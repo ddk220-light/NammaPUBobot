@@ -107,7 +107,7 @@ ddk,Koreans,0,1,1,0.00
 ddk,Lithuanians,0,1,1,0.00
 ddk,Magyars,1,2,3,0.33
 ddk,Malay,1,1,2,0.50
-ddk,Malians,1,1,2,0.50
+ddk,Malians,1,2,3,0.33
 ddk,Maya,1,0,1,1.00
 ddk,Mongols,1,1,2,0.50
 ddk,Portuguese,2,0,2,1.00
@@ -116,7 +116,7 @@ ddk,Shu,3,1,4,0.75
 ddk,Sicilians,0,1,1,0.00
 ddk,Slavs,1,0,1,1.00
 ddk,Spanish,2,0,2,1.00
-ddk,Tatars,0,1,1,0.00
+ddk,Tatars,1,1,2,0.50
 ddk,Teutons,1,1,2,0.50
 ddk,Turks,1,0,1,1.00
 ddk,Vikings,2,1,3,0.67
@@ -174,7 +174,7 @@ Gajini,Huns,2,4,6,0.33
 Gajini,Inca,0,1,1,0.00
 Gajini,Italians,1,3,4,0.25
 Gajini,Japanese,1,0,1,1.00
-Gajini,Khmer,1,1,2,0.50
+Gajini,Khmer,1,2,3,0.33
 Gajini,Koreans,0,2,2,0.00
 Gajini,Magyars,3,1,4,0.75
 Gajini,Malay,3,2,5,0.60
@@ -204,7 +204,7 @@ guruGreatest,Burmese,1,2,3,0.33
 guruGreatest,Byzantines,1,0,1,1.00
 guruGreatest,Chinese,0,1,1,0.00
 guruGreatest,Cumans,2,0,2,1.00
-guruGreatest,Dravidians,0,1,1,0.00
+guruGreatest,Dravidians,0,2,2,0.00
 guruGreatest,Ethiopians,2,0,2,1.00
 guruGreatest,Franks,0,1,1,0.00
 guruGreatest,Georgians,1,1,2,0.50
@@ -356,7 +356,7 @@ MuttonKuska,Saracens,0,3,3,0.00
 MuttonKuska,Shu,0,1,1,0.00
 MuttonKuska,Sicilians,1,1,2,0.50
 MuttonKuska,Slavs,1,0,1,1.00
-MuttonKuska,Spanish,0,1,1,0.00
+MuttonKuska,Spanish,0,2,2,0.00
 MuttonKuska,Tatars,0,1,1,0.00
 MuttonKuska,Turks,0,3,3,0.00
 MuttonKuska,Wei,0,1,1,0.00
@@ -431,6 +431,7 @@ Shadeslayer,Lithuanians,2,1,3,0.67
 Shadeslayer,Malay,0,1,1,0.00
 Shadeslayer,Mapuche,0,1,1,0.00
 Shadeslayer,Maya,0,1,1,0.00
+Shadeslayer,Mongols,0,1,1,0.00
 Shadeslayer,Persians,1,0,1,1.00
 Shadeslayer,Poles,1,2,3,0.33
 Shadeslayer,Portuguese,1,0,1,1.00
@@ -500,7 +501,7 @@ sundar7238,Malians,2,0,2,1.00
 sundar7238,Maya,0,1,1,0.00
 sundar7238,Mongols,1,2,3,0.33
 sundar7238,Persians,0,1,1,0.00
-sundar7238,Poles,1,0,1,1.00
+sundar7238,Poles,2,0,2,1.00
 sundar7238,Portuguese,1,0,1,1.00
 sundar7238,Sicilians,1,0,1,1.00
 sundar7238,Slavs,1,2,3,0.33
@@ -519,6 +520,7 @@ thelivi,Burgundians,0,1,1,0.00
 thelivi,Byzantines,1,0,1,1.00
 thelivi,Celts,1,0,1,1.00
 thelivi,Chinese,1,1,2,0.50
+thelivi,Cumans,0,1,1,0.00
 thelivi,Dravidians,1,2,3,0.33
 thelivi,Ethiopians,0,2,2,0.00
 thelivi,Georgians,1,1,2,0.50
@@ -562,8 +564,8 @@ TiShi,Celts,2,0,2,1.00
 TiShi,Cumans,0,1,1,0.00
 TiShi,Dravidians,1,3,4,0.25
 TiShi,Ethiopians,2,1,3,0.67
-TiShi,Franks,1,1,2,0.50
-TiShi,Georgians,2,0,2,1.00
+TiShi,Franks,1,2,3,0.33
+TiShi,Georgians,3,0,3,1.00
 TiShi,Goths,0,2,2,0.00
 TiShi,Hindustanis,1,1,2,0.50
 TiShi,Huns,3,1,4,0.75
@@ -622,7 +624,7 @@ tyPo,Britons,2,1,3,0.67
 tyPo,Bulgarians,2,3,5,0.40
 tyPo,Burgundians,2,0,2,1.00
 tyPo,Burmese,2,3,5,0.40
-tyPo,Byzantines,2,2,4,0.50
+tyPo,Byzantines,3,2,5,0.60
 tyPo,Celts,1,3,4,0.25
 tyPo,Cumans,0,1,1,0.00
 tyPo,Dravidians,0,1,1,0.00
@@ -634,7 +636,7 @@ tyPo,Hindustanis,2,2,4,0.50
 tyPo,Huns,1,1,2,0.50
 tyPo,Inca,2,4,6,0.33
 tyPo,Italians,1,1,2,0.50
-tyPo,Japanese,1,1,2,0.50
+tyPo,Japanese,2,1,3,0.67
 tyPo,Koreans,1,1,2,0.50
 tyPo,Lithuanians,2,1,3,0.67
 tyPo,Malay,5,0,5,1.00
@@ -681,7 +683,7 @@ tyPo Fan,Saracens,0,2,2,0.00
 tyPo Fan,Sicilians,1,0,1,1.00
 tyPo Fan,Slavs,1,0,1,1.00
 tyPo Fan,Spanish,1,0,1,1.00
-tyPo Fan,Teutons,0,1,1,0.00
+tyPo Fan,Teutons,1,1,2,0.50
 tyPo Fan,Turks,3,0,3,1.00
 tyPo Fan,Vikings,1,0,1,1.00
 wallandboom,Burgundians,1,0,1,1.00
