@@ -450,7 +450,7 @@ async def async_main():
         for civ, w, l, g, wr in worst:
             print(f"    {civ:20s}  {w}W/{l}L  ({wr:.0%})  [{g} games]")
 
-    # Save to CSV
+    # Save all-time stats CSV
     output_path = os.path.join(PROJECT_ROOT, 'data', 'player_civ_stats.csv')
     with open(output_path, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -461,6 +461,29 @@ async def async_main():
                 wr = stats["wins"] / games if games > 0 else 0
                 writer.writerow([nick, civ, stats["wins"], stats["losses"], games, f"{wr:.2f}"])
     print(f"\nDetailed stats saved to {output_path}")
+
+    # Save weekly breakdown CSV
+    # Group match_details by (nick, civ, week_start)
+    weekly = defaultdict(lambda: {"wins": 0, "losses": 0})
+    for row in match_details:
+        dt = datetime.strptime(row['date'], '%Y-%m-%d %H:%M')
+        week_start = (dt - timedelta(days=dt.weekday())).strftime('%Y-%m-%d')
+        key = (row['nick'], row['civ'], week_start)
+        if row['result'] == 'W':
+            weekly[key]["wins"] += 1
+        else:
+            weekly[key]["losses"] += 1
+
+    weekly_path = os.path.join(PROJECT_ROOT, 'data', 'player_civ_weekly.csv')
+    with open(weekly_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["nick", "civ", "week_start", "wins", "losses", "games", "winrate"])
+        for (nick, civ, week_start) in sorted(weekly.keys()):
+            stats = weekly[(nick, civ, week_start)]
+            games = stats["wins"] + stats["losses"]
+            wr = stats["wins"] / games if games > 0 else 0
+            writer.writerow([nick, civ, week_start, stats["wins"], stats["losses"], games, f"{wr:.2f}"])
+    print(f"Weekly breakdown saved to {weekly_path}")
 
 
 def main():
