@@ -98,12 +98,13 @@ class PickupQueue:
 				"pick_teams",
 				display="Pick teams",
 				section="Teams",
-				options=["draft", "matchmaking", "random teams", "no teams"],
+				options=["draft", "matchmaking", "captain based matchmaking", "random teams", "no teams"],
 				default="draft",
 				description="\n".join([
 					"Set how teams should be picked:",
 					"  draft - host a draft stage where captains will have to pick players",
 					"  matchmaking - form teams automatically based on players ratings",
+					"  captain based matchmaking - top 2 rated players become captains, remaining players split to minimize elo difference with weaker captain getting stronger teammates",
 					"  random teams - form teams randomly",
 					"  no teams - do not form teams, only print the players list"
 				]),

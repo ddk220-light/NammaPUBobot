@@ -227,6 +227,34 @@ class Match:
 				[p for p in self.players if p not in best_team][:self.cfg['team_size']]
 			))
 			self.teams[2].set([p for p in self.players if p not in [*self.teams[0], *self.teams[1]]])
+		elif pick_teams == "captain based matchmaking":
+			team_len = min(self.cfg['team_size'], int(len(self.players)/2))
+			# Top 2 rated players become captains
+			sorted_by_rating = sorted(self.players, key=lambda p: self.ratings[p.id], reverse=True)
+			captain_strong = sorted_by_rating[0]
+			captain_weak = sorted_by_rating[1]
+			remaining = sorted_by_rating[2:]
+			# Find the split of remaining players that minimizes elo difference
+			# while favoring the weaker captain getting stronger teammates
+			remaining_team_len = team_len - 1  # each team already has a captain
+			best_combo = None
+			best_score = float('inf')
+			for combo in combinations(remaining, remaining_team_len):
+				others = [p for p in remaining if p not in combo][:remaining_team_len]
+				strong_captain_team_elo = self.ratings[captain_strong.id] + sum(self.ratings[p.id] for p in combo)
+				weak_captain_team_elo = self.ratings[captain_weak.id] + sum(self.ratings[p.id] for p in others)
+				diff = weak_captain_team_elo - strong_captain_team_elo
+				# diff > 0 means weak captain's team is stronger overall (desired)
+				# Prefer smallest diff >= 0; if no such split exists, pick least negative
+				score = -diff if diff >= 0 else abs(diff) + 1e6
+				if score < best_score:
+					best_score = score
+					best_combo = combo
+			weak_team_remaining = [p for p in remaining if p not in best_combo][:remaining_team_len]
+			self.captains = [captain_strong, captain_weak]
+			self.teams[0].set(self.sort_players([captain_strong] + list(best_combo)))
+			self.teams[1].set(self.sort_players([captain_weak] + weak_team_remaining))
+			self.teams[2].set([p for p in self.players if p not in [*self.teams[0], *self.teams[1]]])
 		elif pick_teams == "random teams":
 			self.teams[0].set(random.sample(self.players, min(len(self.players)//2, self.cfg['team_size'])))
 			self.teams[1].set([p for p in self.players if p not in self.teams[0]][:self.cfg['team_size']])
