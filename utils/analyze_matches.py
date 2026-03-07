@@ -27,7 +27,7 @@ import os
 import urllib.request
 import urllib.error
 from datetime import datetime
-from importlib.machinery import SourceFileLoader
+from db_helpers import create_pool
 
 # Add project root to path so we can import bot modules
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -141,41 +141,9 @@ def analyze_online_matches(matches):
 
 async def fetch_db_matches(count=10):
     """Fetch the last N matches from the bot's MySQL database."""
-    try:
-        cfg = SourceFileLoader('cfg', os.path.join(PROJECT_ROOT, 'config.cfg')).load_module()
-    except Exception:
-        print("Error: Could not load config.cfg. Copy config.example.cfg and fill in DB_URI.")
+    pool = await create_pool()
+    if pool is None:
         return None
-
-    db_uri = getattr(cfg, 'DB_URI', '')
-    if not db_uri:
-        print("Error: DB_URI not set in config.cfg")
-        return None
-
-    import aiomysql
-
-    # Parse DB_URI: mysql://user:password@hostname:port/database
-    uri = db_uri
-    for prefix in ('mysql://', 'mysql+aiomysql://'):
-        if uri.startswith(prefix):
-            uri = uri[len(prefix):]
-            break
-
-    user, rest = uri.split(':', 1)
-    password, rest = rest.split('@', 1)
-    host_part, db_name = rest.split('/', 1)
-    if ':' in host_part:
-        host, port = host_part.split(':')
-        port = int(port)
-    else:
-        host = host_part
-        port = 3306
-
-    pool = await aiomysql.create_pool(
-        host=host, user=user, password=password, db=db_name,
-        port=port, charset='utf8mb4', autocommit=True,
-        cursorclass=aiomysql.cursors.DictCursor
-    )
 
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
