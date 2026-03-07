@@ -4,3 +4,4 @@ glicko2>=2.0
 trueskill>=0.4.5
 emoji>=2.7
 prettytable>=3.8
+aiohttp>=3.9
