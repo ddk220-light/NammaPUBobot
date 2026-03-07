@@ -217,16 +217,22 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="Analyze player civ performance from PUB bot matches.")
     parser.add_argument("--days", type=int, default=60, help="Number of days to look back (default: 60)")
+    parser.add_argument("--all", action="store_true", help="Analyze all time (overrides --days)")
     args = parser.parse_args()
 
-    cutoff = datetime.now() - timedelta(days=args.days)
+    if args.all:
+        cutoff = datetime(2020, 1, 1)  # effectively all time
+        label = "all time"
+    else:
+        cutoff = datetime.now() - timedelta(days=args.days)
+        label = f"last {args.days} days"
 
     print("Loading data...")
     pid_to_nick, nick_to_pids = load_profile_map()
     bot_matches = load_bot_matches(cutoff)
     cache = load_match_id_map()
 
-    print(f"Found {len(bot_matches)} bot matches in last {args.days} days")
+    print(f"Found {len(bot_matches)} bot matches ({label})")
     print(f"Mapped {len(nick_to_pids)} players with profile IDs")
     print(f"Cached match mappings: {len(cache)}")
 
@@ -338,7 +344,7 @@ def main():
 
     # Phase 3: Output civ performance
     print(f"\n{'='*70}")
-    print(f"  CIV PERFORMANCE ANALYSIS (last {args.days} days, PUB bot matches only)")
+    print(f"  CIV PERFORMANCE ANALYSIS ({label}, PUB bot matches only)")
     print(f"{'='*70}")
 
     for nick in sorted(player_civs.keys(), key=str.lower):
@@ -369,7 +375,7 @@ def main():
         for civ, w, l, g, wr in worst:
             print(f"    {civ:20s}  {w}W/{l}L  ({wr:.0%})  [{g} games]")
 
-    # Save to CSV
+    # Save all-time civ stats CSV
     output_path = os.path.join(PROJECT_ROOT, 'data', 'player_civ_stats.csv')
     with open(output_path, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -380,6 +386,40 @@ def main():
                 wr = stats["wins"] / games if games > 0 else 0
                 writer.writerow([nick, civ, stats["wins"], stats["losses"], games, f"{wr:.2f}"])
     print(f"\nDetailed stats saved to {output_path}")
+
+    # Save weekly breakdown CSV
+    # Build weekly buckets from match_details
+    # week_key = ISO year-week (e.g. "2024-W05")
+    weekly = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {"wins": 0, "losses": 0})))
+    for row in match_details:
+        dt = datetime.strptime(row['date'], '%Y-%m-%d %H:%M')
+        week_key = f"{dt.isocalendar()[0]}-W{dt.isocalendar()[1]:02d}"
+        nick = row['nick']
+        civ = row['civ']
+        if row['result'] == 'W':
+            weekly[week_key][nick][civ]["wins"] += 1
+        else:
+            weekly[week_key][nick][civ]["losses"] += 1
+
+    weekly_path = os.path.join(PROJECT_ROOT, 'data', 'player_weekly_civ_stats.csv')
+    with open(weekly_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["week", "nick", "civ", "wins", "losses", "games", "winrate",
+                          "week_total_wins", "week_total_losses", "week_total_games", "week_winrate"])
+        for week_key in sorted(weekly.keys()):
+            for nick in sorted(weekly[week_key].keys(), key=str.lower):
+                # Compute player's overall week stats
+                wk_wins = sum(s["wins"] for s in weekly[week_key][nick].values())
+                wk_losses = sum(s["losses"] for s in weekly[week_key][nick].values())
+                wk_games = wk_wins + wk_losses
+                wk_wr = wk_wins / wk_games if wk_games > 0 else 0
+                for civ in sorted(weekly[week_key][nick].keys()):
+                    stats = weekly[week_key][nick][civ]
+                    games = stats["wins"] + stats["losses"]
+                    wr = stats["wins"] / games if games > 0 else 0
+                    writer.writerow([week_key, nick, civ, stats["wins"], stats["losses"],
+                                     games, f"{wr:.2f}", wk_wins, wk_losses, wk_games, f"{wk_wr:.2f}"])
+    print(f"Weekly breakdown saved to {weekly_path}")
 
 
 if __name__ == "__main__":
