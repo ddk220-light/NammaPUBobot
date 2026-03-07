@@ -258,6 +258,7 @@ def main():
     # Phase 2: Match each bot match to an API match
     print(f"\nPhase 2: Matching {len(bot_matches)} bot matches...")
     player_civs = defaultdict(lambda: defaultdict(lambda: {"wins": 0, "losses": 0}))
+    match_details = []  # per-match per-player rows
     matched_count = 0
     cached_hits = 0
 
@@ -308,10 +309,27 @@ def main():
                 player_civs[nick][civ]["wins"] += 1
             else:
                 player_civs[nick][civ]["losses"] += 1
+            match_details.append({
+                'bot_match_id': bot_id,
+                'aoe2_match_id': aoe2_id,
+                'date': bot_match['at'].strftime('%Y-%m-%d %H:%M'),
+                'nick': nick,
+                'team': bp['team'],
+                'civ': civ,
+                'result': 'W' if won else 'L',
+            })
 
     # Save match ID map
     save_match_id_map(cache)
     print(f"\nMatch ID map saved to {MATCH_MAP_PATH} ({len(cache)} entries)")
+
+    # Save per-match detail CSV
+    detail_path = os.path.join(PROJECT_ROOT, 'data', 'match_civ_details.csv')
+    with open(detail_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=['bot_match_id', 'aoe2_match_id', 'date', 'nick', 'team', 'civ', 'result'])
+        writer.writeheader()
+        writer.writerows(match_details)
+    print(f"Per-match details saved to {detail_path} ({len(match_details)} rows)")
 
     total = len(bot_matches)
     pct = matched_count * 100 // total if total else 0
