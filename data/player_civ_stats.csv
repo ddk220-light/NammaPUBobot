@@ -1,83 +1,148 @@
 nick,civ,wins,losses,games,winrate
+aquasama7056,Chinese,1,0,1,1.00
 aquasama7056,Cumans,1,0,1,1.00
 aquasama7056,Dravidians,1,1,2,0.50
-aquasama7056,Goths,0,1,1,0.00
-aquasama7056,Japanese,0,1,1,0.00
+aquasama7056,Goths,1,1,2,0.50
+aquasama7056,Japanese,1,1,2,0.50
+aquasama7056,Maya,1,0,1,1.00
 aquasama7056,Portuguese,1,0,1,1.00
 aquasama7056,Shu,1,0,1,1.00
+aquasama7056,Spanish,1,0,1,1.00
+aquasama7056,Teutons,1,0,1,1.00
+aquasama7056,Wu,0,1,1,0.00
 bearknightman,Hindustanis,0,1,1,0.00
+centurion12,Armenians,2,0,2,1.00
 centurion12,Aztecs,0,1,1,0.00
+centurion12,Bengalis,0,1,1,0.00
 centurion12,Berbers,1,0,1,1.00
+centurion12,Bulgarians,2,0,2,1.00
 centurion12,Burgundians,0,1,1,0.00
-centurion12,Celts,1,0,1,1.00
-centurion12,Dravidians,1,0,1,1.00
-centurion12,Huns,0,1,1,0.00
+centurion12,Byzantines,1,0,1,1.00
+centurion12,Celts,1,1,2,0.50
+centurion12,Chinese,0,1,1,0.00
+centurion12,Dravidians,2,0,2,1.00
+centurion12,Ethiopians,1,0,1,1.00
+centurion12,Franks,1,3,4,0.25
+centurion12,Goths,2,0,2,1.00
+centurion12,Huns,0,4,4,0.00
+centurion12,Italians,1,0,1,1.00
+centurion12,Khitans,0,1,1,0.00
+centurion12,Khmer,1,0,1,1.00
 centurion12,Koreans,0,1,1,0.00
 centurion12,Maya,0,1,1,0.00
-centurion12,Persians,2,0,2,1.00
-centurion12,Poles,2,0,2,1.00
+centurion12,Mongols,1,0,1,1.00
+centurion12,Persians,5,0,5,1.00
+centurion12,Poles,3,0,3,1.00
 centurion12,Romans,1,0,1,1.00
 centurion12,Saracens,1,0,1,1.00
-centurion12,Shu,0,1,1,0.00
-centurion12,Slavs,0,2,2,0.00
+centurion12,Shu,1,1,2,0.50
+centurion12,Slavs,1,2,3,0.33
 centurion12,Tatars,0,1,1,0.00
-centurion12,Vietnamese,1,1,2,0.50
-centurion12,Wei,0,1,1,0.00
+centurion12,Turks,1,0,1,1.00
+centurion12,Vietnamese,1,3,4,0.25
+centurion12,Wei,0,2,2,0.00
 centurion12,Wu,0,1,1,0.00
-Dark De Bruyne,Armenians,3,0,3,1.00
-Dark De Bruyne,Aztecs,0,1,1,0.00
+Dark De Bruyne,Armenians,4,1,5,0.80
+Dark De Bruyne,Aztecs,0,2,2,0.00
 Dark De Bruyne,Bengalis,0,2,2,0.00
+Dark De Bruyne,Berbers,0,1,1,0.00
+Dark De Bruyne,Britons,0,1,1,0.00
+Dark De Bruyne,Bulgarians,1,0,1,1.00
+Dark De Bruyne,Burgundians,0,1,1,0.00
 Dark De Bruyne,Burmese,1,0,1,1.00
+Dark De Bruyne,Byzantines,1,0,1,1.00
 Dark De Bruyne,Celts,0,1,1,0.00
-Dark De Bruyne,Dravidians,0,1,1,0.00
-Dark De Bruyne,Ethiopians,1,0,1,1.00
+Dark De Bruyne,Dravidians,2,2,4,0.50
+Dark De Bruyne,Ethiopians,2,0,2,1.00
 Dark De Bruyne,Franks,0,1,1,0.00
-Dark De Bruyne,Hindustanis,1,0,1,1.00
-Dark De Bruyne,Huns,0,1,1,0.00
+Dark De Bruyne,Georgians,0,1,1,0.00
+Dark De Bruyne,Hindustanis,2,1,3,0.67
+Dark De Bruyne,Huns,1,1,2,0.50
 Dark De Bruyne,Italians,2,1,3,0.67
+Dark De Bruyne,Japanese,0,1,1,0.00
+Dark De Bruyne,Jurchens,0,1,1,0.00
+Dark De Bruyne,Koreans,2,1,3,0.67
+Dark De Bruyne,Lithuanians,1,1,2,0.50
+Dark De Bruyne,Magyars,1,1,2,0.50
 Dark De Bruyne,Malians,2,1,3,0.67
 Dark De Bruyne,Mapuche,1,1,2,0.50
-Dark De Bruyne,Maya,0,1,1,0.00
-Dark De Bruyne,Mongols,1,1,2,0.50
+Dark De Bruyne,Maya,1,2,3,0.33
+Dark De Bruyne,Mongols,2,1,3,0.67
 Dark De Bruyne,Muisca,1,0,1,1.00
 Dark De Bruyne,Persians,0,1,1,0.00
+Dark De Bruyne,Portuguese,0,1,1,0.00
 Dark De Bruyne,Romans,0,1,1,0.00
-Dark De Bruyne,Shu,0,2,2,0.00
-Dark De Bruyne,Spanish,1,1,2,0.50
+Dark De Bruyne,Saracens,0,1,1,0.00
+Dark De Bruyne,Shu,0,3,3,0.00
+Dark De Bruyne,Spanish,1,3,4,0.25
+Dark De Bruyne,Tatars,0,2,2,0.00
 Dark De Bruyne,Teutons,1,1,2,0.50
 Dark De Bruyne,Tupi,2,0,2,1.00
-Dark De Bruyne,Turks,0,2,2,0.00
-Dark De Bruyne,Wu,0,1,1,0.00
+Dark De Bruyne,Turks,1,2,3,0.33
+Dark De Bruyne,Vietnamese,0,1,1,0.00
+Dark De Bruyne,Wei,1,1,2,0.50
+Dark De Bruyne,Wu,1,2,3,0.33
 ddk,Armenians,1,0,1,1.00
-ddk,Aztecs,2,0,2,1.00
-ddk,Bengalis,0,1,1,0.00
+ddk,Aztecs,3,1,4,0.75
+ddk,Bengalis,1,1,2,0.50
 ddk,Berbers,1,0,1,1.00
+ddk,Bulgarians,2,2,4,0.50
+ddk,Burgundians,1,0,1,1.00
 ddk,Burmese,1,0,1,1.00
-ddk,Byzantines,1,0,1,1.00
-ddk,Cumans,0,2,2,0.00
+ddk,Byzantines,2,0,2,1.00
+ddk,Celts,0,1,1,0.00
+ddk,Cumans,1,3,4,0.25
 ddk,Dravidians,1,0,1,1.00
 ddk,Ethiopians,0,1,1,0.00
+ddk,Franks,1,1,2,0.50
 ddk,Georgians,1,0,1,1.00
+ddk,Goths,0,1,1,0.00
+ddk,Gurjaras,0,3,3,0.00
+ddk,Huns,1,0,1,1.00
+ddk,Italians,0,1,1,0.00
+ddk,Japanese,1,0,1,1.00
 ddk,Jurchens,0,1,1,0.00
-ddk,Magyars,0,1,1,0.00
+ddk,Khmer,0,1,1,0.00
+ddk,Koreans,0,1,1,0.00
+ddk,Lithuanians,0,1,1,0.00
+ddk,Magyars,1,2,3,0.33
 ddk,Malay,1,1,2,0.50
+ddk,Malians,1,1,2,0.50
 ddk,Maya,1,0,1,1.00
 ddk,Mongols,1,1,2,0.50
-ddk,Portuguese,1,0,1,1.00
+ddk,Portuguese,2,0,2,1.00
 ddk,Romans,1,1,2,0.50
-ddk,Shu,1,0,1,1.00
-ddk,Spanish,1,0,1,1.00
-ddk,Teutons,0,1,1,0.00
+ddk,Shu,3,1,4,0.75
+ddk,Sicilians,0,1,1,0.00
+ddk,Slavs,1,0,1,1.00
+ddk,Spanish,2,0,2,1.00
+ddk,Tatars,0,1,1,0.00
+ddk,Teutons,1,1,2,0.50
 ddk,Turks,1,0,1,1.00
-ddk,Vikings,1,0,1,1.00
-ddk,Wu,1,0,1,1.00
+ddk,Vikings,2,1,3,0.67
+ddk,Wei,2,1,3,0.67
+ddk,Wu,2,1,3,0.67
 drgameher,Bohemians,0,1,1,0.00
 drgameher,Bulgarians,0,1,1,0.00
+drgameher,Burmese,0,1,1,0.00
 drgameher,Byzantines,0,2,2,0.00
+drgameher,Celts,0,1,1,0.00
+drgameher,Dravidians,1,0,1,1.00
+drgameher,Franks,1,0,1,1.00
+drgameher,Georgians,1,0,1,1.00
 drgameher,Gurjaras,1,0,1,1.00
+drgameher,Huns,1,0,1,1.00
+drgameher,Inca,1,0,1,1.00
+drgameher,Italians,0,1,1,0.00
+drgameher,Khmer,1,1,2,0.50
+drgameher,Koreans,1,0,1,1.00
 drgameher,Malay,0,1,1,0.00
+drgameher,Malians,1,0,1,1.00
+drgameher,Maya,0,1,1,0.00
 drgameher,Mongols,1,1,2,0.50
-drgameher,Spanish,0,1,1,0.00
+drgameher,Poles,0,2,2,0.00
+drgameher,Saracens,0,1,1,0.00
+drgameher,Spanish,0,2,2,0.00
 drgameher,Tatars,1,0,1,1.00
 drgameher,Teutons,0,2,2,0.00
 drgameher,Vietnamese,0,1,1,0.00
@@ -88,86 +153,133 @@ fenrir05,Bengalis,1,0,1,1.00
 fenrir05,Bulgarians,1,0,1,1.00
 fenrir05,Mapuche,1,0,1,1.00
 fenrir05,Shu,0,1,1,0.00
-Gajini,Bohemians,0,1,1,0.00
-Gajini,Britons,2,0,2,1.00
-Gajini,Bulgarians,0,1,1,0.00
-Gajini,Burmese,0,1,1,0.00
-Gajini,Celts,1,2,3,0.33
-Gajini,Cumans,1,0,1,1.00
-Gajini,Ethiopians,0,1,1,0.00
-Gajini,Franks,3,0,3,1.00
-Gajini,Gurjaras,1,0,1,1.00
-Gajini,Huns,1,3,4,0.25
+Gajini,Aztecs,0,1,1,0.00
+Gajini,Bengalis,1,1,2,0.50
+Gajini,Berbers,0,1,1,0.00
+Gajini,Bohemians,1,2,3,0.33
+Gajini,Britons,2,2,4,0.50
+Gajini,Bulgarians,1,2,3,0.33
+Gajini,Burgundians,1,1,2,0.50
+Gajini,Burmese,1,4,5,0.20
+Gajini,Byzantines,2,0,2,1.00
+Gajini,Celts,1,3,4,0.25
+Gajini,Cumans,1,1,2,0.50
+Gajini,Dravidians,0,1,1,0.00
+Gajini,Ethiopians,1,1,2,0.50
+Gajini,Franks,4,1,5,0.80
+Gajini,Goths,0,1,1,0.00
+Gajini,Gurjaras,3,1,4,0.75
+Gajini,Hindustanis,1,2,3,0.33
+Gajini,Huns,2,4,6,0.33
 Gajini,Inca,0,1,1,0.00
-Gajini,Italians,0,2,2,0.00
-Gajini,Khmer,0,1,1,0.00
-Gajini,Koreans,0,1,1,0.00
-Gajini,Magyars,0,1,1,0.00
-Gajini,Malay,2,1,3,0.67
+Gajini,Italians,1,3,4,0.25
+Gajini,Japanese,1,0,1,1.00
+Gajini,Khmer,1,1,2,0.50
+Gajini,Koreans,0,2,2,0.00
+Gajini,Magyars,3,1,4,0.75
+Gajini,Malay,3,2,5,0.60
 Gajini,Malians,0,2,2,0.00
-Gajini,Maya,3,0,3,1.00
-Gajini,Portuguese,1,0,1,1.00
-Gajini,Tatars,2,1,3,0.67
-Gajini,Teutons,2,1,3,0.67
-Gajini,Turks,1,0,1,1.00
-Gajini,Vietnamese,1,0,1,1.00
+Gajini,Maya,4,0,4,1.00
+Gajini,Mongols,1,2,3,0.33
+Gajini,Persians,1,1,2,0.50
+Gajini,Poles,0,2,2,0.00
+Gajini,Portuguese,2,2,4,0.50
+Gajini,Sicilians,0,1,1,0.00
+Gajini,Slavs,0,1,1,0.00
+Gajini,Spanish,2,0,2,1.00
+Gajini,Tatars,3,1,4,0.75
+Gajini,Teutons,5,2,7,0.71
+Gajini,Turks,1,1,2,0.50
+Gajini,Vietnamese,2,0,2,1.00
+Gajini,Vikings,0,1,1,0.00
 guruGreatest,Armenians,2,0,2,1.00
-guruGreatest,Aztecs,2,1,3,0.67
+guruGreatest,Aztecs,2,2,4,0.50
 guruGreatest,Bengalis,0,1,1,0.00
-guruGreatest,Berbers,1,0,1,1.00
-guruGreatest,Bohemians,0,2,2,0.00
-guruGreatest,Britons,4,1,5,0.80
-guruGreatest,Bulgarians,1,0,1,1.00
-guruGreatest,Burgundians,1,0,1,1.00
-guruGreatest,Burmese,0,2,2,0.00
+guruGreatest,Berbers,1,1,2,0.50
+guruGreatest,Bohemians,0,3,3,0.00
+guruGreatest,Britons,4,3,7,0.57
+guruGreatest,Bulgarians,2,0,2,1.00
+guruGreatest,Burgundians,1,2,3,0.33
+guruGreatest,Burmese,1,2,3,0.33
+guruGreatest,Byzantines,1,0,1,1.00
 guruGreatest,Chinese,0,1,1,0.00
+guruGreatest,Cumans,2,0,2,1.00
+guruGreatest,Dravidians,0,1,1,0.00
 guruGreatest,Ethiopians,2,0,2,1.00
-guruGreatest,Georgians,0,1,1,0.00
-guruGreatest,Huns,1,1,2,0.50
+guruGreatest,Franks,0,1,1,0.00
+guruGreatest,Georgians,1,1,2,0.50
+guruGreatest,Goths,1,1,2,0.50
+guruGreatest,Gurjaras,1,0,1,1.00
+guruGreatest,Hindustanis,1,1,2,0.50
+guruGreatest,Huns,1,3,4,0.25
 guruGreatest,Inca,1,0,1,1.00
-guruGreatest,Italians,1,0,1,1.00
-guruGreatest,Japanese,0,1,1,0.00
-guruGreatest,Khmer,1,1,2,0.50
-guruGreatest,Koreans,0,1,1,0.00
-guruGreatest,Lithuanians,1,0,1,1.00
-guruGreatest,Magyars,0,2,2,0.00
-guruGreatest,Maya,0,1,1,0.00
-guruGreatest,Persians,0,1,1,0.00
-guruGreatest,Poles,3,0,3,1.00
-guruGreatest,Portuguese,1,0,1,1.00
-guruGreatest,Romans,0,1,1,0.00
-guruGreatest,Slavs,0,1,1,0.00
+guruGreatest,Italians,1,2,3,0.33
+guruGreatest,Japanese,2,2,4,0.50
+guruGreatest,Khmer,2,2,4,0.50
+guruGreatest,Koreans,2,1,3,0.67
+guruGreatest,Lithuanians,2,1,3,0.67
+guruGreatest,Magyars,0,3,3,0.00
+guruGreatest,Malay,1,2,3,0.33
+guruGreatest,Malians,3,1,4,0.75
+guruGreatest,Maya,1,1,2,0.50
+guruGreatest,Mongols,0,1,1,0.00
+guruGreatest,Persians,1,1,2,0.50
+guruGreatest,Poles,4,0,4,1.00
+guruGreatest,Portuguese,1,1,2,0.50
+guruGreatest,Romans,0,2,2,0.00
+guruGreatest,Saracens,0,1,1,0.00
+guruGreatest,Sicilians,3,2,5,0.60
+guruGreatest,Slavs,2,1,3,0.67
 guruGreatest,Spanish,1,1,2,0.50
-guruGreatest,Tatars,0,2,2,0.00
-guruGreatest,Teutons,0,1,1,0.00
-guruGreatest,Turks,0,1,1,0.00
-guruGreatest,Vikings,1,2,3,0.33
-I'm Dead Guyzzz...,Aztecs,1,0,1,1.00
-I'm Dead Guyzzz...,Bohemians,1,0,1,1.00
-I'm Dead Guyzzz...,Britons,0,1,1,0.00
+guruGreatest,Tatars,1,1,2,0.50
+guruGreatest,Teutons,1,2,3,0.33
+guruGreatest,Turks,1,2,3,0.33
+guruGreatest,Vietnamese,1,0,1,1.00
+guruGreatest,Vikings,3,2,5,0.60
+I'm Dead Guyzzz...,Aztecs,1,1,2,0.50
+I'm Dead Guyzzz...,Bengalis,0,1,1,0.00
+I'm Dead Guyzzz...,Berbers,1,1,2,0.50
+I'm Dead Guyzzz...,Bohemians,2,1,3,0.67
+I'm Dead Guyzzz...,Britons,0,2,2,0.00
 I'm Dead Guyzzz...,Bulgarians,2,0,2,1.00
-I'm Dead Guyzzz...,Burgundians,2,0,2,1.00
+I'm Dead Guyzzz...,Burgundians,2,1,3,0.67
 I'm Dead Guyzzz...,Burmese,1,0,1,1.00
 I'm Dead Guyzzz...,Celts,2,1,3,0.67
-I'm Dead Guyzzz...,Chinese,1,1,2,0.50
-I'm Dead Guyzzz...,Franks,1,1,2,0.50
+I'm Dead Guyzzz...,Chinese,2,1,3,0.67
+I'm Dead Guyzzz...,Cumans,0,1,1,0.00
+I'm Dead Guyzzz...,Ethiopians,0,1,1,0.00
+I'm Dead Guyzzz...,Franks,3,2,5,0.60
 I'm Dead Guyzzz...,Goths,0,1,1,0.00
-I'm Dead Guyzzz...,Hindustanis,1,0,1,1.00
-I'm Dead Guyzzz...,Huns,1,1,2,0.50
-I'm Dead Guyzzz...,Inca,1,2,3,0.33
-I'm Dead Guyzzz...,Italians,0,1,1,0.00
-I'm Dead Guyzzz...,Koreans,0,1,1,0.00
-I'm Dead Guyzzz...,Lithuanians,1,0,1,1.00
-I'm Dead Guyzzz...,Malay,2,0,2,1.00
+I'm Dead Guyzzz...,Gurjaras,0,2,2,0.00
+I'm Dead Guyzzz...,Hindustanis,1,1,2,0.50
+I'm Dead Guyzzz...,Huns,2,1,3,0.67
+I'm Dead Guyzzz...,Inca,3,2,5,0.60
+I'm Dead Guyzzz...,Italians,1,1,2,0.50
+I'm Dead Guyzzz...,Khmer,1,0,1,1.00
+I'm Dead Guyzzz...,Koreans,1,1,2,0.50
+I'm Dead Guyzzz...,Lithuanians,3,2,5,0.60
+I'm Dead Guyzzz...,Malay,2,1,3,0.67
+I'm Dead Guyzzz...,Malians,1,0,1,1.00
 I'm Dead Guyzzz...,Mongols,0,2,2,0.00
-I'm Dead Guyzzz...,Persians,2,0,2,1.00
-I'm Dead Guyzzz...,Poles,1,1,2,0.50
-I'm Dead Guyzzz...,Portuguese,0,3,3,0.00
-I'm Dead Guyzzz...,Slavs,1,1,2,0.50
-I'm Dead Guyzzz...,Spanish,1,0,1,1.00
-I'm Dead Guyzzz...,Tatars,1,1,2,0.50
+I'm Dead Guyzzz...,Persians,4,0,4,1.00
+I'm Dead Guyzzz...,Poles,2,4,6,0.33
+I'm Dead Guyzzz...,Portuguese,0,6,6,0.00
+I'm Dead Guyzzz...,Slavs,1,2,3,0.33
+I'm Dead Guyzzz...,Spanish,1,3,4,0.25
+I'm Dead Guyzzz...,Tatars,1,2,3,0.33
+I'm Dead Guyzzz...,Teutons,1,1,2,0.50
+I'm Dead Guyzzz...,Vietnamese,1,0,1,1.00
+I'm Dead Guyzzz...,Vikings,1,0,1,1.00
 ImVaibhav,Britons,1,0,1,1.00
+ImVaibhav,Bulgarians,0,1,1,0.00
+ImVaibhav,Burmese,1,0,1,1.00
+ImVaibhav,Ethiopians,0,1,1,0.00
+ImVaibhav,Inca,1,0,1,1.00
+ImVaibhav,Lithuanians,1,0,1,1.00
+ImVaibhav,Malians,1,0,1,1.00
+ImVaibhav,Tatars,0,2,2,0.00
 ImVaibhav,Turks,1,0,1,1.00
+Kaipullae,Aztecs,0,1,1,0.00
 Kaipullae,Berbers,1,0,1,1.00
 Kaipullae,Britons,1,0,1,1.00
 Kaipullae,Bulgarians,0,1,1,0.00
@@ -175,7 +287,9 @@ Kaipullae,Burgundians,1,0,1,1.00
 Kaipullae,Celts,1,1,2,0.50
 Kaipullae,Cumans,1,0,1,1.00
 Kaipullae,Georgians,1,0,1,1.00
+Kaipullae,Huns,1,0,1,1.00
 Kaipullae,Inca,1,0,1,1.00
+Kaipullae,Japanese,0,1,1,0.00
 Kaipullae,Jurchens,1,0,1,1.00
 Kaipullae,Khitans,1,0,1,1.00
 Kaipullae,Khmer,0,1,1,0.00
@@ -186,223 +300,390 @@ Kaipullae,Saracens,1,0,1,1.00
 Kaipullae,Shu,2,0,2,1.00
 Kaipullae,Sicilians,0,1,1,0.00
 Kaipullae,Spanish,1,0,1,1.00
+Kaipullae,Teutons,1,0,1,1.00
 Kaipullae,Turks,0,1,1,0.00
 Kaipullae,Vietnamese,0,1,1,0.00
-Kaipullae,Vikings,0,1,1,0.00
+Kaipullae,Vikings,0,2,2,0.00
 Kaipullae,Wei,1,0,1,1.00
+M1k3,Aztecs,0,1,1,0.00
 M1k3,Bengalis,0,2,2,0.00
-M1k3,Bohemians,1,0,1,1.00
+M1k3,Bohemians,2,0,2,1.00
+M1k3,Bulgarians,1,0,1,1.00
 M1k3,Burgundians,0,1,1,0.00
+M1k3,Byzantines,0,1,1,0.00
+M1k3,Celts,1,0,1,1.00
+M1k3,Chinese,0,1,1,0.00
 M1k3,Cumans,1,1,2,0.50
-M1k3,Franks,1,0,1,1.00
+M1k3,Dravidians,0,1,1,0.00
+M1k3,Franks,2,0,2,1.00
 M1k3,Gurjaras,0,1,1,0.00
+M1k3,Japanese,0,1,1,0.00
+M1k3,Jurchens,2,0,2,1.00
 M1k3,Lithuanians,1,0,1,1.00
 M1k3,Malay,0,1,1,0.00
-M1k3,Malians,1,0,1,1.00
+M1k3,Malians,2,0,2,1.00
 M1k3,Mapuche,2,1,3,0.67
 M1k3,Muisca,1,1,2,0.50
-M1k3,Saracens,1,0,1,1.00
+M1k3,Romans,2,0,2,1.00
+M1k3,Saracens,2,0,2,1.00
 M1k3,Shu,2,0,2,1.00
-M1k3,Sicilians,0,1,1,0.00
+M1k3,Sicilians,1,2,3,0.33
+M1k3,Slavs,0,1,1,0.00
+M1k3,Teutons,1,0,1,1.00
 M1k3,Tupi,1,0,1,1.00
-M1k3,Turks,0,1,1,0.00
-M1k3,Vietnamese,2,0,2,1.00
-M1k3,Wei,1,0,1,1.00
-MuttonKuska,Burgundians,0,1,1,0.00
-MuttonKuska,Celts,2,1,3,0.67
+M1k3,Turks,0,2,2,0.00
+M1k3,Vietnamese,3,1,4,0.75
+M1k3,Wei,1,1,2,0.50
+MuttonKuska,Aztecs,1,0,1,1.00
+MuttonKuska,Berbers,1,0,1,1.00
+MuttonKuska,Bohemians,2,0,2,1.00
+MuttonKuska,Bulgarians,1,0,1,1.00
+MuttonKuska,Burgundians,1,1,2,0.50
+MuttonKuska,Byzantines,1,1,2,0.50
+MuttonKuska,Celts,2,3,5,0.40
 MuttonKuska,Dravidians,0,1,1,0.00
+MuttonKuska,Ethiopians,0,1,1,0.00
 MuttonKuska,Gurjaras,1,0,1,1.00
-MuttonKuska,Inca,0,1,1,0.00
-MuttonKuska,Khitans,1,0,1,1.00
+MuttonKuska,Inca,0,2,2,0.00
+MuttonKuska,Khitans,2,0,2,1.00
+MuttonKuska,Khmer,1,1,2,0.50
+MuttonKuska,Lithuanians,0,1,1,0.00
 MuttonKuska,Malians,1,1,2,0.50
 MuttonKuska,Muisca,2,0,2,1.00
-MuttonKuska,Portuguese,1,0,1,1.00
-MuttonKuska,Saracens,0,1,1,0.00
+MuttonKuska,Persians,1,0,1,1.00
+MuttonKuska,Portuguese,1,1,2,0.50
+MuttonKuska,Saracens,0,3,3,0.00
+MuttonKuska,Shu,0,1,1,0.00
 MuttonKuska,Sicilians,1,1,2,0.50
+MuttonKuska,Slavs,1,0,1,1.00
 MuttonKuska,Spanish,0,1,1,0.00
 MuttonKuska,Tatars,0,1,1,0.00
-MuttonKuska,Turks,0,1,1,0.00
+MuttonKuska,Turks,0,3,3,0.00
+MuttonKuska,Wei,0,1,1,0.00
 MuttonKuska,Wu,0,1,1,0.00
+newisyou,Armenians,0,1,1,0.00
 newisyou,Berbers,1,0,1,1.00
+newisyou,Britons,0,1,1,0.00
 newisyou,Burgundians,1,1,2,0.50
 newisyou,Burmese,1,0,1,1.00
-newisyou,Chinese,1,1,2,0.50
-newisyou,Cumans,1,1,2,0.50
+newisyou,Celts,1,0,1,1.00
+newisyou,Chinese,2,1,3,0.67
+newisyou,Cumans,1,2,3,0.33
 newisyou,Dravidians,0,1,1,0.00
+newisyou,Ethiopians,0,1,1,0.00
 newisyou,Huns,0,2,2,0.00
-newisyou,Jurchens,1,0,1,1.00
+newisyou,Jurchens,2,1,3,0.67
+newisyou,Khitans,0,2,2,0.00
 newisyou,Khmer,1,0,1,1.00
+newisyou,Lithuanians,0,1,1,0.00
 newisyou,Magyars,0,1,1,0.00
+newisyou,Malians,1,0,1,1.00
 newisyou,Maya,1,0,1,1.00
+newisyou,Portuguese,0,2,2,0.00
 newisyou,Romans,0,1,1,0.00
+newisyou,Saracens,1,0,1,1.00
+newisyou,Shu,0,1,1,0.00
 newisyou,Sicilians,1,0,1,1.00
+newisyou,Spanish,1,0,1,1.00
 newisyou,Teutons,0,1,1,0.00
-newisyou,Vikings,0,1,1,0.00
+newisyou,Vietnamese,0,1,1,0.00
+newisyou,Vikings,1,1,2,0.50
+ninjavarier,Aztecs,0,1,1,0.00
 ninjavarier,Bohemians,0,1,1,0.00
 ninjavarier,Britons,1,0,1,1.00
 ninjavarier,Chinese,0,1,1,0.00
 ninjavarier,Hindustanis,0,1,1,0.00
-ninjavarier,Italians,0,1,1,0.00
+ninjavarier,Italians,1,1,2,0.50
 ninjavarier,Magyars,0,1,1,0.00
+ninjavarier,Malay,0,1,1,0.00
 ninjavarier,Poles,0,1,1,0.00
+ninjavarier,Portuguese,0,1,1,0.00
+ninjavarier,Sicilians,0,1,1,0.00
+ninjavarier,Turks,0,1,1,0.00
 ninjavarier,Vikings,1,0,1,1.00
+ninjavarier,Wu,0,1,1,0.00
 rusher,Bengalis,1,0,1,1.00
 rusher,Mongols,1,0,1,1.00
-rusher,Persians,1,0,1,1.00
+rusher,Persians,2,0,2,1.00
 rusher,Poles,1,0,1,1.00
 rusher,Tatars,0,1,1,0.00
 Shadeslayer,Aztecs,0,1,1,0.00
-Shadeslayer,Bengalis,1,0,1,1.00
-Shadeslayer,Britons,1,1,2,0.50
+Shadeslayer,Bengalis,2,1,3,0.67
+Shadeslayer,Britons,1,2,3,0.33
+Shadeslayer,Bulgarians,0,2,2,0.00
+Shadeslayer,Burgundians,1,1,2,0.50
+Shadeslayer,Burmese,1,0,1,1.00
+Shadeslayer,Byzantines,0,1,1,0.00
 Shadeslayer,Celts,1,0,1,1.00
-Shadeslayer,Ethiopians,0,1,1,0.00
-Shadeslayer,Franks,0,1,1,0.00
-Shadeslayer,Italians,1,0,1,1.00
-Shadeslayer,Japanese,0,1,1,0.00
-Shadeslayer,Jurchens,0,1,1,0.00
-Shadeslayer,Khitans,0,2,2,0.00
-Shadeslayer,Lithuanians,2,0,2,1.00
+Shadeslayer,Chinese,1,1,2,0.50
+Shadeslayer,Dravidians,0,1,1,0.00
+Shadeslayer,Ethiopians,0,2,2,0.00
+Shadeslayer,Franks,1,1,2,0.50
+Shadeslayer,Georgians,0,1,1,0.00
+Shadeslayer,Hindustanis,0,1,1,0.00
+Shadeslayer,Italians,2,0,2,1.00
+Shadeslayer,Japanese,1,1,2,0.50
+Shadeslayer,Jurchens,0,2,2,0.00
+Shadeslayer,Khitans,1,4,5,0.20
+Shadeslayer,Khmer,1,0,1,1.00
+Shadeslayer,Koreans,0,1,1,0.00
+Shadeslayer,Lithuanians,2,1,3,0.67
+Shadeslayer,Malay,0,1,1,0.00
 Shadeslayer,Mapuche,0,1,1,0.00
+Shadeslayer,Maya,0,1,1,0.00
+Shadeslayer,Persians,1,0,1,1.00
 Shadeslayer,Poles,1,2,3,0.33
+Shadeslayer,Portuguese,1,0,1,1.00
 Shadeslayer,Romans,0,1,1,0.00
 Shadeslayer,Saracens,1,0,1,1.00
-Shadeslayer,Shu,0,2,2,0.00
+Shadeslayer,Shu,0,3,3,0.00
+Shadeslayer,Sicilians,0,1,1,0.00
+Shadeslayer,Spanish,0,2,2,0.00
+Shadeslayer,Tatars,0,1,1,0.00
+Shadeslayer,Teutons,0,1,1,0.00
 Shadeslayer,Tupi,1,1,2,0.50
+Shadeslayer,Turks,0,1,1,0.00
+Shadeslayer,Vikings,1,0,1,1.00
 Shadeslayer,Wei,1,0,1,1.00
+Shadeslayer,Wu,1,2,3,0.33
 stylishsteam,Armenians,1,2,3,0.33
 stylishsteam,Aztecs,0,1,1,0.00
 stylishsteam,Britons,0,2,2,0.00
+stylishsteam,Burmese,0,1,1,0.00
+stylishsteam,Byzantines,1,1,2,0.50
 stylishsteam,Cumans,1,0,1,1.00
+stylishsteam,Ethiopians,1,1,2,0.50
+stylishsteam,Georgians,0,1,1,0.00
+stylishsteam,Hindustanis,1,0,1,1.00
 stylishsteam,Huns,0,1,1,0.00
 stylishsteam,Inca,0,1,1,0.00
-stylishsteam,Japanese,1,0,1,1.00
+stylishsteam,Italians,0,1,1,0.00
+stylishsteam,Japanese,2,0,2,1.00
 stylishsteam,Khitans,0,1,1,0.00
 stylishsteam,Khmer,0,1,1,0.00
-stylishsteam,Magyars,2,0,2,1.00
+stylishsteam,Magyars,2,1,3,0.67
 stylishsteam,Malians,1,0,1,1.00
-stylishsteam,Persians,1,1,2,0.50
-stylishsteam,Shu,0,1,1,0.00
-stylishsteam,Wei,1,0,1,1.00
-sundar7238,Berbers,1,0,1,1.00
+stylishsteam,Maya,0,1,1,0.00
+stylishsteam,Mongols,0,1,1,0.00
+stylishsteam,Persians,2,1,3,0.67
+stylishsteam,Portuguese,1,1,2,0.50
+stylishsteam,Romans,0,1,1,0.00
+stylishsteam,Shu,0,2,2,0.00
+stylishsteam,Sicilians,0,1,1,0.00
+stylishsteam,Teutons,0,1,1,0.00
+stylishsteam,Vietnamese,0,1,1,0.00
+stylishsteam,Vikings,0,1,1,0.00
+stylishsteam,Wei,1,2,3,0.33
+sundar7238,Aztecs,0,1,1,0.00
+sundar7238,Bengalis,2,0,2,1.00
+sundar7238,Berbers,2,0,2,1.00
+sundar7238,Bohemians,0,2,2,0.00
+sundar7238,Britons,3,0,3,1.00
 sundar7238,Bulgarians,0,1,1,0.00
-sundar7238,Burgundians,1,0,1,1.00
-sundar7238,Celts,0,1,1,0.00
-sundar7238,Goths,0,1,1,0.00
+sundar7238,Burgundians,1,1,2,0.50
+sundar7238,Burmese,0,1,1,0.00
+sundar7238,Celts,4,1,5,0.80
+sundar7238,Chinese,2,0,2,1.00
+sundar7238,Cumans,1,1,2,0.50
+sundar7238,Ethiopians,2,3,5,0.40
+sundar7238,Franks,1,1,2,0.50
+sundar7238,Goths,0,2,2,0.00
 sundar7238,Gurjaras,2,1,3,0.67
+sundar7238,Hindustanis,2,3,5,0.40
 sundar7238,Huns,0,1,1,0.00
 sundar7238,Italians,0,2,2,0.00
-sundar7238,Japanese,1,2,3,0.33
+sundar7238,Japanese,2,2,4,0.50
+sundar7238,Khmer,1,2,3,0.33
 sundar7238,Koreans,1,0,1,1.00
-sundar7238,Malians,1,0,1,1.00
+sundar7238,Lithuanians,1,0,1,1.00
+sundar7238,Malians,2,0,2,1.00
 sundar7238,Maya,0,1,1,0.00
-sundar7238,Mongols,0,1,1,0.00
+sundar7238,Mongols,1,2,3,0.33
+sundar7238,Persians,0,1,1,0.00
+sundar7238,Poles,1,0,1,1.00
+sundar7238,Portuguese,1,0,1,1.00
+sundar7238,Sicilians,1,0,1,1.00
 sundar7238,Slavs,1,2,3,0.33
+sundar7238,Spanish,1,1,2,0.50
 sundar7238,Teutons,0,1,1,0.00
 sundar7238,Turks,1,1,2,0.50
+sundar7238,Vietnamese,1,0,1,1.00
 sundar7238,Vikings,1,0,1,1.00
-thelivi,Berbers,2,0,2,1.00
-thelivi,Britons,0,1,1,0.00
+thelivi,Armenians,1,0,1,1.00
+thelivi,Aztecs,1,0,1,1.00
+thelivi,Bengalis,1,0,1,1.00
+thelivi,Berbers,3,1,4,0.75
+thelivi,Bohemians,2,1,3,0.67
+thelivi,Britons,1,1,2,0.50
+thelivi,Burgundians,0,1,1,0.00
+thelivi,Byzantines,1,0,1,1.00
+thelivi,Celts,1,0,1,1.00
+thelivi,Chinese,1,1,2,0.50
 thelivi,Dravidians,1,2,3,0.33
-thelivi,Ethiopians,0,1,1,0.00
-thelivi,Japanese,0,1,1,0.00
-thelivi,Jurchens,1,1,2,0.50
+thelivi,Ethiopians,0,2,2,0.00
+thelivi,Georgians,1,1,2,0.50
+thelivi,Goths,1,2,3,0.33
+thelivi,Gurjaras,0,1,1,0.00
+thelivi,Hindustanis,1,1,2,0.50
+thelivi,Huns,0,2,2,0.00
+thelivi,Japanese,0,2,2,0.00
+thelivi,Jurchens,2,1,3,0.67
+thelivi,Khmer,2,1,3,0.67
 thelivi,Koreans,1,0,1,1.00
-thelivi,Magyars,0,2,2,0.00
-thelivi,Mongols,0,1,1,0.00
-thelivi,Persians,0,1,1,0.00
-thelivi,Poles,0,1,1,0.00
-thelivi,Portuguese,0,2,2,0.00
-thelivi,Romans,1,0,1,1.00
+thelivi,Lithuanians,2,3,5,0.40
+thelivi,Magyars,1,3,4,0.25
+thelivi,Maya,1,0,1,1.00
+thelivi,Mongols,0,2,2,0.00
+thelivi,Persians,2,2,4,0.50
+thelivi,Poles,1,1,2,0.50
+thelivi,Portuguese,1,2,3,0.33
+thelivi,Romans,1,4,5,0.20
+thelivi,Saracens,0,1,1,0.00
 thelivi,Shu,2,1,3,0.67
 thelivi,Sicilians,0,2,2,0.00
-thelivi,Teutons,1,1,2,0.50
-thelivi,Vietnamese,1,0,1,1.00
-thelivi,Vikings,0,2,2,0.00
-thelivi,Wei,1,1,2,0.50
-thelivi,Wu,1,1,2,0.50
-TiShi,Berbers,1,0,1,1.00
-TiShi,Bohemians,0,1,1,0.00
+thelivi,Slavs,1,0,1,1.00
+thelivi,Spanish,0,1,1,0.00
+thelivi,Teutons,2,1,3,0.67
+thelivi,Turks,2,0,2,1.00
+thelivi,Vietnamese,1,1,2,0.50
+thelivi,Vikings,0,4,4,0.00
+thelivi,Wei,1,2,3,0.33
+thelivi,Wu,2,1,3,0.67
+TiShi,Aztecs,1,0,1,1.00
+TiShi,Bengalis,1,0,1,1.00
+TiShi,Berbers,2,1,3,0.67
+TiShi,Bohemians,0,4,4,0.00
+TiShi,Britons,1,1,2,0.50
 TiShi,Bulgarians,0,1,1,0.00
-TiShi,Burgundians,2,1,3,0.67
-TiShi,Dravidians,0,1,1,0.00
-TiShi,Ethiopians,1,0,1,1.00
+TiShi,Burgundians,3,1,4,0.75
+TiShi,Burmese,1,1,2,0.50
+TiShi,Byzantines,1,1,2,0.50
+TiShi,Celts,2,0,2,1.00
+TiShi,Cumans,0,1,1,0.00
+TiShi,Dravidians,1,3,4,0.25
+TiShi,Ethiopians,2,1,3,0.67
+TiShi,Franks,1,1,2,0.50
 TiShi,Georgians,2,0,2,1.00
-TiShi,Italians,0,1,1,0.00
+TiShi,Goths,0,2,2,0.00
+TiShi,Hindustanis,1,1,2,0.50
+TiShi,Huns,3,1,4,0.75
+TiShi,Inca,1,0,1,1.00
+TiShi,Italians,1,2,3,0.33
 TiShi,Japanese,1,0,1,1.00
-TiShi,Khitans,0,1,1,0.00
+TiShi,Jurchens,0,2,2,0.00
+TiShi,Khitans,0,2,2,0.00
 TiShi,Koreans,2,1,3,0.67
+TiShi,Lithuanians,0,1,1,0.00
+TiShi,Magyars,1,0,1,1.00
+TiShi,Malians,1,0,1,1.00
 TiShi,Mapuche,0,1,1,0.00
-TiShi,Mongols,0,1,1,0.00
+TiShi,Mongols,1,1,2,0.50
 TiShi,Muisca,1,0,1,1.00
 TiShi,Persians,0,1,1,0.00
+TiShi,Poles,1,0,1,1.00
 TiShi,Portuguese,1,0,1,1.00
 TiShi,Saracens,0,1,1,0.00
+TiShi,Shu,1,0,1,1.00
+TiShi,Sicilians,1,0,1,1.00
+TiShi,Slavs,1,2,3,0.33
+TiShi,Teutons,1,0,1,1.00
 TiShi,Tupi,6,3,9,0.67
-TiShi,Turks,1,0,1,1.00
-TiShi,Vikings,1,0,1,1.00
+TiShi,Turks,2,1,3,0.67
+TiShi,Vikings,2,1,3,0.67
 tokenbadteam,Bengalis,1,0,1,1.00
 tokenbadteam,Portuguese,1,0,1,1.00
 tokenbadteam,Sicilians,1,0,1,1.00
 tokenbadteam,Spanish,0,1,1,0.00
 tokenbadteam,Turks,1,0,1,1.00
+trush25,Armenians,0,1,1,0.00
 trush25,Aztecs,1,0,1,1.00
 trush25,Bulgarians,0,1,1,0.00
 trush25,Dravidians,0,1,1,0.00
 trush25,Ethiopians,1,0,1,1.00
 trush25,Franks,1,0,1,1.00
 trush25,Georgians,1,0,1,1.00
+trush25,Inca,1,1,2,0.50
 trush25,Japanese,1,0,1,1.00
 trush25,Jurchens,0,1,1,0.00
 trush25,Malians,0,1,1,0.00
 trush25,Mapuche,0,1,1,0.00
 trush25,Maya,0,1,1,0.00
-trush25,Mongols,0,1,1,0.00
-trush25,Poles,1,0,1,1.00
+trush25,Mongols,1,1,2,0.50
+trush25,Poles,1,1,2,0.50
 trush25,Portuguese,0,1,1,0.00
+trush25,Shu,1,1,2,0.50
 trush25,Slavs,1,0,1,1.00
-tyPo,Bengalis,0,1,1,0.00
-tyPo,Berbers,1,1,2,0.50
-tyPo,Bohemians,0,2,2,0.00
-tyPo,Britons,0,1,1,0.00
-tyPo,Bulgarians,1,2,3,0.33
-tyPo,Burmese,0,3,3,0.00
-tyPo,Byzantines,1,1,2,0.50
-tyPo,Celts,1,1,2,0.50
-tyPo,Goths,1,1,2,0.50
-tyPo,Gurjaras,0,1,1,0.00
-tyPo,Hindustanis,1,1,2,0.50
+trush25,Vikings,1,0,1,1.00
+trush25,Wu,1,0,1,1.00
+tyPo,Bengalis,2,2,4,0.50
+tyPo,Berbers,2,2,4,0.50
+tyPo,Bohemians,0,5,5,0.00
+tyPo,Britons,2,1,3,0.67
+tyPo,Bulgarians,2,3,5,0.40
+tyPo,Burgundians,2,0,2,1.00
+tyPo,Burmese,2,3,5,0.40
+tyPo,Byzantines,2,2,4,0.50
+tyPo,Celts,1,3,4,0.25
+tyPo,Cumans,0,1,1,0.00
+tyPo,Dravidians,0,1,1,0.00
+tyPo,Ethiopians,1,1,2,0.50
+tyPo,Franks,1,0,1,1.00
+tyPo,Goths,1,2,3,0.33
+tyPo,Gurjaras,1,1,2,0.50
+tyPo,Hindustanis,2,2,4,0.50
 tyPo,Huns,1,1,2,0.50
-tyPo,Inca,1,2,3,0.33
+tyPo,Inca,2,4,6,0.33
 tyPo,Italians,1,1,2,0.50
-tyPo,Japanese,1,0,1,1.00
-tyPo,Koreans,0,1,1,0.00
-tyPo,Lithuanians,0,1,1,0.00
-tyPo,Malay,4,0,4,1.00
+tyPo,Japanese,1,1,2,0.50
+tyPo,Koreans,1,1,2,0.50
+tyPo,Lithuanians,2,1,3,0.67
+tyPo,Malay,5,0,5,1.00
 tyPo,Malians,2,0,2,1.00
+tyPo,Maya,2,2,4,0.50
+tyPo,Mongols,1,0,1,1.00
+tyPo,Persians,2,0,2,1.00
+tyPo,Poles,5,0,5,1.00
 tyPo,Portuguese,1,0,1,1.00
-tyPo,Saracens,1,0,1,1.00
-tyPo,Sicilians,2,0,2,1.00
-tyPo,Slavs,1,0,1,1.00
-tyPo,Tatars,1,1,2,0.50
-tyPo,Turks,0,3,3,0.00
-tyPo,Vietnamese,1,1,2,0.50
-tyPo,Vikings,0,1,1,0.00
-tyPo Fan,Burgundians,0,1,1,0.00
-tyPo Fan,Byzantines,2,0,2,1.00
-tyPo Fan,Chinese,0,1,1,0.00
-tyPo Fan,Ethiopians,1,0,1,1.00
+tyPo,Saracens,3,0,3,1.00
+tyPo,Sicilians,5,2,7,0.71
+tyPo,Slavs,2,1,3,0.67
+tyPo,Spanish,2,0,2,1.00
+tyPo,Tatars,1,2,3,0.33
+tyPo,Teutons,0,1,1,0.00
+tyPo,Turks,0,4,4,0.00
+tyPo,Vietnamese,1,2,3,0.33
+tyPo,Vikings,2,1,3,0.67
+tyPo Fan,Aztecs,0,1,1,0.00
+tyPo Fan,Berbers,0,1,1,0.00
+tyPo Fan,Bohemians,1,0,1,1.00
+tyPo Fan,Burgundians,0,2,2,0.00
+tyPo Fan,Burmese,1,0,1,1.00
+tyPo Fan,Byzantines,3,0,3,1.00
+tyPo Fan,Celts,1,0,1,1.00
+tyPo Fan,Chinese,1,2,3,0.33
+tyPo Fan,Cumans,0,1,1,0.00
+tyPo Fan,Dravidians,0,2,2,0.00
+tyPo Fan,Ethiopians,2,1,3,0.67
+tyPo Fan,Franks,1,1,2,0.50
 tyPo Fan,Goths,0,1,1,0.00
+tyPo Fan,Gurjaras,1,0,1,1.00
 tyPo Fan,Hindustanis,1,0,1,1.00
+tyPo Fan,Inca,1,0,1,1.00
 tyPo Fan,Italians,0,1,1,0.00
-tyPo Fan,Koreans,1,1,2,0.50
-tyPo Fan,Mongols,1,0,1,1.00
-tyPo Fan,Poles,1,0,1,1.00
-tyPo Fan,Portuguese,2,0,2,1.00
-tyPo Fan,Saracens,0,1,1,0.00
+tyPo Fan,Koreans,2,2,4,0.50
+tyPo Fan,Malay,1,0,1,1.00
+tyPo Fan,Maya,0,1,1,0.00
+tyPo Fan,Mongols,1,1,2,0.50
+tyPo Fan,Persians,0,1,1,0.00
+tyPo Fan,Poles,2,0,2,1.00
+tyPo Fan,Portuguese,3,1,4,0.75
+tyPo Fan,Saracens,0,2,2,0.00
 tyPo Fan,Sicilians,1,0,1,1.00
+tyPo Fan,Slavs,1,0,1,1.00
 tyPo Fan,Spanish,1,0,1,1.00
 tyPo Fan,Teutons,0,1,1,0.00
-tyPo Fan,Turks,2,0,2,1.00
+tyPo Fan,Turks,3,0,3,1.00
+tyPo Fan,Vikings,1,0,1,1.00
 wallandboom,Burgundians,1,0,1,1.00
 wallandboom,Byzantines,0,1,1,0.00
 wallandboom,Chinese,1,0,1,1.00

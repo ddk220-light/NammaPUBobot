@@ -145,7 +145,8 @@ def fetch_all_matches_for_player(profile_id, cutoff):
                     if last_time < cutoff - timedelta(days=2):
                         break
 
-                if not data.get("hasMore", False):
+                # Keep paginating if we got a full page
+                if len(matches) < 20:
                     break
                 page += 1
         except (urllib.error.HTTPError, urllib.error.URLError) as e:
