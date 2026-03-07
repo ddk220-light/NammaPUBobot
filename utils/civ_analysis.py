@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """
-Analyze player civ performance from PUB bot matches (last 60 days).
+Analyze player civ performance from PUB bot matches.
 
-Cross-references bot matches with AoE2 Companion API to get civ data,
-then reports top 5 best and worst civs per player.
+Strategy:
+1. For each mapped player, fetch ALL their matches from the API covering the time range
+2. Build a pool of API matches indexed by (timestamp, player set)
+3. For each bot match, find the corresponding API match by time + player overlap
+4. Cache mappings in data/match_id_map.csv
+
+Usage:
+    python utils/civ_analysis.py
+    python utils/civ_analysis.py --days 90
 """
 
 import csv
@@ -18,28 +25,27 @@ from collections import defaultdict
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 AOE2_API = "https://data.aoe2companion.com/api"
-DAYS = 60
-CUTOFF = datetime.now() - timedelta(days=DAYS)
+MATCH_MAP_PATH = os.path.join(PROJECT_ROOT, 'data', 'match_id_map.csv')
 
-# Bot timestamp offset: bot records ~IST end time, API records UTC start time
-# Difference is roughly timezone (5:30) + game duration (~30min) = ~85-100 min
-# We use a wide window for matching
+# Bot timestamps are IST (UTC+5:30), API timestamps are UTC.
+# Bot records approximate end time, API records start time.
 MAX_TIME_DIFF_MIN = 120
+MIN_TIME_DIFF_MIN = 30
 
+
+# ── Data loading ─────────────────────────────────────────────────────────────
 
 def load_profile_map():
-    """Load player_profile_map.csv, return dict of profile_id -> nick."""
+    """Load player_profile_map.csv. Returns (pid_to_nick, nick_to_pids)."""
     path = os.path.join(PROJECT_ROOT, 'data', 'player_profile_map.csv')
     pid_to_nick = {}
     nick_to_pids = {}
     with open(path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
+        for row in csv.DictReader(f):
             nick = row['nick']
             pid_str = row.get('profile_id', '').strip()
             if not pid_str:
                 continue
-            # Handle multiple profile IDs (e.g. "6823812 / 9039952")
             for pid in pid_str.split(' / '):
                 pid = int(pid.strip())
                 pid_to_nick[pid] = nick
@@ -47,39 +53,33 @@ def load_profile_map():
     return pid_to_nick, nick_to_pids
 
 
-def load_bot_matches():
-    """Load bot matches from last 60 days with their players."""
+def load_bot_matches(cutoff):
+    """Load bot matches since cutoff with their players."""
     matches_path = os.path.join(PROJECT_ROOT, 'data', 'qc_matches.csv')
     players_path = os.path.join(PROJECT_ROOT, 'data', 'qc_player_matches.csv')
     players_csv_path = os.path.join(PROJECT_ROOT, 'data', 'qc_players.csv')
 
-    # Load nick lookup
     nick_lookup = {}
     with open(players_csv_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
+        for row in csv.DictReader(f):
             nick_lookup[row['user_id']] = row['nick']
 
-    # Load matches
     matches = []
     with open(matches_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
+        for row in csv.DictReader(f):
             at = datetime.strptime(row['at'], '%Y-%m-%d %H:%M:%S')
             winner = row['winner_team']
-            if at >= CUTOFF and winner not in ('NULL', ''):
+            if at >= cutoff and winner not in ('NULL', ''):
                 matches.append({
                     'match_id': int(row['match_id']),
                     'at': at,
                     'winner_team': int(winner),
                 })
 
-    # Load player assignments
     match_ids = {m['match_id'] for m in matches}
     player_matches = defaultdict(list)
     with open(players_path, 'r') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
+        for row in csv.DictReader(f):
             mid = int(row['match_id'])
             if mid in match_ids:
                 uid = row['user_id']
@@ -95,11 +95,37 @@ def load_bot_matches():
     return matches
 
 
-def fetch_api_matches(profile_id, count=100):
-    """Fetch recent matches for a player from AoE2 Companion API."""
+def load_match_id_map():
+    """Load cached bot_match_id -> aoe2_match_id mappings (positive hits only)."""
+    cache = {}
+    if os.path.exists(MATCH_MAP_PATH):
+        with open(MATCH_MAP_PATH, 'r') as f:
+            for row in csv.DictReader(f):
+                bot_id = int(row['bot_match_id'])
+                aoe2_id = row['aoe2_match_id']
+                if aoe2_id:
+                    cache[bot_id] = int(aoe2_id)
+    return cache
+
+
+def save_match_id_map(cache):
+    """Save the match ID map to CSV (only positive matches)."""
+    with open(MATCH_MAP_PATH, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['bot_match_id', 'aoe2_match_id', 'matched_at'])
+        for bot_id in sorted(cache.keys()):
+            aoe2_id = cache[bot_id]
+            if aoe2_id:
+                writer.writerow([bot_id, aoe2_id, datetime.now().isoformat()])
+
+
+# ── API interaction ──────────────────────────────────────────────────────────
+
+def fetch_all_matches_for_player(profile_id, cutoff):
+    """Fetch all matches for a player back to cutoff date."""
     all_matches = []
     page = 1
-    while len(all_matches) < count:
+    while True:
         url = f"{AOE2_API}/matches?profile_ids={profile_id}&count=20&page={page}"
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "NammaPUBobot/1.0"})
@@ -109,54 +135,48 @@ def fetch_api_matches(profile_id, count=100):
                 if not matches:
                     break
                 all_matches.extend(matches)
+
+                # Check if we've gone past cutoff
+                last_started = matches[-1].get("started", "")
+                if last_started:
+                    last_time = datetime.fromisoformat(
+                        last_started.replace("Z", "+00:00")
+                    ).replace(tzinfo=None)
+                    if last_time < cutoff - timedelta(days=2):
+                        break
+
                 if not data.get("hasMore", False):
                     break
                 page += 1
         except (urllib.error.HTTPError, urllib.error.URLError) as e:
-            print(f"  API error for profile {profile_id}: {e}", file=sys.stderr)
+            print(f" API error: {e}", file=sys.stderr)
             break
-        time.sleep(0.3)  # rate limiting
-
-    # Filter to last 60 days
-    result = []
-    for m in all_matches:
-        started = m.get("started")
-        if started:
-            st = datetime.fromisoformat(started.replace("Z", "+00:00")).replace(tzinfo=None)
-            if st >= CUTOFF - timedelta(days=1):  # small buffer
-                result.append(m)
-            else:
-                break  # matches are sorted by time desc
-    return result
+        time.sleep(0.2)
+    return all_matches
 
 
-def find_player_in_match(api_match, profile_ids):
-    """Find a player's data in an API match by profile ID."""
-    for team in api_match.get("teams", []):
-        for player in team.get("players", []):
-            if player.get("profileId") in profile_ids:
-                return player
-    return None
+# ── Match ID mapping ─────────────────────────────────────────────────────────
 
+def find_aoe2_match_id(bot_match, nick_to_pids, pid_to_nick, api_pool):
+    """
+    Find the AoE2 match ID for a bot match from the pre-built API pool.
 
-def match_bot_to_api(bot_match, api_matches, nick_to_pids, pid_to_nick):
-    """Find the best API match for a bot match based on player overlap and time."""
+    Returns (aoe2_match_id, api_match_data) or (None, None).
+    """
     bot_nicks = {p['nick'] for p in bot_match['players']}
 
-    best = None
+    best_match = None
     best_score = 0
 
-    for api_match in api_matches:
+    for api_match in api_pool.values():
         started = api_match.get("started", "")
         if not started:
             continue
         api_time = datetime.fromisoformat(started.replace("Z", "+00:00")).replace(tzinfo=None)
 
-        # Bot time is IST (~UTC+5:30), API is UTC
-        # Bot records end time, API records start time
-        # So bot_time - api_time should be ~85-100 min
+        # Bot time (IST end) - API time (UTC start) should be ~85-100 min
         diff_min = (bot_match['at'] - api_time).total_seconds() / 60
-        if not (30 < diff_min < MAX_TIME_DIFF_MIN):
+        if not (MIN_TIME_DIFF_MIN < diff_min < MAX_TIME_DIFF_MIN):
             continue
 
         # Count player overlap
@@ -171,98 +191,135 @@ def match_bot_to_api(bot_match, api_matches, nick_to_pids, pid_to_nick):
             if any(pid in api_pids for pid in pids):
                 overlap += 1
 
-        # Also check reverse: API profile IDs that map to bot nicks
-        for pid in api_pids:
-            mapped_nick = pid_to_nick.get(pid)
-            if mapped_nick and mapped_nick in bot_nicks:
-                pass  # already counted above
-
         score = overlap / len(bot_nicks) if bot_nicks else 0
         if score > best_score and score >= 0.5:
             best_score = score
-            best = api_match
+            best_match = api_match
 
-    return best, best_score
+    if best_match:
+        return best_match.get("matchId"), best_match
+    return None, None
 
+
+def find_player_in_match(api_match, profile_ids):
+    """Find a player's data in an API match by profile ID."""
+    for team in api_match.get("teams", []):
+        for player in team.get("players", []):
+            if player.get("profileId") in profile_ids:
+                return player
+    return None
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    print(f"Loading data...")
-    pid_to_nick, nick_to_pids = load_profile_map()
-    bot_matches = load_bot_matches()
-    print(f"Found {len(bot_matches)} bot matches in last {DAYS} days")
-    print(f"Mapped {len(nick_to_pids)} players with profile IDs")
+    import argparse
+    parser = argparse.ArgumentParser(description="Analyze player civ performance from PUB bot matches.")
+    parser.add_argument("--days", type=int, default=60, help="Number of days to look back (default: 60)")
+    args = parser.parse_args()
 
-    # Collect all unique profile IDs we need to query
-    # Use the most active players to fetch API matches, then cross-reference
+    cutoff = datetime.now() - timedelta(days=args.days)
+
+    print("Loading data...")
+    pid_to_nick, nick_to_pids = load_profile_map()
+    bot_matches = load_bot_matches(cutoff)
+    cache = load_match_id_map()
+
+    print(f"Found {len(bot_matches)} bot matches in last {args.days} days")
+    print(f"Mapped {len(nick_to_pids)} players with profile IDs")
+    print(f"Cached match mappings: {len(cache)}")
+
+    # Determine which profile IDs are active in these bot matches
     active_pids = set()
     for m in bot_matches:
         for p in m['players']:
-            pids = nick_to_pids.get(p['nick'], [])
-            for pid in pids:
+            for pid in nick_to_pids.get(p['nick'], []):
                 active_pids.add(pid)
 
-    print(f"\nFetching API matches for {len(active_pids)} profile IDs...")
-
-    # Fetch API matches for each profile ID and build a combined pool
-    api_match_pool = {}  # matchId -> match data
+    # Phase 1: Build API match pool by fetching all matches per player
+    print(f"\nPhase 1: Fetching API matches for {len(active_pids)} players...")
+    api_pool = {}  # matchId -> match data
     for i, pid in enumerate(sorted(active_pids)):
         nick = pid_to_nick.get(pid, str(pid))
-        print(f"  [{i+1}/{len(active_pids)}] Fetching matches for {nick} (profile {pid})...", end="", flush=True)
-        matches = fetch_api_matches(pid, count=500)
+        print(f"  [{i+1}/{len(active_pids)}] {nick} (profile {pid})...", end="", flush=True)
+        matches = fetch_all_matches_for_player(pid, cutoff)
         new = 0
         for m in matches:
             mid = m.get("matchId")
-            if mid and mid not in api_match_pool:
-                api_match_pool[mid] = m
+            if mid and mid not in api_pool:
+                api_pool[mid] = m
                 new += 1
-        print(f" {len(matches)} matches ({new} new)")
-        time.sleep(0.3)
+        print(f" {len(matches)} fetched, {new} new (pool: {len(api_pool)})")
+        time.sleep(0.2)
 
-    print(f"\nTotal unique API matches in pool: {len(api_match_pool)}")
-    api_matches_list = sorted(api_match_pool.values(),
-                               key=lambda m: m.get("started", ""), reverse=True)
+    print(f"\nTotal API matches in pool: {len(api_pool)}")
 
-    # Cross-reference each bot match with API matches
-    print(f"\nCross-referencing bot matches with API matches...")
-    # player_nick -> {civ: {wins: N, losses: N}}
+    # Phase 2: Match each bot match to an API match
+    print(f"\nPhase 2: Matching {len(bot_matches)} bot matches...")
     player_civs = defaultdict(lambda: defaultdict(lambda: {"wins": 0, "losses": 0}))
     matched_count = 0
-    unmatched_count = 0
+    cached_hits = 0
 
-    for bot_match in bot_matches:
-        api_match, score = match_bot_to_api(bot_match, api_matches_list, nick_to_pids, pid_to_nick)
+    for i, bot_match in enumerate(bot_matches):
+        bot_id = bot_match['match_id']
+
+        # Check cache
+        if bot_id in cache:
+            aoe2_id = cache[bot_id]
+            api_match = api_pool.get(aoe2_id)
+            if api_match:
+                cached_hits += 1
+                matched_count += 1
+                status = f"cached -> {aoe2_id}"
+            else:
+                status = f"cached {aoe2_id} but not in pool"
+                aoe2_id, api_match = find_aoe2_match_id(bot_match, nick_to_pids, pid_to_nick, api_pool)
+                if aoe2_id:
+                    cache[bot_id] = aoe2_id
+                    matched_count += 1
+                    status = f"re-found -> {aoe2_id}"
+        else:
+            aoe2_id, api_match = find_aoe2_match_id(bot_match, nick_to_pids, pid_to_nick, api_pool)
+            if aoe2_id:
+                cache[bot_id] = aoe2_id
+                matched_count += 1
+                status = f"found -> {aoe2_id}"
+            else:
+                status = "no match"
+
+        print(f"  [{i+1}/{len(bot_matches)}] Bot {bot_id} ({bot_match['at'].strftime('%m-%d %H:%M')}): {status}")
 
         if not api_match:
-            unmatched_count += 1
             continue
 
-        matched_count += 1
-
-        # For each bot player, find them in the API match and record their civ
+        # Extract civ + win/loss per player
         for bp in bot_match['players']:
             nick = bp['nick']
             pids = nick_to_pids.get(nick, [])
             if not pids:
                 continue
-
             player_data = find_player_in_match(api_match, set(pids))
             if not player_data:
                 continue
-
             civ = player_data.get("civName", "Unknown")
             won = bp['team'] == bot_match['winner_team']
-
             if won:
                 player_civs[nick][civ]["wins"] += 1
             else:
                 player_civs[nick][civ]["losses"] += 1
 
-    print(f"Matched: {matched_count}/{len(bot_matches)} ({matched_count*100//len(bot_matches)}%)")
-    print(f"Unmatched: {unmatched_count}")
+    # Save match ID map
+    save_match_id_map(cache)
+    print(f"\nMatch ID map saved to {MATCH_MAP_PATH} ({len(cache)} entries)")
 
-    # Output results
+    total = len(bot_matches)
+    pct = matched_count * 100 // total if total else 0
+    print(f"Results: {matched_count}/{total} matched ({pct}%), "
+          f"{cached_hits} from cache")
+
+    # Phase 3: Output civ performance
     print(f"\n{'='*70}")
-    print(f"  CIV PERFORMANCE ANALYSIS (last {DAYS} days, PUB bot matches only)")
+    print(f"  CIV PERFORMANCE ANALYSIS (last {args.days} days, PUB bot matches only)")
     print(f"{'='*70}")
 
     for nick in sorted(player_civs.keys(), key=str.lower):
@@ -276,14 +333,12 @@ def main():
         print(f"\n  {nick} ({total_wins}W/{total_games - total_wins}L across {len(civs)} civs)")
         print(f"  {'-'*50}")
 
-        # Calculate win rate per civ (min 1 game)
         civ_stats = []
         for civ, stats in civs.items():
             games = stats["wins"] + stats["losses"]
             winrate = stats["wins"] / games if games > 0 else 0
             civ_stats.append((civ, stats["wins"], stats["losses"], games, winrate))
 
-        # Sort by winrate desc, then by games desc
         civ_stats.sort(key=lambda x: (-x[4], -x[3]))
 
         print(f"  Top 5 Best:")
