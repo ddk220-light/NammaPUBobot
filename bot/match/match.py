@@ -246,7 +246,7 @@ class Match:
 				diff = weak_captain_team_elo - strong_captain_team_elo
 				# diff > 0 means weak captain's team is stronger overall (desired)
 				# Prefer smallest diff >= 0; if no such split exists, pick least negative
-				score = -diff if diff >= 0 else abs(diff) + 1e6
+				score = diff if diff >= 0 else abs(diff) + 1e6
 				if score < best_score:
 					best_score = score
 					best_combo = combo
