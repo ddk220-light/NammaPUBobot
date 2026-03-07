@@ -9,31 +9,32 @@ Strategy:
 4. Cache mappings in data/match_id_map.csv
 
 Usage:
-    python utils/civ_analysis.py
-    python utils/civ_analysis.py --days 90
+    python utils/civ_analysis.py                # Read from DB (default)
+    python utils/civ_analysis.py --csv          # Read from CSV exports
+    python utils/civ_analysis.py --days 90      # Look back 90 days
 """
 
+import asyncio
+import aiohttp
 import csv
-import json
 import os
 import sys
-import time
-import urllib.request
-import urllib.error
 from datetime import datetime, timedelta
 from collections import defaultdict
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.dirname(__file__))
+from db_helpers import create_pool
+
 AOE2_API = "https://data.aoe2companion.com/api"
 MATCH_MAP_PATH = os.path.join(PROJECT_ROOT, 'data', 'match_id_map.csv')
 
 # Bot timestamps are IST (UTC+5:30), API timestamps are UTC.
 # Bot records approximate end time, API records start time.
-MAX_TIME_DIFF_MIN = 120
-MIN_TIME_DIFF_MIN = 30
+MAX_TIME_DIFF_MIN = 180
 
 
-# ── Data loading ─────────────────────────────────────────────────────────────
+# -- Data loading -------------------------------------------------------------
 
 def load_profile_map():
     """Load player_profile_map.csv. Returns (pid_to_nick, nick_to_pids)."""
@@ -53,7 +54,63 @@ def load_profile_map():
     return pid_to_nick, nick_to_pids
 
 
-def load_bot_matches(cutoff):
+async def load_bot_matches_from_db(cutoff):
+    """Load bot matches since cutoff directly from MySQL."""
+    pool = await create_pool()
+    if pool is None:
+        return None
+
+    cutoff_ts = int(cutoff.timestamp())
+
+    try:
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT match_id, `at`, winner FROM qc_matches "
+                    "WHERE `at` >= %s AND winner IS NOT NULL "
+                    "ORDER BY match_id ASC",
+                    (cutoff_ts,)
+                )
+                rows = await cur.fetchall()
+
+                match_ids = [r['match_id'] for r in rows]
+                if not match_ids:
+                    return []
+
+                fmt = ','.join(['%s'] * len(match_ids))
+                await cur.execute(
+                    f"SELECT pm.match_id, pm.user_id, pm.team, "
+                    f"COALESCE(pm.nick, p.nick, pm.user_id) AS nick "
+                    f"FROM qc_player_matches pm "
+                    f"LEFT JOIN qc_players p ON pm.user_id = p.user_id AND pm.channel_id = p.channel_id "
+                    f"WHERE pm.match_id IN ({fmt})",
+                    match_ids
+                )
+                player_rows = await cur.fetchall()
+    finally:
+        pool.close()
+        await pool.wait_closed()
+
+    player_map = defaultdict(list)
+    for pr in player_rows:
+        player_map[pr['match_id']].append({
+            'user_id': str(pr['user_id']),
+            'nick': pr['nick'],
+            'team': int(pr['team']) if pr['team'] is not None else None,
+        })
+
+    matches = []
+    for r in rows:
+        matches.append({
+            'match_id': r['match_id'],
+            'at': datetime.fromtimestamp(r['at']),
+            'winner_team': int(r['winner']),
+            'players': player_map.get(r['match_id'], []),
+        })
+    return matches
+
+
+def load_bot_matches_from_csv(cutoff):
     """Load bot matches since cutoff with their players."""
     matches_path = os.path.join(PROJECT_ROOT, 'data', 'qc_matches.csv')
     players_path = os.path.join(PROJECT_ROOT, 'data', 'qc_player_matches.csv')
@@ -119,44 +176,70 @@ def save_match_id_map(cache):
                 writer.writerow([bot_id, aoe2_id, datetime.now().isoformat()])
 
 
-# ── API interaction ──────────────────────────────────────────────────────────
+# -- API interaction ----------------------------------------------------------
 
-def fetch_all_matches_for_player(profile_id, cutoff):
+async def fetch_all_matches_for_player(session, semaphore, profile_id, cutoff):
     """Fetch all matches for a player back to cutoff date."""
     all_matches = []
     page = 1
     while True:
         url = f"{AOE2_API}/matches?profile_ids={profile_id}&count=20&page={page}"
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "NammaPUBobot/1.0"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode())
-                matches = data.get("matches", [])
-                if not matches:
-                    break
-                all_matches.extend(matches)
-
-                # Check if we've gone past cutoff
-                last_started = matches[-1].get("started", "")
-                if last_started:
-                    last_time = datetime.fromisoformat(
-                        last_started.replace("Z", "+00:00")
-                    ).replace(tzinfo=None)
-                    if last_time < cutoff - timedelta(days=2):
+        async with semaphore:
+            try:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
                         break
+                    data = await resp.json()
+            except (aiohttp.ClientError, asyncio.TimeoutError):
+                break
+            await asyncio.sleep(0.2)
 
-                # Keep paginating if we got a full page
-                if len(matches) < 20:
-                    break
-                page += 1
-        except (urllib.error.HTTPError, urllib.error.URLError) as e:
-            print(f" API error: {e}", file=sys.stderr)
+        matches = data.get("matches", [])
+        if not matches:
             break
-        time.sleep(0.2)
+        all_matches.extend(matches)
+
+        last_started = matches[-1].get("started", "")
+        if last_started:
+            last_time = datetime.fromisoformat(
+                last_started.replace("Z", "+00:00")
+            ).replace(tzinfo=None)
+            if last_time < cutoff - timedelta(days=2):
+                break
+
+        if len(matches) < 20:
+            break
+        page += 1
     return all_matches
 
 
-# ── Match ID mapping ─────────────────────────────────────────────────────────
+async def fetch_api_pool(active_pids, pid_to_nick, cutoff):
+    """Fetch API matches for all active players concurrently."""
+    semaphore = asyncio.Semaphore(5)
+    api_pool = {}
+
+    async with aiohttp.ClientSession(
+        headers={"User-Agent": "NammaPUBobot/1.0"}
+    ) as session:
+        async def fetch_one(pid):
+            nick = pid_to_nick.get(pid, str(pid))
+            matches = await fetch_all_matches_for_player(session, semaphore, pid, cutoff)
+            new = 0
+            for m in matches:
+                mid = m.get("matchId")
+                if mid and mid not in api_pool:
+                    api_pool[mid] = m
+                    new += 1
+            print(f"  {nick} (profile {pid}): {len(matches)} fetched, {new} new")
+            return len(matches)
+
+        tasks = [fetch_one(pid) for pid in sorted(active_pids)]
+        await asyncio.gather(*tasks)
+
+    return api_pool
+
+
+# -- Match ID mapping ---------------------------------------------------------
 
 def find_aoe2_match_id(bot_match, nick_to_pids, pid_to_nick, api_pool):
     """
@@ -177,7 +260,7 @@ def find_aoe2_match_id(bot_match, nick_to_pids, pid_to_nick, api_pool):
 
         # Bot time (IST end) - API time (UTC start) should be ~85-100 min
         diff_min = (bot_match['at'] - api_time).total_seconds() / 60
-        if not (MIN_TIME_DIFF_MIN < diff_min < MAX_TIME_DIFF_MIN):
+        if not (0 < diff_min < MAX_TIME_DIFF_MIN):
             continue
 
         # Count player overlap
@@ -192,8 +275,11 @@ def find_aoe2_match_id(bot_match, nick_to_pids, pid_to_nick, api_pool):
             if any(pid in api_pids for pid in pids):
                 overlap += 1
 
-        score = overlap / len(bot_nicks) if bot_nicks else 0
-        if score > best_score and score >= 0.5:
+        player_score = overlap / len(bot_nicks) if bot_nicks else 0
+        time_penalty = diff_min / MAX_TIME_DIFF_MIN
+        score = player_score * (1 - 0.3 * time_penalty)
+
+        if score > best_score and score >= 0.4:
             best_score = score
             best_match = api_match
 
@@ -211,49 +297,44 @@ def find_player_in_match(api_match, profile_ids):
     return None
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# -- Main ---------------------------------------------------------------------
 
-def main():
+async def async_main():
     import argparse
     parser = argparse.ArgumentParser(description="Analyze player civ performance from PUB bot matches.")
     parser.add_argument("--days", type=int, default=60, help="Number of days to look back (default: 60)")
+    parser.add_argument("--csv", action="store_true", help="Read from CSV exports instead of MySQL")
     args = parser.parse_args()
 
     cutoff = datetime.now() - timedelta(days=args.days)
 
     print("Loading data...")
     pid_to_nick, nick_to_pids = load_profile_map()
-    bot_matches = load_bot_matches(cutoff)
     cache = load_match_id_map()
+
+    if args.csv:
+        bot_matches = load_bot_matches_from_csv(cutoff)
+    else:
+        bot_matches = await load_bot_matches_from_db(cutoff)
+        if bot_matches is None:
+            print("Falling back to CSV mode...")
+            bot_matches = load_bot_matches_from_csv(cutoff)
 
     print(f"Found {len(bot_matches)} bot matches in last {args.days} days")
     print(f"Mapped {len(nick_to_pids)} players with profile IDs")
     print(f"Cached match mappings: {len(cache)}")
 
-    # Determine which profile IDs are active in these bot matches
+    # Determine active profile IDs
     active_pids = set()
     for m in bot_matches:
         for p in m['players']:
             for pid in nick_to_pids.get(p['nick'], []):
                 active_pids.add(pid)
 
-    # Phase 1: Build API match pool by fetching all matches per player
-    print(f"\nPhase 1: Fetching API matches for {len(active_pids)} players...")
-    api_pool = {}  # matchId -> match data
-    for i, pid in enumerate(sorted(active_pids)):
-        nick = pid_to_nick.get(pid, str(pid))
-        print(f"  [{i+1}/{len(active_pids)}] {nick} (profile {pid})...", end="", flush=True)
-        matches = fetch_all_matches_for_player(pid, cutoff)
-        new = 0
-        for m in matches:
-            mid = m.get("matchId")
-            if mid and mid not in api_pool:
-                api_pool[mid] = m
-                new += 1
-        print(f" {len(matches)} fetched, {new} new (pool: {len(api_pool)})")
-        time.sleep(0.2)
-
-    print(f"\nTotal API matches in pool: {len(api_pool)}")
+    # Phase 1: Fetch API matches concurrently
+    print(f"\nPhase 1: Fetching API matches for {len(active_pids)} players (concurrent)...")
+    api_pool = await fetch_api_pool(active_pids, pid_to_nick, cutoff)
+    print(f"Total API matches in pool: {len(api_pool)}")
 
     # Phase 2: Match each bot match to an API match
     print(f"\nPhase 2: Matching {len(bot_matches)} bot matches...")
@@ -380,6 +461,10 @@ def main():
                 wr = stats["wins"] / games if games > 0 else 0
                 writer.writerow([nick, civ, stats["wins"], stats["losses"], games, f"{wr:.2f}"])
     print(f"\nDetailed stats saved to {output_path}")
+
+
+def main():
+    asyncio.run(async_main())
 
 
 if __name__ == "__main__":
