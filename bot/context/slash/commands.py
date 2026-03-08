@@ -1,7 +1,7 @@
 from typing import Callable
 from asyncio import wait_for, shield
 from asyncio.exceptions import TimeoutError as aTimeoutError
-from nextcord import Interaction, SlashOption, Member, TextChannel
+from nextcord import Interaction, SlashOption, Member, TextChannel, Embed, Colour
 import traceback
 import time
 
@@ -600,9 +600,6 @@ async def _player_civ_stats(
 		interaction: Interaction,
 		player: Member = SlashOption(required=False, verify=False),
 ):
-	from core.utils import get_nick, error_embed
-	from nextcord import Embed, Colour
-
 	target = player or interaction.user
 	nick = get_nick(target)
 
