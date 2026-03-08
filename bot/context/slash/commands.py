@@ -11,6 +11,7 @@ from core.console import log
 from core.config import cfg
 
 import bot
+from bot.civ_stats import get_player_civs
 
 
 from . import SlashContext, autocomplete, groups
@@ -592,6 +593,46 @@ async def _leaderboard(
 		interaction: Interaction,
 		page: int = SlashOption(required=False),
 ): await run_slash(bot.commands.leaderboard, interaction=interaction, page=page)
+
+
+@dc.slash_command(name='player_civ_stats', description='Show best and worst civs for a player.', **guild_kwargs)
+async def _player_civ_stats(
+		interaction: Interaction,
+		player: Member = SlashOption(required=False, verify=False),
+):
+	from core.utils import get_nick, error_embed
+	from nextcord import Embed, Colour
+
+	target = player or interaction.user
+	nick = get_nick(target)
+
+	result = get_player_civs(nick)
+	if result is None:
+		await interaction.response.send_message(
+			embed=error_embed(f"No civ stats found for **{nick}**. They may not have enough matched games."),
+			ephemeral=True
+		)
+		return
+
+	best, worst, total = result
+
+	def format_civs(civs):
+		lines = []
+		for i, c in enumerate(civs, 1):
+			pct = f"{c['winrate'] * 100:.1f}%"
+			lines.append(f"**{i}.** {c['civ']} — {pct} ({c['wins']}W / {c['losses']}L, {c['games']} games)")
+		return "\n".join(lines)
+
+	embed = Embed(title=f"Civ Stats for {nick}", colour=Colour(0x7289DA))
+	embed.add_field(name="Best Civs", value=format_civs(best), inline=False)
+	if worst:
+		embed.add_field(name="Worst Civs", value=format_civs(worst), inline=False)
+	embed.set_footer(text=f"{total} civs with 3+ games")
+
+	if target.display_avatar:
+		embed.set_thumbnail(url=target.display_avatar.url)
+
+	await interaction.response.send_message(embed=embed)
 
 
 @groups.admin_rating.subcommand(name='unhide_player', description='Unhide player from the leaderboard.')
