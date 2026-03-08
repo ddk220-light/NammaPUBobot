@@ -25,7 +25,7 @@ def load():
                     "winrate": float(row["winrate"]),
                 })
     except FileNotFoundError:
-        pass
+        print(f"Warning: {_DATA_PATH} not found, civ stats disabled")
 
 
 def get_player_civs(nick):
