@@ -13,16 +13,19 @@ _civ_data = {}
 def load():
     """Load player civ stats from CSV into memory."""
     _civ_data.clear()
-    with open(_DATA_PATH, newline="") as f:
-        for row in csv.DictReader(f):
-            nick = row["nick"].lower()
-            _civ_data.setdefault(nick, []).append({
-                "civ": row["civ"],
-                "wins": int(row["wins"]),
-                "losses": int(row["losses"]),
-                "games": int(row["games"]),
-                "winrate": float(row["winrate"]),
-            })
+    try:
+        with open(_DATA_PATH, newline="") as f:
+            for row in csv.DictReader(f):
+                nick = row["nick"].lower()
+                _civ_data.setdefault(nick, []).append({
+                    "civ": row["civ"],
+                    "wins": int(row["wins"]),
+                    "losses": int(row["losses"]),
+                    "games": int(row["games"]),
+                    "winrate": float(row["winrate"]),
+                })
+    except FileNotFoundError:
+        pass
 
 
 def get_player_civs(nick):
