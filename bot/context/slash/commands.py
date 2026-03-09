@@ -12,6 +12,7 @@ from core.config import cfg
 
 import bot
 from bot.civ_stats import get_player_civs, pick_balanced_teams, get_today_civs
+from bot.redo_teams import parse_embed_match, parse_text_match, captain_matchmaking, Player
 
 
 from . import SlashContext, autocomplete, groups
@@ -780,4 +781,165 @@ async def _randomize_civs(
 		await interaction.followup.send(
 			embed=error_embed(f"Error: {str(e)}", title="Randomize Civs Error")
 		)
+
+
+@dc.slash_command(name='namma_redo_teams', description='Compare old match teams with captain-based matchmaking.', **guild_kwargs)
+async def _redo_teams(
+	interaction: Interaction,
+	match_id: int = SlashOption(description="Match ID from the bot message to compare."),
+):
+	await interaction.response.defer()
+
+	if not bot.bot_ready:
+		await interaction.followup.send(embed=error_embed("Bot is still starting up."))
+		return
+
+	qc = bot.queue_channels.get(interaction.channel_id)
+	if qc is None:
+		await interaction.followup.send(embed=error_embed("Not in a queue channel."))
+		return
+
+	# Search channel history for the match message
+	target_str = str(match_id)
+	found_msg = None
+	parsed_teams = None
+
+	async for msg in interaction.channel.history(limit=5000):
+		# Check embeds first (PUBobot sends embeds)
+		for emb in msg.embeds:
+			footer_text = emb.footer.text if emb.footer else ''
+			if f"Match id: {target_str}" in (footer_text or ''):
+				parsed_teams = parse_embed_match(emb)
+				if parsed_teams:
+					found_msg = msg
+					break
+			# Also check embed description
+			if emb.description and f"Match id: {target_str}" in emb.description:
+				parsed_teams = parse_embed_match(emb)
+				if not parsed_teams:
+					parsed_teams = parse_text_match(emb.description)
+				if parsed_teams:
+					found_msg = msg
+					break
+		if found_msg:
+			break
+
+		# Check plain text content
+		content = msg.content or ''
+		if f"Match id: {target_str}" in content:
+			parsed_teams = parse_text_match(content)
+			if parsed_teams:
+				found_msg = msg
+				break
+
+	if not found_msg or not parsed_teams:
+		await interaction.followup.send(
+			embed=error_embed(f"Could not find or parse a match message with ID {match_id} in the last 5000 messages.")
+		)
+		return
+
+	# Resolve player names and collect all players
+	guild = interaction.guild
+	all_players = []
+	name_map = {}
+
+	for team in parsed_teams:
+		for p in team['players']:
+			uid = p['user_id']
+			member = guild.get_member(uid)
+			if member is None:
+				try:
+					member = await guild.fetch_member(uid)
+				except Exception:
+					pass
+			name = get_nick(member) if member else f"User#{uid}"
+			name_map[uid] = name
+			all_players.append(Player(id=uid, name=name))
+
+	if len(all_players) < 4:
+		await interaction.followup.send(
+			embed=error_embed(f"Found only {len(all_players)} players. Need at least 4 for team comparison.")
+		)
+		return
+
+	# Get ratings from our system
+	rating_data = await qc.rating.get_players(p.id for p in all_players)
+	ratings = {p['user_id']: p['rating'] for p in rating_data}
+
+	# Run captain-based matchmaking
+	new_team_a, new_team_b, captains, method = captain_matchmaking(all_players, ratings)
+
+	# Build comparison embed
+	def format_old_team(team_data):
+		lines = []
+		for p in team_data['players']:
+			uid = p['user_id']
+			rank = p['rank']
+			name = name_map.get(uid, '?')
+			rating = ratings.get(uid, '?')
+			lines.append(f"`〈{rank}〉` {name} ({rating})")
+		total = sum(ratings.get(p['user_id'], 0) for p in team_data['players'])
+		avg = total // len(team_data['players']) if team_data['players'] else 0
+		return "\n".join(lines), total, avg
+
+	def format_new_team(team_players, cap_ids):
+		lines = []
+		for p in team_players:
+			r = ratings[p.id]
+			cap = " **[C]**" if p.id in cap_ids else ""
+			lines.append(f"{p.name} ({r}){cap}")
+		total = sum(ratings[p.id] for p in team_players)
+		avg = total // len(team_players) if team_players else 0
+		return "\n".join(lines), total, avg
+
+	captain_ids = {c.id for c in captains}
+
+	old_a_text, old_a_total, old_a_avg = format_old_team(parsed_teams[0])
+	old_b_text, old_b_total, old_b_avg = format_old_team(parsed_teams[1])
+	old_diff = abs(old_a_total - old_b_total)
+
+	new_a_text, new_a_total, new_a_avg = format_new_team(new_team_a, captain_ids)
+	new_b_text, new_b_total, new_b_avg = format_new_team(new_team_b, captain_ids)
+	new_diff = abs(new_a_total - new_b_total)
+
+	embed = Embed(
+		title=f"Team Comparison — Match {match_id}",
+		colour=Colour(0x7289DA)
+	)
+
+	# Old teams
+	embed.add_field(
+		name=f"{parsed_teams[0]['emoji']} Old {parsed_teams[0]['name']} 〈{old_a_avg}〉",
+		value=old_a_text,
+		inline=True
+	)
+	embed.add_field(
+		name=f"{parsed_teams[1]['emoji']} Old {parsed_teams[1]['name']} 〈{old_b_avg}〉",
+		value=old_b_text,
+		inline=True
+	)
+	embed.add_field(name="\u200b", value=f"**Elo diff: {old_diff}**", inline=False)
+
+	# New teams
+	embed.add_field(
+		name=f"🔵 New A 〈{new_a_avg}〉",
+		value=new_a_text,
+		inline=True
+	)
+	embed.add_field(
+		name=f"🔴 New B 〈{new_b_avg}〉",
+		value=new_b_text,
+		inline=True
+	)
+	embed.add_field(name="\u200b", value=f"**Elo diff: {new_diff}** ({method})", inline=False)
+
+	# Summary
+	if new_diff < old_diff:
+		embed.set_footer(text=f"Captain matchmaking improves balance by {old_diff - new_diff} rating points")
+	elif new_diff > old_diff:
+		embed.set_footer(text=f"Captain matchmaking is {new_diff - old_diff} rating points worse")
+	else:
+		embed.set_footer(text="Same balance")
+
+	await interaction.followup.send(embed=embed)
 
