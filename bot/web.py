@@ -1,562 +1,143 @@
-"""Civ stats web UI — serves a sortable table of civ_elo_stats.csv."""
+"""NammaPUBobot Web Dashboard — OAuth2, civ stats, channel/queue configuration."""
 
 import csv
 import json
 import os
+import secrets
+import time
+from urllib.parse import urlencode
+
+import aiohttp as aiohttp_client
 from aiohttp import web
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+from core.config import cfg
+from core.cfg_factory import (
+	RoleVar, TextChanVar, MemberVar, VariableTable,
+	BoolVar, IntVar, SliderVar, OptionVar, DurationVar, TextVar
+)
+from core.client import dc
+import bot
 
+# --- Paths ---
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+HTML_PATH = os.path.join(os.path.dirname(__file__), 'web_page.html')
 MIN_GAMES = 50
 
-HTML_PAGE = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Namma PUB — Civ Stats</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300&display=swap');
+# --- Session store ---
+_sessions = {}  # {session_id: {user_id, username, avatar, expires}}
+_oauth_states = {}  # {state: expiry_timestamp}
+SESSION_LIFETIME = 86400  # 24 hours
+COOKIE_NAME = "pubobot_session"
+
+# --- Discord API ---
+DISCORD_API = "https://discord.com/api/v10"
+DISCORD_OAUTH_AUTHORIZE = "https://discord.com/api/oauth2/authorize"
+DISCORD_OAUTH_TOKEN = "https://discord.com/api/oauth2/token"
+
+# --- Variable filtering ---
+SKIP_TYPES = (RoleVar, TextChanVar, MemberVar)
+
+# --- HTML cache ---
+_html_cache = None
+
+
+def _load_html():
+	global _html_cache
+	try:
+		with open(HTML_PATH, 'r') as f:
+			_html_cache = f.read()
+	except FileNotFoundError:
+		_html_cache = "<h1>web_page.html not found</h1>"
+
+
+def _oauth_enabled():
+	return bool(getattr(cfg, 'DC_CLIENT_SECRET', ''))
+
+
+def _get_root_url(request):
+	"""Get public root URL from config or request headers."""
+	if hasattr(cfg, 'WS_ROOT_URL') and cfg.WS_ROOT_URL:
+		return cfg.WS_ROOT_URL.rstrip('/')
+	scheme = request.headers.get('X-Forwarded-Proto', request.scheme)
+	host = request.headers.get('X-Forwarded-Host', request.host)
+	return f"{scheme}://{host}"
+
+
+def _get_session(request):
+	"""Get session data from cookie, or None if invalid/expired."""
+	session_id = request.cookies.get(COOKIE_NAME)
+	if not session_id:
+		return None
+	session = _sessions.get(session_id)
+	if not session or session["expires"] < time.time():
+		_sessions.pop(session_id, None)
+		return None
+	return session
+
+
+def _should_skip(var):
+	"""Check if a variable should be excluded from the web UI."""
+	if isinstance(var, SKIP_TYPES):
+		return True
+	if isinstance(var, VariableTable):
+		return any(isinstance(v, SKIP_TYPES) for v in var.variables.values())
+	return False
+
+
+def _var_type(var):
+	"""Map a Variable subclass to a frontend type string."""
+	for cls, name in [
+		(BoolVar, "bool"), (SliderVar, "slider"), (IntVar, "int"),
+		(OptionVar, "option"), (DurationVar, "duration"),
+		(TextVar, "text"), (VariableTable, "table"),
+	]:
+		if isinstance(var, cls):
+			return name
+	return "str"
+
+
+def _var_meta(var, value):
+	"""Build metadata dict for a variable (for the frontend)."""
+	meta = {
+		"type": _var_type(var),
+		"display": var.display,
+		"description": var.description,
+		"section": var.section,
+		"notnull": var.notnull,
+		"default": var.default,
+		"value": value,
+	}
+	if isinstance(var, OptionVar):
+		meta["options"] = list(var.options)
+	if isinstance(var, SliderVar):
+		meta["min"] = var.min_val
+		meta["max"] = var.max_val
+		meta["unit"] = var.unit
+	if isinstance(var, VariableTable):
+		meta["columns"] = list(var.variables.keys())
+		meta["blank"] = var.blank
+	return meta
+
+
+def _check_admin(qc, member):
+	"""Check if a guild member has admin access for a queue channel."""
+	channel = dc.get_channel(qc.id)
+	return (
+		(qc.cfg.admin_role is not None and qc.cfg.admin_role in member.roles) or
+		member.id == cfg.DC_OWNER_ID or
+		(channel is not None and channel.permissions_for(member).administrator)
+	)
 
-:root {
-  --parchment: #f4e8c1;
-  --parchment-dark: #e8d5a3;
-  --ink: #2c1810;
-  --ink-light: #5c4033;
-  --accent: #8b1a1a;
-  --accent-glow: #c0392b;
-  --gold: #b8860b;
-  --gold-light: #daa520;
-  --border: #c4a86b;
-  --header-bg: #3b2314;
-  --row-hover: rgba(184, 134, 11, 0.12);
-  --row-alt: rgba(139, 69, 19, 0.04);
-  --shadow: rgba(44, 24, 16, 0.15);
-}
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  font-family: 'Crimson Pro', Georgia, serif;
-  background: var(--parchment);
-  color: var(--ink);
-  min-height: 100vh;
-  background-image:
-    radial-gradient(ellipse at 20% 50%, rgba(184, 134, 11, 0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(139, 26, 26, 0.04) 0%, transparent 50%),
-    url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
-}
-
-.container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 3rem;
-}
-
-header {
-  text-align: center;
-  margin-bottom: 2.5rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 2px solid var(--border);
-  position: relative;
-}
-
-header::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 60px;
-  height: 2px;
-  background: var(--gold);
-}
-
-h1 {
-  font-family: 'Cinzel', serif;
-  font-weight: 700;
-  font-size: 2.2rem;
-  color: var(--ink);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 0.3rem;
-}
-
-h2 {
-  font-family: 'Cinzel', serif;
-  font-weight: 600;
-  font-size: 1.4rem;
-  color: var(--ink);
-  letter-spacing: 0.06em;
-  margin-bottom: 1rem;
-}
-
-.subtitle {
-  font-family: 'Crimson Pro', serif;
-  font-style: italic;
-  font-weight: 300;
-  font-size: 1.1rem;
-  color: var(--ink-light);
-  letter-spacing: 0.02em;
-}
-
-.table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  box-shadow: 0 4px 20px var(--shadow), 0 1px 3px var(--shadow);
-  background: rgba(255, 255, 255, 0.35);
-}
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.95rem;
-  min-width: 900px;
-}
-
-thead {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-}
-
-th {
-  background: var(--header-bg);
-  color: var(--parchment);
-  font-family: 'Cinzel', serif;
-  font-weight: 600;
-  font-size: 0.72rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  padding: 0.85rem 0.7rem;
-  text-align: left;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  border-bottom: 2px solid var(--gold);
-  transition: background 0.2s;
-  position: relative;
-}
-
-th:hover {
-  background: #4d2e1a;
-}
-
-th .sort-arrow {
-  display: inline-block;
-  margin-left: 4px;
-  font-size: 0.65rem;
-  opacity: 0.4;
-  transition: opacity 0.2s, transform 0.2s;
-}
-
-th.sort-asc .sort-arrow,
-th.sort-desc .sort-arrow {
-  opacity: 1;
-  color: var(--gold-light);
-}
-
-th.sort-desc .sort-arrow {
-  transform: rotate(180deg);
-}
-
-th:nth-child(1) { padding-left: 1rem; }
-th:nth-child(4), th:nth-child(6), th:nth-child(8), th:nth-child(10) {
-  border-left: 1px solid rgba(196, 168, 107, 0.3);
-}
-
-td {
-  padding: 0.6rem 0.7rem;
-  border-bottom: 1px solid rgba(196, 168, 107, 0.25);
-  transition: background 0.15s;
-}
-
-td:nth-child(1) {
-  padding-left: 1rem;
-  font-family: 'Cinzel', serif;
-  font-weight: 600;
-  font-size: 0.85rem;
-  color: var(--ink);
-  letter-spacing: 0.03em;
-}
-
-td:nth-child(4), td:nth-child(6), td:nth-child(8), td:nth-child(10) {
-  border-left: 1px solid rgba(196, 168, 107, 0.15);
-}
-
-tr:nth-child(even) td {
-  background: var(--row-alt);
-}
-
-tr:hover td {
-  background: var(--row-hover);
-}
-
-td.wr { font-weight: 600; }
-td.wr-high { color: #1a6b1a; }
-td.wr-mid { color: var(--ink-light); }
-td.wr-low { color: var(--accent); }
-
-td.games {
-  color: var(--ink-light);
-  font-size: 0.9rem;
-}
-
-.col-group-label {
-  text-align: center;
-  background: #2c1810;
-  color: var(--gold-light);
-  font-family: 'Cinzel', serif;
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  padding: 0.5rem 0.5rem;
-  border-bottom: 1px solid rgba(196, 168, 107, 0.2);
-}
-
-.loading {
-  text-align: center;
-  padding: 4rem;
-  font-style: italic;
-  color: var(--ink-light);
-  font-size: 1.1rem;
-}
-
-.error {
-  text-align: center;
-  padding: 2rem;
-  color: var(--accent);
-  font-weight: 600;
-}
-
-/* Anomalies section */
-.anomalies {
-  margin-top: 2.5rem;
-}
-
-.anomaly-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 1rem;
-  margin-top: 1rem;
-}
-
-.anomaly-card {
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 1rem 1.2rem;
-  background: rgba(255, 255, 255, 0.35);
-  box-shadow: 0 2px 8px var(--shadow);
-}
-
-.anomaly-card .civ-name {
-  font-family: 'Cinzel', serif;
-  font-weight: 700;
-  font-size: 1rem;
-  margin-bottom: 0.4rem;
-  letter-spacing: 0.04em;
-}
-
-.anomaly-card .anomaly-desc {
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--ink-light);
-}
-
-.anomaly-card .anomaly-desc .wr-val {
-  font-weight: 600;
-}
-
-.anomaly-card .anomaly-desc .wr-val.high { color: #1a6b1a; }
-.anomaly-card .anomaly-desc .wr-val.low { color: var(--accent); }
-
-.anomaly-card .tag {
-  display: inline-block;
-  font-family: 'Cinzel', serif;
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 0.15rem 0.5rem;
-  border-radius: 2px;
-  margin-bottom: 0.5rem;
-}
-
-.tag.better-below {
-  background: rgba(26, 107, 26, 0.12);
-  color: #1a6b1a;
-  border: 1px solid rgba(26, 107, 26, 0.25);
-}
-
-.tag.better-above {
-  background: rgba(139, 26, 26, 0.08);
-  color: var(--accent);
-  border: 1px solid rgba(139, 26, 26, 0.2);
-}
-
-.no-anomalies {
-  text-align: center;
-  padding: 2rem;
-  font-style: italic;
-  color: var(--ink-light);
-}
-
-footer {
-  text-align: center;
-  margin-top: 2rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.85rem;
-  color: var(--ink-light);
-  font-style: italic;
-}
-</style>
-</head>
-<body>
-<div class="container">
-  <header>
-    <h1>Civilization Statistics</h1>
-    <div class="subtitle">Namma PUB — Pickup Game Performance Analysis</div>
-  </header>
-
-  <div class="table-wrap">
-    <table id="stats-table">
-      <thead>
-        <tr class="col-group-row" id="group-row">
-          <th class="col-group-label" colspan="3">Overall</th>
-          <th class="col-group-label" colspan="2">Player Elo &#8805; 1000</th>
-          <th class="col-group-label" colspan="2">Player Elo &lt; 1000</th>
-          <th class="col-group-label" colspan="2">Team Avg &#8805; 1100</th>
-          <th class="col-group-label" colspan="2">Team Avg &lt; 1100</th>
-        </tr>
-        <tr id="header-row"></tr>
-      </thead>
-      <tbody id="table-body">
-        <tr><td colspan="11" class="loading">Loading statistics...</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <div class="anomalies" id="anomalies-section" style="display:none;">
-    <h2>Anomalies</h2>
-    <div class="subtitle" style="margin-bottom:0.5rem;">Civs that perform significantly differently across elo brackets (&#8805;15% winrate gap, min 20 games in each bracket)</div>
-    <div id="anomaly-grid" class="anomaly-grid"></div>
-  </div>
-
-  <footer>Data sourced from PUB bot matches &amp; AoE2 Companion API</footer>
-</div>
-
-<script>
-const COLUMNS = [
-  { key: 'civ', label: 'Civilization', type: 'string' },
-  { key: 'games', label: 'Games', type: 'number' },
-  { key: 'winrate', label: 'Win %', type: 'number' },
-  { key: 'games_player_above', label: 'Games', type: 'number' },
-  { key: 'winrate_player_above', label: 'Win %', type: 'number' },
-  { key: 'games_player_below', label: 'Games', type: 'number' },
-  { key: 'winrate_player_below', label: 'Win %', type: 'number' },
-  { key: 'games_team_above', label: 'Games', type: 'number' },
-  { key: 'winrate_team_above', label: 'Win %', type: 'number' },
-  { key: 'games_team_below', label: 'Games', type: 'number' },
-  { key: 'winrate_team_below', label: 'Win %', type: 'number' },
-];
-
-const MIN_ANOMALY_GAMES = 20;
-const ANOMALY_GAP = 0.15;
-
-let data = [];
-let sortCol = 'civ';
-let sortAsc = true;
-
-function wrClass(v) {
-  if (v >= 0.55) return 'wr wr-high';
-  if (v >= 0.45) return 'wr wr-mid';
-  return 'wr wr-low';
-}
-
-function fmtWr(v) {
-  return (v * 100).toFixed(1) + '%';
-}
-
-function wrSpan(v) {
-  const cls = v >= 0.55 ? 'high' : v < 0.45 ? 'low' : '';
-  return '<span class="wr-val ' + cls + '">' + fmtWr(v) + '</span>';
-}
-
-function buildHeaders() {
-  const row = document.getElementById('header-row');
-  row.innerHTML = '';
-  COLUMNS.forEach(col => {
-    const th = document.createElement('th');
-    th.textContent = col.label;
-    const arrow = document.createElement('span');
-    arrow.className = 'sort-arrow';
-    arrow.textContent = '\\u25B2';
-    th.appendChild(arrow);
-    th.addEventListener('click', () => sortBy(col.key));
-    th.dataset.col = col.key;
-    row.appendChild(th);
-  });
-  updateSortIndicators();
-}
-
-function updateSortIndicators() {
-  document.querySelectorAll('#header-row th').forEach(th => {
-    th.classList.remove('sort-asc', 'sort-desc');
-    if (th.dataset.col === sortCol) {
-      th.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
-    }
-  });
-}
-
-function sortBy(col) {
-  if (sortCol === col) {
-    sortAsc = !sortAsc;
-  } else {
-    sortCol = col;
-    sortAsc = col === 'civ';
-  }
-  updateSortIndicators();
-  renderTable();
-}
-
-function renderTable() {
-  const tbody = document.getElementById('table-body');
-  const colDef = COLUMNS.find(c => c.key === sortCol);
-  const sorted = [...data].sort((a, b) => {
-    let va = a[sortCol], vb = b[sortCol];
-    if (colDef.type === 'string') {
-      va = (va || '').toLowerCase();
-      vb = (vb || '').toLowerCase();
-      return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
-    }
-    return sortAsc ? va - vb : vb - va;
-  });
-
-  tbody.innerHTML = sorted.map(row => {
-    const cells = COLUMNS.map(col => {
-      const v = row[col.key];
-      if (col.key === 'civ') return '<td>' + v + '</td>';
-      if (col.key.startsWith('winrate')) return '<td class="' + wrClass(v) + '">' + fmtWr(v) + '</td>';
-      return '<td class="games">' + v + '</td>';
-    }).join('');
-    return '<tr>' + cells + '</tr>';
-  }).join('');
-}
-
-function findAnomalies() {
-  const anomalies = [];
-
-  data.forEach(row => {
-    // Player elo anomaly
-    if (row.games_player_above >= MIN_ANOMALY_GAMES && row.games_player_below >= MIN_ANOMALY_GAMES) {
-      const gap = row.winrate_player_above - row.winrate_player_below;
-      if (Math.abs(gap) >= ANOMALY_GAP) {
-        anomalies.push({
-          civ: row.civ,
-          type: 'player_elo',
-          betterBelow: gap < 0,
-          above: row.winrate_player_above,
-          below: row.winrate_player_below,
-          gamesAbove: row.games_player_above,
-          gamesBelow: row.games_player_below,
-          gap: Math.abs(gap),
-        });
-      }
-    }
-
-    // Team elo anomaly
-    if (row.games_team_above >= MIN_ANOMALY_GAMES && row.games_team_below >= MIN_ANOMALY_GAMES) {
-      const gap = row.winrate_team_above - row.winrate_team_below;
-      if (Math.abs(gap) >= ANOMALY_GAP) {
-        anomalies.push({
-          civ: row.civ,
-          type: 'team_elo',
-          betterBelow: gap < 0,
-          above: row.winrate_team_above,
-          below: row.winrate_team_below,
-          gamesAbove: row.games_team_above,
-          gamesBelow: row.games_team_below,
-          gap: Math.abs(gap),
-        });
-      }
-    }
-  });
-
-  anomalies.sort((a, b) => b.gap - a.gap);
-  return anomalies;
-}
-
-function renderAnomalies() {
-  const anomalies = findAnomalies();
-  const section = document.getElementById('anomalies-section');
-  const grid = document.getElementById('anomaly-grid');
-
-  if (anomalies.length === 0) {
-    section.style.display = 'block';
-    grid.innerHTML = '<div class="no-anomalies">No significant anomalies found.</div>';
-    return;
-  }
-
-  section.style.display = 'block';
-  const thresholdLabel = (a) => a.type === 'player_elo' ? 'player elo' : 'team avg elo';
-
-  grid.innerHTML = anomalies.map(a => {
-    const tagClass = a.betterBelow ? 'better-below' : 'better-above';
-    const tagText = a.betterBelow
-      ? 'Stronger at lower ' + thresholdLabel(a)
-      : 'Stronger at higher ' + thresholdLabel(a);
-    const label = a.type === 'player_elo' ? 'Player Elo' : 'Team Avg';
-
-    let desc;
-    if (a.betterBelow) {
-      desc = label + ' below threshold: ' + wrSpan(a.below) + ' (' + a.gamesBelow + ' games)'
-        + '<br>' + label + ' above threshold: ' + wrSpan(a.above) + ' (' + a.gamesAbove + ' games)';
-    } else {
-      desc = label + ' above threshold: ' + wrSpan(a.above) + ' (' + a.gamesAbove + ' games)'
-        + '<br>' + label + ' below threshold: ' + wrSpan(a.below) + ' (' + a.gamesBelow + ' games)';
-    }
-
-    return '<div class="anomaly-card">'
-      + '<div class="tag ' + tagClass + '">' + tagText + '</div>'
-      + '<div class="civ-name">' + a.civ + '</div>'
-      + '<div class="anomaly-desc">' + desc + '</div>'
-      + '</div>';
-  }).join('');
-}
-
-async function init() {
-  try {
-    const resp = await fetch('/api/civ-stats');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const result = await resp.json();
-    data = result.civs;
-
-    // Update column group headers with actual thresholds
-    const gr = document.getElementById('group-row');
-    const ths = gr.querySelectorAll('th');
-    ths[1].textContent = 'Player Elo \\u2265 ' + result.player_threshold;
-    ths[2].textContent = 'Player Elo < ' + result.player_threshold;
-    ths[3].textContent = 'Team Avg \\u2265 ' + result.team_threshold;
-    ths[4].textContent = 'Team Avg < ' + result.team_threshold;
-
-    buildHeaders();
-    renderTable();
-    renderAnomalies();
-  } catch (e) {
-    document.getElementById('table-body').innerHTML =
-      '<tr><td colspan="11" class="error">Failed to load data: ' + e.message + '</td></tr>';
-  }
-}
-
-init();
-</script>
-</body>
-</html>'''
-
+# ─── Page handler ───
 
 async def handle_index(request):
-	return web.Response(text=HTML_PAGE, content_type='text/html')
+	if _html_cache is None:
+		_load_html()
+	return web.Response(text=_html_cache, content_type='text/html')
 
+
+# ─── Civ stats API (public, unchanged) ───
 
 async def handle_civ_stats(request):
 	csv_path = os.path.join(DATA_DIR, 'civ_elo_stats.csv')
@@ -566,7 +147,6 @@ async def handle_civ_stats(request):
 	rows = []
 	with open(csv_path, 'r') as f:
 		reader = csv.DictReader(f)
-		# Detect thresholds from column names
 		player_threshold = 1000
 		team_threshold = 1100
 		for name in (reader.fieldnames or []):
@@ -574,7 +154,6 @@ async def handle_civ_stats(request):
 				player_threshold = int(name.split('_')[-1])
 			elif name.startswith('games_team_elo_above_'):
 				team_threshold = int(name.split('_')[-1])
-
 		pt, tt = player_threshold, team_threshold
 		for row in reader:
 			games = int(row['games'])
@@ -601,10 +180,313 @@ async def handle_civ_stats(request):
 	})
 
 
+# ─── Auth routes ───
+
+async def handle_auth_login(request):
+	if not _oauth_enabled():
+		raise web.HTTPBadRequest(text="OAuth not configured")
+	root_url = _get_root_url(request)
+	state = secrets.token_urlsafe(16)
+	_oauth_states[state] = time.time() + 300  # 5 min expiry
+	params = {
+		"client_id": str(cfg.DC_CLIENT_ID),
+		"redirect_uri": f"{root_url}/auth/callback",
+		"response_type": "code",
+		"scope": "identify",
+		"state": state,
+	}
+	raise web.HTTPFound(f"{DISCORD_OAUTH_AUTHORIZE}?{urlencode(params)}")
+
+
+async def handle_auth_callback(request):
+	if not _oauth_enabled():
+		raise web.HTTPBadRequest(text="OAuth not configured")
+
+	code = request.query.get("code")
+	if not code:
+		raise web.HTTPBadRequest(text="Missing code parameter")
+
+	state = request.query.get("state")
+	if not state or state not in _oauth_states or _oauth_states[state] < time.time():
+		_oauth_states.pop(state, None)
+		raise web.HTTPBadRequest(text="Invalid or expired state parameter")
+	_oauth_states.pop(state, None)
+
+	root_url = _get_root_url(request)
+	redirect_uri = f"{root_url}/auth/callback"
+
+	async with aiohttp_client.ClientSession() as http:
+		# Exchange code for token
+		resp = await http.post(DISCORD_OAUTH_TOKEN, data={
+			"client_id": str(cfg.DC_CLIENT_ID),
+			"client_secret": cfg.DC_CLIENT_SECRET,
+			"grant_type": "authorization_code",
+			"code": code,
+			"redirect_uri": redirect_uri,
+		})
+		if resp.status != 200:
+			raise web.HTTPBadRequest(text="Failed to exchange code for token")
+		token_data = await resp.json()
+
+		# Get user info
+		resp = await http.get(f"{DISCORD_API}/users/@me", headers={
+			"Authorization": f"Bearer {token_data['access_token']}"
+		})
+		if resp.status != 200:
+			raise web.HTTPBadRequest(text="Failed to get user info")
+		user = await resp.json()
+
+	session_id = secrets.token_urlsafe(32)
+	_sessions[session_id] = {
+		"user_id": int(user["id"]),
+		"username": user.get("global_name") or user["username"],
+		"avatar": user.get("avatar"),
+		"expires": time.time() + SESSION_LIFETIME,
+	}
+
+	resp = web.HTTPFound("/")
+	is_secure = root_url.startswith("https://")
+	resp.set_cookie(COOKIE_NAME, session_id, max_age=SESSION_LIFETIME, httponly=True, samesite="Lax", secure=is_secure)
+	raise resp
+
+
+async def handle_auth_logout(request):
+	session_id = request.cookies.get(COOKIE_NAME)
+	if session_id:
+		_sessions.pop(session_id, None)
+	resp = web.HTTPFound("/")
+	resp.del_cookie(COOKIE_NAME)
+	raise resp
+
+
+# ─── Dashboard API ───
+
+async def handle_api_me(request):
+	session = _get_session(request)
+	if not session:
+		return web.json_response({"logged_in": False, "oauth_enabled": _oauth_enabled()})
+	return web.json_response({
+		"logged_in": True,
+		"oauth_enabled": True,
+		"user_id": session["user_id"],
+		"username": session["username"],
+		"avatar": session["avatar"],
+	})
+
+
+async def handle_api_guilds(request):
+	session = _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+
+	user_id = session["user_id"]
+	guilds = []
+	for guild in dc.guilds:
+		member = guild.get_member(user_id)
+		if not member:
+			continue
+		# Only show guilds with configured queue channels
+		qc_ids = [ch_id for ch_id, qc in bot.queue_channels.items() if qc.guild_id == guild.id]
+		if not qc_ids:
+			continue
+		is_admin = any(_check_admin(bot.queue_channels[ch_id], member) for ch_id in qc_ids)
+		guilds.append({
+			"id": str(guild.id),
+			"name": guild.name,
+			"icon": str(guild.icon.url) if guild.icon else None,
+			"channels": len(qc_ids),
+			"is_admin": is_admin,
+		})
+	return web.json_response({"guilds": guilds})
+
+
+async def handle_api_channels(request):
+	session = _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+
+	guild_id = int(request.match_info["guild_id"])
+	guild = dc.get_guild(guild_id)
+	if not guild:
+		return web.json_response({"error": "Guild not found"}, status=404)
+	member = guild.get_member(session["user_id"])
+	if not member:
+		return web.json_response({"error": "Not a guild member"}, status=403)
+
+	channels = []
+	for ch_id, qc in bot.queue_channels.items():
+		if qc.guild_id != guild_id:
+			continue
+		ch = dc.get_channel(ch_id)
+		channels.append({
+			"id": str(ch_id),
+			"name": ch.name if ch else f"unknown-{ch_id}",
+			"queues": len(qc.queues),
+			"is_admin": _check_admin(qc, member),
+		})
+	return web.json_response({"channels": channels})
+
+
+async def handle_api_channel_config(request):
+	session = _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+
+	channel_id = int(request.match_info["channel_id"])
+	qc = bot.queue_channels.get(channel_id)
+	if not qc:
+		return web.json_response({"error": "Channel not configured"}, status=404)
+
+	channel = dc.get_channel(channel_id)
+	if not channel:
+		return web.json_response({"error": "Channel not found"}, status=404)
+	member = channel.guild.get_member(session["user_id"])
+	if not member:
+		return web.json_response({"error": "Not a guild member"}, status=403)
+
+	is_admin = _check_admin(qc, member)
+
+	if request.method == "GET":
+		readable = qc.cfg.readable()
+		variables = {}
+		for name, var in qc.cfg_factory.variables.items():
+			if _should_skip(var):
+				continue
+			variables[name] = _var_meta(var, readable.get(name))
+		return web.json_response({
+			"channel_name": channel.name,
+			"guild_name": channel.guild.name,
+			"sections": qc.cfg_factory.sections,
+			"variables": variables,
+			"is_admin": is_admin,
+		})
+
+	# POST — update config
+	if not is_admin:
+		return web.json_response({"error": "Admin access required"}, status=403)
+	try:
+		data = await request.json()
+		filtered = {}
+		for key, value in data.items():
+			var = qc.cfg_factory.variables.get(key)
+			if not var or _should_skip(var):
+				continue
+			# VariableTable expects list; all others expect strings
+			if isinstance(var, VariableTable):
+				filtered[key] = value if isinstance(value, list) else json.dumps(value)
+			elif value is None:
+				filtered[key] = "none"
+			else:
+				filtered[key] = str(value)
+		await qc.cfg.update(filtered)
+		return web.json_response({"ok": True})
+	except Exception as e:
+		return web.json_response({"error": str(e)}, status=400)
+
+
+async def handle_api_queues(request):
+	session = _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+
+	channel_id = int(request.match_info["channel_id"])
+	qc = bot.queue_channels.get(channel_id)
+	if not qc:
+		return web.json_response({"error": "Channel not configured"}, status=404)
+
+	channel = dc.get_channel(channel_id)
+	if not channel:
+		return web.json_response({"error": "Channel not found"}, status=404)
+	member = channel.guild.get_member(session["user_id"])
+	if not member:
+		return web.json_response({"error": "Not a guild member"}, status=403)
+
+	return web.json_response({"queues": [
+		{"name": q.name, "size": q.cfg.size, "players": len(q.queue), "ranked": bool(q.cfg.ranked)}
+		for q in qc.queues
+	]})
+
+
+async def handle_api_queue_config(request):
+	session = _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+
+	channel_id = int(request.match_info["channel_id"])
+	queue_name = request.match_info["queue_name"]
+	qc = bot.queue_channels.get(channel_id)
+	if not qc:
+		return web.json_response({"error": "Channel not configured"}, status=404)
+
+	channel = dc.get_channel(channel_id)
+	if not channel:
+		return web.json_response({"error": "Channel not found"}, status=404)
+	member = channel.guild.get_member(session["user_id"])
+	if not member:
+		return web.json_response({"error": "Not a guild member"}, status=403)
+
+	queue = next((q for q in qc.queues if q.name.lower() == queue_name.lower()), None)
+	if not queue:
+		return web.json_response({"error": f"Queue '{queue_name}' not found"}, status=404)
+
+	is_admin = _check_admin(qc, member)
+
+	if request.method == "GET":
+		readable = queue.cfg.readable()
+		variables = {}
+		for name, var in queue.cfg_factory.variables.items():
+			if _should_skip(var):
+				continue
+			variables[name] = _var_meta(var, readable.get(name))
+		return web.json_response({
+			"queue_name": queue.name,
+			"sections": queue.cfg_factory.sections,
+			"variables": variables,
+			"is_admin": is_admin,
+		})
+
+	# POST
+	if not is_admin:
+		return web.json_response({"error": "Admin access required"}, status=403)
+	try:
+		data = await request.json()
+		filtered = {}
+		for key, value in data.items():
+			var = queue.cfg_factory.variables.get(key)
+			if not var or _should_skip(var):
+				continue
+			if isinstance(var, VariableTable):
+				filtered[key] = value if isinstance(value, list) else json.dumps(value)
+			elif value is None:
+				filtered[key] = "none"
+			else:
+				filtered[key] = str(value)
+		await queue.cfg.update(filtered)
+		return web.json_response({"ok": True})
+	except Exception as e:
+		return web.json_response({"error": str(e)}, status=400)
+
+
+# ─── App setup ───
+
 def create_app():
 	app = web.Application()
 	app.router.add_get('/', handle_index)
+	# Auth
+	app.router.add_get('/auth/login', handle_auth_login)
+	app.router.add_get('/auth/callback', handle_auth_callback)
+	app.router.add_get('/auth/logout', handle_auth_logout)
+	# Public API
 	app.router.add_get('/api/civ-stats', handle_civ_stats)
+	app.router.add_get('/api/me', handle_api_me)
+	# Dashboard API
+	app.router.add_get('/api/guilds', handle_api_guilds)
+	app.router.add_get('/api/guilds/{guild_id}/channels', handle_api_channels)
+	app.router.add_get('/api/channels/{channel_id}/config', handle_api_channel_config)
+	app.router.add_post('/api/channels/{channel_id}/config', handle_api_channel_config)
+	app.router.add_get('/api/channels/{channel_id}/queues', handle_api_queues)
+	app.router.add_get('/api/channels/{channel_id}/queues/{queue_name}/config', handle_api_queue_config)
+	app.router.add_post('/api/channels/{channel_id}/queues/{queue_name}/config', handle_api_queue_config)
 	return app
 
 
@@ -612,6 +494,7 @@ async def start_web_server(port=None):
 	"""Start the web server. Returns the runner for cleanup."""
 	if port is None:
 		port = int(os.environ.get('PORT', 8080))
+	_load_html()
 	app = create_app()
 	runner = web.AppRunner(app)
 	await runner.setup()
