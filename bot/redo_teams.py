@@ -59,8 +59,8 @@ def parse_embed_match(embed):
     """Parse a PUBobot embed to extract teams and players.
 
     Expected embed structure:
-    - Field names: "{emoji} ​ **{TeamName}** ​ `〈{avg_rating}〉`"
-    - Field values: " ​ `〈Rank〉`<@uid> ​ `〈Rank〉`<@uid> ..."
+    - Field names: "{emoji} ​ **{TeamName}** ​ `[〈\u2329]{avg_rating}[〉\u232a]`"
+    - Field values: " ​ `[〈\u2329]Rank[〉\u232a]`<@uid> ​ `[〈\u2329]Rank[〉\u232a]`<@uid> ..."
     - Footer: "Match id: {id}"
 
     Returns list of team dicts or None if parsing fails.
@@ -69,8 +69,8 @@ def parse_embed_match(embed):
 
     for field in embed.fields:
         # Parse team header from field name
-        # Format: :emoji: ​ **TeamName** ​ `〈avg〉`
-        header = re.search(r'(:\w+:).*?\*\*(\w+)\*\*.*?〈(\d+)〉', field.name or '')
+        # Format: :emoji: ​ **TeamName** ​ `[〈\u2329]avg[〉\u232a]`
+        header = re.search(r'(:\w+:).*?\*\*(\w+)\*\*.*?[〈\u2329](\d+)[〉\u232a]', field.name or '')
         if not header:
             continue
 
@@ -82,8 +82,8 @@ def parse_embed_match(embed):
         }
 
         # Parse players from field value
-        # Format: `〈Rank〉`<@uid> or 〈Rank〉<@uid>
-        for rank, uid in re.findall(r'〈([^〉]+)〉[`]?\s*<@!?(\d+)>', field.value or ''):
+        # Format: `[〈\u2329]Rank[〉\u232a]`<@uid> or [〈\u2329]Rank[〉\u232a]<@uid>
+        for rank, uid in re.findall(r'[〈\u2329]([^〉\u232a]+)[〉\u232a][`]?\s*<@!?(\d+)>', field.value or ''):
             team['players'].append({
                 'user_id': int(uid),
                 'rank': rank,
@@ -104,8 +104,8 @@ def parse_text_match(content):
     current_team = None
 
     for line in content.split('\n'):
-        # Team header: :emoji: TeamName 〈rating〉
-        header = re.search(r'(:\w+:).*?([A-Za-z]+).*?〈(\d+)〉', line)
+        # Team header: :emoji: TeamName [〈\u2329]rating[〉\u232a]
+        header = re.search(r'(:\w+:).*?([A-Za-z]+).*?[〈\u2329](\d+)[〉\u232a]', line)
         if header:
             if current_team and current_team['players']:
                 teams.append(current_team)
@@ -116,7 +116,7 @@ def parse_text_match(content):
                 'players': [],
             }
             # Players might be on the same line as the header
-            for rank, uid in re.findall(r'〈([^〉]+)〉[`]?\s*<@!?(\d+)>', line):
+            for rank, uid in re.findall(r'[〈\u2329]([^〉\u232a]+)[〉\u232a][`]?\s*<@!?(\d+)>', line):
                 current_team['players'].append({
                     'user_id': int(uid),
                     'rank': rank,
@@ -124,7 +124,7 @@ def parse_text_match(content):
             continue
 
         if current_team is not None:
-            for rank, uid in re.findall(r'〈([^〉]+)〉[`]?\s*<@!?(\d+)>', line):
+            for rank, uid in re.findall(r'[〈\u2329]([^〉\u232a]+)[〉\u232a][`]?\s*<@!?(\d+)>', line):
                 current_team['players'].append({
                     'user_id': int(uid),
                     'rank': rank,
