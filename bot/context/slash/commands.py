@@ -380,6 +380,97 @@ async def _rating_snap(
 ): await run_slash(bot.commands.rating_snap, interaction=interaction)
 
 
+@groups.admin_rating.subcommand(name='seed_from_channel', description='Bulk copy ratings from another channel ID in the database.')
+async def _rating_seed_from_channel(
+		interaction: Interaction,
+		source_channel_id: str = SlashOption(description="Channel ID to copy ratings from (right-click channel → Copy ID)."),
+):
+	await interaction.response.defer()
+
+	if not interaction.user.guild_permissions.administrator:
+		await interaction.followup.send(embed=error_embed('You must possess server administrator permissions.'))
+		return
+
+	qc = bot.queue_channels.get(interaction.channel_id)
+	if qc is None:
+		await interaction.followup.send(embed=error_embed("Not in a queue channel."))
+		return
+
+	try:
+		src_id = int(source_channel_id)
+	except ValueError:
+		await interaction.followup.send(embed=error_embed("Invalid channel ID. Must be a number."))
+		return
+
+	if src_id == qc.rating.channel_id:
+		await interaction.followup.send(embed=error_embed("Source channel is the same as the current rating channel."))
+		return
+
+	# Read all ratings from source channel
+	from core.database import db
+	import time as _time
+
+	source_data = await db.select(
+		['user_id', 'nick', 'rating', 'deviation', 'wins', 'losses', 'draws', 'streak'],
+		'qc_players',
+		where={'channel_id': src_id}
+	)
+
+	if not source_data:
+		await interaction.followup.send(embed=error_embed(f"No player data found for channel ID {src_id}."))
+		return
+
+	# Filter to players with actual ratings
+	rated = [p for p in source_data if p['rating'] is not None]
+	if not rated:
+		await interaction.followup.send(embed=error_embed(f"Found {len(source_data)} players but none have ratings."))
+		return
+
+	# Seed each player into current channel
+	now = int(_time.time())
+	dest_id = qc.rating.channel_id
+	to_insert = []
+	history = []
+
+	for p in rated:
+		to_insert.append({
+			'channel_id': dest_id,
+			'user_id': p['user_id'],
+			'nick': p['nick'],
+			'rating': p['rating'],
+			'deviation': p['deviation'] or qc.rating.init_deviation,
+			'wins': p['wins'] or 0,
+			'losses': p['losses'] or 0,
+			'draws': p['draws'] or 0,
+			'streak': p['streak'] or 0,
+		})
+		history.append({
+			'channel_id': dest_id,
+			'user_id': p['user_id'],
+			'at': now,
+			'rating_before': qc.rating.init_rp,
+			'rating_change': p['rating'] - qc.rating.init_rp,
+			'deviation_before': qc.rating.init_deviation,
+			'deviation_change': (p['deviation'] or qc.rating.init_deviation) - qc.rating.init_deviation,
+			'match_id': None,
+			'reason': f'bulk seed from channel {src_id}',
+		})
+
+	await db.insert_many('qc_players', to_insert, on_dublicate='replace')
+	await db.insert_many('qc_rating_history', history)
+
+	# Summary
+	ratings = [p['rating'] for p in rated]
+	embed = Embed(
+		title="Bulk Rating Seed Complete",
+		colour=Colour(0x27b75e),
+		description=f"Copied **{len(rated)}** player ratings from channel `{src_id}`."
+	)
+	embed.add_field(name="Rating range", value=f"{min(ratings)} — {max(ratings)}", inline=True)
+	embed.add_field(name="Average", value=f"{sum(ratings) // len(ratings)}", inline=True)
+	await interaction.followup.send(embed=embed)
+
+
 # stats -> ...
 
 @groups.admin_stats.subcommand(name='show', description='Show channel or player stats.')
