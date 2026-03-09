@@ -1586,7 +1586,7 @@ function renderControl(name, meta, editable) {
 
   switch (meta.type) {
     case 'bool':
-      var checked = (val === true || val === 'True' || val === 'true' || val === 1) ? ' checked' : '';
+      var checked = (val === true || val === 'on' || val === 'On' || val === 'True' || val === 'true' || val === 1) ? ' checked' : '';
       return '<div class="checkbox-wrap"><input type="checkbox" data-var="' + esc(name) + '" data-type="bool"' + checked + disabled + '></div>';
 
     case 'option':
@@ -1727,9 +1727,11 @@ function collectFormData(formId) {
     container.querySelectorAll('.table-rows .table-row').forEach(function(rowEl) {
       var inputs = rowEl.querySelectorAll('input[data-col]');
       if (columns.length === 1) {
-        // Single-column: return flat strings
+        // Single-column: return object with column key (backend expects {col: val})
         if (inputs.length > 0 && inputs[0].value.trim()) {
-          rows.push(inputs[0].value.trim());
+          var obj = {};
+          obj[columns[0]] = inputs[0].value.trim();
+          rows.push(obj);
         }
       } else {
         // Multi-column: return objects
