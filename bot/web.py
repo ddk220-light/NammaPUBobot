@@ -468,6 +468,20 @@ async def handle_api_queue_config(request):
 		return web.json_response({"error": str(e)}, status=400)
 
 
+# ─── Debug endpoint (temporary) ───
+
+async def handle_api_debug(request):
+	"""Temporary debug endpoint to diagnose guild/channel state."""
+	return web.json_response({
+		"bot_guilds": [{"id": str(g.id), "name": g.name} for g in dc.guilds],
+		"queue_channels": {
+			str(ch_id): {"guild_id": str(qc.guild_id), "queues": len(qc.queues)}
+			for ch_id, qc in bot.queue_channels.items()
+		},
+		"bot_ready": getattr(bot, 'bot_ready', 'unknown'),
+	})
+
+
 # ─── App setup ───
 
 def create_app():
@@ -481,6 +495,7 @@ def create_app():
 	app.router.add_get('/api/civ-stats', handle_civ_stats)
 	app.router.add_get('/api/me', handle_api_me)
 	# Dashboard API
+	app.router.add_get('/api/debug', handle_api_debug)
 	app.router.add_get('/api/guilds', handle_api_guilds)
 	app.router.add_get('/api/guilds/{guild_id}/channels', handle_api_channels)
 	app.router.add_get('/api/channels/{channel_id}/config', handle_api_channel_config)
