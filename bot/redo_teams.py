@@ -11,6 +11,50 @@ from collections import namedtuple
 Player = namedtuple('Player', ['id', 'name'])
 
 
+def embed_contains_match_id(embed, match_id_str):
+    """Check if any part of an embed contains the match ID."""
+    texts = []
+    if embed.footer and embed.footer.text:
+        texts.append(embed.footer.text)
+    if embed.title:
+        texts.append(embed.title)
+    if embed.description:
+        texts.append(embed.description)
+    for field in embed.fields:
+        if field.name:
+            texts.append(field.name)
+        if field.value:
+            texts.append(field.value)
+    combined = ' '.join(texts).lower()
+    # Check for "match id: NNN" or "match_id: NNN" or just the number in footer
+    if f"match id: {match_id_str}" in combined:
+        return True
+    if f"match id:{match_id_str}" in combined:
+        return True
+    # Check footer specifically for just the number
+    footer = (embed.footer.text or '').lower() if embed.footer else ''
+    if match_id_str in footer:
+        return True
+    return False
+
+
+def get_all_embed_text(embed):
+    """Get all text from an embed as a single string."""
+    parts = []
+    if embed.title:
+        parts.append(embed.title)
+    if embed.description:
+        parts.append(embed.description)
+    for field in embed.fields:
+        if field.name:
+            parts.append(field.name)
+        if field.value:
+            parts.append(field.value)
+    if embed.footer and embed.footer.text:
+        parts.append(embed.footer.text)
+    return '\n'.join(parts)
+
+
 def parse_embed_match(embed):
     """Parse a PUBobot embed to extract teams and players.
 

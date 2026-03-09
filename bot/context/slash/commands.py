@@ -2,6 +2,7 @@ from typing import Callable
 from asyncio import wait_for, shield
 from asyncio.exceptions import TimeoutError as aTimeoutError
 from nextcord import Interaction, SlashOption, Member, TextChannel, Embed, Colour
+import re
 import traceback
 import time
 
@@ -12,7 +13,7 @@ from core.config import cfg
 
 import bot
 from bot.civ_stats import get_player_civs, pick_balanced_teams, get_today_civs
-from bot.redo_teams import parse_embed_match, parse_text_match, captain_matchmaking, Player
+from bot.redo_teams import parse_embed_match, parse_text_match, captain_matchmaking, Player, embed_contains_match_id, get_all_embed_text
 
 
 from . import SlashContext, autocomplete, groups
@@ -802,39 +803,55 @@ async def _redo_teams(
 	# Search channel history for the match message
 	target_str = str(match_id)
 	found_msg = None
+	found_embed = None
 	parsed_teams = None
 
 	async for msg in interaction.channel.history(limit=5000):
-		# Check embeds first (PUBobot sends embeds)
+		# Check embeds (PUBobot sends embeds)
 		for emb in msg.embeds:
-			footer_text = emb.footer.text if emb.footer else ''
-			if f"Match id: {target_str}" in (footer_text or ''):
-				parsed_teams = parse_embed_match(emb)
-				if parsed_teams:
-					found_msg = msg
-					break
-			# Also check embed description
-			if emb.description and f"Match id: {target_str}" in emb.description:
+			if embed_contains_match_id(emb, target_str):
 				parsed_teams = parse_embed_match(emb)
 				if not parsed_teams:
-					parsed_teams = parse_text_match(emb.description)
-				if parsed_teams:
-					found_msg = msg
-					break
+					# Try parsing all embed text as plain text
+					parsed_teams = parse_text_match(get_all_embed_text(emb))
+				found_msg = msg
+				found_embed = emb
+				break
 		if found_msg:
 			break
 
-		# Check plain text content
+		# Check plain text content (case-insensitive)
 		content = msg.content or ''
-		if f"Match id: {target_str}" in content:
+		if target_str in content and re.search(r'match\s*id', content, re.IGNORECASE):
 			parsed_teams = parse_text_match(content)
-			if parsed_teams:
-				found_msg = msg
-				break
+			found_msg = msg
+			break
 
-	if not found_msg or not parsed_teams:
+	if not found_msg:
 		await interaction.followup.send(
-			embed=error_embed(f"Could not find or parse a match message with ID {match_id} in the last 5000 messages.")
+			embed=error_embed(f"Could not find a message with match ID {match_id} in the last 5000 messages.")
+		)
+		return
+
+	if not parsed_teams:
+		# Found the message but couldn't parse teams — show debug info
+		debug_parts = []
+		if found_embed:
+			if found_embed.title:
+				debug_parts.append(f"Title: {found_embed.title[:100]}")
+			for i, f in enumerate(found_embed.fields):
+				debug_parts.append(f"Field {i} name: {(f.name or '')[:80]}")
+				debug_parts.append(f"Field {i} value: {(f.value or '')[:80]}")
+			if found_embed.footer:
+				debug_parts.append(f"Footer: {(found_embed.footer.text or '')[:100]}")
+		else:
+			debug_parts.append(f"Content: {(found_msg.content or '')[:200]}")
+		debug_text = "\n".join(debug_parts) or "No parseable content"
+		await interaction.followup.send(
+			embed=error_embed(
+				f"Found the message but couldn't parse teams.\n```\n{debug_text}\n```",
+				title="Parse Error"
+			)
 		)
 		return
 
