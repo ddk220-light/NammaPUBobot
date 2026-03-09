@@ -20,10 +20,8 @@ loop.run_until_complete(database.db.connect())
 import bot
 
 # Load web server
-if config.cfg.WS_ENABLE:
-	from webui import webserver
-else:
-	webserver = False
+from bot.web import start_web_server
+web_runner = None
 
 log = console.log
 
@@ -86,17 +84,25 @@ async def think():
 
 	log.info("Closing db.")
 	await database.db.close()
-	if webserver:
+	if web_runner:
 		log.info("Closing web server.")
-		webserver.srv.close()
-		await webserver.srv.wait_closed()
+		await web_runner.cleanup()
 	log.info("Closing log.")
 	log.close()
 	print("Exit now.")
 	loop.stop()
 
+# Start web server
+async def init_web():
+	global web_runner
+	try:
+		web_runner = await start_web_server()
+	except Exception as e:
+		log.error(f"Failed to start web server: {e}")
+
 # Login to discord
 loop = asyncio.get_event_loop()
+loop.create_task(init_web())
 loop.create_task(think())
 loop.create_task(dc.start(config.cfg.DC_BOT_TOKEN))
 
