@@ -1,0 +1,1793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Namma PUB</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300&display=swap');
+
+:root {
+  --parchment: #f4e8c1;
+  --parchment-dark: #e8d5a3;
+  --ink: #2c1810;
+  --ink-light: #5c4033;
+  --accent: #8b1a1a;
+  --accent-glow: #c0392b;
+  --gold: #b8860b;
+  --gold-light: #daa520;
+  --border: #c4a86b;
+  --header-bg: #3b2314;
+  --row-hover: rgba(184, 134, 11, 0.12);
+  --row-alt: rgba(139, 69, 19, 0.04);
+  --shadow: rgba(44, 24, 16, 0.15);
+  --nav-bg: #1a0f09;
+  --nav-height: 52px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Crimson Pro', Georgia, serif;
+  background: var(--parchment);
+  color: var(--ink);
+  min-height: 100vh;
+  padding-top: var(--nav-height);
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(184, 134, 11, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(139, 26, 26, 0.04) 0%, transparent 50%),
+    url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+}
+
+/* ─── Navigation Bar ─── */
+
+.top-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-height);
+  background: var(--nav-bg);
+  display: flex;
+  align-items: center;
+  padding: 0 1.5rem;
+  z-index: 1000;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  border-bottom: 2px solid var(--gold);
+}
+
+.nav-brand {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--gold-light);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-right: 2rem;
+  white-space: nowrap;
+}
+
+.nav-links {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.nav-link {
+  font-family: 'Cinzel', serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--parchment-dark);
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 3px;
+  transition: color 0.2s, background 0.2s;
+}
+
+.nav-link:hover {
+  color: var(--gold-light);
+  background: rgba(184, 134, 11, 0.12);
+}
+
+.nav-link.active {
+  color: var(--gold-light);
+  background: rgba(184, 134, 11, 0.18);
+  border-bottom: 2px solid var(--gold);
+}
+
+.nav-auth {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nav-auth .username {
+  font-family: 'Crimson Pro', serif;
+  font-size: 0.95rem;
+  color: var(--parchment-dark);
+}
+
+.nav-auth .btn-login,
+.nav-auth .btn-logout {
+  font-family: 'Cinzel', serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 0.35rem 0.9rem;
+  border-radius: 3px;
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s, color 0.2s;
+}
+
+.nav-auth .btn-login {
+  background: var(--gold);
+  color: #fff;
+}
+
+.nav-auth .btn-login:hover {
+  background: var(--gold-light);
+}
+
+.nav-auth .btn-logout {
+  background: transparent;
+  color: var(--parchment-dark);
+  border: 1px solid rgba(196, 168, 107, 0.3);
+}
+
+.nav-auth .btn-logout:hover {
+  background: rgba(196, 168, 107, 0.12);
+  color: var(--gold-light);
+}
+
+/* ─── Shared layout ─── */
+
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+}
+
+.page { display: none; }
+.page.active { display: block; }
+
+header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid var(--border);
+  position: relative;
+}
+
+header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 2px;
+  background: var(--gold);
+}
+
+h1 {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 2.2rem;
+  color: var(--ink);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.3rem;
+}
+
+h2 {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 1.4rem;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+  margin-bottom: 1rem;
+}
+
+h3 {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--ink);
+  letter-spacing: 0.04em;
+  margin-bottom: 0.75rem;
+}
+
+.subtitle {
+  font-family: 'Crimson Pro', serif;
+  font-style: italic;
+  font-weight: 300;
+  font-size: 1.1rem;
+  color: var(--ink-light);
+  letter-spacing: 0.02em;
+}
+
+/* ─── Civ Stats Table ─── */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: 0 4px 20px var(--shadow), 0 1px 3px var(--shadow);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+  min-width: 900px;
+}
+
+thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+th {
+  background: var(--header-bg);
+  color: var(--parchment);
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.85rem 0.7rem;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  border-bottom: 2px solid var(--gold);
+  transition: background 0.2s;
+  position: relative;
+}
+
+th:hover {
+  background: #4d2e1a;
+}
+
+th .sort-arrow {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.65rem;
+  opacity: 0.4;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+th.sort-asc .sort-arrow,
+th.sort-desc .sort-arrow {
+  opacity: 1;
+  color: var(--gold-light);
+}
+
+th.sort-desc .sort-arrow {
+  transform: rotate(180deg);
+}
+
+th:nth-child(1) { padding-left: 1rem; }
+th:nth-child(4), th:nth-child(6), th:nth-child(8), th:nth-child(10) {
+  border-left: 1px solid rgba(196, 168, 107, 0.3);
+}
+
+td {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid rgba(196, 168, 107, 0.25);
+  transition: background 0.15s;
+}
+
+td:nth-child(1) {
+  padding-left: 1rem;
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--ink);
+  letter-spacing: 0.03em;
+}
+
+td:nth-child(4), td:nth-child(6), td:nth-child(8), td:nth-child(10) {
+  border-left: 1px solid rgba(196, 168, 107, 0.15);
+}
+
+tr:nth-child(even) td {
+  background: var(--row-alt);
+}
+
+tr:hover td {
+  background: var(--row-hover);
+}
+
+td.wr { font-weight: 600; }
+td.wr-high { color: #1a6b1a; }
+td.wr-mid { color: var(--ink-light); }
+td.wr-low { color: var(--accent); }
+
+td.games {
+  color: var(--ink-light);
+  font-size: 0.9rem;
+}
+
+.col-group-label {
+  text-align: center;
+  background: #2c1810;
+  color: var(--gold-light);
+  font-family: 'Cinzel', serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  padding: 0.5rem 0.5rem;
+  border-bottom: 1px solid rgba(196, 168, 107, 0.2);
+}
+
+.loading {
+  text-align: center;
+  padding: 4rem;
+  font-style: italic;
+  color: var(--ink-light);
+  font-size: 1.1rem;
+}
+
+.error {
+  text-align: center;
+  padding: 2rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ─── Anomalies section ─── */
+
+.anomalies {
+  margin-top: 2.5rem;
+}
+
+.anomaly-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.anomaly-card {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1rem 1.2rem;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.anomaly-card .civ-name {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.04em;
+}
+
+.anomaly-card .anomaly-desc {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink-light);
+}
+
+.anomaly-card .anomaly-desc .wr-val {
+  font-weight: 600;
+}
+
+.anomaly-card .anomaly-desc .wr-val.high { color: #1a6b1a; }
+.anomaly-card .anomaly-desc .wr-val.low { color: var(--accent); }
+
+.anomaly-card .tag {
+  display: inline-block;
+  font-family: 'Cinzel', serif;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 2px;
+  margin-bottom: 0.5rem;
+}
+
+.tag.better-below {
+  background: rgba(26, 107, 26, 0.12);
+  color: #1a6b1a;
+  border: 1px solid rgba(26, 107, 26, 0.25);
+}
+
+.tag.better-above {
+  background: rgba(139, 26, 26, 0.08);
+  color: var(--accent);
+  border: 1px solid rgba(139, 26, 26, 0.2);
+}
+
+.no-anomalies {
+  text-align: center;
+  padding: 2rem;
+  font-style: italic;
+  color: var(--ink-light);
+}
+
+/* ─── Dashboard ─── */
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Crimson Pro', serif;
+  font-size: 0.95rem;
+  color: var(--ink-light);
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.breadcrumb a {
+  color: var(--gold);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.breadcrumb a:hover {
+  color: var(--gold-light);
+  text-decoration: underline;
+}
+
+.breadcrumb .separator {
+  color: var(--border);
+  font-size: 0.85rem;
+}
+
+.breadcrumb .current {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.dash-login-prompt {
+  text-align: center;
+  padding: 4rem 2rem;
+  font-style: italic;
+  color: var(--ink-light);
+  font-size: 1.15rem;
+}
+
+.dash-login-prompt a {
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.dash-login-prompt a:hover {
+  text-decoration: underline;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.25rem 1.5rem;
+  background: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 2px 10px var(--shadow);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px var(--shadow);
+  border-color: var(--gold);
+}
+
+.card .card-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ink);
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.03em;
+}
+
+.card .card-detail {
+  font-size: 0.9rem;
+  color: var(--ink-light);
+  line-height: 1.4;
+}
+
+.card .card-badge {
+  display: inline-block;
+  font-family: 'Cinzel', serif;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.5rem;
+  border-radius: 2px;
+  margin-top: 0.5rem;
+  background: rgba(184, 134, 11, 0.12);
+  color: var(--gold);
+  border: 1px solid rgba(184, 134, 11, 0.25);
+}
+
+.card .card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  margin-bottom: 0.5rem;
+}
+
+/* ─── Config Form ─── */
+
+.config-section {
+  margin-bottom: 2rem;
+}
+
+.config-section-title {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.config-var {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid rgba(196, 168, 107, 0.15);
+}
+
+.config-var:last-child {
+  border-bottom: none;
+}
+
+.config-label {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  padding-top: 0.3rem;
+}
+
+.config-label .var-desc {
+  display: block;
+  font-family: 'Crimson Pro', serif;
+  font-weight: 300;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--ink-light);
+  margin-top: 0.15rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.config-control input[type="text"],
+.config-control input[type="number"],
+.config-control textarea,
+.config-control select {
+  font-family: 'Crimson Pro', serif;
+  font-size: 0.95rem;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.45rem 0.6rem;
+  width: 100%;
+  max-width: 400px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.config-control input:focus,
+.config-control textarea:focus,
+.config-control select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(184, 134, 11, 0.15);
+}
+
+.config-control input:disabled,
+.config-control textarea:disabled,
+.config-control select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: rgba(200, 200, 200, 0.2);
+}
+
+.config-control textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+.config-control .slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 400px;
+}
+
+.config-control input[type="range"] {
+  flex: 1;
+  accent-color: var(--gold);
+}
+
+.config-control .slider-val {
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 50px;
+  text-align: right;
+  color: var(--ink);
+}
+
+.config-control .checkbox-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.3rem;
+}
+
+.config-control input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+
+.config-control .readonly-val {
+  font-family: 'Crimson Pro', serif;
+  font-size: 0.95rem;
+  color: var(--ink-light);
+  padding-top: 0.3rem;
+  font-style: italic;
+}
+
+/* Table control */
+.table-control {
+  max-width: 500px;
+}
+
+.table-control .table-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.table-control .table-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.table-control .table-row input {
+  font-family: 'Crimson Pro', serif;
+  font-size: 0.9rem;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.35rem 0.5rem;
+  flex: 1;
+}
+
+.table-control .table-row input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(184, 134, 11, 0.15);
+}
+
+.table-control .btn-remove-row {
+  background: none;
+  border: 1px solid rgba(139, 26, 26, 0.3);
+  color: var(--accent);
+  font-size: 0.85rem;
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.table-control .btn-remove-row:hover {
+  background: rgba(139, 26, 26, 0.1);
+}
+
+.table-control .btn-add-row {
+  font-family: 'Cinzel', serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--ink-light);
+  padding: 0.35rem 0.8rem;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.table-control .btn-add-row:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* Save / Back buttons */
+.form-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.btn-save {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--gold);
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1.8rem;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-save:hover {
+  background: var(--gold-light);
+}
+
+.btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-back {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  color: var(--ink-light);
+  border: 1px solid var(--border);
+  padding: 0.6rem 1.4rem;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.btn-back:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* Queue list within channel config */
+.queue-list {
+  margin-top: 1.5rem;
+}
+
+.queue-list h3 {
+  margin-bottom: 0.75rem;
+}
+
+.queue-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.6rem 1rem;
+  background: rgba(255, 255, 255, 0.35);
+  margin-right: 0.75rem;
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s;
+}
+
+.queue-card:hover {
+  border-color: var(--gold);
+  transform: translateY(-1px);
+}
+
+.queue-card .q-name {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.03em;
+}
+
+.queue-card .q-info {
+  font-size: 0.85rem;
+  color: var(--ink-light);
+}
+
+/* ─── Toast Notifications ─── */
+
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  pointer-events: none;
+}
+
+.toast {
+  font-family: 'Crimson Pro', serif;
+  font-size: 0.95rem;
+  padding: 0.7rem 1.2rem;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  animation: toast-in 0.3s ease forwards;
+  max-width: 380px;
+}
+
+.toast.toast-success {
+  background: #1a6b1a;
+  color: #fff;
+  border: 1px solid #2a8b2a;
+}
+
+.toast.toast-error {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent-glow);
+}
+
+.toast.toast-info {
+  background: var(--header-bg);
+  color: var(--parchment);
+  border: 1px solid var(--gold);
+}
+
+.toast.toast-fade-out {
+  animation: toast-out 0.3s ease forwards;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(20px); }
+}
+
+/* ─── Footer ─── */
+
+footer {
+  text-align: center;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--ink-light);
+  font-style: italic;
+}
+
+/* ─── Responsive ─── */
+
+@media (max-width: 768px) {
+  .config-var {
+    grid-template-columns: 1fr;
+  }
+  .top-nav {
+    padding: 0 0.75rem;
+  }
+  .nav-brand {
+    font-size: 1rem;
+    margin-right: 1rem;
+  }
+  .nav-link {
+    font-size: 0.7rem;
+    padding: 0.4rem 0.6rem;
+  }
+  .container {
+    padding: 1.5rem 1rem 2rem;
+  }
+  h1 {
+    font-size: 1.6rem;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- Navigation Bar -->
+<nav class="top-nav">
+  <div class="nav-brand">Namma PUB</div>
+  <div class="nav-links">
+    <a href="#" class="nav-link active" data-page="civ-stats" onclick="showPage('civ-stats'); return false;">Civ Stats</a>
+    <a href="#" class="nav-link" data-page="dashboard" onclick="showPage('dashboard'); return false;">Dashboard</a>
+  </div>
+  <div class="nav-auth" id="auth-area"></div>
+</nav>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Page 1: Civ Stats -->
+<div class="page active" id="page-civ-stats">
+  <div class="container">
+    <header>
+      <h1>Civilization Statistics</h1>
+      <div class="subtitle">Namma PUB — Pickup Game Performance Analysis</div>
+    </header>
+
+    <div class="table-wrap">
+      <table id="stats-table">
+        <thead>
+          <tr class="col-group-row" id="group-row">
+            <th class="col-group-label" colspan="3">Overall</th>
+            <th class="col-group-label" colspan="2">Player Elo &#8805; 1000</th>
+            <th class="col-group-label" colspan="2">Player Elo &lt; 1000</th>
+            <th class="col-group-label" colspan="2">Team Avg &#8805; 1100</th>
+            <th class="col-group-label" colspan="2">Team Avg &lt; 1100</th>
+          </tr>
+          <tr id="header-row"></tr>
+        </thead>
+        <tbody id="table-body">
+          <tr><td colspan="11" class="loading">Loading statistics...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="anomalies" id="anomalies-section" style="display:none;">
+      <h2>Anomalies</h2>
+      <div class="subtitle" style="margin-bottom:0.5rem;">Civs that perform significantly differently across elo brackets (&#8805;15% winrate gap, min 20 games in each bracket)</div>
+      <div id="anomaly-grid" class="anomaly-grid"></div>
+    </div>
+
+    <footer>Data sourced from PUB bot matches &amp; AoE2 Companion API</footer>
+  </div>
+</div>
+
+<!-- Page 2: Dashboard -->
+<div class="page" id="page-dashboard">
+  <div class="container">
+    <div id="dash-breadcrumb" class="breadcrumb"></div>
+    <div id="dash-content">
+      <div class="loading">Loading dashboard...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ─── Global State ─── */
+let currentUser = null;
+let currentPage = 'civ-stats';
+
+// Civ stats state
+const COLUMNS = [
+  { key: 'civ', label: 'Civilization', type: 'string' },
+  { key: 'games', label: 'Games', type: 'number' },
+  { key: 'winrate', label: 'Win %', type: 'number' },
+  { key: 'games_player_above', label: 'Games', type: 'number' },
+  { key: 'winrate_player_above', label: 'Win %', type: 'number' },
+  { key: 'games_player_below', label: 'Games', type: 'number' },
+  { key: 'winrate_player_below', label: 'Win %', type: 'number' },
+  { key: 'games_team_above', label: 'Games', type: 'number' },
+  { key: 'winrate_team_above', label: 'Win %', type: 'number' },
+  { key: 'games_team_below', label: 'Games', type: 'number' },
+  { key: 'winrate_team_below', label: 'Win %', type: 'number' },
+];
+
+const MIN_ANOMALY_GAMES = 20;
+const ANOMALY_GAP = 0.15;
+
+let civData = [];
+let sortCol = 'civ';
+let sortAsc = true;
+
+// Dashboard state
+let dashGuildId = null;
+let dashGuildName = null;
+let dashChannelId = null;
+let dashChannelName = null;
+let dashQueueName = null;
+
+/* ─── Utility Functions ─── */
+
+function esc(s) {
+  if (s === null || s === undefined) return '';
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(String(s)));
+  return div.innerHTML.replace(/'/g, '&#39;');
+}
+
+async function authFetch(url, options) {
+  var resp = await fetch(url, options);
+  if (resp.status === 401) {
+    currentUser = null;
+    renderAuthArea();
+    var content = document.getElementById('dash-content');
+    if (content) {
+      content.innerHTML = '<div class="dash-login-prompt">Session expired. Please <a href="/auth/login">login again</a>.</div>';
+    }
+    throw new Error('Session expired');
+  }
+  return resp;
+}
+
+/* ─── Toast Notifications ─── */
+
+function showToast(msg, type) {
+  type = type || 'info';
+  var container = document.getElementById('toast-container');
+  var toast = document.createElement('div');
+  toast.className = 'toast toast-' + type;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.classList.add('toast-fade-out');
+    setTimeout(function() {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, 3500);
+}
+
+/* ─── Navigation ─── */
+
+function showPage(page) {
+  currentPage = page;
+  document.querySelectorAll('.page').forEach(function(el) {
+    el.classList.remove('active');
+  });
+  document.querySelectorAll('.nav-link').forEach(function(el) {
+    el.classList.remove('active');
+    if (el.dataset.page === page) el.classList.add('active');
+  });
+  var pageEl = document.getElementById('page-' + page);
+  if (pageEl) pageEl.classList.add('active');
+
+  if (page === 'dashboard') {
+    loadDashboard();
+  }
+}
+
+/* ─── Auth ─── */
+
+async function checkAuth() {
+  try {
+    var resp = await fetch('/api/me');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    if (data.logged_in) {
+      currentUser = {
+        user_id: data.user_id,
+        username: data.username,
+        avatar: data.avatar,
+        oauth_enabled: data.oauth_enabled,
+      };
+    } else {
+      currentUser = null;
+      if (data.oauth_enabled) {
+        currentUser = { oauth_enabled: true, logged_in: false };
+      }
+    }
+  } catch (e) {
+    currentUser = null;
+  }
+  renderAuthArea();
+}
+
+function renderAuthArea() {
+  var area = document.getElementById('auth-area');
+  if (!currentUser) {
+    area.innerHTML = '';
+    return;
+  }
+  if (currentUser.logged_in === false && currentUser.oauth_enabled) {
+    area.innerHTML = '<a class="btn-login" href="/auth/login">Login with Discord</a>';
+    return;
+  }
+  if (currentUser.username) {
+    area.innerHTML =
+      '<span class="username">' + esc(currentUser.username) + '</span>' +
+      '<a class="btn-logout" href="/auth/logout">Logout</a>';
+  } else {
+    area.innerHTML = '';
+  }
+}
+
+/* ─── Civ Stats ─── */
+
+function wrClass(v) {
+  if (v >= 0.55) return 'wr wr-high';
+  if (v >= 0.45) return 'wr wr-mid';
+  return 'wr wr-low';
+}
+
+function fmtWr(v) {
+  return (v * 100).toFixed(1) + '%';
+}
+
+function wrSpan(v) {
+  var cls = v >= 0.55 ? 'high' : v < 0.45 ? 'low' : '';
+  return '<span class="wr-val ' + cls + '">' + fmtWr(v) + '</span>';
+}
+
+function buildHeaders() {
+  var row = document.getElementById('header-row');
+  row.innerHTML = '';
+  COLUMNS.forEach(function(col) {
+    var th = document.createElement('th');
+    th.textContent = col.label;
+    var arrow = document.createElement('span');
+    arrow.className = 'sort-arrow';
+    arrow.textContent = '\u25B2';
+    th.appendChild(arrow);
+    th.addEventListener('click', function() { sortBy(col.key); });
+    th.dataset.col = col.key;
+    row.appendChild(th);
+  });
+  updateSortIndicators();
+}
+
+function updateSortIndicators() {
+  document.querySelectorAll('#header-row th').forEach(function(th) {
+    th.classList.remove('sort-asc', 'sort-desc');
+    if (th.dataset.col === sortCol) {
+      th.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+    }
+  });
+}
+
+function sortBy(col) {
+  if (sortCol === col) {
+    sortAsc = !sortAsc;
+  } else {
+    sortCol = col;
+    sortAsc = col === 'civ';
+  }
+  updateSortIndicators();
+  renderCivTable();
+}
+
+function renderCivTable() {
+  var tbody = document.getElementById('table-body');
+  var colDef = COLUMNS.find(function(c) { return c.key === sortCol; });
+  var sorted = civData.slice().sort(function(a, b) {
+    var va = a[sortCol], vb = b[sortCol];
+    if (colDef.type === 'string') {
+      va = (va || '').toLowerCase();
+      vb = (vb || '').toLowerCase();
+      return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    }
+    return sortAsc ? va - vb : vb - va;
+  });
+
+  tbody.innerHTML = sorted.map(function(row) {
+    var cells = COLUMNS.map(function(col) {
+      var v = row[col.key];
+      if (col.key === 'civ') return '<td>' + esc(v) + '</td>';
+      if (col.key.startsWith('winrate')) return '<td class="' + wrClass(v) + '">' + fmtWr(v) + '</td>';
+      return '<td class="games">' + v + '</td>';
+    }).join('');
+    return '<tr>' + cells + '</tr>';
+  }).join('');
+}
+
+function findAnomalies() {
+  var anomalies = [];
+
+  civData.forEach(function(row) {
+    // Player elo anomaly
+    if (row.games_player_above >= MIN_ANOMALY_GAMES && row.games_player_below >= MIN_ANOMALY_GAMES) {
+      var gap = row.winrate_player_above - row.winrate_player_below;
+      if (Math.abs(gap) >= ANOMALY_GAP) {
+        anomalies.push({
+          civ: row.civ,
+          type: 'player_elo',
+          betterBelow: gap < 0,
+          above: row.winrate_player_above,
+          below: row.winrate_player_below,
+          gamesAbove: row.games_player_above,
+          gamesBelow: row.games_player_below,
+          gap: Math.abs(gap),
+        });
+      }
+    }
+
+    // Team elo anomaly
+    if (row.games_team_above >= MIN_ANOMALY_GAMES && row.games_team_below >= MIN_ANOMALY_GAMES) {
+      var gap = row.winrate_team_above - row.winrate_team_below;
+      if (Math.abs(gap) >= ANOMALY_GAP) {
+        anomalies.push({
+          civ: row.civ,
+          type: 'team_elo',
+          betterBelow: gap < 0,
+          above: row.winrate_team_above,
+          below: row.winrate_team_below,
+          gamesAbove: row.games_team_above,
+          gamesBelow: row.games_team_below,
+          gap: Math.abs(gap),
+        });
+      }
+    }
+  });
+
+  anomalies.sort(function(a, b) { return b.gap - a.gap; });
+  return anomalies;
+}
+
+function renderAnomalies() {
+  var anomalies = findAnomalies();
+  var section = document.getElementById('anomalies-section');
+  var grid = document.getElementById('anomaly-grid');
+
+  if (anomalies.length === 0) {
+    section.style.display = 'block';
+    grid.innerHTML = '<div class="no-anomalies">No significant anomalies found.</div>';
+    return;
+  }
+
+  section.style.display = 'block';
+  var thresholdLabel = function(a) { return a.type === 'player_elo' ? 'player elo' : 'team avg elo'; };
+
+  grid.innerHTML = anomalies.map(function(a) {
+    var tagClass = a.betterBelow ? 'better-below' : 'better-above';
+    var tagText = a.betterBelow
+      ? 'Stronger at lower ' + thresholdLabel(a)
+      : 'Stronger at higher ' + thresholdLabel(a);
+    var label = a.type === 'player_elo' ? 'Player Elo' : 'Team Avg';
+
+    var desc;
+    if (a.betterBelow) {
+      desc = label + ' below threshold: ' + wrSpan(a.below) + ' (' + a.gamesBelow + ' games)'
+        + '<br>' + label + ' above threshold: ' + wrSpan(a.above) + ' (' + a.gamesAbove + ' games)';
+    } else {
+      desc = label + ' above threshold: ' + wrSpan(a.above) + ' (' + a.gamesAbove + ' games)'
+        + '<br>' + label + ' below threshold: ' + wrSpan(a.below) + ' (' + a.gamesBelow + ' games)';
+    }
+
+    return '<div class="anomaly-card">'
+      + '<div class="tag ' + tagClass + '">' + tagText + '</div>'
+      + '<div class="civ-name">' + esc(a.civ) + '</div>'
+      + '<div class="anomaly-desc">' + desc + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+async function initCivStats() {
+  try {
+    var resp = await fetch('/api/civ-stats');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var result = await resp.json();
+    civData = result.civs;
+
+    // Update column group headers with actual thresholds
+    var gr = document.getElementById('group-row');
+    var ths = gr.querySelectorAll('th');
+    ths[1].textContent = 'Player Elo \u2265 ' + result.player_threshold;
+    ths[2].textContent = 'Player Elo < ' + result.player_threshold;
+    ths[3].textContent = 'Team Avg \u2265 ' + result.team_threshold;
+    ths[4].textContent = 'Team Avg < ' + result.team_threshold;
+
+    buildHeaders();
+    renderCivTable();
+    renderAnomalies();
+  } catch (e) {
+    document.getElementById('table-body').innerHTML =
+      '<tr><td colspan="11" class="error">Failed to load data: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+/* ─── Dashboard ─── */
+
+function renderBreadcrumb() {
+  var bc = document.getElementById('dash-breadcrumb');
+  var parts = [];
+
+  if (!dashGuildId) {
+    // At root — no breadcrumb needed
+    bc.innerHTML = '';
+    return;
+  }
+
+  parts.push('<a onclick="resetDashboard(); return false;" href="#">Dashboard</a>');
+
+  if (dashGuildId && !dashChannelId) {
+    parts.push('<span class="current">' + esc(dashGuildName) + '</span>');
+  } else if (dashGuildId && dashChannelId && !dashQueueName) {
+    parts.push('<a onclick="selectGuild(\'' + esc(dashGuildId) + '\', \'' + esc(dashGuildName) + '\'); return false;" href="#">' + esc(dashGuildName) + '</a>');
+    parts.push('<span class="current">#' + esc(dashChannelName) + '</span>');
+  } else if (dashQueueName) {
+    parts.push('<a onclick="selectGuild(\'' + esc(dashGuildId) + '\', \'' + esc(dashGuildName) + '\'); return false;" href="#">' + esc(dashGuildName) + '</a>');
+    parts.push('<a onclick="selectChannel(\'' + esc(dashChannelId) + '\', \'' + esc(dashChannelName) + '\'); return false;" href="#">#' + esc(dashChannelName) + '</a>');
+    parts.push('<span class="current">' + esc(dashQueueName) + '</span>');
+  }
+
+  bc.innerHTML = parts.join('<span class="separator">&#8250;</span>');
+}
+
+function resetDashboard() {
+  dashGuildId = null;
+  dashGuildName = null;
+  dashChannelId = null;
+  dashChannelName = null;
+  dashQueueName = null;
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  var content = document.getElementById('dash-content');
+
+  if (!currentUser || !currentUser.username) {
+    dashGuildId = null;
+    dashGuildName = null;
+    dashChannelId = null;
+    dashChannelName = null;
+    dashQueueName = null;
+    renderBreadcrumb();
+    content.innerHTML = '<div class="dash-login-prompt">Login with Discord to configure channels.<br><br><a href="/auth/login">Login with Discord</a></div>';
+    return;
+  }
+
+  // Reset drill-down state for fresh load
+  dashGuildId = null;
+  dashGuildName = null;
+  dashChannelId = null;
+  dashChannelName = null;
+  dashQueueName = null;
+  renderBreadcrumb();
+
+  content.innerHTML = '<div class="loading">Loading guilds...</div>';
+  try {
+    var resp = await authFetch('/api/guilds');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    var guilds = data.guilds;
+    if (guilds.length === 0) {
+      content.innerHTML = '<div class="dash-login-prompt">No configured guilds found for your account.</div>';
+      return;
+    }
+
+    var html = '<h2>Your Servers</h2><div class="card-grid">';
+    guilds.forEach(function(g) {
+      html += '<div class="card" onclick="selectGuild(\'' + esc(g.id) + '\', \'' + esc(g.name) + '\')">';
+      if (g.icon) {
+        html += '<img class="card-icon" src="' + esc(g.icon) + '" alt="">';
+      }
+      html += '<div class="card-title">' + esc(g.name) + '</div>';
+      html += '<div class="card-detail">' + g.channels + ' channel' + (g.channels !== 1 ? 's' : '') + '</div>';
+      if (g.is_admin) {
+        html += '<div class="card-badge">Admin</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<div class="error">Failed to load guilds: ' + esc(e.message) + '</div>';
+  }
+}
+
+async function selectGuild(id, name) {
+  dashGuildId = id;
+  dashGuildName = name;
+  dashChannelId = null;
+  dashChannelName = null;
+  dashQueueName = null;
+  renderBreadcrumb();
+
+  var content = document.getElementById('dash-content');
+  content.innerHTML = '<div class="loading">Loading channels...</div>';
+
+  try {
+    var resp = await authFetch('/api/guilds/' + id + '/channels');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    renderChannels(data.channels);
+  } catch (e) {
+    content.innerHTML = '<div class="error">Failed to load channels: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderChannels(channels) {
+  var content = document.getElementById('dash-content');
+  if (channels.length === 0) {
+    content.innerHTML = '<div class="dash-login-prompt">No configured channels in this server.</div>';
+    return;
+  }
+
+  var html = '<h2>Channels</h2><div class="card-grid">';
+  channels.forEach(function(ch) {
+    html += '<div class="card" onclick="selectChannel(\'' + esc(ch.id) + '\', \'' + esc(ch.name) + '\')">';
+    html += '<div class="card-title">#' + esc(ch.name) + '</div>';
+    html += '<div class="card-detail">' + ch.queues + ' queue' + (ch.queues !== 1 ? 's' : '') + '</div>';
+    if (ch.is_admin) {
+      html += '<div class="card-badge">Admin</div>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  content.innerHTML = html;
+}
+
+async function selectChannel(id, name) {
+  dashChannelId = id;
+  dashChannelName = name;
+  dashQueueName = null;
+  renderBreadcrumb();
+
+  var content = document.getElementById('dash-content');
+  content.innerHTML = '<div class="loading">Loading configuration...</div>';
+
+  try {
+    var [configResp, queuesResp] = await Promise.all([
+      authFetch('/api/channels/' + id + '/config'),
+      authFetch('/api/channels/' + id + '/queues'),
+    ]);
+    if (!configResp.ok) throw new Error('HTTP ' + configResp.status);
+    if (!queuesResp.ok) throw new Error('HTTP ' + queuesResp.status);
+
+    var [configData, queuesData] = await Promise.all([
+      configResp.json(),
+      queuesResp.json(),
+    ]);
+    if (configData.error) throw new Error(configData.error);
+    if (queuesData.error) throw new Error(queuesData.error);
+
+    renderChannelConfig(configData, queuesData.queues);
+  } catch (e) {
+    content.innerHTML = '<div class="error">Failed to load config: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderChannelConfig(configData, queues) {
+  var content = document.getElementById('dash-content');
+  var isAdmin = configData.is_admin;
+
+  var html = '<h2>#' + esc(configData.channel_name) + ' Configuration</h2>';
+  html += '<form id="channel-config-form" onsubmit="return false;">';
+  html += renderConfigForm('channel-config-form', configData.sections, configData.variables, isAdmin);
+  html += '</form>';
+
+  if (isAdmin) {
+    html += '<div class="form-actions">';
+    html += '<button class="btn-save" onclick="saveChannelConfig()">Save Changes</button>';
+    html += '</div>';
+  }
+
+  // Queue list
+  if (queues && queues.length > 0) {
+    html += '<div class="queue-list"><h3>Queues</h3>';
+    queues.forEach(function(q) {
+      html += '<div class="queue-card" onclick="selectQueue(\'' + esc(q.name) + '\')">';
+      html += '<span class="q-name">' + esc(q.name) + '</span>';
+      html += '<span class="q-info">' + q.players + '/' + q.size + (q.ranked ? ' (ranked)' : '') + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  content.innerHTML = html;
+}
+
+async function selectQueue(name) {
+  dashQueueName = name;
+  renderBreadcrumb();
+
+  var content = document.getElementById('dash-content');
+  content.innerHTML = '<div class="loading">Loading queue configuration...</div>';
+
+  try {
+    var resp = await authFetch('/api/channels/' + dashChannelId + '/queues/' + encodeURIComponent(name) + '/config');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    renderQueueConfig(data);
+  } catch (e) {
+    content.innerHTML = '<div class="error">Failed to load queue config: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderQueueConfig(data) {
+  var content = document.getElementById('dash-content');
+  var isAdmin = data.is_admin;
+
+  var html = '<h2>' + esc(data.queue_name) + ' Queue Configuration</h2>';
+  html += '<form id="queue-config-form" onsubmit="return false;">';
+  html += renderConfigForm('queue-config-form', data.sections, data.variables, isAdmin);
+  html += '</form>';
+
+  html += '<div class="form-actions">';
+  if (isAdmin) {
+    html += '<button class="btn-save" onclick="saveQueueConfig()">Save Changes</button>';
+  }
+  html += '<button class="btn-back" onclick="selectChannel(\'' + esc(dashChannelId) + '\', \'' + esc(dashChannelName) + '\')">Back to Channel</button>';
+  html += '</div>';
+
+  content.innerHTML = html;
+}
+
+function renderConfigForm(formId, sections, variables, isAdmin) {
+  var html = '';
+  var editable = isAdmin;
+
+  // Group variables by section
+  var sectionMap = {};
+  var sectionOrder = sections || [];
+
+  // Ensure we have an order
+  Object.keys(variables).forEach(function(name) {
+    var meta = variables[name];
+    var sec = meta.section || 'General';
+    if (!sectionMap[sec]) sectionMap[sec] = [];
+    sectionMap[sec].push({ name: name, meta: meta });
+    if (sectionOrder.indexOf(sec) === -1) sectionOrder.push(sec);
+  });
+
+  sectionOrder.forEach(function(sec) {
+    var vars = sectionMap[sec];
+    if (!vars || vars.length === 0) return;
+
+    html += '<div class="config-section">';
+    html += '<div class="config-section-title">' + esc(sec) + '</div>';
+    vars.forEach(function(item) {
+      html += '<div class="config-var">';
+      html += '<div class="config-label">' + esc(item.meta.display || item.name);
+      if (item.meta.description) {
+        html += '<span class="var-desc">' + esc(item.meta.description) + '</span>';
+      }
+      html += '</div>';
+      html += '<div class="config-control">';
+      if (item.meta.type === 'table') {
+        html += renderTableControl(item.name, item.meta, editable);
+      } else {
+        html += renderControl(item.name, item.meta, editable);
+      }
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  });
+
+  return html;
+}
+
+function renderControl(name, meta, editable) {
+  var val = meta.value;
+  var disabled = editable ? '' : ' disabled';
+
+  switch (meta.type) {
+    case 'bool':
+      var checked = (val === true || val === 'True' || val === 'true' || val === 1) ? ' checked' : '';
+      return '<div class="checkbox-wrap"><input type="checkbox" data-var="' + esc(name) + '" data-type="bool"' + checked + disabled + '></div>';
+
+    case 'option':
+      var opts = meta.options || [];
+      var html = '<select data-var="' + esc(name) + '" data-type="option"' + disabled + '>';
+      if (!meta.notnull) {
+        html += '<option value=""' + (val === null || val === undefined || val === '' ? ' selected' : '') + '>None</option>';
+      }
+      opts.forEach(function(opt) {
+        var sel = (String(val) === String(opt)) ? ' selected' : '';
+        html += '<option value="' + esc(opt) + '"' + sel + '>' + esc(opt) + '</option>';
+      });
+      html += '</select>';
+      return html;
+
+    case 'slider':
+      var numVal = parseFloat(val) || meta.min || 0;
+      var unit = meta.unit ? ' ' + esc(meta.unit) : '';
+      return '<div class="slider-wrap">' +
+        '<input type="range" data-var="' + esc(name) + '" data-type="slider" min="' + (meta.min || 0) + '" max="' + (meta.max || 100) + '" value="' + numVal + '"' + disabled +
+        ' oninput="this.nextElementSibling.textContent=this.value+\'' + unit.replace(/'/g, "\\'") + '\'">' +
+        '<span class="slider-val">' + numVal + unit + '</span>' +
+        '</div>';
+
+    case 'int':
+      var intVal = val !== null && val !== undefined ? val : '';
+      return '<input type="number" data-var="' + esc(name) + '" data-type="int" value="' + esc(intVal) + '"' + disabled + '>';
+
+    case 'duration':
+      var durVal = val !== null && val !== undefined ? val : '';
+      return '<input type="text" data-var="' + esc(name) + '" data-type="duration" value="' + esc(durVal) + '" placeholder="HH:MM:SS"' + disabled + '>';
+
+    case 'text':
+      var textVal = val !== null && val !== undefined ? val : '';
+      return '<textarea data-var="' + esc(name) + '" data-type="text"' + disabled + '>' + esc(textVal) + '</textarea>';
+
+    case 'str':
+    default:
+      var strVal = val !== null && val !== undefined ? val : '';
+      return '<input type="text" data-var="' + esc(name) + '" data-type="str" value="' + esc(strVal) + '"' + disabled + '>';
+  }
+}
+
+function renderTableControl(name, meta, editable) {
+  var disabled = editable ? '' : ' disabled';
+  var columns = meta.columns || ['value'];
+  var rows = meta.value || [];
+  if (!Array.isArray(rows)) rows = [];
+
+  var html = '<div class="table-control" data-var="' + esc(name) + '" data-type="table" data-columns=\'' + JSON.stringify(columns) + '\'>';
+
+  // Column headers if multi-column
+  if (columns.length > 1) {
+    html += '<div class="table-row" style="font-weight:600;font-size:0.82rem;margin-bottom:0.3rem;">';
+    columns.forEach(function(col) {
+      html += '<span style="flex:1;padding:0 0.2rem;">' + esc(col) + '</span>';
+    });
+    html += '<span style="width:28px"></span>';
+    html += '</div>';
+  }
+
+  html += '<div class="table-rows">';
+  rows.forEach(function(row) {
+    html += '<div class="table-row">';
+    if (Array.isArray(row)) {
+      row.forEach(function(cell, idx) {
+        html += '<input type="text" data-col="' + esc(columns[idx] || idx) + '" value="' + esc(cell) + '"' + disabled + '>';
+      });
+    } else if (typeof row === 'object' && row !== null) {
+      columns.forEach(function(col) {
+        html += '<input type="text" data-col="' + esc(col) + '" value="' + esc(row[col] || '') + '"' + disabled + '>';
+      });
+    } else {
+      html += '<input type="text" data-col="' + esc(columns[0]) + '" value="' + esc(row) + '"' + disabled + '>';
+    }
+    if (editable) {
+      html += '<button class="btn-remove-row" onclick="this.parentElement.remove()" title="Remove row">&times;</button>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+
+  if (editable) {
+    html += '<button class="btn-add-row" onclick="addTableRow(this.parentElement)">+ Add Row</button>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+function addTableRow(container) {
+  var columns = JSON.parse(container.dataset.columns || '["value"]');
+  var rowsDiv = container.querySelector('.table-rows');
+  var rowHtml = '<div class="table-row">';
+  columns.forEach(function(col) {
+    rowHtml += '<input type="text" data-col="' + esc(col) + '" value="">';
+  });
+  rowHtml += '<button class="btn-remove-row" onclick="this.parentElement.remove()" title="Remove row">&times;</button>';
+  rowHtml += '</div>';
+
+  var temp = document.createElement('div');
+  temp.innerHTML = rowHtml;
+  rowsDiv.appendChild(temp.firstChild);
+}
+
+function collectFormData(formId) {
+  var form = document.getElementById(formId);
+  if (!form) return {};
+  var data = {};
+
+  // Simple controls
+  form.querySelectorAll('[data-var]').forEach(function(el) {
+    var varName = el.dataset.var;
+    var varType = el.dataset.type;
+
+    if (varType === 'table') {
+      // Handled separately
+      return;
+    }
+
+    if (varType === 'bool') {
+      data[varName] = el.checked;
+    } else if (varType === 'slider' || varType === 'int') {
+      var numVal = el.value;
+      data[varName] = numVal === '' ? null : Number(numVal);
+    } else if (varType === 'option') {
+      data[varName] = el.value === '' ? null : el.value;
+    } else {
+      data[varName] = el.value || null;
+    }
+  });
+
+  // Table controls
+  form.querySelectorAll('.table-control[data-var]').forEach(function(container) {
+    var varName = container.dataset.var;
+    var columns = JSON.parse(container.dataset.columns || '["value"]');
+    var rows = [];
+    container.querySelectorAll('.table-rows .table-row').forEach(function(rowEl) {
+      var inputs = rowEl.querySelectorAll('input[data-col]');
+      if (columns.length === 1) {
+        // Single-column: return flat strings
+        if (inputs.length > 0 && inputs[0].value.trim()) {
+          rows.push(inputs[0].value.trim());
+        }
+      } else {
+        // Multi-column: return objects
+        var rowData = {};
+        var hasValue = false;
+        inputs.forEach(function(inp) {
+          rowData[inp.dataset.col] = inp.value.trim();
+          if (inp.value.trim()) hasValue = true;
+        });
+        if (hasValue) rows.push(rowData);
+      }
+    });
+    data[varName] = rows;
+  });
+
+  return data;
+}
+
+async function saveChannelConfig() {
+  var data = collectFormData('channel-config-form');
+  try {
+    var resp = await authFetch('/api/channels/' + dashChannelId + '/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) {
+      throw new Error(result.error || 'HTTP ' + resp.status);
+    }
+    showToast('Configuration saved successfully.', 'success');
+  } catch (e) {
+    showToast('Failed to save: ' + e.message, 'error');
+  }
+}
+
+async function saveQueueConfig() {
+  var data = collectFormData('queue-config-form');
+  try {
+    var resp = await authFetch('/api/channels/' + dashChannelId + '/queues/' + encodeURIComponent(dashQueueName) + '/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) {
+      throw new Error(result.error || 'HTTP ' + resp.status);
+    }
+    showToast('Queue configuration saved successfully.', 'success');
+  } catch (e) {
+    showToast('Failed to save: ' + e.message, 'error');
+  }
+}
+
+/* ─── Init ─── */
+
+checkAuth();
+initCivStats();
+</script>
+</body>
+</html>
