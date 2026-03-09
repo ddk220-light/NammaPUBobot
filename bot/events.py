@@ -1,10 +1,54 @@
+import csv
+import os
 import traceback
 from nextcord import ChannelType, Activity, ActivityType
 
 from core.client import dc
+from core.database import db
 from core.console import log
 from core.config import cfg
 import bot
+
+
+async def seed_ratings_from_csv():
+	"""One-time bulk seed of player ratings from data/qc_players.csv into all queue channels."""
+	csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'qc_players.csv')
+	if not os.path.exists(csv_path):
+		log.info("No data/qc_players.csv found, skipping rating seed.")
+		return
+
+	for qc in bot.queue_channels.values():
+		dest_id = qc.rating.channel_id
+		# Check if this channel already has rated players
+		existing = await db.select(['user_id'], 'qc_players', where={'channel_id': dest_id})
+		rated_existing = [p for p in existing if p.get('user_id')]
+		if len(rated_existing) > 0:
+			log.info(f"\tChannel {dest_id} already has {len(rated_existing)} players, skipping CSV seed.")
+			continue
+
+		with open(csv_path, newline='') as f:
+			reader = csv.DictReader(f)
+			rows = [r for r in reader if r.get('rating')]
+
+		if not rows:
+			continue
+
+		to_insert = []
+		for r in rows:
+			to_insert.append({
+				'channel_id': dest_id,
+				'user_id': int(r['user_id']),
+				'nick': r['nick'],
+				'rating': int(r['rating']),
+				'deviation': int(r['deviation']) if r.get('deviation') else 300,
+				'wins': int(r.get('wins') or 0),
+				'losses': int(r.get('losses') or 0),
+				'draws': int(r.get('draws') or 0),
+				'streak': int(r.get('streak') or 0),
+			})
+
+		await db.insert_many('qc_players', to_insert, on_dublicate='replace')
+		log.info(f"\tSeeded {len(to_insert)} player ratings from CSV into channel {dest_id}.")
 
 
 @dc.event
@@ -72,6 +116,7 @@ async def on_ready():
 			else:
 				log.info(f"\tCould not reach a text channel with id {channel_id}.")
 
+		await seed_ratings_from_csv()
 		await bot.load_state()
 		bot.bot_was_ready = True
 		bot.bot_ready = True
