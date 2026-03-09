@@ -11,7 +11,7 @@ from core.console import log
 from core.config import cfg
 
 import bot
-from bot.civ_stats import get_player_civs
+from bot.civ_stats import get_player_civs, pick_balanced_teams, get_today_civs
 
 
 from . import SlashContext, autocomplete, groups
@@ -718,4 +718,66 @@ async def _nick(
 		interaction: Interaction,
 		nick: str
 ): await run_slash(bot.commands.set_nick, interaction=interaction, nick=nick)
+
+
+@dc.slash_command(name='namma_randomize_civs', description='Generate balanced random civ pools for two teams.', **guild_kwargs)
+async def _randomize_civs(
+	interaction: Interaction,
+):
+	# Defer immediately — channel history fetch can be slow
+	await interaction.response.defer()
+
+	if not bot.bot_ready:
+		await interaction.followup.send(
+			embed=error_embed("Bot is still starting up, please try again later.")
+		)
+		return
+
+	try:
+		# Scan today's matches in this channel
+		played_civs = await get_today_civs(interaction.channel)
+
+		# Generate balanced teams
+		result = pick_balanced_teams(excluded_civs=played_civs)
+		if result is None:
+			await interaction.followup.send(
+				embed=error_embed("No civ data available. Check that data/civ_elo_stats.csv exists.")
+			)
+			return
+
+		team_a, team_b = result
+
+		def format_team(civs):
+			lines = []
+			for c in civs:
+				pct = f"{c['winrate'] * 100:.0f}%"
+				lines.append(f"{c['civ']} ({pct})")
+			return "\n".join(lines)
+
+		avg_a = sum(c["winrate"] for c in team_a) / len(team_a) * 100
+		avg_b = sum(c["winrate"] for c in team_b) / len(team_b) * 100
+
+		embed = Embed(title="Randomized Civ Pools", colour=Colour(0x50e3c2))
+		embed.add_field(
+			name=f"Team A  —  avg {avg_a:.1f}%",
+			value=format_team(team_a),
+			inline=True
+		)
+		embed.add_field(
+			name=f"Team B  —  avg {avg_b:.1f}%",
+			value=format_team(team_b),
+			inline=True
+		)
+
+		if played_civs:
+			embed.set_footer(text=f"Excluded {len(played_civs)} civs played today")
+		else:
+			embed.set_footer(text="No matches found today — all civs available")
+
+		await interaction.followup.send(embed=embed)
+
+	except Exception as e:
+		await interaction.followup.send(
+			embed=error_embed(f"Error: {str(e)}", title="Randomize Civs Error")
+		)
 
