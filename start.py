@@ -23,7 +23,10 @@ COMMANDS_URL = "{commands_url}"
 HELP = """{help_text}"""
 STATUS = "{status}"
 
-WS_ENABLE = False
+WS_ENABLE = {ws_enable}
+WS_HOST = "0.0.0.0"
+WS_PORT = {ws_port}
+WS_ROOT_URL = "{ws_root_url}"
 '''
 
 
@@ -74,6 +77,9 @@ def main():
         help_text=os.environ.get("HELP",
             "PUBobot2 is a discord bot for pickup games organisation."),
         status=os.environ.get("STATUS", "PUBobot2"),
+        ws_enable=os.environ.get("WS_ENABLE", "False"),
+        ws_port=os.environ.get("WS_PORT", os.environ.get("PORT", "8080")),
+        ws_root_url=os.environ.get("WS_ROOT_URL", ""),
     )
 
     with open("config.cfg", "w") as f:
