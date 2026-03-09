@@ -7,6 +7,8 @@ from aiohttp import web
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 
+MIN_GAMES = 50
+
 HTML_PAGE = '''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -80,6 +82,15 @@ h1 {
   margin-bottom: 0.3rem;
 }
 
+h2 {
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 1.4rem;
+  color: var(--ink);
+  letter-spacing: 0.06em;
+  margin-bottom: 1rem;
+}
+
 .subtitle {
   font-family: 'Crimson Pro', serif;
   font-style: italic;
@@ -150,7 +161,6 @@ th.sort-desc .sort-arrow {
   transform: rotate(180deg);
 }
 
-/* Column group borders */
 th:nth-child(1) { padding-left: 1rem; }
 th:nth-child(4), th:nth-child(6), th:nth-child(8), th:nth-child(10) {
   border-left: 1px solid rgba(196, 168, 107, 0.3);
@@ -183,7 +193,6 @@ tr:hover td {
   background: var(--row-hover);
 }
 
-/* Winrate coloring */
 td.wr { font-weight: 600; }
 td.wr-high { color: #1a6b1a; }
 td.wr-mid { color: var(--ink-light); }
@@ -220,6 +229,77 @@ td.games {
   font-weight: 600;
 }
 
+/* Anomalies section */
+.anomalies {
+  margin-top: 2.5rem;
+}
+
+.anomaly-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.anomaly-card {
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1rem 1.2rem;
+  background: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 2px 8px var(--shadow);
+}
+
+.anomaly-card .civ-name {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 0.4rem;
+  letter-spacing: 0.04em;
+}
+
+.anomaly-card .anomaly-desc {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--ink-light);
+}
+
+.anomaly-card .anomaly-desc .wr-val {
+  font-weight: 600;
+}
+
+.anomaly-card .anomaly-desc .wr-val.high { color: #1a6b1a; }
+.anomaly-card .anomaly-desc .wr-val.low { color: var(--accent); }
+
+.anomaly-card .tag {
+  display: inline-block;
+  font-family: 'Cinzel', serif;
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 2px;
+  margin-bottom: 0.5rem;
+}
+
+.tag.better-below {
+  background: rgba(26, 107, 26, 0.12);
+  color: #1a6b1a;
+  border: 1px solid rgba(26, 107, 26, 0.25);
+}
+
+.tag.better-above {
+  background: rgba(139, 26, 26, 0.08);
+  color: var(--accent);
+  border: 1px solid rgba(139, 26, 26, 0.2);
+}
+
+.no-anomalies {
+  text-align: center;
+  padding: 2rem;
+  font-style: italic;
+  color: var(--ink-light);
+}
+
 footer {
   text-align: center;
   margin-top: 2rem;
@@ -241,12 +321,12 @@ footer {
   <div class="table-wrap">
     <table id="stats-table">
       <thead>
-        <tr class="col-group-row">
+        <tr class="col-group-row" id="group-row">
           <th class="col-group-label" colspan="3">Overall</th>
-          <th class="col-group-label" colspan="2">Player Elo ≥ 1000</th>
+          <th class="col-group-label" colspan="2">Player Elo &#8805; 1000</th>
           <th class="col-group-label" colspan="2">Player Elo &lt; 1000</th>
-          <th class="col-group-label" colspan="2">Team Avg ≥ 1000</th>
-          <th class="col-group-label" colspan="2">Team Avg &lt; 1000</th>
+          <th class="col-group-label" colspan="2">Team Avg &#8805; 1100</th>
+          <th class="col-group-label" colspan="2">Team Avg &lt; 1100</th>
         </tr>
         <tr id="header-row"></tr>
       </thead>
@@ -254,6 +334,12 @@ footer {
         <tr><td colspan="11" class="loading">Loading statistics...</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div class="anomalies" id="anomalies-section" style="display:none;">
+    <h2>Anomalies</h2>
+    <div class="subtitle" style="margin-bottom:0.5rem;">Civs that perform significantly differently across elo brackets (&#8805;15% winrate gap, min 20 games in each bracket)</div>
+    <div id="anomaly-grid" class="anomaly-grid"></div>
   </div>
 
   <footer>Data sourced from PUB bot matches &amp; AoE2 Companion API</footer>
@@ -274,6 +360,9 @@ const COLUMNS = [
   { key: 'winrate_team_below', label: 'Win %', type: 'number' },
 ];
 
+const MIN_ANOMALY_GAMES = 20;
+const ANOMALY_GAP = 0.15;
+
 let data = [];
 let sortCol = 'civ';
 let sortAsc = true;
@@ -286,6 +375,11 @@ function wrClass(v) {
 
 function fmtWr(v) {
   return (v * 100).toFixed(1) + '%';
+}
+
+function wrSpan(v) {
+  const cls = v >= 0.55 ? 'high' : v < 0.45 ? 'low' : '';
+  return '<span class="wr-val ' + cls + '">' + fmtWr(v) + '</span>';
 }
 
 function buildHeaders() {
@@ -349,13 +443,105 @@ function renderTable() {
   }).join('');
 }
 
+function findAnomalies() {
+  const anomalies = [];
+
+  data.forEach(row => {
+    // Player elo anomaly
+    if (row.games_player_above >= MIN_ANOMALY_GAMES && row.games_player_below >= MIN_ANOMALY_GAMES) {
+      const gap = row.winrate_player_above - row.winrate_player_below;
+      if (Math.abs(gap) >= ANOMALY_GAP) {
+        anomalies.push({
+          civ: row.civ,
+          type: 'player_elo',
+          betterBelow: gap < 0,
+          above: row.winrate_player_above,
+          below: row.winrate_player_below,
+          gamesAbove: row.games_player_above,
+          gamesBelow: row.games_player_below,
+          gap: Math.abs(gap),
+        });
+      }
+    }
+
+    // Team elo anomaly
+    if (row.games_team_above >= MIN_ANOMALY_GAMES && row.games_team_below >= MIN_ANOMALY_GAMES) {
+      const gap = row.winrate_team_above - row.winrate_team_below;
+      if (Math.abs(gap) >= ANOMALY_GAP) {
+        anomalies.push({
+          civ: row.civ,
+          type: 'team_elo',
+          betterBelow: gap < 0,
+          above: row.winrate_team_above,
+          below: row.winrate_team_below,
+          gamesAbove: row.games_team_above,
+          gamesBelow: row.games_team_below,
+          gap: Math.abs(gap),
+        });
+      }
+    }
+  });
+
+  anomalies.sort((a, b) => b.gap - a.gap);
+  return anomalies;
+}
+
+function renderAnomalies() {
+  const anomalies = findAnomalies();
+  const section = document.getElementById('anomalies-section');
+  const grid = document.getElementById('anomaly-grid');
+
+  if (anomalies.length === 0) {
+    section.style.display = 'block';
+    grid.innerHTML = '<div class="no-anomalies">No significant anomalies found.</div>';
+    return;
+  }
+
+  section.style.display = 'block';
+  const thresholdLabel = (a) => a.type === 'player_elo' ? 'player elo' : 'team avg elo';
+
+  grid.innerHTML = anomalies.map(a => {
+    const tagClass = a.betterBelow ? 'better-below' : 'better-above';
+    const tagText = a.betterBelow
+      ? 'Stronger at lower ' + thresholdLabel(a)
+      : 'Stronger at higher ' + thresholdLabel(a);
+    const label = a.type === 'player_elo' ? 'Player Elo' : 'Team Avg';
+
+    let desc;
+    if (a.betterBelow) {
+      desc = label + ' below threshold: ' + wrSpan(a.below) + ' (' + a.gamesBelow + ' games)'
+        + '<br>' + label + ' above threshold: ' + wrSpan(a.above) + ' (' + a.gamesAbove + ' games)';
+    } else {
+      desc = label + ' above threshold: ' + wrSpan(a.above) + ' (' + a.gamesAbove + ' games)'
+        + '<br>' + label + ' below threshold: ' + wrSpan(a.below) + ' (' + a.gamesBelow + ' games)';
+    }
+
+    return '<div class="anomaly-card">'
+      + '<div class="tag ' + tagClass + '">' + tagText + '</div>'
+      + '<div class="civ-name">' + a.civ + '</div>'
+      + '<div class="anomaly-desc">' + desc + '</div>'
+      + '</div>';
+  }).join('');
+}
+
 async function init() {
   try {
     const resp = await fetch('/api/civ-stats');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    data = await resp.json();
+    const result = await resp.json();
+    data = result.civs;
+
+    // Update column group headers with actual thresholds
+    const gr = document.getElementById('group-row');
+    const ths = gr.querySelectorAll('th');
+    ths[1].textContent = 'Player Elo \\u2265 ' + result.player_threshold;
+    ths[2].textContent = 'Player Elo < ' + result.player_threshold;
+    ths[3].textContent = 'Team Avg \\u2265 ' + result.team_threshold;
+    ths[4].textContent = 'Team Avg < ' + result.team_threshold;
+
     buildHeaders();
     renderTable();
+    renderAnomalies();
   } catch (e) {
     document.getElementById('table-body').innerHTML =
       '<tr><td colspan="11" class="error">Failed to load data: ' + e.message + '</td></tr>';
@@ -380,29 +566,39 @@ async def handle_civ_stats(request):
 	rows = []
 	with open(csv_path, 'r') as f:
 		reader = csv.DictReader(f)
-		# Detect threshold from column names
-		threshold = 1000
+		# Detect thresholds from column names
+		player_threshold = 1000
+		team_threshold = 1100
 		for name in (reader.fieldnames or []):
 			if name.startswith('games_player_elo_above_'):
-				threshold = int(name.split('_')[-1])
-				break
+				player_threshold = int(name.split('_')[-1])
+			elif name.startswith('games_team_elo_above_'):
+				team_threshold = int(name.split('_')[-1])
 
+		pt, tt = player_threshold, team_threshold
 		for row in reader:
+			games = int(row['games'])
+			if games < MIN_GAMES:
+				continue
 			rows.append({
 				'civ': row['civ'],
-				'games': int(row['games']),
+				'games': games,
 				'winrate': float(row['winrate']),
-				'games_player_above': int(row.get(f'games_player_elo_above_{threshold}', 0)),
-				'winrate_player_above': float(row.get(f'winrate_player_elo_above_{threshold}', 0)),
-				'games_player_below': int(row.get(f'games_player_elo_below_{threshold}', 0)),
-				'winrate_player_below': float(row.get(f'winrate_player_elo_below_{threshold}', 0)),
-				'games_team_above': int(row.get(f'games_team_elo_above_{threshold}', 0)),
-				'winrate_team_above': float(row.get(f'winrate_team_elo_above_{threshold}', 0)),
-				'games_team_below': int(row.get(f'games_team_elo_below_{threshold}', 0)),
-				'winrate_team_below': float(row.get(f'winrate_team_elo_below_{threshold}', 0)),
+				'games_player_above': int(row.get(f'games_player_elo_above_{pt}', 0)),
+				'winrate_player_above': float(row.get(f'winrate_player_elo_above_{pt}', 0)),
+				'games_player_below': int(row.get(f'games_player_elo_below_{pt}', 0)),
+				'winrate_player_below': float(row.get(f'winrate_player_elo_below_{pt}', 0)),
+				'games_team_above': int(row.get(f'games_team_elo_above_{tt}', 0)),
+				'winrate_team_above': float(row.get(f'winrate_team_elo_above_{tt}', 0)),
+				'games_team_below': int(row.get(f'games_team_elo_below_{tt}', 0)),
+				'winrate_team_below': float(row.get(f'winrate_team_elo_below_{tt}', 0)),
 			})
 
-	return web.json_response(rows)
+	return web.json_response({
+		'civs': rows,
+		'player_threshold': player_threshold,
+		'team_threshold': team_threshold,
+	})
 
 
 def create_app():

@@ -6,9 +6,9 @@ Reads match_civ_details.csv (from civ_analysis.py) and joins with rating history
 to compute winrates at different elo thresholds.
 
 Usage:
-    python utils/civ_elo_stats.py                # Read ratings from DB
-    python utils/civ_elo_stats.py --csv          # Read ratings from CSV exports
-    python utils/civ_elo_stats.py --threshold 1200  # Custom elo cutoff
+    python utils/civ_elo_stats.py                          # Read ratings from DB
+    python utils/civ_elo_stats.py --csv                    # Read ratings from CSV exports
+    python utils/civ_elo_stats.py --player-threshold 1000 --team-threshold 1100
 """
 
 import asyncio
@@ -89,7 +89,7 @@ async def load_rating_history_from_db(pool):
 
 # -- Core logic ---------------------------------------------------------------
 
-def compute_civ_elo_stats(civ_details, nick_to_uid, rating_history, threshold):
+def compute_civ_elo_stats(civ_details, nick_to_uid, rating_history, player_threshold, team_threshold):
     """
     Join civ details with rating history, compute per-civ aggregates.
 
@@ -144,7 +144,7 @@ def compute_civ_elo_stats(civ_details, nick_to_uid, rating_history, threshold):
         s['wins'] += won
 
         if row['player_elo'] is not None:
-            if row['player_elo'] >= threshold:
+            if row['player_elo'] >= player_threshold:
                 s['games_player_above'] += 1
                 s['wins_player_above'] += won
             else:
@@ -153,7 +153,7 @@ def compute_civ_elo_stats(civ_details, nick_to_uid, rating_history, threshold):
 
         t_avg = team_avg.get((row['bot_match_id'], row['team']))
         if t_avg is not None:
-            if t_avg >= threshold:
+            if t_avg >= team_threshold:
                 s['games_team_above'] += 1
                 s['wins_team_above'] += won
             else:
@@ -163,15 +163,16 @@ def compute_civ_elo_stats(civ_details, nick_to_uid, rating_history, threshold):
     return dict(civ_stats)
 
 
-def write_csv(civ_stats, threshold):
+def write_csv(civ_stats, player_threshold, team_threshold):
     """Write civ_elo_stats.csv sorted alphabetically by civ."""
     output_path = os.path.join(DATA_DIR, 'civ_elo_stats.csv')
+    pt, tt = player_threshold, team_threshold
     fieldnames = [
         'civ', 'games', 'winrate',
-        f'games_player_elo_above_{threshold}', f'winrate_player_elo_above_{threshold}',
-        f'games_player_elo_below_{threshold}', f'winrate_player_elo_below_{threshold}',
-        f'games_team_elo_above_{threshold}', f'winrate_team_elo_above_{threshold}',
-        f'games_team_elo_below_{threshold}', f'winrate_team_elo_below_{threshold}',
+        f'games_player_elo_above_{pt}', f'winrate_player_elo_above_{pt}',
+        f'games_player_elo_below_{pt}', f'winrate_player_elo_below_{pt}',
+        f'games_team_elo_above_{tt}', f'winrate_team_elo_above_{tt}',
+        f'games_team_elo_below_{tt}', f'winrate_team_elo_below_{tt}',
     ]
 
     def wr(wins, games):
@@ -186,14 +187,14 @@ def write_csv(civ_stats, threshold):
                 'civ': civ,
                 'games': s['games'],
                 'winrate': wr(s['wins'], s['games']),
-                f'games_player_elo_above_{threshold}': s['games_player_above'],
-                f'winrate_player_elo_above_{threshold}': wr(s['wins_player_above'], s['games_player_above']),
-                f'games_player_elo_below_{threshold}': s['games_player_below'],
-                f'winrate_player_elo_below_{threshold}': wr(s['wins_player_below'], s['games_player_below']),
-                f'games_team_elo_above_{threshold}': s['games_team_above'],
-                f'winrate_team_elo_above_{threshold}': wr(s['wins_team_above'], s['games_team_above']),
-                f'games_team_elo_below_{threshold}': s['games_team_below'],
-                f'winrate_team_elo_below_{threshold}': wr(s['wins_team_below'], s['games_team_below']),
+                f'games_player_elo_above_{pt}': s['games_player_above'],
+                f'winrate_player_elo_above_{pt}': wr(s['wins_player_above'], s['games_player_above']),
+                f'games_player_elo_below_{pt}': s['games_player_below'],
+                f'winrate_player_elo_below_{pt}': wr(s['wins_player_below'], s['games_player_below']),
+                f'games_team_elo_above_{tt}': s['games_team_above'],
+                f'winrate_team_elo_above_{tt}': wr(s['wins_team_above'], s['games_team_above']),
+                f'games_team_elo_below_{tt}': s['games_team_below'],
+                f'winrate_team_elo_below_{tt}': wr(s['wins_team_below'], s['games_team_below']),
             })
 
     return output_path
@@ -205,11 +206,13 @@ async def async_main():
     import argparse
     parser = argparse.ArgumentParser(description="Generate civ winrate stats by elo brackets.")
     parser.add_argument("--csv", action="store_true", help="Read from CSV exports instead of MySQL")
-    parser.add_argument("--threshold", type=int, default=1000, help="Elo cutoff (default: 1000)")
+    parser.add_argument("--player-threshold", type=int, default=1000, help="Player elo cutoff (default: 1000)")
+    parser.add_argument("--team-threshold", type=int, default=1100, help="Team avg elo cutoff (default: 1100)")
     args = parser.parse_args()
 
-    threshold = args.threshold
-    print(f"Generating civ elo stats (threshold: {threshold})...\n")
+    player_threshold = args.player_threshold
+    team_threshold = args.team_threshold
+    print(f"Generating civ elo stats (player threshold: {player_threshold}, team threshold: {team_threshold})...\n")
 
     print("Loading match_civ_details.csv...")
     civ_details = load_match_civ_details()
@@ -238,9 +241,9 @@ async def async_main():
     print(f"  {len(rating_history)} rating history entries")
 
     print("\nComputing civ stats by elo brackets...")
-    civ_stats = compute_civ_elo_stats(civ_details, nick_to_uid, rating_history, threshold)
+    civ_stats = compute_civ_elo_stats(civ_details, nick_to_uid, rating_history, player_threshold, team_threshold)
 
-    output_path = write_csv(civ_stats, threshold)
+    output_path = write_csv(civ_stats, player_threshold, team_threshold)
     print(f"\nSaved {len(civ_stats)} civs to {output_path}")
 
     total_games = sum(s['games'] for s in civ_stats.values())
