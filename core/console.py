@@ -37,9 +37,12 @@ class Log:
 		# Have to do this encoding/decoding bullshit because python fails to encode some symbols by default
 		string = string.encode(sys.stdout.encoding, 'ignore').decode(sys.stdout.encoding)
 
-		# Save user input line, print string and then user input line
-		line_buffer = readline.get_line_buffer()
-		sys.stdout.write("\r\n\033[F\033[K" + string + '\r\n>' + line_buffer)
+		if sys.stdin.isatty():
+			# Save user input line, print string and then user input line
+			line_buffer = readline.get_line_buffer()
+			sys.stdout.write("\r\n\033[F\033[K" + string + '\r\n>' + line_buffer)
+		else:
+			print(string, flush=True)
 
 	def log(self, data, log_level):
 		string = str(data).encode(sys.stdout.encoding, 'ignore').decode(sys.stdout.encoding)
@@ -90,7 +93,8 @@ alive = True
 log = Log()
 user_input_queue = Queue()
 
-# Init user console
-thread = Thread(target=user_input, name="user_input")
-thread.daemon = True
-thread.start()
+# Init user console (skip in non-interactive environments like containers)
+if sys.stdin.isatty():
+	thread = Thread(target=user_input, name="user_input")
+	thread.daemon = True
+	thread.start()
