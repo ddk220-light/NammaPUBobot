@@ -152,7 +152,7 @@ class QueueChannel:
 				display="Initial rating",
 				section="Rating",
 				description="Set player's initial rating.",
-				default=1500,
+				default=1000,
 				verify=lambda x: 0 <= x <= 10000,
 				verify_message="Initial rating must be between 0 and 10000",
 				notnull=True,
@@ -174,7 +174,7 @@ class QueueChannel:
 				display="Minimum deviation",
 				section="Rating",
 				description="Set players minimum deviation value. If not set, rating changes may seek to 0 over time.",
-				default=75,
+				default=100,
 				verify=lambda x: 1 <= x <= 3000,
 				verify_message="Rating minimum deviation must be between 1 and 3000",
 				on_change=bot.update_rating_system
@@ -245,7 +245,7 @@ class QueueChannel:
 				display="Rating decay",
 				section="Rating",
 				description="Set weekly rating decay until a nearest rank is met. Applies only to inactive players.",
-				default=15,
+				default=10,
 				verify=lambda x: 0 <= x <= 100,
 				verify_message="Rating decay must be between 0 and 100",
 				on_change=bot.update_rating_system
@@ -264,14 +264,15 @@ class QueueChannel:
 				"lb_min_matches",
 				display="Leaderboard min matches",
 				section="Leaderboard",
-				description="Set a minimum amount of played matches required for a player to be shown in the !leaderboard."
+				description="Set a minimum amount of played matches required for a player to be shown in the !leaderboard.",
+				default=40
 			),
 			Variables.DurationVar(
 				"lb_last_match_limit",
 				display="Leaderboard last match limit",
 				section="Leaderboard",
 				description="Hide players from the leaderboard that hasn't played a single match for specified duration.",
-				default=None,
+				default=2592000,
 				verify=lambda d: 0 < d <= 311040000,  # 10 years max
 				verify_message="Leaderboard last match limit must be less than 10 years."
 			),
@@ -280,7 +281,7 @@ class QueueChannel:
 				display="Set ratings to nicks",
 				section="Leaderboard",
 				description="Add [rating] prefix to guild members nicknames.",
-				default=0,
+				default=1,
 				notnull=True
 			),
 			Variables.BoolVar(
@@ -294,21 +295,22 @@ class QueueChannel:
 			VariableTable(
 				'ranks', display="Rating ranks", section="Leaderboard",
 				variables=[
-					Variables.StrVar("rank", default="〈E〉"),
-					Variables.IntVar("rating", default=1200, description="The rank will be given on this rating or higher."),
+					Variables.StrVar("rank", default="〈F〉"),
+					Variables.IntVar("rating", default=0, description="The rank will be given on this rating or higher."),
 					Variables.RoleVar("role", description="Assign a guild role to the rank owners.")
 				],
 				default=[
-					dict(rank="〈G〉", rating=0, role=None),
-					dict(rank="〈F〉", rating=1000, role=None),
-					dict(rank="〈E〉", rating=1200, role=None),
-					dict(rank="〈D〉", rating=1400, role=None),
-					dict(rank="〈C〉", rating=1600, role=None),
-					dict(rank="〈B〉", rating=1800, role=None),
-					dict(rank="〈A〉", rating=1900, role=None),
-					dict(rank="〈★〉", rating=2000, role=None)
+					dict(rank="〈F〉", rating=0, role=None),
+					dict(rank="〈D〉", rating=500, role=None),
+					dict(rank="〈C〉", rating=1000, role=None),
+					dict(rank="〈B〉", rating=1200, role=None),
+					dict(rank="〈A〉", rating=1400, role=None),
+					dict(rank="〈★〉", rating=1600, role=None),
+					dict(rank="〈★★〉", rating=1800, role=None),
+					dict(rank="〈★★★〉", rating=2000, role=None),
+					dict(rank="〈$〉", rating=2500, role=None)
 				],
-				blank=dict(rank="〈G〉", rating=0, role=None)
+				blank=dict(rank="〈F〉", rating=0, role=None)
 			)
 		]
 	)
