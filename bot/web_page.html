@@ -2,1056 +2,603 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PUBobot2</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>PUBobot2 web-ui</title>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500&family=Roboto:wght@300;400;700&display=swap');
 
-:root {
-  --bg-darkest: #1a1a2e;
-  --bg-dark: #23233d;
-  --bg-panel: #2a2a45;
-  --bg-input: #1e1e36;
-  --bg-hover: #32325a;
-  --text: #dcdde1;
-  --text-dim: #8e8ea0;
-  --text-bright: #ffffff;
-  --accent: #5865f2;
-  --accent-hover: #4752c4;
-  --green: #57a773;
-  --green-hover: #4c9466;
-  --red: #d94444;
-  --red-hover: #c03b3b;
-  --border: #3a3a5c;
-  --border-light: #444466;
-  --toggle-off: #555577;
-  --toggle-on: #5865f2;
-  --sidebar-w: 260px;
-  --topbar-h: 48px;
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background: var(--bg-darkest);
-  color: var(--text);
-  min-height: 100vh;
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-/* ─── Top Bar ─── */
-.topbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--topbar-h);
-  background: var(--bg-dark);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 1rem;
-  z-index: 100;
-}
-
-.topbar-brand {
-  font-weight: 700;
-  font-size: 1rem;
-  color: var(--text-bright);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.topbar-brand .version {
-  font-size: 0.7rem;
-  font-weight: 400;
-  color: var(--text-dim);
-  background: var(--bg-panel);
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-}
-
-.topbar-nav {
-  display: flex;
-  gap: 0.25rem;
-  margin-left: 2rem;
-}
-
-.topbar-nav a {
-  color: var(--text-dim);
-  text-decoration: none;
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 0.35rem 0.75rem;
-  border-radius: 4px;
-  transition: background 0.15s, color 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.topbar-nav a:hover { background: var(--bg-hover); color: var(--text); }
-.topbar-nav a.active { background: var(--accent); color: #fff; }
-
-.topbar-auth {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.topbar-auth .username {
-  color: var(--text-dim);
-  font-size: 0.85rem;
-}
-
-.topbar-auth .btn-login {
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  padding: 0.3rem 0.8rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background 0.15s;
-}
-
-.topbar-auth .btn-login:hover { background: var(--accent-hover); }
-
-.topbar-auth .btn-logout {
-  background: transparent;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-  padding: 0.25rem 0.6rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background 0.15s, color 0.15s;
-}
-
-.topbar-auth .btn-logout:hover { background: var(--bg-hover); color: var(--text); }
+* { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Roboto', sans-serif; font-size: 16px; }
+a { text-decoration: none; outline: none; }
+body { margin: 0; padding: 0; overflow: hidden; }
 
 /* ─── Layout ─── */
-.app-layout {
-  display: flex;
-  margin-top: var(--topbar-h);
-  min-height: calc(100vh - var(--topbar-h));
+#main_layout {
+  display: flex; flex-direction: column; position: absolute;
+  min-height: 100%; min-width: 900px; width: 100%;
 }
 
-/* ─── Sidebar ─── */
-.sidebar {
-  width: var(--sidebar-w);
-  min-width: var(--sidebar-w);
-  background: var(--bg-dark);
-  border-right: 1px solid var(--border);
-  padding: 1rem 0;
-  overflow-y: auto;
-  position: sticky;
-  top: var(--topbar-h);
-  height: calc(100vh - var(--topbar-h));
+#main_app {
+  display: flex; flex-direction: row; align-items: stretch; flex: 1 1 auto;
 }
 
-.sidebar-section {
-  padding: 0.5rem 0.75rem;
+/* ─── Title Bar ─── */
+#titlebar {
+  display: flex; align-items: center; z-index: 5;
+  height: 48px; color: white; background: #484c54;
+  box-shadow: 0 5px 5px -3px rgba(0,0,0,0.5);
 }
 
-.sidebar-label {
-  font-size: 0.65rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
-  margin-bottom: 0.4rem;
-  padding: 0 0.5rem;
+#tb-botinfo {
+  font-family: 'Oswald', sans-serif; font-weight: 400;
+  font-size: 20px; letter-spacing: 1px; padding-left: 12px;
 }
 
-.sidebar-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.75rem;
-  border-radius: 4px;
+#tb-botinfo-version {
+  padding: 7px 10px 0 5px;
+  font-family: 'Oswald', sans-serif; font-weight: 300; font-size: 14px;
+}
+
+.tb-link {
+  display: flex; align-items: center;
+  color: #85868a; background: #2f3136; border-radius: 10px;
+  cursor: pointer; padding: 5px 10px; margin: 0 0 0 10px;
+  font-size: 14px; transition: color 0.15s;
+}
+
+.tb-link:hover { color: white; }
+.tb-link img { height: 20px; margin-right: 5px; }
+
+#tb-whitespace { flex: 2 1 auto; }
+
+#tb-user { color: white; padding-right: 5px; }
+#tb-user * { font-family: 'Roboto', sans-serif; font-weight: 300; font-size: 14px; }
+
+#tb-logout { padding: 3px 10px 0 10px; }
+#tb-logout img { width: 20px; height: 20px; cursor: pointer; }
+
+/* ─── Guild Nav (left icon strip) ─── */
+#guild_nav {
+  display: flex; flex-direction: column; align-items: center;
+  width: 72px; min-width: 72px; padding-top: 15px;
+  background: #202225; overflow-y: auto;
+}
+
+.gn_guild, .gn_action {
+  display: flex; align-items: center;
+  width: 48px; height: 48px; margin: 5px; position: relative;
   cursor: pointer;
-  font-size: 0.85rem;
-  color: var(--text-dim);
+}
+
+.gn_guild img, .gn_action img { width: 48px; height: 48px; }
+.gn_guild img { border-radius: 50%; transition: border-radius 0.15s; }
+.gn_guild:hover img { border-radius: 25%; }
+.gn_guild.selected img { border-radius: 25%; border-left: 3px white solid; }
+
+.gn_guild span, .gn_action span {
+  z-index: 10; visibility: hidden; position: absolute; left: 58px;
+  background: #111; color: white; border-radius: 6px; padding: 5px 8px;
+  white-space: nowrap; font-size: 13px; pointer-events: none;
+}
+
+.gn_guild:hover span, .gn_action:hover span { visibility: visible; }
+
+#guild_nav hr { border: 1px gray solid; width: 50%; margin: 10px 0; }
+.gn_action img:hover { filter: brightness(125%); }
+
+/* ─── Guild Menu (channel/queue sidebar) ─── */
+#guild_menu {
+  display: flex; flex-direction: column; align-items: center;
+  width: 240px; min-width: 240px; background: #2f3136;
+  padding-top: 25px; overflow-y: auto;
+}
+
+.gm_channel, .gm_queue, .gm_link {
+  display: flex; align-items: center;
+  height: 26px; width: 85%; color: #85868a; background: #2f3136;
+  border-radius: 10px; cursor: pointer; padding: 5px 10px;
+  transition: filter 0.1s;
+}
+
+.gm_channel:hover, .gm_queue:hover { filter: brightness(110%); }
+.selected.gm_channel, .selected.gm_queue { color: white; background: #383b41; }
+
+.gm_icon { height: 16px; padding-right: 5px; }
+.gm_channel span, .gm_queue span { flex: 1 1 auto; font-size: 14px; }
+
+.gm_dropdown { width: 20px; height: 20px; visibility: hidden; position: relative; }
+.gm_channel:hover .gm_dropdown, .gm_queue:hover .gm_dropdown { visibility: visible; }
+
+.gm_dropdown_opts {
+  display: flex; flex-direction: column; visibility: hidden;
+  position: absolute; right: 0; top: 20px;
+  z-index: 8; min-width: 160px;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+}
+
+.gm_dropdown:hover .gm_dropdown_opts { visibility: visible; }
+
+.gm_dropdown_opts a {
+  width: 100%; z-index: 9; color: #85868a;
+  background: #2f3136; padding: 10px; font-size: 14px;
+}
+
+.gm_dropdown_opts a:hover { filter: brightness(120%); }
+.gm_dropdown_opts .urgent { color: #e21d1d; }
+
+.gm_queue_menu {
+  display: flex; flex-direction: column; align-items: center;
+  width: 90%; margin-left: 20px;
+  border-left: #85868a 1px solid; padding-right: 0;
+}
+
+#guild_menu hr { border: 1px #85868a solid; width: 70%; margin: 10px 0; }
+
+/* ─── Main Area ─── */
+#main_area {
+  background: #36393f; flex: 1 1 auto;
+  overflow-y: auto; height: calc(100vh - 48px);
+}
+
+/* ─── Settings Layout ─── */
+#st_layout {
+  display: flex; flex-direction: column; align-items: center;
+  width: 600px; margin: 0 auto;
+}
+
+/* Section tabs */
+#st_sections {
+  display: flex; justify-content: space-around; width: 100%;
+}
+
+#st_sections div {
+  flex: 1 1 auto; margin: 0 10px; cursor: pointer;
+  padding: 30px 20px 10px; text-align: center;
+  font-size: 18px; border-radius: 0 0 5px 5px;
+  background: #484c54; color: #c0c1c4;
+  box-shadow: 0 5px 5px -3px rgba(0,0,0,0.5);
   transition: background 0.15s, color 0.15s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-.sidebar-item:hover { background: var(--bg-hover); color: var(--text); }
-.sidebar-item.active { background: var(--bg-panel); color: var(--text-bright); }
+#st_sections div.selected { background: #777e8b; color: whitesmoke; }
+#st_sections div:hover { background: #777e8b; color: whitesmoke; }
 
-.sidebar-item .icon {
-  font-size: 1rem;
-  width: 20px;
-  text-align: center;
-  flex-shrink: 0;
+/* Settings fields */
+#st_fields {
+  display: flex; flex-direction: column; align-items: stretch;
+  padding: 10px; width: 100%;
 }
 
-.sidebar-item .badge {
-  margin-left: auto;
-  font-size: 0.65rem;
-  background: var(--accent);
-  color: #fff;
-  padding: 0.05rem 0.35rem;
-  border-radius: 3px;
-  font-weight: 600;
+.st_variable {
+  display: flex; flex-direction: column; align-items: stretch;
 }
 
-.sidebar-guild-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  margin: 0.25rem 0.75rem;
-  cursor: pointer;
-  border: 2px solid transparent;
-  transition: border-color 0.15s;
+.st_separator { border: 0; border-top: 1px #202225 solid; width: 95%; align-self: center; }
+
+/* Variable header row */
+.var_header {
+  display: flex; align-items: center; padding: 8px 0;
 }
 
-.sidebar-guild-icon:hover { border-color: var(--accent); }
-.sidebar-guild-icon.active { border-color: var(--accent); }
-
-.sidebar-add {
-  color: var(--text-dim);
-  font-size: 0.8rem;
-  padding: 0.4rem 0.75rem;
-  cursor: pointer;
-  transition: color 0.15s;
+.vh_title {
+  font-family: 'Oswald', sans-serif; font-weight: 300;
+  letter-spacing: 1px; font-size: 18px; color: white;
 }
 
-.sidebar-add:hover { color: var(--text); }
+.vh_icons { display: flex; align-items: center; }
+.vh_icons div { padding: 0 0 0 5px; }
+.vh_icons img { cursor: pointer; width: 18px; height: 18px; opacity: 0.6; transition: opacity 0.15s; }
+.vh_icons img:hover { opacity: 1; filter: brightness(150%); }
 
-/* ─── Main Content ─── */
-.main-content {
-  flex: 1;
-  padding: 0;
-  min-width: 0;
+.vh_icons span {
+  display: none; position: absolute; margin-top: 30px; z-index: 9;
+  background: #191919; color: #ccc; text-align: left;
+  border: 1px black solid; border-radius: 6px; padding: 5px;
+  white-space: pre; font-size: 13px; max-width: 300px;
 }
 
-/* ─── Pages ─── */
-.page { display: none; }
-.page.active { display: block; }
+.vh_icons div:hover span { display: block; }
+.vh_whitespace { flex: 1 1 auto; }
 
-/* ─── Config Panel ─── */
-.config-panel {
-  max-width: 700px;
-  margin: 0;
-  padding: 0 2rem 2rem;
+/* Toggle switch for nullable fields */
+.vh_switch {
+  position: relative; display: inline-block;
+  width: 40px; height: 24px; margin-right: 10px;
 }
 
-/* Tab bar */
-.tab-bar {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 1.5rem;
-  padding: 0 2rem;
-  position: sticky;
-  top: var(--topbar-h);
-  background: var(--bg-darkest);
-  z-index: 10;
-}
+.vh_switch input { opacity: 0; width: 0; height: 0; }
 
-.tab-btn {
-  padding: 0.75rem 1.25rem;
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--text-dim);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-  white-space: nowrap;
-}
-
-.tab-btn:hover {
-  color: var(--text);
-  background: var(--bg-hover);
-}
-
-.tab-btn.active {
-  color: var(--text-bright);
-  border-bottom-color: var(--accent);
-  background: var(--bg-panel);
-}
-
-/* Config rows */
-.config-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid rgba(58, 58, 92, 0.4);
-  gap: 1rem;
-}
-
-.config-row:last-child { border-bottom: none; }
-
-.config-row-label {
-  flex: 1;
-  min-width: 0;
-}
-
-.config-row-label .name {
-  font-weight: 500;
-  font-size: 0.9rem;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.config-row-label .name .info-icon {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1px solid var(--text-dim);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.6rem;
-  color: var(--text-dim);
-  cursor: help;
-  flex-shrink: 0;
-}
-
-.config-row-label .name .reset-icon {
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  color: var(--text-dim);
-  cursor: pointer;
-  flex-shrink: 0;
-  opacity: 0.6;
-  transition: opacity 0.15s;
-}
-
-.config-row-label .name .reset-icon:hover { opacity: 1; }
-
-.config-row-control {
-  flex-shrink: 0;
-}
-
-/* Toggle switch */
-.toggle {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  cursor: pointer;
-}
-
-.toggle input { display: none; }
-
-.toggle .slider {
-  position: absolute;
+.vh_switch .slider {
+  position: absolute; cursor: pointer;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: var(--toggle-off);
-  border-radius: 12px;
-  transition: background 0.2s;
+  border-radius: 34px; background-color: #376ace;
+  transition: background 0.15s;
 }
 
-.toggle .slider::before {
-  content: '';
-  position: absolute;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  top: 3px;
-  left: 3px;
-  transition: transform 0.2s;
+.vh_switch .slider:before {
+  position: absolute; content: "";
+  height: 18px; width: 18px; left: 18px; bottom: 3px;
+  border-radius: 50%; background-color: white;
+  transition: left 0.15s;
 }
 
-.toggle input:checked + .slider {
-  background: var(--toggle-on);
+.vh_switch input:checked + .slider { background-color: #202225; }
+.vh_switch input:checked + .slider:before { left: 4px; }
+
+/* Variable content (shown/hidden by toggle) */
+.var_content { padding: 10px 5px 5px 5px; }
+.var_content.hidden { display: none; padding: 0; height: 0; }
+
+/* ─── Boolean tri-state (X / V) ─── */
+.field_boolean {
+  display: flex; align-items: center;
+  border: 1px solid black; width: 80px;
+  border-radius: 5px; overflow: hidden;
 }
 
-.toggle input:checked + .slider::before {
-  transform: translateX(20px);
+.field_boolean input[type=radio] { display: none; }
+
+.field_boolean label {
+  flex: 1 1 auto; cursor: pointer; line-height: 28px;
+  text-align: center; user-select: none;
+  font-family: 'Roboto', sans-serif; font-weight: 300;
 }
 
-/* Tri-state toggle (X / / V) */
-.tri-toggle {
-  display: inline-flex;
-  border-radius: 4px;
-  overflow: hidden;
-  border: 1px solid var(--border);
+.field_boolean label:hover { background: #484c54; }
+.field_boolean input[type=radio]:disabled + label { background: #484c54; opacity: 0.5; }
+
+.boolean_on { color: green; }
+.field_boolean input[type=radio]:checked + label.boolean_on { background: #00ad02; color: white; }
+
+.boolean_null { color: gray; }
+.field_boolean input[type=radio]:checked + label.boolean_null { background: gray; color: white; }
+
+.boolean_off { color: red; }
+.field_boolean input[type=radio]:checked + label.boolean_off { background: #e01a1a; color: white; }
+
+/* ─── Form inputs ─── */
+.field_select, .field_string, .field_number, .field_slider, .field_text {
+  color: #a5a6aa; font-family: 'Roboto', sans-serif; font-size: 16px;
+  background: #202225; border: 1px black solid; border-radius: 5px;
+  padding: 4px 5px; outline: none;
 }
 
-.tri-toggle .tri-btn {
-  width: 32px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-  cursor: pointer;
-  border: none;
-  background: var(--bg-input);
-  color: var(--text-dim);
-  transition: background 0.15s, color 0.15s;
+.field_select:focus, .field_string:focus, .field_number:focus, .field_text:focus {
+  border-color: #376ace;
 }
 
-.tri-toggle .tri-btn.x-btn.active { background: var(--red); color: #fff; }
-.tri-toggle .tri-btn.slash-btn { color: var(--text-dim); cursor: default; }
-.tri-toggle .tri-btn.v-btn.active { background: var(--green); color: #fff; }
-
-/* Text/number inputs */
-.cfg-input {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.85rem;
-  color: var(--text);
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.4rem 0.6rem;
-  width: 100%;
-  max-width: 320px;
-  transition: border-color 0.15s;
-}
-
-.cfg-input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.cfg-input:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.cfg-input.short { max-width: 120px; }
-
-select.cfg-input {
-  appearance: auto;
-  cursor: pointer;
-}
-
-textarea.cfg-input {
-  min-height: 70px;
-  resize: vertical;
-}
+.field_select { width: 100%; padding: 1px 5px; }
+.field_select option { background: #202225; }
+.field_string { width: 100%; }
+.field_number { width: 80px; }
+.field_text { width: 100%; height: 96px; resize: vertical; }
 
 /* Slider */
-.slider-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  max-width: 320px;
+.slider_container {
+  display: flex; align-items: center;
 }
 
-.slider-wrap input[type="range"] {
-  flex: 1;
-  accent-color: var(--accent);
-  height: 4px;
+.slider_bar_wrap {
+  flex: 1 1 auto; margin: 0 10px;
+  height: 6px; background: #202225; border: 1px solid black;
+  border-radius: 3px; position: relative; cursor: pointer;
 }
 
-.slider-wrap .slider-val {
-  font-size: 0.8rem;
-  font-weight: 600;
-  min-width: 50px;
-  text-align: right;
-  color: var(--text);
+.slider_bar_fill {
+  height: 100%; background: #a5a6aa; border-radius: 3px;
 }
 
-/* Rating ranks table */
-.ranks-table {
-  width: 100%;
-  max-width: 500px;
-  border-collapse: collapse;
-  margin-top: 0.5rem;
+.field_slider { width: 60px; margin: 0 5px 0 10px; text-align: center; }
+
+.slider_container span { color: white; font-size: 14px; }
+
+/* Duration picker */
+.field_duration {
+  color: #a5a6aa; font-family: 'Roboto', sans-serif; font-size: 16px;
+  background: #202225; border: 1px black solid; border-radius: 5px;
+  padding: 4px 5px; outline: none; width: 100%;
 }
 
-.ranks-table th {
-  text-align: left;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-dim);
-  padding: 0.5rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
+.field_duration:focus { border-color: #376ace; }
+
+/* ─── Editable table ─── */
+.field_table { padding-left: 0; width: 100%; }
+
+.editable_table {
+  min-width: 100%; text-align: left;
+  color: white; background: #202225;
+  border: 1px black solid; border-collapse: collapse;
 }
 
-.ranks-table th .info-icon {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid var(--text-dim);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.5rem;
-  color: var(--text-dim);
-  cursor: help;
-  margin-left: 0.25rem;
-  vertical-align: middle;
+.editable_table td { padding: 8px; }
+.editable_table tr:hover { background: #2c3034; }
+
+.editable_table thead td {
+  padding: 12px 8px; background-color: #3d724f;
+  color: white; text-align: center; white-space: nowrap;
+  font-size: 14px; font-weight: 500;
 }
 
-.ranks-table td {
-  padding: 0.35rem 0.5rem;
-  border-bottom: 1px solid rgba(58, 58, 92, 0.3);
+.editable_table tbody td {
+  border-bottom: 1px solid #2c3034;
 }
 
-.ranks-table td input {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.85rem;
-  color: var(--text);
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0.3rem 0.4rem;
-  width: 100%;
+.editable_table tbody td input {
+  background: transparent; border: none; color: white;
+  font-size: 15px; width: 100%; outline: none;
+  padding: 2px;
 }
 
-.ranks-table td input:focus {
-  outline: none;
-  border-color: var(--accent);
+.editable_table tbody td input:focus {
+  background: #2c3034; border-radius: 3px;
 }
 
-.ranks-table .btn-remove-row {
-  background: var(--red);
-  color: #fff;
-  border: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  font-weight: 700;
+td.et_remove { width: 20px; text-align: center; }
+
+.et_remove_btn {
+  background: #e01a1a; color: white; border: none;
+  width: 20px; height: 20px; border-radius: 3px;
+  cursor: pointer; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
   transition: background 0.15s;
 }
 
-.ranks-table .btn-remove-row:hover { background: var(--red-hover); }
+.et_remove_btn:hover { background: #c01515; }
 
-.ranks-table .add-row-cell {
-  text-align: center;
-  padding: 0.5rem;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 0.8rem;
-  transition: color 0.15s;
+.et_add {
+  padding: 12px; text-align: center;
+  cursor: pointer; background: #2c3034;
+  color: #85868a; font-size: 14px;
+  transition: background 0.15s, color 0.15s;
 }
 
-.ranks-table .add-row-cell:hover { color: var(--text); }
+.et_add:hover { background: #71632b; color: white; }
 
-/* Generic table control (for non-ranks tables) */
-.table-control {
-  max-width: 500px;
+/* ─── Save button ─── */
+.field_submit {
+  font-family: 'Roboto', sans-serif; letter-spacing: 4px; font-size: 18px;
+  align-self: center; margin-top: 20px; margin-bottom: 20px;
+  background: #3d724f; color: #d4d4d4;
+  width: 80%; border: 1px #202225 solid; border-radius: 2px;
+  text-align: center; line-height: 36px;
+  box-shadow: 0 5px 5px -3px rgba(0,0,0,0.5);
+  cursor: pointer; transition: color 0.15s, border-color 0.15s;
 }
 
-.table-control .table-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-bottom: 0.5rem;
+.field_submit:hover { color: white; border-color: darkgreen; }
+
+/* ─── Dashboard views ─── */
+.dash-login-prompt {
+  text-align: center; padding: 4rem 2rem;
+  color: #85868a; font-size: 1rem;
 }
 
-.table-control .table-row {
-  display: flex;
-  gap: 0.4rem;
-  align-items: center;
-}
+.dash-login-prompt a { color: #376ace; font-weight: 600; }
+.dash-login-prompt a:hover { text-decoration: underline; }
 
-.table-control .table-row input {
-  font-family: 'Inter', sans-serif;
-  font-size: 0.85rem;
-  color: var(--text);
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 0.3rem 0.4rem;
-  flex: 1;
-}
+.loading { text-align: center; padding: 3rem; color: #85868a; }
+.error { text-align: center; padding: 2rem; color: #e01a1a; }
 
-.table-control .table-row input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.table-control .btn-remove-row {
-  background: var(--red);
-  color: #fff;
-  border: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  font-weight: 700;
-}
-
-.table-control .btn-remove-row:hover { background: var(--red-hover); }
-
-.table-control .btn-add-row {
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  background: none;
-  border: 1px dashed var(--border);
-  padding: 0.3rem 0.7rem;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-
-.table-control .btn-add-row:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* Save button */
-.btn-save {
-  background: var(--green);
-  color: #fff;
-  border: none;
-  padding: 0.6rem 0;
-  width: 100%;
-  max-width: 500px;
-  border-radius: 4px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background 0.15s;
-  margin-top: 1.5rem;
-}
-
-.btn-save:hover { background: var(--green-hover); }
-.btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.btn-back {
-  background: transparent;
-  color: var(--text-dim);
-  border: 1px solid var(--border);
-  padding: 0.5rem 1.2rem;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-  margin-top: 0.75rem;
-}
-
-.btn-back:hover { border-color: var(--accent); color: var(--accent); }
-
-/* ─── Cards ─── */
 .card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 1rem;
-  padding: 1.5rem 2rem;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem; padding: 1.5rem 2rem;
 }
 
 .card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 1.25rem;
-  cursor: pointer;
+  background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
+  padding: 1.25rem; cursor: pointer;
   transition: border-color 0.15s, transform 0.1s;
 }
 
-.card:hover {
-  border-color: var(--accent);
-  transform: translateY(-1px);
-}
-
-.card .card-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  margin-bottom: 0.5rem;
-}
-
-.card .card-title {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--text-bright);
-  margin-bottom: 0.2rem;
-}
-
-.card .card-detail {
-  font-size: 0.8rem;
-  color: var(--text-dim);
-}
-
+.card:hover { border-color: #376ace; transform: translateY(-1px); }
+.card .card-title { font-weight: 600; font-size: 0.95rem; color: white; margin-bottom: 0.2rem; }
+.card .card-detail { font-size: 0.8rem; color: #85868a; }
 .card .card-badge {
-  display: inline-block;
-  font-size: 0.6rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-  margin-top: 0.4rem;
-  background: rgba(88, 101, 242, 0.15);
-  color: var(--accent);
-  border: 1px solid rgba(88, 101, 242, 0.3);
+  display: inline-block; font-size: 0.6rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 0.1rem 0.4rem; border-radius: 3px; margin-top: 0.4rem;
+  background: rgba(55,106,206,0.15); color: #376ace;
+  border: 1px solid rgba(55,106,206,0.3);
+}
+.card .card-icon { width: 36px; height: 36px; border-radius: 50%; margin-bottom: 0.5rem; }
+
+.content-title {
+  font-family: 'Oswald', sans-serif; font-weight: 300;
+  font-size: 1.2rem; color: white; padding: 1.5rem 2rem 0;
+  letter-spacing: 1px;
 }
 
-/* Queue cards in sidebar */
-.queue-card {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.75rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  color: var(--text-dim);
-  transition: background 0.15s, color 0.15s;
+/* ─── Breadcrumb ─── */
+.breadcrumb {
+  display: flex; align-items: center; gap: 0.3rem;
+  font-size: 0.85rem; color: #85868a; padding: 1rem 2rem 0;
 }
 
-.queue-card:hover { background: var(--bg-hover); color: var(--text); }
-.queue-card.active { background: var(--bg-panel); color: var(--text-bright); }
-
-.queue-card .q-badge {
-  font-size: 0.6rem;
-  font-weight: 700;
-  background: var(--accent);
-  color: #fff;
-  padding: 0.05rem 0.3rem;
-  border-radius: 2px;
-}
+.breadcrumb a { color: #376ace; cursor: pointer; }
+.breadcrumb a:hover { text-decoration: underline; }
+.breadcrumb .separator { color: #85868a; }
+.breadcrumb .current { color: white; font-weight: 500; }
 
 /* ─── Civ Stats ─── */
-.stats-container {
-  padding: 2rem;
-  max-width: 1400px;
-}
-
-.stats-container header {
-  margin-bottom: 1.5rem;
-}
-
+.stats-container { padding: 2rem; max-width: 1400px; }
+.stats-container header { margin-bottom: 1.5rem; }
 .stats-container h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-bright);
-  margin-bottom: 0.25rem;
+  font-family: 'Oswald', sans-serif; font-weight: 400;
+  font-size: 1.5rem; color: white; letter-spacing: 1px; margin-bottom: 0.25rem;
 }
-
-.stats-container .subtitle {
-  color: var(--text-dim);
-  font-size: 0.9rem;
-}
+.stats-container .subtitle { color: #85868a; font-size: 0.9rem; }
 
 .table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-panel);
+  overflow-x: auto; border: 1px solid #484c54; border-radius: 4px;
+  background: #2f3136;
 }
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
-  min-width: 900px;
-}
+table.stats-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 900px; }
+table.stats-table thead { position: sticky; top: 0; z-index: 10; }
 
-thead { position: sticky; top: 0; z-index: 10; }
-
-th {
-  background: var(--bg-dark);
-  color: var(--text-dim);
-  font-weight: 600;
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 0.7rem 0.6rem;
-  text-align: left;
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--border);
+table.stats-table th {
+  background: #202225; color: #85868a; font-weight: 600;
+  font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 0.7rem 0.6rem; text-align: left; cursor: pointer;
+  user-select: none; white-space: nowrap; border-bottom: 1px solid #484c54;
   transition: background 0.15s;
 }
 
-th:hover { background: var(--bg-hover); }
+table.stats-table th:hover { background: #36393f; }
 
-th .sort-arrow {
-  display: inline-block;
-  margin-left: 3px;
-  font-size: 0.6rem;
-  opacity: 0.3;
-  transition: opacity 0.15s;
-}
-
-th.sort-asc .sort-arrow, th.sort-desc .sort-arrow {
-  opacity: 1;
-  color: var(--accent);
-}
-
+th .sort-arrow { display: inline-block; margin-left: 3px; font-size: 0.6rem; opacity: 0.3; }
+th.sort-asc .sort-arrow, th.sort-desc .sort-arrow { opacity: 1; color: #376ace; }
 th.sort-desc .sort-arrow { transform: rotate(180deg); }
 
-td {
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid rgba(58, 58, 92, 0.3);
-}
-
-td:first-child {
-  font-weight: 500;
-  color: var(--text-bright);
-}
-
-tr:hover td { background: var(--bg-hover); }
+table.stats-table td { padding: 0.5rem 0.6rem; border-bottom: 1px solid rgba(72,76,84,0.4); }
+table.stats-table td:first-child { font-weight: 500; color: white; }
+table.stats-table tr:hover td { background: #36393f; }
 
 td.wr { font-weight: 600; }
 td.wr-high { color: #57d98b; }
-td.wr-mid { color: var(--text-dim); }
+td.wr-mid { color: #85868a; }
 td.wr-low { color: #e06060; }
-
-td.games { color: var(--text-dim); }
+td.games { color: #85868a; }
 
 .col-group-label {
-  text-align: center;
-  background: var(--bg-darkest);
-  color: var(--text-dim);
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  padding: 0.4rem;
-  border-bottom: 1px solid var(--border);
+  text-align: center; background: #1a1a1a; color: #85868a;
+  font-size: 0.65rem; letter-spacing: 0.08em;
+  padding: 0.4rem; border-bottom: 1px solid #484c54;
 }
 
-/* Anomalies */
 .anomalies { margin-top: 2rem; }
+.anomalies h2 { font-family: 'Oswald', sans-serif; font-weight: 300; font-size: 1.1rem; color: white; letter-spacing: 1px; margin-bottom: 0.25rem; }
 
 .anomaly-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.75rem;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 0.75rem; margin-top: 0.75rem;
 }
 
-.anomaly-card {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 1rem;
-}
-
-.anomaly-card .civ-name {
-  font-weight: 700;
-  font-size: 0.95rem;
-  color: var(--text-bright);
-  margin-bottom: 0.3rem;
-}
-
-.anomaly-card .anomaly-desc {
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  line-height: 1.5;
-}
-
+.anomaly-card { background: #2f3136; border: 1px solid #484c54; border-radius: 6px; padding: 1rem; }
+.anomaly-card .civ-name { font-weight: 700; font-size: 0.95rem; color: white; margin-bottom: 0.3rem; }
+.anomaly-card .anomaly-desc { font-size: 0.85rem; color: #85868a; line-height: 1.5; }
 .anomaly-card .anomaly-desc .wr-val { font-weight: 600; }
 .anomaly-card .anomaly-desc .wr-val.high { color: #57d98b; }
 .anomaly-card .anomaly-desc .wr-val.low { color: #e06060; }
 
 .anomaly-card .tag {
-  display: inline-block;
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 0.1rem 0.5rem;
-  border-radius: 3px;
-  margin-bottom: 0.4rem;
+  display: inline-block; font-size: 0.6rem; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 0.1rem 0.5rem; border-radius: 3px; margin-bottom: 0.4rem;
 }
+.tag.better-below { background: rgba(87,217,139,0.1); color: #57d98b; border: 1px solid rgba(87,217,139,0.25); }
+.tag.better-above { background: rgba(224,96,96,0.1); color: #e06060; border: 1px solid rgba(224,96,96,0.25); }
 
-.tag.better-below { background: rgba(87, 217, 139, 0.1); color: #57d98b; border: 1px solid rgba(87, 217, 139, 0.25); }
-.tag.better-above { background: rgba(224, 96, 96, 0.1); color: #e06060; border: 1px solid rgba(224, 96, 96, 0.25); }
+.no-anomalies { text-align: center; padding: 2rem; color: #85868a; font-style: italic; }
 
-/* Misc */
-.loading {
-  text-align: center;
-  padding: 3rem;
-  color: var(--text-dim);
-}
-
-.error {
-  text-align: center;
-  padding: 2rem;
-  color: var(--red);
-}
-
-.dash-login-prompt {
-  text-align: center;
-  padding: 4rem 2rem;
-  color: var(--text-dim);
-  font-size: 1rem;
-}
-
-.dash-login-prompt a {
-  color: var(--accent);
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.dash-login-prompt a:hover { text-decoration: underline; }
-
-.no-anomalies {
-  text-align: center;
-  padding: 2rem;
-  color: var(--text-dim);
-  font-style: italic;
-}
-
-/* Breadcrumb */
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  padding: 1rem 2rem 0;
-}
-
-.breadcrumb a {
-  color: var(--accent);
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.breadcrumb a:hover { text-decoration: underline; }
-.breadcrumb .separator { color: var(--text-dim); }
-.breadcrumb .current { color: var(--text-bright); font-weight: 500; }
-
-/* h2 in content area */
-.content-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-bright);
-  padding: 1rem 2rem 0;
-}
+footer { text-align: center; padding: 1.5rem; font-size: 0.75rem; color: #85868a; }
 
 /* ─── Toast ─── */
 .toast-container {
-  position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  pointer-events: none;
+  position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+  display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none;
 }
 
 .toast {
-  font-size: 0.85rem;
-  padding: 0.6rem 1rem;
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  pointer-events: auto;
-  animation: toast-in 0.3s ease forwards;
-  max-width: 350px;
+  font-size: 0.85rem; padding: 0.6rem 1rem; border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4); pointer-events: auto;
+  animation: toast-in 0.3s ease forwards; max-width: 350px;
 }
 
-.toast.toast-success { background: var(--green); color: #fff; }
-.toast.toast-error { background: var(--red); color: #fff; }
-.toast.toast-info { background: var(--bg-panel); color: var(--text); border: 1px solid var(--border); }
+.toast.toast-success { background: #3d724f; color: #fff; }
+.toast.toast-error { background: #e01a1a; color: #fff; }
+.toast.toast-info { background: #484c54; color: white; border: 1px solid #85868a; }
 .toast.toast-fade-out { animation: toast-out 0.3s ease forwards; }
 
 @keyframes toast-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(20px); } }
-
-/* Footer */
-footer {
-  text-align: center;
-  padding: 1.5rem;
-  font-size: 0.75rem;
-  color: var(--text-dim);
-}
+@keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateY(20px); } }
 
 /* ─── Responsive ─── */
-@media (max-width: 768px) {
-  .sidebar { display: none; }
-  .tab-bar { overflow-x: auto; }
-  .config-panel { padding: 0 1rem 2rem; }
-  .card-grid { padding: 1rem; }
-  .stats-container { padding: 1rem; }
-  .breadcrumb { padding: 0.75rem 1rem 0; }
+@media (max-width: 900px) {
+  #guild_nav { display: none; }
+  #guild_menu { width: 180px; min-width: 180px; }
+  #st_layout { width: 100%; }
 }
 </style>
 </head>
 <body>
 
-<!-- Top Bar -->
-<div class="topbar">
-  <div class="topbar-brand">PUBobot2 <span class="version">v0.8-Beta</span></div>
-  <div class="topbar-nav">
-    <a href="#" class="active" data-page="civ-stats" onclick="showPage('civ-stats'); return false;">Civ Stats</a>
-    <a href="#" data-page="dashboard" onclick="showPage('dashboard'); return false;">Dashboard</a>
+<div id="main_layout">
+
+<!-- Title Bar -->
+<div id="titlebar">
+  <div id="tb-botinfo">PUBobot2</div>
+  <div id="tb-botinfo-version">v0.8-Beta</div>
+
+  <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
+    <span>Civ Stats</span>
   </div>
-  <div class="topbar-auth" id="auth-area"></div>
+  <div class="tb-link" onclick="showPage('dashboard')" style="cursor:pointer;">
+    <span>Dashboard</span>
+  </div>
+
+  <div id="tb-whitespace"></div>
+
+  <div id="tb-user"></div>
+  <div id="tb-auth"></div>
 </div>
 
-<!-- Toast Container -->
+<!-- Toast -->
 <div class="toast-container" id="toast-container"></div>
 
-<!-- Page 1: Civ Stats (no sidebar) -->
-<div class="page active" id="page-civ-stats">
-  <div class="stats-container">
-    <header>
-      <h1>Civilization Statistics</h1>
-      <div class="subtitle">Pickup Game Performance Analysis</div>
-    </header>
-    <div class="table-wrap">
-      <table id="stats-table">
-        <thead>
-          <tr class="col-group-row" id="group-row">
-            <th class="col-group-label" colspan="3">Overall</th>
-            <th class="col-group-label" colspan="2">Player Elo &#8805; 1000</th>
-            <th class="col-group-label" colspan="2">Player Elo &lt; 1000</th>
-            <th class="col-group-label" colspan="2">Team Avg &#8805; 1100</th>
-            <th class="col-group-label" colspan="2">Team Avg &lt; 1100</th>
-          </tr>
-          <tr id="header-row"></tr>
-        </thead>
-        <tbody id="table-body">
-          <tr><td colspan="11" class="loading">Loading statistics...</td></tr>
-        </tbody>
-      </table>
+<!-- Main App -->
+<div id="main_app">
+
+<!-- Guild Nav (icon strip) -->
+<div id="guild_nav"></div>
+
+<!-- Guild Menu (channel/queue sidebar) -->
+<div id="guild_menu"></div>
+
+<!-- Main Area -->
+<div id="main_area">
+  <!-- Civ Stats Page -->
+  <div class="page active" id="page-civ-stats">
+    <div class="stats-container">
+      <header>
+        <h1>Civilization Statistics</h1>
+        <div class="subtitle">Pickup Game Performance Analysis</div>
+      </header>
+      <div class="table-wrap">
+        <table class="stats-table" id="stats-table">
+          <thead>
+            <tr class="col-group-row" id="group-row">
+              <th class="col-group-label" colspan="3">Overall</th>
+              <th class="col-group-label" colspan="2">Player Elo &#8805; 1000</th>
+              <th class="col-group-label" colspan="2">Player Elo &lt; 1000</th>
+              <th class="col-group-label" colspan="2">Team Avg &#8805; 1100</th>
+              <th class="col-group-label" colspan="2">Team Avg &lt; 1100</th>
+            </tr>
+            <tr id="header-row"></tr>
+          </thead>
+          <tbody id="table-body">
+            <tr><td colspan="11" class="loading">Loading statistics...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="anomalies" id="anomalies-section" style="display:none;">
+        <h2>Anomalies</h2>
+        <div class="subtitle" style="font-size:0.8rem;margin-bottom:0.5rem;">Civs with significant winrate gaps across elo brackets (&ge;15%, min 20 games each)</div>
+        <div id="anomaly-grid" class="anomaly-grid"></div>
+      </div>
+      <footer>Data sourced from PUB bot matches &amp; AoE2 Companion API</footer>
     </div>
-    <div class="anomalies" id="anomalies-section" style="display:none;">
-      <h2 style="font-size:1.1rem;font-weight:600;color:var(--text-bright);margin-bottom:0.25rem;">Anomalies</h2>
-      <div class="subtitle" style="font-size:0.8rem;margin-bottom:0.5rem;">Civs that perform significantly differently across elo brackets (&ge;15% winrate gap, min 20 games each)</div>
-      <div id="anomaly-grid" class="anomaly-grid"></div>
+  </div>
+
+  <!-- Dashboard Page -->
+  <div class="page" id="page-dashboard">
+    <div id="dash-breadcrumb" class="breadcrumb"></div>
+    <div id="dash-content">
+      <div class="loading">Loading dashboard...</div>
     </div>
-    <footer>Data sourced from PUB bot matches &amp; AoE2 Companion API</footer>
   </div>
 </div>
 
-<!-- Page 2: Dashboard (with sidebar) -->
-<div class="page" id="page-dashboard">
-  <div class="app-layout">
-    <div class="sidebar" id="dash-sidebar"></div>
-    <div class="main-content">
-      <div id="dash-breadcrumb" class="breadcrumb"></div>
-      <div id="dash-content">
-        <div class="loading">Loading dashboard...</div>
-      </div>
-    </div>
-  </div>
+</div>
 </div>
 
 <script>
@@ -1074,39 +621,29 @@ var COLUMNS = [
   { key: 'winrate_team_below', label: 'Win %', type: 'number' },
 ];
 
-var MIN_ANOMALY_GAMES = 20;
-var ANOMALY_GAP = 0.15;
-var civData = [];
-var sortCol = 'civ';
-var sortAsc = true;
+var MIN_ANOMALY_GAMES = 20, ANOMALY_GAP = 0.15;
+var civData = [], sortCol = 'civ', sortAsc = true;
 
 // Dashboard
-var dashGuilds = [];
-var dashGuildId = null;
-var dashGuildName = null;
-var dashChannels = [];
-var dashChannelId = null;
-var dashChannelName = null;
-var dashQueues = [];
-var dashQueueName = null;
-var dashActiveTab = null;
-var dashConfigData = null;
+var dashGuilds = [], dashChannels = [], dashQueues = [];
+var dashGuildId = null, dashGuildName = null;
+var dashChannelId = null, dashChannelName = null;
+var dashQueueName = null, dashActiveTab = null, dashConfigData = null;
 
 /* ─── Utils ─── */
 function esc(s) {
   if (s === null || s === undefined) return '';
-  var div = document.createElement('div');
-  div.appendChild(document.createTextNode(String(s)));
-  return div.innerHTML.replace(/'/g, '&#39;');
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(String(s)));
+  return d.innerHTML.replace(/'/g, '&#39;');
 }
 
-async function authFetch(url, options) {
-  var resp = await fetch(url, options);
+async function authFetch(url, opts) {
+  var resp = await fetch(url, opts);
   if (resp.status === 401) {
-    currentUser = null;
-    renderAuthArea();
-    var content = document.getElementById('dash-content');
-    if (content) content.innerHTML = '<div class="dash-login-prompt">Session expired. <a href="/auth/login">Login again</a></div>';
+    currentUser = null; renderAuth();
+    var c = document.getElementById('dash-content');
+    if (c) c.innerHTML = '<div class="dash-login-prompt">Session expired. <a href="/auth/login">Login again</a></div>';
     throw new Error('Session expired');
   }
   return resp;
@@ -1114,28 +651,23 @@ async function authFetch(url, options) {
 
 function showToast(msg, type) {
   type = type || 'info';
-  var container = document.getElementById('toast-container');
-  var toast = document.createElement('div');
-  toast.className = 'toast toast-' + type;
-  toast.textContent = msg;
-  container.appendChild(toast);
-  setTimeout(function() {
-    toast.classList.add('toast-fade-out');
-    setTimeout(function() { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 300);
-  }, 3500);
+  var c = document.getElementById('toast-container');
+  var t = document.createElement('div');
+  t.className = 'toast toast-' + type; t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(function() { t.classList.add('toast-fade-out'); setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 300); }, 3500);
 }
 
 /* ─── Navigation ─── */
 function showPage(page) {
   currentPage = page;
   document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
-  document.querySelectorAll('.topbar-nav a').forEach(function(el) {
-    el.classList.remove('active');
-    if (el.dataset.page === page) el.classList.add('active');
-  });
-  var pageEl = document.getElementById('page-' + page);
-  if (pageEl) pageEl.classList.add('active');
+  var p = document.getElementById('page-' + page);
+  if (p) p.classList.add('active');
   if (page === 'dashboard') loadDashboard();
+  // Show/hide guild nav + menu for dashboard only
+  document.getElementById('guild_nav').style.display = page === 'dashboard' ? 'flex' : 'none';
+  document.getElementById('guild_menu').style.display = page === 'dashboard' ? 'flex' : 'none';
 }
 
 /* ─── Auth ─── */
@@ -1143,45 +675,38 @@ async function checkAuth() {
   try {
     var resp = await fetch('/api/me');
     if (!resp.ok) return;
-    var data = await resp.json();
-    if (data.logged_in) {
-      currentUser = { user_id: data.user_id, username: data.username, avatar: data.avatar, oauth_enabled: data.oauth_enabled };
-    } else {
-      currentUser = data.oauth_enabled ? { oauth_enabled: true, logged_in: false } : null;
-    }
-  } catch (e) { currentUser = null; }
-  renderAuthArea();
+    var d = await resp.json();
+    if (d.logged_in) currentUser = { user_id: d.user_id, username: d.username, avatar: d.avatar, oauth_enabled: d.oauth_enabled };
+    else currentUser = d.oauth_enabled ? { oauth_enabled: true, logged_in: false } : null;
+  } catch(e) { currentUser = null; }
+  renderAuth();
 }
 
-function renderAuthArea() {
-  var area = document.getElementById('auth-area');
-  if (!currentUser) { area.innerHTML = ''; return; }
+function renderAuth() {
+  var u = document.getElementById('tb-user');
+  var a = document.getElementById('tb-auth');
+  if (!currentUser) { u.innerHTML = ''; a.innerHTML = ''; return; }
   if (currentUser.logged_in === false && currentUser.oauth_enabled) {
-    area.innerHTML = '<a class="btn-login" href="/auth/login">Login with Discord</a>';
+    u.innerHTML = ''; a.innerHTML = '<a class="tb-link" href="/auth/login" style="background:#376ace;color:white">Login with Discord</a>';
     return;
   }
   if (currentUser.username) {
-    area.innerHTML = '<span class="username">' + esc(currentUser.username) + '</span><a class="btn-logout" href="/auth/logout">Logout</a>';
+    u.innerHTML = '<span>' + esc(currentUser.username) + '</span>';
+    a.innerHTML = '<a class="tb-link" href="/auth/logout" style="margin-right:8px">Logout</a>';
   }
 }
 
 /* ─── Civ Stats ─── */
 function wrClass(v) { return v >= 0.55 ? 'wr wr-high' : v >= 0.45 ? 'wr wr-mid' : 'wr wr-low'; }
-function fmtWr(v) { return (v * 100).toFixed(1) + '%'; }
-function wrSpan(v) { var cls = v >= 0.55 ? 'high' : v < 0.45 ? 'low' : ''; return '<span class="wr-val ' + cls + '">' + fmtWr(v) + '</span>'; }
+function fmtWr(v) { return (v*100).toFixed(1)+'%'; }
+function wrSpan(v) { var c = v >= 0.55 ? 'high' : v < 0.45 ? 'low' : ''; return '<span class="wr-val '+c+'">'+fmtWr(v)+'</span>'; }
 
 function buildHeaders() {
-  var row = document.getElementById('header-row');
-  row.innerHTML = '';
+  var row = document.getElementById('header-row'); row.innerHTML = '';
   COLUMNS.forEach(function(col) {
-    var th = document.createElement('th');
-    th.textContent = col.label;
-    var arrow = document.createElement('span');
-    arrow.className = 'sort-arrow';
-    arrow.textContent = '\u25B2';
-    th.appendChild(arrow);
-    th.addEventListener('click', function() { sortBy(col.key); });
-    th.dataset.col = col.key;
+    var th = document.createElement('th'); th.textContent = col.label;
+    var ar = document.createElement('span'); ar.className = 'sort-arrow'; ar.textContent = '\u25B2';
+    th.appendChild(ar); th.addEventListener('click', function() { sortBy(col.key); }); th.dataset.col = col.key;
     row.appendChild(th);
   });
   updateSortIndicators();
@@ -1189,504 +714,430 @@ function buildHeaders() {
 
 function updateSortIndicators() {
   document.querySelectorAll('#header-row th').forEach(function(th) {
-    th.classList.remove('sort-asc', 'sort-desc');
+    th.classList.remove('sort-asc','sort-desc');
     if (th.dataset.col === sortCol) th.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
   });
 }
 
 function sortBy(col) {
-  if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = col === 'civ'; }
-  updateSortIndicators();
-  renderCivTable();
+  if (sortCol === col) sortAsc = !sortAsc; else { sortCol = col; sortAsc = col === 'civ'; }
+  updateSortIndicators(); renderCivTable();
 }
 
 function renderCivTable() {
   var tbody = document.getElementById('table-body');
-  var colDef = COLUMNS.find(function(c) { return c.key === sortCol; });
-  var sorted = civData.slice().sort(function(a, b) {
-    var va = a[sortCol], vb = b[sortCol];
-    if (colDef.type === 'string') { va = (va || '').toLowerCase(); vb = (vb || '').toLowerCase(); return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va); }
-    return sortAsc ? va - vb : vb - va;
+  var cd = COLUMNS.find(function(c) { return c.key === sortCol; });
+  var sorted = civData.slice().sort(function(a,b) {
+    var va=a[sortCol], vb=b[sortCol];
+    if (cd.type === 'string') { va=(va||'').toLowerCase(); vb=(vb||'').toLowerCase(); return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va); }
+    return sortAsc ? va-vb : vb-va;
   });
   tbody.innerHTML = sorted.map(function(row) {
-    return '<tr>' + COLUMNS.map(function(col) {
-      var v = row[col.key];
-      if (col.key === 'civ') return '<td>' + esc(v) + '</td>';
-      if (col.key.startsWith('winrate')) return '<td class="' + wrClass(v) + '">' + fmtWr(v) + '</td>';
-      return '<td class="games">' + v + '</td>';
-    }).join('') + '</tr>';
+    return '<tr>'+COLUMNS.map(function(col) {
+      var v=row[col.key];
+      if (col.key==='civ') return '<td>'+esc(v)+'</td>';
+      if (col.key.startsWith('winrate')) return '<td class="'+wrClass(v)+'">'+fmtWr(v)+'</td>';
+      return '<td class="games">'+v+'</td>';
+    }).join('')+'</tr>';
   }).join('');
 }
 
 function findAnomalies() {
-  var anomalies = [];
-  civData.forEach(function(row) {
-    if (row.games_player_above >= MIN_ANOMALY_GAMES && row.games_player_below >= MIN_ANOMALY_GAMES) {
-      var gap = row.winrate_player_above - row.winrate_player_below;
-      if (Math.abs(gap) >= ANOMALY_GAP) anomalies.push({ civ: row.civ, type: 'player_elo', betterBelow: gap < 0, above: row.winrate_player_above, below: row.winrate_player_below, gamesAbove: row.games_player_above, gamesBelow: row.games_player_below, gap: Math.abs(gap) });
+  var a = [];
+  civData.forEach(function(r) {
+    if (r.games_player_above >= MIN_ANOMALY_GAMES && r.games_player_below >= MIN_ANOMALY_GAMES) {
+      var g = r.winrate_player_above - r.winrate_player_below;
+      if (Math.abs(g) >= ANOMALY_GAP) a.push({civ:r.civ,type:'player_elo',betterBelow:g<0,above:r.winrate_player_above,below:r.winrate_player_below,gamesAbove:r.games_player_above,gamesBelow:r.games_player_below,gap:Math.abs(g)});
     }
-    if (row.games_team_above >= MIN_ANOMALY_GAMES && row.games_team_below >= MIN_ANOMALY_GAMES) {
-      var gap = row.winrate_team_above - row.winrate_team_below;
-      if (Math.abs(gap) >= ANOMALY_GAP) anomalies.push({ civ: row.civ, type: 'team_elo', betterBelow: gap < 0, above: row.winrate_team_above, below: row.winrate_team_below, gamesAbove: row.games_team_above, gamesBelow: row.games_team_below, gap: Math.abs(gap) });
+    if (r.games_team_above >= MIN_ANOMALY_GAMES && r.games_team_below >= MIN_ANOMALY_GAMES) {
+      var g = r.winrate_team_above - r.winrate_team_below;
+      if (Math.abs(g) >= ANOMALY_GAP) a.push({civ:r.civ,type:'team_elo',betterBelow:g<0,above:r.winrate_team_above,below:r.winrate_team_below,gamesAbove:r.games_team_above,gamesBelow:r.games_team_below,gap:Math.abs(g)});
     }
   });
-  anomalies.sort(function(a, b) { return b.gap - a.gap; });
-  return anomalies;
+  a.sort(function(x,y) { return y.gap-x.gap; }); return a;
 }
 
 function renderAnomalies() {
-  var anomalies = findAnomalies();
-  var section = document.getElementById('anomalies-section');
+  var anoms = findAnomalies();
+  var sec = document.getElementById('anomalies-section');
   var grid = document.getElementById('anomaly-grid');
-  if (anomalies.length === 0) { section.style.display = 'block'; grid.innerHTML = '<div class="no-anomalies">No significant anomalies found.</div>'; return; }
-  section.style.display = 'block';
-  grid.innerHTML = anomalies.map(function(a) {
-    var tagClass = a.betterBelow ? 'better-below' : 'better-above';
-    var tagText = a.betterBelow ? 'Stronger at lower ' + (a.type === 'player_elo' ? 'player elo' : 'team avg elo') : 'Stronger at higher ' + (a.type === 'player_elo' ? 'player elo' : 'team avg elo');
-    var label = a.type === 'player_elo' ? 'Player Elo' : 'Team Avg';
-    var desc = a.betterBelow
-      ? label + ' below: ' + wrSpan(a.below) + ' (' + a.gamesBelow + ')<br>' + label + ' above: ' + wrSpan(a.above) + ' (' + a.gamesAbove + ')'
-      : label + ' above: ' + wrSpan(a.above) + ' (' + a.gamesAbove + ')<br>' + label + ' below: ' + wrSpan(a.below) + ' (' + a.gamesBelow + ')';
-    return '<div class="anomaly-card"><div class="tag ' + tagClass + '">' + tagText + '</div><div class="civ-name">' + esc(a.civ) + '</div><div class="anomaly-desc">' + desc + '</div></div>';
+  if (!anoms.length) { sec.style.display='block'; grid.innerHTML='<div class="no-anomalies">No significant anomalies.</div>'; return; }
+  sec.style.display='block';
+  grid.innerHTML = anoms.map(function(a) {
+    var tc=a.betterBelow?'better-below':'better-above';
+    var tt=a.betterBelow?'Stronger at lower ':'Stronger at higher '; tt += a.type==='player_elo'?'player elo':'team avg elo';
+    var lb=a.type==='player_elo'?'Player Elo':'Team Avg';
+    var ds=a.betterBelow ? lb+' below: '+wrSpan(a.below)+' ('+a.gamesBelow+')<br>'+lb+' above: '+wrSpan(a.above)+' ('+a.gamesAbove+')'
+      : lb+' above: '+wrSpan(a.above)+' ('+a.gamesAbove+')<br>'+lb+' below: '+wrSpan(a.below)+' ('+a.gamesBelow+')';
+    return '<div class="anomaly-card"><div class="tag '+tc+'">'+tt+'</div><div class="civ-name">'+esc(a.civ)+'</div><div class="anomaly-desc">'+ds+'</div></div>';
   }).join('');
 }
 
 async function initCivStats() {
   try {
     var resp = await fetch('/api/civ-stats');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    var result = await resp.json();
-    civData = result.civs;
-    var gr = document.getElementById('group-row');
-    var ths = gr.querySelectorAll('th');
-    ths[1].textContent = 'Player Elo \u2265 ' + result.player_threshold;
-    ths[2].textContent = 'Player Elo < ' + result.player_threshold;
-    ths[3].textContent = 'Team Avg \u2265 ' + result.team_threshold;
-    ths[4].textContent = 'Team Avg < ' + result.team_threshold;
-    buildHeaders();
-    renderCivTable();
-    renderAnomalies();
-  } catch (e) {
-    document.getElementById('table-body').innerHTML = '<tr><td colspan="11" class="error">Failed to load data: ' + esc(e.message) + '</td></tr>';
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    var res = await resp.json(); civData = res.civs;
+    var gr = document.getElementById('group-row'); var ths = gr.querySelectorAll('th');
+    ths[1].textContent='Player Elo \u2265 '+res.player_threshold;
+    ths[2].textContent='Player Elo < '+res.player_threshold;
+    ths[3].textContent='Team Avg \u2265 '+res.team_threshold;
+    ths[4].textContent='Team Avg < '+res.team_threshold;
+    buildHeaders(); renderCivTable(); renderAnomalies();
+  } catch(e) {
+    document.getElementById('table-body').innerHTML='<tr><td colspan="11" class="error">Failed to load: '+esc(e.message)+'</td></tr>';
   }
 }
 
 /* ─── Dashboard ─── */
 
-function renderSidebar() {
-  var sb = document.getElementById('dash-sidebar');
-  var html = '';
-
-  if (dashChannelId && dashConfigData) {
-    // Show channel + queues in sidebar
-    html += '<div class="sidebar-section">';
-    html += '<div class="sidebar-item active"><span class="icon">#</span> ' + esc(dashChannelName) + '</div>';
-
-    if (dashQueues && dashQueues.length > 0) {
-      dashQueues.forEach(function(q) {
-        var cls = dashQueueName === q.name ? 'active' : '';
-        html += '<div class="queue-card ' + cls + '" onclick="selectQueue(\'' + esc(q.name) + '\')">';
-        html += '<span class="q-badge">PQ</span> ' + esc(q.name);
-        html += '</div>';
-      });
+function renderGuildNav() {
+  var nav = document.getElementById('guild_nav'); var html = '';
+  dashGuilds.forEach(function(g) {
+    var sel = dashGuildId === g.id ? ' selected' : '';
+    if (g.icon) {
+      html += '<a class="gn_guild'+sel+'" onclick="selectGuild(\''+esc(g.id)+'\',\''+esc(g.name)+'\');return false" href="#">';
+      html += '<img src="'+esc(g.icon)+'"><span>'+esc(g.name)+'</span></a>';
+    } else {
+      html += '<a class="gn_guild'+sel+'" onclick="selectGuild(\''+esc(g.id)+'\',\''+esc(g.name)+'\');return false" href="#">';
+      html += '<span style="width:48px;height:48px;background:#484c54;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:18px;">'+esc(g.name.charAt(0))+'</span>';
+      html += '<span>'+esc(g.name)+'</span></a>';
     }
-    html += '<div class="sidebar-add" onclick="showToast(\'Create queues via Discord commands\', \'info\')">+ create queue</div>';
-    html += '</div>';
+  });
+  nav.innerHTML = html;
+}
 
-    if (dashChannels && dashChannels.length > 1) {
-      html += '<div class="sidebar-section">';
-      html += '<div class="sidebar-add" onclick="resetToGuild()">+ add channel</div>';
-      html += '</div>';
-    }
-  } else if (dashGuildId && dashChannels) {
-    html += '<div class="sidebar-section">';
+function renderGuildMenu() {
+  var menu = document.getElementById('guild_menu'); var html = '';
+
+  if (dashChannels.length) {
     dashChannels.forEach(function(ch) {
-      var cls = dashChannelId === ch.id ? 'active' : '';
-      html += '<div class="sidebar-item ' + cls + '" onclick="selectChannel(\'' + esc(ch.id) + '\', \'' + esc(ch.name) + '\')">';
-      html += '<span class="icon">#</span> ' + esc(ch.name);
-      html += '</div>';
-    });
-    html += '<div class="sidebar-add" onclick="showToast(\'Add channels via Discord commands\', \'info\')">+ add channel</div>';
-    html += '</div>';
-  } else if (dashGuilds && dashGuilds.length > 0) {
-    html += '<div class="sidebar-section">';
-    html += '<div class="sidebar-label">Servers</div>';
-    dashGuilds.forEach(function(g) {
-      if (g.icon) {
-        html += '<img class="sidebar-guild-icon' + (dashGuildId === g.id ? ' active' : '') + '" src="' + esc(g.icon) + '" title="' + esc(g.name) + '" onclick="selectGuild(\'' + esc(g.id) + '\', \'' + esc(g.name) + '\')">';
-      } else {
-        html += '<div class="sidebar-item' + (dashGuildId === g.id ? ' active' : '') + '" onclick="selectGuild(\'' + esc(g.id) + '\', \'' + esc(g.name) + '\')">';
-        html += '<span class="icon">S</span> ' + esc(g.name);
+      var sel = dashChannelId === ch.id ? ' selected' : '';
+      html += '<div class="gm_channel'+sel+'" onclick="selectChannel(\''+esc(ch.id)+'\',\''+esc(ch.name)+'\');return false">';
+      html += '<span style="color:#85868a;margin-right:4px;font-size:14px;">#</span>';
+      html += '<span>'+esc(ch.name)+'</span></div>';
+
+      // Show queues under selected channel
+      if (dashChannelId === ch.id && dashQueues.length) {
+        html += '<div class="gm_queue_menu">';
+        dashQueues.forEach(function(q) {
+          var qsel = dashQueueName === q.name ? ' selected' : '';
+          html += '<div class="gm_queue'+qsel+'" onclick="selectQueue(\''+esc(q.name)+'\');return false">';
+          html += '<span style="background:#376ace;color:white;font-size:9px;font-weight:700;padding:1px 4px;border-radius:2px;margin-right:5px;">PQ</span>';
+          html += '<span>'+esc(q.name)+'</span></div>';
+        });
+        html += '<div class="gm_queue" onclick="showToast(\'Create queues via Discord commands\',\'info\')">';
+        html += '<span style="color:#85868a;margin-right:5px;">+</span><span>create queue</span></div>';
         html += '</div>';
       }
     });
-    html += '</div>';
+    html += '<div class="gm_channel" onclick="showToast(\'Add channels via Discord commands\',\'info\')">';
+    html += '<span style="color:#85868a;margin-right:5px;">+</span><span>add channel</span></div>';
   }
 
-  sb.innerHTML = html;
+  menu.innerHTML = html;
 }
 
 function renderBreadcrumb() {
   var bc = document.getElementById('dash-breadcrumb');
-  var parts = [];
   if (!dashGuildId) { bc.innerHTML = ''; return; }
-  parts.push('<a onclick="resetDashboard(); return false;" href="#">Dashboard</a>');
+  var parts = ['<a onclick="resetDashboard();return false" href="#">Dashboard</a>'];
   if (dashGuildId && !dashChannelId) {
-    parts.push('<span class="current">' + esc(dashGuildName) + '</span>');
-  } else if (dashGuildId && dashChannelId && !dashQueueName) {
-    parts.push('<a onclick="selectGuild(\'' + esc(dashGuildId) + '\', \'' + esc(dashGuildName) + '\'); return false;" href="#">' + esc(dashGuildName) + '</a>');
-    parts.push('<span class="current">#' + esc(dashChannelName) + '</span>');
+    parts.push('<span class="current">'+esc(dashGuildName)+'</span>');
+  } else if (dashChannelId && !dashQueueName) {
+    parts.push('<a onclick="selectGuild(\''+esc(dashGuildId)+'\',\''+esc(dashGuildName)+'\');return false" href="#">'+esc(dashGuildName)+'</a>');
+    parts.push('<span class="current">#'+esc(dashChannelName)+'</span>');
   } else if (dashQueueName) {
-    parts.push('<a onclick="selectGuild(\'' + esc(dashGuildId) + '\', \'' + esc(dashGuildName) + '\'); return false;" href="#">' + esc(dashGuildName) + '</a>');
-    parts.push('<a onclick="selectChannel(\'' + esc(dashChannelId) + '\', \'' + esc(dashChannelName) + '\'); return false;" href="#">#' + esc(dashChannelName) + '</a>');
-    parts.push('<span class="current">' + esc(dashQueueName) + '</span>');
+    parts.push('<a onclick="selectGuild(\''+esc(dashGuildId)+'\',\''+esc(dashGuildName)+'\');return false" href="#">'+esc(dashGuildName)+'</a>');
+    parts.push('<a onclick="selectChannel(\''+esc(dashChannelId)+'\',\''+esc(dashChannelName)+'\');return false" href="#">#'+esc(dashChannelName)+'</a>');
+    parts.push('<span class="current">'+esc(dashQueueName)+'</span>');
   }
-  bc.innerHTML = parts.join('<span class="separator">&#8250;</span>');
+  bc.innerHTML = parts.join('<span class="separator"> &#8250; </span>');
 }
 
 function resetDashboard() {
-  dashGuildId = null; dashGuildName = null; dashChannelId = null;
-  dashChannelName = null; dashQueueName = null; dashChannels = [];
-  dashQueues = []; dashConfigData = null; dashActiveTab = null;
+  dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null;
+  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashActiveTab=null;
   loadDashboard();
-}
-
-function resetToGuild() {
-  dashChannelId = null; dashChannelName = null;
-  dashQueueName = null; dashConfigData = null; dashActiveTab = null;
-  selectGuild(dashGuildId, dashGuildName);
 }
 
 async function loadDashboard() {
   var content = document.getElementById('dash-content');
   if (!currentUser || !currentUser.username) {
-    dashGuildId = null; dashGuildName = null; dashChannelId = null;
-    dashChannelName = null; dashQueueName = null;
-    renderBreadcrumb(); renderSidebar();
+    dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
+    renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
     content.innerHTML = '<div class="dash-login-prompt">Login with Discord to configure channels.<br><br><a href="/auth/login">Login with Discord</a></div>';
     return;
   }
-  dashGuildId = null; dashGuildName = null; dashChannelId = null;
-  dashChannelName = null; dashQueueName = null;
+  dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
   renderBreadcrumb();
   content.innerHTML = '<div class="loading">Loading guilds...</div>';
   try {
     var resp = await authFetch('/api/guilds');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    var data = await resp.json();
-    if (data.error) throw new Error(data.error);
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    var data = await resp.json(); if (data.error) throw new Error(data.error);
     dashGuilds = data.guilds;
-    renderSidebar();
-    if (dashGuilds.length === 0) {
-      content.innerHTML = '<div class="dash-login-prompt">No configured guilds found.</div>';
-      return;
-    }
-    var html = '<div class="content-title">Your Servers</div><div class="card-grid">';
-    dashGuilds.forEach(function(g) {
-      html += '<div class="card" onclick="selectGuild(\'' + esc(g.id) + '\', \'' + esc(g.name) + '\')">';
-      if (g.icon) html += '<img class="card-icon" src="' + esc(g.icon) + '" alt="">';
-      html += '<div class="card-title">' + esc(g.name) + '</div>';
-      html += '<div class="card-detail">' + g.channels + ' channel' + (g.channels !== 1 ? 's' : '') + '</div>';
-      if (g.is_admin) html += '<div class="card-badge">Admin</div>';
-      html += '</div>';
-    });
-    html += '</div>';
-    content.innerHTML = html;
-  } catch (e) {
-    content.innerHTML = '<div class="error">Failed to load guilds: ' + esc(e.message) + '</div>';
-  }
+    renderGuildNav(); renderGuildMenu();
+    if (!dashGuilds.length) { content.innerHTML = '<div class="dash-login-prompt">No configured guilds found.</div>'; return; }
+    // Auto-select first guild
+    selectGuild(dashGuilds[0].id, dashGuilds[0].name);
+  } catch(e) { content.innerHTML = '<div class="error">Failed to load guilds: '+esc(e.message)+'</div>'; }
 }
 
 async function selectGuild(id, name) {
-  dashGuildId = id; dashGuildName = name;
-  dashChannelId = null; dashChannelName = null; dashQueueName = null;
-  dashConfigData = null; dashActiveTab = null;
-  renderBreadcrumb();
+  dashGuildId=id; dashGuildName=name; dashChannelId=null; dashChannelName=null;
+  dashQueueName=null; dashConfigData=null; dashActiveTab=null;
+  renderBreadcrumb(); renderGuildNav();
   var content = document.getElementById('dash-content');
   content.innerHTML = '<div class="loading">Loading channels...</div>';
   try {
-    var resp = await authFetch('/api/guilds/' + id + '/channels');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    var data = await resp.json();
-    if (data.error) throw new Error(data.error);
-    dashChannels = data.channels;
-    renderSidebar();
-    if (dashChannels.length === 0) {
-      content.innerHTML = '<div class="dash-login-prompt">No configured channels.</div>';
-      return;
-    }
-    var html = '<div class="content-title">Channels in ' + esc(name) + '</div><div class="card-grid">';
-    dashChannels.forEach(function(ch) {
-      html += '<div class="card" onclick="selectChannel(\'' + esc(ch.id) + '\', \'' + esc(ch.name) + '\')">';
-      html += '<div class="card-title"># ' + esc(ch.name) + '</div>';
-      html += '<div class="card-detail">' + ch.queues + ' queue' + (ch.queues !== 1 ? 's' : '') + '</div>';
-      if (ch.is_admin) html += '<div class="card-badge">Admin</div>';
-      html += '</div>';
-    });
-    html += '</div>';
-    content.innerHTML = html;
-  } catch (e) {
-    content.innerHTML = '<div class="error">Failed to load channels: ' + esc(e.message) + '</div>';
-  }
+    var resp = await authFetch('/api/guilds/'+id+'/channels');
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    var data = await resp.json(); if (data.error) throw new Error(data.error);
+    dashChannels = data.channels; dashQueues = [];
+    renderGuildMenu();
+    if (!dashChannels.length) { content.innerHTML = '<div class="dash-login-prompt">No configured channels.</div>'; return; }
+    // Auto-select first channel
+    selectChannel(dashChannels[0].id, dashChannels[0].name);
+  } catch(e) { content.innerHTML = '<div class="error">Failed to load channels: '+esc(e.message)+'</div>'; }
 }
 
 async function selectChannel(id, name) {
-  dashChannelId = id; dashChannelName = name;
-  dashQueueName = null; dashActiveTab = null;
+  dashChannelId=id; dashChannelName=name; dashQueueName=null; dashActiveTab=null;
   renderBreadcrumb();
   var content = document.getElementById('dash-content');
   content.innerHTML = '<div class="loading">Loading configuration...</div>';
   try {
-    var results = await Promise.all([
-      authFetch('/api/channels/' + id + '/config'),
-      authFetch('/api/channels/' + id + '/queues'),
-    ]);
-    if (!results[0].ok) throw new Error('HTTP ' + results[0].status);
-    if (!results[1].ok) throw new Error('HTTP ' + results[1].status);
+    var results = await Promise.all([authFetch('/api/channels/'+id+'/config'), authFetch('/api/channels/'+id+'/queues')]);
+    if (!results[0].ok) throw new Error('HTTP '+results[0].status);
+    if (!results[1].ok) throw new Error('HTTP '+results[1].status);
     var jsons = await Promise.all([results[0].json(), results[1].json()]);
     if (jsons[0].error) throw new Error(jsons[0].error);
-    if (jsons[1].error) throw new Error(jsons[1].error);
-    dashConfigData = jsons[0];
-    dashQueues = jsons[1].queues || [];
+    dashConfigData = jsons[0]; dashQueues = jsons[1].queues || [];
     dashActiveTab = dashConfigData.sections ? dashConfigData.sections[0] : 'General';
-    renderSidebar();
-    renderChannelConfig();
-  } catch (e) {
-    content.innerHTML = '<div class="error">Failed to load config: ' + esc(e.message) + '</div>';
-  }
-}
-
-function renderChannelConfig() {
-  var content = document.getElementById('dash-content');
-  var data = dashConfigData;
-  var isAdmin = data.is_admin;
-
-  // Tab bar
-  var html = '<div class="tab-bar">';
-  (data.sections || []).forEach(function(sec) {
-    html += '<button class="tab-btn' + (sec === dashActiveTab ? ' active' : '') + '" onclick="switchTab(\'' + esc(sec) + '\')">' + esc(sec) + '</button>';
-  });
-  html += '</div>';
-
-  // Config panel for active tab
-  html += '<div class="config-panel"><form id="channel-config-form" onsubmit="return false;">';
-  html += renderConfigSection(data.variables, dashActiveTab, isAdmin);
-  html += '</form>';
-
-  if (isAdmin) {
-    html += '<button class="btn-save" onclick="saveChannelConfig()">S A V E</button>';
-  }
-  html += '</div>';
-
-  content.innerHTML = html;
-}
-
-function switchTab(tab) {
-  dashActiveTab = tab;
-  if (dashQueueName) {
-    renderQueueConfigView();
-  } else {
-    renderChannelConfig();
-  }
+    renderGuildMenu(); renderConfigView();
+  } catch(e) { content.innerHTML = '<div class="error">Failed to load config: '+esc(e.message)+'</div>'; }
 }
 
 async function selectQueue(name) {
-  dashQueueName = name;
-  dashActiveTab = null;
-  renderBreadcrumb(); renderSidebar();
+  dashQueueName=name; dashActiveTab=null;
+  renderBreadcrumb(); renderGuildMenu();
   var content = document.getElementById('dash-content');
-  content.innerHTML = '<div class="loading">Loading queue configuration...</div>';
+  content.innerHTML = '<div class="loading">Loading queue config...</div>';
   try {
-    var resp = await authFetch('/api/channels/' + dashChannelId + '/queues/' + encodeURIComponent(name) + '/config');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    var data = await resp.json();
-    if (data.error) throw new Error(data.error);
+    var resp = await authFetch('/api/channels/'+dashChannelId+'/queues/'+encodeURIComponent(name)+'/config');
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    var data = await resp.json(); if (data.error) throw new Error(data.error);
     dashConfigData = data;
     dashActiveTab = data.sections ? data.sections[0] : 'General';
-    renderSidebar();
-    renderQueueConfigView();
-  } catch (e) {
-    content.innerHTML = '<div class="error">Failed to load queue config: ' + esc(e.message) + '</div>';
-  }
+    renderGuildMenu(); renderConfigView();
+  } catch(e) { content.innerHTML = '<div class="error">Failed to load queue config: '+esc(e.message)+'</div>'; }
 }
 
-function renderQueueConfigView() {
+function switchTab(tab) { dashActiveTab = tab; renderConfigView(); }
+
+function renderConfigView() {
   var content = document.getElementById('dash-content');
   var data = dashConfigData;
   var isAdmin = data.is_admin;
+  var formId = dashQueueName ? 'queue-config-form' : 'channel-config-form';
 
-  var html = '<div class="tab-bar">';
+  // Section tabs
+  var html = '<div id="st_layout"><div id="st_sections">';
   (data.sections || []).forEach(function(sec) {
-    html += '<button class="tab-btn' + (sec === dashActiveTab ? ' active' : '') + '" onclick="switchTab(\'' + esc(sec) + '\')">' + esc(sec) + '</button>';
+    html += '<div class="'+(sec===dashActiveTab?'selected':'')+'" onclick="switchTab(\''+esc(sec)+'\')">'+esc(sec)+'</div>';
   });
   html += '</div>';
 
-  html += '<div class="config-panel"><form id="queue-config-form" onsubmit="return false;">';
+  // Settings form
+  html += '<form autocomplete="off" id="'+formId+'" onsubmit="return false"><div id="st_fields">';
   html += renderConfigSection(data.variables, dashActiveTab, isAdmin);
-  html += '</form>';
 
+  // Save button
   if (isAdmin) {
-    html += '<button class="btn-save" onclick="saveQueueConfig()">S A V E</button>';
+    if (dashQueueName) {
+      html += '<div class="field_submit" onclick="saveQueueConfig()">SAVE</div>';
+    } else {
+      html += '<div class="field_submit" onclick="saveChannelConfig()">SAVE</div>';
+    }
   }
-  html += '<button class="btn-back" onclick="selectChannel(\'' + esc(dashChannelId) + '\', \'' + esc(dashChannelName) + '\')">Back to Channel</button>';
-  html += '</div>';
 
+  html += '</div></form></div>';
   content.innerHTML = html;
 }
 
 function renderConfigSection(variables, section, editable) {
-  var html = '';
+  var html = ''; var first = true;
   Object.keys(variables).forEach(function(name) {
     var meta = variables[name];
     if ((meta.section || 'General') !== section) return;
 
-    html += '<div class="config-row">';
-    html += '<div class="config-row-label"><div class="name">' + esc(meta.display || name);
-    if (meta.description) html += ' <span class="info-icon" title="' + esc(meta.description) + '">i</span>';
-    html += ' <span class="reset-icon" title="Reset to default">&#x21bb;</span>';
-    html += '</div></div>';
-    html += '<div class="config-row-control">';
+    if (!first) html += '<hr class="st_separator">';
+    first = false;
+
+    html += '<div class="st_variable">';
+    html += '<div class="var_header">';
+    html += '<div class="vh_title">'+esc(meta.display || name)+'</div>';
+    html += '<div class="vh_icons">';
+    if (meta.description) {
+      html += '<div><span>'+esc(meta.description)+'</span><img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'18\' height=\'18\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2385868a\' stroke-width=\'2\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'10\'/%3E%3Cpath d=\'M12 16v-4\'/%3E%3Cpath d=\'M12 8h.01\'/%3E%3C/svg%3E"></div>';
+    }
+    html += '<div><span>Reset to default</span><img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'18\' height=\'18\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2385868a\' stroke-width=\'2\'%3E%3Cpath d=\'M1 4v6h6\'/%3E%3Cpath d=\'M3.51 15a9 9 0 1 0 2.13-9.36L1 10\'/%3E%3C/svg%3E"></div>';
+    html += '</div>';
+    html += '<div class="vh_whitespace"></div>';
 
     if (meta.type === 'table') {
+      // No toggle for tables
+      html += '</div>'; // close var_header
+      html += '<div class="var_content">';
       html += renderTableControl(name, meta, editable);
+      html += '</div>';
+    } else if (meta.type === 'bool') {
+      // Tri-state boolean (X / V)
+      html += renderBoolControl(name, meta, editable);
+      html += '</div>'; // close var_header
+    } else if (!meta.notnull && meta.value === null && meta.type !== 'option') {
+      // Nullable with toggle switch (null = toggle on, has value = toggle off)
+      var isNull = meta.value === null || meta.value === undefined || meta.value === '';
+      html += '<div><label class="vh_switch"><input type="checkbox" data-null-for="'+esc(name)+'"'+(isNull?' checked':'')+' onchange="toggleNullField(this,\''+esc(name)+'\')"'+(editable?'':' disabled')+'><span class="slider"></span></label></div>';
+      html += '</div>'; // close var_header
+      html += '<div class="var_content'+(isNull?' hidden':'')+'" data-field-for="'+esc(name)+'">';
+      html += renderInputControl(name, meta, editable);
+      html += '</div>';
     } else {
-      html += renderControl(name, meta, editable);
+      html += '</div>'; // close var_header
+      html += '<div class="var_content">';
+      html += renderInputControl(name, meta, editable);
+      html += '</div>';
     }
 
-    html += '</div></div>';
+    html += '</div>'; // close st_variable
   });
   return html;
 }
 
-function renderControl(name, meta, editable) {
+function renderBoolControl(name, meta, editable) {
   var val = meta.value;
-  var disabled = editable ? '' : ' disabled';
+  var isOn = (val === true || val === 'on' || val === 'On' || val === 1 || val === '1');
+  var isOff = (val === false || val === 'off' || val === 'Off' || val === 0 || val === '0');
+  var isNull = !isOn && !isOff;
+  var dis = editable ? '' : ' disabled';
+
+  var html = '<div class="field_boolean" id="var_'+esc(name)+'">';
+  html += '<input id="var_'+esc(name)+'_off" type="radio" name="'+esc(name)+'" value="off"'+(isOff?' checked':'')+dis+'>';
+  html += '<label class="boolean_off" for="var_'+esc(name)+'_off">x</label>';
+  html += '<input id="var_'+esc(name)+'_none" type="radio" name="'+esc(name)+'" value="none" disabled>';
+  html += '<label class="boolean_null" for="var_'+esc(name)+'_none">/</label>';
+  html += '<input id="var_'+esc(name)+'_on" type="radio" name="'+esc(name)+'" value="on"'+(isOn?' checked':'')+dis+'>';
+  html += '<label class="boolean_on" for="var_'+esc(name)+'_on">v</label>';
+  html += '</div>';
+  return html;
+}
+
+function renderInputControl(name, meta, editable) {
+  var val = meta.value;
+  var dis = editable ? '' : ' disabled';
 
   switch (meta.type) {
-    case 'bool':
-      var isOn = (val === true || val === 'on' || val === 'On' || val === 'True' || val === 'true' || val === 1);
-      var checked = isOn ? ' checked' : '';
-      return '<label class="toggle"><input type="checkbox" data-var="' + esc(name) + '" data-type="bool"' + checked + disabled + '><span class="slider"></span></label>';
-
     case 'option':
       var opts = meta.options || [];
-      var h = '<select class="cfg-input" data-var="' + esc(name) + '" data-type="option"' + disabled + '>';
-      if (!meta.notnull) h += '<option value=""' + (val === null || val === undefined || val === '' ? ' selected' : '') + '>None</option>';
-      opts.forEach(function(opt) {
-        h += '<option value="' + esc(opt) + '"' + (String(val) === String(opt) ? ' selected' : '') + '>' + esc(opt) + '</option>';
-      });
-      return h + '</select>';
+      var h = '<select class="field_select" data-var="'+esc(name)+'" data-type="option"'+dis+'>';
+      if (!meta.notnull) h += '<option value=""'+(val==null||val===''?' selected':'')+'>None</option>';
+      opts.forEach(function(o) { h += '<option value="'+esc(o)+'"'+(String(val)===String(o)?' selected':'')+'>'+esc(o)+'</option>'; });
+      return h+'</select>';
 
     case 'slider':
-      var numVal = parseFloat(val) || meta.min || 0;
-      var unit = meta.unit ? ' ' + esc(meta.unit) : '';
-      return '<div class="slider-wrap"><input type="range" data-var="' + esc(name) + '" data-type="slider" min="' + (meta.min || 0) + '" max="' + (meta.max || 100) + '" value="' + numVal + '"' + disabled + ' oninput="this.nextElementSibling.textContent=this.value+\'' + unit.replace(/'/g, "\\'") + '\'"><span class="slider-val">' + numVal + unit + '</span></div>';
+      var n = parseFloat(val) || meta.min || 0;
+      var u = meta.unit ? esc(meta.unit) : '%';
+      return '<div class="slider_container"><input class="field_slider" type="number" data-var="'+esc(name)+'" data-type="slider" value="'+n+'" min="'+(meta.min||0)+'" max="'+(meta.max||100)+'"'+dis+'><span>'+u+'</span></div>';
 
     case 'int':
-      var intVal = val !== null && val !== undefined ? val : '';
-      return '<input class="cfg-input short" type="number" data-var="' + esc(name) + '" data-type="int" value="' + esc(intVal) + '"' + disabled + '>';
+      var iv = val !== null && val !== undefined ? val : '';
+      return '<input class="field_number" type="number" data-var="'+esc(name)+'" data-type="int" value="'+esc(iv)+'"'+dis+'>';
 
     case 'duration':
-      var durVal = val !== null && val !== undefined ? val : '';
-      return '<input class="cfg-input" type="text" data-var="' + esc(name) + '" data-type="duration" value="' + esc(durVal) + '" placeholder="HH:MM:SS"' + disabled + '>';
+      var dv = val !== null && val !== undefined ? val : '';
+      return '<input class="field_duration" type="text" data-var="'+esc(name)+'" data-type="duration" value="'+esc(dv)+'" placeholder="HH:MM:SS"'+dis+'>';
 
     case 'text':
-      var textVal = val !== null && val !== undefined ? val : '';
-      return '<textarea class="cfg-input" data-var="' + esc(name) + '" data-type="text"' + disabled + '>' + esc(textVal) + '</textarea>';
+      var tv = val !== null && val !== undefined ? val : '';
+      return '<textarea class="field_text" data-var="'+esc(name)+'" data-type="text"'+dis+'>'+esc(tv)+'</textarea>';
 
     case 'str':
     default:
-      var strVal = val !== null && val !== undefined ? val : '';
-      return '<input class="cfg-input" type="text" data-var="' + esc(name) + '" data-type="str" value="' + esc(strVal) + '"' + disabled + '>';
+      var sv = val !== null && val !== undefined ? val : '';
+      return '<input class="field_string" type="text" data-var="'+esc(name)+'" data-type="str" value="'+esc(sv)+'"'+dis+'>';
   }
 }
 
 function renderTableControl(name, meta, editable) {
-  var disabled = editable ? '' : ' disabled';
   var columns = meta.columns || ['value'];
   var rows = meta.value || [];
   if (!Array.isArray(rows)) rows = [];
+  var dis = editable ? '' : ' disabled';
 
-  // Use ranks-table style for multi-column tables
-  if (columns.length > 1) {
-    var html = '<table class="ranks-table" data-var="' + esc(name) + '" data-type="table" data-columns=\'' + JSON.stringify(columns) + '\'>';
-    html += '<thead><tr>';
-    columns.forEach(function(col) {
-      html += '<th>' + esc(col);
-      if (col === 'rating') html += ' <span class="info-icon" title="The rank will be given on this rating or higher">i</span>';
-      if (col === 'role') html += ' <span class="info-icon" title="Assign a guild role to the rank owners">i</span>';
-      html += '</th>';
-    });
-    html += '<th></th></tr></thead><tbody>';
-    rows.forEach(function(row) {
-      html += '<tr>';
-      if (typeof row === 'object' && row !== null && !Array.isArray(row)) {
-        columns.forEach(function(col) {
-          html += '<td><input type="text" data-col="' + esc(col) + '" value="' + esc(row[col] || '') + '"' + disabled + '></td>';
-        });
-      } else {
-        columns.forEach(function(col, idx) {
-          var cellVal = Array.isArray(row) ? (row[idx] || '') : row;
-          html += '<td><input type="text" data-col="' + esc(col) + '" value="' + esc(cellVal) + '"' + disabled + '></td>';
-        });
-      }
-      if (editable) {
-        html += '<td><button class="btn-remove-row" onclick="this.closest(\'tr\').remove()" title="Remove">&times;</button></td>';
-      } else {
-        html += '<td></td>';
-      }
-      html += '</tr>';
-    });
-    if (editable) {
-      html += '<tr><td colspan="' + (columns.length + 1) + '" class="add-row-cell" onclick="addRanksRow(this.closest(\'table\'))">add more</td></tr>';
+  var html = '<div class="field_table"><table class="editable_table" data-var="'+esc(name)+'" data-type="table" data-columns=\''+JSON.stringify(columns)+'\'>';
+
+  // Header
+  html += '<thead><tr>';
+  columns.forEach(function(col) {
+    html += '<td>'+esc(col);
+    if (col === 'rating') html += ' <span style="font-size:11px;opacity:0.6;">&#9432;</span>';
+    if (col === 'role') html += ' <span style="font-size:11px;opacity:0.6;">&#9432;</span>';
+    html += '</td>';
+  });
+  html += '<td class="et_remove"></td></tr></thead>';
+
+  // Body
+  html += '<tbody>';
+  rows.forEach(function(row) {
+    html += '<tr>';
+    if (typeof row === 'object' && row !== null && !Array.isArray(row)) {
+      columns.forEach(function(col) {
+        html += '<td><input type="text" data-col="'+esc(col)+'" value="'+esc(row[col]||'')+'"'+dis+'></td>';
+      });
+    } else {
+      columns.forEach(function(col,i) {
+        var cv = Array.isArray(row) ? (row[i]||'') : row;
+        html += '<td><input type="text" data-col="'+esc(col)+'" value="'+esc(cv)+'"'+dis+'></td>';
+      });
     }
-    html += '</tbody></table>';
-    return html;
+    if (editable) html += '<td class="et_remove"><button class="et_remove_btn" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
+    else html += '<td></td>';
+    html += '</tr>';
+  });
+  html += '</tbody>';
+
+  // Footer (add more)
+  if (editable) {
+    html += '<tfoot><tr><td colspan="'+(columns.length+1)+'" class="et_add" onclick="addTableRow(this.closest(\'table\'))">add more</td></tr></tfoot>';
   }
 
-  // Single-column table (generic)
-  var html = '<div class="table-control" data-var="' + esc(name) + '" data-type="table" data-columns=\'' + JSON.stringify(columns) + '\'>';
-  html += '<div class="table-rows">';
-  rows.forEach(function(row) {
-    html += '<div class="table-row">';
-    if (typeof row === 'object' && row !== null) {
-      columns.forEach(function(col) { html += '<input type="text" data-col="' + esc(col) + '" value="' + esc(row[col] || '') + '"' + disabled + '>'; });
-    } else {
-      html += '<input type="text" data-col="' + esc(columns[0]) + '" value="' + esc(row) + '"' + disabled + '>';
-    }
-    if (editable) html += '<button class="btn-remove-row" onclick="this.parentElement.remove()">&times;</button>';
-    html += '</div>';
-  });
-  html += '</div>';
-  if (editable) html += '<button class="btn-add-row" onclick="addTableRow(this.parentElement)">+ Add Row</button>';
-  html += '</div>';
+  html += '</table></div>';
   return html;
 }
 
-function addRanksRow(table) {
+function toggleNullField(checkbox, name) {
+  var field = document.querySelector('[data-field-for="'+name+'"]');
+  if (!field) return;
+  if (checkbox.checked) { field.classList.add('hidden'); }
+  else { field.classList.remove('hidden'); }
+}
+
+function addTableRow(table) {
   var columns = JSON.parse(table.dataset.columns || '["value"]');
   var tbody = table.querySelector('tbody');
-  var addRow = tbody.querySelector('.add-row-cell');
   var tr = document.createElement('tr');
   columns.forEach(function(col) {
     var td = document.createElement('td');
-    td.innerHTML = '<input type="text" data-col="' + esc(col) + '" value="">';
+    td.innerHTML = '<input type="text" data-col="'+esc(col)+'" value="">';
     tr.appendChild(td);
   });
   var tdBtn = document.createElement('td');
-  tdBtn.innerHTML = '<button class="btn-remove-row" onclick="this.closest(\'tr\').remove()" title="Remove">&times;</button>';
+  tdBtn.className = 'et_remove';
+  tdBtn.innerHTML = '<button class="et_remove_btn" onclick="this.closest(\'tr\').remove()">&times;</button>';
   tr.appendChild(tdBtn);
-  addRow.closest('tr').before(tr);
-}
-
-function addTableRow(container) {
-  var columns = JSON.parse(container.dataset.columns || '["value"]');
-  var rowsDiv = container.querySelector('.table-rows');
-  var div = document.createElement('div');
-  div.className = 'table-row';
-  columns.forEach(function(col) { div.innerHTML += '<input type="text" data-col="' + esc(col) + '" value="">'; });
-  div.innerHTML += '<button class="btn-remove-row" onclick="this.parentElement.remove()">&times;</button>';
-  rowsDiv.appendChild(div);
+  tbody.appendChild(tr);
 }
 
 function collectFormData(formId) {
@@ -1694,50 +1145,46 @@ function collectFormData(formId) {
   if (!form) return {};
   var data = {};
 
+  // Bool radios
+  form.querySelectorAll('.field_boolean').forEach(function(fb) {
+    var checked = fb.querySelector('input[type=radio]:checked');
+    if (!checked) return;
+    var name = checked.name;
+    data[name] = checked.value; // 'on', 'off', 'none'
+  });
+
+  // Null toggles: if checked, value is null
+  form.querySelectorAll('input[data-null-for]').forEach(function(cb) {
+    var name = cb.dataset.nullFor;
+    if (cb.checked) data[name] = null;
+  });
+
   // Simple controls
   form.querySelectorAll('[data-var]').forEach(function(el) {
-    var varName = el.dataset.var;
-    var varType = el.dataset.type;
-    if (varType === 'table') return;
-    if (varType === 'bool') { data[varName] = el.checked; }
-    else if (varType === 'slider' || varType === 'int') { data[varName] = el.value === '' ? null : Number(el.value); }
-    else if (varType === 'option') { data[varName] = el.value === '' ? null : el.value; }
-    else { data[varName] = el.value || null; }
+    var vn = el.dataset.var, vt = el.dataset.type;
+    if (vt === 'table') return;
+    // Skip if null-toggled
+    var nullCb = form.querySelector('input[data-null-for="'+vn+'"]');
+    if (nullCb && nullCb.checked) return;
+
+    if (vt === 'slider' || vt === 'int') data[vn] = el.value === '' ? null : Number(el.value);
+    else if (vt === 'option') data[vn] = el.value === '' ? null : el.value;
+    else data[vn] = el.value || null;
   });
 
-  // Table controls (div-based)
-  form.querySelectorAll('.table-control[data-var]').forEach(function(container) {
-    var varName = container.dataset.var;
-    var columns = JSON.parse(container.dataset.columns || '["value"]');
-    var rows = [];
-    container.querySelectorAll('.table-rows .table-row').forEach(function(rowEl) {
-      var inputs = rowEl.querySelectorAll('input[data-col]');
-      if (columns.length === 1) {
-        if (inputs.length > 0 && inputs[0].value.trim()) {
-          var obj = {}; obj[columns[0]] = inputs[0].value.trim(); rows.push(obj);
-        }
-      } else {
-        var rowData = {}; var hasValue = false;
-        inputs.forEach(function(inp) { rowData[inp.dataset.col] = inp.value.trim(); if (inp.value.trim()) hasValue = true; });
-        if (hasValue) rows.push(rowData);
-      }
-    });
-    data[varName] = rows;
-  });
-
-  // Table controls (ranks-table)
-  form.querySelectorAll('table.ranks-table[data-var]').forEach(function(table) {
-    var varName = table.dataset.var;
-    var columns = JSON.parse(table.dataset.columns || '["value"]');
+  // Tables
+  form.querySelectorAll('table.editable_table[data-var]').forEach(function(table) {
+    var vn = table.dataset.var;
+    var cols = JSON.parse(table.dataset.columns || '["value"]');
     var rows = [];
     table.querySelectorAll('tbody tr').forEach(function(tr) {
       var inputs = tr.querySelectorAll('input[data-col]');
-      if (inputs.length === 0) return; // skip "add more" row
-      var rowData = {}; var hasValue = false;
-      inputs.forEach(function(inp) { rowData[inp.dataset.col] = inp.value.trim(); if (inp.value.trim()) hasValue = true; });
-      if (hasValue) rows.push(rowData);
+      if (!inputs.length) return;
+      var rd = {}, hv = false;
+      inputs.forEach(function(inp) { rd[inp.dataset.col] = inp.value.trim(); if (inp.value.trim()) hv=true; });
+      if (hv) rows.push(rd);
     });
-    data[varName] = rows;
+    data[vn] = rows;
   });
 
   return data;
@@ -1746,28 +1193,32 @@ function collectFormData(formId) {
 async function saveChannelConfig() {
   var data = collectFormData('channel-config-form');
   try {
-    var resp = await authFetch('/api/channels/' + dashChannelId + '/config', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+    var resp = await authFetch('/api/channels/'+dashChannelId+'/config', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data),
     });
-    var result = await resp.json();
-    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP ' + resp.status);
-    showToast('Configuration saved successfully.', 'success');
-  } catch (e) { showToast('Failed to save: ' + e.message, 'error'); }
+    var r = await resp.json();
+    if (!resp.ok || r.error) throw new Error(r.error || 'HTTP '+resp.status);
+    showToast('Configuration saved.', 'success');
+  } catch(e) { showToast('Failed: '+e.message, 'error'); }
 }
 
 async function saveQueueConfig() {
   var data = collectFormData('queue-config-form');
   try {
-    var resp = await authFetch('/api/channels/' + dashChannelId + '/queues/' + encodeURIComponent(dashQueueName) + '/config', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+    var resp = await authFetch('/api/channels/'+dashChannelId+'/queues/'+encodeURIComponent(dashQueueName)+'/config', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data),
     });
-    var result = await resp.json();
-    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP ' + resp.status);
-    showToast('Queue configuration saved successfully.', 'success');
-  } catch (e) { showToast('Failed to save: ' + e.message, 'error'); }
+    var r = await resp.json();
+    if (!resp.ok || r.error) throw new Error(r.error || 'HTTP '+resp.status);
+    showToast('Queue config saved.', 'success');
+  } catch(e) { showToast('Failed: '+e.message, 'error'); }
 }
 
 /* ─── Init ─── */
+// Hide sidebar panels initially (shown when dashboard loads)
+document.getElementById('guild_nav').style.display = 'none';
+document.getElementById('guild_menu').style.display = 'none';
+
 checkAuth();
 initCivStats();
 </script>
