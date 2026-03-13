@@ -9,6 +9,8 @@ from core.console import log
 from core.config import cfg
 import bot
 from bot.elo_sync import process_elo_sync
+from bot.civ_sync import parse_lobby_embed, buffer_lobby_result
+from bot.message_logger import log_channel_message, log_bot_message
 
 
 async def seed_ratings_from_csv():
@@ -97,9 +99,31 @@ async def on_message(message):
 		and '```markdown' in message.content
 		and 'results' in message.content):
 		try:
+			log_bot_message(message, 'Pubobot')
 			await process_elo_sync(message)
 		except Exception as e:
 			log.error(f"ELO sync error: {e}\n{traceback.format_exc()}")
+
+	# Buffer AOE2LobbyBOT match results for civ sync
+	lobbybot_id = getattr(cfg, 'LOBBYBOT_USER_ID', None)
+	if (lobbybot_id
+		and message.author.id == lobbybot_id
+		and message.author.bot
+		and message.embeds):
+		try:
+			log_bot_message(message, 'AOE2LobbyBOT')
+			parsed = parse_lobby_embed(message)
+			if parsed:
+				buffer_lobby_result(parsed)
+		except Exception as e:
+			log.error(f"Civ sync buffer error: {e}\n{traceback.format_exc()}")
+
+	# Log all channel messages in queue channels
+	if message.channel.id in bot.queue_channels:
+		try:
+			log_channel_message(message)
+		except Exception:
+			pass
 
 
 @dc.event

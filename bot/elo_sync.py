@@ -2,6 +2,7 @@ import re
 import time
 from core.database import db
 from core.console import log
+from bot.civ_sync import find_matching_lobby, find_matching_lobby_from_history, link_and_write
 
 
 def parse_elo_message(content):
@@ -205,6 +206,21 @@ async def process_elo_sync(message):
 			log.info(f"ELO sync: {nick} {rating_before} -> {rating_after} ({'+' if rating_change >= 0 else ''}{rating_change})")
 
 	log.info(f"ELO sync: processed match {match_id} ({queue_name})")
+
+	# Try to link with a LobbyBOT match for civ data
+	try:
+		lobby = find_matching_lobby(parsed, message.created_at.timestamp())
+		if lobby is None:
+			log.info(f"Civ sync: no buffered LobbyBOT match found, scanning channel history...")
+			lobby = await find_matching_lobby_from_history(
+				message.channel, parsed, message.created_at.timestamp()
+			)
+		if lobby:
+			link_and_write(match_id, parsed, lobby)
+		else:
+			log.info(f"Civ sync: no matching LobbyBOT result found for match {match_id}")
+	except Exception as e:
+		log.error(f"Civ sync error for match {match_id}: {e}")
 
 
 def _resolve_user_id(message, nick):
