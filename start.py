@@ -74,7 +74,7 @@ def main():
         dc_owner_id=owner_id,
         dc_slash_servers=os.environ.get("DC_SLASH_SERVERS", ""),
         pubobot_user_id=os.environ.get("PUBOBOT_USER_ID", "177022387903004673"),
-        lobbybot_user_id=os.environ.get("LOBBYBOT_USER_ID", "0"),
+        lobbybot_user_id=os.environ.get("LOBBYBOT_USER_ID", "1230652255875629058"),
         db_uri=db_uri,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         commands_url=os.environ.get("COMMANDS_URL",
