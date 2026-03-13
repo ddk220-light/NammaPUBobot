@@ -17,6 +17,8 @@ DC_INVITE_LINK = "{dc_invite_link}"
 DC_OWNER_ID = {dc_owner_id}
 DC_SLASH_SERVERS = [{dc_slash_servers}]
 
+PUBOBOT_USER_ID = {pubobot_user_id}
+
 DB_URI = "{db_uri}"
 LOG_LEVEL = "{log_level}"
 COMMANDS_URL = "{commands_url}"
@@ -70,6 +72,7 @@ def main():
         dc_invite_link=os.environ.get("DC_INVITE_LINK", ""),
         dc_owner_id=owner_id,
         dc_slash_servers=os.environ.get("DC_SLASH_SERVERS", ""),
+        pubobot_user_id=os.environ.get("PUBOBOT_USER_ID", "177022387903004673"),
         db_uri=db_uri,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         commands_url=os.environ.get("COMMANDS_URL",

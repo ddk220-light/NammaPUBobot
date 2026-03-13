@@ -8,6 +8,7 @@ from core.database import db
 from core.console import log
 from core.config import cfg
 import bot
+from bot.elo_sync import process_elo_sync
 
 
 async def seed_ratings_from_csv():
@@ -87,6 +88,18 @@ async def on_message(message):
 		await bot.enable_channel(message)
 	elif message.content == '!disable_pubobot':
 		await bot.disable_channel(message)
+
+	# Sync ELO from original Pubobot
+	pubobot_id = getattr(cfg, 'PUBOBOT_USER_ID', None)
+	if (pubobot_id
+		and message.author.id == pubobot_id
+		and message.author.bot
+		and '```markdown' in message.content
+		and 'results' in message.content):
+		try:
+			await process_elo_sync(message)
+		except Exception as e:
+			log.error(f"ELO sync error: {e}\n{traceback.format_exc()}")
 
 
 @dc.event
