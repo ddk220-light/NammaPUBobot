@@ -128,6 +128,7 @@ Chennai Manikam,Berbers,2025-12-01,0,2,2,0.00
 Chennai Manikam,Berbers,2025-12-08,0,1,1,0.00
 Chennai Manikam,Berbers,2025-12-22,0,1,1,0.00
 Chennai Manikam,Berbers,2025-12-29,0,1,1,0.00
+Chennai Manikam,Berbers,2026-03-02,0,1,1,0.00
 Chennai Manikam,Bohemians,2025-01-20,0,1,1,0.00
 Chennai Manikam,Bohemians,2025-02-24,0,1,1,0.00
 Chennai Manikam,Bohemians,2025-03-03,0,1,1,0.00
@@ -508,6 +509,7 @@ Chennai Manikam,Portuguese,2025-08-25,0,1,1,0.00
 Chennai Manikam,Portuguese,2025-11-24,0,1,1,0.00
 Chennai Manikam,Portuguese,2025-12-08,0,1,1,0.00
 Chennai Manikam,Portuguese,2026-02-02,1,0,1,1.00
+Chennai Manikam,Portuguese,2026-03-02,1,0,1,1.00
 Chennai Manikam,Romans,2024-12-23,0,1,1,0.00
 Chennai Manikam,Romans,2025-03-10,1,0,1,1.00
 Chennai Manikam,Romans,2025-04-07,0,1,1,0.00
@@ -970,6 +972,7 @@ Dark De Bruyne,Persians,2025-06-16,0,1,1,0.00
 Dark De Bruyne,Persians,2025-11-03,1,0,1,1.00
 Dark De Bruyne,Persians,2025-12-22,1,0,1,1.00
 Dark De Bruyne,Persians,2026-02-16,0,1,1,0.00
+Dark De Bruyne,Persians,2026-03-02,1,0,1,1.00
 Dark De Bruyne,Poles,2024-06-17,1,0,1,1.00
 Dark De Bruyne,Poles,2024-11-04,0,1,1,0.00
 Dark De Bruyne,Poles,2025-01-27,0,1,1,0.00
@@ -1154,6 +1157,7 @@ Gajini,Bengalis,2025-11-03,0,1,1,0.00
 Gajini,Bengalis,2025-12-01,0,2,2,0.00
 Gajini,Bengalis,2026-01-05,1,0,1,1.00
 Gajini,Bengalis,2026-01-12,0,1,1,0.00
+Gajini,Bengalis,2026-03-02,0,1,1,0.00
 Gajini,Berbers,2024-03-04,1,0,1,1.00
 Gajini,Berbers,2024-05-20,0,1,1,0.00
 Gajini,Berbers,2024-09-16,0,1,1,0.00
@@ -1259,6 +1263,7 @@ Gajini,Burgundians,2025-11-10,0,1,1,0.00
 Gajini,Burgundians,2025-12-01,0,1,1,0.00
 Gajini,Burgundians,2026-01-19,1,0,1,1.00
 Gajini,Burgundians,2026-01-26,0,1,1,0.00
+Gajini,Burgundians,2026-03-02,1,0,1,1.00
 Gajini,Burmese,2024-06-10,1,0,1,1.00
 Gajini,Burmese,2024-06-17,0,3,3,0.00
 Gajini,Burmese,2024-07-29,2,0,2,1.00
@@ -1337,6 +1342,7 @@ Gajini,Celts,2025-12-08,2,0,2,1.00
 Gajini,Celts,2025-12-22,1,0,1,1.00
 Gajini,Celts,2026-01-26,0,1,1,0.00
 Gajini,Celts,2026-02-09,1,2,3,0.33
+Gajini,Celts,2026-03-02,1,1,2,0.50
 Gajini,Chinese,2024-02-26,1,1,2,0.50
 Gajini,Chinese,2024-03-11,1,0,1,1.00
 Gajini,Chinese,2024-03-18,0,1,1,0.00
@@ -1415,6 +1421,7 @@ Gajini,Dravidians,2025-11-03,1,0,1,1.00
 Gajini,Dravidians,2025-12-08,1,1,2,0.50
 Gajini,Dravidians,2025-12-15,0,2,2,0.00
 Gajini,Dravidians,2026-01-19,0,1,1,0.00
+Gajini,Dravidians,2026-03-02,1,0,1,1.00
 Gajini,Ethiopians,2024-01-29,1,2,3,0.33
 Gajini,Ethiopians,2024-03-11,0,2,2,0.00
 Gajini,Ethiopians,2024-04-22,0,1,1,0.00
@@ -1475,6 +1482,7 @@ Gajini,Goths,2025-12-01,0,1,1,0.00
 Gajini,Goths,2025-12-08,1,0,1,1.00
 Gajini,Goths,2025-12-22,1,0,1,1.00
 Gajini,Goths,2026-01-26,0,1,1,0.00
+Gajini,Goths,2026-03-02,0,1,1,0.00
 Gajini,Gurjaras,2024-02-26,0,1,1,0.00
 Gajini,Gurjaras,2024-03-11,0,1,1,0.00
 Gajini,Gurjaras,2024-04-22,0,1,1,0.00
@@ -1663,6 +1671,7 @@ Gajini,Khmer,2025-12-08,0,1,1,0.00
 Gajini,Khmer,2026-01-05,1,0,1,1.00
 Gajini,Khmer,2026-01-12,0,1,1,0.00
 Gajini,Khmer,2026-02-16,0,1,1,0.00
+Gajini,Khmer,2026-03-02,0,1,1,0.00
 Gajini,Koreans,2024-03-04,0,2,2,0.00
 Gajini,Koreans,2024-03-11,1,0,1,1.00
 Gajini,Koreans,2024-04-01,1,0,1,1.00
@@ -2034,6 +2043,7 @@ Gajini,Teutons,2026-01-05,2,0,2,1.00
 Gajini,Teutons,2026-01-12,1,1,2,0.50
 Gajini,Teutons,2026-02-16,1,1,2,0.50
 Gajini,Teutons,2026-02-23,1,0,1,1.00
+Gajini,Teutons,2026-03-02,1,0,1,1.00
 Gajini,Turks,2024-01-22,0,3,3,0.00
 Gajini,Turks,2024-02-12,2,0,2,1.00
 Gajini,Turks,2024-02-26,0,1,1,0.00
@@ -2718,6 +2728,7 @@ ImVaibhav,Ethiopians,2026-02-02,0,1,1,0.00
 ImVaibhav,Franks,2025-07-14,1,0,1,1.00
 ImVaibhav,Franks,2025-08-18,1,0,1,1.00
 ImVaibhav,Franks,2025-12-29,0,1,1,0.00
+ImVaibhav,Franks,2026-03-02,1,0,1,1.00
 ImVaibhav,Goths,2025-09-01,0,1,1,0.00
 ImVaibhav,Gurjaras,2025-06-16,0,1,1,0.00
 ImVaibhav,Gurjaras,2025-07-07,0,1,1,0.00
@@ -2796,6 +2807,7 @@ ImVaibhav,Vietnamese,2025-06-16,1,0,1,1.00
 ImVaibhav,Vietnamese,2025-09-08,0,1,1,0.00
 ImVaibhav,Vietnamese,2025-11-03,1,0,1,1.00
 ImVaibhav,Vietnamese,2025-12-01,1,0,1,1.00
+ImVaibhav,Vietnamese,2026-03-02,0,1,1,0.00
 ImVaibhav,Vikings,2025-06-16,0,1,1,0.00
 ImVaibhav,Vikings,2025-07-07,1,0,1,1.00
 ImVaibhav,Vikings,2025-11-03,1,0,1,1.00
@@ -3194,6 +3206,7 @@ M1k3,Armenians,2025-06-02,0,1,1,0.00
 M1k3,Armenians,2025-08-18,2,0,2,1.00
 M1k3,Armenians,2025-09-01,1,0,1,1.00
 M1k3,Armenians,2025-11-17,0,1,1,0.00
+M1k3,Armenians,2026-03-02,1,0,1,1.00
 M1k3,Aztecs,2024-01-22,1,1,2,0.50
 M1k3,Aztecs,2024-01-29,0,1,1,0.00
 M1k3,Aztecs,2024-05-20,1,0,1,1.00
@@ -3206,6 +3219,7 @@ M1k3,Aztecs,2025-04-21,0,1,1,0.00
 M1k3,Aztecs,2025-06-02,0,1,1,0.00
 M1k3,Aztecs,2025-11-17,0,1,1,0.00
 M1k3,Aztecs,2026-01-19,0,1,1,0.00
+M1k3,Aztecs,2026-03-02,0,1,1,0.00
 M1k3,Bengalis,2024-01-22,0,1,1,0.00
 M1k3,Bengalis,2024-01-29,2,0,2,1.00
 M1k3,Bengalis,2024-02-26,1,1,2,0.50
@@ -3245,6 +3259,7 @@ M1k3,Bohemians,2025-12-01,0,1,1,0.00
 M1k3,Bohemians,2025-12-08,0,1,1,0.00
 M1k3,Bohemians,2026-01-12,1,0,1,1.00
 M1k3,Bohemians,2026-02-23,1,0,1,1.00
+M1k3,Bohemians,2026-03-02,1,0,1,1.00
 M1k3,Britons,2024-01-22,1,0,1,1.00
 M1k3,Britons,2024-04-15,0,1,1,0.00
 M1k3,Britons,2024-06-03,0,1,1,0.00
@@ -3591,6 +3606,7 @@ M1k3,Jurchens,2025-10-13,0,1,1,0.00
 M1k3,Jurchens,2025-11-03,0,1,1,0.00
 M1k3,Jurchens,2025-12-22,0,1,1,0.00
 M1k3,Jurchens,2026-01-26,2,0,2,1.00
+M1k3,Jurchens,2026-03-02,0,1,1,0.00
 M1k3,Khitans,2025-06-09,0,1,1,0.00
 M1k3,Khitans,2025-07-07,1,0,1,1.00
 M1k3,Khitans,2025-10-20,1,0,1,1.00
@@ -3691,6 +3707,7 @@ M1k3,Malians,2025-12-22,0,1,1,0.00
 M1k3,Malians,2025-12-29,0,1,1,0.00
 M1k3,Malians,2026-01-05,1,0,1,1.00
 M1k3,Malians,2026-02-23,1,0,1,1.00
+M1k3,Malians,2026-03-02,1,0,1,1.00
 M1k3,Mapuche,2026-02-16,1,1,2,0.50
 M1k3,Mapuche,2026-02-23,1,0,1,1.00
 M1k3,Maya,2024-01-29,1,2,3,0.33
@@ -3916,6 +3933,7 @@ M1k3,Turks,2025-10-20,1,0,1,1.00
 M1k3,Turks,2025-12-22,1,1,2,0.50
 M1k3,Turks,2026-01-26,0,1,1,0.00
 M1k3,Turks,2026-02-16,0,1,1,0.00
+M1k3,Turks,2026-03-02,1,0,1,1.00
 M1k3,Vietnamese,2024-01-22,0,1,1,0.00
 M1k3,Vietnamese,2024-04-15,1,0,1,1.00
 M1k3,Vietnamese,2024-06-03,0,1,1,0.00
@@ -3963,6 +3981,7 @@ M1k3,Wu,2025-08-25,1,1,2,0.50
 M1k3,Wu,2025-10-20,1,0,1,1.00
 M1k3,Wu,2025-11-10,2,0,2,1.00
 M1k3,Wu,2025-12-01,0,1,1,0.00
+MuttonKuska,Armenians,2026-03-02,0,1,1,0.00
 MuttonKuska,Aztecs,2025-04-14,1,0,1,1.00
 MuttonKuska,Aztecs,2025-07-07,1,0,1,1.00
 MuttonKuska,Aztecs,2025-07-14,0,1,1,0.00
@@ -4070,6 +4089,7 @@ MuttonKuska,Goths,2025-09-29,1,1,2,0.50
 MuttonKuska,Goths,2025-11-03,1,0,1,1.00
 MuttonKuska,Goths,2025-11-17,1,0,1,1.00
 MuttonKuska,Goths,2025-12-22,0,1,1,0.00
+MuttonKuska,Goths,2026-03-02,1,0,1,1.00
 MuttonKuska,Gurjaras,2025-04-14,0,1,1,0.00
 MuttonKuska,Gurjaras,2025-05-12,2,1,3,0.67
 MuttonKuska,Gurjaras,2025-06-09,0,1,1,0.00
@@ -4158,6 +4178,7 @@ MuttonKuska,Malay,2025-09-08,1,1,2,0.50
 MuttonKuska,Malay,2025-10-06,0,1,1,0.00
 MuttonKuska,Malay,2025-12-08,1,0,1,1.00
 MuttonKuska,Malay,2025-12-29,1,0,1,1.00
+MuttonKuska,Malay,2026-03-02,1,0,1,1.00
 MuttonKuska,Malians,2025-05-19,0,1,1,0.00
 MuttonKuska,Malians,2025-05-26,0,1,1,0.00
 MuttonKuska,Malians,2025-07-28,1,2,3,0.33
@@ -4166,6 +4187,7 @@ MuttonKuska,Malians,2025-11-10,1,0,1,1.00
 MuttonKuska,Malians,2025-12-08,0,1,1,0.00
 MuttonKuska,Malians,2025-12-22,0,1,1,0.00
 MuttonKuska,Malians,2026-02-23,1,1,2,0.50
+MuttonKuska,Mapuche,2026-03-02,1,0,1,1.00
 MuttonKuska,Maya,2025-04-21,0,1,1,0.00
 MuttonKuska,Maya,2025-05-12,0,3,3,0.00
 MuttonKuska,Maya,2025-05-26,1,0,1,1.00
@@ -4175,11 +4197,13 @@ MuttonKuska,Maya,2025-10-06,0,1,1,0.00
 MuttonKuska,Maya,2025-11-24,1,0,1,1.00
 MuttonKuska,Maya,2025-12-01,1,0,1,1.00
 MuttonKuska,Maya,2025-12-08,1,0,1,1.00
+MuttonKuska,Maya,2026-03-02,0,1,1,0.00
 MuttonKuska,Mongols,2025-04-28,1,0,1,1.00
 MuttonKuska,Mongols,2025-05-12,0,1,1,0.00
 MuttonKuska,Mongols,2025-07-28,0,1,1,0.00
 MuttonKuska,Mongols,2025-10-06,0,1,1,0.00
 MuttonKuska,Mongols,2025-12-15,0,1,1,0.00
+MuttonKuska,Mongols,2026-03-02,1,0,1,1.00
 MuttonKuska,Muisca,2026-02-16,1,0,1,1.00
 MuttonKuska,Muisca,2026-02-23,1,0,1,1.00
 MuttonKuska,Persians,2025-04-28,1,1,2,0.50
@@ -4199,6 +4223,7 @@ MuttonKuska,Portuguese,2025-07-21,0,1,1,0.00
 MuttonKuska,Portuguese,2025-09-22,0,1,1,0.00
 MuttonKuska,Portuguese,2026-01-19,0,1,1,0.00
 MuttonKuska,Portuguese,2026-02-16,1,0,1,1.00
+MuttonKuska,Portuguese,2026-03-02,1,0,1,1.00
 MuttonKuska,Romans,2025-04-21,0,1,1,0.00
 MuttonKuska,Romans,2025-04-28,0,1,1,0.00
 MuttonKuska,Romans,2025-06-02,1,1,2,0.50
@@ -4254,6 +4279,7 @@ MuttonKuska,Tatars,2026-02-23,0,1,1,0.00
 MuttonKuska,Teutons,2025-05-26,1,0,1,1.00
 MuttonKuska,Teutons,2025-07-07,0,1,1,0.00
 MuttonKuska,Teutons,2025-09-29,1,1,2,0.50
+MuttonKuska,Teutons,2026-03-02,0,1,1,0.00
 MuttonKuska,Turks,2025-05-26,0,1,1,0.00
 MuttonKuska,Turks,2025-06-02,1,1,2,0.50
 MuttonKuska,Turks,2025-06-09,0,1,1,0.00
@@ -4485,6 +4511,7 @@ Shadeslayer,Goths,2025-04-28,1,0,1,1.00
 Shadeslayer,Goths,2025-09-01,1,0,1,1.00
 Shadeslayer,Goths,2025-09-08,1,0,1,1.00
 Shadeslayer,Goths,2025-12-29,0,1,1,0.00
+Shadeslayer,Goths,2026-03-02,1,0,1,1.00
 Shadeslayer,Gurjaras,2024-03-04,1,1,2,0.50
 Shadeslayer,Gurjaras,2024-04-01,0,1,1,0.00
 Shadeslayer,Gurjaras,2024-05-06,0,1,1,0.00
@@ -4645,6 +4672,7 @@ Shadeslayer,Malay,2025-05-19,0,1,1,0.00
 Shadeslayer,Malay,2025-07-28,0,2,2,0.00
 Shadeslayer,Malay,2025-09-29,0,1,1,0.00
 Shadeslayer,Malay,2026-01-19,0,1,1,0.00
+Shadeslayer,Malay,2026-03-02,0,1,1,0.00
 Shadeslayer,Malians,2024-01-29,1,0,1,1.00
 Shadeslayer,Malians,2024-02-26,1,0,1,1.00
 Shadeslayer,Malians,2024-04-22,0,1,1,0.00
@@ -5226,6 +5254,7 @@ TiShi,Romans,2025-09-01,1,0,1,1.00
 TiShi,Romans,2025-09-22,0,1,1,0.00
 TiShi,Romans,2025-09-29,0,1,1,0.00
 TiShi,Romans,2025-10-13,2,0,2,1.00
+TiShi,Romans,2026-03-02,1,0,1,1.00
 TiShi,Saracens,2025-07-14,1,0,1,1.00
 TiShi,Saracens,2025-09-22,0,1,1,0.00
 TiShi,Saracens,2025-12-08,1,0,1,1.00
@@ -5624,6 +5653,7 @@ aquasama7056,Mongols,2025-08-18,0,1,1,0.00
 aquasama7056,Persians,2025-04-28,1,0,1,1.00
 aquasama7056,Persians,2025-06-16,1,1,2,0.50
 aquasama7056,Persians,2025-10-13,1,0,1,1.00
+aquasama7056,Persians,2026-03-02,1,0,1,1.00
 aquasama7056,Poles,2025-04-07,1,0,1,1.00
 aquasama7056,Poles,2025-04-14,0,1,1,0.00
 aquasama7056,Poles,2025-05-12,1,1,2,0.50
@@ -5684,6 +5714,7 @@ aquasama7056,Vikings,2025-07-07,0,1,1,0.00
 aquasama7056,Vikings,2025-07-14,1,0,1,1.00
 aquasama7056,Vikings,2025-09-08,1,0,1,1.00
 aquasama7056,Wu,2026-01-26,0,1,1,0.00
+aquasama7056,Wu,2026-03-02,0,1,1,0.00
 bearknightman,Georgians,2025-10-27,0,1,1,0.00
 bearknightman,Hindustanis,2026-02-23,0,1,1,0.00
 centurion12,Armenians,2025-02-10,1,0,1,1.00
@@ -7452,6 +7483,7 @@ guruGreatest,Burgundians,2025-12-29,0,1,1,0.00
 guruGreatest,Burgundians,2026-01-05,0,1,1,0.00
 guruGreatest,Burgundians,2026-01-19,0,1,1,0.00
 guruGreatest,Burgundians,2026-02-09,1,0,1,1.00
+guruGreatest,Burgundians,2026-03-02,1,0,1,1.00
 guruGreatest,Burmese,2025-11-24,0,1,1,0.00
 guruGreatest,Burmese,2025-12-29,0,1,1,0.00
 guruGreatest,Burmese,2026-01-19,1,0,1,1.00
@@ -7482,6 +7514,7 @@ guruGreatest,Georgians,2025-12-15,2,0,2,1.00
 guruGreatest,Georgians,2025-12-22,0,1,1,0.00
 guruGreatest,Georgians,2026-01-05,1,0,1,1.00
 guruGreatest,Georgians,2026-02-09,0,1,1,0.00
+guruGreatest,Georgians,2026-03-02,1,0,1,1.00
 guruGreatest,Goths,2025-12-22,1,0,1,1.00
 guruGreatest,Goths,2026-01-26,0,1,1,0.00
 guruGreatest,Goths,2026-02-02,1,0,1,1.00
@@ -7501,16 +7534,19 @@ guruGreatest,Huns,2026-02-23,1,1,2,0.50
 guruGreatest,Inca,2025-12-22,0,1,1,0.00
 guruGreatest,Inca,2025-12-29,1,0,1,1.00
 guruGreatest,Inca,2026-02-16,1,0,1,1.00
+guruGreatest,Inca,2026-03-02,0,1,1,0.00
 guruGreatest,Italians,2025-11-24,1,0,1,1.00
 guruGreatest,Italians,2025-12-01,0,1,1,0.00
 guruGreatest,Italians,2026-01-05,0,2,2,0.00
 guruGreatest,Italians,2026-02-16,1,0,1,1.00
+guruGreatest,Italians,2026-03-02,1,0,1,1.00
 guruGreatest,Japanese,2025-12-01,1,2,3,0.33
 guruGreatest,Japanese,2025-12-29,0,1,1,0.00
 guruGreatest,Japanese,2026-01-19,1,0,1,1.00
 guruGreatest,Japanese,2026-01-26,0,1,1,0.00
 guruGreatest,Japanese,2026-02-02,1,0,1,1.00
 guruGreatest,Japanese,2026-02-16,0,1,1,0.00
+guruGreatest,Japanese,2026-03-02,1,0,1,1.00
 guruGreatest,Khmer,2025-08-18,0,1,1,0.00
 guruGreatest,Khmer,2025-12-01,0,1,1,0.00
 guruGreatest,Khmer,2025-12-22,0,2,2,0.00
@@ -7570,6 +7606,7 @@ guruGreatest,Poles,2025-12-22,1,0,1,1.00
 guruGreatest,Poles,2026-01-12,1,0,1,1.00
 guruGreatest,Poles,2026-02-16,2,0,2,1.00
 guruGreatest,Poles,2026-02-23,1,0,1,1.00
+guruGreatest,Poles,2026-03-02,1,0,1,1.00
 guruGreatest,Portuguese,2025-12-22,1,0,1,1.00
 guruGreatest,Portuguese,2026-01-05,0,1,1,0.00
 guruGreatest,Portuguese,2026-02-16,1,0,1,1.00
@@ -7587,12 +7624,14 @@ guruGreatest,Sicilians,2025-12-29,1,0,1,1.00
 guruGreatest,Sicilians,2026-01-12,1,0,1,1.00
 guruGreatest,Sicilians,2026-01-26,1,1,2,0.50
 guruGreatest,Sicilians,2026-02-02,1,1,2,0.50
+guruGreatest,Sicilians,2026-03-02,1,0,1,1.00
 guruGreatest,Slavs,2025-10-20,1,0,1,1.00
 guruGreatest,Slavs,2025-11-24,1,0,1,1.00
 guruGreatest,Slavs,2025-12-22,1,1,2,0.50
 guruGreatest,Slavs,2026-01-12,1,0,1,1.00
 guruGreatest,Slavs,2026-01-26,1,0,1,1.00
 guruGreatest,Slavs,2026-02-23,0,1,1,0.00
+guruGreatest,Slavs,2026-03-02,1,1,2,0.50
 guruGreatest,Spanish,2025-12-08,0,1,1,0.00
 guruGreatest,Spanish,2025-12-22,1,0,1,1.00
 guruGreatest,Spanish,2025-12-29,2,0,2,1.00
@@ -7627,6 +7666,7 @@ newisyou,Aztecs,2025-10-06,0,1,1,0.00
 newisyou,Aztecs,2025-12-29,0,1,1,0.00
 newisyou,Bengalis,2025-12-08,0,1,1,0.00
 newisyou,Bengalis,2025-12-15,1,0,1,1.00
+newisyou,Bengalis,2026-03-02,0,1,1,0.00
 newisyou,Berbers,2025-08-04,2,1,3,0.67
 newisyou,Berbers,2025-08-11,1,0,1,1.00
 newisyou,Berbers,2025-12-15,0,1,1,0.00
@@ -7634,12 +7674,14 @@ newisyou,Berbers,2026-02-09,1,0,1,1.00
 newisyou,Bohemians,2025-08-04,1,1,2,0.50
 newisyou,Bohemians,2025-09-15,0,1,1,0.00
 newisyou,Bohemians,2025-12-29,0,1,1,0.00
+newisyou,Bohemians,2026-03-02,0,1,1,0.00
 newisyou,Britons,2025-09-22,1,0,1,1.00
 newisyou,Britons,2026-01-19,0,1,1,0.00
 newisyou,Bulgarians,2025-08-04,0,1,1,0.00
 newisyou,Bulgarians,2025-08-11,1,0,1,1.00
 newisyou,Bulgarians,2025-12-22,1,0,1,1.00
 newisyou,Bulgarians,2025-12-29,0,2,2,0.00
+newisyou,Bulgarians,2026-03-02,1,0,1,1.00
 newisyou,Burgundians,2025-09-15,0,2,2,0.00
 newisyou,Burgundians,2025-09-22,1,0,1,1.00
 newisyou,Burgundians,2026-02-09,0,1,1,0.00
@@ -7682,6 +7724,7 @@ newisyou,Franks,2025-09-29,1,1,2,0.50
 newisyou,Franks,2025-11-10,0,1,1,0.00
 newisyou,Georgians,2025-07-28,0,1,1,0.00
 newisyou,Georgians,2025-12-08,1,0,1,1.00
+newisyou,Georgians,2026-03-02,0,1,1,0.00
 newisyou,Goths,2025-12-15,0,1,1,0.00
 newisyou,Gurjaras,2025-08-25,0,1,1,0.00
 newisyou,Gurjaras,2025-09-15,1,0,1,1.00
@@ -7769,6 +7812,7 @@ newisyou,Spanish,2025-07-28,1,0,1,1.00
 newisyou,Spanish,2025-12-15,1,0,1,1.00
 newisyou,Spanish,2026-01-05,1,0,1,1.00
 newisyou,Tatars,2025-07-07,1,0,1,1.00
+newisyou,Tatars,2026-03-02,1,0,1,1.00
 newisyou,Teutons,2026-02-09,0,1,1,0.00
 newisyou,Turks,2025-09-29,0,2,2,0.00
 newisyou,Turks,2025-10-06,0,1,1,0.00
@@ -7861,6 +7905,7 @@ ninjavarier,Japanese,2024-02-26,1,0,1,1.00
 ninjavarier,Japanese,2024-04-29,0,1,1,0.00
 ninjavarier,Japanese,2024-09-09,1,0,1,1.00
 ninjavarier,Japanese,2025-09-08,0,1,1,0.00
+ninjavarier,Khitans,2026-03-02,0,1,1,0.00
 ninjavarier,Koreans,2024-02-12,0,1,1,0.00
 ninjavarier,Koreans,2024-02-26,0,1,1,0.00
 ninjavarier,Koreans,2024-04-08,1,1,2,0.50
@@ -7936,7 +7981,10 @@ rusher,Bengalis,2026-02-23,1,0,1,1.00
 rusher,Celts,2025-05-26,1,1,2,0.50
 rusher,Ethiopians,2025-05-19,0,1,1,0.00
 rusher,Hindustanis,2025-05-12,0,1,1,0.00
+rusher,Inca,2026-03-02,0,1,1,0.00
+rusher,Japanese,2026-03-02,0,1,1,0.00
 rusher,Magyars,2025-05-26,0,1,1,0.00
+rusher,Magyars,2026-03-02,0,1,1,0.00
 rusher,Mongols,2025-05-12,1,0,1,1.00
 rusher,Mongols,2026-02-09,1,0,1,1.00
 rusher,Persians,2026-01-26,1,0,1,1.00
@@ -8410,6 +8458,7 @@ sundar7238,Byzantines,2025-07-07,1,0,1,1.00
 sundar7238,Byzantines,2025-08-25,0,1,1,0.00
 sundar7238,Byzantines,2025-12-15,0,1,1,0.00
 sundar7238,Byzantines,2025-12-29,1,1,2,0.50
+sundar7238,Byzantines,2026-03-02,1,0,1,1.00
 sundar7238,Celts,2024-03-04,0,1,1,0.00
 sundar7238,Celts,2024-03-11,0,1,1,0.00
 sundar7238,Celts,2024-04-08,0,1,1,0.00
@@ -8668,6 +8717,7 @@ sundar7238,Japanese,2025-12-29,0,1,1,0.00
 sundar7238,Japanese,2026-01-19,0,1,1,0.00
 sundar7238,Japanese,2026-01-26,1,0,1,1.00
 sundar7238,Japanese,2026-02-09,1,1,2,0.50
+sundar7238,Japanese,2026-03-02,1,0,1,1.00
 sundar7238,Khmer,2024-03-11,1,0,1,1.00
 sundar7238,Khmer,2024-04-22,0,1,1,0.00
 sundar7238,Khmer,2024-10-28,0,1,1,0.00
@@ -8684,6 +8734,7 @@ sundar7238,Khmer,2025-11-17,1,0,1,1.00
 sundar7238,Khmer,2025-12-29,1,0,1,1.00
 sundar7238,Khmer,2026-01-12,1,0,1,1.00
 sundar7238,Khmer,2026-02-02,0,2,2,0.00
+sundar7238,Khmer,2026-03-02,0,1,1,0.00
 sundar7238,Koreans,2024-01-29,1,0,1,1.00
 sundar7238,Koreans,2024-03-04,0,1,1,0.00
 sundar7238,Koreans,2024-03-18,1,0,1,1.00
@@ -8721,6 +8772,7 @@ sundar7238,Magyars,2025-09-08,0,1,1,0.00
 sundar7238,Magyars,2025-09-15,0,1,1,0.00
 sundar7238,Magyars,2025-12-15,1,0,1,1.00
 sundar7238,Magyars,2025-12-22,1,1,2,0.50
+sundar7238,Magyars,2026-03-02,0,1,1,0.00
 sundar7238,Malay,2024-01-29,0,1,1,0.00
 sundar7238,Malay,2024-04-22,0,1,1,0.00
 sundar7238,Malay,2024-06-10,1,0,1,1.00
@@ -8741,6 +8793,7 @@ sundar7238,Malay,2025-09-15,0,1,1,0.00
 sundar7238,Malay,2025-11-03,1,0,1,1.00
 sundar7238,Malay,2025-11-17,1,0,1,1.00
 sundar7238,Malay,2025-12-29,0,1,1,0.00
+sundar7238,Malay,2026-03-02,0,1,1,0.00
 sundar7238,Malians,2024-02-26,0,1,1,0.00
 sundar7238,Malians,2024-03-11,0,1,1,0.00
 sundar7238,Malians,2024-03-25,3,1,4,0.75
@@ -9126,6 +9179,7 @@ thelivi,Bulgarians,2025-08-11,3,1,4,0.75
 thelivi,Bulgarians,2025-09-08,1,0,1,1.00
 thelivi,Bulgarians,2025-09-29,1,0,1,1.00
 thelivi,Bulgarians,2025-12-29,0,1,1,0.00
+thelivi,Bulgarians,2026-03-02,1,0,1,1.00
 thelivi,Burgundians,2024-06-03,1,0,1,1.00
 thelivi,Burgundians,2024-07-08,1,0,1,1.00
 thelivi,Burgundians,2024-10-28,0,1,1,0.00
@@ -9159,6 +9213,7 @@ thelivi,Burmese,2025-08-11,0,1,1,0.00
 thelivi,Burmese,2025-09-29,1,1,2,0.50
 thelivi,Burmese,2025-11-17,2,0,2,1.00
 thelivi,Burmese,2025-11-24,0,1,1,0.00
+thelivi,Burmese,2026-03-02,0,1,1,0.00
 thelivi,Byzantines,2024-06-17,0,1,1,0.00
 thelivi,Byzantines,2024-08-12,0,1,1,0.00
 thelivi,Byzantines,2024-11-04,0,1,1,0.00
@@ -9174,6 +9229,7 @@ thelivi,Byzantines,2025-08-11,0,1,1,0.00
 thelivi,Byzantines,2025-09-01,0,1,1,0.00
 thelivi,Byzantines,2025-12-29,1,0,1,1.00
 thelivi,Byzantines,2026-01-26,1,0,1,1.00
+thelivi,Byzantines,2026-03-02,1,0,1,1.00
 thelivi,Celts,2024-01-22,0,1,1,0.00
 thelivi,Celts,2024-03-11,0,1,1,0.00
 thelivi,Celts,2024-04-01,1,0,1,1.00
@@ -9404,6 +9460,7 @@ thelivi,Japanese,2025-08-18,0,1,1,0.00
 thelivi,Japanese,2025-12-15,1,0,1,1.00
 thelivi,Japanese,2025-12-22,1,0,1,1.00
 thelivi,Japanese,2026-02-02,0,2,2,0.00
+thelivi,Japanese,2026-03-02,0,2,2,0.00
 thelivi,Jurchens,2025-05-05,1,0,1,1.00
 thelivi,Jurchens,2025-07-28,1,1,2,0.50
 thelivi,Jurchens,2025-08-11,0,1,1,0.00
@@ -9653,6 +9710,7 @@ thelivi,Saracens,2025-07-07,1,0,1,1.00
 thelivi,Saracens,2025-07-21,1,0,1,1.00
 thelivi,Saracens,2025-09-15,1,1,2,0.50
 thelivi,Saracens,2026-01-26,0,1,1,0.00
+thelivi,Saracens,2026-03-02,1,0,1,1.00
 thelivi,Shu,2025-05-05,0,1,1,0.00
 thelivi,Shu,2025-06-09,0,1,1,0.00
 thelivi,Shu,2025-06-16,0,1,1,0.00
@@ -9693,6 +9751,7 @@ thelivi,Slavs,2025-11-17,1,0,1,1.00
 thelivi,Slavs,2025-12-08,0,1,1,0.00
 thelivi,Slavs,2025-12-29,1,1,2,0.50
 thelivi,Slavs,2026-01-19,1,0,1,1.00
+thelivi,Slavs,2026-03-02,0,1,1,0.00
 thelivi,Spanish,2024-03-25,1,0,1,1.00
 thelivi,Spanish,2024-10-07,0,1,1,0.00
 thelivi,Spanish,2024-10-14,1,2,3,0.33
@@ -9727,6 +9786,7 @@ thelivi,Tatars,2025-09-15,0,1,1,0.00
 thelivi,Tatars,2025-09-29,1,0,1,1.00
 thelivi,Tatars,2025-12-15,0,1,1,0.00
 thelivi,Tatars,2025-12-22,1,0,1,1.00
+thelivi,Tatars,2026-03-02,0,1,1,0.00
 thelivi,Teutons,2024-01-29,1,0,1,1.00
 thelivi,Teutons,2024-03-04,1,0,1,1.00
 thelivi,Teutons,2024-09-09,1,0,1,1.00
@@ -9851,6 +9911,7 @@ tokenbadteam,Spanish,2025-01-27,1,1,2,0.50
 tokenbadteam,Spanish,2025-06-09,1,0,1,1.00
 tokenbadteam,Spanish,2025-06-23,0,1,1,0.00
 tokenbadteam,Spanish,2026-02-23,0,1,1,0.00
+tokenbadteam,Spanish,2026-03-02,0,1,1,0.00
 tokenbadteam,Tatars,2025-02-24,0,1,1,0.00
 tokenbadteam,Teutons,2025-02-03,1,0,1,1.00
 tokenbadteam,Teutons,2025-02-17,0,1,1,0.00
@@ -9873,6 +9934,7 @@ trush25,Mapuche,2026-02-23,0,1,1,0.00
 trush25,Maya,2026-02-23,0,1,1,0.00
 trush25,Mongols,2026-02-09,1,0,1,1.00
 trush25,Mongols,2026-02-16,0,1,1,0.00
+trush25,Persians,2026-03-02,1,0,1,1.00
 trush25,Poles,2026-01-19,0,1,1,0.00
 trush25,Poles,2026-02-09,1,0,1,1.00
 trush25,Portuguese,2026-01-19,0,1,1,0.00
@@ -10150,6 +10212,7 @@ tyPo,Chinese,2025-09-22,0,1,1,0.00
 tyPo,Chinese,2025-11-10,1,0,1,1.00
 tyPo,Chinese,2025-12-01,0,1,1,0.00
 tyPo,Chinese,2025-12-08,1,1,2,0.50
+tyPo,Chinese,2026-03-02,1,0,1,1.00
 tyPo,Cumans,2024-01-29,1,0,1,1.00
 tyPo,Cumans,2024-02-26,1,0,1,1.00
 tyPo,Cumans,2024-03-11,0,1,1,0.00
@@ -10324,6 +10387,7 @@ tyPo,Hindustanis,2026-01-05,1,0,1,1.00
 tyPo,Hindustanis,2026-01-19,0,1,1,0.00
 tyPo,Hindustanis,2026-02-16,0,1,1,0.00
 tyPo,Hindustanis,2026-02-23,1,0,1,1.00
+tyPo,Hindustanis,2026-03-02,0,1,1,0.00
 tyPo,Huns,2024-04-22,2,0,2,1.00
 tyPo,Huns,2024-06-17,1,0,1,1.00
 tyPo,Huns,2024-10-07,1,0,1,1.00
@@ -10421,6 +10485,7 @@ tyPo,Japanese,2025-11-03,1,0,1,1.00
 tyPo,Japanese,2025-12-01,0,1,1,0.00
 tyPo,Japanese,2026-01-12,1,0,1,1.00
 tyPo,Japanese,2026-01-19,1,1,2,0.50
+tyPo,Japanese,2026-03-02,0,1,1,0.00
 tyPo,Khmer,2024-02-26,1,3,4,0.25
 tyPo,Khmer,2024-06-17,0,1,1,0.00
 tyPo,Khmer,2024-07-08,0,2,2,0.00
@@ -10493,6 +10558,7 @@ tyPo,Lithuanians,2025-12-01,0,2,2,0.00
 tyPo,Lithuanians,2025-12-29,1,0,1,1.00
 tyPo,Lithuanians,2026-01-26,0,1,1,0.00
 tyPo,Lithuanians,2026-02-09,2,0,2,1.00
+tyPo,Lithuanians,2026-03-02,1,1,2,0.50
 tyPo,Magyars,2024-01-29,0,1,1,0.00
 tyPo,Magyars,2024-02-26,0,1,1,0.00
 tyPo,Magyars,2024-03-04,1,0,1,1.00
@@ -10549,6 +10615,7 @@ tyPo,Malay,2025-12-01,0,1,1,0.00
 tyPo,Malay,2026-01-12,1,0,1,1.00
 tyPo,Malay,2026-02-09,1,0,1,1.00
 tyPo,Malay,2026-02-23,3,0,3,1.00
+tyPo,Malay,2026-03-02,0,1,1,0.00
 tyPo,Malians,2024-02-26,1,0,1,1.00
 tyPo,Malians,2024-04-08,0,2,2,0.00
 tyPo,Malians,2024-06-03,1,1,2,0.50
@@ -10612,6 +10679,7 @@ tyPo,Mongols,2025-10-20,1,0,1,1.00
 tyPo,Mongols,2025-11-17,1,0,1,1.00
 tyPo,Mongols,2025-12-01,0,1,1,0.00
 tyPo,Mongols,2026-01-05,1,0,1,1.00
+tyPo,Mongols,2026-03-02,1,1,2,0.50
 tyPo,Persians,2024-02-12,0,1,1,0.00
 tyPo,Persians,2024-02-26,0,1,1,0.00
 tyPo,Persians,2024-03-04,1,0,1,1.00
@@ -10708,6 +10776,7 @@ tyPo,Saracens,2025-12-01,0,2,2,0.00
 tyPo,Saracens,2025-12-29,1,0,1,1.00
 tyPo,Saracens,2026-01-26,2,0,2,1.00
 tyPo,Saracens,2026-02-02,1,0,1,1.00
+tyPo,Saracens,2026-03-02,1,0,1,1.00
 tyPo,Sicilians,2024-02-19,1,1,2,0.50
 tyPo,Sicilians,2024-02-26,0,1,1,0.00
 tyPo,Sicilians,2024-07-29,2,1,3,0.67
@@ -11314,8 +11383,10 @@ wallandboom,Bohemians,2025-12-08,1,1,2,0.50
 wallandboom,Britons,2025-09-22,0,1,1,0.00
 wallandboom,Britons,2025-10-27,0,1,1,0.00
 wallandboom,Bulgarians,2025-10-20,1,0,1,1.00
+wallandboom,Bulgarians,2026-03-02,0,1,1,0.00
 wallandboom,Burgundians,2025-09-22,0,1,1,0.00
 wallandboom,Burgundians,2026-02-16,1,0,1,1.00
+wallandboom,Burgundians,2026-03-02,1,0,1,1.00
 wallandboom,Burmese,2025-10-20,0,1,1,0.00
 wallandboom,Byzantines,2025-10-13,0,1,1,0.00
 wallandboom,Byzantines,2025-10-27,1,0,1,1.00
@@ -11345,6 +11416,7 @@ wallandboom,Jurchens,2025-12-29,0,1,1,0.00
 wallandboom,Khitans,2025-12-01,1,0,1,1.00
 wallandboom,Khmer,2025-10-06,1,0,1,1.00
 wallandboom,Khmer,2025-10-20,0,1,1,0.00
+wallandboom,Khmer,2026-03-02,0,1,1,0.00
 wallandboom,Lithuanians,2026-02-23,0,1,1,0.00
 wallandboom,Magyars,2025-12-08,1,0,1,1.00
 wallandboom,Magyars,2025-12-22,1,0,1,1.00
