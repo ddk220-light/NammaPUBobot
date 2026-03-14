@@ -7,6 +7,7 @@ import traceback
 import time
 
 from core.client import dc
+from core.database import db
 from core.utils import error_embed, ok_embed, parse_duration, get_nick
 from core.console import log
 from core.config import cfg
@@ -722,7 +723,7 @@ async def _nick(
 ): await run_slash(bot.commands.set_nick, interaction=interaction, nick=nick)
 
 
-@dc.slash_command(name='namma_randomize_civs', description='Generate balanced random civ pools for two teams.', **guild_kwargs)
+@dc.slash_command(name='test_random_civs', description='Generate balanced random civ pools for two teams.', **guild_kwargs)
 async def _randomize_civs(
 	interaction: Interaction,
 ):
@@ -784,10 +785,9 @@ async def _randomize_civs(
 		)
 
 
-@dc.slash_command(name='namma_redo_teams', description='Compare old match teams with captain-based matchmaking.', **guild_kwargs)
+@dc.slash_command(name='test_teams', description='Compare last match teams with captain-based matchmaking.', **guild_kwargs)
 async def _redo_teams(
 	interaction: Interaction,
-	match_id: int = SlashOption(description="Match ID from the bot message to compare."),
 ):
 	await interaction.response.defer()
 
@@ -799,6 +799,16 @@ async def _redo_teams(
 	if qc is None:
 		await interaction.followup.send(embed=error_embed("Not in a queue channel."))
 		return
+
+	# Find the last played match from the database
+	lg = await db.select_one(
+		['match_id'], "qc_matches", where=dict(channel_id=qc.id), order_by="match_id", limit=1
+	)
+	if not lg:
+		await interaction.followup.send(embed=error_embed("No matches found on this channel."))
+		return
+
+	match_id = lg['match_id']
 
 	# Search channel history for the match message
 	target_str = str(match_id)
@@ -920,7 +930,8 @@ async def _redo_teams(
 	new_diff = abs(new_a_total - new_b_total)
 
 	embed = Embed(
-		title=f"Team Comparison — Match {match_id}",
+		title=f"⚠️ TEST — Team Comparison — Match {match_id}",
+		description="This is a test comparison only. These teams were **not** used in the actual match.",
 		colour=Colour(0x7289DA)
 	)
 
@@ -952,11 +963,11 @@ async def _redo_teams(
 
 	# Summary
 	if new_diff < old_diff:
-		embed.set_footer(text=f"Captain matchmaking improves balance by {old_diff - new_diff} rating points")
+		embed.set_footer(text=f"TEST ONLY | Captain matchmaking improves balance by {old_diff - new_diff} rating points")
 	elif new_diff > old_diff:
-		embed.set_footer(text=f"Captain matchmaking is {new_diff - old_diff} rating points worse")
+		embed.set_footer(text=f"TEST ONLY | Captain matchmaking is {new_diff - old_diff} rating points worse")
 	else:
-		embed.set_footer(text="Same balance")
+		embed.set_footer(text="TEST ONLY | Same balance")
 
 	await interaction.followup.send(embed=embed)
 
