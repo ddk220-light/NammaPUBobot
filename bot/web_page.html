@@ -533,11 +533,100 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 @keyframes toast-in { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateY(20px); } }
 
+/* ─── Hamburger button (hidden on desktop) ─── */
+#mobile-menu-btn {
+  display: none; background: none; border: none; cursor: pointer;
+  padding: 6px 10px; margin-left: 4px;
+}
+#mobile-menu-btn svg { width: 24px; height: 24px; }
+
+/* ─── Mobile overlay backdrop ─── */
+#mobile-overlay {
+  display: none; position: fixed; inset: 0; z-index: 49;
+  background: rgba(0,0,0,0.5);
+}
+
 /* ─── Responsive ─── */
+
+/* Tablet */
 @media (max-width: 900px) {
-  #guild_nav { display: none; }
+  #main_layout { min-width: 0; }
+  #guild_nav { display: none !important; }
   #guild_menu { width: 180px; min-width: 180px; }
   #st_layout { width: 100%; }
+  table.stats-table { min-width: 600px; }
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  #main_layout { min-width: 0; }
+
+  /* Titlebar: compact */
+  #titlebar { height: auto; min-height: 48px; flex-wrap: wrap; padding: 6px 0; }
+  #tb-botinfo { font-size: 18px; padding-left: 10px; }
+  #tb-botinfo-version { font-size: 12px; padding: 4px 6px 0 3px; }
+  .tb-link { font-size: 13px; padding: 4px 10px; margin: 0 0 0 6px; }
+  #tb-whitespace { flex: 1 1 auto; min-width: 0; }
+  #tb-user * { font-size: 13px; }
+
+  /* Hamburger visible */
+  #mobile-menu-btn { display: block; }
+
+  /* Sidebar: slide-over drawer on mobile */
+  #guild_nav { display: none !important; }
+  #guild_menu {
+    position: fixed !important; top: 0; left: 0; bottom: 0; z-index: 50;
+    width: 260px !important; min-width: 0 !important;
+    transform: translateX(-100%); transition: transform 0.25s ease;
+    box-shadow: 4px 0 20px rgba(0,0,0,0.5);
+    padding-top: 60px;
+  }
+  #guild_menu.mobile-open { transform: translateX(0); }
+  #mobile-overlay.mobile-open { display: block; }
+
+  /* Main area: full width */
+  #main_area { height: calc(100vh - 48px); }
+
+  /* Settings layout */
+  #st_layout { width: 100%; padding: 0 4px 24px; }
+  #st_sections { flex-wrap: wrap; gap: 4px; }
+  #st_sections div { font-size: 14px; padding: 16px 8px 10px; margin: 0 2px; }
+  #st_fields { padding: 10px 4px; }
+
+  /* Form controls */
+  .field_number { width: 80px; }
+  .slider_container { flex-wrap: wrap; }
+  .field_slider { width: 60px; }
+
+  /* Tables */
+  .field_table { overflow-x: auto; }
+  .editable_table { font-size: 13px; }
+  .editable_table td { padding: 8px 6px; }
+  .editable_table thead td { font-size: 13px; padding: 10px 6px; }
+
+  /* Stats page */
+  .stats-container { padding: 1rem 0.75rem; }
+  .stats-container h1 { font-size: 1.2rem; }
+  table.stats-table { min-width: 500px; font-size: 12px; }
+  table.stats-table th { font-size: 10px; padding: 0.5rem 0.4rem; }
+  table.stats-table td { padding: 0.4rem 0.4rem; }
+  .col-group-label { font-size: 9px; padding: 0.3rem; }
+
+  /* Anomaly cards */
+  .anomaly-grid { grid-template-columns: 1fr; }
+  .card-grid { grid-template-columns: 1fr; padding: 1rem; }
+
+  /* Breadcrumb */
+  .breadcrumb { padding: 0.8rem 0.75rem 0; font-size: 13px; flex-wrap: wrap; }
+
+  /* Toast */
+  .toast-container { left: 0.5rem; right: 0.5rem; bottom: 0.75rem; }
+  .toast { max-width: 100%; font-size: 13px; }
+
+  /* Save button */
+  .field_submit { width: 95%; font-size: 16px; letter-spacing: 2px; }
+
+  .content-title { font-size: 1.1rem; padding: 1rem 0.75rem 0; }
 }
 </style>
 </head>
@@ -547,6 +636,9 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 
 <!-- Title Bar -->
 <div id="titlebar">
+  <button id="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Menu">
+    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+  </button>
   <div id="tb-botinfo">PUBobot2</div>
   <div id="tb-botinfo-version">v0.8-Beta</div>
 
@@ -562,6 +654,9 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   <div id="tb-user"></div>
   <div id="tb-auth"></div>
 </div>
+
+<!-- Mobile overlay -->
+<div id="mobile-overlay" onclick="closeMobileMenu()"></div>
 
 <!-- Toast -->
 <div class="toast-container" id="toast-container"></div>
@@ -682,13 +777,16 @@ function showToast(msg, type) {
 /* ─── Navigation ─── */
 function showPage(page) {
   currentPage = page;
+  closeMobileMenu();
   document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
   var p = document.getElementById('page-' + page);
   if (p) p.classList.add('active');
   if (page === 'dashboard') loadDashboard();
   // Show/hide guild nav + menu for dashboard only
-  document.getElementById('guild_nav').style.display = page === 'dashboard' ? 'flex' : 'none';
-  document.getElementById('guild_menu').style.display = page === 'dashboard' ? 'flex' : 'none';
+  var isDash = page === 'dashboard';
+  document.getElementById('guild_nav').style.display = isDash ? 'flex' : 'none';
+  document.getElementById('guild_menu').style.display = isDash ? 'flex' : 'none';
+  document.getElementById('mobile-menu-btn').style.display = isDash ? '' : 'none';
 }
 
 /* ─── Auth ─── */
@@ -1235,10 +1333,30 @@ async function saveQueueConfig() {
   } catch(e) { showToast('Failed: '+e.message, 'error'); }
 }
 
+/* ─── Mobile Menu ─── */
+function toggleMobileMenu() {
+  var menu = document.getElementById('guild_menu');
+  var overlay = document.getElementById('mobile-overlay');
+  if (menu.classList.contains('mobile-open')) { closeMobileMenu(); }
+  else { menu.classList.add('mobile-open'); overlay.classList.add('mobile-open'); }
+}
+
+function closeMobileMenu() {
+  document.getElementById('guild_menu').classList.remove('mobile-open');
+  document.getElementById('mobile-overlay').classList.remove('mobile-open');
+}
+
+// Close mobile menu when selecting a channel/queue
+var _origSelectChannel = selectChannel;
+selectChannel = async function(id, name) { closeMobileMenu(); return _origSelectChannel(id, name); };
+var _origSelectQueue = selectQueue;
+selectQueue = async function(name) { closeMobileMenu(); return _origSelectQueue(name); };
+
 /* ─── Init ─── */
 // Hide sidebar panels initially (shown when dashboard loads)
 document.getElementById('guild_nav').style.display = 'none';
 document.getElementById('guild_menu').style.display = 'none';
+document.getElementById('mobile-menu-btn').style.display = 'none';
 
 checkAuth();
 initCivStats();

@@ -305,3 +305,49 @@ class TrueSkillRating(BaseRating):
 			r2.append(new)
 
 		return [r1, r2]
+
+
+class AoE2Rating(BaseRating):
+	"""AoE2 DE-style Elo: individual rating vs opponent team average, K=32/team_size."""
+
+	BASE_K = 32
+	PLACEMENT_THRESHOLD = 10
+	PLACEMENT_MULTIPLIER = 3
+
+	def __init__(self, **kwargs):
+		super().__init__(**kwargs)
+
+	def rate(self, winners, losers, draw=False):
+		team_size = max(len(winners), len(losers))
+		k = max(self.BASE_K / team_size, 4)
+
+		winner_avg = sum(p['rating'] for p in winners) / len(winners)
+		loser_avg = sum(p['rating'] for p in losers) / len(losers)
+
+		r1, r2 = [], []
+
+		for p in winners:
+			expected = 1.0 / (1.0 + 10.0 ** ((loser_avg - p['rating']) / 400.0))
+			actual = 0.5 if draw else 1.0
+			raw_change = k * (actual - expected)
+
+			games_played = p['wins'] + p['losses'] + p['draws']
+			if games_played < self.PLACEMENT_THRESHOLD:
+				raw_change *= self.PLACEMENT_MULTIPLIER
+
+			new = self._scale_changes(p, raw_change, 0, 0 if draw else 1)
+			r1.append(new)
+
+		for p in losers:
+			expected = 1.0 / (1.0 + 10.0 ** ((winner_avg - p['rating']) / 400.0))
+			actual = 0.5 if draw else 0.0
+			raw_change = k * (actual - expected)
+
+			games_played = p['wins'] + p['losses'] + p['draws']
+			if games_played < self.PLACEMENT_THRESHOLD:
+				raw_change *= self.PLACEMENT_MULTIPLIER
+
+			new = self._scale_changes(p, raw_change, 0, 0 if draw else -1)
+			r2.append(new)
+
+		return [r1, r2]

@@ -11,7 +11,7 @@ from core.utils import join_and, seconds_to_str, get_nick
 from core.database import db
 
 import bot
-from bot.stats.rating import FlatRating, Glicko2Rating, TrueSkillRating
+from bot.stats.rating import FlatRating, Glicko2Rating, TrueSkillRating, AoE2Rating
 
 MAX_EXPIRE_TIME = 12*60*60
 MAX_PROMOTION_DELAY = 12*60*60
@@ -28,7 +28,8 @@ class QueueChannel:
 	rating_names = {
 		'flat': FlatRating,
 		'Glicko2': Glicko2Rating,
-		'TrueSkill': TrueSkillRating
+		'TrueSkill': TrueSkillRating,
+		'AoE2': AoE2Rating
 	}
 
 	cfg_factory = CfgFactory(
@@ -136,7 +137,7 @@ class QueueChannel:
 				section="Rating",
 				description="Set player's rating calculation method.",
 				options=rating_names.keys(),
-				default="TrueSkill",
+				default="AoE2",
 				notnull=True,
 				on_change=bot.update_rating_system
 			),
