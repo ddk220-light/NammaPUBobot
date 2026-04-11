@@ -54,7 +54,7 @@ async def main():
 		for name in config.keys():
 			log.info(f'DROPPING COLUMN `{name}` in `qc_configs`...')
 			await db.execute(f'ALTER TABLE qc_configs DROP COLUMN `{name}`')
-			await db.execute(f'ALTER TABLE qc_configs CHANGE channel_id channel_id bigint(20) AUTO_INCREMENT')
+			await db.execute(f'ALTER TABLE qc_configs CHANGE channel_id channel_id bigint(20) AUTO_INCREMENT')  # noqa: F541
 
 	config = None
 	pq_cfgs = await db.select(['*'], 'pq_configs')
@@ -72,6 +72,6 @@ async def main():
 		for name in config.keys():
 			log.info(f'DROPPING COLUMN `{name}` in `pq_configs`...')
 			await db.execute(f'ALTER TABLE pq_configs DROP COLUMN `{name}`')
-			await db.execute(f'ALTER TABLE pq_configs CHANGE pq_id pq_id bigint(20) AUTO_INCREMENT')
+			await db.execute(f'ALTER TABLE pq_configs CHANGE pq_id pq_id bigint(20) AUTO_INCREMENT')  # noqa: F541
 
 db.loop.run_until_complete(main())

@@ -5,6 +5,12 @@ from core.database import db
 from core.console import log
 from bot.civ_sync import find_matching_lobby, find_matching_lobby_from_history, link_and_write
 
+# Last successful ELO sync timestamp (unix). Read by bot/web.py handle_health as
+# a liveness signal — a long gap here, combined with no new Pubobot messages,
+# is just quiet; but a long gap while matches are happening means the
+# sync pipeline is broken.
+last_elo_sync_at = 0.0
+
 
 def parse_elo_message(content):
 	"""Parse a Pubobot ELO result message.
@@ -278,11 +284,17 @@ async def process_elo_sync(message):
 
 	log.info(f"ELO sync: processed match {match_id} ({queue_name})")
 
+	# Stamp the last-success timestamp AFTER the DB writes complete — if any
+	# of the inserts above raised, we don't want to report the sync pipeline
+	# as "healthy" in /health.
+	global last_elo_sync_at
+	last_elo_sync_at = time.time()
+
 	# Try to link with a LobbyBOT match for civ data
 	try:
 		lobby = find_matching_lobby(parsed, message.created_at.timestamp())
 		if lobby is None:
-			log.info(f"Civ sync: no buffered LobbyBOT match found, scanning channel history...")
+			log.info("Civ sync: no buffered LobbyBOT match found, scanning channel history...")
 			lobby = await find_matching_lobby_from_history(
 				message.channel, parsed, message.created_at.timestamp()
 			)

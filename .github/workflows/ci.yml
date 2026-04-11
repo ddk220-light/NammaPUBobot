@@ -1,0 +1,60 @@
+# NammaPUBobot CI — ruff lint + pytest unit tests + docker build.
+#
+# Runs on every push and every PR against main. Three independent
+# jobs so they fan out in parallel; any one of them failing blocks
+# the PR. Nothing here deploys anywhere — deployment is still manual
+# via `railway up --ci`.
+#
+# Python version is pinned to 3.11 to match the Dockerfile
+# (FROM python:3.11-slim). If the Dockerfile moves, bump this too.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ruff
+        # Pin ruff so a silent upgrade doesn't start failing CI out of
+        # nowhere. Bump deliberately.
+        run: pip install ruff==0.14.4
+      - name: Run ruff
+        run: ruff check .
+
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test deps
+        # We don't pip-install the full requirements.txt here because
+        # it pulls nextcord (+ its native deps) which aren't needed for
+        # the pure-parser unit tests. conftest.py stubs out the heavy
+        # imports. Keep this minimal on purpose.
+        run: pip install pytest==8.3.3
+      - name: Run pytest
+        run: pytest tests/ -v
+
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        # Validates the Dockerfile still produces a clean image. This
+        # is what Railway runs on every deploy — catching breakage
+        # here saves a failed deploy round-trip.
+        run: docker build -t nammapubobot:ci .

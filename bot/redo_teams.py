@@ -131,7 +131,7 @@ def parse_text_match(content):
                 })
 
         # Stop at Captains section
-        if re.search(r'Captains', line):
+        if re.search(r'Captains', line):  # noqa: SIM102
             if current_team and current_team['players']:
                 teams.append(current_team)
                 current_team = None

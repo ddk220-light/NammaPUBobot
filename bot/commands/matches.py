@@ -4,10 +4,10 @@ __all__ = [
 ]
 
 from nextcord import Member
-from typing import List
+from typing import List  # noqa: UP035
 from functools import wraps
 
-from core.utils import get, find
+from core.utils import get, find  # noqa: F401
 
 import bot
 
@@ -74,7 +74,7 @@ async def cap_for(ctx, match: bot.Match, team_name: str):
 
 
 @author_match
-async def pick(ctx, match: bot.Match, players: List[Member]):
+async def pick(ctx, match: bot.Match, players: List[Member]):  # noqa: UP006
 	await match.draft.pick(ctx, ctx.author, players)
 
 
@@ -110,15 +110,15 @@ async def report(ctx, match: bot.Match, result):
 		raise bot.Exc.ValueError("Invalid result value.")
 
 
-async def report_manual(ctx, queue: str, winners: List[Member], losers: List[Member], draw: bool = False):
+async def report_manual(ctx, queue: str, winners: List[Member], losers: List[Member], draw: bool = False):  # noqa: UP006
 	""" Report a fake match """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
 		raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
 	if any((winners.count(p) != 1 or p in losers for p in winners)):
-		raise bot.Exc.ValueError(f"Teams can not contain duplicate players.")
+		raise bot.Exc.ValueError(f"Teams can not contain duplicate players.")  # noqa: F541
 	if any((losers.count(p) != 1 or p in winners for p in losers)):
-		raise bot.Exc.ValueError(f"Teams can not contain duplicate players.")
+		raise bot.Exc.ValueError(f"Teams can not contain duplicate players.")  # noqa: F541
 	if not len(winners) or not len(losers):
-		raise bot.Exc.ValueError(f"Teams can not be empty.")
+		raise bot.Exc.ValueError(f"Teams can not be empty.")  # noqa: F541
 	await q.fake_ranked_match(ctx, winners, losers, draw=draw)

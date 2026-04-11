@@ -3,11 +3,11 @@ import random
 import re
 from prettytable import PrettyTable, MARKDOWN
 from nextcord import Embed
-from nextcord.utils import get, find, escape_markdown
+from nextcord.utils import get, find, escape_markdown  # noqa: F401
 from datetime import timedelta
 
 
-class EmojiFormatter(object):
+class EmojiFormatter(object):  # noqa: UP004
 	""" Converts emoji name to an emoji string """
 
 	def __init__(self, guild):

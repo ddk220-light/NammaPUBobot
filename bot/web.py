@@ -40,6 +40,11 @@ SKIP_TYPES = (RoleVar, TextChanVar, MemberVar)
 # --- HTML cache ---
 _html_cache = None
 
+# Process boot time — used by /health's uptime_seconds field. Set at module
+# import (which happens during asyncio bootstrap, before any task starts),
+# so it's a reasonable proxy for "when the bot process started".
+_boot_time = time.time()
+
 
 def _load_html():
 	global _html_cache
@@ -188,9 +193,21 @@ async def handle_health(request):
 	back to a TCP probe because no healthcheckPath was configured). With
 	this endpoint + healthcheckPath = "/health" in railway.toml, Railway
 	restarts the container whenever Discord is actually dead.
+
+	The payload also carries non-gating observability fields:
+	  - active_matches: current in-flight match count
+	  - last_tick_age_seconds: seconds since the last think() tick
+	    (>5 with bot_ready=true means the think loop is stalled)
+	  - last_elo_sync_at: unix timestamp of the last successful ELO sync,
+	    0 if none yet this process run
+	  - uptime_seconds: process uptime since import
+	These let the Railway dashboard / future `/metrics` scrape see
+	degradation before it becomes an outage.
 	"""
 	import asyncio as _asyncio
 	from core.database import db as _db
+	from bot import events as _events
+	from bot import elo_sync as _elo_sync
 
 	discord_ok = bool(getattr(bot, 'bot_ready', False)) and dc.is_ready()
 
@@ -202,12 +219,22 @@ async def handle_health(request):
 	except Exception:
 		db_ok = False
 
+	now = time.time()
+	last_tick = getattr(_events, 'last_tick_at', 0.0) or 0.0
+	# If we've never ticked, report None rather than a misleading huge delta
+	last_tick_age = int(now - last_tick) if last_tick > 0 else None
+	last_elo_sync = getattr(_elo_sync, 'last_elo_sync_at', 0.0) or 0.0
+
 	healthy = discord_ok and db_ok
 	payload = {
 		"status": "ok" if healthy else "unhealthy",
 		"discord_connected": discord_ok,
 		"db_connected": db_ok,
 		"bot_ready": bool(getattr(bot, 'bot_ready', False)),
+		"active_matches": len(getattr(bot, 'active_matches', []) or []),
+		"last_tick_age_seconds": last_tick_age,
+		"last_elo_sync_at": int(last_elo_sync) if last_elo_sync > 0 else 0,
+		"uptime_seconds": int(now - _boot_time),
 	}
 	return web.json_response(payload, status=200 if healthy else 503)
 
@@ -495,7 +522,11 @@ async def handle_api_queues(request):
 	if not channel:
 		return web.json_response({"error": "Channel not found"}, status=404)
 	try:
-		member = channel.guild.get_member(session["user_id"]) or await channel.guild.fetch_member(session["user_id"])
+		# We don't use the member object — we only call fetch_member for
+		# its side effect: raising if the caller isn't actually in the
+		# guild. Assigning to `_` is what tells the linter "the name is
+		# unused on purpose" without losing the membership check.
+		_ = channel.guild.get_member(session["user_id"]) or await channel.guild.fetch_member(session["user_id"])
 	except Exception:
 		return web.json_response({"error": "Not a guild member"}, status=403)
 

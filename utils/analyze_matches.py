@@ -255,7 +255,7 @@ def print_db_match(match, players, ratings, index):
                 print(f"    - {nick}{rating_str}")
 
     if unassigned:
-        print(f"\n  Unassigned:")
+        print(f"\n  Unassigned:")  # noqa: F541
         for p in unassigned:
             print(f"    - {p.get('nick', 'Unknown')}")
 
@@ -307,14 +307,14 @@ def analyze_db_matches(matches, players_by_match, ratings_by_match):
     # Rating changes summary
     all_changes = []
     for match_ratings in ratings_by_match.values():
-        for uid, r in match_ratings.items():
+        for uid, r in match_ratings.items():  # noqa: B007
             all_changes.append(r['rating_change'])
 
     if all_changes:
         avg_change = sum(abs(c) for c in all_changes) / len(all_changes)
         max_gain = max(all_changes)
         max_loss = min(all_changes)
-        print(f"\n  Rating changes:")
+        print(f"\n  Rating changes:")  # noqa: F541
         print(f"    Avg absolute change: {avg_change:.1f}")
         print(f"    Biggest gain: +{max_gain}")
         print(f"    Biggest loss: {max_loss}")

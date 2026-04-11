@@ -4,7 +4,7 @@ from time import time
 from math import ceil
 from nextcord import Member, Embed, Colour
 
-from core.utils import get, find, seconds_to_str, get_nick, discord_table
+from core.utils import get, find, seconds_to_str, get_nick, discord_table  # noqa: F401
 from core.database import db
 
 import bot
@@ -215,7 +215,7 @@ async def leaderboard(ctx, page: int = 1):
 				str(data[n]['rating']) + ctx.qc.rating_rank(data[n]['rating'])['rank'],
 				data[n]['nick'].strip(),
 				int(data[n]['wins'] + data[n]['losses'] + data[n]['draws']),
-				"{0}/{1}/{2} ({3}%)".format(
+				"{0}/{1}/{2} ({3}%)".format(  # noqa: UP030
 					data[n]['wins'],
 					data[n]['losses'],
 					data[n]['draws'],

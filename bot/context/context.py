@@ -8,7 +8,7 @@ import bot
 from core.config import cfg
 from core.utils import error_embed, ok_embed, find
 from core.client import FakeMember, dc
-from core.console import log
+from core.console import log  # noqa: F401
 
 
 class Context:
@@ -136,6 +136,6 @@ class WebContext(Context):
 		if (channel := dc.get_channel(channel_id)) is None:
 			raise bot.Exc.NotFoundError(f"Discord Channel object with id {channel_id} is not reachable.")
 		if (author := channel.guild.get_member(user_id)) is None:
-			raise bot.Exc.NotFoundError(f"You are not a member of requested guild.")
+			raise bot.Exc.NotFoundError(f"You are not a member of requested guild.")  # noqa: F541
 
 		super().__init__(qc, channel, author)

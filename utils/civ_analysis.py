@@ -190,7 +190,7 @@ async def fetch_all_matches_for_player(session, semaphore, profile_id, cutoff):
                     if resp.status != 200:
                         break
                     data = await resp.json()
-            except (aiohttp.ClientError, asyncio.TimeoutError):
+            except (aiohttp.ClientError, asyncio.TimeoutError):  # noqa: UP041
                 break
             await asyncio.sleep(0.2)
 
@@ -441,13 +441,13 @@ async def async_main():
 
         civ_stats.sort(key=lambda x: (-x[4], -x[3]))
 
-        print(f"  Top 5 Best:")
-        for civ, w, l, g, wr in civ_stats[:5]:
+        print(f"  Top 5 Best:")  # noqa: F541
+        for civ, w, l, g, wr in civ_stats[:5]:  # noqa: E741
             print(f"    {civ:20s}  {w}W/{l}L  ({wr:.0%})  [{g} games]")
 
-        print(f"  Top 5 Worst:")
+        print(f"  Top 5 Worst:")  # noqa: F541
         worst = [c for c in reversed(civ_stats) if c[4] < 1.0][:5]
-        for civ, w, l, g, wr in worst:
+        for civ, w, l, g, wr in worst:  # noqa: E741
             print(f"    {civ:20s}  {w}W/{l}L  ({wr:.0%})  [{g} games]")
 
     # Save all-time stats CSV

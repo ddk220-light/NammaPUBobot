@@ -5,8 +5,8 @@ import random
 from nextcord import DiscordException
 
 import bot
-from core.utils import find, get, iter_to_dict, join_and, get_nick
-from core.console import log
+from core.utils import find, get, iter_to_dict, join_and, get_nick  # noqa: F401
+from core.console import log  # noqa: F401
 from core.client import dc
 
 from .check_in import CheckIn
@@ -112,7 +112,7 @@ class Match:
 
 		data['players'] = [guild.get_member(user_id) for user_id in data['players']]
 		if None in data['players']:
-			raise bot.Exc.ValueError(f"Error fetching guild members.")
+			raise bot.Exc.ValueError(f"Error fetching guild members.")  # noqa: F541
 
 		# Fill data with discord objects
 		for i in range(len(data['teams'])):
@@ -353,7 +353,7 @@ class Match:
 			raise bot.Exc.PermissionError(self.gt("You must be a team captain to report a loss or draw."))
 
 		enemy_team = self.teams[1-team.idx]
-		if draw_flag and not enemy_team.draw_flag == draw_flag:
+		if draw_flag and not enemy_team.draw_flag == draw_flag:  # noqa: SIM201
 			team.draw_flag = draw_flag
 			await ctx.notice(
 				self.gt(
@@ -429,7 +429,7 @@ class Match:
 				msg += "\n".join(
 					(f"> {get_nick(p)} {before[p.id]['rating']} ⟼ {after[p.id]['rating']}" for p in team)
 				)
-				n += 1
+				n += 1  # noqa: SIM113
 		msg += "```"
 		await ctx.notice(msg)
 

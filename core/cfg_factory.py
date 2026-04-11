@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from typing import Optional, List
+from typing import Optional, List  # noqa: UP035
 import re
 import emoji
 import json
@@ -7,7 +7,7 @@ from nextcord import Guild
 
 from core.database import db
 from core.client import dc
-from core.utils import format_emoji, parse_duration, seconds_to_str
+from core.utils import format_emoji, parse_duration, seconds_to_str  # noqa: F401
 from core.console import log
 
 FACTORY_VERSION = 1
@@ -58,7 +58,7 @@ class Variable:
 class FactoryTable:
 	""" Database table representation that is passed to a CfgFactory object. """
 
-	def __init__(self, name: str, p_key: str, f_key: Optional[str] = None):
+	def __init__(self, name: str, p_key: str, f_key: Optional[str] = None):  # noqa: UP045
 		self.name = name
 		self.p_key = p_key
 		self.f_key = f_key
@@ -100,8 +100,8 @@ class CfgFactory:
 	""" ConfigFactory describes the config structure and manages creation/loading of its Config objects """
 
 	def __init__(
-			self, table: FactoryTable, name: str, variables: List[Variable],
-			display: Optional[str] = None, icon: Optional[str] = "star.png", sections: Optional[List[str]] = None
+			self, table: FactoryTable, name: str, variables: List[Variable],  # noqa: UP006
+			display: Optional[str] = None, icon: Optional[str] = "star.png", sections: Optional[List[str]] = None  # noqa: UP006, UP045
 	):
 		self.table = table
 		self.name = name
@@ -111,7 +111,7 @@ class CfgFactory:
 		self.variables = {v.name: v for v in variables}
 		self.blank = {v.name: v.default for v in self.variables.values()}
 
-	async def spawn(self, guild: Guild, p_key: Optional[int] = None, f_key: Optional[int] = None):
+	async def spawn(self, guild: Guild, p_key: Optional[int] = None, f_key: Optional[int] = None):  # noqa: UP045
 		""" Load existing Config from db by given p_key if exists or spawn a new one """
 
 		row = await db.select_one(['*'], self.table.name, {'cfg_name': self.name, self.table.p_key: p_key})
@@ -128,7 +128,7 @@ class CfgFactory:
 
 			return await Config.load(self, row, guild)
 
-	async def select(self, guild: Guild, keys: List[dict]):
+	async def select(self, guild: Guild, keys: List[dict]):  # noqa: UP006
 		""" Returns all Config objects from db by given keys """
 
 		rows = await db.select(['*'], self.table.name, keys)
@@ -188,7 +188,7 @@ class Config:
 		# Update useful objects and push to database
 		on_change_triggers = set()
 		if len(data):
-			for key, value in data.items():
+			for key, value in data.items():  # noqa: B007
 				vo = self._factory.variables[key]
 				setattr(self, key, objects[key])
 				if vo.on_change:
@@ -502,15 +502,15 @@ class DurationVar(Variable):
 class VariableTable(Variable):
 
 	def __init__(
-			self, name, variables=[], blank=None, default=[], **kwargs):
+			self, name, variables=[], blank=None, default=[], **kwargs):  # noqa: B006
 		super().__init__(name, default=default, **kwargs)
 		self.variables = {v.name: v for v in variables}
 		self.blank = blank if blank else {i: None for i in self.variables.keys()}
 
 	async def validate(self, data, guild):
-		if type(data) == str:
+		if type(data) == str:  # noqa: E721
 			data = json.loads(data)
-		elif type(data) != list:
+		elif type(data) != list:  # noqa: E721
 			raise (ValueError('Value must be a a json string or a list.'))
 
 		validated = []
@@ -529,20 +529,20 @@ class VariableTable(Variable):
 				{var_name: await self.variables[var_name].wrap(value, guild) for var_name, value in row.items()})
 		return wrapped
 
-	def readable(self, l):
+	def readable(self, l):  # noqa: E741
 		return [{var_name: self.variables[var_name].readable(value) for var_name, value in d.items()} for d in l]
 
 	def readable_row(self, d):
 		return {var_name: self.variables[var_name].readable(value) for var_name, value in d.items()}
 
-	def verify(self, l):
+	def verify(self, l):  # noqa: E741
 		return(
 			all((
 				all((self.variables[key].verify(value) for key, value in d.items())) for d in l
 			))
 		)
 
-	def jsonify(self, l):
+	def jsonify(self, l):  # noqa: E741
 		return [{var_name: self.variables[var_name].jsonify(value) for var_name, value in d.items()} for d in l]
 
 

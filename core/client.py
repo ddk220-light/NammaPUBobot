@@ -14,7 +14,7 @@ class FakeMember:
 		self.bot = True
 
 	def __eq__(self, other):
-		return True if self.id == getattr(other, 'id', None) else False
+		return True if self.id == getattr(other, 'id', None) else False  # noqa: SIM210
 
 	def __hash__(self):
 		return self.id

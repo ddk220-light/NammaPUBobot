@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from asyncio import get_event_loop
+from asyncio import get_event_loop  # noqa: F401
 from importlib import import_module
 from core.config import cfg
 

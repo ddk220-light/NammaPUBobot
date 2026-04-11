@@ -30,7 +30,7 @@ def get_value(d1, d2, variable):
 	return val
 
 
-def safe_list_get(l, idx, default):
+def safe_list_get(l, idx, default):  # noqa: E741
 	try:
 		return l[idx]
 	except IndexError:
@@ -78,7 +78,7 @@ channels = list(c1.fetchall())
 
 progress = 0
 for chan in channels:
-	progress += 1
+	progress += 1  # noqa: SIM113
 	print(f"{progress}/{len(channels)}")
 
 	team_names = chan['team_names'] if chan['team_names'] and len(chan['team_names']) == 2 else "Alpha Beta"

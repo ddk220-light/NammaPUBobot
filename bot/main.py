@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-import traceback
+import traceback  # noqa: F401
 import json
-from nextcord import Interaction
+from nextcord import Interaction  # noqa: F401
 
 from core.console import log
-from core.database import db
+from core.database import db  # noqa: F401
 from core.config import cfg
-from core.utils import error_embed, ok_embed, get
+from core.utils import error_embed, ok_embed, get  # noqa: F401
 
 import bot
 
@@ -63,7 +63,7 @@ def save_state():
 	for match in bot.active_matches:
 		matches.append(match.serialize())
 
-	f = open("saved_state.json", 'w')
+	f = open("saved_state.json", 'w')  # noqa: SIM115
 	f.write(json.dumps(dict(queues=queues, matches=matches, allow_offline=bot.allow_offline, expire=bot.expire.serialize())))
 	f.close()
 
@@ -72,7 +72,7 @@ async def load_state():
 	try:
 		with open("saved_state.json", "r") as f:
 			data = json.loads(f.read())
-	except IOError:
+	except IOError:  # noqa: UP024
 		return
 
 	log.info("Loading state...")

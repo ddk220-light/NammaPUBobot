@@ -5,7 +5,7 @@ __all__ = [
 
 import json
 from core.utils import find, get, split_big_text
-from core.console import log
+from core.console import log  # noqa: F401
 import bot
 
 
@@ -103,7 +103,7 @@ async def set_qc_cfg(ctx, cfg):
 	except Exception as e:
 		raise bot.Exc.ValueError(str(e))
 	else:
-		await ctx.success(f"Channel configuration updated.")
+		await ctx.success(f"Channel configuration updated.")  # noqa: F541
 
 
 async def set_queue_cfg(ctx, queue: str, cfg: str):

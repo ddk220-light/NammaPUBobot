@@ -5,7 +5,7 @@ import asyncio
 import bot
 from core.console import log
 from core.database import db
-from core.utils import iter_to_dict, find, get_nick
+from core.utils import iter_to_dict, find, get_nick  # noqa: F401
 
 db.ensure_table(dict(
 	tname="players",

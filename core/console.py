@@ -4,7 +4,7 @@ import os
 import datetime
 from threading import Thread
 from multiprocessing import Queue
-import rlcompleter  # this does python autocomplete by tab
+import rlcompleter  # this does python autocomplete by tab  # noqa: F401
 try:
 	import readline
 except ModuleNotFoundError:  # windows support
@@ -29,7 +29,7 @@ class Log:
 		if not os.path.exists(os.path.abspath("logs")):
 			os.makedirs('logs')
 
-		self.file = open(datetime.datetime.now().strftime("logs/log_%Y-%m-%d-%H:%M"), 'w')
+		self.file = open(datetime.datetime.now().strftime("logs/log_%Y-%m-%d-%H:%M"), 'w')  # noqa: SIM115
 		self.loglevel = LogLevelToInt[cfg.LOG_LEVEL]
 
 	@staticmethod

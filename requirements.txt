@@ -1,8 +1,12 @@
-nextcord>=2.5
-aiomysql>=0.2
-glicko2>=2.0
-trueskill>=0.4.5
-emoji>=2.7
-prettytable>=3.8
-aiohttp>=3.9
-cryptography>=41.0
+# Pinned 2026-04-11 from the versions the Railway builder installed in
+# commit 288edfd. Bump deliberately, not accidentally — unpinned deps are
+# how "worked fine yesterday" becomes "broken at 3am". Indirect deps are
+# left unpinned so pip can pull compatible transitives.
+nextcord==2.6.0
+aiomysql==0.3.2
+glicko2==2.1.0
+trueskill==0.4.5
+emoji==2.15.0
+prettytable==3.17.0
+aiohttp==3.13.5
+cryptography==46.0.7

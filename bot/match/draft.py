@@ -30,7 +30,7 @@ class Draft:
 			pass
 
 	async def refresh(self, ctx):
-		if self.m.state != self.m.DRAFT:
+		if self.m.state != self.m.DRAFT:  # noqa: SIM114
 			await self.print(ctx)
 		elif len(self.m.teams[2]) and any((len(t) < self.m.cfg['team_size'] for t in self.m.teams)):
 			await self.print(ctx)
@@ -86,7 +86,7 @@ class Draft:
 
 			# auto last-pick rest of the players if possible
 			# if rest of pick_order covers the unpicked list
-			if len(self.m.teams[2]) and len(self.pick_order[pick_step+1:]) >= len(self.m.teams[2]):
+			if len(self.m.teams[2]) and len(self.pick_order[pick_step+1:]) >= len(self.m.teams[2]):  # noqa: SIM102
 				# if rest of pick_order is a single team
 				if len(set(self.pick_order[pick_step+1:])) == 1:
 					picker_team = self.m.teams[self.pick_order[pick_step+1]]

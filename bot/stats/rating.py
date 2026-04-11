@@ -69,7 +69,7 @@ class BaseRating:
 		)
 		results = []
 		for user_id in user_ids:
-			if d := find(lambda p: p['user_id'] == user_id, data):
+			if d := find(lambda p: p['user_id'] == user_id, data):  # noqa: B023
 				if d['rating'] is None:
 					d['rating'] = self.init_rp
 					d['deviation'] = self.init_deviation

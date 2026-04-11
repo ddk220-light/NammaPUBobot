@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from core.console import log
+from core.console import log  # noqa: F401
 from core.cfg_factory import FactoryTable, CfgFactory, Variables, VariableTable
 from core.utils import get_nick, get, SafeTemplateDict
 from core.client import dc
@@ -304,7 +304,7 @@ class PickupQueue:
 
 		players = [guild.get_member(user_id) for user_id in data['players']]
 		if None in players:
-			raise bot.Exc.ValueError(f"Error fetching guild members.")
+			raise bot.Exc.ValueError(f"Error fetching guild members.")  # noqa: F541
 
 		q.queue = players
 		if q.length and q not in bot.active_queues:

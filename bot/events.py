@@ -62,10 +62,17 @@ async def on_init():
 _last_state_save = 0
 _STATE_SAVE_INTERVAL = 30  # seconds; crash-survivability backstop for in-flight matches
 
+# Stamped every tick — read by bot/web.py handle_health as the "last_tick_age_seconds"
+# liveness signal. If think() stops running (rare, but possible under a deep
+# deadlock or if the supervisor misses an exception) this value stops advancing
+# and /health reflects the stall.
+last_tick_at = 0.0
+
 
 @dc.event
 async def on_think(frame_time):
-	global _last_state_save
+	global _last_state_save, last_tick_at
+	last_tick_at = frame_time
 
 	# Iterate over a snapshot so removing a failed match from the set
 	# doesn't skip the rest of the tick. Previously an exception in one
@@ -76,7 +83,7 @@ async def on_think(frame_time):
 			await match.think(frame_time)
 		except Exception as e:
 			log.error("\n".join([
-				f"Error at Match.think().",
+				"Error at Match.think().",
 				f"match_id: {match.id}).",
 				f"{str(e)}. Traceback:\n{traceback.format_exc()}=========="
 			]))

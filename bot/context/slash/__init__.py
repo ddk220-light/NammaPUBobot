@@ -1,4 +1,4 @@
-from .context import SlashContext
-from . import autocomplete
-from . import commands
+from .context import SlashContext  # noqa: F401
+from . import autocomplete  # noqa: F401
+from . import commands  # noqa: F401
 

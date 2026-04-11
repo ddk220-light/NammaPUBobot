@@ -80,7 +80,7 @@ class QueueChannel:
 				display="Promotion delay",
 				section="General",
 				description="Set time delay between players can promote queues.",
-				verify=lambda x: 0 <= MAX_PROMOTION_DELAY,
+				verify=lambda x: 0 <= MAX_PROMOTION_DELAY,  # noqa: SIM300
 				verify_message=f"Promotion delay time must be less than {seconds_to_str(MAX_EXPIRE_TIME)}"
 			),
 			Variables.BoolVar(

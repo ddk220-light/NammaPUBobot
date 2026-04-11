@@ -185,7 +185,7 @@ class Embeds:
 		if self.m.cfg['start_msg']:
 			embed.add_field(name="—", value=self.m.cfg['start_msg'] + "\n\u200b", inline=False)
 
-		if self.m.cfg['show_streamers']:
+		if self.m.cfg['show_streamers']:  # noqa: SIM102
 			if len(streamers := [p for p in self.m.players if isinstance(p.activity, Streaming)]):
 				embed.add_field(name=self.m.qc.gt("Player streams"), inline=False, value="\n".join([
 					f"{p.mention}: {p.activity.url}" for p in streamers

@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable  # noqa: UP035
 from asyncio import wait_for, shield
 from asyncio.exceptions import TimeoutError as aTimeoutError
 from nextcord import Interaction, SlashOption, Member, TextChannel, Embed, Colour
@@ -69,7 +69,7 @@ async def run_slash_coro(ctx: SlashContext, coro: Callable, **kwargs):
 		await ctx.error(str(e), title="RuntimeError")
 		log.error("\n".join([
 			f"Error processing /slash command {coro.__name__}.",
-			f"QC: {ctx.channel.guild.name}>#{ctx.channel.name} ({qc.id}).",
+			f"QC: {ctx.channel.guild.name}>#{ctx.channel.name} ({ctx.qc.id}).",
 			f"Member: {ctx.author} ({ctx.author.id}).",
 			f"Kwargs: {kwargs}.",
 			f"Exception: {str(e)}. Traceback:\n{traceback.format_exc()}=========="

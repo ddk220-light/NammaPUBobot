@@ -1,0 +1,122 @@
+# Ruff configuration for NammaPUBobot.
+#
+# We target py311 because that's what the Dockerfile ships (CLAUDE.md
+# says py39+ is the minimum, but Railway builds on 3.11 — if we break
+# that, production breaks, so lint against what actually runs).
+#
+# The rule set is intentionally small: we're dropping ruff into a
+# codebase that has never been linted, so starting strict would mean
+# burying every change in drive-by fixes. Start with the high-signal
+# rules, add more once the team is comfortable.
+#
+#   E, F  — pycodestyle errors + pyflakes (syntax, unused imports,
+#           undefined names — the baseline every project should have)
+#   B     — flake8-bugbear (real bug patterns like mutable default args,
+#           except-bare, no-op asserts)
+#   UP    — pyupgrade (py3.11 idioms, catches legacy f-strings etc.)
+#   SIM   — flake8-simplify (readability fixes)
+#
+# Notably absent: W (whitespace), D (docstrings), ANN (annotations),
+# PL (pylint) — all too noisy for a codebase that uses tab indentation
+# and predates type hints.
+
+target-version = "py311"
+line-length = 120
+
+# The repo uses tabs throughout the original codebase (see CLAUDE.md).
+# Mixing tabs and spaces is a bug, but enforcing pep8 spaces now would
+# rewrite every file — that's a separate future PR.
+indent-width = 4
+
+exclude = [
+    ".git",
+    "__pycache__",
+    "data",
+    "export-apr10",
+    "bot/i18n",     # gettext-compiled files, not hand-written
+]
+
+[lint]
+select = ["E", "F", "B", "UP", "SIM"]
+
+# Ignore rules that conflict with our style or would explode the
+# diff on day one. Each entry must explain why.
+ignore = [
+    # Long lines — the codebase has many, and refactoring them all up
+    # front is unrelated noise. Add back later once the big offenders
+    # are rewritten.
+    "E501",
+    # Tab indentation — the project uses tabs. E101/W191 complaints
+    # are noise, not bugs.
+    "E101", "W191",
+    # PUBobot2.py and start.py deliberately import bot AFTER the DB
+    # adapter connect completes, so some imports sit below top-level
+    # statements. This is the bootstrap ordering, not a style error.
+    "E402",
+    # B008: Function call in default argument. We use `loop =
+    # asyncio.get_event_loop()` as a default in a few places; those
+    # are safe in this codebase and rewriting is out of scope.
+    "B008",
+    # B904: raise-from in except. The project already raises without
+    # from in several places; fixing all of them is a separate PR.
+    "B904",
+    # B905: zip(..., strict=True). Available only since 3.10; fine to
+    # add opportunistically but not worth a mass rewrite.
+    "B905",
+    # SIM105: contextlib.suppress — the try/except/pass form is often
+    # easier to read than a wrapper import.
+    "SIM105",
+    # SIM108: ternary-over-if. Often makes code less readable for the
+    # state-machine logic in bot/match.
+    "SIM108",
+    # SIM117: merging nested with-statements. Often worse for async
+    # context managers in the DB adapter.
+    "SIM117",
+    # UP009: utf-8 coding declaration comments. Harmless in 3.11 but
+    # mass-removing them would bloat the diff with zero bug value.
+    "UP009",
+    # UP032: prefer f-strings over .format(). The bot uses .format()
+    # everywhere with named kwargs for log lines — rewriting them all
+    # is out of scope for this cleanup pass.
+    "UP032",
+    # UP015: unnecessary open mode. Minor cosmetic.
+    "UP015",
+    # UP017: datetime.UTC alias. New in 3.11; nice to have but the
+    # existing `timezone.utc` usages work fine and refactoring them is
+    # out of scope.
+    "UP017",
+    # UP034: extraneous parentheses. Cosmetic — in some cases the
+    # parens group multi-line expressions for readability.
+    "UP034",
+    # SIM103: "inline the return condition." For permission / auth
+    # checks the explicit if-return form is often clearer than a
+    # one-liner, and less error-prone to later edits.
+    "SIM103",
+    # SIM118: `key in dict.keys()` → `key in dict`. Cosmetic.
+    "SIM118",
+]
+
+[lint.per-file-ignores]
+# Tests intentionally use bare asserts and relative imports.
+"tests/*" = ["E402", "F401", "B011"]
+# start.py generates config via string templating; unused imports and
+# star-import tricks in the config loader are tolerated.
+"start.py" = ["F401"]
+# PUBobot2.py imports `locales` and `cfg_factory` for their side
+# effects (translation registration + config factory class loading),
+# so F401 looks like a false positive here.
+"PUBobot2.py" = ["F401"]
+# core/locales.py and bot/__init__.py are legacy entry points full of
+# star imports. Don't rewrite them yet.
+"core/locales.py" = ["F401", "F403", "F405"]
+"bot/__init__.py" = ["F401", "F403", "F405"]
+"bot/commands/__init__.py" = ["F401", "F403", "F405"]
+# core/DBAdapters/mysql.py uses `from .common import *` to surface the
+# shared DB error classes. That's a legacy pattern and replacing it
+# is its own PR.
+"core/DBAdapters/mysql.py" = ["F401", "F403", "F405"]
+
+[format]
+# Preserve tab indentation in auto-fixes. If we ever convert to spaces,
+# do it as its own PR.
+indent-style = "tab"

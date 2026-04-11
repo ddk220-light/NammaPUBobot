@@ -1,6 +1,6 @@
 import traceback
 import re
-from typing import Callable
+from typing import Callable  # noqa: UP035
 
 from core.client import dc
 from core.console import log
@@ -69,7 +69,7 @@ async def on_message(message):
 		except Exception as e:
 			await ctx.error(str(e), title="RuntimeError")
 			log.error("\n".join([
-				f"Error processing a text message command.",
+				f"Error processing a text message command.",  # noqa: F541
 				f"QC: {ctx.channel.guild.name}>#{ctx.channel.name} ({qc.id}).",
 				f"Member: {ctx.author} ({ctx.author.id}).",
 				f"Content: `{message.content}`.",

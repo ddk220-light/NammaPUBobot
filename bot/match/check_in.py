@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-import mmap
+import mmap  # noqa: F401
 import random
 import bot
 from nextcord.errors import DiscordException
 
 from core.utils import join_and
-from core.console import log
+from core.console import log  # noqa: F401
 
 
 class CheckIn:
