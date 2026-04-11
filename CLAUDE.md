@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-NammaPUBobot — a fork of PUBobot2, a Discord bot for organizing AoE2 pickup games. Built with Python 3.9+, nextcord (discord library), aiomysql, and MySQL.
+NammaPUBobot — a fork of PUBobot2, a Discord bot for organizing AoE2 pickup games. Built with Python 3.11 (Railway Dockerfile ships 3.11-slim, `ruff.toml` targets py311), nextcord (discord library), aiomysql, and MySQL.
 
 ## Running the Bot
 
@@ -22,7 +22,17 @@ python3 PUBobot2.py
 python3 start.py
 ```
 
-There is no test suite or linter configured in this project.
+## Linting & Tests
+
+```bash
+# Lint (config lives in ruff.toml; line-length 120, tab indent)
+ruff check .
+
+# Run the pytest suite (pure-function tests for elo_sync/civ_sync parsers)
+pytest tests/
+```
+
+CI runs both on every PR via `.github/workflows/ci.yml`.
 
 ## Architecture
 
@@ -46,9 +56,9 @@ There is no test suite or linter configured in this project.
 - **`bot/queues/pickup_queue.py`** — `PickupQueue`: player queue that starts a `Match` when full
 - **`bot/match/match.py`** — `Match` lifecycle: INIT → CHECK_IN → DRAFT → WAITING_REPORT. Contains `Team`, `CheckIn`, `Draft`, `Embeds` helpers
 - **`bot/commands/`** — Command implementations (config, queues, matches, stats, admin, misc). Imported via `__init__.py` star imports
-- **`bot/context/`** — Command context abstraction with two paths:
+- **`bot/context/`** — Command context abstraction:
   - `slash/` — Slash command definitions in `commands.py`, autocomplete in `autocomplete.py`, command groups in `groups.py`
-  - `message/` — Legacy `!command` message-based commands
+  - (The legacy `!command` `bot/context/message/` handler was removed in Layer 5 — every prior `!cmd` has a slash equivalent prefixed `namma_`.)
 - **`bot/stats/`** — Stats tracking, rating systems (Flat, Glicko2, TrueSkill)
 - **`bot/civ_stats.py`** — Loads `data/player_civ_stats.csv` and `data/civ_elo_stats.csv` at import time. Provides `get_player_civs()` lookup, `pick_balanced_teams()` for randomized civ pools, and `get_today_civs()` for channel history scanning
 - **`bot/web.py`** — Web dashboard server (aiohttp). Discord OAuth2 login, session management, REST API for channel/queue config CRUD, civ stats API. Serves `bot/web_page.html`

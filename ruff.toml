@@ -33,7 +33,6 @@ exclude = [
     "__pycache__",
     "data",
     "export-apr10",
-    "bot/i18n",     # gettext-compiled files, not hand-written
 ]
 
 [lint]

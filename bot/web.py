@@ -16,6 +16,7 @@ from core.cfg_factory import (
 	BoolVar, IntVar, SliderVar, OptionVar, DurationVar, TextVar
 )
 from core.client import dc
+from core.database import db
 import bot
 
 # --- Paths ---
@@ -23,11 +24,65 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 HTML_PATH = os.path.join(os.path.dirname(__file__), 'web_page.html')
 MIN_GAMES = 50
 
-# --- Session store ---
-_sessions = {}  # {session_id: {user_id, username, avatar, expires}}
-_oauth_states = {}  # {state: expiry_timestamp}
+# --- Session store (Layer 5: migrated from in-memory dicts to MySQL) ---
+#
+# Previously `_sessions` and `_oauth_states` were module-level dicts. Every
+# Railway redeploy (which is every commit to main) blew them away, so all
+# OAuth-logged-in admins had to log back in any time we shipped a fix. Moving
+# them to MySQL means sessions survive deploys, and an `expires_at`-indexed
+# DELETE in _get_session keeps the tables self-cleaning without a cron.
 SESSION_LIFETIME = 86400  # 24 hours
+OAUTH_STATE_LIFETIME = 300  # 5 minutes
 COOKIE_NAME = "pubobot_session"
+
+# Opportunistic cleanup — run a single DELETE of expired rows at most once
+# every 5 minutes. Gated on a module-level timestamp so a burst of requests
+# doesn't hammer the DB with the same delete. Amortized cost is essentially
+# zero (hits an indexed column) and avoids a dedicated cleanup job.
+_last_session_cleanup = 0.0
+_SESSION_CLEANUP_INTERVAL = 300  # seconds
+
+db.ensure_table(dict(
+	tname="web_sessions",
+	columns=[
+		dict(cname="session_id", ctype=db.types.str),
+		dict(cname="user_id", ctype=db.types.int, notnull=True),
+		dict(cname="username", ctype=db.types.str, notnull=True),
+		dict(cname="avatar", ctype=db.types.str),  # nullable — not every Discord user has an avatar
+		dict(cname="csrf", ctype=db.types.str, notnull=True),
+		dict(cname="expires_at", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["session_id"],
+))
+
+db.ensure_table(dict(
+	tname="web_oauth_states",
+	columns=[
+		dict(cname="state", ctype=db.types.str),
+		dict(cname="expires_at", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["state"],
+))
+
+
+async def _cleanup_expired_sessions():
+	"""Best-effort cleanup of expired sessions and OAuth states.
+
+	Called inline at read/write boundaries so we don't need a dedicated cron
+	job. Returns silently on DB errors — an unavailable DB would already have
+	prevented the surrounding auth flow from working."""
+	global _last_session_cleanup
+	now = time.time()
+	if now - _last_session_cleanup < _SESSION_CLEANUP_INTERVAL:
+		return
+	_last_session_cleanup = now
+	try:
+		cutoff = int(now)
+		await db.execute("DELETE FROM `web_sessions` WHERE `expires_at` < %s", (cutoff,))
+		await db.execute("DELETE FROM `web_oauth_states` WHERE `expires_at` < %s", (cutoff,))
+	except Exception:
+		# Don't let cleanup errors bubble into auth flow — next tick will retry
+		pass
 
 # --- Discord API ---
 DISCORD_API = "https://discord.com/api/v10"
@@ -68,16 +123,45 @@ def _get_root_url(request):
 	return f"{scheme}://{host}"
 
 
-def _get_session(request):
-	"""Get session data from cookie, or None if invalid/expired."""
+async def _get_session(request):
+	"""Get session data from cookie, or None if invalid/expired.
+
+	Layer 5: reads from `web_sessions` in MySQL instead of a process-local dict
+	so that OAuth logins survive Railway redeploys. Async because DB calls are
+	awaitable — all call sites have been updated to `await _get_session(...)`.
+
+	Piggybacks on the request to run opportunistic cleanup of expired
+	sessions/oauth states at most once every 5 minutes.
+	"""
+	await _cleanup_expired_sessions()
 	session_id = request.cookies.get(COOKIE_NAME)
 	if not session_id:
 		return None
-	session = _sessions.get(session_id)
-	if not session or session["expires"] < time.time():
-		_sessions.pop(session_id, None)
+	row = await db.select_one(
+		('session_id', 'user_id', 'username', 'avatar', 'csrf', 'expires_at'),
+		'web_sessions',
+		where={'session_id': session_id},
+	)
+	if not row:
 		return None
-	return session
+	if row['expires_at'] < int(time.time()):
+		# Stale cookie — drop the row so cleanup stays accurate
+		try:
+			await db.delete('web_sessions', where={'session_id': session_id})
+		except Exception:
+			pass
+		return None
+	# Map the DB row shape to the legacy dict shape that downstream handlers
+	# expect. `expires` is kept for backwards compatibility with any code that
+	# reads it, even though _get_session already filters on expires_at.
+	return {
+		'session_id': row['session_id'],
+		'user_id': row['user_id'],
+		'username': row['username'],
+		'avatar': row['avatar'],
+		'csrf': row['csrf'],
+		'expires': row['expires_at'],
+	}
 
 
 def _should_skip(var):
@@ -289,7 +373,13 @@ async def handle_auth_login(request):
 		raise web.HTTPBadRequest(text="OAuth not configured")
 	root_url = _get_root_url(request)
 	state = secrets.token_urlsafe(16)
-	_oauth_states[state] = time.time() + 300  # 5 min expiry
+	# Persist the OAuth state in MySQL so we survive a redeploy that happens
+	# between the user clicking "Login" and Discord redirecting them back.
+	await _cleanup_expired_sessions()
+	await db.insert('web_oauth_states', {
+		'state': state,
+		'expires_at': int(time.time()) + OAUTH_STATE_LIFETIME,
+	}, on_dublicate='replace')
 	params = {
 		"client_id": str(cfg.DC_CLIENT_ID),
 		"redirect_uri": f"{root_url}/auth/callback",
@@ -309,10 +399,24 @@ async def handle_auth_callback(request):
 		raise web.HTTPBadRequest(text="Missing code parameter")
 
 	state = request.query.get("state")
-	if not state or state not in _oauth_states or _oauth_states[state] < time.time():
-		_oauth_states.pop(state, None)
+	if not state:
 		raise web.HTTPBadRequest(text="Invalid or expired state parameter")
-	_oauth_states.pop(state, None)
+	state_row = await db.select_one(
+		('state', 'expires_at'), 'web_oauth_states', where={'state': state}
+	)
+	if not state_row or state_row['expires_at'] < int(time.time()):
+		# Clean up the stale row if it exists — keeps the table tight
+		if state_row:
+			try:
+				await db.delete('web_oauth_states', where={'state': state})
+			except Exception:
+				pass
+		raise web.HTTPBadRequest(text="Invalid or expired state parameter")
+	# Single-use — delete immediately to prevent replay
+	try:
+		await db.delete('web_oauth_states', where={'state': state})
+	except Exception:
+		pass
 
 	root_url = _get_root_url(request)
 	redirect_uri = f"{root_url}/auth/callback"
@@ -339,16 +443,17 @@ async def handle_auth_callback(request):
 		user = await resp.json()
 
 	session_id = secrets.token_urlsafe(32)
-	_sessions[session_id] = {
-		"user_id": int(user["id"]),
-		"username": user.get("global_name") or user["username"],
-		"avatar": user.get("avatar"),
-		"expires": time.time() + SESSION_LIFETIME,
+	await db.insert('web_sessions', {
+		'session_id': session_id,
+		'user_id': int(user["id"]),
+		'username': user.get("global_name") or user["username"],
+		'avatar': user.get("avatar"),
 		# Per-session CSRF token — required on all POST endpoints via the
 		# X-CSRF-Token header. Generated once at login so the dashboard JS
 		# can fetch it from /api/me and cache it for the session.
-		"csrf": secrets.token_urlsafe(32),
-	}
+		'csrf': secrets.token_urlsafe(32),
+		'expires_at': int(time.time()) + SESSION_LIFETIME,
+	}, on_dublicate='replace')
 
 	resp = web.HTTPFound("/")
 	is_secure = root_url.startswith("https://")
@@ -359,7 +464,10 @@ async def handle_auth_callback(request):
 async def handle_auth_logout(request):
 	session_id = request.cookies.get(COOKIE_NAME)
 	if session_id:
-		_sessions.pop(session_id, None)
+		try:
+			await db.delete('web_sessions', where={'session_id': session_id})
+		except Exception:
+			pass
 	resp = web.HTTPFound("/")
 	resp.del_cookie(COOKIE_NAME)
 	raise resp
@@ -368,17 +476,24 @@ async def handle_auth_logout(request):
 # ─── Dashboard API ───
 
 async def handle_api_me(request):
-	session = _get_session(request)
+	session = await _get_session(request)
 	if not session:
 		return web.json_response({"logged_in": False, "oauth_enabled": _oauth_enabled()})
-	# Lazily issue a CSRF token for any session missing one (e.g. if the
-	# session predates the CSRF feature, or if sessions ever start being
-	# persisted across restarts). Safe because this endpoint requires a
-	# valid same-origin session cookie — an attacker without that cookie
-	# can't trigger the issuance, and cross-origin JS can't read the
-	# response under the browser's same-origin policy.
-	if 'csrf' not in session:
-		session['csrf'] = secrets.token_urlsafe(32)
+	# Lazily issue a CSRF token for any session missing one (e.g. legacy
+	# rows from before the CSRF feature landed). Safe because this endpoint
+	# requires a valid same-origin session cookie — an attacker without
+	# that cookie can't trigger the issuance, and cross-origin JS can't
+	# read the response under the browser's same-origin policy.
+	if not session.get('csrf'):
+		new_csrf = secrets.token_urlsafe(32)
+		try:
+			await db.update('web_sessions', {'csrf': new_csrf}, keys={'session_id': session['session_id']})
+			session['csrf'] = new_csrf
+		except Exception:
+			# If the update fails, fall back to an ephemeral token for this
+			# response — it won't match on the next POST but at least /api/me
+			# still returns a usable payload.
+			session['csrf'] = new_csrf
 	return web.json_response({
 		"logged_in": True,
 		"oauth_enabled": True,
@@ -390,7 +505,7 @@ async def handle_api_me(request):
 
 
 async def handle_api_guilds(request):
-	session = _get_session(request)
+	session = await _get_session(request)
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
@@ -417,7 +532,7 @@ async def handle_api_guilds(request):
 
 
 async def handle_api_channels(request):
-	session = _get_session(request)
+	session = await _get_session(request)
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
@@ -445,7 +560,7 @@ async def handle_api_channels(request):
 
 
 async def handle_api_channel_config(request):
-	session = _get_session(request)
+	session = await _get_session(request)
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
@@ -509,7 +624,7 @@ async def handle_api_channel_config(request):
 
 
 async def handle_api_queues(request):
-	session = _get_session(request)
+	session = await _get_session(request)
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
@@ -537,7 +652,7 @@ async def handle_api_queues(request):
 
 
 async def handle_api_queue_config(request):
-	session = _get_session(request)
+	session = await _get_session(request)
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 

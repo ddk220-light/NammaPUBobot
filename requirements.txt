@@ -10,3 +10,9 @@ emoji==2.15.0
 prettytable==3.17.0
 aiohttp==3.13.5
 cryptography==46.0.7
+# Sentry is loaded conditionally via SENTRY_DSN env var — see PUBobot2.py.
+# Without a DSN, the init becomes a no-op but the package still loads to
+# keep imports non-conditional. If you never set SENTRY_DSN you pay no
+# runtime overhead; setting it enables exception capture via the task
+# supervisor's _task_done_callback.
+sentry-sdk==2.18.0

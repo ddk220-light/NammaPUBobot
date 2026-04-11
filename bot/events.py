@@ -95,6 +95,12 @@ async def on_think(frame_time):
 	await bot.stats.jobs.think(frame_time)
 	await bot.expire_auto_ready(frame_time)
 
+	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict
+	# docstring in bot/__init__.py — entries older than 30 minutes are
+	# guaranteed-dead leaks from check-in exit paths that raised before
+	# unsubscribing. Cheap (O(n), n ≈ 0-3) so no need to gate on interval.
+	bot.waiting_reactions.sweep_expired(frame_time)
+
 	# Periodic state snapshot — if the process crashes before a clean
 	# shutdown, SIGTERM (or the crash supervisor in PUBobot2.py) can only
 	# save state best-effort. This keeps a rolling ≤30s-old backup on
@@ -157,14 +163,45 @@ async def on_message(message):
 
 @dc.event
 async def on_reaction_add(reaction, user):
-	if user.id != dc.user.id and reaction.message.id in bot.waiting_reactions.keys():
+	if user.id != dc.user.id and reaction.message.id in bot.waiting_reactions:
 		await bot.waiting_reactions[reaction.message.id](reaction, user)
 
 
 @dc.event
-async def on_reaction_remove(reaction, user):  # FIXME: this event does not get triggered for some reason
-	if user.id != dc.user.id and reaction.message.channel.id in bot.waiting_reactions.keys():
-		await bot.waiting_reactions[reaction.message.id](reaction, user, remove=True)
+async def on_raw_reaction_remove(payload):
+	# Fixed in Layer 5 (was `on_reaction_remove` with a FIXME saying "event does not
+	# get triggered"). Two separate problems:
+	#
+	#   1. Nextcord only fires the cached `on_reaction_remove` for messages still
+	#      in its internal message cache. Check-in messages typically live 1-2
+	#      minutes but the cache turnover during a busy channel can evict them
+	#      before the user un-reacts, so the callback silently never ran.
+	#   2. Even when it did fire, the original code checked
+	#      `reaction.message.channel.id in bot.waiting_reactions` (channel vs
+	#      message id typo), so the lookup always failed. That's a 2022-vintage
+	#      bug that nobody caught because of (1).
+	#
+	# `on_raw_reaction_remove` fires for ALL reaction removes, cached or not,
+	# and gives us `payload.message_id` directly. The callback only uses
+	# `str(reaction)` and `user` — `payload.emoji` is a PartialEmoji whose
+	# __str__ returns the same string as Reaction's __str__, so the check-in
+	# callback (`str(reaction) == self.READY_EMOJI`) continues to work.
+	if payload.user_id == dc.user.id:
+		return
+	if payload.message_id not in bot.waiting_reactions:
+		return
+	# Resolve Member — the callback checks `user not in self.m.players`, so we
+	# need the actual Member object, not just the id.
+	guild = dc.get_guild(payload.guild_id) if payload.guild_id else None
+	if guild is None:
+		return
+	member = guild.get_member(payload.user_id)
+	if member is None:
+		return
+	try:
+		await bot.waiting_reactions[payload.message_id](payload.emoji, member, remove=True)
+	except Exception as e:
+		log.error(f"on_raw_reaction_remove callback error: {e}\n{traceback.format_exc()}")
 
 
 @dc.event

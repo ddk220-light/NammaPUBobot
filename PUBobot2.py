@@ -1,14 +1,47 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
 import time
 import signal
 import asyncio
 import traceback
 from asyncio import sleep as asleep
 
+# Sentry — opt-in via SENTRY_DSN env var. Initialized BEFORE any other bot
+# imports so that exceptions raised during module import (config parse,
+# DB connect, bot.__init__) get reported instead of silently killing the
+# container. If SENTRY_DSN is unset, sentry_sdk.init() is skipped entirely
+# and all downstream sentry_sdk.capture_exception() calls become no-ops
+# (the SDK's documented behavior for an uninitialized client).
+_sentry_dsn = os.environ.get('SENTRY_DSN', '').strip()
+if _sentry_dsn:
+	import sentry_sdk
+	sentry_sdk.init(
+		dsn=_sentry_dsn,
+		# Capture the full stack for every exception. Default is on but
+		# stated explicitly so future readers don't wonder.
+		attach_stacktrace=True,
+		# Don't sample transactions — we're using Sentry as an error
+		# reporter, not an APM. Setting this to 0.0 avoids pulling in
+		# performance-monitoring instrumentation we don't need.
+		traces_sample_rate=0.0,
+		# Environment tag from Railway env var if set, else "local".
+		environment=os.environ.get('RAILWAY_ENVIRONMENT_NAME', 'local'),
+		# Release tag from Railway's commit SHA if set. Shows up in the
+		# Sentry UI so we can correlate errors with deploys.
+		release=os.environ.get('RAILWAY_GIT_COMMIT_SHA', None),
+	)
+else:
+	sentry_sdk = None
+
 # Load bot core
-from core import config, console, database, locales, cfg_factory
+# Layer 5: `locales` used to be in this import for its side effect
+# (it listdir'd locales/compiled/ and built a gettext translation
+# table at import time). With the Layer 5 stub, core/locales.py does
+# no I/O and needs no eager load — bot/queue_channel.py imports it
+# lazily on its own. Dropped from this line.
+from core import config, console, database, cfg_factory
 from core.client import dc
 
 loop = asyncio.get_event_loop()
@@ -45,6 +78,16 @@ def _task_done_callback(task):
 	# Uncaught exception — critical failure.
 	tb_text = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
 	log.error(f"CRITICAL: supervised task '{task.get_name()}' crashed:\n{tb_text}")
+	# Report to Sentry if configured. No-op when SENTRY_DSN is unset.
+	# Wrapped so a Sentry transport failure can't block the exit path.
+	if sentry_sdk is not None:
+		try:
+			with sentry_sdk.push_scope() as scope:
+				scope.set_tag("task_name", task.get_name())
+				scope.set_tag("critical", "true")
+				sentry_sdk.capture_exception(exc)
+		except Exception as sentry_exc:
+			log.error(f"Sentry capture failed during task crash: {sentry_exc}")
 	# Best-effort state save before exit — we have periodic snapshots too
 	# but an extra save here loses at most a few seconds of in-flight state.
 	try:
