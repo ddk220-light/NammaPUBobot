@@ -4,3 +4,10 @@ dockerfilePath = "Dockerfile"
 [deploy]
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
+# Actively check Discord+DB liveness on every deploy. Without this,
+# Railway falls back to a TCP probe that passes even when the Discord
+# client is dead — which is exactly how we ended up with a 2h 23m
+# zombie-bot outage on 2026-04-11. The /health route in bot/web.py
+# returns 503 unless both Discord and the DB are actually reachable.
+healthcheckPath = "/health"
+healthcheckTimeout = 300

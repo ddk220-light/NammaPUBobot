@@ -5,9 +5,7 @@ import time
 import signal
 import asyncio
 import traceback
-import queue
 from asyncio import sleep as asleep
-from asyncio import iscoroutine
 
 # Load bot core
 from core import config, console, database, locales, cfg_factory
@@ -25,35 +23,66 @@ web_runner = None
 
 log = console.log
 
-# Gracefully exit on ctrl+c
+# ─── Task supervision ────────────────────────────────────────────────
+# Any critical task that dies unexpectedly must bring down the whole
+# process so Railway's ON_FAILURE restart policy kicks in. Previously a
+# 1015 (Cloudflare rate limit) on Discord login would kill only the
+# Discord task while web + think kept the container alive → zombie bot
+# for hours. Never again.
+
+def _task_done_callback(task):
+	"""Done-callback: if a critical task crashed, stop the loop so the
+	process exits non-zero and Railway restarts the container.
+	Cancelled tasks and normal completion are ignored."""
+	if task.cancelled():
+		log.info(f"Task {task.get_name()} was cancelled.")
+		return
+	exc = task.exception()
+	if exc is None:
+		log.info(f"Task {task.get_name()} completed normally.")
+		return
+	# Uncaught exception — critical failure.
+	tb_text = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+	log.error(f"CRITICAL: supervised task '{task.get_name()}' crashed:\n{tb_text}")
+	# Best-effort state save before exit — we have periodic snapshots too
+	# but an extra save here loses at most a few seconds of in-flight state.
+	try:
+		bot.save_state()
+	except Exception as save_exc:
+		log.error(f"Failed to save state during crash: {save_exc}")
+	log.error("Stopping event loop — process will exit, Railway will restart the container.")
+	try:
+		loop.stop()
+	except RuntimeError:
+		pass
+
+
+def supervised_task(coro, name):
+	"""Wrap a coroutine in a task with crash-supervision attached."""
+	task = loop.create_task(coro, name=name)
+	task.add_done_callback(_task_done_callback)
+	return task
+
+
+# ─── Signal handlers ─────────────────────────────────────────────────
+# Gracefully exit on SIGINT (Ctrl+C locally) or SIGTERM (Railway deploys).
+# Without SIGTERM, `saved_state.json` is never written when Railway stops
+# the container for a redeploy → in-flight matches are lost every deploy.
 original_SIGINT_handler = signal.getsignal(signal.SIGINT)
+original_SIGTERM_handler = signal.getsignal(signal.SIGTERM)
 
 
 def ctrl_c(sig, frame):
+	log.info(f"Received signal {sig}, shutting down gracefully...")
 	bot.save_state()
 	console.terminate()
+	# Restore original handlers so a second signal kills immediately
 	signal.signal(signal.SIGINT, original_SIGINT_handler)
+	signal.signal(signal.SIGTERM, original_SIGTERM_handler)
 
 
 signal.signal(signal.SIGINT, ctrl_c)
-
-
-# Run commands from user console
-async def run_console():
-	try:
-		cmd = console.user_input_queue.get(False)
-	except queue.Empty:
-		return
-
-	log.info(cmd)
-	try:
-		x = eval(cmd)
-		if iscoroutine(x):
-			log.info(await x)
-		else:
-			log.info(str(x))
-	except Exception as e:
-		log.error("CONSOLE| ERROR: "+str(e))
+signal.signal(signal.SIGTERM, ctrl_c)
 
 
 # Background processes loop
@@ -64,7 +93,6 @@ async def think():
 	# Loop runs roughly every 1 second
 	while console.alive:
 		frame_time = time.time()
-		await run_console()
 		for task in dc.events['on_think']:
 			try:
 				await task(frame_time)
@@ -102,9 +130,9 @@ async def init_web():
 
 # Login to discord
 loop = asyncio.get_event_loop()
-loop.create_task(init_web())
-loop.create_task(think())
-loop.create_task(dc.start(config.cfg.DC_BOT_TOKEN))
+supervised_task(init_web(), name="web_server")
+supervised_task(think(), name="think_loop")
+supervised_task(dc.start(config.cfg.DC_BOT_TOKEN), name="discord_client")
 
 log.info("Connecting to discord...")
 loop.run_forever()

@@ -133,6 +133,44 @@ async def handle_index(request):
 	return web.Response(text=_html_cache, content_type='text/html')
 
 
+# ─── Health check (for Railway healthcheckPath) ───
+
+async def handle_health(request):
+	"""Liveness probe used by Railway's healthcheckPath.
+
+	Returns 200 only when the Discord client is connected AND the DB pool
+	answers a trivial query. Returns 503 in every other state.
+
+	This is what prevents the zombie-bot failure mode: previously a
+	Discord 1015 rate limit would kill the Discord task while the web
+	task kept the container "alive" from Railway's point of view (it fell
+	back to a TCP probe because no healthcheckPath was configured). With
+	this endpoint + healthcheckPath = "/health" in railway.toml, Railway
+	restarts the container whenever Discord is actually dead.
+	"""
+	import asyncio as _asyncio
+	from core.database import db as _db
+
+	discord_ok = bool(getattr(bot, 'bot_ready', False)) and dc.is_ready()
+
+	db_ok = False
+	try:
+		# Cap the query at 2s so a slow DB doesn't hang the healthcheck
+		await _asyncio.wait_for(_db.fetchone("SELECT 1 AS ok"), timeout=2.0)
+		db_ok = True
+	except Exception:
+		db_ok = False
+
+	healthy = discord_ok and db_ok
+	payload = {
+		"status": "ok" if healthy else "unhealthy",
+		"discord_connected": discord_ok,
+		"db_connected": db_ok,
+		"bot_ready": bool(getattr(bot, 'bot_ready', False)),
+	}
+	return web.json_response(payload, status=200 if healthy else 503)
+
+
 # ─── Civ stats API (public, unchanged) ───
 
 async def handle_civ_stats(request):
@@ -487,6 +525,8 @@ async def handle_api_debug(request):
 def create_app():
 	app = web.Application()
 	app.router.add_get('/', handle_index)
+	# Health check (Railway healthcheckPath)
+	app.router.add_get('/health', handle_health)
 	# Auth
 	app.router.add_get('/auth/login', handle_auth_login)
 	app.router.add_get('/auth/callback', handle_auth_callback)

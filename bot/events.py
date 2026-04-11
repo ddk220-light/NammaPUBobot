@@ -59,9 +59,19 @@ async def on_init():
 	await bot.stats.check_match_id_counter()
 
 
+_last_state_save = 0
+_STATE_SAVE_INTERVAL = 30  # seconds; crash-survivability backstop for in-flight matches
+
+
 @dc.event
 async def on_think(frame_time):
-	for match in bot.active_matches:
+	global _last_state_save
+
+	# Iterate over a snapshot so removing a failed match from the set
+	# doesn't skip the rest of the tick. Previously an exception in one
+	# match.think() broke the whole for-loop and starved every later
+	# match that tick.
+	for match in list(bot.active_matches):
 		try:
 			await match.think(frame_time)
 		except Exception as e:
@@ -70,12 +80,24 @@ async def on_think(frame_time):
 				f"match_id: {match.id}).",
 				f"{str(e)}. Traceback:\n{traceback.format_exc()}=========="
 			]))
-			bot.active_matches.remove(match)
-			break
+			if match in bot.active_matches:
+				bot.active_matches.remove(match)
+			continue
 	await bot.expire.think(frame_time)
 	await bot.noadds.think(frame_time)
 	await bot.stats.jobs.think(frame_time)
 	await bot.expire_auto_ready(frame_time)
+
+	# Periodic state snapshot — if the process crashes before a clean
+	# shutdown, SIGTERM (or the crash supervisor in PUBobot2.py) can only
+	# save state best-effort. This keeps a rolling ≤30s-old backup on
+	# disk for unexpected exits.
+	if frame_time - _last_state_save >= _STATE_SAVE_INTERVAL:
+		try:
+			bot.save_state()
+			_last_state_save = frame_time
+		except Exception as e:
+			log.error(f"Periodic save_state failed: {e}\n{traceback.format_exc()}")
 
 
 @dc.event
