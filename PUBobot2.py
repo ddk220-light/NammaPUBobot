@@ -33,13 +33,14 @@ log = console.log
 def _task_done_callback(task):
 	"""Done-callback: if a critical task crashed, stop the loop so the
 	process exits non-zero and Railway restarts the container.
-	Cancelled tasks and normal completion are ignored."""
+	Cancelled tasks and normal completion are silent — the supervisor's
+	only job is catching unhandled crashes. (init_web in particular is
+	a start-and-return task: it launches the aiohttp runner and returns.
+	Its 'completion' is expected and not worth logging.)"""
 	if task.cancelled():
-		log.info(f"Task {task.get_name()} was cancelled.")
 		return
 	exc = task.exception()
 	if exc is None:
-		log.info(f"Task {task.get_name()} completed normally.")
 		return
 	# Uncaught exception — critical failure.
 	tb_text = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))

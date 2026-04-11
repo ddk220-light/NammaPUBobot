@@ -755,6 +755,19 @@ function esc(s) {
 }
 
 async function authFetch(url, opts) {
+  opts = opts || {};
+  // Auto-inject the CSRF token on state-changing requests. The token is
+  // captured once per login from /api/me and lives on currentUser; every
+  // POST/PUT/PATCH/DELETE must echo it back via X-CSRF-Token, or the
+  // server returns 403. This is the dashboard half of the CSRF protection
+  // landed in 2026-04-11 — the server half is _check_csrf in bot/web.py.
+  var method = ((opts.method || 'GET') + '').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD' && currentUser && currentUser.csrf) {
+    opts.headers = opts.headers || {};
+    if (!('X-CSRF-Token' in opts.headers)) {
+      opts.headers['X-CSRF-Token'] = currentUser.csrf;
+    }
+  }
   var resp = await fetch(url, opts);
   if (resp.status === 401) {
     currentUser = null; renderAuth();
@@ -795,7 +808,10 @@ async function checkAuth() {
     var resp = await fetch('/api/me');
     if (!resp.ok) return;
     var d = await resp.json();
-    if (d.logged_in) currentUser = { user_id: d.user_id, username: d.username, avatar: d.avatar, oauth_enabled: d.oauth_enabled };
+    // csrf is returned by /api/me for logged-in sessions and is required
+    // by authFetch on every state-changing request. Cache it on
+    // currentUser so every dashboard POST picks it up automatically.
+    if (d.logged_in) currentUser = { user_id: d.user_id, username: d.username, avatar: d.avatar, csrf: d.csrf, oauth_enabled: d.oauth_enabled };
     else currentUser = d.oauth_enabled ? { oauth_enabled: true, logged_in: false } : null;
   } catch(e) { currentUser = null; }
   renderAuth();

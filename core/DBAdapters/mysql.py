@@ -50,6 +50,12 @@ class Adapter:
 	async def connect(self):
 		self.loop = asyncio.get_running_loop()
 		try:
+			# pool_recycle=3600: Railway MySQL (and most managed MySQL) drops
+			# idle connections after ~8h (wait_timeout). Before this was set,
+			# the first query after a quiet night raised InterfaceError
+			# ("MySQL server has gone away") and a whole think() tick would
+			# crash. Recycling every hour keeps all pooled connections fresh
+			# well inside the server's idle window.
 			self.pool = await aiomysql.create_pool(
 				host=self.dbHost,
 				user=self.dbUser,
@@ -57,6 +63,7 @@ class Adapter:
 				db=self.dbName,
 				charset='utf8mb4',
 				autocommit=True,
+				pool_recycle=3600,
 				cursorclass=aiomysql.cursors.DictCursor)
 
 		except mysqlErr.Error as e:

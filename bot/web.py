@@ -120,9 +120,50 @@ def _var_meta(var, value):
 
 
 def _check_admin(qc, member):
-	"""Check if a guild member has admin access for a queue channel."""
-	# TODO: restore proper admin checks later
-	return True
+	"""Check if a guild member has admin access for a queue channel.
+
+	Mirrors the permission model used by slash admin commands in
+	bot/context/slash/ and by enable_channel/disable_channel in
+	bot/main.py: the bot owner, the guild owner, or any member with the
+	Manage Guild permission is treated as an admin. Until 2026-04-11
+	this returned True unconditionally (see the old TODO comment),
+	which meant any OAuth-logged-in Discord user could mutate the
+	channel and queue config of every channel the bot manages.
+	"""
+	if member is None:
+		return False
+	# Bot owner (global override, mirrors context.Context.check_perms)
+	owner_id = getattr(cfg, 'DC_OWNER_ID', 0)
+	if owner_id and member.id == owner_id:
+		return True
+	# Guild owner of the guild this member is in
+	guild = getattr(member, 'guild', None)
+	if guild is not None and member.id == getattr(guild, 'owner_id', 0):
+		return True
+	# Anyone with Manage Guild permission
+	perms = getattr(member, 'guild_permissions', None)
+	if perms is not None and getattr(perms, 'manage_guild', False):
+		return True
+	return False
+
+
+def _check_csrf(request, session):
+	"""Validate X-CSRF-Token header against the session CSRF token.
+
+	Uses constant-time compare to avoid timing oracles. Returns True only
+	when the session has a csrf token AND the header exactly matches.
+	Dashboard POST endpoints that don't gate on this are vulnerable to
+	cross-site request forgery: a malicious page could trick a logged-in
+	admin's browser into POSTing to /api/channels/<id>/config because the
+	session cookie rides along automatically.
+	"""
+	if not session:
+		return False
+	expected = session.get('csrf')
+	if not expected:
+		return False
+	provided = request.headers.get('X-CSRF-Token', '')
+	return secrets.compare_digest(provided, expected)
 
 
 # ─── Page handler ───
@@ -276,6 +317,10 @@ async def handle_auth_callback(request):
 		"username": user.get("global_name") or user["username"],
 		"avatar": user.get("avatar"),
 		"expires": time.time() + SESSION_LIFETIME,
+		# Per-session CSRF token — required on all POST endpoints via the
+		# X-CSRF-Token header. Generated once at login so the dashboard JS
+		# can fetch it from /api/me and cache it for the session.
+		"csrf": secrets.token_urlsafe(32),
 	}
 
 	resp = web.HTTPFound("/")
@@ -299,12 +344,21 @@ async def handle_api_me(request):
 	session = _get_session(request)
 	if not session:
 		return web.json_response({"logged_in": False, "oauth_enabled": _oauth_enabled()})
+	# Lazily issue a CSRF token for any session missing one (e.g. if the
+	# session predates the CSRF feature, or if sessions ever start being
+	# persisted across restarts). Safe because this endpoint requires a
+	# valid same-origin session cookie — an attacker without that cookie
+	# can't trigger the issuance, and cross-origin JS can't read the
+	# response under the browser's same-origin policy.
+	if 'csrf' not in session:
+		session['csrf'] = secrets.token_urlsafe(32)
 	return web.json_response({
 		"logged_in": True,
 		"oauth_enabled": True,
 		"user_id": session["user_id"],
 		"username": session["username"],
 		"avatar": session["avatar"],
+		"csrf": session["csrf"],
 	})
 
 
@@ -399,6 +453,12 @@ async def handle_api_channel_config(request):
 		})
 
 	# POST — update config
+	# CSRF check first: reject cross-site POSTs before running any admin
+	# or config-mutation logic. Pre-CSRF this endpoint accepted any POST
+	# with a valid session cookie, so a malicious page could rewrite a
+	# logged-in admin's channel config with no interaction.
+	if not _check_csrf(request, session):
+		return web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
 	if not is_admin:
 		return web.json_response({"error": "Admin access required"}, status=403)
 	try:
@@ -485,6 +545,9 @@ async def handle_api_queue_config(request):
 		})
 
 	# POST
+	# CSRF check first — see handle_api_channel_config for rationale.
+	if not _check_csrf(request, session):
+		return web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
 	if not is_admin:
 		return web.json_response({"error": "Admin access required"}, status=403)
 	try:

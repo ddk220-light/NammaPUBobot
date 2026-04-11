@@ -1,5 +1,6 @@
 import re
 import time
+import zlib
 from core.database import db
 from core.console import log
 from bot.civ_sync import find_matching_lobby, find_matching_lobby_from_history, link_and_write
@@ -113,7 +114,13 @@ async def process_elo_sync(message):
 	if qc is None:
 		return
 
+	# qc_players and qc_rating_history are keyed on the shared rating
+	# channel; qc_matches and qc_player_matches are keyed on the pickup
+	# channel (matches register_match_ranked's convention — and the
+	# stats.py queries join on the pickup channel id). Keep these two
+	# variables distinct — conflating them poisons the stats joins.
 	channel_id = qc.rating.channel_id
+	qc_channel_id = qc.id
 
 	# Dedup: check if this match_id already exists in rating history
 	existing = await db.select_one(
@@ -127,8 +134,34 @@ async def process_elo_sync(message):
 	now = int(time.time())
 	winner_index = 0  # Team at index 0 is the winner in Pubobot format
 
+	# Write the match row itself. Until this landed (2026-04-11) the live
+	# ELO sync only wrote qc_players and qc_rating_history — every
+	# Pubobot-sourced match silently skipped qc_matches and
+	# qc_player_matches, so any stats query that JOINed those tables
+	# drifted from reality on every new match. Pubobot's ELO message
+	# doesn't include map info, so maps='' and the "set score" is just
+	# the single win (1-0). ranked=1, winner=0 is the Pubobot convention
+	# (winning team is always at index 0).
+	alpha_name = parsed['teams'][0]['name'] if len(parsed['teams']) > 0 else 'A'
+	beta_name = parsed['teams'][1]['name'] if len(parsed['teams']) > 1 else 'B'
+	await db.insert('qc_matches', {
+		'match_id': match_id,
+		'channel_id': qc_channel_id,
+		'queue_id': None,
+		'queue_name': queue_name,
+		'at': now,
+		'alpha_name': alpha_name,
+		'beta_name': beta_name,
+		'ranked': 1,
+		'winner': winner_index,
+		'alpha_score': 1,
+		'beta_score': 0,
+		'maps': '',
+	}, on_dublicate='ignore')
+
 	for team in parsed['teams']:
 		is_winner = (team['index'] == winner_index)
+		team_bit = team['index']  # 0 or 1, used for qc_player_matches.team
 
 		for player in team['players']:
 			nick = player['nick']
@@ -136,16 +169,35 @@ async def process_elo_sync(message):
 			rating_after = player['after']
 			rating_change = rating_after - rating_before
 
-			# Look up player by nick
-			p = await db.select_one(
-				('user_id', 'rating', 'deviation', 'wins', 'losses', 'draws', 'streak'),
-				'qc_players',
-				where={'nick': nick, 'channel_id': channel_id}
-			)
+			# Resolve the Discord user_id up front. Used for the lookup
+			# preference below, for the insert user_id, and for the
+			# qc_player_matches row. Falls back to a deterministic
+			# synthetic negative id (see _resolve_user_id) so unresolved
+			# players never collide on the qc_player_matches PK.
+			resolved_user_id = _resolve_user_id(message, nick)
+
+			# Prefer user_id lookup when we have a real Discord id —
+			# that's the only way to survive a nick change without
+			# creating a duplicate qc_players row. Fall back to nick
+			# lookup for legacy rows (imported before user_id was known)
+			# and for synthetic ids (where nick IS the stable key).
+			p = None
+			if resolved_user_id > 0:
+				p = await db.select_one(
+					('user_id', 'rating', 'deviation', 'wins', 'losses', 'draws', 'streak', 'nick'),
+					'qc_players',
+					where={'user_id': resolved_user_id, 'channel_id': channel_id}
+				)
+			if p is None:
+				p = await db.select_one(
+					('user_id', 'rating', 'deviation', 'wins', 'losses', 'draws', 'streak', 'nick'),
+					'qc_players',
+					where={'nick': nick, 'channel_id': channel_id}
+				)
 
 			if p is None:
 				# Auto-create player with the after rating
-				user_id = _resolve_user_id(message, nick)
+				user_id = resolved_user_id
 				await db.insert('qc_players', {
 					'channel_id': channel_id,
 					'user_id': user_id,
@@ -170,12 +222,23 @@ async def process_elo_sync(message):
 					'match_id': match_id,
 					'reason': queue_name,
 				})
+
+				await db.insert('qc_player_matches', {
+					'match_id': match_id,
+					'channel_id': qc_channel_id,
+					'user_id': user_id,
+					'nick': nick,
+					'team': team_bit,
+				}, on_dublicate='ignore')
 				continue
 
 			user_id = p['user_id']
 
-			# Update existing player
+			# Update existing player. Always refresh nick so the row stays
+			# findable by nick for future lookups (players rename in
+			# Discord, and the nick-lookup fallback above relies on this).
 			update_data = {
+				'nick': nick,
 				'rating': rating_after,
 				'last_ranked_match_at': now,
 			}
@@ -203,6 +266,14 @@ async def process_elo_sync(message):
 				'reason': queue_name,
 			})
 
+			await db.insert('qc_player_matches', {
+				'match_id': match_id,
+				'channel_id': qc_channel_id,
+				'user_id': user_id,
+				'nick': nick,
+				'team': team_bit,
+			}, on_dublicate='ignore')
+
 			log.info(f"ELO sync: {nick} {rating_before} -> {rating_after} ({'+' if rating_change >= 0 else ''}{rating_change})")
 
 	log.info(f"ELO sync: processed match {match_id} ({queue_name})")
@@ -226,10 +297,24 @@ async def process_elo_sync(message):
 def _resolve_user_id(message, nick):
 	"""Try to resolve a Discord user_id from the guild member list.
 
-	Falls back to 0 if not found.
+	Returns the real Discord snowflake (positive 64-bit int) when the nick
+	resolves to a guild member. Falls back to a deterministic synthetic
+	NEGATIVE id derived from the nick when no member matches.
+
+	Why the synthetic fallback: unresolved players used to all collapse
+	to user_id=0, stomping each other on the qc_players (channel_id,
+	user_id) primary key and — once we started writing qc_player_matches
+	from the live sync — the (match_id, user_id) primary key too. A
+	stable per-nick id avoids that collision while still never colliding
+	with a real Discord id (snowflakes are always positive). We use
+	zlib.crc32 (stable across interpreter restarts) rather than Python's
+	hash() (randomised per run by default). A nightly reconciliation job
+	can later merge a synthetic row into its real-id row once the player
+	rejoins and becomes resolvable.
 	"""
 	if hasattr(message, 'guild') and message.guild:
 		for member in message.guild.members:
 			if member.display_name == nick or member.name == nick:
 				return member.id
-	return 0
+	# +1 guarantees we never return 0 (synonym of "unresolved" in old code)
+	return -(zlib.crc32(nick.encode('utf-8')) + 1)
