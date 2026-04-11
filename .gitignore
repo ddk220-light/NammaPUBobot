@@ -6,3 +6,10 @@ __pycache__/
 *.pyo
 locales/compiled/
 data/logs/
+# One-off CSV dump from the original Pubobot, used by
+# utils/import_pubobot_export.py as input. Not a redistributable
+# artifact — do not check in.
+export-apr10/
+# Test venv scratch space (created for local test runs against the
+# system Python 3.14 which lacks pytest).
+.pytest_cache/
