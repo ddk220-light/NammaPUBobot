@@ -1,14 +1,73 @@
 import csv
 import os
 import re
+import time
 from datetime import datetime, timezone
 from core.console import log
+from core.database import db
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+
+# Durable record of civs played per AOE2LobbyBOT-reported match. Written when
+# LobbyBOT posts a completed-match embed (see persist_lobby_civs), and read by
+# bot/civ_stats.get_today_civs to drive /test_random_civs' "exclude civs played
+# today" filter — replacing the old fragile channel-history scrape.
+db.ensure_table(dict(
+	tname="qc_match_civs",
+	columns=[
+		dict(cname="id", ctype=db.types.int, autoincrement=True),
+		dict(cname="channel_id", ctype=db.types.int),
+		dict(cname="aoe2_match_id", ctype=db.types.int, notnull=False),
+		dict(cname="aoe2_name", ctype=db.types.str),
+		dict(cname="civ", ctype=db.types.str),
+		dict(cname="at", ctype=db.types.int),
+	],
+	primary_keys=["id"]
+))
 
 # In-memory buffer of parsed LobbyBOT match results (max 20)
 _lobby_buffer = []
 MAX_BUFFER = 20
+
+
+async def persist_lobby_civs(channel_id, parsed):
+	"""Store the civs from a parsed AOE2LobbyBOT result into qc_match_civs.
+
+	Called from on_message when LobbyBOT posts a completed match, using the same
+	proven parse_lobby_embed output. Idempotent: a match already recorded (by
+	aoe2_match_id in this channel) is skipped, so redeliveries don't duplicate.
+	"""
+	if not parsed:
+		return
+	at = int(parsed.get('timestamp') or time.time())
+	aoe2_match_id = parsed.get('aoe2_match_id')
+
+	rows = []
+	for team in parsed.get('teams', []):
+		for p in team.get('players', []):
+			civ = (p.get('civ') or '').strip()
+			if not civ or civ.lower() == 'unknown':
+				continue
+			rows.append(dict(
+				channel_id=channel_id,
+				aoe2_match_id=aoe2_match_id,
+				aoe2_name=p.get('aoe2_name', ''),
+				civ=civ,
+				at=at,
+			))
+	if not rows:
+		return
+
+	if aoe2_match_id is not None:
+		exists = await db.fetchone(
+			"SELECT 1 AS x FROM qc_match_civs WHERE channel_id=%s AND aoe2_match_id=%s LIMIT 1",
+			[channel_id, aoe2_match_id]
+		)
+		if exists:
+			return
+
+	await db.insert_many('qc_match_civs', rows)
+	log.info(f"Civ record: stored {len(rows)} civs for aoe2 match {aoe2_match_id} in channel {channel_id}.")
 
 
 def parse_lobby_embed(message):

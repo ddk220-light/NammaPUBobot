@@ -9,7 +9,7 @@ from core.console import log
 from core.config import cfg
 import bot
 from bot.elo_sync import process_elo_sync
-from bot.civ_sync import parse_lobby_embed, buffer_lobby_result
+from bot.civ_sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
 from bot.message_logger import log_channel_message, log_bot_message
 
 
@@ -169,6 +169,7 @@ async def on_message(message):
 			parsed = parse_lobby_embed(message)
 			if parsed:
 				buffer_lobby_result(parsed)
+				await persist_lobby_civs(message.channel.id, parsed)
 		except Exception as e:
 			log.error(f"Civ sync buffer error: {e}\n{traceback.format_exc()}")
 

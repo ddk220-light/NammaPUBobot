@@ -3,6 +3,8 @@ import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from core.database import db
+
 MIN_GAMES = 3
 TOP_N = 5
 MIN_CIV_GAMES = 50
@@ -150,27 +152,20 @@ def pick_balanced_teams(excluded_civs=None):
 
 
 async def get_today_civs(channel):
-    """Scan channel history for today's AOE2LobbyBOT match embeds and extract civs played.
+    """Civs already played in this channel today (IST).
 
-    Returns a set of civ name strings.
+    Reads the durable qc_match_civs record that AOE2LobbyBOT results are
+    persisted into (see bot/civ_sync.persist_lobby_civs) — no longer scrapes
+    channel history. Returns a set of civ name strings.
     """
-    now_ist = datetime.now(IST)
-    today_start = now_ist.replace(hour=0, minute=0, second=0, microsecond=0)
-    played_civs = set()
-
-    async for msg in channel.history(after=today_start, limit=200):
-        # Only look at bot messages with "Match completed" content
-        if not msg.author.bot or "Match completed" not in (msg.content or ""):
-            continue
-        for embed in msg.embeds:
-            for field in embed.fields:
-                if field.name and field.name.strip() == "Civ":
-                    for civ_name in (field.value or "").split("\n"):
-                        civ_name = civ_name.strip()
-                        if civ_name:
-                            played_civs.add(civ_name)
-
-    return played_civs
+    today_start = int(
+        datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    )
+    rows = await db.fetchall(
+        "SELECT DISTINCT civ FROM qc_match_civs WHERE channel_id=%s AND at >= %s",
+        [channel.id, today_start]
+    )
+    return {r["civ"] for r in rows if r["civ"]}
 
 
 # Load on import
