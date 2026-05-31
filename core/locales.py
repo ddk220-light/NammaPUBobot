@@ -28,6 +28,13 @@
 class _IdentityTranslator:
 	"""Dict-like + callable stub. `locales["en"]("hello") == "hello"`."""
 
+	# Only English is supported by the passthrough stub. This is surfaced as
+	# the option list for the `lang` channel variable, which is evaluated at
+	# import time in bot/queue_channel.py (QueueChannel.cfg_factory). Without
+	# keys() that call raised AttributeError and crashed the whole bot on
+	# startup — the cause of the failed deploys since the Layer 5 commit.
+	_LANGS = ("en",)
+
 	def __getitem__(self, key):
 		return self
 
@@ -36,6 +43,18 @@ class _IdentityTranslator:
 
 	def get(self, key, default=None):
 		return self
+
+	def keys(self):
+		return list(self._LANGS)
+
+	def values(self):
+		return [self]
+
+	def items(self):
+		return [(k, self) for k in self._LANGS]
+
+	def __iter__(self):
+		return iter(self._LANGS)
 
 	def __call__(self, s):
 		return s

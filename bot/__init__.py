@@ -19,6 +19,7 @@ from . import commands
 
 from . import events
 from . import utils
+from . import douche  # noqa: F401  (imported for its db.ensure_table side effect)
 
 
 class _TTLReactionDict(dict):

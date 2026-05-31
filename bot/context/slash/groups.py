@@ -39,3 +39,8 @@ async def admin_noadds(interaction: Interaction):
 @dc.slash_command(name='namma_phrases', **guild_kwargs)
 async def admin_phrases(interaction: Interaction):
 	pass
+
+
+@dc.slash_command(name='namma_douche', **guild_kwargs)
+async def douche(interaction: Interaction):
+	pass

@@ -126,6 +126,25 @@ async def on_message(message):
 	elif message.content == '!disable_pubobot':
 		await bot.disable_channel(message)
 
+	# `++` / `--` shorthand: add/remove the author to/from the channel queues.
+	# Restored after Layer 5 removed the text-command system — these two are the
+	# only shorthands kept. They reuse the existing add/remove command handlers
+	# (add with no args -> default/active queues; remove with no args -> all).
+	if message.content in ('++', '--'):
+		if (qc := bot.queue_channels.get(message.channel.id)) is not None and bot.bot_ready:
+			from bot.context.message import MessageContext
+			ctx = MessageContext(qc, message)
+			try:
+				if message.content == '++':
+					await bot.commands.add(ctx)
+				else:
+					await bot.commands.remove(ctx)
+			except bot.Exc.PubobotException as e:
+				await ctx.error(str(e), title=e.__class__.__name__)
+			except Exception as e:
+				log.error(f"Error processing '{message.content}': {e}\n{traceback.format_exc()}")
+		return
+
 	# Sync ELO from original Pubobot
 	pubobot_id = getattr(cfg, 'PUBOBOT_USER_ID', None)
 	if (pubobot_id

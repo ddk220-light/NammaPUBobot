@@ -8,6 +8,7 @@ glicko2==2.1.0
 trueskill==0.4.5
 emoji==2.15.0
 prettytable==3.17.0
+matplotlib==3.9.2
 aiohttp==3.13.5
 cryptography==46.0.7
 # Sentry is loaded conditionally via SENTRY_DSN env var — see PUBobot2.py.

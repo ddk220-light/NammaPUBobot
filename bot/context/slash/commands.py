@@ -598,6 +598,43 @@ async def _leaderboard(
 ): await run_slash(bot.commands.leaderboard, interaction=interaction, page=page)
 
 
+# douche -> ...
+
+@groups.douche.subcommand(name='add', description='Record that a player douched another (moderator).')
+async def _douche_add(
+		interaction: Interaction,
+		player: Member = SlashOption(verify=False),
+		target: Member = SlashOption(verify=False)
+): await run_slash(bot.commands.douche_add, interaction=interaction, player=player, target=target)
+
+
+@groups.douche.subcommand(name='summary', description="Show a player's douche record.")
+async def _douche_summary(
+		interaction: Interaction,
+		player: Member = SlashOption(required=False, verify=False)
+): await run_slash(bot.commands.douche_summary, interaction=interaction, player=player)
+
+
+@groups.douche.subcommand(name='leaderboard', description='Show the douche leaderboard.')
+async def _douche_leaderboard(
+		interaction: Interaction
+): await run_slash(bot.commands.douche_leaderboard, interaction=interaction)
+
+
+@dc.slash_command(name='namma_mapstats', description='Show channel map popularity as a chart.', **guild_kwargs)
+async def _mapstats(
+		interaction: Interaction,
+		period: str = SlashOption(required=False, choices=['1M', '6M', '1Y'])
+): await run_slash(bot.commands.mapstats, interaction=interaction, period=period)
+
+
+@dc.slash_command(name='namma_activity', description='Show an activity heatmap (weekday × hour, IST).', **guild_kwargs)
+async def _activity(
+		interaction: Interaction,
+		player: Member = SlashOption(required=False, verify=False)
+): await run_slash(bot.commands.activity, interaction=interaction, player=player)
+
+
 @dc.slash_command(name='player_civ_stats', description='Show best and worst civs for a player.', **guild_kwargs)
 async def _player_civ_stats(
 		interaction: Interaction,
