@@ -3,6 +3,8 @@ import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from nextcord import Embed, Colour
+
 from core.database import db
 
 MIN_GAMES = 3
@@ -166,6 +168,34 @@ async def get_today_civs(channel):
         [channel.id, today_start]
     )
     return {r["civ"] for r in rows if r["civ"]}
+
+
+async def build_suggestion_embed(channel, title="Suggested Civ Pools"):
+    """Balanced random civ pools (5 per team), excluding civs played today.
+
+    Shared by the /suggest_civs command and the auto-post when a match's teams
+    are formed. Returns an Embed, or None if no civ data is loaded.
+    """
+    played = await get_today_civs(channel)
+    result = pick_balanced_teams(excluded_civs=played)
+    if result is None:
+        return None
+    team_a, team_b = result
+
+    def _fmt(civs):
+        return "\n".join(f"{c['civ']} ({c['winrate'] * 100:.0f}%)" for c in civs)
+
+    avg_a = sum(c["winrate"] for c in team_a) / len(team_a) * 100
+    avg_b = sum(c["winrate"] for c in team_b) / len(team_b) * 100
+
+    embed = Embed(title=title, colour=Colour(0x50e3c2))
+    embed.add_field(name=f"Team A  —  avg {avg_a:.1f}%", value=_fmt(team_a), inline=True)
+    embed.add_field(name=f"Team B  —  avg {avg_b:.1f}%", value=_fmt(team_b), inline=True)
+    embed.set_footer(
+        text=(f"Excluded {len(played)} civ(s) played today" if played
+              else "No civs played today — all available")
+    )
+    return embed
 
 
 # Load on import

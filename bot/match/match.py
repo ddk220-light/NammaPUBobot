@@ -440,6 +440,16 @@ class Match:
 		except DiscordException:
 			pass
 
+		# Teams are formed — suggest balanced random civ pools for this match.
+		# Best-effort: never let a civ-suggestion hiccup affect the match flow.
+		try:
+			from bot.civ_stats import build_suggestion_embed
+			civ_embed = await build_suggestion_embed(ctx.channel)
+			if civ_embed is not None:
+				await ctx.notice(embed=civ_embed)
+		except Exception:
+			pass
+
 	async def finish_match(self, ctx):
 		bot.active_matches.remove(self)
 		self.queue.last_maps += self.maps

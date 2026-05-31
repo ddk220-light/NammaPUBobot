@@ -760,8 +760,8 @@ async def _nick(
 ): await run_slash(bot.commands.set_nick, interaction=interaction, nick=nick)
 
 
-@dc.slash_command(name='test_random_civs', description='Generate balanced random civ pools for two teams.', **guild_kwargs)
-async def _randomize_civs(
+@dc.slash_command(name='suggest_civs', description='Suggest balanced random civ pools for two teams.', **guild_kwargs)
+async def _suggest_civs(
 	interaction: Interaction,
 ):
 	# Defer immediately — channel history fetch can be slow
@@ -797,7 +797,7 @@ async def _randomize_civs(
 		avg_a = sum(c["winrate"] for c in team_a) / len(team_a) * 100
 		avg_b = sum(c["winrate"] for c in team_b) / len(team_b) * 100
 
-		embed = Embed(title="Randomized Civ Pools", colour=Colour(0x50e3c2))
+		embed = Embed(title="Suggested Civ Pools", colour=Colour(0x50e3c2))
 		embed.add_field(
 			name=f"Team A  —  avg {avg_a:.1f}%",
 			value=format_team(team_a),
