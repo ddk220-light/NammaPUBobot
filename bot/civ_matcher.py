@@ -74,7 +74,7 @@ async def _fetch_recent(session, sem, pid, pool):
 				if resp.status != 200:
 					return
 				data = await resp.json()
-		except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+		except (aiohttp.ClientError, TimeoutError, ValueError):
 			return
 	for m in data.get("matches", []):
 		mid = m.get("matchId")

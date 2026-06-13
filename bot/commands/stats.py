@@ -311,9 +311,8 @@ async def activity(ctx, player: Member = None):
 		await interaction.response.defer()
 
 	target = None
-	if player is not None:
-		if (target := await ctx.get_member(player)) is None:
-			raise bot.Exc.NotFoundError(ctx.qc.gt("Specified user not found."))
+	if player is not None and (target := await ctx.get_member(player)) is None:
+		raise bot.Exc.NotFoundError(ctx.qc.gt("Specified user not found."))
 
 	ts_from = int(time()) - 28 * 86400
 
