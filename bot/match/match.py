@@ -269,10 +269,10 @@ class Match:
 				(self.ratings[captain_weak.id] + sum(self.ratings[p.id] for p in
 					[p for p in remaining if p not in favor_combo][:remaining_team_len]))
 			)
-			if favor_diff - regular_diff <= 300:
+			if favor_diff - regular_diff <= 50:
 				best_combo = favor_combo
 			# Step 2: Drop weak captain favoring, use pure balanced captain split
-			elif balanced_diff - regular_diff <= 300:
+			elif balanced_diff - regular_diff <= 50:
 				best_combo = balanced_combo
 			# Step 3: Fall back to regular matchmaking entirely
 			else:
