@@ -298,3 +298,35 @@ AOE2LobbyBOT is closed-source, breaks on patches needing manual fixes, and has o
 - Watcher TTLs: max FILLING duration before EXPIRED, and max IN_PROGRESS result-poll window before giving up — what values fit your community's game lengths?
 - Should per-player .aoe2record files be downloaded/cached server-side (enables mgz analysis but adds aoe.ms 429 handling), or only ever emitted as links?
 - Confirm qc_lobbies is the sole durable store and lobbies are intentionally kept OUT of saved_state.json — agreed?
+
+
+# PHASE 0 — SPIKE RESULTS (verified live 2026-06-14)
+
+Run via `utils/lobby_spike.py` (throwaway diagnostic, kept for re-runs). Captured against the live socket; raw scratch capture lands in `tests/fixtures/lobby_events.json` (gitignored, ~1MB ambient public lobbies — a small curated test123 fixture is added in Phase 1).
+
+### Three lobby-input methods (clarified) — one engine, three adapters
+The tracker is a single **gameId-keyed `LobbyWatcher` core**; behaviour is driven by whether a `Match` is attached, not by entry point:
+1. **Auto-search by name** (`test123`, unfiltered feed) — match-linked → full Flow 1/2/3 (captain-confirm loss).
+2. **`/lobby2 <gameid>`** (filtered `&match_ids=`) — opportunistically link if the id's roster matches an active ranked match.
+3. **`/lobby <gameid>`** (filtered) — standalone, informational only (live fill + completed embed). No existing `/lobby` command in the repo today; all three are to be built.
+
+### CONFIRMED (automated half)
+- **Unfiltered detect-by-name is FEASIBLE.** `wss://socket.aoe2companion.com/listen?handler=lobbies` (no `match_ids`) connects anonymously and streams every public lobby — a 936-entry snapshot then deltas — with `name` present on each. A `test123` lobby will surface; client-side name filter catches it. This closes the only load-bearing unknown for the auto path.
+- **Wire protocol.** Each WS TEXT frame is a JSON **array** of `{"type", "data"}` events. Types: `lobbyAdded | lobbyUpdated | lobbyRemoved | slotAdded | slotUpdated | slotRemoved`. Initial frame = full state as `*Added` events (snapshot: 104 lobbyAdded + 832 slotAdded); subsequent frames = deltas. A delta frame already contained a `lobbyRemoved` — **the host-launched signal** the FILLING→IN_PROGRESS transition keys on. Skip `type=='pong'`.
+- **Slot → lobby linkage:** `slot.data.matchId == lobby.data.matchId`. Roster = slots whose matchId matches. `matchId` IS the `aoe2de://0/<id>` id (sample 485355768).
+- **Lobby `data` fields:** `matchId, name, server, mapName, mapImageUrl, started(null=open), finished, totalSlotCount, blockedSlotCount, averageRating, leaderboardId/Name, gameModeName, speedName, password, recordGame, …` — covers the LOBBY embed in full.
+- **Slot `data` fields:** `profileId, name, civ, civName, civImageUrl, slot, team, color, colorHex, status, matchId, verified, games, wins, losses, drops, steamId, avatar{Small,Medium,Full}Url`. Everything the core loop needs (profileId capture, roster-confirm, profile-map self-heal, civ attribution, completed embed) is present.
+
+### DISCREPANCY vs original verdict (note for Phase 3)
+- The sampled (unranked) `slotAdded` had **no per-slot `rating`/`rank`** — only lobby-level `averageRating`. The live win-probability differentiator may need a **ranked** lobby (where per-slot rating may appear) or a REST rating lookup by profileId. **Does not affect the core Flow 1/2/3 loop.** Confirm when the first real ranked `test123` is captured.
+
+### STILL TO VERIFY (needs a live ranked `test123` lobby — owner action)
+Run while a real lobby is open, then after it finishes:
+```
+python utils/lobby_spike.py watch --name test123 --seconds 300   # capture join→fill→launch
+python utils/lobby_spike.py rest <gameid>                         # confirm by-id completion fetch
+```
+1. A lobby named exactly `test123` is caught and its full join→fill→`lobbyRemoved` lifecycle records cleanly.
+2. `GET data.aoe2companion.com/api/matches/{id}` returns the finished match (winner/civs/duration) after launch — and the lag window before it 200s.
+3. Whether a **ranked** slot payload carries per-slot rating (win-prob feasibility).
+This live capture also becomes the small curated golden fixture for the Phase-1 reducer test.

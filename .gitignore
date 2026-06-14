@@ -13,3 +13,7 @@ export-apr10/
 # Test venv scratch space (created for local test runs against the
 # system Python 3.14 which lacks pytest).
 .pytest_cache/
+# Raw scratch capture from utils/lobby_spike.py (Phase 0) — ~1MB of ambient
+# public lobbies. The committed golden fixture is a small curated test123
+# lifecycle, added separately in Phase 1.
+tests/fixtures/lobby_events.json

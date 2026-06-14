@@ -101,6 +101,7 @@ async def on_think(frame_time):
 	await bot.noadds.think(frame_time)
 	await bot.stats.jobs.think(frame_time)
 	await bot.civ_reconcile.reconcile.think(frame_time)
+	await bot.lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
 	await bot.expire_auto_ready(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict

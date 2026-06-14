@@ -21,6 +21,7 @@ from . import events
 from . import utils
 from . import douche  # noqa: F401  (imported for its db.ensure_table side effect)
 from . import civ_reconcile  # noqa: F401  (ensure_table side effect + the reconcile job instance)
+from . import lobby  # noqa: F401  (qc_lobbies/qc_profile_map ensure_table + the LobbyJobs instance)
 
 
 class _TTLReactionDict(dict):
