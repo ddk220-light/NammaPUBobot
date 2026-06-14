@@ -344,6 +344,15 @@ class Match:
 		else:
 			await self.final_message(ctx)
 
+		# Opt-in live-lobby watcher (ranked only). Best-effort + fully isolated —
+		# a watcher failure must never affect the match or the report flow.
+		if self.ranked:
+			try:
+				from bot.lobby import watcher as lobby_watcher
+				lobby_watcher.start_for(self, ctx.channel)
+			except Exception as e:
+				log.error(f"Lobby watcher start failed for match {self.id}: {e}")
+
 	async def report_loss(self, ctx, member, draw_flag):
 		if self.state != self.WAITING_REPORT:
 			raise bot.Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
@@ -452,6 +461,7 @@ class Match:
 
 	async def finish_match(self, ctx):
 		bot.active_matches.remove(self)
+		await self._stop_lobby_watcher()
 		self.queue.last_maps += self.maps
 		self.queue.last_maps = self.queue.last_maps[-len(self.maps)*self.queue.cfg.map_cooldown:]
 
@@ -473,3 +483,13 @@ class Match:
 		except DiscordException:
 			pass
 		bot.active_matches.remove(self)
+		await self._stop_lobby_watcher()
+
+	async def _stop_lobby_watcher(self):
+		# Best-effort teardown of the opt-in lobby watcher; never raises into the
+		# match flow. A linked+launched watcher has already stopped itself.
+		try:
+			from bot.lobby import watcher as lobby_watcher
+			await lobby_watcher.stop_for(self.id)
+		except Exception as e:
+			log.error(f"Lobby watcher stop failed for match {self.id}: {e}")
