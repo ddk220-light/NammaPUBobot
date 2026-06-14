@@ -7,69 +7,21 @@ from nextcord import Embed, Colour
 
 from core.database import db
 
-MIN_GAMES = 3
-TOP_N = 5
+# A civ needs this many games overall before it's used for balanced pools.
 MIN_CIV_GAMES = 50
 
-_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "player_civ_stats.csv"
 _ELO_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "civ_elo_stats.csv"
 
-# {nick_lower: [{"civ": str, "wins": int, "losses": int, "games": int, "winrate": float}, ...]}
-_civ_data = {}
-
+# Overall civ win-rates {civ: {"civ", "games", "winrate"}}. Used by the auto-post
+# civ-pool suggestion. Seeded from the CSV at import as a fallback, but
+# build_suggestion_embed pulls a LIVE copy from qc_match_civs each time.
 _civ_elo_data = {}
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
 
-def load():
-    """Load player civ stats from CSV into memory."""
-    _civ_data.clear()
-    try:
-        with open(_DATA_PATH, newline="") as f:
-            for row in csv.DictReader(f):
-                nick = row["nick"].lower()
-                _civ_data.setdefault(nick, []).append({
-                    "civ": row["civ"],
-                    "wins": int(row["wins"]),
-                    "losses": int(row["losses"]),
-                    "games": int(row["games"]),
-                    "winrate": float(row["winrate"]),
-                })
-    except FileNotFoundError:
-        print(f"Warning: {_DATA_PATH} not found, civ stats disabled")
-
-
-def get_player_civs(nick):
-    """Return (best, worst, total_qualifying) for a player nick.
-
-    Returns None if player not found.
-    best/worst are lists of up to TOP_N civ dicts, sorted by winrate.
-    """
-    entries = _civ_data.get(nick.lower())
-    if not entries:
-        return None
-
-    qualified = [e for e in entries if e["games"] >= MIN_GAMES]
-    if not qualified:
-        return None
-
-    by_wr = sorted(qualified, key=lambda e: (-e["winrate"], -e["games"]))
-    total = len(qualified)
-
-    best = by_wr[:TOP_N]
-    # Only show worst if there are enough civs that best and worst won't fully overlap
-    if total > TOP_N:
-        worst = by_wr[-TOP_N:]
-        worst.reverse()  # Show lowest winrate first
-    else:
-        worst = []
-
-    return best, worst, total
-
-
 def load_civ_elo_stats():
-    """Load overall civ winrate stats from CSV into memory."""
+    """Seed overall civ winrate stats from CSV into memory (fallback only)."""
     _civ_elo_data.clear()
     try:
         with open(_ELO_DATA_PATH, newline="") as f:
@@ -87,18 +39,36 @@ def load_civ_elo_stats():
         print(f"Warning: {_ELO_DATA_PATH} not found, civ randomization disabled")
 
 
+async def civ_elo_from_db():
+    """Overall civ win-rates aggregated LIVE from qc_match_civs (the table the
+    reconcile job keeps current). Returns {civ: {"civ","games","winrate"}}; an
+    empty dict if there's not enough data yet (caller falls back to the seed)."""
+    rows = await db.fetchall(
+        "SELECT civ, SUM(result='W') wins, COUNT(*) games FROM qc_match_civs "
+        "WHERE civ IS NOT NULL GROUP BY civ HAVING games >= %s",
+        [MIN_CIV_GAMES]
+    )
+    out = {}
+    for r in rows:
+        games = int(r["games"] or 0)
+        if not games:
+            continue
+        out[r["civ"]] = {"civ": r["civ"], "games": games, "winrate": int(r["wins"] or 0) / games}
+    return out
+
+
 def get_all_civs():
-    """Return dict of all civs with sufficient data."""
+    """Return dict of all civs with sufficient data (the in-memory seed)."""
     return dict(_civ_elo_data)
 
 
-def pick_balanced_teams(excluded_civs=None):
+def pick_balanced_teams(excluded_civs=None, civ_data=None):
     """Pick 5 civs for each team, balanced by winrate with variety.
 
-    Returns (team_a, team_b) where each is a list of civ dicts sorted by winrate desc.
-    Returns None if not enough civ data loaded.
+    civ_data: optional {civ: {...}} to use instead of the in-memory seed, so
+    callers can pass a live DB copy. Returns (team_a, team_b) or None if no data.
     """
-    all_civs = get_all_civs()
+    all_civs = civ_data if civ_data is not None else get_all_civs()
     if not all_civs:
         return None
 
@@ -156,9 +126,7 @@ def pick_balanced_teams(excluded_civs=None):
 async def get_today_civs(channel):
     """Civs already played in this channel today (IST).
 
-    Reads the durable qc_match_civs record that AOE2LobbyBOT results are
-    persisted into (see bot/civ_sync.persist_lobby_civs) — no longer scrapes
-    channel history. Returns a set of civ name strings.
+    Reads the durable qc_match_civs record. Returns a set of civ name strings.
     """
     today_start = int(
         datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
@@ -173,11 +141,13 @@ async def get_today_civs(channel):
 async def build_suggestion_embed(channel, title="Suggested Civ Pools"):
     """Balanced random civ pools (5 per team), excluding civs played today.
 
-    Shared by the /suggest_civs command and the auto-post when a match's teams
-    are formed. Returns an Embed, or None if no civ data is loaded.
+    Auto-posted when a match's teams are formed. Civ win-rates come LIVE from
+    qc_match_civs (kept current by the reconcile job), falling back to the seed.
+    Returns an Embed, or None if no civ data is available.
     """
     played = await get_today_civs(channel)
-    result = pick_balanced_teams(excluded_civs=played)
+    civ_data = await civ_elo_from_db()
+    result = pick_balanced_teams(excluded_civs=played, civ_data=civ_data or None)
     if result is None:
         return None
     team_a, team_b = result
@@ -198,6 +168,6 @@ async def build_suggestion_embed(channel, title="Suggested Civ Pools"):
     return embed
 
 
-# Load on import
-load()
+# Seed the in-memory fallback from CSV at import; build_suggestion_embed
+# refreshes from the live DB on each call.
 load_civ_elo_stats()
