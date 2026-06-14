@@ -20,6 +20,7 @@ from . import commands
 from . import events
 from . import utils
 from . import douche  # noqa: F401  (imported for its db.ensure_table side effect)
+from . import civ_reconcile  # noqa: F401  (ensure_table side effect + the reconcile job instance)
 
 
 class _TTLReactionDict(dict):

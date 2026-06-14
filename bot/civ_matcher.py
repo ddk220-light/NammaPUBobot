@@ -59,6 +59,29 @@ def _load_profile_map():
 	return nick_to_pids
 
 
+def _load_profile_uid_map():
+	"""Discord user_id -> [profile_id, ...] from data/player_profile_map.csv.
+
+	Keyed on the stable Discord user_id (the CSV's user_id column) rather than
+	the nick. A player renaming used to silently break civ matching — the
+	nick-keyed lookup is why most matches went un-recorded. user_id never drifts.
+	"""
+	uid_to_pids = {}
+	if not os.path.exists(_PROFILE_MAP_PATH):
+		return uid_to_pids
+	with open(_PROFILE_MAP_PATH, newline="") as f:
+		for row in csv.DictReader(f):
+			uid = (row.get("user_id") or "").strip()
+			pids_raw = (row.get("profile_id") or "").strip()
+			if not uid.isdigit() or not pids_raw:
+				continue
+			for p in pids_raw.split("/"):
+				p = p.strip()
+				if p.isdigit():
+					uid_to_pids.setdefault(int(uid), []).append(int(p))
+	return uid_to_pids
+
+
 def _iso_to_unix(s):
 	try:
 		return int(datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp())
@@ -82,15 +105,17 @@ async def _fetch_recent(session, sem, pid, pool):
 			pool[mid] = m
 
 
-async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
+async def _find_and_record(channel_id, bot_match_id, players, winner, match_at, post_replay=True):
 	"""Return True if civs were recorded (or already present), False to retry."""
 	nick_to_pids = _load_profile_map()
+	uid_to_pids = _load_profile_uid_map()
 
-	# Map this match's players to AoE2 profile ids.
+	# Map this match's players to AoE2 profile ids. Prefer the stable user_id
+	# (survives nick changes); fall back to nick for rows without a user_id.
 	player_info = {}   # user_id -> (nick, team, [pids])
 	active_pids = set()
 	for user_id, nick, team in players:
-		pids = nick_to_pids.get(nick, [])
+		pids = uid_to_pids.get(user_id) or nick_to_pids.get(nick, [])
 		if pids:
 			player_info[user_id] = (nick, team, pids)
 			active_pids.update(pids)
@@ -159,10 +184,12 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 		f"recorded {len(rows)} civs (overlap {best_overlap})."
 	)
 
-	# Now that the aoe2 match is resolved, post a "watch replay" link. Pick a
-	# download perspective that's actually a participant in the matched game.
-	link_pid = next((pid for pid in active_pids if pid in pid_civ), None)
-	await _post_replay_link(channel_id, aoe2_match_id, link_pid, best)
+	# Now that the aoe2 match is resolved, post a "watch replay" link (live path
+	# only — the reconcile sweep passes post_replay=False to avoid spamming old
+	# matches). Pick a download perspective that's actually a participant.
+	if post_replay:
+		link_pid = next((pid for pid in active_pids if pid in pid_civ), None)
+		await _post_replay_link(channel_id, aoe2_match_id, link_pid, best)
 	return True
 
 
