@@ -115,6 +115,15 @@ _fake_core_database.db = _RaisingDB()
 sys.modules['core.database'] = _fake_core_database
 
 
+# ─── aiohttp (stub) ──────────────────────────────────────────────────
+# bot/civ_matcher.py does `import aiohttp` at module load, but only USES it
+# (ClientSession, ClientError, ...) inside async functions the unit tests never
+# run. CI's pytest job installs only pytest, so a bare stub lets civ_matcher
+# import for its pure-helper tests (_load_profile_uid_map) without pulling in
+# the full aiohttp runtime dependency. Same trick as the core.* fakes above.
+sys.modules['aiohttp'] = types.ModuleType('aiohttp')
+
+
 # ─── bot (package shim) ──────────────────────────────────────────────
 # Importing any submodule of `bot` normally runs `bot/__init__.py`,
 # which pulls in nextcord and dozens of other runtime-only deps. The
