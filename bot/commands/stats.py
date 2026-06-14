@@ -8,6 +8,7 @@ from nextcord import Member, Embed, Colour, File
 
 from core.utils import get, find, seconds_to_str, get_nick, discord_table  # noqa: F401
 from core.database import db
+from core.console import log
 
 import bot
 
@@ -110,12 +111,17 @@ async def top(ctx, period=None):
 
 
 async def rank(ctx, player: Member = None):
+	# Defer — gathering the profile + rendering the ELO chart can exceed the
+	# 3-second interaction window.
+	interaction = getattr(ctx, 'interaction', None)
+	if interaction is not None and not interaction.response.is_done():
+		await interaction.response.defer()
+
 	target = ctx.author if not player else await ctx.get_member(player)
 	if not target:
 		raise bot.Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
 
 	data = await ctx.qc.get_lb()
-	# Figure out leaderboard placement
 	if p := find(lambda i: i['user_id'] == target.id, data):
 		place = data.index(p) + 1
 	else:
@@ -127,46 +133,102 @@ async def rank(ctx, player: Member = None):
 		p = find(lambda i: i['user_id'] == target.id, data)
 		place = "?"
 
-	if p:
-		embed = Embed(title=f"__{get_nick(target)}__", colour=Colour(0x7289DA))
-		embed.add_field(name="№", value=f"**{place}**", inline=True)
-		embed.add_field(name=ctx.qc.gt("Matches"), value=f"**{(p['wins'] + p['losses'] + p['draws'])}**", inline=True)
-		if p['rating']:
-			embed.add_field(name=ctx.qc.gt("Rank"), value=f"**{ctx.qc.rating_rank(p['rating'])['rank']}**", inline=True)
-			embed.add_field(name=ctx.qc.gt("Rating"), value=f"**{p['rating']}**±{p['deviation']}")
-		else:
-			embed.add_field(name=ctx.qc.gt("Rank"), value="**〈?〉**", inline=True)
-			embed.add_field(name=ctx.qc.gt("Rating"), value="**?**")
+	if not p:
+		raise bot.Exc.ValueError(ctx.qc.gt("No rating data found."))
+
+	embed = Embed(title=f"__{get_nick(target)}__", colour=Colour(0x7289DA))
+	embed.add_field(name="№", value=f"**{place}**", inline=True)
+	embed.add_field(name=ctx.qc.gt("Matches"), value=f"**{(p['wins'] + p['losses'] + p['draws'])}**", inline=True)
+	if p['rating']:
+		embed.add_field(name=ctx.qc.gt("Rank"), value=f"**{ctx.qc.rating_rank(p['rating'])['rank']}**", inline=True)
+		embed.add_field(name=ctx.qc.gt("Rating"), value=f"**{p['rating']}**±{p['deviation']}")
+	else:
+		embed.add_field(name=ctx.qc.gt("Rank"), value="**〈?〉**", inline=True)
+		embed.add_field(name=ctx.qc.gt("Rating"), value="**?**")
+	embed.add_field(name="W/L/D/S", value="**{wins}**/**{losses}**/**{draws}**/**{streak}**".format(**p), inline=True)
+	embed.add_field(name=ctx.qc.gt("Winrate"), value="**{}%**".format(
+		int(p['wins'] * 100 / (p['wins'] + p['losses'] or 1))
+	), inline=True)
+	if target.display_avatar:
+		embed.set_thumbnail(url=target.display_avatar.url)
+
+	# Rich profile bits (best-effort — any piece with no data is simply omitted).
+	from bot import player_profile
+	prof = {}
+	try:
+		prof = await player_profile.gather_profile(ctx.qc.rating.channel_id, target.id)
+	except Exception as e:
+		log.error(f"gather_profile failed for {target.id}: {e}")
+
+	if prof.get("recent_form"):
+		sq = {"W": "🟩", "L": "🟥", "D": "⬛"}
 		embed.add_field(
-			name="W/L/D/S",
-			value="**{wins}**/**{losses}**/**{draws}**/**{streak}**".format(**p),
+			name=ctx.qc.gt("Recent form"),
+			value="".join(sq[r] for r in prof["recent_form"]) + f"  `last {len(prof['recent_form'])}`",
+			inline=False
+		)
+	if prof.get("peak_rating"):
+		embed.add_field(
+			name=ctx.qc.gt("Peak"),
+			value=f"**{prof['peak_rating']}** · {seconds_to_str(int(time() - prof['peak_at']))} ago",
 			inline=True
 		)
-		embed.add_field(name=ctx.qc.gt("Winrate"), value="**{}%**\n\u200b".format(
-			int(p['wins'] * 100 / (p['wins'] + p['losses'] or 1))
-		), inline=True)
-		if target.display_avatar:
-			embed.set_thumbnail(url=target.display_avatar.url)
-
-		changes = await db.select(
-			('at', 'rating_change', 'match_id', 'reason'),
-			'qc_rating_history', where=dict(user_id=target.id, channel_id=ctx.qc.rating.channel_id),
-			order_by='id', limit=5
+	civs = prof.get("civs") or {}
+	if civs.get("most_played"):
+		mp = civs["most_played"]
+		embed.add_field(name=ctx.qc.gt("Most played"), value=f"`{mp['civ']}` · {mp['games']} games", inline=True)
+	if prof.get("nemesis"):
+		nemnick, losses = prof["nemesis"]
+		embed.add_field(name=ctx.qc.gt("Nemesis"), value=f"`{nemnick}` · {losses} losses", inline=True)
+	if prof.get("best_mate"):
+		matenick, wins, games = prof["best_mate"]
+		embed.add_field(name=ctx.qc.gt("Best teammate"), value=f"`{matenick}` · {int(wins * 100 / games)}% of {games}", inline=True)
+	if civs.get("best"):
+		embed.add_field(
+			name=ctx.qc.gt("Best civs"),
+			value="\n".join(f"`{c['civ']}` {int(c['wr'] * 100)}% ({c['games']})" for c in civs["best"]),
+			inline=True
 		)
-		if len(changes):
-			embed.add_field(
-				name=ctx.qc.gt("Last changes:"),
-				value="\n".join(("\u200b \u200b **{change}** \u200b | {ago} ago | {reason}{match_id}".format(
-					ago=seconds_to_str(int(time() - c['at'])),
-					reason=c['reason'],
-					match_id=f"(__{c['match_id']}__)" if c['match_id'] else "",
-					change=("+" if c['rating_change'] >= 0 else "") + str(c['rating_change'])
-				) for c in changes))
-			)
-		await ctx.reply(embed=embed)
+	if civs.get("worst"):
+		embed.add_field(
+			name=ctx.qc.gt("Worst civs"),
+			value="\n".join(f"`{c['civ']}` {int(c['wr'] * 100)}% ({c['games']})" for c in civs["worst"]),
+			inline=True
+		)
 
+	changes = await db.select(
+		('at', 'rating_change', 'match_id', 'reason'),
+		'qc_rating_history', where=dict(user_id=target.id, channel_id=ctx.qc.rating.channel_id),
+		order_by='id', limit=5
+	)
+	if len(changes):
+		embed.add_field(
+			name=ctx.qc.gt("Last changes:"),
+			value="\n".join(("**{change}** · {ago} ago · {reason}{match_id}".format(
+				ago=seconds_to_str(int(time() - c['at'])),
+				reason=c['reason'],
+				match_id=f" (__{c['match_id']}__)" if c['match_id'] else "",
+				change=("+" if c['rating_change'] >= 0 else "") + str(c['rating_change'])
+			) for c in changes))
+		)
+
+	# ELO-over-time chart, rendered off the event loop and attached to the embed.
+	file = None
+	pts = prof.get("elo_points") or []
+	if len(pts) >= 2:
+		try:
+			png = await asyncio.get_running_loop().run_in_executor(
+				None, player_profile.render_elo_chart, pts, get_nick(target)
+			)
+			file = File(io.BytesIO(png), filename="elo.png")
+			embed.set_image(url="attachment://elo.png")
+		except Exception as e:
+			log.error(f"ELO chart render failed for {target.id}: {e}")
+
+	if file is not None:
+		await ctx.reply(embed=embed, file=file)
 	else:
-		raise bot.Exc.ValueError(ctx.qc.gt("No rating data found."))
+		await ctx.reply(embed=embed)
 
 
 async def leaderboard(ctx, page: int = 1):
