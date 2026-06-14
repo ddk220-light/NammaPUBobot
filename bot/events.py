@@ -81,13 +81,20 @@ async def on_think(frame_time):
 	for match in list(bot.active_matches):
 		try:
 			await match.think(frame_time)
+			match._think_errors = 0
 		except Exception as e:
+			match._think_errors = getattr(match, "_think_errors", 0) + 1
 			log.error("\n".join([
 				"Error at Match.think().",
-				f"match_id: {match.id}).",
+				f"match_id: {match.id}, consecutive errors: {match._think_errors}.",
 				f"{str(e)}. Traceback:\n{traceback.format_exc()}=========="
 			]))
-			if match in bot.active_matches:
+			# Don't silently drop an in-flight match on a single transient error
+			# — that leaves the captain unable to /report and frees players to
+			# re-queue (the 1390237 incident). Only remove after repeated
+			# failures, so one persistently-broken match still can't starve the rest.
+			if match._think_errors >= 5 and match in bot.active_matches:
+				log.error(f"Removing match {match.id} after {match._think_errors} consecutive think errors.")
 				bot.active_matches.remove(match)
 			continue
 	await bot.expire.think(frame_time)
@@ -109,6 +116,7 @@ async def on_think(frame_time):
 	if frame_time - _last_state_save >= _STATE_SAVE_INTERVAL:
 		try:
 			bot.save_state()
+			await bot.save_state_db()   # durable copy on the MySQL volume
 			_last_state_save = frame_time
 		except Exception as e:
 			log.error(f"Periodic save_state failed: {e}\n{traceback.format_exc()}")
