@@ -49,6 +49,16 @@ def should_giveup(created_at, now, giveup_after=GIVEUP_AFTER):
 	return (now - (created_at or 0)) > giveup_after
 
 
+def parse_game_id(s):
+	"""Extract an aoe2 game id from a raw string or an `aoe2de://0/<id>` paste.
+	Returns the int id, or None if it isn't a bare numeric id."""
+	raw = (s or "").strip()
+	if raw.lower().startswith("aoe2de://0/"):
+		raw = raw[len("aoe2de://0/"):]
+	raw = raw.strip().strip("/")
+	return int(raw) if raw.isdigit() else None
+
+
 def should_record_civs(winner_idx, win_tid):
 	"""Record Flow 3 civs only when the W/L is trustworthy: a winner we mapped to a
 	bot team (winner_idx set), or a genuine API draw (win_tid None -> result NULL is
@@ -139,15 +149,19 @@ async def resolve_row(row):
 		return
 
 	# 6) Flow 3 (record civs) then Flow 2 (post + gate the losing captain's ✅).
-	profile_to_user = await _profile_to_user(parse_pids(row.get("profile_ids")))
+	# Roster-divergence guard uses the CAPTURED roster only (frozen at link time):
+	# if it maps to users no longer in the match (/subauto), don't trust the mapping.
+	captured = await _profile_to_user(parse_pids(row.get("profile_ids")))
+	roster_ok = set(captured.values()).issubset({p.id for p in match.players})
+	# For the winner hint, augment with each match player's known profiles so it
+	# still works when the captured roster is sparse/empty (e.g. a /lobby2 link).
+	profile_to_user = dict(captured)
+	profile_to_user.update(await _match_players_profiles(match))
 	win_tid = api.winning_teamid(match_api)
 	winner_idx, losing_captain = resolve_result(
 		match_api, profile_to_user, [match.teams[0], match.teams[1]]
 	)
-	# Roster-divergence guard: if /subauto (or any roster change) happened after
-	# the lobby was captured, the frozen profileIds may map to players no longer in
-	# this match — don't trust the team mapping for the winner hint / W/L.
-	if not set(profile_to_user.values()).issubset({p.id for p in match.players}):
+	if not roster_ok:
 		winner_idx, losing_captain = None, None
 	# Only record civs when W/L is trustworthy (a mapped winner or a genuine API
 	# draw); if a real winner exists but we couldn't map it, skip so civ_matcher
@@ -310,6 +324,63 @@ async def _profile_to_user(profile_ids):
 	except Exception as e:
 		log.error(f"profile_to_user lookup failed: {e}")
 		return {}
+
+
+async def _match_players_profiles(match):
+	"""{profileId: user_id} for every match player's known profiles (qc_profile_map
+	+ CSV). Lets the winner hint resolve from the accumulated map even when the
+	per-game captured roster is empty (manual /lobby2 links)."""
+	out = {}
+	try:
+		for p in match.players:
+			for pid in await _profiles_for(p.id):
+				out[pid] = p.id
+	except Exception as e:
+		log.error(f"match-players profile lookup failed (match {getattr(match, 'id', '?')}): {e}")
+	return out
+
+
+async def link_manual(channel_id, match_id, game_id, requested_by):
+	"""/lobby2 — manually link an aoe2 game id to a ranked match. Persists an
+	in_progress qc_lobbies row (backdated past the 15-min floor so LobbyJobs polls
+	it right away) and supersedes the auto test123 watcher + any other non-terminal
+	lobby row for the match. Returns 'linked' or 'exists'. Best-effort; raises only
+	on a hard DB failure (the caller surfaces it)."""
+	existing = await db.select_one(
+		["id", "status"], "qc_lobbies", where={"channel_id": channel_id, "aoe2_game_id": game_id}
+	)
+	if existing and existing["status"] not in ("completed", "expired"):
+		return "exists"
+	# Stop the auto (test123) watcher and expire any other live lobby row for this
+	# match, so only this manual link drives the result.
+	try:
+		from bot.lobby import watcher
+		await watcher.stop_for(match_id)
+	except Exception as e:
+		log.error(f"stop auto-watcher for manual link failed (match {match_id}): {e}")
+	try:
+		await db.execute(
+			"UPDATE qc_lobbies SET status='expired' WHERE match_id=%s "
+			"AND status IN ('created','filling','in_progress','awaiting_confirm') AND aoe2_game_id<>%s",
+			[match_id, game_id],
+		)
+	except Exception as e:
+		log.error(f"supersede prior lobby rows failed (match {match_id}): {e}")
+	now = int(time.time())
+	row = dict(
+		aoe2_game_id=game_id, channel_id=channel_id, message_id=None, completed_message_id=None,
+		match_id=match_id, status="in_progress", lobby_name="(manual)", map_name=None, server=None,
+		profile_ids="", created_at=now - 16 * 60, last_edit_at=0, requested_by=requested_by,
+	)
+	if existing:   # a terminal row for this exact game — revive it
+		await db.update(
+			"qc_lobbies",
+			{k: v for k, v in row.items() if k not in ("aoe2_game_id", "channel_id")},
+			keys={"id": existing["id"]},
+		)
+	else:
+		await db.insert("qc_lobbies", row)
+	return "linked"
 
 
 async def _profiles_for(user_id):

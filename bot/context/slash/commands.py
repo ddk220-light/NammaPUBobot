@@ -540,6 +540,17 @@ async def _sub_auto(
 ): await run_slash(bot.commands.sub_auto, interaction=interaction)
 
 
+@dc.slash_command(
+	name='lobby2',
+	description='Link your live AoE2 game id to this ranked match so the result posts automatically',
+	**guild_kwargs
+)
+async def _lobby2(
+		interaction: Interaction,
+		gameid: str = SlashOption(name="gameid", description="AoE2 game id (the number in aoe2de://0/<id>)")
+): await run_slash(bot.commands.lobby2, interaction=interaction, gameid=gameid)
+
+
 @dc.slash_command(name='subfor', description='Become a substitute', **guild_kwargs)
 async def _sub_for(
 		interaction: Interaction,

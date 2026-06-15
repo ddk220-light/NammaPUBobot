@@ -27,6 +27,16 @@ def test_parse_pids():
 	assert completed.parse_pids("") == []
 
 
+def test_parse_game_id():
+	assert completed.parse_game_id("485355768") == 485355768
+	assert completed.parse_game_id("aoe2de://0/485355768") == 485355768
+	assert completed.parse_game_id("  aoe2de://0/485355768/ ") == 485355768
+	assert completed.parse_game_id("AOE2DE://0/123") == 123
+	assert completed.parse_game_id("not-a-number") is None
+	assert completed.parse_game_id("") is None
+	assert completed.parse_game_id(None) is None
+
+
 def test_next_poll_at_and_should_giveup():
 	assert completed.next_poll_at(1000) == 1000 + completed.POLL_AFTER_SECONDS
 	assert completed.should_giveup(0, completed.GIVEUP_AFTER + 1) is True

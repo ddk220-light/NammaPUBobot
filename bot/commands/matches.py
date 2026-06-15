@@ -1,6 +1,6 @@
 __all__ = [
 	'show_matches', 'show_teams', 'set_ready', 'sub_me', 'sub_auto', 'sub_for', 'put',
-	'sub_force', 'cap_me', 'cap_for', 'pick', 'report_admin', 'report', 'report_manual'
+	'sub_force', 'cap_me', 'cap_for', 'pick', 'report_admin', 'report', 'report_manual', 'lobby2'
 ]
 
 from nextcord import Member
@@ -127,3 +127,32 @@ async def report_manual(ctx, queue: str, winners: List[Member], losers: List[Mem
 	if not len(winners) or not len(losers):
 		raise bot.Exc.ValueError(f"Teams can not be empty.")  # noqa: F541
 	await q.fake_ranked_match(ctx, winners, losers, draw=draw)
+
+
+async def lobby2(ctx, gameid: str):
+	"""Manually link an AoE2 game id to your current ranked match so the result
+	posts automatically (for lobbies the auto `test123` watcher didn't catch)."""
+	from bot.lobby import completed
+
+	game_id = completed.parse_game_id(gameid)
+	if game_id is None:
+		raise bot.Exc.SyntaxError(ctx.qc.gt(
+			"Provide a numeric AoE2 game id (the number in `aoe2de://0/<id>`)."
+		))
+	match = find(
+		lambda m: m.qc == ctx.qc and m.ranked and m.state == bot.Match.WAITING_REPORT and ctx.author in m.players,
+		bot.active_matches,
+	)
+	if match is None:
+		raise bot.Exc.NotFoundError(ctx.qc.gt(
+			"You have no ranked match awaiting a result here. `/lobby2` links your live game to "
+			"the current ranked match so the result posts automatically."
+		))
+	result = await completed.link_manual(ctx.qc.id, match.id, game_id, ctx.author.id)
+	if result == "exists":
+		await ctx.success(ctx.qc.gt("That game is already linked — I'll post the result when it finishes."))
+	else:
+		await ctx.success(ctx.qc.gt(
+			"Linked game `{gid}` to match #{mid}. I'll post the result for the losing captain to confirm "
+			"when the game ends."
+		).format(gid=game_id, mid=match.id))
