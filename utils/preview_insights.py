@@ -85,33 +85,32 @@ async def preview_one(pool, mrow):
         print("  → no insights (not a two-team match)")
         return
 
-    user_ids = [p["user_id"] for p in pms if p["team"] in (0, 1)]
+    t0 = [p["user_id"] for p in team0]
+    t1 = [p["user_id"] for p in team1]
+    user_ids = t0 + t1
     placeholders = ", ".join(["%s"] * len(user_ids))
     rows = await _fetchall(
         pool,
-        "SELECT pm.match_id, pm.user_id, pm.team, m.winner "
+        "SELECT pm.match_id, pm.user_id, pm.nick, pm.team, m.winner "
         "FROM qc_player_matches pm "
         "JOIN qc_matches m ON m.match_id = pm.match_id AND m.channel_id = pm.channel_id "
         "WHERE pm.channel_id = %s AND m.ranked = 1 AND pm.team IS NOT NULL "
-        f"AND m.match_id < %s AND pm.user_id IN ({placeholders})",
+        f"AND m.match_id < %s AND pm.user_id IN ({placeholders}) "
+        "ORDER BY pm.match_id ASC",
         (ch, mid, *user_ids),
     )
-    by_match = ti._index_history(rows)
-    if not by_match:
+    hist = ti._index_history(rows)
+    if not hist.order:
         print("  → no insights (no prior ranked history for these players)")
         return
 
-    t0 = [p["user_id"] for p in team0]
-    t1 = [p["user_id"] for p in team1]
-    synergy = ti._synergy_candidates(by_match, t0, 0) + ti._synergy_candidates(by_match, t1, 1)
-    rivalry = ti._rivalry_candidates(by_match, t0, t1)
-    chosen = ti._select(synergy, rivalry)
+    chosen = ti._select(ti._candidates(hist.order, hist.matches, t0, t1))
     if not chosen:
-        print(f"  → nothing surfaced ({len(by_match)} prior games, nothing met the thresholds)")
+        print(f"  → nothing surfaced ({len(hist.order)} prior games, nothing met the thresholds)")
         return
 
     meta = [{"name": a_name, "emoji": ""}, {"name": b_name, "emoji": ""}]
-    print(f"  Insights (from {len(by_match)} prior ranked games):")
+    print(f"  Insights (from {len(hist.order)} prior ranked games):")
     for c in chosen:
         print("    " + ti._phrase(c, nick, meta))
 
