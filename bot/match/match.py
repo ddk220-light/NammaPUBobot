@@ -449,6 +449,16 @@ class Match:
 		except DiscordException:
 			pass
 
+		# Teams are formed — post fun synergy/rivalry storylines from match history.
+		# Best-effort: never let an insights hiccup affect the match flow.
+		try:
+			from bot.team_insights import build_insights_embed
+			insights_embed = await build_insights_embed(self)
+			if insights_embed is not None:
+				await ctx.notice(embed=insights_embed)
+		except Exception:
+			pass
+
 		# Teams are formed — suggest balanced random civ pools for this match.
 		# Best-effort: never let a civ-suggestion hiccup affect the match flow.
 		try:
