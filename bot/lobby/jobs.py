@@ -23,6 +23,8 @@ class LobbyJobs:
 	POLL_INTERVAL = 15      # seconds between maintenance passes
 	REAP_INTERVAL = 600     # seconds between stale-row sweeps
 	STALE_AFTER = 1800      # a created/filling row older than this never launched
+	FLOOR_SECONDS = 15 * 60  # don't poll a launched game for completion until 15 min in
+	POLL_CONCURRENCY = 5     # max in-flight completion resolutions
 	TERMINAL = ("completed", "expired")
 
 	def __init__(self):
@@ -61,7 +63,7 @@ class LobbyJobs:
 		if now >= self.next_reap:
 			self.next_reap = now + self.REAP_INTERVAL
 			await self._reap_stale(now - self.STALE_AFTER)
-		# Phase 3: drive in_progress completion polls here.
+		await self._poll_completions(now)
 
 	async def _rehydrate(self):
 		"""On boot, note any lobbies a redeploy left mid-flight. Phase 2 only logs
@@ -89,8 +91,59 @@ class LobbyJobs:
 		except Exception as e:
 			log.error(f"Lobby reap skipped: {e}")
 
+	async def _poll_completions(self, now):
+		"""Phase 3 — select due in_progress / awaiting_confirm rows and dispatch
+		each to completed.resolve_row as a GC-tracked background task. One SELECT
+		per pass; per-row scheduling lives in last_edit_at (next-poll timestamp).
+		Two-status OR uses raw SQL because db.select where= is equality-only."""
+		try:
+			rows = await db.fetchall(
+				"SELECT id, aoe2_game_id, match_id, channel_id, profile_ids, "
+				"created_at, last_edit_at, completed_message_id, status "
+				"FROM qc_lobbies WHERE status IN ('in_progress','awaiting_confirm')"
+			)
+		except Exception as e:
+			log.error(f"Lobby poll select skipped: {e}")
+			return
+		if not rows:
+			return
+		from bot.lobby import completed
+		sem = asyncio.Semaphore(self.POLL_CONCURRENCY)
+		for r in rows:
+			row_id = r.get("id")
+			# Skip rows already being resolved: a resolution can take up to the
+			# API timeout (~15s) while the poll pass fires every 15s — without this
+			# the same row would be dispatched twice and double-post. _inflight.add
+			# is synchronous (no await before it), so a row is claimed atomically.
+			if row_id in _inflight or not self._due(r, now):
+				continue
+			_inflight.add(row_id)
+			task = asyncio.create_task(self._guarded_resolve(completed, r, sem))
+			_pending.add(task)
+			task.add_done_callback(_pending.discard)
+
+	def _due(self, row, now):
+		"""15-min floor since launch, then gated by the per-row next-poll timestamp
+		stored in last_edit_at (reboot-safe; no stored attempt counter)."""
+		created = row.get("created_at") or 0
+		if now - created < self.FLOOR_SECONDS:
+			return False
+		return now >= (row.get("last_edit_at") or 0)
+
+	async def _guarded_resolve(self, completed, row, sem):
+		try:
+			async with sem:
+				await completed.resolve_row(row)
+		except Exception as e:
+			log.error(f"Lobby resolve_row({row.get('id')}) failed: {e}")
+		finally:
+			_inflight.discard(row.get("id"))
+
 
 # Keep create_task'd background jobs from being GC'd mid-run (civ_matcher pattern).
 _pending = set()
+# Row ids currently being resolved — prevents the same qc_lobbies row being
+# dispatched by two overlapping poll passes (single-process guard).
+_inflight = set()
 
 jobs = LobbyJobs()
