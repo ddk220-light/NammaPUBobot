@@ -190,6 +190,7 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at, 
 	if post_replay:
 		link_pid = next((pid for pid in active_pids if pid in pid_civ), None)
 		await _post_replay_link(channel_id, aoe2_match_id, link_pid, best)
+		await _post_civ_summary(channel_id, bot_match_id, rows, winner)
 	return True
 
 
@@ -225,6 +226,25 @@ async def _post_replay_link(channel_id, aoe2_match_id, profile_id, api_match):
 		await channel.send(embed=embed)
 	except Exception as e:
 		log.error(f"Replay link post failed (aoe2 {aoe2_match_id}): {e}")
+
+
+async def _post_civ_summary(channel_id, bot_match_id, rows, winner):
+	"""Post the "what the civs say" wrap-up now that civs are known.
+
+	Best-effort: any failure here must not affect civ recording.
+	"""
+	try:
+		from core.client import dc
+		from bot.post_game import build_post_game_embed
+
+		channel = dc.get_channel(channel_id)
+		if channel is None:
+			return
+		embed = await build_post_game_embed(channel_id, bot_match_id, rows, winner)
+		if embed is not None:
+			await channel.send(embed=embed)
+	except Exception as e:
+		log.error(f"Post-game civ summary failed (bot match {bot_match_id}): {e}")
 
 
 async def _record_with_retry(channel_id, bot_match_id, players, winner, match_at):
