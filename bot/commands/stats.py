@@ -1,4 +1,4 @@
-__all__ = ['last_game', 'stats', 'top', 'rank', 'leaderboard', 'mapstats', 'activity']
+__all__ = ['last_game', 'stats', 'top', 'rank', 'leaderboard', 'leaderboard_alternate', 'mapstats', 'activity']
 
 import io
 import asyncio
@@ -11,6 +11,7 @@ from core.database import db
 from core.console import log
 
 import bot
+from bot import alt_ratings
 
 
 async def last_game(ctx, queue: str = None, player: Member = None, match_id: int = None):
@@ -288,6 +289,47 @@ async def leaderboard(ctx, page: int = 1):
 			] for n in range(len(data))]
 		)
 	)
+
+
+async def leaderboard_alternate(ctx, page: int = 1):
+	""" What-if leaderboard: Elo without the blanket weekly uncertainty (sigma) decay.
+
+	Reads the precomputed snapshot in data/alt_ratings.csv (regenerate with
+	utils/compute_alt_ratings.py) and shows it next to live ratings so players can
+	see how a decay-policy change would feel before anything is actually changed.
+	"""
+	page = (page or 1) - 1
+
+	alt_map = alt_ratings.load_alt_ratings()
+	if not alt_map:
+		raise bot.Exc.NotFoundError(ctx.qc.gt("No alternate-rating snapshot is available yet."))
+
+	rows = alt_ratings.build_alt_leaderboard(await ctx.qc.get_lb(), alt_map)
+	pages = ceil(len(rows) / 10) or 1
+	rows = rows[page * 10:(page + 1) * 10]
+	if not len(rows):
+		raise bot.Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
+
+	meta = alt_ratings.load_snapshot_meta()
+	note = (
+		"📊 **Alternate Elo — a what-if, not your live rating.**\n"
+		f"This is what the leaderboard would look like if the weekly *uncertainty (σ) decay* — which "
+		f"bumped **every** player's volatility up every week since {meta.get('branch_date', 'late 2025')} "
+		f"and stopped active players ever settling — had instead only applied to inactive players.\n"
+		f"`Δ` = alternate − current. Snapshot as of {meta.get('computed_date', 'now')} · page {page + 1} of {pages}.\n"
+		"Take a look and let us know how it feels before we decide whether to change anything.\n"
+	)
+	table = discord_table(
+		["№", "Nickname", "Elo", "Alt Elo", "Δ"],
+		[[
+			(page * 10) + (n + 1),
+			rows[n]['nick'].strip(),
+			rows[n]['current'],
+			rows[n]['alt'],
+			("+" if rows[n]['delta'] > 0 else "") + str(rows[n]['delta']),
+		] for n in range(len(rows))]
+	)
+	await ctx.reply(note + table)
 
 
 async def mapstats(ctx, period: str = None):

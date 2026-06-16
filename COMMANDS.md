@@ -39,6 +39,7 @@
 | command               | description                                             |
 |-----------------------|---------------------------------------------------------|
 | /leaderboard          | Show rating leaderboard                                 |
+| /leaderboard_alternate| What-if leaderboard: Elo without the blanket weekly uncertainty decay |
 | /rank                 | Show your or another player's rating stats              |
 | /lastgame             | Show last played match                                  |
 | /top                  | Show top active players on the channel                  |

@@ -618,6 +618,17 @@ async def _leaderboard(
 ): await run_slash(bot.commands.leaderboard, interaction=interaction, page=page)
 
 
+@dc.slash_command(
+	name='leaderboard_alternate',
+	description='What-if leaderboard: Elo without the blanket weekly uncertainty decay.',
+	**guild_kwargs
+)
+async def _leaderboard_alternate(
+		interaction: Interaction,
+		page: int = SlashOption(required=False),
+): await run_slash(bot.commands.leaderboard_alternate, interaction=interaction, page=page)
+
+
 # douche -> ...
 
 @groups.douche.subcommand(name='add', description='Record that a player douched another (moderator).')
