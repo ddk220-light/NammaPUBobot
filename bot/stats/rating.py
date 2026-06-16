@@ -7,6 +7,7 @@ from core.database import db
 from core.utils import find, get_nick
 
 from bot.stats import stats
+from bot.stats.decay import compute_decay
 
 
 class BaseRating:
@@ -146,23 +147,26 @@ class BaseRating:
 		await db.insert_many('qc_rating_history', history)
 
 	async def apply_decay(self, rating, deviation, ranks_table):
-		""" Apply weekly rating and deviation decay """
+		""" Apply rating and deviation decay to players inactive past the grace window.
+
+		Both the rating decay (toward the nearest rank floor) and the deviation
+		decay (toward the initial deviation) apply ONLY to players who have not
+		played a ranked game within the grace window — a single recent game
+		cancels the decay. The policy itself lives in bot.stats.decay.
+		"""
 		now = int(time.time())
 		ranks = [i['rating'] for i in ranks_table if i['rating'] != 0]
 		data = await stats.last_games(self.channel_id)
 		history = []
 		to_update = []
 		for p in data:
-			if None in (p['rating'], p['deviation'], p['at']):
+			if p['rating'] is None or p['deviation'] is None:
 				continue
 
-			new_deviation = min((self.init_deviation, p['deviation'] + deviation))
-
-			min_rating = max([i for i in ranks if i <= p['rating']]+[0])
-			if min_rating != 0 and p['at'] < (now-(60*60*24*7)):
-				new_rating = max((min_rating, p['rating']-rating))
-			else:
-				new_rating = p['rating']
+			new_rating, new_deviation = compute_decay(
+				p['rating'], p['deviation'], p.get('at'), now,
+				rating, deviation, self.init_deviation, ranks,
+			)
 
 			if new_rating != p['rating'] or new_deviation != p['deviation']:
 				history.append(dict(
@@ -176,7 +180,7 @@ class BaseRating:
 					match_id=None,
 					reason="inactivity rating decay"
 				))
-				p.pop('at')
+				p.pop('at', None)
 				p['deviation'] = new_deviation
 				p['rating'] = new_rating
 				to_update.append(p)
