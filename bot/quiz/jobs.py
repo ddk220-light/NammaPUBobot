@@ -1,0 +1,123 @@
+# -*- coding: utf-8 -*-
+"""Daily-post / close-and-reveal / weekly-leaderboard job on the shared 1-s think()
+tick. Bulletproof and cadence-gated like LobbyJobs — a failure here can never break
+the tick or any existing flow. Does nothing unless a qc_quiz_config row has
+enabled=1. nextcord / core.client / embeds are imported lazily inside the methods so
+importing bot.quiz (hence this module) stays test-safe under the conftest stubs."""
+import asyncio
+import datetime
+import json
+import time
+
+from core.console import log
+
+from . import pool, scoring, store
+
+_POOL = pool.load()        # loaded once at import; [] if not generated yet
+_pending = set()           # keep create_task'd jobs from being GC'd mid-run
+
+
+class QuizJobs:
+	POLL_INTERVAL = 30     # seconds between quiz maintenance passes
+
+	def __init__(self):
+		self.next_run = 0
+		self._running = False
+
+	async def think(self, frame_time):
+		try:
+			if self._running or frame_time < self.next_run:
+				return
+			self.next_run = frame_time + self.POLL_INTERVAL
+			self._running = True
+			task = asyncio.create_task(self._run())
+
+			def _done(t):
+				self._running = False
+				_pending.discard(t)
+				if not t.cancelled() and t.exception() is not None:
+					log.error(f"Quiz job crashed: {t.exception()}")
+
+			_pending.add(task)
+			task.add_done_callback(_done)
+		except Exception as e:
+			self._running = False
+			log.error(f"Quiz think() error (ignored): {e}")
+
+	async def _run(self):
+		now = int(time.time())
+		await self._close_due(now)            # always resolve open posts, even if disabled
+		cfg = await store.get_config()
+		if not cfg or not cfg.get("enabled"):
+			return
+		await self._maybe_post_daily(cfg, now)
+		await self._maybe_leaderboard(cfg, now)
+
+	async def _maybe_post_daily(self, cfg, now):
+		if not scoring.daily_due(now, cfg.get("quiz_hour") or 9, cfg.get("last_post_ymd")):
+			return
+		# Claim today's slot FIRST so a restart mid-tick can't double-post.
+		await store.upsert_config(cfg["channel_id"], last_post_ymd=scoring._ymd(now))
+		asked = await store.asked_ids(cfg["channel_id"])
+		recent = await store.recent_categories(cfg["channel_id"])
+		q = pool.pick_next(_POOL, asked, recent)
+		if not q:
+			log.info("Quiz pool exhausted — nothing to post.")
+			return
+		from core.client import dc
+		from . import embeds
+		channel = dc.get_channel(cfg["channel_id"])
+		if channel is None:
+			log.error(f"Quiz channel {cfg['channel_id']} not found.")
+			return
+		open_window = int(cfg.get("open_window") or 86400)
+		post_id = await store.create_post(cfg["channel_id"], q, now, now + open_window)
+		msg = await channel.send(
+			embed=embeds.card_embed(q["category"], q["difficulty"], post_id, open_window / 3600),
+			view=embeds.card_view(post_id))
+		await store.set_message_id(post_id, msg.id)
+		log.info(f"Quiz posted #{post_id} ({q['id']}) in channel {cfg['channel_id']}.")
+
+	async def _close_due(self, now):
+		due = await store.due_to_close(now)
+		if not due:
+			return
+		import nextcord
+		from core.client import dc
+		from . import embeds
+		for post in due:
+			try:
+				ans = await store.answers_for_post(post["id"])
+				winners = [a["nick"] for a in ans if int(a.get("is_correct") or 0)]
+				options = json.loads(post["options_json"])
+				channel = dc.get_channel(post["channel_id"])
+				if channel and post.get("message_id"):
+					try:
+						msg = await channel.fetch_message(post["message_id"])
+						await msg.edit(embed=embeds.result_embed(
+							post["prompt"], options, post["correct_index"],
+							post["explanation"], winners), view=None)
+					except nextcord.NotFound:
+						pass
+				await store.close_post(post["id"])
+			except Exception as e:
+				log.error(f"Quiz close({post.get('id')}) failed: {e}")
+
+	async def _maybe_leaderboard(self, cfg, now):
+		if not scoring.leaderboard_due(now, cfg.get("leaderboard_dow") or 7,
+									   cfg.get("leaderboard_hour") or 18,
+									   cfg.get("last_leaderboard_ymd")):
+			return
+		await store.upsert_config(cfg["channel_id"], last_leaderboard_ymd=scoring._ymd(now))
+		rows = await store.week_answers(cfg["channel_id"], now - 7 * 86400, now)
+		tallied = scoring.tally(rows)
+		from core.client import dc
+		from . import embeds
+		channel = dc.get_channel(cfg["channel_id"])
+		if channel is None:
+			return
+		label = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%b %d")
+		await channel.send(embed=embeds.leaderboard_embed(tallied, f"week to {label}"))
+
+
+jobs = QuizJobs()
