@@ -194,11 +194,15 @@ async def on_message(message):
 
 @dc.event
 async def on_interaction(interaction):
-	# Quiz component clicks (reveal/answer) — DB-driven, restart-safe. Foreign
-	# interactions (slash commands, other features) fall straight through; nextcord
-	# still dispatches application commands via its own internal path. Self-isolating:
-	# on_quiz_interaction never raises. Lazy import keeps quiz's nextcord modules out
-	# of events' import path until first use.
+	# CRITICAL: core.client's @dc.event system replaces nextcord's built-in
+	# Client.on_interaction (which is just `process_application_commands`), so we MUST
+	# call it here or EVERY slash command + autocomplete silently stops working.
+	# Then route quiz component clicks (type 3, custom_id 'quiz:*'). The two handle
+	# disjoint interaction types — process_* no-ops on components, the quiz router
+	# no-ops on application commands — so calling both is safe. on_quiz_interaction is
+	# self-isolating (never raises). Lazy import keeps quiz's nextcord modules out of
+	# events' import path until first use.
+	await dc.process_application_commands(interaction)
 	from bot.quiz import interactions as quiz_interactions
 	await quiz_interactions.on_quiz_interaction(interaction)
 
