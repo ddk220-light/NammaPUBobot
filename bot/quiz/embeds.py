@@ -15,7 +15,13 @@ def card_embed(category, difficulty, number, closes_in_h):
 
 
 def card_view(post_id):
-	v = nextcord.ui.View(timeout=None)
+	# auto_defer=False is REQUIRED: these buttons carry no per-View callback (we route
+	# every click through the global on_interaction handler in bot.events so it works
+	# across a Railway redeploy). With nextcord's default auto_defer=True, the View's
+	# dispatch would silently ACK (type-6 deferred update) the click after the no-op
+	# callback, and our handler's response.send_message would then raise
+	# InteractionResponded — i.e. the button would appear to do nothing.
+	v = nextcord.ui.View(timeout=None, auto_defer=False)
 	v.add_item(nextcord.ui.Button(
 		style=nextcord.ButtonStyle.primary, label="Reveal & start",
 		custom_id=f"quiz:{post_id}:reveal"))
@@ -31,7 +37,7 @@ def question_embed(prompt, options, seconds_left):
 
 
 def answer_view(post_id, n_options):
-	v = nextcord.ui.View(timeout=None)
+	v = nextcord.ui.View(timeout=None, auto_defer=False)  # see card_view: route via on_interaction
 	for i in range(n_options):
 		v.add_item(nextcord.ui.Button(
 			style=nextcord.ButtonStyle.secondary, label=chr(ord("A") + i),
