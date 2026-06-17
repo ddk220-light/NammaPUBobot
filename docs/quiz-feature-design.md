@@ -155,6 +155,11 @@ The bot redeploys on Railway, so no in-memory-only state:
   `answered_at`/`response_ms` NULL) and **updated at answer**. The composite PK
   enforces one reveal+answer per person; a revealed-but-unanswered row is a valid
   state (player opened it, never locked in).
+- `qc_quiz_config` — one row per channel: `channel_id` (PK), `enabled`,
+  `quiz_hour`, `answer_window`, `open_window`, `leaderboard_dow`,
+  `leaderboard_hour`, `min_difficulty`, `last_post_ymd` (date of the last daily
+  post, to avoid double-posting), `last_leaderboard_ymd`. Self-contained to the
+  quiz package — see §8.
 - The weekly leaderboard is a `GROUP BY user_id` over `qc_quiz_answers` filtered to
   the trailing ISO week + channel — no extra table.
 
@@ -164,18 +169,16 @@ The bot redeploys on Railway, so no in-memory-only state:
   via `QuizJobs`, cadence-gated like `StatsJobs`.
 - Scoring: **1 point per correct answer** within the player's window. The weekly
   leaderboard ranks by correct count (with answered count + accuracy shown).
-- Config: new **optional, default-off** CfgFactory variables on `QueueChannel`, so
-  the feature integrates with the existing typed-config system and the web
-  dashboard's auto-generated forms. The quiz posts to the channel where it is
-  enabled.
-  - `quiz_enabled` (bool, default False)
-  - `quiz_hour` (int, local hour for the daily post)
-  - `quiz_answer_window` (int seconds, default 180)
-  - `quiz_open_window` (int seconds; how long a quiz stays revealable, default ~24 h)
-  - `quiz_leaderboard_dow` (int, day of week) + `quiz_leaderboard_hour` (int)
-  - `quiz_min_difficulty` (str/enum, optional filter)
-- Any new config var that must survive a Railway boot also needs a matching entry in
-  `start.py`'s `config.cfg` template (per CLAUDE.md).
+- Config lives in the dedicated **`qc_quiz_config`** table (§7), one row per
+  channel, managed entirely inside `bot/quiz/` — the lobby precedent (`qc_lobbies`
+  has its own tables and never touched the core config). This keeps
+  `queue_channel.py` and its CfgFactory **byte-for-byte untouched** (strongest
+  do-no-harm). Admins configure via a `/quiz` admin subcommand group. Fields,
+  with defaults applied in code: `enabled` (False), `quiz_hour`, `answer_window`
+  (180 s), `open_window` (~24 h), `leaderboard_dow` + `leaderboard_hour`,
+  `min_difficulty`. The quiz posts to the channel the row is keyed to.
+- No `start.py` / `config.cfg` template changes are required — all quiz config is
+  DB-resident, not environment-driven.
 
 ## 9. Commands
 
