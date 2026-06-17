@@ -92,10 +92,16 @@ async def record_reveal(post_id, user_id, nick, revealed_at, deadline_at):
 
 
 async def record_answer(post_id, user_id, choice_index, is_correct, answered_at, response_ms):
-	await db.update("qc_quiz_answers", dict(
-		choice_index=choice_index, is_correct=(1 if is_correct else 0),
-		answered_at=answered_at, response_ms=response_ms),
-		{"post_id": post_id, "user_id": user_id})
+	"""Atomically record the answer ONLY if the user has not already answered. The
+	`answered_at IS NULL` guard closes the read-then-write TOCTOU race: nextcord
+	dispatches each click as its own task, so two near-simultaneous taps both pass the
+	in-handler `answered_at is None` check; the DB row lock then serialises these
+	UPDATEs and the second matches 0 rows, so the first answer wins and is never
+	overwritten. (db.update can't express the conditional WHERE, hence raw execute.)"""
+	await db.execute(
+		"UPDATE qc_quiz_answers SET choice_index=%s, is_correct=%s, answered_at=%s, response_ms=%s "
+		"WHERE post_id=%s AND user_id=%s AND answered_at IS NULL",
+		[choice_index, (1 if is_correct else 0), answered_at, response_ms, post_id, user_id])
 
 
 async def answers_for_post(post_id):

@@ -17,6 +17,13 @@ _POOL = pool.load()        # loaded once at import; [] if not generated yet
 _pending = set()           # keep create_task'd jobs from being GC'd mid-run
 
 
+def _hour(value, default):
+	"""Honour an explicitly-configured 0 (midnight / 00:00 UTC). `value or default`
+	would wrongly override hour 0 because 0 is falsy; return the default only when the
+	field is unset (None)."""
+	return default if value is None else int(value)
+
+
 class QuizJobs:
 	POLL_INTERVAL = 30     # seconds between quiz maintenance passes
 
@@ -54,18 +61,24 @@ class QuizJobs:
 		await self._maybe_leaderboard(cfg, now)
 
 	async def _maybe_post_daily(self, cfg, now):
-		if not scoring.daily_due(now, cfg.get("quiz_hour") or 9, cfg.get("last_post_ymd")):
+		if not scoring.daily_due(now, _hour(cfg.get("quiz_hour"), 9), cfg.get("last_post_ymd")):
 			return
-		# Claim today's slot FIRST so a restart mid-tick can't double-post.
-		await store.upsert_config(cfg["channel_id"], last_post_ymd=scoring._ymd(now))
-		await self._post_question(cfg["channel_id"], int(cfg.get("open_window") or 86400), now)
+		await self._post_question(
+			cfg["channel_id"], int(cfg.get("open_window") or 86400), now,
+			min_difficulty=cfg.get("min_difficulty"))
 
-	async def _post_question(self, channel_id, open_window, now):
-		"""Pick the next unused question and post the card. Returns the post id, or
-		None when the pool is exhausted / the channel is missing."""
+	async def _post_question(self, channel_id, open_window, now, min_difficulty=None):
+		"""Pick the next unused question and post the card. Claims last_post_ymd only
+		AFTER a confirmed post, so (a) a missing channel / empty pool leaves the day
+		un-claimed for the next tick to retry rather than silently burning it, and
+		(b) a manual /quiz post_now also satisfies the once-per-day dedup, so the
+		scheduler won't double-post later the same day. The only double-post window is
+		a crash strictly between channel.send and this claim (one DB round-trip) —
+		accepted, and far rarer than the cold-cache miss it replaces. Returns the post
+		id, or None when the pool is exhausted / the channel is missing."""
 		asked = await store.asked_ids(channel_id)
 		recent = await store.recent_categories(channel_id)
-		q = pool.pick_next(_POOL, asked, recent)
+		q = pool.pick_next(_POOL, asked, recent, min_difficulty=min_difficulty)
 		if not q:
 			log.info("Quiz pool exhausted — nothing to post.")
 			return None
@@ -80,15 +93,20 @@ class QuizJobs:
 			embed=embeds.card_embed(q["category"], q["difficulty"], post_id, open_window / 3600),
 			view=embeds.card_view(post_id))
 		await store.set_message_id(post_id, msg.id)
+		await store.upsert_config(channel_id, last_post_ymd=scoring._ymd(now))
 		log.info(f"Quiz posted #{post_id} ({q['id']}) in channel {channel_id}.")
 		return post_id
 
 	async def force_post(self, channel_id):
 		"""Post a quiz immediately, ignoring the daily schedule (admin /quiz post_now).
-		Returns the post id or None. Uses the channel's configured open_window if any."""
+		Returns the post id or None. Uses the channel's configured open_window /
+		min_difficulty if any; claims the day (in _post_question) so the scheduler
+		won't post a second quiz later today."""
 		cfg = await store.get_config(channel_id)
 		open_window = int((cfg or {}).get("open_window") or 86400)
-		return await self._post_question(channel_id, open_window, int(time.time()))
+		return await self._post_question(
+			channel_id, open_window, int(time.time()),
+			min_difficulty=(cfg or {}).get("min_difficulty"))
 
 	async def _close_due(self, now):
 		due = await store.due_to_close(now)
@@ -117,7 +135,7 @@ class QuizJobs:
 
 	async def _maybe_leaderboard(self, cfg, now):
 		if not scoring.leaderboard_due(now, cfg.get("leaderboard_dow") or 7,
-									   cfg.get("leaderboard_hour") or 18,
+									   _hour(cfg.get("leaderboard_hour"), 18),
 									   cfg.get("last_leaderboard_ymd")):
 			return
 		await store.upsert_config(cfg["channel_id"], last_leaderboard_ymd=scoring._ymd(now))

@@ -26,6 +26,11 @@ async def on_quiz_interaction(interaction):
 		route = parse_custom_id(cid)
 		if route is None:
 			return
+		# Defer ephemerally up front (only now that we know it's a quiz click): this
+		# buys 15 minutes and decouples us from the 3-second interaction-token window
+		# that the several sequential MySQL round-trips below could otherwise blow on a
+		# cold connection-pool reconnect. Every reply then goes through followup.
+		await interaction.response.defer(ephemeral=True)
 		kind, post_id, choice = route
 		post = await store.get_post(post_id)
 		if not post:
@@ -54,7 +59,8 @@ async def _handle_reveal(interaction, post, now):
 	seconds_left = max(0, int(row.get("deadline_at") or deadline) - now)
 	if seconds_left == 0:
 		return await _eph(interaction, too_late_notice())
-	await interaction.response.send_message(
+	# We deferred ephemerally in on_quiz_interaction, so the question goes via followup.
+	await interaction.followup.send(
 		embed=question_embed(post["prompt"], options, seconds_left),
 		view=answer_view(post["id"], len(options)), ephemeral=True)
 

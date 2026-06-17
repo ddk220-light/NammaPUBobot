@@ -13,6 +13,7 @@ import random as _random
 
 _REQUIRED = ("id", "category", "difficulty", "prompt", "options", "correct_index",
 			 "explanation", "source")
+_DIFF_RANK = {"easy": 0, "medium": 1, "hard": 2}
 _DEFAULT_PATH = os.path.join(
 	os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
 	"data", "quiz_questions.json")
@@ -48,11 +49,18 @@ def load(path=None):
 		return []
 
 
-def pick_next(items, asked_ids, recent_categories=(), rng=None):
+def pick_next(items, asked_ids, recent_categories=(), rng=None, min_difficulty=None):
 	"""Pick a not-yet-asked question, preferring categories not in recent_categories.
-	Returns None when every question has been asked. Deterministic given rng."""
+	When min_difficulty is set (easy|medium|hard) only questions at least that hard are
+	eligible, but the filter never blocks a post — if it would empty the pool it is
+	ignored. Returns None only when every question has been asked. Deterministic given
+	rng."""
 	rng = rng or _random.Random()
 	fresh = [q for q in items if q["id"] not in asked_ids]
+	if min_difficulty in _DIFF_RANK:
+		floor = _DIFF_RANK[min_difficulty]
+		hard_enough = [q for q in fresh if _DIFF_RANK.get(q.get("difficulty"), 1) >= floor]
+		fresh = hard_enough or fresh
 	if not fresh:
 		return None
 	recent = set(recent_categories or ())

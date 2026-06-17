@@ -62,3 +62,18 @@ def test_pick_next_falls_back_when_all_recent():
 def test_pick_next_returns_none_when_exhausted():
 	items = pool.validate(_load())
 	assert pool.pick_next(items, asked_ids={"q1", "q2", "q3"}, recent_categories=[], rng=None) is None
+
+
+def test_pick_next_min_difficulty_filters():
+	items = pool.validate(_load())   # q1 medium, q2 easy, q3 hard
+	for seed in range(10):
+		q = pool.pick_next(items, asked_ids=set(), recent_categories=[],
+						   rng=random.Random(seed), min_difficulty="hard")
+		assert q["id"] == "q3"       # only the hard question qualifies
+
+
+def test_pick_next_min_difficulty_never_blocks_a_post():
+	easy_only = [q for q in pool.validate(_load()) if q["difficulty"] == "easy"]
+	q = pool.pick_next(easy_only, asked_ids=set(), recent_categories=[],
+					   rng=random.Random(0), min_difficulty="hard")
+	assert q is not None and q["difficulty"] == "easy"   # filter ignored rather than blocking
