@@ -1,0 +1,17 @@
+[
+  {"id": "q1", "category": "armor", "difficulty": "medium",
+   "prompt": "Which siege unit has no melee armor?",
+   "options": ["Ram", "Mangonel", "Scorpion", "Siege Tower"],
+   "correct_index": 2, "explanation": "Scorpion has no Base Melee class.",
+   "source": "unit_stats.armors_json"},
+  {"id": "q2", "category": "bonus", "difficulty": "easy",
+   "prompt": "Which does bonus damage vs Camels?",
+   "options": ["Skirmisher", "Mameluke", "Knight", "Archer"],
+   "correct_index": 1, "explanation": "Mameluke attacks_json has class 30.",
+   "source": "unit_stats.attacks_json"},
+  {"id": "q3", "category": "mechanic", "difficulty": "hard",
+   "prompt": "Which is the only unit with a bleed effect?",
+   "options": ["Steppe Lancer", "Berserk", "Leitis", "Coustillier"],
+   "correct_index": 3, "explanation": "Coustillier charge; bleed_dps present.",
+   "source": "ref_special_effects"}
+]
