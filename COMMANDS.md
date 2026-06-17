@@ -45,6 +45,15 @@
 | /top                  | Show top active players on the channel                  |
 | /stats show           | Show overall channel stats                              |
 
+#### AoE2 unit quiz (opt-in)
+| command               | description                                             |
+|-----------------------|---------------------------------------------------------|
+| /quiz_leaderboard     | Show this week's quiz leaderboard                       |
+| /quiz enable          | (admin) Enable the daily quiz in a channel at a UTC hour|
+| /quiz disable         | (admin) Disable the daily quiz                          |
+| /quiz config          | (admin) Set a quiz setting (answer_window, open_window, leaderboard day/hour, …) |
+| /quiz post_now        | (admin) Post a quiz immediately                         |
+
 #### Miscellaneous
 | command               | description                                             |
 |-----------------------|---------------------------------------------------------|
