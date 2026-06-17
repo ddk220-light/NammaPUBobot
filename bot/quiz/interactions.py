@@ -7,6 +7,7 @@ features) fall straight through — we only act on custom_ids starting with 'qui
 Only imported at runtime (by bot.events), never during unit tests."""
 import json
 import time
+import traceback
 
 import nextcord
 
@@ -26,11 +27,12 @@ async def on_quiz_interaction(interaction):
 		route = parse_custom_id(cid)
 		if route is None:
 			return
-		# Defer ephemerally up front (only now that we know it's a quiz click): this
-		# buys 15 minutes and decouples us from the 3-second interaction-token window
-		# that the several sequential MySQL round-trips below could otherwise blow on a
-		# cold connection-pool reconnect. Every reply then goes through followup.
-		await interaction.response.defer(ephemeral=True)
+		# Respond DIRECTLY with an ephemeral message — the canonical pattern for a
+		# button click. Do NOT defer here: on a COMPONENT interaction
+		# response.defer() (without with_message) is a DEFERRED_UPDATE that silently
+		# acks the click and shows the user nothing, which made the reveal look like it
+		# "did nothing". The few PK-keyed MySQL round-trips below are single-digit-ms
+		# on Railway, comfortably inside the 3-second interaction window.
 		kind, post_id, choice = route
 		post = await store.get_post(post_id)
 		if not post:
@@ -40,7 +42,14 @@ async def on_quiz_interaction(interaction):
 			return await _handle_reveal(interaction, post, now)
 		return await _handle_answer(interaction, post, choice, now)
 	except Exception as e:
-		log.error(f"quiz interaction error (ignored): {e}")
+		log.error(f"quiz interaction error: {e}\n{traceback.format_exc()}")
+		# Never fail silently — give the user a hint if we have not responded yet.
+		try:
+			if not interaction.response.is_done():
+				await interaction.response.send_message(
+					"Something went wrong opening the quiz — please try again.", ephemeral=True)
+		except Exception:
+			pass
 
 
 async def _handle_reveal(interaction, post, now):
@@ -59,8 +68,7 @@ async def _handle_reveal(interaction, post, now):
 	seconds_left = max(0, int(row.get("deadline_at") or deadline) - now)
 	if seconds_left == 0:
 		return await _eph(interaction, too_late_notice())
-	# We deferred ephemerally in on_quiz_interaction, so the question goes via followup.
-	await interaction.followup.send(
+	await interaction.response.send_message(
 		embed=question_embed(post["prompt"], options, seconds_left),
 		view=answer_view(post["id"], len(options)), ephemeral=True)
 
