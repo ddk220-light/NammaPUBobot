@@ -4,3 +4,4 @@ from .matches import *
 from .stats import *
 from .admin import *
 from .misc import *
+from .quiz import *

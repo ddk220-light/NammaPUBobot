@@ -102,6 +102,7 @@ async def on_think(frame_time):
 	await bot.stats.jobs.think(frame_time)
 	await bot.civ_reconcile.reconcile.think(frame_time)
 	await bot.lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
+	await bot.quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
 	await bot.expire_auto_ready(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict
@@ -189,6 +190,17 @@ async def on_message(message):
 			log_channel_message(message)
 		except Exception:
 			pass
+
+
+@dc.event
+async def on_interaction(interaction):
+	# Quiz component clicks (reveal/answer) — DB-driven, restart-safe. Foreign
+	# interactions (slash commands, other features) fall straight through; nextcord
+	# still dispatches application commands via its own internal path. Self-isolating:
+	# on_quiz_interaction never raises. Lazy import keeps quiz's nextcord modules out
+	# of events' import path until first use.
+	from bot.quiz import interactions as quiz_interactions
+	await quiz_interactions.on_quiz_interaction(interaction)
 
 
 @dc.event

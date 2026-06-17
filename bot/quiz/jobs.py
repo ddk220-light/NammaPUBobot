@@ -58,25 +58,37 @@ class QuizJobs:
 			return
 		# Claim today's slot FIRST so a restart mid-tick can't double-post.
 		await store.upsert_config(cfg["channel_id"], last_post_ymd=scoring._ymd(now))
-		asked = await store.asked_ids(cfg["channel_id"])
-		recent = await store.recent_categories(cfg["channel_id"])
+		await self._post_question(cfg["channel_id"], int(cfg.get("open_window") or 86400), now)
+
+	async def _post_question(self, channel_id, open_window, now):
+		"""Pick the next unused question and post the card. Returns the post id, or
+		None when the pool is exhausted / the channel is missing."""
+		asked = await store.asked_ids(channel_id)
+		recent = await store.recent_categories(channel_id)
 		q = pool.pick_next(_POOL, asked, recent)
 		if not q:
 			log.info("Quiz pool exhausted — nothing to post.")
-			return
+			return None
 		from core.client import dc
 		from . import embeds
-		channel = dc.get_channel(cfg["channel_id"])
+		channel = dc.get_channel(channel_id)
 		if channel is None:
-			log.error(f"Quiz channel {cfg['channel_id']} not found.")
-			return
-		open_window = int(cfg.get("open_window") or 86400)
-		post_id = await store.create_post(cfg["channel_id"], q, now, now + open_window)
+			log.error(f"Quiz channel {channel_id} not found.")
+			return None
+		post_id = await store.create_post(channel_id, q, now, now + open_window)
 		msg = await channel.send(
 			embed=embeds.card_embed(q["category"], q["difficulty"], post_id, open_window / 3600),
 			view=embeds.card_view(post_id))
 		await store.set_message_id(post_id, msg.id)
-		log.info(f"Quiz posted #{post_id} ({q['id']}) in channel {cfg['channel_id']}.")
+		log.info(f"Quiz posted #{post_id} ({q['id']}) in channel {channel_id}.")
+		return post_id
+
+	async def force_post(self, channel_id):
+		"""Post a quiz immediately, ignoring the daily schedule (admin /quiz post_now).
+		Returns the post id or None. Uses the channel's configured open_window if any."""
+		cfg = await store.get_config(channel_id)
+		open_window = int((cfg or {}).get("open_window") or 86400)
+		return await self._post_question(channel_id, open_window, int(time.time()))
 
 	async def _close_due(self, now):
 		due = await store.due_to_close(now)

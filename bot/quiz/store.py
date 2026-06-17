@@ -26,6 +26,12 @@ async def upsert_config(channel_id, **fields):
 		await db.insert("qc_quiz_config", dict(channel_id=channel_id, **fields))
 
 
+async def disable_all():
+	"""Disable the quiz everywhere — used before enabling a new channel so only one
+	channel is ever active (get_config() serves a single enabled row)."""
+	await db.execute("UPDATE qc_quiz_config SET enabled=0")
+
+
 # ── posts ────────────────────────────────────────────────────────────────
 async def asked_ids(channel_id):
 	rows = await db.fetchall(

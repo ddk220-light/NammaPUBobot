@@ -940,3 +940,40 @@ async def _redo_teams(
 
 	await interaction.followup.send(embed=embed)
 
+
+# ── AoE2 unit quiz (opt-in feature) ───────────────────────────────────────
+@dc.slash_command(name='quiz_leaderboard', description="Show this week's AoE2 quiz leaderboard.", **guild_kwargs)
+async def _quiz_leaderboard(
+		interaction: Interaction
+): await run_slash(bot.commands.quiz_leaderboard, interaction=interaction)
+
+
+@groups.admin_quiz.subcommand(name='enable', description='Enable the daily AoE2 quiz in a channel.')
+async def _quiz_enable(
+		interaction: Interaction,
+		channel: TextChannel = SlashOption(name="channel", description="Channel to post the daily quiz in."),
+		hour: int = SlashOption(name="hour", description="UTC hour (0-23) for the daily post.", required=False, default=9)
+): await run_slash(bot.commands.quiz_enable, interaction=interaction, channel=channel, hour=hour)
+
+
+@groups.admin_quiz.subcommand(name='disable', description='Disable the daily AoE2 quiz.')
+async def _quiz_disable(
+		interaction: Interaction
+): await run_slash(bot.commands.quiz_disable, interaction=interaction)
+
+
+@groups.admin_quiz.subcommand(name='config', description='Set a quiz setting (admin).')
+async def _quiz_config(
+		interaction: Interaction,
+		field: str = SlashOption(
+			name="field",
+			description="quiz_hour|answer_window|open_window|leaderboard_dow|leaderboard_hour|min_difficulty"),
+		value: str = SlashOption(name="value", description="New value.")
+): await run_slash(bot.commands.quiz_config, interaction=interaction, field=field, value=value)
+
+
+@groups.admin_quiz.subcommand(name='post_now', description='Post an AoE2 quiz immediately.')
+async def _quiz_post_now(
+		interaction: Interaction
+): await run_slash(bot.commands.quiz_post_now, interaction=interaction)
+

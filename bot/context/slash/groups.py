@@ -44,3 +44,8 @@ async def admin_phrases(interaction: Interaction):
 @dc.slash_command(name='douche', **guild_kwargs)
 async def douche(interaction: Interaction):
 	pass
+
+
+@dc.slash_command(name='quiz', **guild_kwargs)
+async def admin_quiz(interaction: Interaction):
+	pass
