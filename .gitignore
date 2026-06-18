@@ -18,3 +18,11 @@ export-apr10/
 # public lobbies. The committed golden fixture is a small curated test123
 # lifecycle, added separately in Phase 1.
 tests/fixtures/lobby_events.json
+
+# replay-quiz local scratch (vendored mgz test copy, downloaded replays)
+.replay_scratch/
+.venv_replay/
+data/replays/
+data/.replay_profiles_cache.json
+data/_crosspatch_ids.txt
+data/.replay_extract_cache/
