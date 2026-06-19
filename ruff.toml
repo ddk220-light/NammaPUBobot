@@ -33,7 +33,15 @@ exclude = [
     "__pycache__",
     "data",
     "export-apr10",
+    # Vendored from the approved `feat/replay-quizzes` workstream — it has its
+    # own (semicolon-heavy, 4-space) style and is offline tooling, not bot
+    # runtime code. Lint it on its own terms, not this repo's ruleset. The
+    # bot never imports it; the unified pipeline consumes only its JSON output.
+    "utils/replay_quiz",
 ]
+# Honor `exclude` even when a path is passed explicitly (e.g. `ruff check utils`),
+# so the vendored subtree above is never linted by accident.
+force-exclude = true
 
 [lint]
 select = ["E", "F", "B", "UP", "SIM"]
