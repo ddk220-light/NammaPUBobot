@@ -5,9 +5,10 @@ bot.quiz imports are lazy (inside the handlers) so this module loads during the
 `from . import commands` step without pulling nextcord-heavy quiz modules early."""
 import time
 
-__all__ = ["quiz_leaderboard", "quiz_enable", "quiz_disable", "quiz_config", "quiz_post_now"]
+__all__ = ["quiz_leaderboard", "quiz_enable", "quiz_disable", "quiz_config", "quiz_post_now",
+		   "quiz_status", "quiz_skip", "quiz_reveal_now"]
 
-_INT_FIELDS = ("quiz_hour", "answer_window", "open_window", "leaderboard_dow", "leaderboard_hour")
+_INT_FIELDS = ("quiz_hour", "answer_window", "open_window", "leaderboard_dow", "leaderboard_hour", "test_interval")
 
 
 async def quiz_leaderboard(ctx):
@@ -71,3 +72,46 @@ async def quiz_post_now(ctx):
 		await ctx.success(f"Posted quiz #{post_id}.", title="Quiz")
 	else:
 		await ctx.error("Could not post — the question pool may be exhausted.")
+
+
+async def quiz_status(ctx):
+	from bot.quiz import schedule, store
+	cfg = await store.get_config()
+	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id
+	seq = await store.next_seq(channel_id)
+	entry = schedule.entry_for_seq(schedule.load(), seq)
+	nxt = (f"#{entry['seq']} (Week {entry['week']} Day {entry['day']}, {entry['category']})"
+		   if entry else "schedule exhausted")
+	enabled = bool(cfg and cfg.get("enabled"))
+	await ctx.reply(
+		f"Quiz **{'ON' if enabled else 'OFF'}** · next: {nxt} · "
+		f"last leaderboard: week {(cfg or {}).get('last_leaderboard_week') or 0}"
+		+ (f" · test cadence: every {cfg.get('test_interval')}s" if cfg and cfg.get("test_interval") else ""))
+
+
+async def quiz_skip(ctx):
+	ctx.check_perms(ctx.Perms.ADMIN)
+	import time
+	from bot.quiz import schedule, store
+	cfg = await store.get_config()
+	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id
+	seq = await store.next_seq(channel_id)
+	entry = schedule.entry_for_seq(schedule.load(), seq)
+	if not entry:
+		return await ctx.error("Nothing to skip — schedule exhausted.")
+	now = int(time.time())
+	pid = await store.create_post(channel_id, entry, now, now)
+	await store.close_post(pid)
+	await ctx.success(
+		f"Skipped #{entry['seq']} ({entry['id']}). Add its id to data/quiz_blocklist.json "
+		f"and regenerate the schedule to drop it permanently.", title="Quiz")
+
+
+async def quiz_reveal_now(ctx):
+	ctx.check_perms(ctx.Perms.ADMIN)
+	from bot.quiz import store
+	from bot.quiz.jobs import jobs as quiz_jobs
+	cfg = await store.get_config()
+	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id
+	await quiz_jobs.reveal_now(channel_id)
+	await ctx.success("Revealed the previous question (if any was open).", title="Quiz")

@@ -65,6 +65,8 @@ db.ensure_table(dict(
 		dict(cname="last_post_ymd", ctype=db.types.str, notnull=False),
 		dict(cname="last_leaderboard_ymd", ctype=db.types.str, notnull=False),
 		dict(cname="last_leaderboard_week", ctype=db.types.int, notnull=False),
+		dict(cname="test_interval", ctype=db.types.int, notnull=False),   # seconds; set => fast test cadence
+		dict(cname="last_post_at", ctype=db.types.int, notnull=False),    # epoch of last post (test cadence)
 	],
 	primary_keys=["channel_id"],
 ))

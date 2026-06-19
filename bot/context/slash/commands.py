@@ -967,7 +967,7 @@ async def _quiz_config(
 		interaction: Interaction,
 		field: str = SlashOption(
 			name="field",
-			description="quiz_hour|answer_window|open_window|leaderboard_dow|leaderboard_hour|min_difficulty"),
+			description="quiz_hour|answer_window|open_window|leaderboard_dow|leaderboard_hour|test_interval|min_difficulty"),
 		value: str = SlashOption(name="value", description="New value.")
 ): await run_slash(bot.commands.quiz_config, interaction=interaction, field=field, value=value)
 
@@ -976,4 +976,22 @@ async def _quiz_config(
 async def _quiz_post_now(
 		interaction: Interaction
 ): await run_slash(bot.commands.quiz_post_now, interaction=interaction)
+
+
+@groups.admin_quiz.subcommand(name='status', description='Show the quiz schedule status (admin).')
+async def _quiz_status(
+		interaction: Interaction
+): await run_slash(bot.commands.quiz_status, interaction=interaction)
+
+
+@groups.admin_quiz.subcommand(name='skip', description='Skip the next scheduled quiz question (admin).')
+async def _quiz_skip(
+		interaction: Interaction
+): await run_slash(bot.commands.quiz_skip, interaction=interaction)
+
+
+@groups.admin_quiz.subcommand(name='reveal_now', description='Reveal the previous quiz answer now (admin).')
+async def _quiz_reveal_now(
+		interaction: Interaction
+): await run_slash(bot.commands.quiz_reveal_now, interaction=interaction)
 

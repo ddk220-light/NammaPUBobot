@@ -58,7 +58,11 @@ class QuizJobs:
 		await self._close_due(now)                    # always: resolve any leftover open posts
 
 	async def _maybe_post_daily(self, cfg, now):
-		if not scoring.daily_due(now, _hour(cfg.get("quiz_hour"), 9), cfg.get("last_post_ymd")):
+		ti = cfg.get("test_interval")
+		if ti:
+			if now - int(cfg.get("last_post_at") or 0) < int(ti):
+				return
+		elif not scoring.daily_due(now, _hour(cfg.get("quiz_hour"), 9), cfg.get("last_post_ymd")):
 			return
 		await self._reveal_previous(cfg["channel_id"])
 		await self._maybe_week_leaderboard(cfg["channel_id"])
@@ -85,9 +89,13 @@ class QuizJobs:
 									q["day"], open_window / 3600),
 			view=embeds.card_view(post_id))
 		await store.set_message_id(post_id, msg.id)
-		await store.upsert_config(channel_id, last_post_ymd=scoring._ymd(now))
+		await store.upsert_config(channel_id, last_post_ymd=scoring._ymd(now), last_post_at=now)
 		log.info(f"Quiz posted #{q['seq']} ({q['id']}) in channel {channel_id}.")
 		return post_id
+
+	async def reveal_now(self, channel_id):
+		"""Admin: immediately reveal the previous still-open question."""
+		await self._reveal_previous(channel_id)
 
 	async def force_post(self, channel_id):
 		"""Post a quiz immediately, ignoring the daily schedule (admin /quiz post_now).
