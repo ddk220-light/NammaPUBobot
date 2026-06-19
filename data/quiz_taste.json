@@ -1,0 +1,82 @@
+{
+  "_comment": "Learned taste model from the owner's per-question ratings. curate.py multiplies each candidate's base score by these. Tunable each feedback round. Higher = more interesting.",
+
+  "shape_weights": {
+    "_comment": "Per question_type. Combat matchups rated great/excellent; siege razing-score arbitrary; famous odd-one-out boring.",
+    "least_value": 1.30,
+    "fastest": 1.30,
+    "most_hp": 1.25,
+    "building_bonus_showdown": 1.15,
+    "nonsiege_razer": 1.15,
+    "bonus_vs_buildings_odd": 1.05,
+    "lack_both": 1.05,
+    "superlative": 0.95,
+    "most_projectiles": 0.90,
+    "lack_single": 0.85,
+    "effect_superlative": 0.80,
+    "projectile_number": 0.70,
+    "only_without": 0.70,
+    "odd_one_out": 0.45,
+    "anti_building_showdown": 0.40
+  },
+
+  "dimension_weights": {
+    "_comment": "Stat-showdown dimension. 'attack' is over-cited -> low; HP/armor/rate less obvious -> high.",
+    "hp": 1.15,
+    "pierce_armor": 1.05,
+    "melee_armor": 1.00,
+    "reload_time": 1.00,
+    "range": 0.95,
+    "speed": 0.95,
+    "attack": 0.50
+  },
+
+  "grouping_weights": {
+    "_comment": "Specific/civ-bound groupings are more interesting than generic shared lines.",
+    "uu_cluster": 1.15,
+    "line_cross_civ": 1.15,
+    "archetype": 0.85,
+    "open": 1.00
+  },
+
+  "multi_select_bonus": 1.15,
+  "tier_clash_penalty": 0.35,
+  "known_fact_penalty": 0.45,
+
+  "known_facts": [
+    {"why": "Celts lacking Plate Barding Armor is textbook", "match": ["plate barding", "celts"]},
+    {"why": "Leitis ignoring melee armor is its signature", "match": ["ignores", "melee armor", "leitis"]},
+    {"why": "Mangudai bonus vs siege is textbook", "match": ["mangudai", "siege"]},
+    {"why": "Huskarl high pierce armor is textbook", "match": ["huskarl", "pierce armor"]},
+    {"why": "Cataphract trample is its signature", "match": ["cataphract", "trample"]},
+    {"why": "Slinger ignoring armor is textbook", "match": ["slinger", "ignores"]},
+
+    {"_comment": "Famous CIV-TRAIT facts — cross-civ questions whose answer is a civ's signature identity are common knowledge (per Q7 Malay elephants)."},
+    {"why": "Malay elephants are famously the weakest/cheapest", "match": ["malay", "elephant"]},
+    {"why": "Franks paladins famously have +HP", "match": ["franks", "paladin"]},
+    {"why": "Franks knights famously have +HP", "match": ["franks", "knight"]},
+    {"why": "Britons archers famously out-range", "match": ["britons", "range"]},
+    {"why": "Goths infantry are famously cheap/spammy", "match": ["goths", "champion"]},
+    {"why": "Mongols cavalry archers are famously fastest-firing", "match": ["mongols", "cavalry archer"]},
+    {"why": "Mayans archers are famously cheaper/tougher", "match": ["mayans", "plumed"]},
+    {"why": "Bengalis elephants are famously resistant", "match": ["bengalis", "elephant"]},
+    {"why": "Teutons are famously slow / high melee armor", "match": ["teutons", "melee armor"]}
+  ],
+
+  "tier_lines": [
+    ["Scorpion", "Heavy Scorpion"],
+    ["Mangonel", "Onager", "Siege Onager"],
+    ["Knight", "Cavalier", "Paladin"],
+    ["Spearman", "Pikeman", "Halberdier"],
+    ["Skirmisher", "Elite Skirmisher", "Imperial Skirmisher"],
+    ["Archer", "Crossbowman", "Arbalester"],
+    ["Battering Ram", "Capped Ram", "Siege Ram"],
+    ["Scout Cavalry", "Light Cavalry", "Hussar", "Winged Hussar"],
+    ["Militia", "Man-at-Arms", "Long Swordsman", "Two-Handed Swordsman", "Champion"],
+    ["Cavalry Archer", "Heavy Cavalry Archer"],
+    ["Camel Rider", "Heavy Camel Rider", "Imperial Camel Rider"],
+    ["Battle Elephant", "Elite Battle Elephant"],
+    ["Demolition Raft", "Demolition Ship", "Heavy Demolition Ship"],
+    ["Galley", "War Galley", "Galleon"]
+  ]
+}

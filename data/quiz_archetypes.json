@@ -1,0 +1,44 @@
+{
+  "_comment": "Curated 'feels-similar' unit clusters for grouping strategy #5. Members are display-name fragments matched case-insensitively against unit names (and reverse-matched against matchup_db slugs). Hand-maintained; grows over time. label is used verbatim in prompts: 'which of these <label> ...'.",
+  "ranged_uu": {
+    "label": "archer unique units",
+    "members": ["Longbowman", "Plumed Archer", "Rattan Archer", "Genoese Crossbowman",
+                "Chu Ko Nu", "Camel Archer", "Kipchak", "War Wagon", "Mangudai",
+                "Elephant Archer", "Slinger", "Genitour", "Chakram Thrower",
+                "Composite Bowman", "Arambai"]
+  },
+  "infantry_uu": {
+    "label": "infantry unique units",
+    "members": ["Berserk", "Huskarl", "Samurai", "Teutonic Knight", "Woad Raider",
+                "Jaguar Warrior", "Throwing Axeman", "Gbeto", "Karambit Warrior",
+                "Urumi Swordsman", "Shotel Warrior", "Condottiero", "Kamayuk",
+                "Champi Warrior", "Ghulam", "Centurion", "Legionary", "Serjeant",
+                "Guecha Warrior"]
+  },
+  "cavalry_uu": {
+    "label": "cavalry unique units",
+    "members": ["Cataphract", "Boyar", "Konnik", "Leitis", "Keshik", "Tarkan",
+                "Magyar Huszar", "Coustillier", "Shrivamsha Rider", "War Elephant",
+                "Ballista Elephant", "Battle Elephant", "Steppe Lancer", "Bolas Rider",
+                "Iron Pagoda", "Fire Lancer", "Savar"]
+  },
+  "gunpowder_uu": {
+    "label": "gunpowder unique units",
+    "members": ["Conquistador", "Janissary", "Organ Gun", "Hussite Wagon"]
+  },
+  "cavalry_line": {
+    "label": "knight-line cavalry",
+    "members": ["Knight", "Cavalier", "Paladin", "Savar"]
+  },
+  "trash_units": {
+    "label": "trash (no-gold) units",
+    "members": ["Spearman", "Pikeman", "Halberdier", "Skirmisher", "Elite Skirmisher",
+                "Light Cavalry", "Hussar", "Winged Hussar"]
+  },
+  "siege_line": {
+    "label": "siege weapons",
+    "members": ["Mangonel", "Onager", "Siege Onager", "Scorpion", "Heavy Scorpion",
+                "Battering Ram", "Capped Ram", "Siege Ram", "Bombard Cannon",
+                "Siege Tower", "Trebuchet", "Cannon Galleon"]
+  }
+}
