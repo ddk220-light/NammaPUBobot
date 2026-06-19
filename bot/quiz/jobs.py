@@ -5,15 +5,14 @@ the tick or any existing flow. Does nothing unless a qc_quiz_config row has
 enabled=1. nextcord / core.client / embeds are imported lazily inside the methods so
 importing bot.quiz (hence this module) stays test-safe under the conftest stubs."""
 import asyncio
-import datetime
 import json
 import time
 
 from core.console import log
 
-from . import pool, scoring, store
+from . import schedule, scoring, store
 
-_POOL = pool.load()        # loaded once at import; [] if not generated yet
+_SCHEDULE = schedule.load()    # ordered, numbered question schedule; [] until generated
 _pending = set()           # keep create_task'd jobs from being GC'd mid-run
 
 
@@ -55,35 +54,24 @@ class QuizJobs:
 		now = int(time.time())
 		cfg = await store.get_config()
 		if cfg and cfg.get("enabled"):
-			await self._maybe_post_daily(cfg, now)    # reveals yesterday's answer, then posts today's
-			await self._maybe_leaderboard(cfg, now)
+			await self._maybe_post_daily(cfg, now)
 		await self._close_due(now)                    # always: resolve any leftover open posts
 
 	async def _maybe_post_daily(self, cfg, now):
 		if not scoring.daily_due(now, _hour(cfg.get("quiz_hour"), 9), cfg.get("last_post_ymd")):
 			return
-		# Reveal the previous question's answer as a fresh channel announcement BEFORE
-		# posting today's — guarantees the answer is visible, in the feed, and ordered
-		# ahead of the next question (not just edited into a day-old card).
 		await self._reveal_previous(cfg["channel_id"])
-		await self._post_question(
-			cfg["channel_id"], int(cfg.get("open_window") or 86400), now,
-			min_difficulty=cfg.get("min_difficulty"))
+		await self._maybe_week_leaderboard(cfg["channel_id"])
+		await self._post_question(cfg["channel_id"], int(cfg.get("open_window") or 86400), now)
 
-	async def _post_question(self, channel_id, open_window, now, min_difficulty=None):
-		"""Pick the next unused question and post the card. Claims last_post_ymd only
-		AFTER a confirmed post, so (a) a missing channel / empty pool leaves the day
-		un-claimed for the next tick to retry rather than silently burning it, and
-		(b) a manual /quiz post_now also satisfies the once-per-day dedup, so the
-		scheduler won't double-post later the same day. The only double-post window is
-		a crash strictly between channel.send and this claim (one DB round-trip) —
-		accepted, and far rarer than the cold-cache miss it replaces. Returns the post
-		id, or None when the pool is exhausted / the channel is missing."""
-		asked = await store.asked_ids(channel_id)
-		recent = await store.recent_categories(channel_id)
-		q = pool.pick_next(_POOL, asked, recent, min_difficulty=min_difficulty)
+	async def _post_question(self, channel_id, open_window, now):
+		"""Post the channel's next scheduled question (by seq). Claims last_post_ymd only
+		after a confirmed send. Returns the post id, or None when the schedule is
+		exhausted / the channel is missing."""
+		seq = await store.next_seq(channel_id)
+		q = schedule.entry_for_seq(_SCHEDULE, seq)
 		if not q:
-			log.info("Quiz pool exhausted — nothing to post.")
+			log.info(f"Quiz schedule exhausted at seq {seq} — regenerate quiz_schedule.json.")
 			return None
 		from core.client import dc
 		from . import embeds
@@ -93,23 +81,22 @@ class QuizJobs:
 			return None
 		post_id = await store.create_post(channel_id, q, now, now + open_window)
 		msg = await channel.send(
-			embed=embeds.card_embed(q["category"], q["difficulty"], post_id, open_window / 3600),
+			embed=embeds.card_embed(q["category"], q["difficulty"], q["seq"], q["week"],
+									q["day"], open_window / 3600),
 			view=embeds.card_view(post_id))
 		await store.set_message_id(post_id, msg.id)
 		await store.upsert_config(channel_id, last_post_ymd=scoring._ymd(now))
-		log.info(f"Quiz posted #{post_id} ({q['id']}) in channel {channel_id}.")
+		log.info(f"Quiz posted #{q['seq']} ({q['id']}) in channel {channel_id}.")
 		return post_id
 
 	async def force_post(self, channel_id):
 		"""Post a quiz immediately, ignoring the daily schedule (admin /quiz post_now).
-		Returns the post id or None. Uses the channel's configured open_window /
-		min_difficulty if any; claims the day (in _post_question) so the scheduler
-		won't post a second quiz later today."""
+		Returns the post id or None. Uses the channel's configured open_window if any;
+		claims the day (in _post_question) so the scheduler won't post a second quiz
+		later today."""
 		cfg = await store.get_config(channel_id)
 		open_window = int((cfg or {}).get("open_window") or 86400)
-		return await self._post_question(
-			channel_id, open_window, int(time.time()),
-			min_difficulty=(cfg or {}).get("min_difficulty"))
+		return await self._post_question(channel_id, open_window, int(time.time()))
 
 	async def _reveal(self, post, fresh):
 		"""Resolve one post: edit its original card into the result, and — when `fresh` —
@@ -121,19 +108,20 @@ class QuizJobs:
 		ans = await store.answers_for_post(post["id"])
 		winners = [a["nick"] for a in ans if int(a.get("is_correct") or 0)]
 		options = json.loads(post["options_json"])
+		correct = json.loads(post["correct_indices"])
 		channel = dc.get_channel(post["channel_id"])
 		if channel:
 			if post.get("message_id"):
 				try:
 					msg = await channel.fetch_message(post["message_id"])
 					await msg.edit(embed=embeds.result_embed(
-						post["prompt"], options, post["correct_index"],
+						post["prompt"], options, correct,
 						post["explanation"], winners), view=None)
 				except nextcord.NotFound:
 					pass
 			if fresh:
 				await channel.send(embed=embeds.result_embed(
-					post["prompt"], options, post["correct_index"], post["explanation"],
+					post["prompt"], options, correct, post["explanation"],
 					winners, title="Yesterday's answer"))
 		await store.close_post(post["id"])
 
@@ -147,6 +135,26 @@ class QuizJobs:
 			except Exception as e:
 				log.error(f"Quiz reveal-previous({prev.get('id')}) failed: {e}")
 
+	async def _maybe_week_leaderboard(self, channel_id):
+		"""If the highest fully-posted schedule week hasn't had its leaderboard posted,
+		post it now (keyed to schedule weeks -> robust to calendar drift)."""
+		posted = await store.posted_seqs(channel_id)
+		done_weeks = [w for w in sorted({q["week"] for q in _SCHEDULE})
+					  if schedule.week_is_complete(_SCHEDULE, w, posted)]
+		if not done_weeks:
+			return
+		week = done_weeks[-1]
+		cfg = await store.get_config(channel_id)
+		if int((cfg or {}).get("last_leaderboard_week") or 0) >= week:
+			return
+		await store.upsert_config(channel_id, last_leaderboard_week=week)
+		rows = await store.week_answers_by_week(channel_id, week)
+		from core.client import dc
+		from . import embeds
+		channel = dc.get_channel(channel_id)
+		if channel:
+			await channel.send(embed=embeds.leaderboard_embed(scoring.tally(rows), f"Week {week}"))
+
 	async def _close_due(self, now):
 		"""Fallback resolver: any still-open post past its closes_at gets an in-place
 		edit (no fresh message — these are stale leftovers, e.g. the quiz was disabled).
@@ -156,22 +164,6 @@ class QuizJobs:
 				await self._reveal(post, fresh=False)
 			except Exception as e:
 				log.error(f"Quiz close({post.get('id')}) failed: {e}")
-
-	async def _maybe_leaderboard(self, cfg, now):
-		if not scoring.leaderboard_due(now, cfg.get("leaderboard_dow") or 7,
-									   _hour(cfg.get("leaderboard_hour"), 18),
-									   cfg.get("last_leaderboard_ymd")):
-			return
-		await store.upsert_config(cfg["channel_id"], last_leaderboard_ymd=scoring._ymd(now))
-		rows = await store.week_answers(cfg["channel_id"], now - 7 * 86400, now)
-		tallied = scoring.tally(rows)
-		from core.client import dc
-		from . import embeds
-		channel = dc.get_channel(cfg["channel_id"])
-		if channel is None:
-			return
-		label = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%b %d")
-		await channel.send(embed=embeds.leaderboard_embed(tallied, f"week to {label}"))
 
 
 jobs = QuizJobs()

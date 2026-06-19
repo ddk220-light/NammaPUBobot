@@ -64,6 +64,7 @@ db.ensure_table(dict(
 		dict(cname="min_difficulty", ctype=db.types.str, notnull=False),
 		dict(cname="last_post_ymd", ctype=db.types.str, notnull=False),
 		dict(cname="last_leaderboard_ymd", ctype=db.types.str, notnull=False),
+		dict(cname="last_leaderboard_week", ctype=db.types.int, notnull=False),
 	],
 	primary_keys=["channel_id"],
 ))
