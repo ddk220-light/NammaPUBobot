@@ -71,6 +71,9 @@ async def _handle_reveal(interaction, post, now):
 	seconds_left = max(0, int(row.get("deadline_at") or deadline) - now)
 	if seconds_left == 0:
 		return await _eph(interaction, too_late_notice())
+	# Only game "techgaps" questions are multi-answer; every other category — including
+	# all player-quiz categories (Villagers, Age speed, Buildings, Military*, Tech timing)
+	# — is single-answer. Keep in sync if a future multi-answer category is added.
 	multi = post["category"] == "techgaps"
 	view = answer_view(post["id"], options, multi)
 	await interaction.response.send_message(
