@@ -7,10 +7,10 @@ import nextcord
 from . import view as _v
 
 
-def card_embed(category, difficulty, number, closes_in_h):
+def card_embed(category, difficulty, seq, week, day, closes_in_h):
 	return nextcord.Embed(
 		title="Daily AoE2 quiz",
-		description="\n".join(_v.card_lines(category, difficulty, number, closes_in_h)),
+		description="\n".join(_v.card_lines(category, difficulty, seq, week, day, closes_in_h)),
 		colour=nextcord.Colour.blurple())
 
 
@@ -36,19 +36,28 @@ def question_embed(prompt, options, seconds_left):
 	return e
 
 
-def answer_view(post_id, n_options):
-	v = nextcord.ui.View(timeout=None, auto_defer=False)  # see card_view: route via on_interaction
-	for i in range(n_options):
-		v.add_item(nextcord.ui.Button(
-			style=nextcord.ButtonStyle.secondary, label=chr(ord("A") + i),
-			custom_id=f"quiz:{post_id}:ans:{i}"))
+def answer_view(post_id, options, multi):
+	# Routed via the global on_interaction handler (redeploy-safe), so auto_defer=False
+	# and the components carry DB-resolvable custom_ids. See card_view's note.
+	v = nextcord.ui.View(timeout=None, auto_defer=False)
+	if multi:
+		v.add_item(nextcord.ui.StringSelect(
+			custom_id=f"quiz:{post_id}:msel", placeholder="Select ALL that apply, then click away",
+			min_values=1, max_values=len(options),
+			options=[nextcord.SelectOption(label=f"{chr(65 + i)}. {o[:90]}", value=str(i))
+					 for i, o in enumerate(options)]))
+	else:
+		for i in range(len(options)):
+			v.add_item(nextcord.ui.Button(
+				style=nextcord.ButtonStyle.secondary, label=chr(65 + i),
+				custom_id=f"quiz:{post_id}:ans:{i}"))
 	return v
 
 
-def result_embed(prompt, options, correct_index, explanation, winners, title="Quiz result"):
+def result_embed(prompt, options, correct_indices, explanation, winners, title="Quiz result"):
 	return nextcord.Embed(
 		title=title,
-		description="\n".join(_v.result_lines(prompt, options, correct_index, explanation, winners)),
+		description="\n".join(_v.result_lines(prompt, options, correct_indices, explanation, winners)),
 		colour=nextcord.Colour.green())
 
 
