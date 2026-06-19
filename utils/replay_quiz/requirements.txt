@@ -1,0 +1,15 @@
+# Replay-quiz pipeline parser dependencies.
+#
+# mgz is pinned to the sanduckhan aoc-mgz fork, which adds AoE2 DE save_version
+# 67.x support (current game builds) on top of PyPI mgz 1.8.51 — the SAME pin
+# aoe2_matchup/apps/viewer + apps/website use. The only delta that matters for
+# this pipeline is a 2-line fix in mgz/fast/header.py (the parser path that
+# mgz.model.parse_match uses); see mgz_save67.patch for that exact diff if you
+# prefer to patch stock mgz instead of installing the fork.
+#
+# Without this, mgz.model.parse_match FAILS on save_version 67.x replays (the
+# bulk of the corpus) with "could not parse".
+mgz @ https://github.com/sanduckhan/aoc-mgz/archive/a1683d8eeca67796ced0d0c05b145420c97d862d.tar.gz
+aocref
+requests
+tqdm
