@@ -45,9 +45,9 @@ def answer_view(post_id, n_options):
 	return v
 
 
-def result_embed(prompt, options, correct_index, explanation, winners):
+def result_embed(prompt, options, correct_index, explanation, winners, title="Quiz result"):
 	return nextcord.Embed(
-		title="Quiz result",
+		title=title,
 		description="\n".join(_v.result_lines(prompt, options, correct_index, explanation, winners)),
 		colour=nextcord.Colour.green())
 

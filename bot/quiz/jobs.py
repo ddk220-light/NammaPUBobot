@@ -53,16 +53,19 @@ class QuizJobs:
 
 	async def _run(self):
 		now = int(time.time())
-		await self._close_due(now)            # always resolve open posts, even if disabled
 		cfg = await store.get_config()
-		if not cfg or not cfg.get("enabled"):
-			return
-		await self._maybe_post_daily(cfg, now)
-		await self._maybe_leaderboard(cfg, now)
+		if cfg and cfg.get("enabled"):
+			await self._maybe_post_daily(cfg, now)    # reveals yesterday's answer, then posts today's
+			await self._maybe_leaderboard(cfg, now)
+		await self._close_due(now)                    # always: resolve any leftover open posts
 
 	async def _maybe_post_daily(self, cfg, now):
 		if not scoring.daily_due(now, _hour(cfg.get("quiz_hour"), 9), cfg.get("last_post_ymd")):
 			return
+		# Reveal the previous question's answer as a fresh channel announcement BEFORE
+		# posting today's — guarantees the answer is visible, in the feed, and ordered
+		# ahead of the next question (not just edited into a day-old card).
+		await self._reveal_previous(cfg["channel_id"])
 		await self._post_question(
 			cfg["channel_id"], int(cfg.get("open_window") or 86400), now,
 			min_difficulty=cfg.get("min_difficulty"))
@@ -108,28 +111,49 @@ class QuizJobs:
 			channel_id, open_window, int(time.time()),
 			min_difficulty=(cfg or {}).get("min_difficulty"))
 
-	async def _close_due(self, now):
-		due = await store.due_to_close(now)
-		if not due:
-			return
+	async def _reveal(self, post, fresh):
+		"""Resolve one post: edit its original card into the result, and — when `fresh` —
+		ALSO send a new 'Yesterday's answer' message so the answer shows in the channel
+		feed right before the next question. Marks the post closed. Bulletproof."""
 		import nextcord
 		from core.client import dc
 		from . import embeds
-		for post in due:
+		ans = await store.answers_for_post(post["id"])
+		winners = [a["nick"] for a in ans if int(a.get("is_correct") or 0)]
+		options = json.loads(post["options_json"])
+		channel = dc.get_channel(post["channel_id"])
+		if channel:
+			if post.get("message_id"):
+				try:
+					msg = await channel.fetch_message(post["message_id"])
+					await msg.edit(embed=embeds.result_embed(
+						post["prompt"], options, post["correct_index"],
+						post["explanation"], winners), view=None)
+				except nextcord.NotFound:
+					pass
+			if fresh:
+				await channel.send(embed=embeds.result_embed(
+					post["prompt"], options, post["correct_index"], post["explanation"],
+					winners, title="Yesterday's answer"))
+		await store.close_post(post["id"])
+
+	async def _reveal_previous(self, channel_id):
+		"""Reveal the previous still-open question as a fresh announcement (called right
+		before posting the next one). No-op on the very first question."""
+		prev = await store.latest_open_post(channel_id)
+		if prev:
 			try:
-				ans = await store.answers_for_post(post["id"])
-				winners = [a["nick"] for a in ans if int(a.get("is_correct") or 0)]
-				options = json.loads(post["options_json"])
-				channel = dc.get_channel(post["channel_id"])
-				if channel and post.get("message_id"):
-					try:
-						msg = await channel.fetch_message(post["message_id"])
-						await msg.edit(embed=embeds.result_embed(
-							post["prompt"], options, post["correct_index"],
-							post["explanation"], winners), view=None)
-					except nextcord.NotFound:
-						pass
-				await store.close_post(post["id"])
+				await self._reveal(prev, fresh=True)
+			except Exception as e:
+				log.error(f"Quiz reveal-previous({prev.get('id')}) failed: {e}")
+
+	async def _close_due(self, now):
+		"""Fallback resolver: any still-open post past its closes_at gets an in-place
+		edit (no fresh message — these are stale leftovers, e.g. the quiz was disabled).
+		The normal daily path reveals the previous question via _reveal_previous."""
+		for post in await store.due_to_close(now):
+			try:
+				await self._reveal(post, fresh=False)
 			except Exception as e:
 				log.error(f"Quiz close({post.get('id')}) failed: {e}")
 

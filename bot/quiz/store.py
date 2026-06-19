@@ -69,6 +69,16 @@ async def due_to_close(now_ts):
 	return rows or []
 
 
+async def latest_open_post(channel_id):
+	"""The most recent still-open post for this channel — i.e. the PREVIOUS question,
+	revealed as a fresh announcement right before the next one is posted. None if there
+	is no open post."""
+	rows = await db.fetchall(
+		"SELECT * FROM qc_quiz_posts WHERE channel_id=%s AND status='open' "
+		"ORDER BY id DESC LIMIT 1", [channel_id])
+	return rows[0] if rows else None
+
+
 async def close_post(post_id):
 	await db.update("qc_quiz_posts", {"status": "closed"}, {"id": post_id})
 
