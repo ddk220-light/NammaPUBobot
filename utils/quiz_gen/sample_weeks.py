@@ -52,10 +52,12 @@ def _facets(q):
     return f
 
 
-def draw(bank, weeks, blocklist=()):
-    """Return `weeks` lists of 7 questions each, rotated (ROTATION) with hard
-    no-repeat facets. `blocklist` is a set of question ids to exclude. Also returns
-    the count of slots that needed the relaxed (option-set-unique-only) fallback."""
+def make_game_taker(bank, blocklist=()):
+    """Return (take, relaxed_count). take(cat, prefer_fresh_dim=None) -> a fresh game
+    question of that category or None, applying the same hard no-repeat facet logic
+    draw() uses. relaxed_count() reports how many picks needed the relaxed
+    (option-set-unique-only) fallback. Lets callers (e.g. the unified scheduler) draw
+    one game question at a time instead of whole weeks."""
     block = set(blocklist)
     pool = {}
     for q in bank:
@@ -82,6 +84,14 @@ def draw(bank, weeks, blocklist=()):
                 return q
         return None
 
+    return take, (lambda: relaxed_hits[0])
+
+
+def draw(bank, weeks, blocklist=()):
+    """Return `weeks` lists of 7 questions each, rotated (ROTATION) with hard
+    no-repeat facets. `blocklist` is a set of question ids to exclude. Also returns
+    the count of slots that needed the relaxed (option-set-unique-only) fallback."""
+    take, relaxed_count = make_game_taker(bank, blocklist)
     out, last_dim = [], None
     for _ in range(weeks):
         week = []
@@ -91,7 +101,7 @@ def draw(bank, weeks, blocklist=()):
                 last_dim = q.get("meta", {}).get("effect")
             week.append(q)
         out.append(week)
-    return out, relaxed_hits[0]
+    return out, relaxed_count()
 
 
 def main():
