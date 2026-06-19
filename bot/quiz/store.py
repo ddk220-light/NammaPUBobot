@@ -47,16 +47,31 @@ async def recent_categories(channel_id, n=3):
 
 
 async def create_post(channel_id, q, opened_at, closes_at):
-	"""Insert an open post (message_id filled in after the Discord send). Returns the
-	new post id (cur.lastrowid)."""
+	"""Insert an open post. q is a schedule entry (carries seq/week/day/correct_indices)."""
 	return await db.insert("qc_quiz_posts", dict(
 		channel_id=channel_id, message_id=None, question_id=q["id"], category=q["category"],
-		prompt=q["prompt"], options_json=json.dumps(q["options"]), correct_index=q["correct_index"],
-		explanation=q["explanation"], opened_at=opened_at, closes_at=closes_at, status="open"))
+		prompt=q["prompt"], options_json=json.dumps(q["options"]),
+		correct_index=q.get("correct_index"),
+		correct_indices=json.dumps(q["correct_indices"]),
+		explanation=q["explanation"], opened_at=opened_at, closes_at=closes_at, status="open",
+		seq=q["seq"], week=q["week"], day=q["day"]))
 
 
 async def set_message_id(post_id, message_id):
 	await db.update("qc_quiz_posts", {"message_id": message_id}, {"id": post_id})
+
+
+async def next_seq(channel_id):
+	"""The seq the channel should post next = (max posted seq) + 1, starting at 1."""
+	rows = await db.fetchall(
+		"SELECT MAX(seq) m FROM qc_quiz_posts WHERE channel_id=%s", [channel_id])
+	return int((rows[0]["m"] or 0)) + 1 if rows else 1
+
+
+async def posted_seqs(channel_id):
+	rows = await db.fetchall(
+		"SELECT seq FROM qc_quiz_posts WHERE channel_id=%s AND seq IS NOT NULL", [channel_id])
+	return {r["seq"] for r in (rows or [])}
 
 
 async def get_post(post_id):
@@ -114,9 +129,30 @@ async def record_answer(post_id, user_id, choice_index, is_correct, answered_at,
 		[choice_index, (1 if is_correct else 0), answered_at, response_ms, post_id, user_id])
 
 
+async def record_answer_multi(post_id, user_id, choice_indices, is_correct, answered_at, response_ms):
+	"""Record a multi-select answer once (same answered_at IS NULL TOCTOU guard as
+	record_answer). Stores the chosen set as JSON in choice_indices."""
+	await db.execute(
+		"UPDATE qc_quiz_answers SET choice_indices=%s, is_correct=%s, answered_at=%s, response_ms=%s "
+		"WHERE post_id=%s AND user_id=%s AND answered_at IS NULL",
+		[json.dumps(sorted(int(i) for i in choice_indices)), (1 if is_correct else 0),
+		 answered_at, response_ms, post_id, user_id])
+
+
 async def answers_for_post(post_id):
 	rows = await db.fetchall(
 		"SELECT * FROM qc_quiz_answers WHERE post_id=%s AND answered_at IS NOT NULL", [post_id])
+	return rows or []
+
+
+async def week_answers_by_week(channel_id, week):
+	"""Answered rows for posts in a given SCHEDULE week — feeds scoring.tally. Robust to
+	calendar drift (keys off the schedule week, not a rolling 7-day window)."""
+	rows = await db.fetchall(
+		"SELECT a.user_id, a.nick, a.is_correct FROM qc_quiz_answers a "
+		"JOIN qc_quiz_posts p ON p.id=a.post_id "
+		"WHERE p.channel_id=%s AND p.week=%s AND a.answered_at IS NOT NULL",
+		[channel_id, week])
 	return rows or []
 
 
