@@ -70,6 +70,12 @@ Standalone analysis scripts (not imported by the bot at runtime):
 - `analyze_matches.py` — DB match analysis tool
 - `db_helpers.py` — Shared `create_pool()` and `parse_db_uri()` for utility scripts
 
+### Quiz generation — two sources, one schedule (`utils/quiz_gen/`, `utils/replay_quiz/`)
+The daily quiz draws from **two independent offline banks in one shared record schema**, interleaved by a single scheduler. The bot reads only the baked `data/quiz_schedule.json` at runtime (never the source DBs).
+- **Game bank** (`utils/quiz_gen/`, source=`game`): unit/civ questions from the `aoe2_matchup` sim DBs → `build_bank.py` → `data/quiz_bank.json`. Categories: combat, techgaps, stats, effects.
+- **Player bank** (`utils/replay_quiz/`, source=`player`): "which *player*…" questions from real match replays → `build_db.py` → `data/replay_quiz.db` → `build_questions.py` → `data/question_bank.json`, then `utils/quiz_gen/convert_player_bank.py` → `data/quiz_bank_player.json` (unified schema; options show player name + Elo only, metric values go in the reveal; answers independently re-derived from `replay_quiz.db`).
+- **Master scheduler**: `utils/quiz_gen/build_schedule.py` reads both banks and **alternates per week — day 1/3/5/7 player, day 2/4/6 game** (player first, keyed on day-within-week) → `data/quiz_schedule.json`. `sample_weeks.make_game_taker` + `player_sample.make_player_taker` give the two source-symmetric takers. Regenerate: `python convert_player_bank.py && python build_schedule.py` from `utils/quiz_gen/`. The `replay_quiz/` pipeline needs the `mgz` fork (`utils/replay_quiz/requirements.txt`) only to (re)parse replays — NOT for scheduling and NOT for the bot.
+
 ### Command registration pattern
 Slash commands are defined in `bot/context/slash/commands.py`. Each wraps a handler from `bot/commands/` via `run_slash()`, which handles interaction timing, context creation, and error formatting. Admin commands use subcommand groups defined in `bot/context/slash/groups.py`.
 
