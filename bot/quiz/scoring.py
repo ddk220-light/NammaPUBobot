@@ -22,6 +22,8 @@ def parse_custom_id(cid):
 			return ("reveal", int(parts[1]), None)
 		if len(parts) == 4 and parts[2] == "ans":
 			return ("answer", int(parts[1]), int(parts[3]))
+		if len(parts) == 3 and parts[2] == "msel":
+			return ("mselect", int(parts[1]), None)
 	except ValueError:
 		return None
 	return None
@@ -30,6 +32,12 @@ def parse_custom_id(cid):
 def grade(choice_index, correct_index):
 	"""True iff the chosen option is the correct one."""
 	return int(choice_index) == int(correct_index)
+
+
+def grade_multi(chosen_indices, correct_indices):
+	"""True iff the chosen option set EXACTLY equals the correct set (all-or-nothing).
+	Order- and duplicate-independent."""
+	return set(int(i) for i in chosen_indices) == set(int(i) for i in correct_indices)
 
 
 def iso_week_key(ts):

@@ -59,3 +59,27 @@ def test_leaderboard_due_gates_on_weekday_hour_and_dedup():
 	assert s.leaderboard_due(now_ts=at, dow=4, hour=9, last_leaderboard_ymd="2024-06-13") is False
 	assert s.leaderboard_due(now_ts=at, dow=7, hour=9, last_leaderboard_ymd="") is False  # wrong dow
 	assert s.leaderboard_due(now_ts=at, dow=4, hour=10, last_leaderboard_ymd="") is False  # before hour
+
+
+from bot.quiz.scoring import grade_multi, parse_custom_id
+
+
+def test_grade_multi_exact_match_is_correct():
+	assert grade_multi([2, 0], [0, 2]) is True          # order-independent
+	assert grade_multi([1], [1]) is True
+
+
+def test_grade_multi_subset_or_superset_is_wrong():
+	assert grade_multi([0], [0, 2]) is False             # missed one
+	assert grade_multi([0, 1, 2], [0, 2]) is False       # extra one
+	assert grade_multi([], [0]) is False                 # empty
+
+
+def test_grade_multi_dedups_repeats():
+	assert grade_multi([2, 2, 0], [0, 2]) is True
+
+
+def test_parse_custom_id_multiselect_route():
+	assert parse_custom_id("quiz:7:msel") == ("mselect", 7, None)
+	assert parse_custom_id("quiz:7:ans:2") == ("answer", 7, 2)
+	assert parse_custom_id("quiz:7:reveal") == ("reveal", 7, None)
