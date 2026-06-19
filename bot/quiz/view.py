@@ -11,12 +11,12 @@ def letter_options(options):
 	return [f"{_LETTERS[i]}. {opt}" for i, opt in enumerate(options)]
 
 
-def card_lines(category, difficulty, number, closes_in_h):
+def card_lines(category, difficulty, seq, week, day, closes_in_h):
 	return [
-		f"**Daily AoE2 quiz · #{number}**",
+		f"**Daily AoE2 quiz · Week {week} · Day {day} · #{seq}**",
 		f"Category: {category} · {difficulty}",
-		"Tap **Reveal & start** — a private 3:00 timer starts, then lock one answer.",
-		f"Closes in ~{int(closes_in_h)}h · weekly leaderboard on the configured day.",
+		"Tap **Reveal & start** — a private 3:00 timer starts, then lock your answer.",
+		f"Closes in ~{int(closes_in_h)}h · weekly leaderboard at the end of each week.",
 	]
 
 
@@ -44,12 +44,12 @@ def too_late_notice():
 	return "Your 3-minute window has passed — no answer recorded."
 
 
-def result_lines(prompt, options, correct_index, explanation, winners):
-	letters = letter_options(options)
+def result_lines(prompt, options, correct_indices, explanation, winners):
+	correct = ", ".join(_LETTERS[i] for i in sorted(correct_indices))
 	who = ", ".join(winners) if winners else "nobody"
 	return [
 		f"**{prompt}**",
-		f"Correct answer: **{letters[correct_index]}**",
+		f"Correct answer{'s' if len(correct_indices) > 1 else ''}: **{correct}**",
 		explanation,
 		f"Got it right: {who}",
 	]
