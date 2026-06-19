@@ -58,3 +58,31 @@ def fill_lines(entry):
 	if open_count:
 		lines.append(f"*+{open_count} open slot(s)*")
 	return lines, filled, playable
+
+
+# ── join / spectate deep links ───────────────────────────────────────────
+# AoE2:DE registers an `aoe2de://` protocol handler. `0/<id>` joins the lobby,
+# `1/<id>` spectates. Discord link buttons only allow http(s)/discord schemes, so
+# the button points at an https redirect on our own web server (bot/web.py
+# /join|/spectate/<id>) which bounces the browser to the aoe2de:// link.
+
+def deep_link(game_id, mode="join"):
+	"""The raw `aoe2de://` deep link for an AoE2 game id (None if no id). Used as the
+	redirect target and as a copy-paste fallback when no web base URL is configured."""
+	if game_id is None:
+		return None
+	return f"aoe2de://1/{game_id}" if mode == "spectate" else f"aoe2de://0/{game_id}"
+
+
+def join_url(base_url, game_id):
+	"""https URL of the join redirect, or None when the base URL / id is missing."""
+	if not base_url or game_id is None:
+		return None
+	return f"{base_url.rstrip('/')}/join/{game_id}"
+
+
+def spectate_url(base_url, game_id):
+	"""https URL of the spectate redirect, or None when the base URL / id is missing."""
+	if not base_url or game_id is None:
+		return None
+	return f"{base_url.rstrip('/')}/spectate/{game_id}"

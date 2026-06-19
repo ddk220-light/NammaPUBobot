@@ -734,6 +734,41 @@ async def handle_api_debug(request):
 	})
 
 
+# ─── AoE2 lobby join / spectate redirects ───
+
+def _aoe2_redirect(request, mode):
+	"""Bounce the browser to the `aoe2de://` deep link that launches AoE2:DE into a
+	lobby. Discord link buttons can't carry the aoe2de:// scheme, so the lobby buttons
+	point here (https) and we redirect. mode is 'join' (aoe2de://0/<id>) or 'spectate'
+	(aoe2de://1/<id>). The game id is validated as digits so the target is injection-safe."""
+	game_id = request.match_info.get('game_id', '')
+	if not game_id.isdigit():
+		return web.Response(status=404, text="invalid game id")
+	target = f"aoe2de://1/{game_id}" if mode == "spectate" else f"aoe2de://0/{game_id}"
+	what = "Spectating" if mode == "spectate" else "Joining"
+	html = (
+		'<!doctype html><html><head><meta charset="utf-8">'
+		'<meta name="viewport" content="width=device-width,initial-scale=1">'
+		f'<title>{what} AoE2 lobby…</title>'
+		f'<meta http-equiv="refresh" content="0;url={target}">'
+		f'<script>window.location.href = {target!r};</script></head>'
+		'<body style="font-family:sans-serif;text-align:center;padding-top:3em;background:#1b1d22;color:#eee">'
+		f'<h2>{what} the Age of Empires II lobby…</h2>'
+		f'<p>If the game didn\'t open, click <a style="color:#50e3c2" href="{target}">{target}</a></p>'
+		'<p style="color:#888">Steam and Age of Empires II: Definitive Edition must be running.</p>'
+		'</body></html>'
+	)
+	return web.Response(text=html, content_type='text/html')
+
+
+async def handle_lobby_join(request):
+	return _aoe2_redirect(request, "join")
+
+
+async def handle_lobby_spectate(request):
+	return _aoe2_redirect(request, "spectate")
+
+
 # ─── App setup ───
 
 def create_app():
@@ -741,6 +776,9 @@ def create_app():
 	app.router.add_get('/', handle_index)
 	# Health check (Railway healthcheckPath)
 	app.router.add_get('/health', handle_health)
+	# AoE2 lobby join / spectate deep-link redirects (clicked from Discord buttons)
+	app.router.add_get('/join/{game_id}', handle_lobby_join)
+	app.router.add_get('/spectate/{game_id}', handle_lobby_spectate)
 	# Auth
 	app.router.add_get('/auth/login', handle_auth_login)
 	app.router.add_get('/auth/callback', handle_auth_callback)

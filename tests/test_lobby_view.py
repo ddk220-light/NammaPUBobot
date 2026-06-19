@@ -64,3 +64,20 @@ def test_fill_lines_no_open_marker_when_full():
 	lines, filled, playable = view.fill_lines(st[MID])
 	assert filled == playable == 2
 	assert not any("open slot" in line for line in lines)
+
+
+def test_deep_link_join_and_spectate():
+	assert view.deep_link(16072058) == "aoe2de://0/16072058"
+	assert view.deep_link(16072058, mode="spectate") == "aoe2de://1/16072058"
+	assert view.deep_link(None) is None
+
+
+def test_join_and_spectate_urls():
+	assert view.join_url("https://x.up.railway.app", 123) == "https://x.up.railway.app/join/123"
+	assert view.spectate_url("https://x.up.railway.app/", 123) == "https://x.up.railway.app/spectate/123"
+
+
+def test_join_url_none_without_base_or_id():
+	assert view.join_url("", 123) is None
+	assert view.join_url("https://x", None) is None
+	assert view.spectate_url(None, 123) is None

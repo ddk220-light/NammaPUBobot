@@ -150,9 +150,20 @@ async def lobby2(ctx, gameid: str):
 		))
 	result = await completed.link_manual(ctx.qc.id, match.id, game_id, ctx.author.id)
 	if result == "exists":
-		await ctx.success(ctx.qc.gt("That game is already linked — I'll post the result when it finishes."))
+		msg = ctx.qc.gt("That game is already linked — I'll post the result when it finishes.")
 	else:
-		await ctx.success(ctx.qc.gt(
+		msg = ctx.qc.gt(
 			"Linked game `{gid}` to match #{mid}. I'll post the result for the losing captain to confirm "
 			"when the game ends."
-		).format(gid=game_id, mid=match.id))
+		).format(gid=game_id, mid=match.id)
+	# Post a public message with Join/Spectate buttons so teammates can click straight
+	# into the game (the buttons redirect to aoe2de://). Falls back to the plain
+	# confirmation + a copy-paste link when no web base URL is configured.
+	from bot.lobby import buttons
+	view = buttons.link_view(game_id)
+	if view is not None:
+		from core.utils import ok_embed
+		await ctx.reply(embed=ok_embed(msg), view=view)
+	else:
+		from bot.lobby import view as lview
+		await ctx.success(f"{msg}\n\n🎮 Join: `{lview.deep_link(game_id)}`")

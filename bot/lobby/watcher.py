@@ -22,7 +22,7 @@ from nextcord import Embed, Colour, DiscordException
 from core.console import log
 from core.database import db
 
-from . import reducer, socket, view, profile_map
+from . import buttons, reducer, socket, view, profile_map
 
 TARGET_NAME = "test123"     # the announce join key (v1: fixed, single active match)
 HARD_TTL = 90 * 60          # absolute cap on a watcher's life (seconds)
@@ -62,7 +62,8 @@ class LobbyWatcher:
 		if self.task:
 			self.task.cancel()
 		if status == "expired" and self.message and not self.linked:
-			await self._safe_edit(self._embed("Lobby tracking ended — no lobby detected.", greyed=True))
+			await self._safe_edit(
+				self._embed("Lobby tracking ended — no lobby detected.", greyed=True), view=None)
 
 	async def _guard(self):
 		try:
@@ -120,11 +121,11 @@ class LobbyWatcher:
 		if cand is None:
 			return
 		mid, entry = cand
-		await self._render(entry)
+		await self._render(mid, entry)
 		if not self.linked and view.link_ready(entry, self.match_size):
 			await self._confirm(mid, entry)
 
-	async def _render(self, entry):
+	async def _render(self, mid, entry):
 		lines, filled, playable = view.fill_lines(entry)
 		body = "\n".join(lines) or "*waiting for players…*"
 		title = f"AoE2 lobby `{TARGET_NAME}` — {filled}/{playable} joined"
@@ -134,11 +135,12 @@ class LobbyWatcher:
 		now = time.monotonic()
 		if self.message is not None and (now - self._last_edit) < EDIT_DEBOUNCE:
 			return
-		embed = self._embed(title, body=body)
+		vw, hint = self._join_links(mid)
+		embed = self._embed(title, body=self._with_hint(body, hint))
 		if self.message is None:
-			await self._safe_send(embed)
+			await self._safe_send(embed, view=vw)
 		else:
-			await self._safe_edit(embed)
+			await self._safe_edit(embed, view=vw)
 		self._last_text = rendered
 		self._last_edit = now
 
@@ -157,23 +159,26 @@ class LobbyWatcher:
 			log.error(f"LobbyWatcher({self.match.id}) profile-map heal failed: {e}")
 		await self._persist("filling")
 		lob = entry.get("lobby") or {}
-		body = "\n".join(view.fill_lines(entry)[0])
+		vw, hint = self._join_links(mid)
+		body = self._with_hint("\n".join(view.fill_lines(entry)[0]), hint)
 		await self._safe_edit(self._embed(
 			f"✅ Linked to match **#{self.match.id}** — {len(pids)} players",
 			body=body,
 			footer=f"game {mid} · {lob.get('mapName') or '?'} · {lob.get('server') or '?'}",
-		))
+		), view=vw)
 		log.info(f"LobbyWatcher({self.match.id}) linked game {mid} ({len(pids)} players).")
 
 	async def _on_launch(self):
 		if self._stopped:
 			return
 		await self._persist("in_progress")
+		# Game launched: the lobby is gone, so a Join button would be dead — keep only a
+		# Spectate button (cleared automatically when no base URL is configured).
 		await self._safe_edit(self._embed(
 			f"🎮 Game in progress — match **#{self.match.id}**",
 			body="The result will sync when the game ends.",
 			footer=f"game {self.game_id}",
-		))
+		), view=buttons.link_view(self.game_id, join=False, spectate=True))
 		log.info(f"LobbyWatcher({self.match.id}) game {self.game_id} launched.")
 		await self.stop()   # leave the in_progress row; Phase 3 polls completion
 
@@ -215,6 +220,19 @@ class LobbyWatcher:
 		except Exception as e:
 			log.error(f"LobbyWatcher({self.match.id}) persist failed: {e}")
 
+	# ── join / spectate buttons ──────────────────────────────────────────
+	def _join_links(self, game_id):
+		"""(view, hint) for a joinable lobby. `view` is the Join/Spectate link-button
+		View, or None; `hint` is the raw aoe2de:// link to append to the body as a
+		copy-paste fallback when no web base URL is configured (so the buttons are
+		absent)."""
+		vw = buttons.link_view(game_id)
+		return vw, (None if vw else view.deep_link(game_id))
+
+	@staticmethod
+	def _with_hint(body, hint):
+		return body + (f"\n\n🎮 Join: `{hint}`" if hint else "")
+
 	# ── discord helpers ──────────────────────────────────────────────────
 	def _embed(self, title, body=None, footer=None, greyed=False):
 		embed = Embed(
@@ -226,17 +244,17 @@ class LobbyWatcher:
 			embed.set_footer(text=footer)
 		return embed
 
-	async def _safe_send(self, embed):
+	async def _safe_send(self, embed, view=None):
 		try:
-			self.message = await self.channel.send(embed=embed)
+			self.message = await self.channel.send(embed=embed, view=view)
 		except DiscordException as e:
 			log.warning(f"LobbyWatcher({self.match.id}) send failed: {e}")
 
-	async def _safe_edit(self, embed):
+	async def _safe_edit(self, embed, view=None):
 		if not self.message:
 			return
 		try:
-			await self.message.edit(embed=embed)
+			await self.message.edit(embed=embed, view=view)
 		except DiscordException as e:
 			log.warning(f"LobbyWatcher({self.match.id}) edit failed: {e}")
 
