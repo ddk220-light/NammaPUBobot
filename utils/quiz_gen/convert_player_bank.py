@@ -35,10 +35,14 @@ def _difficulty(closeness):
 
 def _explain(order, answer, refs):
     field = " · ".join(f"{o['identity']} {o['value']}" for o in order)
-    line = f"**{answer}** is the answer. Values — {field}."
+    line = f"**{answer}** is the answer. Career averages — {field}."
     if refs:
         g = refs[0]
-        line += f" Top game: {g['identity']} {g['value']} ({g['civ']}, #{g['match_id']})."
+        # The reference is the all-time single-game record for this stat (any player, for
+        # verification via the replay), NOT one of the four options — label it as such so
+        # naming a non-option player in the reveal isn't confusing.
+        line += (f" Single-game record for this stat: {g['identity']} {g['value']} "
+                 f"({g['civ']}, match #{g['match_id']}).")
     return line
 
 
