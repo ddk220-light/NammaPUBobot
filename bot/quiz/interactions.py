@@ -15,7 +15,7 @@ from core.console import log
 
 from . import store
 from .embeds import answer_view, question_embed
-from .scoring import grade, parse_custom_id
+from .scoring import grade, grade_multi, parse_custom_id
 from .view import already_answered_notice, closed_notice, too_late_notice
 
 
@@ -40,7 +40,10 @@ async def on_quiz_interaction(interaction):
 		now = int(time.time())
 		if kind == "reveal":
 			return await _handle_reveal(interaction, post, now)
-		return await _handle_answer(interaction, post, choice, now)
+		if kind == "mselect":
+			values = [int(v) for v in (interaction.data or {}).get("values", [])]
+			return await _handle_answer(interaction, post, values, now, multi=True)
+		return await _handle_answer(interaction, post, choice, now, multi=False)
 	except Exception as e:
 		log.error(f"quiz interaction error: {e}\n{traceback.format_exc()}")
 		# Never fail silently — give the user a hint if we have not responded yet.
@@ -68,12 +71,14 @@ async def _handle_reveal(interaction, post, now):
 	seconds_left = max(0, int(row.get("deadline_at") or deadline) - now)
 	if seconds_left == 0:
 		return await _eph(interaction, too_late_notice())
+	multi = post["category"] == "techgaps"
+	view = answer_view(post["id"], options, multi)
 	await interaction.response.send_message(
 		embed=question_embed(post["prompt"], options, seconds_left),
-		view=answer_view(post["id"], len(options)), ephemeral=True)
+		view=view, ephemeral=True)
 
 
-async def _handle_answer(interaction, post, choice, now):
+async def _handle_answer(interaction, post, choice, now, multi):
 	row = await store.get_answer(post["id"], interaction.user.id)
 	if not row:
 		return await _eph(interaction, "Tap **Reveal & start** first.")
@@ -81,10 +86,15 @@ async def _handle_answer(interaction, post, choice, now):
 		return await _eph(interaction, already_answered_notice())
 	if post["status"] != "open" or now > int(row["deadline_at"]):
 		return await _eph(interaction, too_late_notice())
-	is_correct = grade(choice, post["correct_index"])
 	response_ms = max(0, (now - int(row["revealed_at"])) * 1000)
-	await store.record_answer(post["id"], interaction.user.id, choice, is_correct, now, response_ms)
-	await _eph(interaction, "Locked in. The answer is revealed when the quiz closes.")
+	if multi:
+		correct_set = json.loads(post["correct_indices"])
+		is_correct = grade_multi(choice, correct_set)
+		await store.record_answer_multi(post["id"], interaction.user.id, choice, is_correct, now, response_ms)
+	else:
+		is_correct = grade(choice, post["correct_index"])
+		await store.record_answer(post["id"], interaction.user.id, choice, is_correct, now, response_ms)
+	await _eph(interaction, "Locked in. The answer is revealed when the next quiz posts.")
 
 
 def _nick(user):
