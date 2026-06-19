@@ -10,7 +10,8 @@ spec.loader.exec_module(ps)
 
 def _q(i, metric, answer, closeness=0.8, cat="Villagers"):
     return dict(id=f"player_{i:05d}", category=cat, question_type="top4", grouping="best",
-                difficulty="medium", prompt="Who?", options=["a", "b", "c", "d"],
+                difficulty="medium", prompt="Who?",
+                options=[f"{i}a", f"{i}b", f"{i}c", f"{i}d"],   # distinct option sets
                 correct_indices=[0], correct_index=0, multi=False, explanation="x",
                 source="player", score=closeness,
                 meta=dict(metric_id=metric, answer=answer, closeness=closeness))
@@ -36,6 +37,15 @@ def test_theme_filters_to_its_categories():
     take, _ = ps.make_player_taker(bank)
     got = take("Buildings")
     assert got is not None and got["category"] == "Buildings"
+
+
+def test_metric_and_answer_may_repeat_across_weeks_not_within():
+    # same metric/answer is blocked within a week but allowed once the week advances
+    bank = [_q(0, "m1", "alice"), _q(1, "m1", "alice")]
+    take, _ = ps.make_player_taker(bank)
+    assert take(week=1) is not None
+    assert take(week=1) is None              # m1/alice already used this week
+    assert take(week=2) is not None          # new week -> reusable
 
 
 def test_relaxed_fallback_used_when_band_excludes_everything():

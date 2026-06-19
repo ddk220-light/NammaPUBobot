@@ -42,7 +42,7 @@ def build(game_bank, player_bank, weeks=26, blocklist=()):
             if day % 2 == 1:                                 # player day
                 theme = PLAYER_THEMES[pi % len(PLAYER_THEMES)]
                 pi += 1
-                q = p_take(theme) or p_take()                # fall back to any theme
+                q = p_take(theme, week=wi) or p_take(None, week=wi)   # fall back to any theme
                 src = "player"
             else:                                            # game day
                 cat = GAME_SLOTS[gi % len(GAME_SLOTS)]
@@ -54,7 +54,10 @@ def build(game_bank, player_bank, weeks=26, blocklist=()):
             if not q:
                 continue
             seq += 1
-            out.append({**q, "source": q.get("source", src), "seq": seq,
+            # `source` here is the game/player TAG (the schedule's notion of source); a
+            # game bank entry's own `source` is a data-provenance string, so set it
+            # explicitly rather than inheriting it via {**q}.
+            out.append({**q, "source": src, "seq": seq,
                         "week": wi, "day": day, "weekday": _WEEKDAY[day - 1]})
     return out
 
