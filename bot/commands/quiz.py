@@ -12,12 +12,16 @@ _INT_FIELDS = ("quiz_hour", "answer_window", "open_window", "leaderboard_dow", "
 
 
 async def quiz_leaderboard(ctx):
-	from bot.quiz import embeds, scoring, store
+	from bot.quiz import embeds, schedule, scoring, store
 	cfg = await store.get_config()
 	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id
-	now = int(time.time())
-	rows = await store.week_answers(channel_id, now - 7 * 86400, now)
-	await ctx.reply(embed=embeds.leaderboard_embed(scoring.tally(rows), "this week"))
+	# Show the current SCHEDULE week (the latest week with any posts) so the on-demand
+	# board matches the auto-posted "Week N" one rather than a rolling 7-day window.
+	posted = await store.posted_seqs(channel_id)
+	weeks = [q["week"] for q in schedule.load() if q["seq"] in posted]
+	week = max(weeks) if weeks else 1
+	rows = await store.week_answers_by_week(channel_id, week)
+	await ctx.reply(embed=embeds.leaderboard_embed(scoring.tally(rows), f"Week {week} (so far)"))
 
 
 async def quiz_enable(ctx, channel, hour=9):
@@ -91,7 +95,6 @@ async def quiz_status(ctx):
 
 async def quiz_skip(ctx):
 	ctx.check_perms(ctx.Perms.ADMIN)
-	import time
 	from bot.quiz import schedule, store
 	cfg = await store.get_config()
 	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id

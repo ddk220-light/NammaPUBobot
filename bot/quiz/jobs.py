@@ -144,24 +144,26 @@ class QuizJobs:
 				log.error(f"Quiz reveal-previous({prev.get('id')}) failed: {e}")
 
 	async def _maybe_week_leaderboard(self, channel_id):
-		"""If the highest fully-posted schedule week hasn't had its leaderboard posted,
-		post it now (keyed to schedule weeks -> robust to calendar drift)."""
+		"""Post the leaderboard for EVERY completed schedule week not yet posted. Keyed to
+		schedule weeks -> robust to calendar drift AND to several weeks completing in one
+		tick (which happens under the fast test cadence, so no week is silently skipped)."""
 		posted = await store.posted_seqs(channel_id)
 		done_weeks = [w for w in sorted({q["week"] for q in _SCHEDULE})
 					  if schedule.week_is_complete(_SCHEDULE, w, posted)]
 		if not done_weeks:
 			return
-		week = done_weeks[-1]
 		cfg = await store.get_config(channel_id)
-		if int((cfg or {}).get("last_leaderboard_week") or 0) >= week:
-			return
-		await store.upsert_config(channel_id, last_leaderboard_week=week)
-		rows = await store.week_answers_by_week(channel_id, week)
+		last = int((cfg or {}).get("last_leaderboard_week") or 0)
 		from core.client import dc
 		from . import embeds
-		channel = dc.get_channel(channel_id)
-		if channel:
-			await channel.send(embed=embeds.leaderboard_embed(scoring.tally(rows), f"Week {week}"))
+		for week in done_weeks:
+			if week <= last:
+				continue
+			await store.upsert_config(channel_id, last_leaderboard_week=week)
+			rows = await store.week_answers_by_week(channel_id, week)
+			channel = dc.get_channel(channel_id)
+			if channel:
+				await channel.send(embed=embeds.leaderboard_embed(scoring.tally(rows), f"Week {week}"))
 
 	async def _close_due(self, now):
 		"""Fallback resolver: any still-open post past its closes_at gets an in-place
