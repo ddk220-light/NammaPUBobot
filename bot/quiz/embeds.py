@@ -7,10 +7,10 @@ import nextcord
 from . import view as _v
 
 
-def card_embed(category, difficulty, seq, week, day, closes_in_h):
+def card_embed(category, difficulty, seq, week, day, closes_in_h, source=None):
 	return nextcord.Embed(
 		title="Daily AoE2 quiz",
-		description="\n".join(_v.card_lines(category, difficulty, seq, week, day, closes_in_h)),
+		description="\n".join(_v.card_lines(category, difficulty, seq, week, day, closes_in_h, source)),
 		colour=nextcord.Colour.blurple())
 
 

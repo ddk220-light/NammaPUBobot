@@ -54,7 +54,7 @@ async def create_post(channel_id, q, opened_at, closes_at):
 		correct_index=q.get("correct_index"),
 		correct_indices=json.dumps(q["correct_indices"]),
 		explanation=q["explanation"], opened_at=opened_at, closes_at=closes_at, status="open",
-		seq=q["seq"], week=q["week"], day=q["day"]))
+		seq=q["seq"], week=q["week"], day=q["day"], source=q.get("source")))
 
 
 async def set_message_id(post_id, message_id):

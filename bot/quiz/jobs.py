@@ -86,7 +86,7 @@ class QuizJobs:
 		post_id = await store.create_post(channel_id, q, now, now + open_window)
 		msg = await channel.send(
 			embed=embeds.card_embed(q["category"], q["difficulty"], q["seq"], q["week"],
-									q["day"], open_window / 3600),
+									q["day"], open_window / 3600, source=q.get("source")),
 			view=embeds.card_view(post_id))
 		await store.set_message_id(post_id, msg.id)
 		await store.upsert_config(channel_id, last_post_ymd=scoring._ymd(now), last_post_at=now)

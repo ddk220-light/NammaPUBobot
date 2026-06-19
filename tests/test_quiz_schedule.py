@@ -19,12 +19,16 @@ def test_draw_respects_blocklist():
     ids = [q["id"] for wk in weeks for q in wk if q]
     assert victim not in ids
 
-def test_stamp_assigns_sequential_numbers():
-    weeks = [[{"id": "a"}, {"id": "b"}], [{"id": "c"}, {"id": "d"}]]
-    flat = build_schedule.stamp(weeks)
-    assert [e["seq"] for e in flat] == [1, 2, 3, 4]
-    assert [e["week"] for e in flat] == [1, 1, 2, 2]
-    assert [e["day"] for e in flat] == [1, 2, 1, 2]
+def test_build_stamps_sequential_numbers_and_alternates():
+    # the unified scheduler stamps seq/week/day inline (replacing the old stamp()).
+    game = [{"id": f"combat_{i:05d}", "category": "combat", "options": ["a", "b", "c", "d"],
+             "correct_indices": [0], "score": 0.9, "meta": {"opp": f"o{i}"}} for i in range(20)]
+    player = [{"id": f"player_{i:05d}", "category": "Villagers", "options": ["w", "x", "y", "z"],
+               "correct_indices": [1], "source": "player", "score": 0.8,
+               "meta": {"metric_id": f"m{i}", "answer": f"p{i}", "closeness": 0.8}} for i in range(20)]
+    flat = build_schedule.build(game, player, weeks=1)
+    assert [e["seq"] for e in flat] == list(range(1, len(flat) + 1))
+    assert flat[0]["source"] == "player"               # week starts on a player question
 
 
 from bot.quiz import schedule as sched

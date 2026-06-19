@@ -57,3 +57,16 @@ def test_result_lines_render_multiple_correct_letters():
 	out = "\n".join(result_lines("Q?", ["a", "b", "c", "d"], [0, 2], "because", ["Ann"]))
 	assert "A, C" in out
 	assert "because" in out and "Ann" in out
+
+
+def test_card_lines_shows_source_tag():
+	game = "\n".join(card_lines("combat", "hard", 1, 1, 2, 24, source="game"))
+	player = "\n".join(card_lines("Villagers", "medium", 2, 1, 1, 24, source="player"))
+	assert "Game" in game and "combat" in game
+	assert "Player" in player and "Villagers" in player
+
+
+def test_card_lines_without_source_is_backcompat():
+	# omitting source (existing callers) must still render, with no tag
+	out = "\n".join(card_lines("combat", "hard", 5, 1, 1, 24))
+	assert "#5" in out and "Game" not in out and "Player" not in out

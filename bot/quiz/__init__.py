@@ -26,6 +26,7 @@ db.ensure_table(dict(
 		dict(cname="seq", ctype=db.types.int, notnull=False),               # global question number
 		dict(cname="week", ctype=db.types.int, notnull=False),
 		dict(cname="day", ctype=db.types.int, notnull=False),               # 1=Mon .. 7=Sun (schedule day)
+		dict(cname="source", ctype=db.types.str, notnull=False),            # "game" | "player" quiz source
 		dict(cname="explanation", ctype=db.types.text),
 		dict(cname="opened_at", ctype=db.types.int),
 		dict(cname="closes_at", ctype=db.types.int),
