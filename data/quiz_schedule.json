@@ -1,0 +1,2919 @@
+[
+  {
+    "id": "combat_00010",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which archer unique unit survives the fight with the most HP remaining against a Aztecs Champion?",
+    "options": [
+      "Elite Camel Archer (Berbers)",
+      "Elite Longbowman (Britons)",
+      "Elite War Wagon (Koreans)",
+      "Elite Chu Ko Nu (Chinese)"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Chu Ko Nu (Chinese) survives the fight with the most HP remaining vs a Aztecs Champion (hp_pct=0.97).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Aztecs/champion",
+    "score": 0.9794,
+    "meta": {
+      "values": {
+        "Elite Camel Archer (Berbers)": 0.941,
+        "Elite War Wagon (Koreans)": 0.949,
+        "Elite Longbowman (Britons)": 0.953,
+        "Elite Chu Ko Nu (Chinese)": 0.975
+      },
+      "cluster": "ranged_uu",
+      "opp": "Champion",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9794,
+    "seq": 1,
+    "week": 1,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00000",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Leather Archer Armor AND Thumb Ring for the Elite Skirmisher line?",
+    "options": [
+      "Burmese",
+      "Poles",
+      "Gurjaras",
+      "Goths"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Burmese lack both Leather Archer Armor and Thumb Ring on the Elite Skirmisher line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.9882,
+    "meta": {
+      "values": {
+        "Burmese": "no Leather Archer Armor, no Thumb Ring",
+        "Poles": "has both",
+        "Gurjaras": "has both",
+        "Goths": "no Thumb Ring"
+      }
+    },
+    "taste_score": 1.0376,
+    "seq": 2,
+    "week": 1,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00011",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which infantry unique unit survives the fight with the most HP remaining against a Slavs Halberdier?",
+    "options": [
+      "Elite Karambit Warrior (Malay)",
+      "Elite Kamayuk (Incas)",
+      "Elite Ghulam (Hindustanis)",
+      "Elite Shotel Warrior (Ethiopians)"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Karambit Warrior (Malay) survives the fight with the most HP remaining vs a Slavs Halberdier (hp_pct=0.73).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Slavs/halberdier",
+    "score": 0.9683,
+    "meta": {
+      "values": {
+        "Elite Shotel Warrior (Ethiopians)": 0.691,
+        "Elite Ghulam (Hindustanis)": 0.701,
+        "Elite Kamayuk (Incas)": 0.71,
+        "Elite Karambit Warrior (Malay)": 0.729
+      },
+      "cluster": "infantry_uu",
+      "opp": "Halberdier",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9683,
+    "seq": 3,
+    "week": 1,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00013",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Champions, which has the highest pierce armor?",
+    "options": [
+      "Wu Champion",
+      "Turks Champion",
+      "Vietnamese Champion",
+      "Armenians Champion"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Armenians Champion has the highest pierce armor (6); next is Turks Champion (5).",
+    "source": "ref_units.final_pierce_armor across civs",
+    "score": 0.88,
+    "meta": {
+      "values": {
+        "Turks Champion": 5.0,
+        "Vietnamese Champion": 5.0,
+        "Wu Champion": 5.0,
+        "Armenians Champion": 6.0
+      }
+    },
+    "taste_score": 0.9614,
+    "seq": 4,
+    "week": 1,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00014",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit survives the fight with the most HP remaining against a Britons Arbalester?",
+    "options": [
+      "Elite Boyar (Slavs)",
+      "Elite Leitis (Lithuanians)",
+      "Elite Keshik (Tatars)",
+      "Elite Konnik (Bulgarians)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Keshik (Tatars) survives the fight with the most HP remaining vs a Britons Arbalester (hp_pct=0.83).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Britons/arbalester",
+    "score": 0.9571,
+    "meta": {
+      "values": {
+        "Elite Konnik (Bulgarians)": 0.772,
+        "Elite Leitis (Lithuanians)": 0.791,
+        "Elite Boyar (Slavs)": 0.812,
+        "Elite Keshik (Tatars)": 0.832
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Arbalester",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9571,
+    "seq": 5,
+    "week": 1,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "effects_00129",
+    "category": "effects",
+    "question_type": "projectiles",
+    "grouping": "effect_value",
+    "difficulty": "hard",
+    "prompt": "Which of these units fires the most projectiles in a single attack?",
+    "options": [
+      "Elite Hussite Wagon",
+      "Elite Chu Ko Nu",
+      "Dromon",
+      "Thirisadai"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Hussite Wagon fires the most projectiles in a single attack (6); next is Dromon (5).",
+    "source": "ref_projectiles.primary projectile_count",
+    "score": 0.66,
+    "meta": {
+      "values": {
+        "Dromon": 5,
+        "Elite Chu Ko Nu": 5,
+        "Thirisadai": 5,
+        "Elite Hussite Wagon": 6
+      },
+      "effect": "projectiles"
+    },
+    "taste_score": 0.66,
+    "seq": 6,
+    "week": 1,
+    "day": 6,
+    "weekday": "Sat"
+  },
+  {
+    "id": "techgaps_00001",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Blast Furnace AND Iron casting for the Champion (militia line)?",
+    "options": [
+      "Teutons",
+      "Italians",
+      "Shu",
+      "Koreans"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Shu lack both Blast Furnace and Iron casting on the Champion line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.9838,
+    "meta": {
+      "values": {
+        "Shu": "no Blast Furnace, no Iron casting",
+        "Italians": "has both",
+        "Teutons": "has both",
+        "Koreans": "no Blast Furnace"
+      }
+    },
+    "taste_score": 1.033,
+    "seq": 7,
+    "week": 1,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00016",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit survives the fight with the most HP remaining against a Tatars Heavy Cavalry Archer?",
+    "options": [
+      "Elite War Elephant (Persians)",
+      "Elite Leitis (Lithuanians)",
+      "Elite Magyar Huszar (Magyars)",
+      "Elite Shrivamsha Rider (Gurjaras)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Magyar Huszar (Magyars) survives the fight with the most HP remaining vs a Tatars Heavy Cavalry Archer (hp_pct=0.41).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Tatars/heavy_cav_archer",
+    "score": 0.9531,
+    "meta": {
+      "values": {
+        "Elite War Elephant (Persians)": 0.377,
+        "Elite Shrivamsha Rider (Gurjaras)": 0.387,
+        "Elite Leitis (Lithuanians)": 0.392,
+        "Elite Magyar Huszar (Magyars)": 0.409
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Heavy Cavalry Archer",
+      "scale": "3k"
+    },
+    "taste_score": 0.9531,
+    "seq": 8,
+    "week": 2,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00004",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Blast Furnace AND Plate Barding Armor for the Hussar (scout line)?",
+    "options": [
+      "Persians",
+      "Saracens",
+      "Koreans",
+      "Berbers"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Koreans lack both Blast Furnace and Plate Barding Armor on the Hussar line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.9786,
+    "meta": {
+      "values": {
+        "Koreans": "no Blast Furnace, no Plate Barding Armor",
+        "Persians": "has both",
+        "Berbers": "has both",
+        "Saracens": "has both"
+      }
+    },
+    "taste_score": 1.0275,
+    "seq": 9,
+    "week": 2,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00019",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit survives the fight with the most HP remaining against a Turks Hand Cannoneer?",
+    "options": [
+      "Elite Tarkan (Huns)",
+      "Elite Coustillier (Burgundians)",
+      "Elite Shrivamsha Rider (Gurjaras)",
+      "Elite Iron Pagoda (Jurchens)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Shrivamsha Rider (Gurjaras) survives the fight with the most HP remaining vs a Turks Hand Cannoneer (hp_pct=0.77).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Turks/hand_cannoneer",
+    "score": 0.9382,
+    "meta": {
+      "values": {
+        "Elite Coustillier (Burgundians)": 0.694,
+        "Elite Iron Pagoda (Jurchens)": 0.697,
+        "Elite Tarkan (Huns)": 0.711,
+        "Elite Shrivamsha Rider (Gurjaras)": 0.773
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9382,
+    "seq": 10,
+    "week": 2,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00038",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Cavaliers, which has the highest melee armor?",
+    "options": [
+      "Turks Cavalier",
+      "Tatars Cavalier",
+      "Vietnamese Cavalier",
+      "Sicilians Cavalier"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Sicilians Cavalier has the highest melee armor (6); next is Tatars Cavalier (5).",
+    "source": "ref_units.final_melee_armor across civs",
+    "score": 0.8,
+    "meta": {
+      "values": {
+        "Tatars Cavalier": 5.0,
+        "Turks Cavalier": 5.0,
+        "Vietnamese Cavalier": 5.0,
+        "Sicilians Cavalier": 6.0
+      }
+    },
+    "taste_score": 0.874,
+    "seq": 11,
+    "week": 2,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00020",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which infantry unique unit survives the fight with the most HP remaining against a Aztecs Elite Eagle Warrior?",
+    "options": [
+      "Elite Berserk (Vikings)",
+      "Elite Woad Raider (Celts)",
+      "Elite Urumi Swordsman (Dravidians)",
+      "Elite Samurai (Japanese)"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Samurai (Japanese) survives the fight with the most HP remaining vs a Aztecs Elite Eagle Warrior (hp_pct=0.74).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Aztecs/elite_eagle",
+    "score": 0.9359,
+    "meta": {
+      "values": {
+        "Elite Woad Raider (Celts)": 0.665,
+        "Elite Berserk (Vikings)": 0.687,
+        "Elite Urumi Swordsman (Dravidians)": 0.693,
+        "Elite Samurai (Japanese)": 0.745
+      },
+      "cluster": "infantry_uu",
+      "opp": "Elite Eagle Warrior",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9359,
+    "seq": 12,
+    "week": 2,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "effects_00265",
+    "category": "effects",
+    "question_type": "trample",
+    "grouping": "effect_value",
+    "difficulty": "medium",
+    "prompt": "Which of these units has the largest trample (area-damage) radius?",
+    "options": [
+      "Champion",
+      "Halberdier",
+      "Elite Ibirapema Warrior",
+      "Elite Urumi Swordsman"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Urumi Swordsman has the largest trample (area-damage) radius (0.75); next is Champion (0.5).",
+    "source": "ref_special_effects.trample_radius",
+    "score": 0.56,
+    "meta": {
+      "values": {
+        "Champion": 0.5,
+        "Halberdier": 0.5,
+        "Elite Ibirapema Warrior": 0.5,
+        "Elite Urumi Swordsman": 0.75
+      },
+      "effect": "trample"
+    },
+    "taste_score": 0.476,
+    "seq": 13,
+    "week": 2,
+    "day": 6,
+    "weekday": "Sat"
+  },
+  {
+    "id": "techgaps_00009",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Arson AND Blast Furnace for the Pikeman (spear line)?",
+    "options": [
+      "Saracens",
+      "Muisca",
+      "Aztecs",
+      "Malians"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Muisca lack both Arson and Blast Furnace on the Pikeman line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.9455,
+    "meta": {
+      "values": {
+        "Muisca": "no Arson, no Blast Furnace",
+        "Saracens": "has both",
+        "Aztecs": "has both",
+        "Malians": "no Blast Furnace"
+      }
+    },
+    "taste_score": 0.9928,
+    "seq": 14,
+    "week": 2,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00054",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which archer unique unit survives the fight with the most HP remaining against a Teutons Halberdier?",
+    "options": [
+      "Elite Kipchak (Cumans)",
+      "Elite Camel Archer (Berbers)",
+      "Elite Genoese Crossbowman (Italians)",
+      "Elite Genitour (Berbers)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Genoese Crossbowman (Italians) survives the fight with the most HP remaining vs a Teutons Halberdier (hp_pct=0.97).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Teutons/halberdier",
+    "score": 0.8265,
+    "meta": {
+      "values": {
+        "Elite Kipchak (Cumans)": 0.908,
+        "Elite Camel Archer (Berbers)": 0.915,
+        "Elite Genitour (Berbers)": 0.948,
+        "Elite Genoese Crossbowman (Italians)": 0.973
+      },
+      "cluster": "ranged_uu",
+      "opp": "Halberdier",
+      "scale": "3k"
+    },
+    "taste_score": 0.8265,
+    "seq": 15,
+    "week": 3,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00042",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Chain Barding Armor AND Plate Barding Armor for the Light Cavalry (scout line)?",
+    "options": [
+      "Britons",
+      "Armenians",
+      "Malay",
+      "Chinese"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Malay lack both Chain Barding Armor and Plate Barding Armor on the Light Cavalry line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.8292,
+    "meta": {
+      "values": {
+        "Malay": "no Chain Barding Armor, no Plate Barding Armor",
+        "Britons": "has both",
+        "Armenians": "no Plate Barding Armor",
+        "Chinese": "has both"
+      }
+    },
+    "taste_score": 0.8707,
+    "seq": 16,
+    "week": 3,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00104",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which gunpowder unique unit survives the fight with the most HP remaining against a Aztecs Champion?",
+    "options": [
+      "Elite Hussite Wagon (Bohemians)",
+      "Elite Janissary (Turks)",
+      "Elite Organ Gun (Portuguese)",
+      "Elite Conquistador (Spanish)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Organ Gun (Portuguese) survives the fight with the most HP remaining vs a Aztecs Champion (hp_pct=1.0).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Aztecs/champion",
+    "score": 0.6933,
+    "meta": {
+      "values": {
+        "Elite Janissary (Turks)": 0.933,
+        "Elite Hussite Wagon (Bohemians)": 0.948,
+        "Elite Conquistador (Spanish)": 0.962,
+        "Elite Organ Gun (Portuguese)": 1.0
+      },
+      "cluster": "gunpowder_uu",
+      "opp": "Champion",
+      "scale": "30v30"
+    },
+    "taste_score": 0.6933,
+    "seq": 17,
+    "week": 3,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00039",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Hussars, which has the highest pierce armor?",
+    "options": [
+      "Slavs Hussar",
+      "Spanish Hussar",
+      "Tatars Hussar",
+      "Wu Hussar"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Tatars Hussar has the highest pierce armor (7); next is Slavs Hussar (6).",
+    "source": "ref_units.final_pierce_armor across civs",
+    "score": 0.8,
+    "meta": {
+      "values": {
+        "Slavs Hussar": 6.0,
+        "Spanish Hussar": 6.0,
+        "Wu Hussar": 6.0,
+        "Tatars Hussar": 7.0
+      }
+    },
+    "taste_score": 0.874,
+    "seq": 18,
+    "week": 3,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00148",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "medium",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which archer unique unit wins while losing the least resources against a Britons Arbalester?",
+    "options": [
+      "Elite Kipchak (Cumans)",
+      "Elite Genoese Crossbowman (Italians)",
+      "Elite Chu Ko Nu (Chinese)",
+      "Elite Mangudai (Mongols)"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Kipchak (Cumans) wins while losing the least resources vs a Britons Arbalester (value_lost=1131.09).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Britons/arbalester",
+    "score": 0.6374,
+    "meta": {
+      "values": {
+        "Elite Kipchak (Cumans)": 1131.092,
+        "Elite Chu Ko Nu (Chinese)": 1173.69,
+        "Elite Genoese Crossbowman (Italians)": 1339.56,
+        "Elite Mangudai (Mongols)": 1346.4
+      },
+      "cluster": "ranged_uu",
+      "opp": "Arbalester",
+      "scale": "30v30"
+    },
+    "taste_score": 0.6374,
+    "seq": 19,
+    "week": 3,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "effects_00223",
+    "category": "effects",
+    "question_type": "projectiles",
+    "grouping": "effect_value",
+    "difficulty": "medium",
+    "prompt": "Which of these units fires the most projectiles in a single attack?",
+    "options": [
+      "Elite Kipchak",
+      "War Hulk",
+      "Carrack",
+      "Elite Turtle Ship"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Kipchak fires the most projectiles in a single attack (4); next is Carrack (3).",
+    "source": "ref_projectiles.primary projectile_count",
+    "score": 0.61,
+    "meta": {
+      "values": {
+        "Carrack": 3,
+        "War Hulk": 3,
+        "Elite Turtle Ship": 3,
+        "Elite Kipchak": 4
+      },
+      "effect": "projectiles"
+    },
+    "taste_score": 0.5185,
+    "seq": 20,
+    "week": 3,
+    "day": 6,
+    "weekday": "Sat"
+  },
+  {
+    "id": "techgaps_00044",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Bloodlines AND Plate Barding Armor for the Heavy Camel Rider line?",
+    "options": [
+      "Saracens",
+      "Turks",
+      "Byzantines",
+      "Ethiopians"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Ethiopians lack both Bloodlines and Plate Barding Armor on the Heavy Camel Rider line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.8121,
+    "meta": {
+      "values": {
+        "Ethiopians": "no Bloodlines, no Plate Barding Armor",
+        "Saracens": "has both",
+        "Turks": "has both",
+        "Byzantines": "no Bloodlines"
+      }
+    },
+    "taste_score": 0.8527,
+    "seq": 21,
+    "week": 3,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00311",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which archer unique unit survives the fight with the most HP remaining against a Gurjaras Heavy Camel Rider?",
+    "options": [
+      "Elite Plumed Archer (Mayans)",
+      "Elite Longbowman (Britons)",
+      "Elite Camel Archer (Berbers)",
+      "Elite War Wagon (Koreans)"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Elite Longbowman (Britons) survives the fight with the most HP remaining vs a Gurjaras Heavy Camel Rider (hp_pct=0.4).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Gurjaras/heavy_camel",
+    "score": 0.9218,
+    "meta": {
+      "values": {
+        "Elite War Wagon (Koreans)": 0.345,
+        "Elite Camel Archer (Berbers)": 0.369,
+        "Elite Plumed Archer (Mayans)": 0.372,
+        "Elite Longbowman (Britons)": 0.397
+      },
+      "cluster": "ranged_uu",
+      "opp": "Heavy Camel Rider",
+      "scale": "30v30"
+    },
+    "taste_score": 0.4148,
+    "seq": 22,
+    "week": 4,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00049",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Blast Furnace AND Gambesons for the Two-Handed Swordsman (militia line)?",
+    "options": [
+      "Gurjaras",
+      "Tatars",
+      "Mayans",
+      "Wei"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Gurjaras lack both Blast Furnace and Gambesons on the Two-Handed Swordsman line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.8,
+    "meta": {
+      "values": {
+        "Gurjaras": "no Blast Furnace, no Gambesons",
+        "Tatars": "no Gambesons",
+        "Mayans": "no Gambesons",
+        "Wei": "no Gambesons"
+      }
+    },
+    "taste_score": 0.84,
+    "seq": 23,
+    "week": 4,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00017",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Turks Hand Cannoneer?",
+    "options": [
+      "Elite Boyar (Slavs)",
+      "Elite Magyar Huszar (Magyars)",
+      "Elite War Elephant (Persians)",
+      "Elite Konnik (Bulgarians)"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Elite Magyar Huszar (Magyars) wins while losing the least resources vs a Turks Hand Cannoneer (value_lost=1693.11).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Turks/hand_cannoneer",
+    "score": 0.9397,
+    "meta": {
+      "values": {
+        "Elite Magyar Huszar (Magyars)": 1693.114,
+        "Elite War Elephant (Persians)": 1832.984,
+        "Elite Boyar (Slavs)": 1837.0,
+        "Elite Konnik (Bulgarians)": 1882.179
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9397,
+    "seq": 24,
+    "week": 4,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00040",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Hand Cannoneers, which has the highest pierce armor?",
+    "options": [
+      "Turks Hand Cannoneer",
+      "Hindustanis Hand Cannoneer",
+      "Teutons Hand Cannoneer",
+      "Tatars Hand Cannoneer"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Hindustanis Hand Cannoneer has the highest pierce armor (5); next is Tatars Hand Cannoneer (4).",
+    "source": "ref_units.final_pierce_armor across civs",
+    "score": 0.8,
+    "meta": {
+      "values": {
+        "Tatars Hand Cannoneer": 4.0,
+        "Teutons Hand Cannoneer": 4.0,
+        "Turks Hand Cannoneer": 4.0,
+        "Hindustanis Hand Cannoneer": 5.0
+      }
+    },
+    "taste_score": 0.874,
+    "seq": 25,
+    "week": 4,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00018",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit survives the fight with the most HP remaining against a Portuguese Hand Cannoneer?",
+    "options": [
+      "Elite Keshik (Tatars)",
+      "Elite Leitis (Lithuanians)",
+      "Elite Coustillier (Burgundians)",
+      "Elite Tarkan (Huns)"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Keshik (Tatars) survives the fight with the most HP remaining vs a Portuguese Hand Cannoneer (hp_pct=0.66).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Portuguese/hand_cannoneer",
+    "score": 0.9392,
+    "meta": {
+      "values": {
+        "Elite Tarkan (Huns)": 0.595,
+        "Elite Coustillier (Burgundians)": 0.603,
+        "Elite Leitis (Lithuanians)": 0.608,
+        "Elite Keshik (Tatars)": 0.662
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "3k"
+    },
+    "taste_score": 0.9392,
+    "seq": 26,
+    "week": 4,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "effects_00419",
+    "category": "effects",
+    "question_type": "trample",
+    "grouping": "effect_value",
+    "difficulty": "medium",
+    "prompt": "Which of these units has the largest trample (area-damage) radius?",
+    "options": [
+      "Elite Ratha (Melee)",
+      "War Chariot",
+      "Elite Battle Elephant",
+      "Battle Elephant"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Ratha (Melee) has the largest trample (area-damage) radius (0.5); next is Elite Battle Elephant (0.4).",
+    "source": "ref_special_effects.trample_radius",
+    "score": 0.64,
+    "meta": {
+      "values": {
+        "Elite Battle Elephant": 0.4,
+        "War Chariot": 0.4,
+        "Battle Elephant": 0.4,
+        "Elite Ratha (Melee)": 0.5
+      },
+      "effect": "trample"
+    },
+    "taste_score": 0.224,
+    "seq": 27,
+    "week": 4,
+    "day": 6,
+    "weekday": "Sat"
+  },
+  {
+    "id": "techgaps_00073",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Blast Furnace AND Bloodlines for the Elite Steppe Lancer line?",
+    "options": [
+      "Jurchens",
+      "Cumans",
+      "Khitans",
+      "Tatars"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Khitans lack both Blast Furnace and Bloodlines on the Elite Steppe Lancer line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.7467,
+    "meta": {
+      "values": {
+        "Khitans": "no Blast Furnace, no Bloodlines",
+        "Cumans": "has both",
+        "Jurchens": "has both",
+        "Tatars": "has both"
+      }
+    },
+    "taste_score": 0.784,
+    "seq": 28,
+    "week": 4,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00024",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which infantry unique unit survives the fight with the most HP remaining against a Aztecs Elite Eagle Warrior?",
+    "options": [
+      "Elite Berserk (Vikings)",
+      "Elite Woad Raider (Celts)",
+      "Elite Shotel Warrior (Ethiopians)",
+      "Elite Urumi Swordsman (Dravidians)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Shotel Warrior (Ethiopians) survives the fight with the most HP remaining vs a Aztecs Elite Eagle Warrior (hp_pct=0.7).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Aztecs/elite_eagle",
+    "score": 0.9236,
+    "meta": {
+      "values": {
+        "Elite Berserk (Vikings)": 0.61,
+        "Elite Urumi Swordsman (Dravidians)": 0.64,
+        "Elite Woad Raider (Celts)": 0.665,
+        "Elite Shotel Warrior (Ethiopians)": 0.699
+      },
+      "cluster": "infantry_uu",
+      "opp": "Elite Eagle Warrior",
+      "scale": "3k"
+    },
+    "taste_score": 0.9236,
+    "seq": 29,
+    "week": 5,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00078",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Blast Furnace AND Plate Mail Armor for the Halberdier (spear line)?",
+    "options": [
+      "Lithuanians",
+      "Franks",
+      "Mapuche",
+      "Shu"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Lithuanians lack both Blast Furnace and Plate Mail Armor on the Halberdier line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.7183,
+    "meta": {
+      "values": {
+        "Lithuanians": "no Blast Furnace, no Plate Mail Armor",
+        "Franks": "has both",
+        "Mapuche": "has both",
+        "Shu": "no Blast Furnace"
+      }
+    },
+    "taste_score": 0.7542,
+    "seq": 30,
+    "week": 5,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00025",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Britons Arbalester?",
+    "options": [
+      "Elite War Elephant (Persians)",
+      "Elite Coustillier (Burgundians)",
+      "Elite Magyar Huszar (Magyars)",
+      "Elite Konnik (Bulgarians)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Magyar Huszar (Magyars) wins while losing the least resources vs a Britons Arbalester (value_lost=980.27).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Britons/arbalester",
+    "score": 0.922,
+    "meta": {
+      "values": {
+        "Elite Magyar Huszar (Magyars)": 980.273,
+        "Elite Coustillier (Burgundians)": 1007.069,
+        "Elite War Elephant (Persians)": 1037.891,
+        "Elite Konnik (Bulgarians)": 1126.714
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Arbalester",
+      "scale": "30v30"
+    },
+    "taste_score": 0.922,
+    "seq": 31,
+    "week": 5,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00041",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Elite Steppe Lancers, which has the highest pierce armor?",
+    "options": [
+      "Jurchens Elite Steppe Lancer",
+      "Khitans Elite Steppe Lancer",
+      "Tatars Elite Steppe Lancer",
+      "Cumans Elite Steppe Lancer"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Tatars Elite Steppe Lancer has the highest pierce armor (7); next is Cumans Elite Steppe Lancer (6).",
+    "source": "ref_units.final_pierce_armor across civs",
+    "score": 0.8,
+    "meta": {
+      "values": {
+        "Cumans Elite Steppe Lancer": 6.0,
+        "Jurchens Elite Steppe Lancer": 6.0,
+        "Khitans Elite Steppe Lancer": 6.0,
+        "Tatars Elite Steppe Lancer": 7.0
+      }
+    },
+    "taste_score": 0.874,
+    "seq": 32,
+    "week": 5,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00027",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Cumans Heavy Cavalry Archer?",
+    "options": [
+      "Elite War Elephant (Persians)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Tarkan (Huns)",
+      "Elite Keshik (Tatars)"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Keshik (Tatars) wins while losing the least resources vs a Cumans Heavy Cavalry Archer (value_lost=1097.45).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Cumans/heavy_cav_archer",
+    "score": 0.9157,
+    "meta": {
+      "values": {
+        "Elite Keshik (Tatars)": 1097.455,
+        "Elite Tarkan (Huns)": 1125.882,
+        "Elite Iron Pagoda (Jurchens)": 1202.5,
+        "Elite War Elephant (Persians)": 1276.851
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Heavy Cavalry Archer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9157,
+    "seq": 33,
+    "week": 5,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "effects_00439",
+    "category": "effects",
+    "question_type": "blast",
+    "grouping": "effect_value",
+    "difficulty": "medium",
+    "prompt": "Which of these units has the largest blast (splash) radius?",
+    "options": [
+      "Onager",
+      "Heavy Rocket Cart",
+      "Mangonel",
+      "Siege Onager"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Siege Onager has the largest blast (splash) radius (1.5); next is Onager (1.25).",
+    "source": "ref_projectiles.primary blast_radius",
+    "score": 0.56,
+    "meta": {
+      "values": {
+        "Mangonel": 1.0,
+        "Onager": 1.25,
+        "Heavy Rocket Cart": 1.25,
+        "Siege Onager": 1.5
+      },
+      "effect": "blast"
+    },
+    "taste_score": 0.1666,
+    "seq": 34,
+    "week": 5,
+    "day": 6,
+    "weekday": "Sat"
+  },
+  {
+    "id": "techgaps_00079",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Chain Mail Armor AND Plate Mail Armor for the Halberdier (spear line)?",
+    "options": [
+      "Wu",
+      "Khmer",
+      "Tatars",
+      "Wei"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Tatars lack both Chain Mail Armor and Plate Mail Armor on the Halberdier line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.7183,
+    "meta": {
+      "values": {
+        "Tatars": "no Chain Mail Armor, no Plate Mail Armor",
+        "Khmer": "no Plate Mail Armor",
+        "Wu": "has both",
+        "Wei": "no Plate Mail Armor"
+      }
+    },
+    "taste_score": 0.7542,
+    "seq": 35,
+    "week": 5,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00028",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit wins while losing the least resources against a Cumans Heavy Cavalry Archer?",
+    "options": [
+      "Elite Leitis (Lithuanians)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Shrivamsha Rider (Gurjaras)",
+      "Elite Magyar Huszar (Magyars)"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Magyar Huszar (Magyars) wins while losing the least resources vs a Cumans Heavy Cavalry Archer (value_lost=1351.14).",
+    "source": "matchup_battles team1_value_lost scale=3k vs Cumans/heavy_cav_archer",
+    "score": 0.9134,
+    "meta": {
+      "values": {
+        "Elite Magyar Huszar (Magyars)": 1351.136,
+        "Elite Leitis (Lithuanians)": 1421.0,
+        "Elite Iron Pagoda (Jurchens)": 1492.969,
+        "Elite Shrivamsha Rider (Gurjaras)": 1578.944
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Heavy Cavalry Archer",
+      "scale": "3k"
+    },
+    "taste_score": 0.9134,
+    "seq": 36,
+    "week": 6,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00080",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations LACK Blast Furnace for the Champion (militia line)?",
+    "options": [
+      "Chinese",
+      "Britons",
+      "Vietnamese",
+      "Italians"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Vietnamese cannot research Blast Furnace for the Champion line; Britons, Chinese, Italians can. (30/37 Champion civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.8865,
+    "meta": {
+      "values": {
+        "Vietnamese": "missing",
+        "Britons": "has it",
+        "Chinese": "has it",
+        "Italians": "has it"
+      }
+    },
+    "taste_score": 0.7535,
+    "seq": 37,
+    "week": 6,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00029",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Turks Hand Cannoneer?",
+    "options": [
+      "Elite Coustillier (Burgundians)",
+      "Elite Leitis (Lithuanians)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Tarkan (Huns)"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Coustillier (Burgundians) wins while losing the least resources vs a Turks Hand Cannoneer (value_lost=1264.05).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Turks/hand_cannoneer",
+    "score": 0.9132,
+    "meta": {
+      "values": {
+        "Elite Coustillier (Burgundians)": 1264.052,
+        "Elite Tarkan (Huns)": 1301.471,
+        "Elite Leitis (Lithuanians)": 1339.8,
+        "Elite Iron Pagoda (Jurchens)": 1477.734
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9132,
+    "seq": 38,
+    "week": 6,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00045",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Siege Rams, which has the fastest movement speed?",
+    "options": [
+      "Shu Siege Ram",
+      "Wei Siege Ram",
+      "Turks Siege Ram",
+      "Vikings Siege Ram"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Shu Siege Ram has the fastest movement speed (0.69); next is Turks Siege Ram (0.6).",
+    "source": "ref_units.final_speed across civs",
+    "score": 0.82,
+    "meta": {
+      "values": {
+        "Turks Siege Ram": 0.6,
+        "Vikings Siege Ram": 0.6,
+        "Wei Siege Ram": 0.6,
+        "Shu Siege Ram": 0.69
+      }
+    },
+    "taste_score": 0.8511,
+    "seq": 39,
+    "week": 6,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00030",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit survives the fight with the most HP remaining against a Turks Hand Cannoneer?",
+    "options": [
+      "Elite Tarkan (Huns)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Keshik (Tatars)",
+      "Elite Leitis (Lithuanians)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Keshik (Tatars) survives the fight with the most HP remaining vs a Turks Hand Cannoneer (hp_pct=0.65).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Turks/hand_cannoneer",
+    "score": 0.9111,
+    "meta": {
+      "values": {
+        "Elite Leitis (Lithuanians)": 0.551,
+        "Elite Iron Pagoda (Jurchens)": 0.567,
+        "Elite Tarkan (Huns)": 0.585,
+        "Elite Keshik (Tatars)": 0.647
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "3k"
+    },
+    "taste_score": 0.9111,
+    "seq": 40,
+    "week": 6,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "effects_00385",
+    "category": "effects",
+    "question_type": "projectiles",
+    "grouping": "effect_value",
+    "difficulty": "medium",
+    "prompt": "Which of these units fires the most projectiles in a single attack?",
+    "options": [
+      "Elite Longboat",
+      "Dromon",
+      "Elite Kipchak",
+      "Elite Turtle Ship"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Dromon fires the most projectiles in a single attack (5); next is Elite Kipchak (4).",
+    "source": "ref_projectiles.primary projectile_count",
+    "score": 0.52,
+    "meta": {
+      "values": {
+        "Elite Turtle Ship": 3,
+        "Elite Kipchak": 4,
+        "Elite Longboat": 4,
+        "Dromon": 5
+      },
+      "effect": "projectiles"
+    },
+    "taste_score": 0.312,
+    "seq": 41,
+    "week": 6,
+    "day": 6,
+    "weekday": "Sat"
+  },
+  {
+    "id": "techgaps_00081",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Bracer AND Husbandry for the Heavy Cavalry Archer line?",
+    "options": [
+      "Cumans",
+      "Goths",
+      "Georgians",
+      "Franks"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Cumans lack both Bracer and Husbandry on the Heavy Cavalry Archer line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.7152,
+    "meta": {
+      "values": {
+        "Cumans": "no Bracer, no Husbandry",
+        "Georgians": "has both",
+        "Goths": "has both",
+        "Franks": "no Bracer"
+      }
+    },
+    "taste_score": 0.751,
+    "seq": 42,
+    "week": 6,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00031",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit survives the fight with the most HP remaining against a Britons Arbalester?",
+    "options": [
+      "Elite Leitis (Lithuanians)",
+      "Elite Magyar Huszar (Magyars)",
+      "Elite Boyar (Slavs)",
+      "Elite Coustillier (Burgundians)"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Elite Magyar Huszar (Magyars) survives the fight with the most HP remaining vs a Britons Arbalester (hp_pct=0.66).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Britons/arbalester",
+    "score": 0.9099,
+    "meta": {
+      "values": {
+        "Elite Leitis (Lithuanians)": 0.557,
+        "Elite Coustillier (Burgundians)": 0.621,
+        "Elite Boyar (Slavs)": 0.627,
+        "Elite Magyar Huszar (Magyars)": 0.656
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Arbalester",
+      "scale": "3k"
+    },
+    "taste_score": 0.9099,
+    "seq": 43,
+    "week": 7,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00083",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations miss BOTH Bloodlines AND Husbandry for the Cavalier (knight line)?",
+    "options": [
+      "Italians",
+      "Vikings",
+      "Khmer",
+      "Malians"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Vikings lack both Bloodlines and Husbandry on the Cavalier line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.7103,
+    "meta": {
+      "values": {
+        "Vikings": "no Bloodlines, no Husbandry",
+        "Italians": "has both",
+        "Khmer": "has both",
+        "Malians": "has both"
+      }
+    },
+    "taste_score": 0.7458,
+    "seq": 44,
+    "week": 7,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00033",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Portuguese Hand Cannoneer?",
+    "options": [
+      "Elite Magyar Huszar (Magyars)",
+      "Elite Boyar (Slavs)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Konnik (Bulgarians)"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Magyar Huszar (Magyars) wins while losing the least resources vs a Portuguese Hand Cannoneer (value_lost=1358.59).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Portuguese/hand_cannoneer",
+    "score": 0.9093,
+    "meta": {
+      "values": {
+        "Elite Magyar Huszar (Magyars)": 1358.591,
+        "Elite Iron Pagoda (Jurchens)": 1477.734,
+        "Elite Konnik (Bulgarians)": 1555.714,
+        "Elite Boyar (Slavs)": 1600.5
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.9093,
+    "seq": 45,
+    "week": 7,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00046",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Two-Handed Swordsmans, which has the highest melee armor?",
+    "options": [
+      "Khmer Two-Handed Swordsman",
+      "Huns Two-Handed Swordsman",
+      "Ethiopians Two-Handed Swordsman",
+      "Wei Two-Handed Swordsman"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Ethiopians Two-Handed Swordsman has the highest melee armor (4); next is Huns Two-Handed Swordsman (3).",
+    "source": "ref_units.final_melee_armor across civs",
+    "score": 0.9143,
+    "meta": {
+      "values": {
+        "Huns Two-Handed Swordsman": 3.0,
+        "Khmer Two-Handed Swordsman": 3.0,
+        "Wei Two-Handed Swordsman": 3.0,
+        "Ethiopians Two-Handed Swordsman": 4.0
+      }
+    },
+    "taste_score": 0.849,
+    "seq": 46,
+    "week": 7,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00055",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit survives the fight with the most HP remaining against a Portuguese Hand Cannoneer?",
+    "options": [
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Coustillier (Burgundians)",
+      "Elite Leitis (Lithuanians)",
+      "Elite Konnik (Bulgarians)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Leitis (Lithuanians) survives the fight with the most HP remaining vs a Portuguese Hand Cannoneer (hp_pct=0.74).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Portuguese/hand_cannoneer",
+    "score": 0.8246,
+    "meta": {
+      "values": {
+        "Elite Coustillier (Burgundians)": 0.684,
+        "Elite Konnik (Bulgarians)": 0.686,
+        "Elite Iron Pagoda (Jurchens)": 0.697,
+        "Elite Leitis (Lithuanians)": 0.736
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.8246,
+    "seq": 47,
+    "week": 7,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "effects_00436",
+    "category": "effects",
+    "question_type": "projectiles",
+    "grouping": "effect_value",
+    "difficulty": "medium",
+    "prompt": "Which of these units fires the most projectiles in a single attack?",
+    "options": [
+      "Mangonel",
+      "Elite Organ Gun",
+      "Elite Hussite Wagon",
+      "Onager"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Onager fires the most projectiles in a single attack (8); next is Elite Hussite Wagon (6).",
+    "source": "ref_projectiles.primary projectile_count",
+    "score": 0.61,
+    "meta": {
+      "values": {
+        "Elite Hussite Wagon": 6,
+        "Mangonel": 6,
+        "Elite Organ Gun": 6,
+        "Onager": 8
+      },
+      "effect": "projectiles"
+    },
+    "taste_score": 0.1815,
+    "seq": 48,
+    "week": 7,
+    "day": 6,
+    "weekday": "Sat"
+  },
+  {
+    "id": "techgaps_00097",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations LACK Bracer for the Arbalester (archer line)?",
+    "options": [
+      "Mayans",
+      "Wu",
+      "Malians",
+      "Khmer"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Malians cannot research Bracer for the Arbalester line; Khmer, Mayans, Wu can. (28/29 Arbalester civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.846,
+    "meta": {
+      "values": {
+        "Malians": "missing",
+        "Wu": "has it",
+        "Khmer": "has it",
+        "Mayans": "has it"
+      }
+    },
+    "taste_score": 0.7191,
+    "seq": 49,
+    "week": 7,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00056",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which infantry unique unit survives the fight with the most HP remaining against a Aztecs Elite Eagle Warrior?",
+    "options": [
+      "Elite Samurai (Japanese)",
+      "Elite Jaguar Warrior (Aztecs)",
+      "Elite Serjeant (Sicilians)",
+      "Elite Centurion (Romans)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Serjeant (Sicilians) survives the fight with the most HP remaining vs a Aztecs Elite Eagle Warrior (hp_pct=0.81).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Aztecs/elite_eagle",
+    "score": 0.8213,
+    "meta": {
+      "values": {
+        "Elite Samurai (Japanese)": 0.745,
+        "Elite Jaguar Warrior (Aztecs)": 0.757,
+        "Elite Centurion (Romans)": 0.777,
+        "Elite Serjeant (Sicilians)": 0.805
+      },
+      "cluster": "infantry_uu",
+      "opp": "Elite Eagle Warrior",
+      "scale": "30v30"
+    },
+    "taste_score": 0.8213,
+    "seq": 50,
+    "week": 8,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00115",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "medium",
+    "prompt": "Which of these civilisations miss BOTH Bloodlines AND Bracer for the Heavy Cavalry Archer line?",
+    "options": [
+      "Franks",
+      "Chinese",
+      "Jurchens",
+      "Celts"
+    ],
+    "correct_indices": [
+      0,
+      3
+    ],
+    "correct_index": null,
+    "multi": true,
+    "explanation": "Celts, Franks lack both Bloodlines and Bracer on the Heavy Cavalry Archer line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.5636,
+    "meta": {
+      "values": {
+        "Celts": "no Bloodlines, no Bracer",
+        "Franks": "no Bloodlines, no Bracer",
+        "Chinese": "has both",
+        "Jurchens": "has both"
+      }
+    },
+    "taste_score": 0.6805,
+    "seq": 51,
+    "week": 8,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00059",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which infantry unique unit survives the fight with the most HP remaining against a Teutons Halberdier?",
+    "options": [
+      "Elite Karambit Warrior (Malay)",
+      "Elite Kamayuk (Incas)",
+      "Elite Ghulam (Hindustanis)",
+      "Elite Huskarl (Goths)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Ghulam (Hindustanis) survives the fight with the most HP remaining vs a Teutons Halberdier (hp_pct=0.73).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Teutons/halberdier",
+    "score": 0.8167,
+    "meta": {
+      "values": {
+        "Elite Kamayuk (Incas)": 0.669,
+        "Elite Karambit Warrior (Malay)": 0.689,
+        "Elite Huskarl (Goths)": 0.691,
+        "Elite Ghulam (Hindustanis)": 0.73
+      },
+      "cluster": "infantry_uu",
+      "opp": "Halberdier",
+      "scale": "30v30"
+    },
+    "taste_score": 0.8167,
+    "seq": 52,
+    "week": 8,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00053",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Paladins, which has the fastest movement speed?",
+    "options": [
+      "Lithuanians Paladin",
+      "Spanish Paladin",
+      "Cumans Paladin",
+      "Magyars Paladin"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Cumans Paladin has the fastest movement speed (1.56); next is Lithuanians Paladin (1.49).",
+    "source": "ref_units.final_speed across civs",
+    "score": 0.8,
+    "meta": {
+      "values": {
+        "Lithuanians Paladin": 1.49,
+        "Magyars Paladin": 1.49,
+        "Spanish Paladin": 1.49,
+        "Cumans Paladin": 1.56
+      }
+    },
+    "taste_score": 0.8303,
+    "seq": 53,
+    "week": 8,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00060",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which infantry unique unit survives the fight with the most HP remaining against a Slavs Halberdier?",
+    "options": [
+      "Elite Huskarl (Goths)",
+      "Elite Ghulam (Hindustanis)",
+      "Elite Shotel Warrior (Ethiopians)",
+      "Elite Kamayuk (Incas)"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Huskarl (Goths) survives the fight with the most HP remaining vs a Slavs Halberdier (hp_pct=0.76).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Slavs/halberdier",
+    "score": 0.8111,
+    "meta": {
+      "values": {
+        "Elite Shotel Warrior (Ethiopians)": 0.694,
+        "Elite Ghulam (Hindustanis)": 0.701,
+        "Elite Kamayuk (Incas)": 0.71,
+        "Elite Huskarl (Goths)": 0.765
+      },
+      "cluster": "infantry_uu",
+      "opp": "Halberdier",
+      "scale": "3k"
+    },
+    "taste_score": 0.8111,
+    "seq": 54,
+    "week": 8,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "effects_00450",
+    "category": "effects",
+    "question_type": "projectiles",
+    "grouping": "effect_value",
+    "difficulty": "medium",
+    "prompt": "Which of these units fires the most projectiles in a single attack?",
+    "options": [
+      "Elite Organ Gun",
+      "Mangonel",
+      "Onager",
+      "Siege Onager"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Siege Onager fires the most projectiles in a single attack (10); next is Onager (8).",
+    "source": "ref_projectiles.primary projectile_count",
+    "score": 0.52,
+    "meta": {
+      "values": {
+        "Mangonel": 6,
+        "Elite Organ Gun": 6,
+        "Onager": 8,
+        "Siege Onager": 10
+      },
+      "effect": "projectiles"
+    },
+    "taste_score": 0.1092,
+    "seq": 55,
+    "week": 8,
+    "day": 6,
+    "weekday": "Sat"
+  },
+  {
+    "id": "techgaps_00117",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations LACK Ring Archer Armor for the Cavalry Archer line?",
+    "options": [
+      "Teutons",
+      "Malay",
+      "Portuguese",
+      "Wu"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Wu cannot research Ring Archer Armor for the Cavalry Archer line; Malay, Portuguese, Teutons can. (6/9 Cavalry Archer civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.8,
+    "meta": {
+      "values": {
+        "Wu": "missing",
+        "Teutons": "has it",
+        "Portuguese": "has it",
+        "Malay": "has it"
+      }
+    },
+    "taste_score": 0.68,
+    "seq": 56,
+    "week": 8,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00062",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which infantry unique unit survives the fight with the most HP remaining against a Mayans Elite Eagle Warrior?",
+    "options": [
+      "Elite Samurai (Japanese)",
+      "Elite Berserk (Vikings)",
+      "Elite Serjeant (Sicilians)",
+      "Elite Centurion (Romans)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Serjeant (Sicilians) survives the fight with the most HP remaining vs a Mayans Elite Eagle Warrior (hp_pct=0.76).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Mayans/elite_eagle",
+    "score": 0.8099,
+    "meta": {
+      "values": {
+        "Elite Berserk (Vikings)": 0.692,
+        "Elite Samurai (Japanese)": 0.705,
+        "Elite Centurion (Romans)": 0.712,
+        "Elite Serjeant (Sicilians)": 0.765
+      },
+      "cluster": "infantry_uu",
+      "opp": "Elite Eagle Warrior",
+      "scale": "30v30"
+    },
+    "taste_score": 0.8099,
+    "seq": 57,
+    "week": 9,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00140",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations LACK Ring Archer Armor for the Hand Cannoneer line?",
+    "options": [
+      "Khmer",
+      "Dravidians",
+      "Teutons",
+      "Burgundians"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Burgundians cannot research Ring Archer Armor for the Hand Cannoneer line; Dravidians, Khmer, Teutons can. (19/23 Hand Cannoneer civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.7623,
+    "meta": {
+      "values": {
+        "Burgundians": "missing",
+        "Khmer": "has it",
+        "Dravidians": "has it",
+        "Teutons": "has it"
+      }
+    },
+    "taste_score": 0.648,
+    "seq": 58,
+    "week": 9,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00064",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit wins while losing the least resources against a Cumans Heavy Cavalry Archer?",
+    "options": [
+      "Elite Leitis (Lithuanians)",
+      "Elite Keshik (Tatars)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Magyar Huszar (Magyars)"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Elite Keshik (Tatars) wins while losing the least resources vs a Cumans Heavy Cavalry Archer (value_lost=1317.82).",
+    "source": "matchup_battles team1_value_lost scale=3k vs Cumans/heavy_cav_archer",
+    "score": 0.7963,
+    "meta": {
+      "values": {
+        "Elite Keshik (Tatars)": 1317.818,
+        "Elite Magyar Huszar (Magyars)": 1351.136,
+        "Elite Leitis (Lithuanians)": 1421.0,
+        "Elite Iron Pagoda (Jurchens)": 1492.969
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Heavy Cavalry Archer",
+      "scale": "3k"
+    },
+    "taste_score": 0.7963,
+    "seq": 59,
+    "week": 9,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00063",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "medium",
+    "prompt": "Among these fully-upgraded Light Cavalrys, which has the highest HP?",
+    "options": [
+      "Vikings Light Cavalry",
+      "Franks Light Cavalry",
+      "Shu Light Cavalry",
+      "Malay Light Cavalry"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Franks Light Cavalry has the highest HP (72); next is Malay Light Cavalry (60).",
+    "source": "ref_units.final_hp across civs",
+    "score": 0.64,
+    "meta": {
+      "values": {
+        "Malay Light Cavalry": 60.0,
+        "Shu Light Cavalry": 60.0,
+        "Vikings Light Cavalry": 60.0,
+        "Franks Light Cavalry": 72.0
+      }
+    },
+    "taste_score": 0.8041,
+    "seq": 60,
+    "week": 9,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00065",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit survives the fight with the most HP remaining against a Italians Hand Cannoneer?",
+    "options": [
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Keshik (Tatars)",
+      "Elite Boyar (Slavs)",
+      "Elite Tarkan (Huns)"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Tarkan (Huns) survives the fight with the most HP remaining vs a Italians Hand Cannoneer (hp_pct=0.68).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Italians/hand_cannoneer",
+    "score": 0.794,
+    "meta": {
+      "values": {
+        "Elite Boyar (Slavs)": 0.596,
+        "Elite Keshik (Tatars)": 0.601,
+        "Elite Iron Pagoda (Jurchens)": 0.607,
+        "Elite Tarkan (Huns)": 0.679
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.794,
+    "seq": 61,
+    "week": 9,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "techgaps_00141",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations LACK Bracer for the Elite Skirmisher line?",
+    "options": [
+      "Dravidians",
+      "Wu",
+      "Byzantines",
+      "Mapuche"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Mapuche cannot research Bracer for the Elite Skirmisher line; Byzantines, Dravidians, Wu can. (42/51 Elite Skirmisher civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.7608,
+    "meta": {
+      "values": {
+        "Mapuche": "missing",
+        "Wu": "has it",
+        "Byzantines": "has it",
+        "Dravidians": "has it"
+      }
+    },
+    "taste_score": 0.6467,
+    "seq": 62,
+    "week": 9,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00066",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Tatars Heavy Cavalry Archer?",
+    "options": [
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Boyar (Slavs)",
+      "Elite Coustillier (Burgundians)",
+      "Elite Leitis (Lithuanians)"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Leitis (Lithuanians) wins while losing the least resources vs a Tatars Heavy Cavalry Archer (value_lost=2140.2).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Tatars/heavy_cav_archer",
+    "score": 0.7926,
+    "meta": {
+      "values": {
+        "Elite Leitis (Lithuanians)": 2140.2,
+        "Elite Boyar (Slavs)": 2195.6,
+        "Elite Iron Pagoda (Jurchens)": 2307.5,
+        "Elite Coustillier (Burgundians)": 2441.81
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Heavy Cavalry Archer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.7926,
+    "seq": 63,
+    "week": 10,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00150",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations LACK Plate Mail Armor for the Elite Fire Lancer line?",
+    "options": [
+      "Jurchens",
+      "Chinese",
+      "Khitans",
+      "Vietnamese"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Jurchens cannot research Plate Mail Armor for the Elite Fire Lancer line; Chinese, Khitans, Vietnamese can. (4/5 Elite Fire Lancer civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.7467,
+    "meta": {
+      "values": {
+        "Jurchens": "missing",
+        "Vietnamese": "has it",
+        "Chinese": "has it",
+        "Khitans": "has it"
+      }
+    },
+    "taste_score": 0.6347,
+    "seq": 64,
+    "week": 10,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00067",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Mayans Arbalester?",
+    "options": [
+      "Elite Boyar (Slavs)",
+      "Elite Coustillier (Burgundians)",
+      "Elite Shrivamsha Rider (Gurjaras)",
+      "Elite Leitis (Lithuanians)"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Elite Coustillier (Burgundians) wins while losing the least resources vs a Mayans Arbalester (value_lost=998.53).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Mayans/arbalester",
+    "score": 0.7899,
+    "meta": {
+      "values": {
+        "Elite Coustillier (Burgundians)": 998.534,
+        "Elite Shrivamsha Rider (Gurjaras)": 1023.889,
+        "Elite Leitis (Lithuanians)": 1131.0,
+        "Elite Boyar (Slavs)": 1145.1
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Arbalester",
+      "scale": "30v30"
+    },
+    "taste_score": 0.7899,
+    "seq": 65,
+    "week": 10,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00068",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Halberdiers, which has the highest melee armor?",
+    "options": [
+      "Romans Halberdier",
+      "Tupi Halberdier",
+      "Wu Halberdier",
+      "Vietnamese Halberdier"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Romans Halberdier has the highest melee armor (4); next is Tupi Halberdier (3).",
+    "source": "ref_units.final_melee_armor across civs",
+    "score": 0.85,
+    "meta": {
+      "values": {
+        "Tupi Halberdier": 3.0,
+        "Vietnamese Halberdier": 3.0,
+        "Wu Halberdier": 3.0,
+        "Romans Halberdier": 4.0
+      }
+    },
+    "taste_score": 0.7893,
+    "seq": 66,
+    "week": 10,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00071",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit survives the fight with the most HP remaining against a Britons Arbalester?",
+    "options": [
+      "Elite Magyar Huszar (Magyars)",
+      "Elite Boyar (Slavs)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Keshik (Tatars)"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Keshik (Tatars) survives the fight with the most HP remaining vs a Britons Arbalester (hp_pct=0.72).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Britons/arbalester",
+    "score": 0.7859,
+    "meta": {
+      "values": {
+        "Elite Boyar (Slavs)": 0.627,
+        "Elite Magyar Huszar (Magyars)": 0.656,
+        "Elite Iron Pagoda (Jurchens)": 0.661,
+        "Elite Keshik (Tatars)": 0.725
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Arbalester",
+      "scale": "3k"
+    },
+    "taste_score": 0.7859,
+    "seq": 67,
+    "week": 10,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "techgaps_00181",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "hard",
+    "prompt": "Which of these civilisations LACK Plate Mail Armor for the Pikeman (spear line)?",
+    "options": [
+      "Khitans",
+      "Hindustanis",
+      "Saracens",
+      "Berbers"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Hindustanis cannot research Plate Mail Armor for the Pikeman line; Berbers, Khitans, Saracens can. (10/11 Pikeman civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.6788,
+    "meta": {
+      "values": {
+        "Hindustanis": "missing",
+        "Khitans": "has it",
+        "Berbers": "has it",
+        "Saracens": "has it"
+      }
+    },
+    "taste_score": 0.577,
+    "seq": 68,
+    "week": 10,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00075",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Italians Hand Cannoneer?",
+    "options": [
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Boyar (Slavs)",
+      "Elite Coustillier (Burgundians)",
+      "Elite Magyar Huszar (Magyars)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Coustillier (Burgundians) wins while losing the least resources vs a Italians Hand Cannoneer (value_lost=1711.64).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Italians/hand_cannoneer",
+    "score": 0.7808,
+    "meta": {
+      "values": {
+        "Elite Coustillier (Burgundians)": 1711.638,
+        "Elite Magyar Huszar (Magyars)": 1815.182,
+        "Elite Iron Pagoda (Jurchens)": 1915.469,
+        "Elite Boyar (Slavs)": 1997.6
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "30v30"
+    },
+    "taste_score": 0.7808,
+    "seq": 69,
+    "week": 11,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00192",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "medium",
+    "prompt": "Which of these civilisations miss BOTH Bracer AND Husbandry for the Cavalry Archer line?",
+    "options": [
+      "Sicilians",
+      "Armenians",
+      "Teutons",
+      "Malay"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Teutons lack both Bracer and Husbandry on the Cavalry Archer line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.5333,
+    "meta": {
+      "values": {
+        "Teutons": "no Bracer, no Husbandry",
+        "Armenians": "has both",
+        "Malay": "has both",
+        "Sicilians": "has both"
+      }
+    },
+    "taste_score": 0.56,
+    "seq": 70,
+    "week": 11,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00077",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Mayans Arbalester?",
+    "options": [
+      "Elite Coustillier (Burgundians)",
+      "Elite Shrivamsha Rider (Gurjaras)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Keshik (Tatars)"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Elite Keshik (Tatars) wins while losing the least resources vs a Mayans Arbalester (value_lost=866.18).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Mayans/arbalester",
+    "score": 0.7743,
+    "meta": {
+      "values": {
+        "Elite Keshik (Tatars)": 866.182,
+        "Elite Iron Pagoda (Jurchens)": 948.594,
+        "Elite Coustillier (Burgundians)": 998.534,
+        "Elite Shrivamsha Rider (Gurjaras)": 1023.889
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Arbalester",
+      "scale": "30v30"
+    },
+    "taste_score": 0.7743,
+    "seq": 71,
+    "week": 11,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00070",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Bombard Cannons, which has the highest melee armor?",
+    "options": [
+      "Vietnamese Bombard Cannon",
+      "Turks Bombard Cannon",
+      "Spanish Bombard Cannon",
+      "Hindustanis Bombard Cannon"
+    ],
+    "correct_indices": [
+      3
+    ],
+    "correct_index": 3,
+    "multi": false,
+    "explanation": "Hindustanis Bombard Cannon has the highest melee armor (3); next is Spanish Bombard Cannon (2).",
+    "source": "ref_units.final_melee_armor across civs",
+    "score": 0.85,
+    "meta": {
+      "values": {
+        "Spanish Bombard Cannon": 2.0,
+        "Turks Bombard Cannon": 2.0,
+        "Vietnamese Bombard Cannon": 2.0,
+        "Hindustanis Bombard Cannon": 3.0
+      }
+    },
+    "taste_score": 0.7893,
+    "seq": 72,
+    "week": 11,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00105",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit survives the fight with the most HP remaining against a Britons Arbalester?",
+    "options": [
+      "Elite Boyar (Slavs)",
+      "Elite Coustillier (Burgundians)",
+      "Elite Konnik (Bulgarians)",
+      "Elite Leitis (Lithuanians)"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Boyar (Slavs) survives the fight with the most HP remaining vs a Britons Arbalester (hp_pct=0.81).",
+    "source": "matchup_battles team1_hp_pct scale=30v30 vs Britons/arbalester",
+    "score": 0.6919,
+    "meta": {
+      "values": {
+        "Elite Coustillier (Burgundians)": 0.756,
+        "Elite Konnik (Bulgarians)": 0.772,
+        "Elite Leitis (Lithuanians)": 0.791,
+        "Elite Boyar (Slavs)": 0.812
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Arbalester",
+      "scale": "30v30"
+    },
+    "taste_score": 0.6919,
+    "seq": 73,
+    "week": 11,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "techgaps_00195",
+    "category": "techgaps",
+    "question_type": "lack_both",
+    "grouping": "open",
+    "difficulty": "medium",
+    "prompt": "Which of these civilisations miss BOTH Plate Mail Armor AND Squires for the Two-Handed Swordsman (militia line)?",
+    "options": [
+      "Khmer",
+      "Wei",
+      "Ethiopians",
+      "Huns"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Khmer lack both Plate Mail Armor and Squires on the Two-Handed Swordsman line.",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.5333,
+    "meta": {
+      "values": {
+        "Khmer": "no Plate Mail Armor, no Squires",
+        "Huns": "no Plate Mail Armor",
+        "Wei": "no Plate Mail Armor",
+        "Ethiopians": "has both"
+      }
+    },
+    "taste_score": 0.56,
+    "seq": 74,
+    "week": 11,
+    "day": 7,
+    "weekday": "Sun"
+  },
+  {
+    "id": "combat_00113",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit survives the fight with the most HP remaining against a Cumans Heavy Cavalry Archer?",
+    "options": [
+      "Elite Coustillier (Burgundians)",
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Leitis (Lithuanians)",
+      "Elite Magyar Huszar (Magyars)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Leitis (Lithuanians) survives the fight with the most HP remaining vs a Cumans Heavy Cavalry Archer (hp_pct=0.61).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Cumans/heavy_cav_archer",
+    "score": 0.6828,
+    "meta": {
+      "values": {
+        "Elite Coustillier (Burgundians)": 0.557,
+        "Elite Magyar Huszar (Magyars)": 0.561,
+        "Elite Iron Pagoda (Jurchens)": 0.582,
+        "Elite Leitis (Lithuanians)": 0.608
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Heavy Cavalry Archer",
+      "scale": "3k"
+    },
+    "taste_score": 0.6828,
+    "seq": 75,
+    "week": 12,
+    "day": 1,
+    "weekday": "Mon"
+  },
+  {
+    "id": "techgaps_00207",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "medium",
+    "prompt": "Which of these civilisations LACK Siege Engineers for the Onager line?",
+    "options": [
+      "Spanish",
+      "Khmer",
+      "Malay",
+      "Vikings"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Spanish cannot research Siege Engineers for the Onager line; Khmer, Malay, Vikings can. (20/33 Onager civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.6303,
+    "meta": {
+      "values": {
+        "Spanish": "missing",
+        "Khmer": "has it",
+        "Malay": "has it",
+        "Vikings": "has it"
+      }
+    },
+    "taste_score": 0.5358,
+    "seq": 76,
+    "week": 12,
+    "day": 2,
+    "weekday": "Tue"
+  },
+  {
+    "id": "combat_00124",
+    "category": "combat",
+    "question_type": "cost_value",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 30-vs-30 (equal numbers) fight, which cavalry unique unit wins while losing the least resources against a Britons Arbalester?",
+    "options": [
+      "Elite Magyar Huszar (Magyars)",
+      "Elite War Elephant (Persians)",
+      "Elite Boyar (Slavs)",
+      "Elite Coustillier (Burgundians)"
+    ],
+    "correct_indices": [
+      2
+    ],
+    "correct_index": 2,
+    "multi": false,
+    "explanation": "Elite Boyar (Slavs) wins while losing the least resources vs a Britons Arbalester (value_lost=930.6).",
+    "source": "matchup_battles team1_value_lost scale=30v30 vs Britons/arbalester",
+    "score": 0.6713,
+    "meta": {
+      "values": {
+        "Elite Boyar (Slavs)": 930.6,
+        "Elite Magyar Huszar (Magyars)": 980.273,
+        "Elite Coustillier (Burgundians)": 1007.069,
+        "Elite War Elephant (Persians)": 1037.891
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Arbalester",
+      "scale": "30v30"
+    },
+    "taste_score": 0.6713,
+    "seq": 77,
+    "week": 12,
+    "day": 3,
+    "weekday": "Wed"
+  },
+  {
+    "id": "stats_00088",
+    "category": "stats",
+    "question_type": "superlative",
+    "grouping": "line_cross_civ",
+    "difficulty": "hard",
+    "prompt": "Among these fully-upgraded Arbalesters, which has the highest melee armor?",
+    "options": [
+      "Wu Arbalester",
+      "Armenians Arbalester",
+      "Poles Arbalester",
+      "Sicilians Arbalester"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Armenians Arbalester has the highest melee armor (3); next is Poles Arbalester (2).",
+    "source": "ref_units.final_melee_armor across civs",
+    "score": 0.8,
+    "meta": {
+      "values": {
+        "Poles Arbalester": 2.0,
+        "Sicilians Arbalester": 2.0,
+        "Wu Arbalester": 2.0,
+        "Armenians Arbalester": 3.0
+      }
+    },
+    "taste_score": 0.7429,
+    "seq": 78,
+    "week": 12,
+    "day": 4,
+    "weekday": "Thu"
+  },
+  {
+    "id": "combat_00127",
+    "category": "combat",
+    "question_type": "survive_hp",
+    "grouping": "matchup",
+    "difficulty": "hard",
+    "prompt": "In a 3,000-resource (cost-parity) fight, which cavalry unique unit survives the fight with the most HP remaining against a Portuguese Hand Cannoneer?",
+    "options": [
+      "Elite Iron Pagoda (Jurchens)",
+      "Elite Boyar (Slavs)",
+      "Elite War Elephant (Persians)",
+      "Elite Konnik (Bulgarians)"
+    ],
+    "correct_indices": [
+      0
+    ],
+    "correct_index": 0,
+    "multi": false,
+    "explanation": "Elite Iron Pagoda (Jurchens) survives the fight with the most HP remaining vs a Portuguese Hand Cannoneer (hp_pct=0.43).",
+    "source": "matchup_battles team1_hp_pct scale=3k vs Portuguese/hand_cannoneer",
+    "score": 0.6689,
+    "meta": {
+      "values": {
+        "Elite Konnik (Bulgarians)": 0.381,
+        "Elite Boyar (Slavs)": 0.4,
+        "Elite War Elephant (Persians)": 0.412,
+        "Elite Iron Pagoda (Jurchens)": 0.427
+      },
+      "cluster": "cavalry_uu",
+      "opp": "Hand Cannoneer",
+      "scale": "3k"
+    },
+    "taste_score": 0.6689,
+    "seq": 79,
+    "week": 12,
+    "day": 5,
+    "weekday": "Fri"
+  },
+  {
+    "id": "techgaps_00210",
+    "category": "techgaps",
+    "question_type": "lack_single",
+    "grouping": "open",
+    "difficulty": "medium",
+    "prompt": "Which of these civilisations LACK Bloodlines for the Paladin (knight line)?",
+    "options": [
+      "Lithuanians",
+      "Byzantines",
+      "Spanish",
+      "Teutons"
+    ],
+    "correct_indices": [
+      1
+    ],
+    "correct_index": 1,
+    "multi": false,
+    "explanation": "Byzantines cannot research Bloodlines for the Paladin line; Lithuanians, Spanish, Teutons can. (6/10 Paladin civs have it.)",
+    "source": "ref_techs_applied(tech_type='standard') JOIN ref_units",
+    "score": 0.6267,
+    "meta": {
+      "values": {
+        "Byzantines": "missing",
+        "Lithuanians": "has it",
+        "Spanish": "has it",
+        "Teutons": "has it"
+      }
+    },
+    "taste_score": 0.5327,
+    "seq": 80,
+    "week": 12,
+    "day": 7,
+    "weekday": "Sun"
+  }
+]

@@ -52,21 +52,21 @@ def _facets(q):
     return f
 
 
-def main():
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 4
-    with open(_BANK, encoding="utf-8") as f:
-        bank = json.load(f)
+def draw(bank, weeks, blocklist=()):
+    """Return `weeks` lists of 7 questions each, rotated (ROTATION) with hard
+    no-repeat facets. `blocklist` is a set of question ids to exclude. Also returns
+    the count of slots that needed the relaxed (option-set-unique-only) fallback."""
+    block = set(blocklist)
     pool = {}
     for q in bank:
+        if q["id"] in block:
+            continue
         pool.setdefault(q["category"], []).append(q)
     for c in pool:
         pool[c].sort(key=lambda q: q.get("taste_score", q["score"]), reverse=True)
-
-    counts = {}          # facet -> times used
+    counts, relaxed_hits = {}, [0]
 
     def take(cat, prefer_fresh_dim=None):
-        # pass 1: respect all freshness caps; pass 2 (relaxed): only forbid an exact
-        # duplicate question (the option-set facet), so a slot is never left empty.
         for relaxed in (False, True):
             for q in pool.get(cat, []):
                 fac = _facets(q)
@@ -77,19 +77,28 @@ def main():
                     continue
                 for k, _ in fac:
                     counts[k] = counts.get(k, 0) + 1
+                if relaxed:
+                    relaxed_hits[0] += 1
                 return q
         return None
 
-    weeks = []
-    last_effect_dim = None
-    for _ in range(n):
+    out, last_dim = [], None
+    for _ in range(weeks):
         week = []
         for slot in ROTATION:
-            q = take(slot, prefer_fresh_dim=last_effect_dim if slot == "effects" else None)
+            q = take(slot, prefer_fresh_dim=last_dim if slot == "effects" else None)
             if slot == "effects" and q:
-                last_effect_dim = q.get("meta", {}).get("effect")
+                last_dim = q.get("meta", {}).get("effect")
             week.append(q)
-        weeks.append(week)
+        out.append(week)
+    return out, relaxed_hits[0]
+
+
+def main():
+    n = int(sys.argv[1]) if len(sys.argv) > 1 else 4
+    with open(_BANK, encoding="utf-8") as f:
+        bank = json.load(f)
+    weeks, _ = draw(bank, n)
 
     for wi, week in enumerate(weeks, 1):
         print("=" * 70)
