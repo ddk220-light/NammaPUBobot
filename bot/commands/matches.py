@@ -156,14 +156,15 @@ async def lobby2(ctx, gameid: str):
 			"Linked game `{gid}` to match #{mid}. I'll post the result for the losing captain to confirm "
 			"when the game ends."
 		).format(gid=game_id, mid=match.id)
-	# Post a public message with Join/Spectate buttons so teammates can click straight
-	# into the game (the buttons redirect to aoe2de://). Falls back to the plain
-	# confirmation + a copy-paste link when no web base URL is configured.
+	# Post a public message with the aoe2de:// code block (copyable) + Join/Spectate
+	# buttons so teammates can click straight into the game. Buttons redirect via the
+	# web server; the code block is always shown so it works even without a web URL.
 	from bot.lobby import buttons
+	from bot.lobby import view as lview
+	body = f"{msg}\n\n`{lview.deep_link(game_id)}`"
 	view = buttons.link_view(game_id)
 	if view is not None:
 		from core.utils import ok_embed
-		await ctx.reply(embed=ok_embed(msg), view=view)
+		await ctx.reply(embed=ok_embed(body), view=view)
 	else:
-		from bot.lobby import view as lview
-		await ctx.success(f"{msg}\n\n🎮 Join: `{lview.deep_link(game_id)}`")
+		await ctx.success(body)

@@ -126,17 +126,16 @@ class LobbyWatcher:
 			await self._confirm(mid, entry)
 
 	async def _render(self, mid, entry):
-		lines, filled, playable = view.fill_lines(entry)
-		body = "\n".join(lines) or "*waiting for players…*"
-		title = f"AoE2 lobby `{TARGET_NAME}` — {filled}/{playable} joined"
+		title = (entry.get("lobby") or {}).get("name") or TARGET_NAME
+		body = "\n".join(view.lobby_card_lines(entry, mid)) or "*waiting for players…*"
 		rendered = title + "\n" + body
 		if rendered == self._last_text:
 			return
 		now = time.monotonic()
 		if self.message is not None and (now - self._last_edit) < EDIT_DEBOUNCE:
 			return
-		vw, hint = self._join_links(mid)
-		embed = self._embed(title, body=self._with_hint(body, hint))
+		embed = self._embed(title, body=body)
+		vw = buttons.link_view(mid)
 		if self.message is None:
 			await self._safe_send(embed, view=vw)
 		else:
@@ -158,14 +157,13 @@ class LobbyWatcher:
 		except Exception as e:
 			log.error(f"LobbyWatcher({self.match.id}) profile-map heal failed: {e}")
 		await self._persist("filling")
-		lob = entry.get("lobby") or {}
-		vw, hint = self._join_links(mid)
-		body = self._with_hint("\n".join(view.fill_lines(entry)[0]), hint)
+		title = (entry.get("lobby") or {}).get("name") or TARGET_NAME
+		body = "\n".join(view.lobby_card_lines(entry, mid))
 		await self._safe_edit(self._embed(
-			f"✅ Linked to match **#{self.match.id}** — {len(pids)} players",
+			title,
 			body=body,
-			footer=f"game {mid} · {lob.get('mapName') or '?'} · {lob.get('server') or '?'}",
-		), view=vw)
+			footer=f"✅ Linked to match #{self.match.id} · {len(pids)} players",
+		), view=buttons.link_view(mid))
 		log.info(f"LobbyWatcher({self.match.id}) linked game {mid} ({len(pids)} players).")
 
 	async def _on_launch(self):
@@ -219,19 +217,6 @@ class LobbyWatcher:
 				await db.insert("qc_lobbies", row)
 		except Exception as e:
 			log.error(f"LobbyWatcher({self.match.id}) persist failed: {e}")
-
-	# ── join / spectate buttons ──────────────────────────────────────────
-	def _join_links(self, game_id):
-		"""(view, hint) for a joinable lobby. `view` is the Join/Spectate link-button
-		View, or None; `hint` is the raw aoe2de:// link to append to the body as a
-		copy-paste fallback when no web base URL is configured (so the buttons are
-		absent)."""
-		vw = buttons.link_view(game_id)
-		return vw, (None if vw else view.deep_link(game_id))
-
-	@staticmethod
-	def _with_hint(body, hint):
-		return body + (f"\n\n🎮 Join: `{hint}`" if hint else "")
 
 	# ── discord helpers ──────────────────────────────────────────────────
 	def _embed(self, title, body=None, footer=None, greyed=False):

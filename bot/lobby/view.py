@@ -74,6 +74,37 @@ def deep_link(game_id, mode="join"):
 	return f"aoe2de://1/{game_id}" if mode == "spectate" else f"aoe2de://0/{game_id}"
 
 
+def lobby_card_lines(entry, game_id):
+	"""Reference-style lobby card body (the AOE2LobbyBOT look): the aoe2de:// join link
+	as a copyable code block, then Map/Server, then the player roster with `Open`
+	placeholders for empty seats and a `+N slots remaining` header. Pure — no Discord."""
+	lob = entry.get("lobby") or {}
+	total = lob.get("totalSlotCount") or 0
+	blocked = lob.get("blockedSlotCount") or 0
+	playable = max(0, total - blocked)
+	occupied = sorted(
+		reducer.occupied_slots(entry),
+		key=lambda s: (s.get("slot") if s.get("slot") is not None else 0),
+	)
+	names = [s.get("name") or "?" for s in occupied]
+	open_count = max(0, playable - len(names))
+
+	lines = []
+	link = deep_link(game_id)
+	if link:
+		lines.append(f"`{link}`")            # copyable, like the reference card
+	meta = []
+	if lob.get("mapName"):
+		meta.append(f"Map: {lob['mapName']}")
+	if lob.get("server"):
+		meta.append(f"Server: {lob['server']}")
+	if meta:
+		lines += ["", *meta]
+	remaining = f"+{open_count} slot(s) remaining" if open_count else "full"
+	lines += ["", f"**Players** · {remaining}", *names, *(["Open"] * open_count)]
+	return lines
+
+
 def join_url(base_url, game_id):
 	"""https URL of the join redirect, or None when the base URL / id is missing."""
 	if not base_url or game_id is None:

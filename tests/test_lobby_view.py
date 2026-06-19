@@ -81,3 +81,19 @@ def test_join_url_none_without_base_or_id():
 	assert view.join_url("", 123) is None
 	assert view.join_url("https://x", None) is None
 	assert view.spectate_url(None, 123) is None
+
+
+def test_lobby_card_lines_matches_reference_shape():
+	st = reducer.fold([_lobby(total=4), _slot(0, 1, "ddk220"), _slot(1, 2, "Shadeslayer")])
+	body = "\n".join(view.lobby_card_lines(st[MID], MID))
+	assert f"`aoe2de://0/{MID}`" in body          # copyable deep link
+	assert "Map: Arabia" in body and "Server: koreacentral" in body
+	assert "ddk220" in body and "Shadeslayer" in body
+	assert "+2 slot(s) remaining" in body
+	assert body.count("Open") == 2                # two empty seats rendered as Open
+
+
+def test_lobby_card_lines_full_lobby_says_full():
+	st = reducer.fold([_lobby(total=2), _slot(0, 1, "A"), _slot(1, 2, "B")])
+	body = "\n".join(view.lobby_card_lines(st[MID], MID))
+	assert "full" in body and "Open" not in body
