@@ -21,7 +21,11 @@ db.ensure_table(dict(
 		dict(cname="category", ctype=db.types.str),
 		dict(cname="prompt", ctype=db.types.text),
 		dict(cname="options_json", ctype=db.types.text),
-		dict(cname="correct_index", ctype=db.types.int),
+		dict(cname="correct_index", ctype=db.types.int, notnull=False),
+		dict(cname="correct_indices", ctype=db.types.text, notnull=False),  # JSON list, multi-answer
+		dict(cname="seq", ctype=db.types.int, notnull=False),               # global question number
+		dict(cname="week", ctype=db.types.int, notnull=False),
+		dict(cname="day", ctype=db.types.int, notnull=False),               # 1=Mon .. 7=Sun (schedule day)
 		dict(cname="explanation", ctype=db.types.text),
 		dict(cname="opened_at", ctype=db.types.int),
 		dict(cname="closes_at", ctype=db.types.int),
@@ -39,6 +43,7 @@ db.ensure_table(dict(
 		dict(cname="revealed_at", ctype=db.types.int),
 		dict(cname="deadline_at", ctype=db.types.int),
 		dict(cname="choice_index", ctype=db.types.int, notnull=False),
+		dict(cname="choice_indices", ctype=db.types.text, notnull=False),   # JSON list, multi-answer
 		dict(cname="is_correct", ctype=db.types.bool, notnull=False),
 		dict(cname="answered_at", ctype=db.types.int, notnull=False),
 		dict(cname="response_ms", ctype=db.types.int, notnull=False),
