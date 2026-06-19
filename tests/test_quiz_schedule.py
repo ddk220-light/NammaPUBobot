@@ -25,3 +25,20 @@ def test_stamp_assigns_sequential_numbers():
     assert [e["seq"] for e in flat] == [1, 2, 3, 4]
     assert [e["week"] for e in flat] == [1, 1, 2, 2]
     assert [e["day"] for e in flat] == [1, 2, 1, 2]
+
+
+from bot.quiz import schedule as sched
+
+_FIX = [
+    {"id": "x1", "category": "combat", "seq": 1, "week": 1, "day": 1, "options": ["a", "b", "c", "d"], "correct_indices": [0]},
+    {"id": "x2", "category": "techgaps", "seq": 2, "week": 1, "day": 2, "options": ["a", "b", "c", "d"], "correct_indices": [1, 2]},
+]
+
+def test_entry_for_seq_returns_match_or_none():
+    assert sched.entry_for_seq(_FIX, 2)["id"] == "x2"
+    assert sched.entry_for_seq(_FIX, 99) is None
+
+def test_week_is_complete_true_when_all_days_posted():
+    # week 1 has days {1,2} in this 2-entry fixture
+    assert sched.week_is_complete(_FIX, week=1, posted_seqs={1, 2}) is True
+    assert sched.week_is_complete(_FIX, week=1, posted_seqs={1}) is False
