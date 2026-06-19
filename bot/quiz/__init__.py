@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """AoE2 unit-quiz subsystem — strictly additive, opt-in.
 
-Self-contained: the bot reads only data/quiz_questions.json + these qc_quiz_* tables
+Self-contained: the bot reads only data/quiz_schedule.json + these qc_quiz_* tables
 at runtime and NEVER touches the aoe2_matchup SQLite. Disabled by default (no
 qc_quiz_config row with enabled=1 -> the think() job does nothing). Mirrors the
 bot/lobby/ isolation: dedicated tables declared here via ensure_table at import,
