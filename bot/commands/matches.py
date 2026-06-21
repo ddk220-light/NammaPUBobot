@@ -130,41 +130,34 @@ async def report_manual(ctx, queue: str, winners: List[Member], losers: List[Mem
 
 
 async def lobby2(ctx, gameid: str):
-	"""Manually link an AoE2 game id to your current ranked match so the result
-	posts automatically (for lobbies the auto `test123` watcher didn't catch)."""
-	from bot.lobby import completed
+	"""Announce a live AoE2 lobby by its game id: posts a self-updating card (join link,
+	map, server, settings, who's in) with a Join button — like AOE2LobbyBOT's /lobby. If
+	you're in a ranked match awaiting a result, it also links the game so the result
+	posts automatically (best-effort, silent)."""
+	from bot.lobby import announce, completed
 
 	game_id = completed.parse_game_id(gameid)
 	if game_id is None:
 		raise bot.Exc.SyntaxError(ctx.qc.gt(
 			"Provide a numeric AoE2 game id (the number in `aoe2de://0/<id>`)."
 		))
+
+	# Primary: post the live, self-updating lobby card in this channel.
+	announce.start(ctx.channel, game_id)
+
+	# Bonus (silent): if the caller is in a ranked match awaiting a result, link this
+	# game so the result posts automatically. Never errors the command if not.
+	linked_note = ""
 	match = find(
 		lambda m: m.qc == ctx.qc and m.ranked and m.state == bot.Match.WAITING_REPORT and ctx.author in m.players,
 		bot.active_matches,
 	)
-	if match is None:
-		raise bot.Exc.NotFoundError(ctx.qc.gt(
-			"You have no ranked match awaiting a result here. `/lobby2` links your live game to "
-			"the current ranked match so the result posts automatically."
-		))
-	result = await completed.link_manual(ctx.qc.id, match.id, game_id, ctx.author.id)
-	if result == "exists":
-		msg = ctx.qc.gt("That game is already linked — I'll post the result when it finishes.")
-	else:
-		msg = ctx.qc.gt(
-			"Linked game `{gid}` to match #{mid}. I'll post the result for the losing captain to confirm "
-			"when the game ends."
-		).format(gid=game_id, mid=match.id)
-	# Post a public message with the aoe2de:// code block (copyable) + Join/Spectate
-	# buttons so teammates can click straight into the game. Buttons redirect via the
-	# web server; the code block is always shown so it works even without a web URL.
-	from bot.lobby import buttons
-	from bot.lobby import view as lview
-	body = f"{msg}\n\n`{lview.deep_link(game_id)}`"
-	view = buttons.link_view(game_id)
-	if view is not None:
-		from core.utils import ok_embed
-		await ctx.reply(embed=ok_embed(body), view=view)
-	else:
-		await ctx.success(body)
+	if match is not None:
+		try:
+			await completed.link_manual(ctx.qc.id, match.id, game_id, ctx.author.id)
+			linked_note = ctx.qc.gt(" Also linked it to match #{mid} for the result.").format(mid=match.id)
+		except Exception:
+			pass
+
+	await ctx.ignore(ctx.qc.gt("📡 Tracking lobby `{gid}` — the card will post here and update "
+							   "as players join.{note}").format(gid=game_id, note=linked_note))

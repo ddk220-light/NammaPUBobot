@@ -74,34 +74,72 @@ def deep_link(game_id, mode="join"):
 	return f"aoe2de://1/{game_id}" if mode == "spectate" else f"aoe2de://0/{game_id}"
 
 
+# AoE2 player-colour slot → coloured dot (1-indexed, the in-game order).
+_COLOR_DOT = {1: "🔵", 2: "🔴", 3: "🟢", 4: "🟡", 5: "🟦", 6: "🟣", 7: "⚪", 8: "🟠"}
+
+
+def settings_lines(lob):
+	"""Lobby-settings lines (game mode · speed, map, server, ranked/avg-Elo, flags).
+	Every field is optional — the socket may omit any of them. Pure."""
+	out = []
+	mode_speed = " · ".join(x for x in (lob.get("gameModeName"), lob.get("speedName")) if x)
+	if mode_speed:
+		out.append(mode_speed)
+	if lob.get("mapName"):
+		out.append(f"Map: {lob['mapName']}")
+	if lob.get("server"):
+		out.append(f"Server: {lob['server']}")
+	ranked = []
+	if lob.get("leaderboardName"):
+		ranked.append(lob["leaderboardName"])
+	if lob.get("averageRating"):
+		ranked.append(f"avg {lob['averageRating']} Elo")
+	if ranked:
+		out.append(" · ".join(ranked))
+	flags = []
+	if lob.get("password"):
+		flags.append("🔒 password")          # presence only — never print the value
+	if lob.get("recordGame"):
+		flags.append("⏺ recorded")
+	if flags:
+		out.append(" · ".join(flags))
+	return out
+
+
+def roster_lines(entry):
+	"""One line per occupied seat: `<colour-dot> <name> — <civ>` (civ omitted if
+	unknown), in seat order. Pure."""
+	out = []
+	for s in sorted(reducer.occupied_slots(entry),
+					key=lambda s: (s.get("slot") if s.get("slot") is not None else 0)):
+		dot = _COLOR_DOT.get(s.get("color"), "▫️")
+		name = s.get("name") or "?"
+		civ = s.get("civName")
+		out.append(f"{dot} {name}" + (f" — {civ}" if civ else ""))
+	return out
+
+
 def lobby_card_lines(entry, game_id):
-	"""Reference-style lobby card body (the AOE2LobbyBOT look): the aoe2de:// join link
-	as a copyable code block, then Map/Server, then the player roster with `Open`
-	placeholders for empty seats and a `+N slots remaining` header. Pure — no Discord."""
+	"""Full reference-style lobby card body (the AOE2LobbyBOT look): the aoe2de:// join
+	link as a copyable code block, the lobby settings (mode/speed/map/server/ranked/
+	flags), then the player roster with coloured dots + civ and `Open` placeholders for
+	empty seats under a `+N slots remaining` header. Pure — no Discord."""
 	lob = entry.get("lobby") or {}
 	total = lob.get("totalSlotCount") or 0
 	blocked = lob.get("blockedSlotCount") or 0
 	playable = max(0, total - blocked)
-	occupied = sorted(
-		reducer.occupied_slots(entry),
-		key=lambda s: (s.get("slot") if s.get("slot") is not None else 0),
-	)
-	names = [s.get("name") or "?" for s in occupied]
-	open_count = max(0, playable - len(names))
+	roster = roster_lines(entry)
+	open_count = max(0, playable - len(roster))
 
 	lines = []
 	link = deep_link(game_id)
 	if link:
 		lines.append(f"`{link}`")            # copyable, like the reference card
-	meta = []
-	if lob.get("mapName"):
-		meta.append(f"Map: {lob['mapName']}")
-	if lob.get("server"):
-		meta.append(f"Server: {lob['server']}")
-	if meta:
-		lines += ["", *meta]
+	settings = settings_lines(lob)
+	if settings:
+		lines += ["", *settings]
 	remaining = f"+{open_count} slot(s) remaining" if open_count else "full"
-	lines += ["", f"**Players** · {remaining}", *names, *(["Open"] * open_count)]
+	lines += ["", f"**Players** · {remaining}", *roster, *(["Open"] * open_count)]
 	return lines
 
 

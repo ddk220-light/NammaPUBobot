@@ -97,3 +97,45 @@ def test_lobby_card_lines_full_lobby_says_full():
 	st = reducer.fold([_lobby(total=2), _slot(0, 1, "A"), _slot(1, 2, "B")])
 	body = "\n".join(view.lobby_card_lines(st[MID], MID))
 	assert "full" in body and "Open" not in body
+
+
+def _rich_lobby(mid=MID):
+	return {"type": "lobbyAdded", "data": {
+		"matchId": mid, "name": "letsgo", "mapName": "Arabia", "server": "ukwest",
+		"totalSlotCount": 4, "blockedSlotCount": 0, "gameModeName": "Random Map",
+		"speedName": "Fast", "leaderboardName": "1v1 RM", "averageRating": 1187,
+		"password": "secret", "recordGame": True,
+	}}
+
+
+def _civ_slot(idx, pid, name, color, civ, mid=MID):
+	return {"type": "slotAdded", "data": {
+		"matchId": mid, "slot": idx, "profileId": pid, "name": name, "color": color, "civName": civ,
+	}}
+
+
+def test_settings_lines_render_all_known_fields():
+	st = reducer.fold([_rich_lobby()])
+	out = "\n".join(view.settings_lines(st[MID]["lobby"]))
+	assert "Random Map · Fast" in out
+	assert "Map: Arabia" in out and "Server: ukwest" in out
+	assert "1v1 RM" in out and "avg 1187 Elo" in out
+	assert "🔒 password" in out and "secret" not in out   # presence only, never the value
+	assert "⏺ recorded" in out
+
+
+def test_roster_lines_have_colour_dot_and_civ():
+	st = reducer.fold([_rich_lobby(), _civ_slot(0, 1, "ddk220", 1, "Mongols"),
+					   _civ_slot(1, 2, "Shadeslayer", 2, "Franks")])
+	out = view.roster_lines(st[MID])
+	assert out[0] == "🔵 ddk220 — Mongols"
+	assert out[1] == "🔴 Shadeslayer — Franks"
+
+
+def test_full_card_includes_settings_and_rich_roster():
+	st = reducer.fold([_rich_lobby(), _civ_slot(0, 1, "ddk220", 1, "Mongols")])
+	body = "\n".join(view.lobby_card_lines(st[MID], MID))
+	assert f"`aoe2de://0/{MID}`" in body
+	assert "Random Map · Fast" in body and "avg 1187 Elo" in body
+	assert "🔵 ddk220 — Mongols" in body
+	assert "+3 slot(s) remaining" in body and body.count("Open") == 3

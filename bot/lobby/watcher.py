@@ -17,12 +17,12 @@ it is only imported lazily at runtime (never at package import / under tests).
 import asyncio
 import time
 
-from nextcord import Embed, Colour, DiscordException
+from nextcord import DiscordException
 
 from core.console import log
 from core.database import db
 
-from . import buttons, reducer, socket, view, profile_map
+from . import buttons, embeds, reducer, socket, view, profile_map
 
 TARGET_NAME = "test123"     # the announce join key (v1: fixed, single active match)
 HARD_TTL = 90 * 60          # absolute cap on a watcher's life (seconds)
@@ -63,7 +63,7 @@ class LobbyWatcher:
 			self.task.cancel()
 		if status == "expired" and self.message and not self.linked:
 			await self._safe_edit(
-				self._embed("Lobby tracking ended — no lobby detected.", greyed=True), view=None)
+				embeds.simple_embed("Lobby tracking ended — no lobby detected.", greyed=True), view=None)
 
 	async def _guard(self):
 		try:
@@ -134,7 +134,7 @@ class LobbyWatcher:
 		now = time.monotonic()
 		if self.message is not None and (now - self._last_edit) < EDIT_DEBOUNCE:
 			return
-		embed = self._embed(title, body=body)
+		embed = embeds.lobby_embed(entry, mid)
 		vw = buttons.link_view(mid)
 		if self.message is None:
 			await self._safe_send(embed, view=vw)
@@ -157,11 +157,8 @@ class LobbyWatcher:
 		except Exception as e:
 			log.error(f"LobbyWatcher({self.match.id}) profile-map heal failed: {e}")
 		await self._persist("filling")
-		title = (entry.get("lobby") or {}).get("name") or TARGET_NAME
-		body = "\n".join(view.lobby_card_lines(entry, mid))
-		await self._safe_edit(self._embed(
-			title,
-			body=body,
+		await self._safe_edit(embeds.lobby_embed(
+			entry, mid,
 			footer=f"✅ Linked to match #{self.match.id} · {len(pids)} players",
 		), view=buttons.link_view(mid))
 		log.info(f"LobbyWatcher({self.match.id}) linked game {mid} ({len(pids)} players).")
@@ -172,8 +169,8 @@ class LobbyWatcher:
 		await self._persist("in_progress")
 		# Game launched: the lobby is gone, so a Join button would be dead — keep only a
 		# Spectate button (cleared automatically when no base URL is configured).
-		await self._safe_edit(self._embed(
-			f"🎮 Game in progress — match **#{self.match.id}**",
+		await self._safe_edit(embeds.simple_embed(
+			f"🎮 Game in progress — match #{self.match.id}",
 			body="The result will sync when the game ends.",
 			footer=f"game {self.game_id}",
 		), view=buttons.link_view(self.game_id, join=False, spectate=True))
@@ -219,16 +216,6 @@ class LobbyWatcher:
 			log.error(f"LobbyWatcher({self.match.id}) persist failed: {e}")
 
 	# ── discord helpers ──────────────────────────────────────────────────
-	def _embed(self, title, body=None, footer=None, greyed=False):
-		embed = Embed(
-			title=title,
-			colour=Colour(0x4a4d52) if greyed else Colour(0x50e3c2),
-			description=body or None,
-		)
-		if footer:
-			embed.set_footer(text=footer)
-		return embed
-
 	async def _safe_send(self, embed, view=None):
 		try:
 			self.message = await self.channel.send(embed=embed, view=view)
