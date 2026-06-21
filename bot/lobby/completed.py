@@ -122,6 +122,11 @@ async def resolve_row(row):
 		await _set_status(row_id, "expired")
 		return
 
+	# 1b) Bare /lobby2 lobby (no bot match): post the informational results card.
+	if row.get("match_id") is None:
+		await _resolve_informational(row, now)
+		return
+
 	# 2) Resolve the live bot match FIRST. If it is gone or already past report
 	#    (reported manually / cancelled / timed out), do nothing but close the row.
 	match = next((m for m in bot.active_matches if m.id == row.get("match_id")), None)
@@ -169,6 +174,45 @@ async def resolve_row(row):
 	if should_record_civs(winner_idx, win_tid):
 		await _safe_record_civs(match, match_api, now, winner_idx=winner_idx)
 	await _post_result_and_gate(match, row, winner_idx, losing_captain)
+
+
+async def _resolve_informational(row, now):
+	"""Bare /lobby2 lobby (match_id NULL): once the game is finished, post an
+	informational results card (teams, winner, civs, duration, replay links) in the
+	channel and close the row. No ranked reporting, no captain confirm."""
+	from nextcord import DiscordException
+
+	from core.client import dc
+
+	from . import results
+
+	row_id = row.get("id")
+	game_id = row.get("aoe2_game_id")
+	if row.get("completed_message_id"):
+		await _set_status(row_id, "completed")
+		return
+	match_api = await api.fetch_match_by_id(game_id)
+	if match_api is None or not api.is_finished(match_api):
+		await _reschedule(row_id, now)
+		return
+	channel = dc.get_channel(row.get("channel_id"))
+	if channel is None:
+		await _set_status(row_id, "completed")
+		return
+	try:
+		message = await channel.send(embed=results.results_embed(match_api))
+	except DiscordException as e:
+		log.warning(f"results card send failed (game {game_id}): {e}")
+		await _reschedule(row_id, now)
+		return
+	try:
+		await db.update(
+			"qc_lobbies",
+			{"status": "completed", "completed_message_id": message.id, "last_edit_at": now},
+			keys={"id": row_id})
+	except Exception as e:
+		log.error(f"results card status update failed (game {game_id}): {e}")
+	log.info(f"Posted informational results card for game {game_id}.")
 
 
 async def _post_result_and_gate(match, row, winner_idx, losing_captain):

@@ -130,9 +130,10 @@ async def report_manual(ctx, queue: str, winners: List[Member], losers: List[Mem
 
 
 async def lobby2(ctx, gameid: str):
-	"""Announce a live AoE2 lobby by its game id: posts a self-updating card (join link,
-	map, server, settings, who's in) with a Join button — like AOE2LobbyBOT's /lobby. If
-	you're in a ranked match awaiting a result, it also links the game so the result
+	"""Announce a live AoE2 lobby by its game id: this command's reply IS a self-updating
+	lobby card (join link, map + thumbnail, server, settings, who's in with civs) and a
+	Join button — like AOE2LobbyBOT's /lobby. When the game ends a results card is posted.
+	If you're in a ranked match awaiting a result, it also links the game so the result
 	posts automatically (best-effort, silent)."""
 	from bot.lobby import announce, completed
 
@@ -142,12 +143,9 @@ async def lobby2(ctx, gameid: str):
 			"Provide a numeric AoE2 game id (the number in `aoe2de://0/<id>`)."
 		))
 
-	# Primary: post the live, self-updating lobby card in this channel.
-	announce.start(ctx.channel, game_id)
-
 	# Bonus (silent): if the caller is in a ranked match awaiting a result, link this
-	# game so the result posts automatically. Never errors the command if not.
-	linked_note = ""
+	# game so the result posts automatically. Never errors the command if not. Done
+	# first so the ranked row exists before the announcer's launch-time persist check.
 	match = find(
 		lambda m: m.qc == ctx.qc and m.ranked and m.state == bot.Match.WAITING_REPORT and ctx.author in m.players,
 		bot.active_matches,
@@ -155,9 +153,15 @@ async def lobby2(ctx, gameid: str):
 	if match is not None:
 		try:
 			await completed.link_manual(ctx.qc.id, match.id, game_id, ctx.author.id)
-			linked_note = ctx.qc.gt(" Also linked it to match #{mid} for the result.").format(mid=match.id)
 		except Exception:
 			pass
 
-	await ctx.ignore(ctx.qc.gt("📡 Tracking lobby `{gid}` — the card will post here and update "
-							   "as players join.{note}").format(gid=game_id, note=linked_note))
+	# This command's own reply becomes the live lobby card (so it reads "used /lobby2"),
+	# which the announcer then edits in place as players join.
+	inter = ctx.interaction
+	if inter.response.is_done():
+		msg = await inter.followup.send(embed=announce.loading_embed(game_id))
+	else:
+		await inter.response.send_message(embed=announce.loading_embed(game_id))
+		msg = await inter.original_message()
+	announce.start(msg, game_id, ctx.author.id)
