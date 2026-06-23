@@ -58,6 +58,17 @@ async def reopen_pending_parser_update(current_parser_version):
         [current_parser_version])
 
 
+async def reset_stale_processing(now, older_than_s=600):
+    """Recover matches orphaned in 'processing' by a crash/redeploy mid-ingest: reset them to
+    the retryable 'unavailable' status. Run once per process at first sweep — a real in-flight
+    parse finishes in seconds, so anything still 'processing' past older_than_s is from a dead
+    process and would otherwise be picked up by neither find_new_match nor find_due_retry."""
+    await db.execute(
+        "UPDATE rs_ingest SET status='unavailable', next_attempt_at=%s "
+        "WHERE status='processing' AND (last_attempt_at IS NULL OR last_attempt_at < %s)",
+        [now, now - older_than_s])
+
+
 # ── ingest status ────────────────────────────────────────────────────────
 async def get_ingest(aoe2_match_id):
     return await db.select_one(["*"], "rs_ingest", {"aoe2_match_id": aoe2_match_id})

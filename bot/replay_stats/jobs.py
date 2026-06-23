@@ -47,10 +47,11 @@ class ReplayStatsJobs:
     async def _run(self):
         if not await store.is_enabled():
             return
+        now = int(time.time())
         if not self._reopened:
             await store.reopen_pending_parser_update(PARSER_VERSION)
+            await store.reset_stale_processing(now)
             self._reopened = True
-        now = int(time.time())
         work = await store.find_new_match()
         if work:
             await self.ingest_one(work["aoe2_match_id"], work.get("bot_match_id"),
@@ -80,10 +81,12 @@ class ReplayStatsJobs:
                         error_reason=fstatus)
                 return await self._mark_unavailable(aoe2_match_id, attempts, first_seen_at, now, fstatus)
 
-            resolved = await asyncio.to_thread(_load_resolved)
-            date_map = {aoe2_match_id: _date_str(played_at_epoch)} if played_at_epoch else {}
-            result, pstatus, sv = await parse_replay(path, resolved, date_map)
-            _safe_unlink(path)
+            try:
+                resolved = await asyncio.to_thread(_load_resolved)
+                date_map = {aoe2_match_id: _date_str(played_at_epoch)} if played_at_epoch else {}
+                result, pstatus, sv = await parse_replay(path, resolved, date_map)
+            finally:
+                _safe_unlink(path)   # remove the temp replay on every path (success or error)
 
             if pstatus == "pending_parser_update":
                 await store.upsert_ingest(aoe2_match_id, status="pending_parser_update",
