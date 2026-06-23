@@ -4,7 +4,8 @@ import bot.replay_stats.policy as p
 def test_save_version_supported():
     assert p.save_version_supported(67.2) is True
     assert p.save_version_supported(66.6) is True
-    assert p.save_version_supported(68.0) is False   # a future patch
+    assert p.save_version_supported(68.0) is True    # verified: sanduckhan parses save 68.x
+    assert p.save_version_supported(69.0) is False   # a future, not-yet-verified patch
     assert p.save_version_supported(None) is False
 
 
