@@ -1028,3 +1028,11 @@ async def _replaystats_reingest(
 		match_id: str = SlashOption(name="match_id", description="The aoe2 match id."),
 ): await run_slash(bot.commands.replaystats_reingest, interaction=interaction, match_id=match_id)
 
+
+@dc.slash_command(name='player_details', description="Show a player's in-game replay stats (last 90 days).", **guild_kwargs)
+async def _player_details(
+		interaction: Interaction,
+		player: Member = SlashOption(name="player", description="Whose stats to show (defaults to you).", required=False, verify=False),
+		days: int = SlashOption(name="days", description="How many days back (default 90).", required=False, default=90),
+): await run_slash(bot.commands.player_details, interaction=interaction, player=player, days=days)
+

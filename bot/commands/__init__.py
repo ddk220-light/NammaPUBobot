@@ -6,3 +6,4 @@ from .admin import *
 from .misc import *
 from .quiz import *
 from .replay_stats import *
+from .player_details import *
