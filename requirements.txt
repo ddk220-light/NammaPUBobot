@@ -17,3 +17,9 @@ cryptography==46.0.7
 # runtime overhead; setting it enables exception capture via the task
 # supervisor's _task_done_callback.
 sentry-sdk==2.18.0
+# Replay parsing for the live replay-stats pipeline (bot/replay_stats). mgz is the sanduckhan
+# fork pinned to a commit that supports AoE2 DE save_version 67.x; aocref is its reference data.
+mgz @ https://github.com/sanduckhan/aoc-mgz/archive/a1683d8eeca67796ced0d0c05b145420c97d862d.tar.gz
+aocref
+requests==2.32.3
+tqdm==4.67.1
