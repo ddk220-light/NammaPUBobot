@@ -71,6 +71,13 @@ class ReplayStatsJobs:
                                       first_seen_at=first_seen_at, last_attempt_at=now)
             path, fstatus = await fetch_replay(aoe2_match_id)
             if not path:
+                if fstatus in ("http_429", "429_exhausted"):
+                    # Global aoe.ms rate-limit (per-IP) — cool down WITHOUT counting an attempt,
+                    # so a busy backfill doesn't penalize matches toward longer backoff.
+                    return await store.upsert_ingest(
+                        aoe2_match_id, status="unavailable", attempts=attempts,
+                        first_seen_at=first_seen_at, next_attempt_at=now + 1800,
+                        error_reason=fstatus)
                 return await self._mark_unavailable(aoe2_match_id, attempts, first_seen_at, now, fstatus)
 
             resolved = await asyncio.to_thread(_load_resolved)
