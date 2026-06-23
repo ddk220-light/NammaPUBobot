@@ -574,15 +574,13 @@ async def reopen_pending_parser_update(current_parser_version):
         [current_parser_version])
 
 
-async def reset_stale_processing(now, older_than_s=600):
+async def reset_stale_processing(now):
     """Recover matches orphaned in 'processing' by a crash/redeploy mid-ingest: reset them to
-    the retryable 'unavailable' status. Run once per process at first sweep — a real in-flight
-    parse finishes in seconds, so anything still 'processing' past older_than_s is from a dead
-    process and would otherwise be picked up by neither find_new_match nor find_due_retry."""
+    the retryable 'unavailable' status. Run once per process at first sweep — this process has
+    not written any 'processing' row yet, so every existing one is from a dead process."""
     await db.execute(
-        "UPDATE rs_ingest SET status='unavailable', next_attempt_at=%s "
-        "WHERE status='processing' AND (last_attempt_at IS NULL OR last_attempt_at < %s)",
-        [now, now - older_than_s])
+        "UPDATE rs_ingest SET status='unavailable', next_attempt_at=%s WHERE status='processing'",
+        [now])
 
 
 # ── ingest status ────────────────────────────────────────────────────────
@@ -1327,7 +1325,7 @@ Append to `requirements.txt`:
 # Replay parsing for the live replay-stats pipeline (bot/replay_stats). mgz is the sanduckhan
 # fork pinned to a commit that supports AoE2 DE save_version 67.x; aocref is its reference data.
 mgz @ https://github.com/sanduckhan/aoc-mgz/archive/a1683d8eeca67796ced0d0c05b145420c97d862d.tar.gz
-aocref
+aocref==2.0.37
 requests==2.32.3
 tqdm==4.67.1
 ```
