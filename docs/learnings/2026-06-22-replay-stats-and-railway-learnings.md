@@ -204,18 +204,21 @@ build time/size from the parser deps.
 
 The feature shipped (opt-in, off-by-default), was enabled, and a 90-day backfill ran. What we learned the hard way:
 
-- **The save-version treadmill hit immediately.** Since the last replay bake (May 10, save 67.2),
-  AoE2 shipped a patch bumping replays to **save 68.0**, so the **most recent ~6 weeks of games
-  are unparseable** by the canonical mgz API our `extract.py` uses. The system handled it exactly
-  as designed: detected the new format, **shelved** the games as `pending_parser_update` (72 of
-  them), never crashed, and they'll auto-parse once the parser is updated.
-- **No drop-in save-68 parser exists yet.** Tested against a real save-68 replay:
-  `sanduckhan/aoc-mgz` (our pin) and `happyleavesaoc/aoc-mgz` master **both fail** at the new DE
-  header (`de_string` assertion). **`AoEInsights/aoc-mgz` (package `mgz-fast`) CAN parse save-68**
-  but exposes only a low-level API — **no `mgz.model`** — so adopting it means **rewriting
-  `extract.py`** (a real project, not a pin bump). Decision: take the 67.x slice now, leave save-68
-  shelved until a canonical `mgz.model`-compatible save-68 parser lands (then it's a one-line pin
-  bump + `PARSER_VERSION` bump → auto-reparse).
+- **The save-version "blocker" was self-inflicted — our gate, not the parser.** Since the last
+  replay bake (May 10, save 67.2), AoE2 bumped replays to **save 68.0**, and our `policy.py` gate
+  (`MAX_SUPPORTED_SAVE = 67.99`) **shelved** the ~6 weeks of save-68 games as
+  `pending_parser_update` — correctly graceful (never crashed). But the gate was **too
+  conservative**: the pinned **sanduckhan fork parses save-68 fine** — verified 7/7 real save-68
+  replays through `extract.py` (the DE header format didn't change in a parser-breaking way
+  67.2 → 68; the parser, like mgz-fast, falls into its `save >= 67.2` branch and sails through).
+- **Lesson: gate by what the parser EMPIRICALLY handles, not by a README version number.** My
+  first pass wrongly concluded save-68 needed a fork — because I tested *`happyleavesaoc/aoc-mgz`
+  master* (66.6-max, which genuinely **does** fail at the `de_string` offset) and the prod gate
+  masked that **sanduckhan was never actually tried on 68**. `AoEInsights/aoc-mgz` (package
+  `mgz-fast`) also parses save-68 but is a lean low-level lib (**no `mgz.model`**) → unusable
+  without rewriting `extract.py`. **The actual fix was one line:** `MAX_SUPPORTED_SAVE` → `68.99`
+  + bump `PARSER_VERSION` (`+2`) → `reopen_pending_parser_update` reparses the 72 shelved games.
+  No fork, no port, no rewrite.
 - **Build-system gotcha (caught in staging).** The save-68 forks use `hatchling`+`setuptools-scm`,
   so a GitHub **tarball** install fails ("setuptools-scm was unable to detect version") — they need
   `pip install git+https://…` *and* `git` present in the build image. Our prod `sanduckhan` pin is
@@ -229,5 +232,10 @@ The feature shipped (opt-in, off-by-default), was enabled, and a 90-day backfill
   Task-8 test, run for real against 156 overlapping matches) found **0 mismatches** across the
   sampled players — live extraction reproduces the trusted values exactly.
 
-**Open follow-up:** save-68 support. Watch `happyleavesaoc/aoc-mgz` for a save-68 release (then
-bump the pin), or scope the `mgz-fast` migration if recent data is urgently needed.
+**Resolved:** save-68 is handled by the existing parser (gate bumped to `68.99`, `PARSER_VERSION`
+`+2`). **For future patches:** when `/replaystats status` shows games piling on a new `save NN`,
+empirically test the pinned fork on one such replay (download it, run `extract.py`); if it parses,
+just bump `MAX_SUPPORTED_SAVE` + `PARSER_VERSION` and they auto-reparse. Only if the fork genuinely
+*fails* do you need a real parser update (the `mgz-fast` low-level lib parses newer formats but
+would require porting its version-gated header logic into the canonical/sanduckhan `mgz/fast/`, or
+rewriting `extract.py` — a real project; the build-system gotcha above applies to any fork swap).

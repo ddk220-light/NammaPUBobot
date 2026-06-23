@@ -8,7 +8,7 @@ from core.database import db
 
 # Bumped whenever the mgz pin or SUPPORTED_SAVE_VERSIONS policy changes (see policy.py).
 # Stored on every parsed match; a bump auto-reopens pending_parser_update rows.
-PARSER_VERSION = "mgz-a1683d8+1"
+PARSER_VERSION = "mgz-a1683d8+2"   # +2: save 68.x verified-supported -> reopens shelved save-68 games
 
 db.ensure_table(dict(
     tname="rs_config",

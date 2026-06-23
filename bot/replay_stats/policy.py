@@ -3,10 +3,13 @@
 parser handles, and how to back off / give up on retries. No DB, no nextcord, no mgz —
 unit-tested in isolation (tests/test_replay_stats_policy.py)."""
 
-# The sanduckhan/aoc-mgz fork (pinned in requirements.txt) parses up to AoE2 DE save 67.x;
-# base mgz handles older versions. Anything newer is an un-parseable future patch until the
-# fork is bumped (then raise this and bump PARSER_VERSION in __init__.py).
-MAX_SUPPORTED_SAVE = 67.99
+# The pinned sanduckhan/aoc-mgz fork parses AoE2 DE replays through save 68.x — VERIFIED
+# empirically (2026-06-23: 7/7 real save-68 replays parsed cleanly through extract.py; the
+# header format didn't change in a parser-breaking way from 67.2 → 68). Raise this (and bump
+# PARSER_VERSION in __init__.py) only after empirically confirming the fork handles a newer
+# version, so the pending_parser_update shelf keeps genuinely-unparseable future patches
+# recoverable rather than letting them parse_failed.
+MAX_SUPPORTED_SAVE = 68.99
 
 # Backoff (seconds) for replays not yet on aoe.ms, by prior attempt count.
 UNAVAILABLE_BACKOFF = [600, 3600, 21600, 86400]   # 10m, 1h, 6h, 24h
