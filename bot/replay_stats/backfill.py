@@ -11,6 +11,8 @@ from . import store
 from .jobs import jobs
 
 _task = None
+FETCH_PACING_S = 10   # seconds between fetches — keep us under aoe.ms's per-IP 429 rate limit
+                      # (2s hammered it into long 15-120s backoffs; 10s avoids most 429s)
 
 
 async def kick_off(days):
@@ -40,7 +42,7 @@ async def _run(days):
             errors = 0
             if done % 20 == 0:
                 log.info(f"Replay-stats backfill: {done} matches processed…")
-            await asyncio.sleep(2)   # gentle pacing between external fetches
+            await asyncio.sleep(FETCH_PACING_S)   # gentle pacing between external fetches
         except Exception as e:
             errors += 1
             log.error(f"Replay-stats backfill iteration error ({errors}/5): {e}")

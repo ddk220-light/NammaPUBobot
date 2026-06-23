@@ -197,3 +197,37 @@ build time/size from the parser deps.
 - **Railway:** [plan limits](https://docs.railway.com/pricing/plans),
   [scaling](https://docs.railway.com/deployments/scaling),
   [volumes & ephemeral storage](https://docs.railway.com/reference/volumes).
+
+---
+
+## 9. Production rollout findings (2026-06-23)
+
+The feature shipped (opt-in, off-by-default), was enabled, and a 90-day backfill ran. What we learned the hard way:
+
+- **The save-version treadmill hit immediately.** Since the last replay bake (May 10, save 67.2),
+  AoE2 shipped a patch bumping replays to **save 68.0**, so the **most recent ~6 weeks of games
+  are unparseable** by the canonical mgz API our `extract.py` uses. The system handled it exactly
+  as designed: detected the new format, **shelved** the games as `pending_parser_update` (72 of
+  them), never crashed, and they'll auto-parse once the parser is updated.
+- **No drop-in save-68 parser exists yet.** Tested against a real save-68 replay:
+  `sanduckhan/aoc-mgz` (our pin) and `happyleavesaoc/aoc-mgz` master **both fail** at the new DE
+  header (`de_string` assertion). **`AoEInsights/aoc-mgz` (package `mgz-fast`) CAN parse save-68**
+  but exposes only a low-level API — **no `mgz.model`** — so adopting it means **rewriting
+  `extract.py`** (a real project, not a pin bump). Decision: take the 67.x slice now, leave save-68
+  shelved until a canonical `mgz.model`-compatible save-68 parser lands (then it's a one-line pin
+  bump + `PARSER_VERSION` bump → auto-reparse).
+- **Build-system gotcha (caught in staging).** The save-68 forks use `hatchling`+`setuptools-scm`,
+  so a GitHub **tarball** install fails ("setuptools-scm was unable to detect version") — they need
+  `pip install git+https://…` *and* `git` present in the build image. Our prod `sanduckhan` pin is
+  the old static-version style, which is why its tarball works. Any future fork swap must account
+  for this (git-install + add `git` to the Dockerfile, or `SETUPTOOLS_SCM_PRETEND_VERSION`).
+- **aoe.ms rate-limits per IP.** A 2s backfill cadence triggered relentless 429s (15→30→60→120s
+  in-download backoffs). Bumped `backfill.FETCH_PACING_S` to **10s**. Because it's per-IP, **local
+  testing didn't contend** with the prod bot's downloads.
+- **The pipeline is validated end-to-end and CORRECT.** 199 games parsed+stored, 1,566 player
+  rows (97% attributed). A **parity check vs the offline `replay_quiz.db` ground truth** (the
+  Task-8 test, run for real against 156 overlapping matches) found **0 mismatches** across the
+  sampled players — live extraction reproduces the trusted values exactly.
+
+**Open follow-up:** save-68 support. Watch `happyleavesaoc/aoc-mgz` for a save-68 release (then
+bump the pin), or scope the `mgz-fast` migration if recent data is urgently needed.
