@@ -49,3 +49,8 @@ async def douche(interaction: Interaction):
 @dc.slash_command(name='quiz', **guild_kwargs)
 async def admin_quiz(interaction: Interaction):
 	pass
+
+
+@dc.slash_command(name='replaystats', **guild_kwargs)
+async def admin_replaystats(interaction: Interaction):
+	pass

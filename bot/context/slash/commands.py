@@ -995,3 +995,36 @@ async def _quiz_reveal_now(
 		interaction: Interaction
 ): await run_slash(bot.commands.quiz_reveal_now, interaction=interaction)
 
+
+# ── Replay-stats pipeline (opt-in, admin) ─────────────────────────────────
+@groups.admin_replaystats.subcommand(name='status', description='Show replay-stats ingest status.')
+async def _replaystats_status(
+		interaction: Interaction,
+): await run_slash(bot.commands.replaystats_status, interaction=interaction)
+
+
+@groups.admin_replaystats.subcommand(name='enable', description='Enable replay-stats ingestion (admin).')
+async def _replaystats_enable(
+		interaction: Interaction,
+): await run_slash(bot.commands.replaystats_enable, interaction=interaction)
+
+
+@groups.admin_replaystats.subcommand(name='disable', description='Disable replay-stats ingestion (admin).')
+async def _replaystats_disable(
+		interaction: Interaction,
+): await run_slash(bot.commands.replaystats_disable, interaction=interaction)
+
+
+@groups.admin_replaystats.subcommand(name='backfill', description='Backfill recent replays, newest-first (admin).')
+async def _replaystats_backfill(
+		interaction: Interaction,
+		days: int = SlashOption(name="days", description="How many days back to backfill.", required=False, default=90),
+): await run_slash(bot.commands.replaystats_backfill, interaction=interaction, days=days)
+
+
+@groups.admin_replaystats.subcommand(name='reingest', description='Force re-ingest one aoe2 match (admin).')
+async def _replaystats_reingest(
+		interaction: Interaction,
+		match_id: str = SlashOption(name="match_id", description="The aoe2 match id."),
+): await run_slash(bot.commands.replaystats_reingest, interaction=interaction, match_id=match_id)
+
