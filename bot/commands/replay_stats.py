@@ -51,11 +51,18 @@ async def replaystats_backfill(ctx, days=90):
 
 async def replaystats_reingest(ctx, match_id):
     ctx.check_perms(ctx.Perms.ADMIN)
-    from bot.replay_stats import store
     from bot.replay_stats.jobs import jobs
     import time
-    await store.upsert_ingest(int(match_id), status="processing", attempts=0,
-                              first_seen_at=int(time.time()))
-    await jobs.ingest_one(int(match_id), None, None, int(time.time()))
-    await ctx.success(f"Re-ingested aoe2 match {int(match_id)} (see /replaystats status).",
+    try:
+        mid = int(match_id)
+    except ValueError:
+        return await ctx.error("match_id must be a numeric aoe2 match id.")
+    if jobs._running:
+        return await ctx.error("A replay-stats sweep is in progress — try again in a moment.")
+    jobs._running = True   # coarse lock: keep the tick's sweep from overlapping this match
+    try:
+        await jobs.ingest_one(mid, None, None, int(time.time()))
+    finally:
+        jobs._running = False
+    await ctx.success(f"Re-ingested aoe2 match {mid} (see /replaystats status).",
                       title="Replay-stats")
