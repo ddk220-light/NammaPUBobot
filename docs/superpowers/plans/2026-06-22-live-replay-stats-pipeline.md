@@ -694,8 +694,9 @@ def _download_module():
 
 async def fetch_replay(aoe2_match_id):
     """Resolve a participant profile_id and download the replay. Returns (path|None, status).
-    status: 'ok'/'cached' on success; 'no_profile', '404'/'http_*'/'429_exhausted'/'neterr:*'
-    on failure."""
+    status: 'ok'/'cached' on success; 'no_profile' when no participant resolved; otherwise the
+    last download_replay status — e.g. 'http_404'/'neterr:*'/'bad_zip'/'no_record_in_zip' (each
+    participant tried), or 'http_429'/'429_exhausted' (aoe.ms rate-limited — we stop early)."""
     dl = await asyncio.to_thread(_download_module)
     profile_ids = await asyncio.to_thread(dl.resolve_profile_ids, aoe2_match_id)
     if not profile_ids:
@@ -706,8 +707,9 @@ async def fetch_replay(aoe2_match_id):
         last_status = status
         if path:
             return path, status
-        if status.startswith("http_4") and status != "http_429":
-            continue   # try the next participant on a 404 for this one
+        if status in ("http_429", "429_exhausted"):
+            break   # aoe.ms rate-limits globally (per-IP) — another participant won't help
+        # otherwise (404 / neterr / http_5xx / bad_zip): try the next participant
     return None, last_status
 
 
