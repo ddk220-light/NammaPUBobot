@@ -1033,6 +1033,7 @@ async def _replaystats_reingest(
 async def _player_details(
 		interaction: Interaction,
 		player: Member = SlashOption(name="player", description="Whose stats to show (defaults to you).", required=False, verify=False),
+		compare: Member = SlashOption(name="compare", description="Optional second player to overlay (drawn dotted).", required=False, verify=False),
 		days: int = SlashOption(name="days", description="How many days back (default 90).", required=False, default=90),
-): await run_slash(bot.commands.player_details, interaction=interaction, player=player, days=days)
+): await run_slash(bot.commands.player_details, interaction=interaction, player=player, player2=compare, days=days)
 
