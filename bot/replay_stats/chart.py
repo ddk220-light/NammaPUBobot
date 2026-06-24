@@ -96,6 +96,35 @@ GREEN, RED, GREY = "#2e8b57", "#b22222", "#808080"
 N_FULL, N_MIN = 10, 5
 
 
+def _decollide(fig, labels, fixed, pad=3.0):
+    """Greedy label de-collision: push each annotation in `labels` (a list of (artist, x_anchor))
+    straight up until its rendered box overlaps neither the others nor the `fixed` texts. Run AFTER
+    layout so the window extents are final; each label's leader line stretches to follow it. Offsets
+    are nudged in points (physical), so the result is dpi-independent at save time."""
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    rend = canvas.get_renderer()
+    placed = [list(t.get_window_extent(rend).extents) for t in fixed]
+    for a, _xa in sorted(labels, key=lambda u: u[1]):       # left to right
+        e = a.get_window_extent(rend)
+        box = [e.x0, e.y0, e.x1, e.y1]
+        moved = 0.0
+        for _ in range(len(placed) + 2):
+            hit = next((p for p in placed if box[0] < p[2] and box[2] > p[0]
+                        and box[1] < p[3] and box[3] > p[1]), None)
+            if hit is None:
+                break
+            shift = hit[3] - box[1] + pad                   # lift clear of the box it overlaps
+            box[1] += shift
+            box[3] += shift
+            moved += shift
+        if moved:
+            dx, dy = a.xyann
+            a.xyann = (dx, dy + moved * 72.0 / fig.dpi)      # px -> points
+        placed.append(box)
+
+
 def render_growth_curve(name, curve, days):
     """Render bot.replay_stats.query.build_growth_curve() output (the averaged production timeline)
     to a PNG. Villager + military mean lines with 95% CI bands, age-up guide lines, eco/military
@@ -124,8 +153,15 @@ def render_growth_curve(name, curve, days):
             break
 
     xs = [t / 60 for t in grid[:keep]]
-    top = max(max((v for v in vhi[:keep] if v is not None), default=1),
-              max((v for v in mhi[:keep] if v is not None), default=1)) or 1
+    # Scale the y-axis to the confidence-reliable prefix (n >= N_FULL) plus the full mean lines —
+    # not the wide thin-tail CI, which would stretch the axis and squash the curves. The tail band
+    # may clip, but it's already shaded as low-confidence.
+    rel = thin if 0 < thin < keep else keep
+
+    def _mx(seq):
+        return max((v for v in seq if v is not None), default=1)
+
+    top = max(_mx(vhi[:rel]), _mx(mhi[:rel]), _mx(vm[:keep]), _mx(mm[:keep])) or 1
 
     fig = Figure(figsize=(20, 12))
     ax = fig.subplots()
@@ -139,30 +175,40 @@ def render_growth_curve(name, curve, days):
     ax.plot(xs, vm[:keep], color=GREEN, lw=3, label="Villagers", zorder=3)
     ax.plot(xs, mm[:keep], color=RED, lw=3, label="Military", zorder=3)
 
+    ymax = top * 1.18                      # headroom for the stacked, de-collided upgrade labels
+    age_texts, age_levels = [], (ymax * 0.985, ymax * 0.93)   # alternate height so close ages don't clash
     f, c, i = curve["ages"]
-    for t, lab in ((f, "Feudal"), (c, "Castle"), (i, "Imperial")):
+    for idx, (t, lab) in enumerate(((f, "Feudal"), (c, "Castle"), (i, "Imperial"))):
         if t and t / 60 <= xs[-1]:
             ax.axvline(t / 60, color="#666666", ls="--", lw=1.5, zorder=2)
-            ax.text(t / 60, top * 1.005, f"{lab}  {_secs(t)}", ha="center", va="bottom",
-                    fontsize=12, fontweight="bold", color="#444444", zorder=4,
-                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.7))
+            age_texts.append(ax.text(
+                t / 60, age_levels[idx % 2], f"{lab}  {_secs(t)}", ha="center", va="top",
+                fontsize=12, fontweight="bold", color="#444444", zorder=7,
+                bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#bdbdbd", alpha=0.95)))
 
-    def mark(items, means, color, fc, dy):
-        for j, (tech, tt) in enumerate(items):
-            if tt / 60 > xs[-1]:
+    # Upgrade markers: a dot on the line + a leader-lined label. Labels are de-collided after layout
+    # (_decollide) so densely-clustered researches (or two at the same avg time) never overlap.
+    upgrades = []
+
+    def add_marks(items, means, color, fc):
+        for tech, tt in items:
+            x = tt / 60
+            if x > xs[-1]:
                 continue
             y = _interp(grid[:keep], means[:keep], tt)
             if y is None:
                 continue
-            ax.plot([tt / 60], [y], "o", color=color, ms=8, zorder=5)
-            ax.annotate(f"{tech}  {_secs(tt)}", (tt / 60, y), textcoords="offset points",
-                        xytext=(7, dy + (j % 2) * 16), fontsize=10.5, zorder=6,
-                        bbox=dict(boxstyle="round,pad=0.3", fc=fc, ec=color, alpha=0.92))
+            ax.plot([x], [y], "o", color=color, ms=7, zorder=5)
+            upgrades.append((ax.annotate(
+                f"{tech}  {_secs(tt)}", (x, y), textcoords="offset points", xytext=(0, 12),
+                ha="center", fontsize=10, zorder=6,
+                bbox=dict(boxstyle="round,pad=0.3", fc=fc, ec=color, alpha=0.95),
+                arrowprops=dict(arrowstyle="-", color=color, lw=0.7, alpha=0.5, shrinkA=0, shrinkB=1)), x))
 
-    mark(curve.get("eco", []), vm, GREEN, "#e9f6ee", 8)
-    mark(curve.get("mil_upg", []), mm, RED, "#fbeaea", -22)
+    add_marks(curve.get("eco", []), vm, GREEN, "#e9f6ee")
+    add_marks(curve.get("mil_upg", []), mm, RED, "#fbeaea")
 
-    ax.set_ylim(0, top * 1.10)
+    ax.set_ylim(0, ymax)
     ax.set_xlim(0, xs[-1])
     ax.set_xlabel("Game time (minutes)", fontsize=15, fontweight="bold")
     ax.set_ylabel("Average cumulative count  (villagers / military)", fontsize=15, fontweight="bold")
@@ -183,6 +229,7 @@ def render_growth_curve(name, curve, days):
         "|   shaded = 95% CI   ·   dotted = games still in progress",
         fontsize=18, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
+    _decollide(fig, upgrades, age_texts)   # after layout: extents are final, leader lines follow
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=140)
