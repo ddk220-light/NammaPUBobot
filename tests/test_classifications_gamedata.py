@@ -33,3 +33,7 @@ def test_tech_click_s():
     assert gd.tech_click_s(GAME, 1, "Fletching") == 780
     assert gd.tech_click_s(GAME, 1, "Loom") is None     # not this player
     assert gd.tech_click_s(GAME, 2, "Loom") == 120
+
+
+def test_player_numbers():
+    assert gd.player_numbers(GAME) == [1, 2]
