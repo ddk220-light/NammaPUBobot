@@ -92,7 +92,8 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version):
     p2p = shape.pnum_to_profile(extracted["players"])
 
     # clear any prior rows for this match (idempotent re-ingest)
-    for t in ("rs_player_games", "rs_player_units", "rs_player_techs", "rs_player_buildings"):
+    for t in ("rs_player_games", "rs_player_units", "rs_player_techs", "rs_player_buildings",
+              "rs_player_events"):
         await db.execute(f"DELETE FROM {t} WHERE aoe2_match_id=%s", [aoe2_id])
 
     await db.insert("rs_matches",
@@ -110,6 +111,9 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version):
     builds = shape.building_rows(aoe2_id, extracted["buildings"], p2p)
     if builds:
         await db.insert_many("rs_player_buildings", builds, on_dublicate="replace")
+    events = shape.event_rows(aoe2_id, extracted.get("events", []), p2p)
+    if events:
+        await db.insert_many("rs_player_events", events, on_dublicate="replace")
     profs = shape.profile_upserts(extracted["players"], profmap, parsed_at)
     if profs:
         await db.insert_many("rs_profiles", profs, on_dublicate="replace")

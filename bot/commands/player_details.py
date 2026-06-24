@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""User-facing /player_details: a player's build-timeline chart over the last N days, built from
-the daily-quiz metric categories. Thin handler — the data + rendering live in bot.replay_stats
-(query.gather_timeline_data + chart.render_timeline), lazily imported so this module loads cheap."""
+"""User-facing /player_details: a player's averaged production-timeline graph over the last N days.
+Thin handler — the data + rendering live in bot.replay_stats (query.gather_growth_curve +
+chart.render_growth_curve), lazily imported so this module loads cheap. The growth curve is drawn
+from the per-event rs_player_events series, so it covers each linked player's standard-map games
+whose replays have been parsed for per-event data."""
 __all__ = ["player_details"]
 
 from nextcord import Member, File
@@ -27,11 +29,12 @@ async def player_details(ctx, player: Member = None, days: int = 90):
 
     from bot.replay_stats import query, chart
     profile_ids = await query.resolve_profile_ids(target.id)
-    data = await query.gather_timeline_data(profile_ids, days=days)
-    if not data:
+    curve = await query.gather_growth_curve(profile_ids, days=days)
+    if not curve:
         return await ctx.error(
-            f"No replay stats for {get_nick(target)} in the last {days} days. Replay stats "
-            "cover linked players' standard-map games once their replays have been parsed.",
+            f"No replay stats for {get_nick(target)} in the last {days} days. The production "
+            "timeline covers linked players' standard-map games once their replays have been "
+            "parsed for per-event data.",
             title="Player details")
-    png = chart.render_timeline(get_nick(target), data, days)
-    await ctx.reply(file=File(fp=png, filename="build_timeline.png"))
+    png = chart.render_growth_curve(get_nick(target), curve, days)
+    await ctx.reply(file=File(fp=png, filename="production_timeline.png"))

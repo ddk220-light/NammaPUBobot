@@ -100,6 +100,8 @@ def extract_match(path, resolved, date_map=None):
     tc_build_times = {n: [] for n in players}
     deletes = {n: [] for n in players}
     tc_instances = {n: set() for n in players}
+    events = []                         # production timeline: one row per timestamped DE_QUEUE click
+                                        # (null-timestamp queues are dropped — nowhere to plot them)
 
     for p in m.players:
         for o in (p.objects or []):
@@ -140,6 +142,10 @@ def extract_match(path, resolved, date_map=None):
             key = (pnum, unit)
             rec = queues.setdefault(key, [0, 0, 0, 0])
             rec[0] += amt
+            if ts is not None:
+                qcat, qmil = classify_unit(unit)
+                events.append(dict(player_number=pnum, kind="queue", name=unit, category=qcat,
+                                   is_military=qmil, amount=amt, t_s=round(ts)))
             pf, pc, pi = before(pnum, ts)
             if pf:
                 rec[1] += amt
@@ -230,7 +236,8 @@ def extract_match(path, resolved, date_map=None):
     match = dict(aoe2_match_id=aoe2_id, map=getattr(m.map, "name", ""),
                  save_version=m.save_version, duration_s=round(_secs(m.duration)) if _secs(m.duration) else None,
                  date=date_map.get(aoe2_id, ""), winner_team=None)
-    return dict(match=match, players=out_players, units=out_units, techs=out_techs, buildings=out_buildings)
+    return dict(match=match, players=out_players, units=out_units, techs=out_techs,
+                buildings=out_buildings, events=events)
 
 
 def load_resolved():

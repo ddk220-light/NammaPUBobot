@@ -6,9 +6,10 @@ imports (mgz, requests) stay lazy inside fetch.py/parse.py so importing this pac
 test-safe under the conftest stubs."""
 from core.database import db
 
-# Bumped whenever the mgz pin or SUPPORTED_SAVE_VERSIONS policy changes (see policy.py).
-# Stored on every parsed match; a bump auto-reopens pending_parser_update rows.
-PARSER_VERSION = "mgz-a1683d8+2"   # +2: save 68.x verified-supported -> reopens shelved save-68 games
+# Bumped whenever the mgz pin or SUPPORTED_SAVE_VERSIONS policy changes (see policy.py),
+# or when the extractor's output shape changes. Stored on every parsed match; a bump
+# auto-reopens pending_parser_update rows (NOT 'done' rows — those are re-done by an explicit backfill).
+PARSER_VERSION = "mgz-a1683d8+3"   # +3: emit per-queue production events -> rs_player_events (growth-curve timeline)
 
 db.ensure_table(dict(
     tname="rs_config",
@@ -106,6 +107,28 @@ db.ensure_table(dict(
         dict(cname="count", ctype=db.types.int, notnull=False),
     ],
     primary_keys=["aoe2_match_id", "player_number", "building"],
+))
+
+db.ensure_table(dict(
+    tname="rs_player_events",
+    # Per-action production timeline (the genuinely-new data the growth-curve chart needs):
+    # one row per DE_QUEUE train-click, carrying its timestamp + batch amount + unit category.
+    # `kind` is 'queue' today; 'build'/'research'/'age' are reserved for B3 (no migration needed).
+    # PK (aoe2_match_id, player_number, seq) indexes the match-id lookup AND makes re-ingest
+    # idempotent (write_match deletes by aoe2_match_id first, then re-inserts seq from 0).
+    columns=[
+        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="player_number", ctype=db.types.int),
+        dict(cname="seq", ctype=db.types.int),               # per-(match,player) event index
+        dict(cname="profile_id", ctype=db.types.int, notnull=False),
+        dict(cname="t_s", ctype=db.types.int, notnull=False),   # action timestamp, seconds from start
+        dict(cname="kind", ctype=db.types.str, notnull=False),  # 'queue' (B1); build/research/age reserved
+        dict(cname="name", ctype=db.types.str, notnull=False),  # unit name
+        dict(cname="category", ctype=db.types.str, notnull=False),
+        dict(cname="is_military", ctype=db.types.bool, notnull=False),
+        dict(cname="amount", ctype=db.types.int, notnull=False),
+    ],
+    primary_keys=["aoe2_match_id", "player_number", "seq"],
 ))
 
 db.ensure_table(dict(

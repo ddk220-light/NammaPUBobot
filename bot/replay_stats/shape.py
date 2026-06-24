@@ -15,6 +15,7 @@ _UNIT_FIELDS = ("player_number", "unit", "category", "is_military",
                 "total", "pre_feudal", "pre_castle", "pre_imperial")
 _TECH_FIELDS = ("player_number", "tech", "click_s", "phase")
 _BUILDING_FIELDS = ("player_number", "building", "count")
+_EVENT_FIELDS = ("player_number", "kind", "name", "category", "is_military", "amount", "t_s")
 
 
 def match_row(m, bot_match_id, parsed_at, parser_version):
@@ -61,6 +62,25 @@ def tech_rows(aoe2_match_id, techs, pnum2profile):
 
 def building_rows(aoe2_match_id, buildings, pnum2profile):
     return _long_rows(aoe2_match_id, buildings, pnum2profile, _BUILDING_FIELDS)
+
+
+def event_rows(aoe2_match_id, events, pnum2profile):
+    """Per-action production timeline -> rs_player_events rows. Assigns a per-(match,player) seq
+    in time order so the composite PK (match, player, seq) is unique and re-ingest-safe (a player
+    can queue the same unit many times)."""
+    ordered = sorted(events, key=lambda e: (e["player_number"], e.get("t_s") or 0,
+                                            e.get("name") or "", e.get("amount") or 0))
+    seqs, out = {}, []
+    for e in ordered:
+        pn = e["player_number"]
+        s = seqs.get(pn, 0)
+        seqs[pn] = s + 1
+        row = {k: e.get(k) for k in _EVENT_FIELDS}
+        row["aoe2_match_id"] = aoe2_match_id
+        row["profile_id"] = pnum2profile.get(pn)
+        row["seq"] = s
+        out.append(row)
+    return out
 
 
 def profile_upserts(players, profmap, now):
