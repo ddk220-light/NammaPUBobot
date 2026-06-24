@@ -9,7 +9,6 @@ async def _exec(pool, sql, args=None):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(sql, args or [])
-            return cur
 
 
 async def ensure_tables(pool):
@@ -34,9 +33,9 @@ async def window_matches(pool, days):
 async def upsert_classification(pool, c):
     """Write the registry row + its data-requirements ledger for one Classification."""
     await _exec(pool,
-        "REPLACE INTO cls_classifications (`key`, title, description, trigger_spec, version, "
-        "status, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-        [c.key, c.title, c.trigger_spec, c.trigger_spec, c.version, c.status, int(time.time())])
+        "REPLACE INTO cls_classifications (`key`, title, trigger_spec, version, "
+        "status, updated_at) VALUES (%s,%s,%s,%s,%s,%s)",
+        [c.key, c.title, c.trigger_spec, c.version, c.status, int(time.time())])
     await _exec(pool, "DELETE FROM cls_data_requirements WHERE `key`=%s", [c.key])
     for r in c.requirements:
         await _exec(pool,

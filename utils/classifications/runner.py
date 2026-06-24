@@ -30,18 +30,21 @@ def _cache_path(aoe2_match_id):
     return os.path.join(CACHE_DIR, "{}.{}.json".format(aoe2_match_id, EXTRACT_VERSION))
 
 
-async def _ensure_replay(aoe2_match_id):
-    """Return a path to the cached .aoe2record, downloading if absent. None if unavailable."""
+async def _ensure_replay(aoe2_match_id, no_download=False):
+    """Return (path, downloaded). Uses the cached .aoe2record if present (downloaded=False);
+    otherwise downloads it unless no_download is set. (None, False) if unavailable. Never deletes."""
     path = os.path.join(REPLAY_DIR, "{}.aoe2record".format(aoe2_match_id))
     if os.path.exists(path):
-        return path
+        return path, False
+    if no_download:
+        return None, False
     from utils.replay_quiz import download as dl
     pids = await dl.resolve_profile_ids(aoe2_match_id)
     for pid in pids:
         got, status = await dl.download_replay(aoe2_match_id, pid)
         if got and os.path.exists(got):
-            return got
-    return None
+            return got, True
+    return None, False
 
 
 def _extract_cached(path, aoe2_match_id, resolved, date_map):
@@ -82,10 +85,12 @@ async def run(days, only_key=None, no_download=False):
         for m in matches:
             mid = m["aoe2_match_id"]
             played_at = m["played_at"]
-            path = None if no_download else await _ensure_replay(mid)
+            path, downloaded = await _ensure_replay(mid, no_download)
             if not path:
                 failed += 1
                 continue
+            if downloaded:
+                fetched += 1
             try:
                 game = _extract_cached(path, mid, resolved, date_map)
             except Exception as e:                       # corrupt/unsupported replay -> skip
@@ -105,8 +110,8 @@ async def run(days, only_key=None, no_download=False):
                     await dbio.upsert_results(pool, c.key, mid, result_rows, metric_rows)
                     stats[c.key] += len(result_rows)
 
-        print("scanned={} fetched/cached_ok={} failed/unavailable={}".format(
-            scanned, scanned - fetched, failed))
+        print("scanned={} newly_downloaded={} failed/unavailable={}".format(
+            scanned, fetched, failed))
         for k, n in stats.items():
             print("  {}: {} matched player-games".format(k, n))
         return 0
