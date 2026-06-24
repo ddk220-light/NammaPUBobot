@@ -54,6 +54,7 @@ async def insights(ctx, use_case: str = "archer_rush", days: int = 90,
 		return await ctx.error("Unknown use case '{}'.".format(use_case), title="Insights")
 	title = reg.get("title") or use_case
 	specs = REGISTRY[use_case].factor_specs if use_case in REGISTRY else []
+	condition = (REGISTRY[use_case].trigger_spec if use_case in REGISTRY else reg.get("trigger_spec")) or ""
 
 	profile_ids = None
 	if player:
@@ -75,6 +76,8 @@ async def insights(ctx, use_case: str = "archer_rush", days: int = 90,
 	embed = Embed(title="{} - insights (last {}d)".format(title, days))
 	embed.description = "{} games | {} players | {} winners / {} losers".format(
 		len(results), len(board), wl["n_winners"], wl["n_losers"])
+	if condition:
+		embed.set_footer(text="{}: {}".format(title, condition))
 	embed.add_field(name="Leaderboard (by games)", value=prev, inline=False)
 	if aggregate_stats:
 		flines = ["{:<28} {:>8} {:>8}".format("fact", "winners", "losers")]

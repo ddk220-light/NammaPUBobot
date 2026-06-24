@@ -61,7 +61,7 @@ CLASSIFICATION = Classification(
     key="archer_rush",
     title="Archer Rush",
     version=2,
-    trigger_spec="Queued >=1 foot Archer (archer line; NOT skirmisher) before the Castle-age click.",
+    trigger_spec="a player who made at least one foot Archer (not Skirmisher) before clicking up to Castle Age",
     requirements=[
         req("foot_archer_queue_events", source="extract.events[category=archer_line]",
             status="available", note="per-queue timestamps; emitted by extract.py:147"),

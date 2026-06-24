@@ -34,12 +34,17 @@ async def on_insights_interaction(interaction):
 			return
 		use_case = cid[len("insights:full:"):cid.rfind(":")]
 		from bot.classifications import query
+		from utils.classifications.registry import REGISTRY
 		results = await query.fetch_results(use_case, days)
 		board = query.roster(results)
 		text, _ = query.leaderboard_text(board, 4000)
+		c = REGISTRY.get(use_case)
 		embed = nextcord.Embed(
-			title="{} - full leaderboard ({} players, last {}d)".format(use_case, len(board), days),
+			title="{} - full leaderboard ({} players, last {}d)".format(
+				c.title if c else use_case, len(board), days),
 			description=text)
+		if c and c.trigger_spec:
+			embed.set_footer(text="{}: {}".format(c.title, c.trigger_spec))
 		await _eph(interaction, embed=embed)
 	except Exception as e:
 		log.error("insights interaction error: {}\n{}".format(e, traceback.format_exc()))
