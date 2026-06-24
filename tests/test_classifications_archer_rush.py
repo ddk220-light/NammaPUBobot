@@ -1,4 +1,4 @@
-from utils.classifications.defs.archer_rush import trigger
+from utils.classifications.defs.archer_rush import trigger, factors
 
 # A clear feudal archer rush (player 1): archers queued before the castle click (1200).
 # A fast-castle player (player 2): clicks Castle early (700); archers only AFTER the click.
@@ -39,9 +39,6 @@ def test_trigger_ignores_skirmishers():
                     "amount": 20, "t_s": 700}],
     }
     assert trigger(skirmisher_only, 1) is False
-
-
-from utils.classifications.defs.archer_rush import factors
 
 
 def test_factors_counts_and_timing():
@@ -87,3 +84,17 @@ def test_factors_fletching_after_castle_does_not_count():
     f = factors(game, 1)
     assert f["fletching_pre_castle"] == 0.0
     assert f["fletching_after_feudal_s"] is None
+
+
+def test_factors_commit_to_castle_none_without_fletching():
+    game = {
+        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": 1400, "eapm": 90}],
+        "techs": [],   # no Fletching at all
+        "events": [
+            {"player_number": 1, "category": "archer_line", "name": "Archer", "amount": 6, "t_s": 700},
+            {"player_number": 1, "category": "archer_line", "name": "Archer", "amount": 6, "t_s": 900},
+        ],
+    }
+    f = factors(game, 1)
+    assert f["archers_pre_castle"] == 12.0
+    assert f["commit_to_castle_s"] is None   # Fletching is a required co-signal

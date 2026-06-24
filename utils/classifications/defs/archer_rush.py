@@ -42,9 +42,9 @@ def factors(game, pnum):
     within = sum((e.get("amount") or 1) for e in evs
                  if feudal_s is not None and e["t_s"] <= feudal_s + W_SECONDS)
 
-    fl = gd.tech_click_s(game, pnum, "Fletching")
-    fletch_pre_castle = _before_castle(fl, castle_s)
-    fletch_s = fl if fletch_pre_castle else None
+    fletch_click_s = gd.tech_click_s(game, pnum, "Fletching")
+    fletch_pre_castle = _before_castle(fletch_click_s, castle_s)
+    fletch_s = fletch_click_s if fletch_pre_castle else None
 
     tenth_s, cum = None, 0
     for e in evs:
@@ -53,6 +53,8 @@ def factors(game, pnum):
             tenth_s = e["t_s"]
             break
     commit_to_castle_s = None
+    # "commit" requires BOTH the 10th archer queued AND Fletching clicked pre-castle
+    # (per the definition); either alone leaves commit_to_castle_s undefined (None).
     if tenth_s is not None and fletch_s is not None and castle_s is not None:
         commit_s = max(tenth_s, fletch_s)
         if castle_s > commit_s:
