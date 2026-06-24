@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 def req(field_name, source, status, note=""):
     """One data-requirement row. status is 'available' or 'missing'."""
-    assert status in ("available", "missing"), status
+    if status not in ("available", "missing"):
+        raise ValueError(f"req() status must be 'available' or 'missing', got {status!r}")
     return {"field": field_name, "source": source, "status": status, "note": note}
 
 
