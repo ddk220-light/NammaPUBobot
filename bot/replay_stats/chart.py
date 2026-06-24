@@ -93,6 +93,7 @@ def render_timeline(name, data, days):
 
 
 GREEN, RED, GREY = "#2e8b57", "#b22222", "#808080"
+P1C, P2C = "#1f6feb", "#e8710a"   # per-player accent for age-up guides (distinct from green/red)
 N_FULL, N_MIN = 10, 5
 
 
@@ -155,9 +156,11 @@ DOT = (0, (1.4, 1.5))   # player-2 / secondary linestyle
 def render_growth_curve(name, curve, days, curve2=None, name2=None):
     """Render the averaged production timeline to a PNG. Single player: villager + military mean
     lines with 95% CI bands, age-up guides, eco/military upgrade markers, and an n-line. When a
-    second curve is given, overlay player 2 as DOTTED lines for comparison — the CI bands and the
-    per-upgrade labels are dropped (two players' worth is unreadable) and the age-up times move to
-    a compact corner table, keeping the focus on the four growth lines."""
+    second curve is given, overlay player 2 as DOTTED lines for comparison: the CI bands are
+    dropped, but BOTH players keep their eco/military research markers (P2 drawn with a hollow dot
+    and a dashed box/leader so it reads as the compared player) and BOTH players' age-ups are drawn
+    as vertical guides coloured per player (P1 blue, P2 orange) plus a colour-matched corner table —
+    so it's easy to see who clicks each age / researches each upgrade earlier."""
     import matplotlib
     matplotlib.use("Agg")
     from matplotlib.figure import Figure
@@ -184,7 +187,7 @@ def render_growth_curve(name, curve, days, curve2=None, name2=None):
         vm2, mm2 = curve2["vil_mean"], curve2["mil_mean"]
         top = max(top, _mx(vm2[:keep2]), _mx(mm2[:keep2]))
     top = top or 1
-    ymax = top * 1.18                      # headroom for stacked labels / age table
+    ymax = top * (1.30 if compare else 1.18)   # extra headroom: compare stacks two players' labels
 
     fig = Figure(figsize=(20, 12))
     ax = fig.subplots()
@@ -206,27 +209,66 @@ def render_growth_curve(name, curve, days, curve2=None, name2=None):
         ax.plot(xs2, mm2[:keep2], color=RED, lw=2.5, ls=DOT, zorder=4, label=f"{_short(name2)} military")
 
     age_texts, upgrades = [], []
-    if compare:
-        # vertical guides for both players (P1 dashed, P2 dotted) + phase names on P1; exact times
-        # for both go in a compact corner table so the chart stays legible.
-        for cv, st, xm in ((curve, "--", xs[-1]), (curve2, DOT, xs2[-1])):
-            for t in cv["ages"]:
-                if t and t / 60 <= xm:
-                    ax.axvline(t / 60, color="#8a8a8a", ls=st, lw=1.3, zorder=2)
-        for t, lab in zip(curve["ages"], ("Feudal", "Castle", "Imperial")):
-            if t and t / 60 <= xs[-1]:
-                ax.text(t / 60, ymax * 0.985, lab, ha="center", va="top", fontsize=11,
-                        fontweight="bold", color="#555555", zorder=7,
-                        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#cccccc", alpha=0.9))
 
+    # upgrade markers: a dot on the line + a leader-lined label, de-collided after layout so
+    # densely-clustered researches (or two players' at the same avg time) never overlap. The dashed
+    # variant (P2 in compare mode) uses a hollow dot + dashed box/leader so it reads as "compared".
+    def add_marks(items, grid_, means, xmax, color, fc, dashed):
+        ls = "--" if dashed else "-"
+        for tech, tt in items:
+            x = tt / 60
+            if x > xmax:
+                continue
+            y = _interp(grid_, means, tt)
+            if y is None:
+                continue
+            ax.plot([x], [y], marker="o", ls="none", ms=7, zorder=5,
+                    mfc=("none" if dashed else color), mec=color, mew=(1.6 if dashed else 0))
+            upgrades.append((ax.annotate(
+                f"{tech}  {_secs(tt)}", (x, y), textcoords="offset points", xytext=(0, 12),
+                ha="center", fontsize=(9 if compare else 10), zorder=6,
+                bbox=dict(boxstyle="round,pad=0.3", fc=fc, ec=color, alpha=0.95, ls=ls),
+                arrowprops=dict(arrowstyle="-", color=color, lw=0.7, alpha=0.5, ls=ls,
+                                shrinkA=0, shrinkB=1)), x))
+
+    if compare:
+        # (B) age-up guides coloured per player (P1 blue/solid, P2 orange/dashed) so the earlier
+        # click of each age is obvious; the neutral phase name sits centred between the pair.
+        for cv, pc, st, xmax in ((curve, P1C, "-", xs[-1]), (curve2, P2C, "--", xs2[-1])):
+            for t in cv["ages"]:
+                if t and t / 60 <= xmax:
+                    ax.axvline(t / 60, color=pc, ls=st, lw=1.7, alpha=0.85, zorder=2)
+        for idx, lab in enumerate(("Feudal", "Castle", "Imperial")):
+            ts = [t for t, xm in ((curve["ages"][idx], xs[-1]), (curve2["ages"][idx], xs2[-1]))
+                  if t and t / 60 <= xm]
+            if ts:
+                age_texts.append(ax.text(
+                    sum(ts) / len(ts) / 60, ymax * 0.985, lab, ha="center", va="top",
+                    fontsize=11, fontweight="bold", color="#555555", zorder=7,
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#cccccc", alpha=0.9)))
+
+        # exact age times — each player's row in their accent colour (so colour -> player is legible).
+        # One aligned monospace block gives the box; the two data rows are overlaid in colour on top.
         def _row(nm, cv):
             return _short(nm, 14).ljust(14) + "".join(
                 (_secs(t) if t else "-").rjust(9) for t in cv["ages"])
-        tbl = ("".ljust(14) + "Feudal".rjust(9) + "Castle".rjust(9) + "Imperial".rjust(9)
-               + "\n" + _row(name, curve) + "\n" + _row(name2, curve2))
-        ax.text(0.987, 0.987, tbl, transform=ax.transAxes, ha="right", va="top",
-                fontfamily="monospace", fontsize=11, color="#333333", zorder=8,
-                bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="#bdbdbd", alpha=0.96))
+        hdr = "age-up".ljust(14) + "Feudal".rjust(9) + "Castle".rjust(9) + "Imperial".rjust(9)
+        r1, r2 = _row(name, curve), _row(name2, curve2)
+        tx, ty = 0.987, 0.987
+        age_texts.append(ax.text(
+            tx, ty, hdr + "\n" + r1 + "\n" + r2, transform=ax.transAxes, ha="right", va="top",
+            fontfamily="monospace", fontsize=11, color="#333333", zorder=8,
+            bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="#bdbdbd", alpha=0.96)))
+        ax.text(tx, ty, "\n" + r1, transform=ax.transAxes, ha="right", va="top",
+                fontfamily="monospace", fontsize=11, color=P1C, zorder=9)
+        ax.text(tx, ty, "\n\n" + r2, transform=ax.transAxes, ha="right", va="top",
+                fontfamily="monospace", fontsize=11, color=P2C, zorder=9)
+
+        # (A) research markers on BOTH players (P1 solid/filled, P2 dashed/hollow).
+        add_marks(curve.get("eco", []), grid[:keep], vm[:keep], xs[-1], GREEN, "#e9f6ee", False)
+        add_marks(curve.get("mil_upg", []), grid[:keep], mm[:keep], xs[-1], RED, "#fbeaea", False)
+        add_marks(curve2.get("eco", []), curve2["grid"][:keep2], vm2[:keep2], xs2[-1], GREEN, "#e9f6ee", True)
+        add_marks(curve2.get("mil_upg", []), curve2["grid"][:keep2], mm2[:keep2], xs2[-1], RED, "#fbeaea", True)
     else:
         age_levels = (ymax * 0.985, ymax * 0.93)   # alternate height so close ages don't clash
         for idx, (t, lab) in enumerate(zip(curve["ages"], ("Feudal", "Castle", "Imperial"))):
@@ -236,26 +278,8 @@ def render_growth_curve(name, curve, days, curve2=None, name2=None):
                     t / 60, age_levels[idx % 2], f"{lab}  {_secs(t)}", ha="center", va="top",
                     fontsize=12, fontweight="bold", color="#444444", zorder=7,
                     bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#bdbdbd", alpha=0.95)))
-
-        # upgrade markers: a dot on the line + a leader-lined label, de-collided after layout so
-        # densely-clustered researches (or two at the same avg time) never overlap.
-        def add_marks(items, means, color, fc):
-            for tech, tt in items:
-                x = tt / 60
-                if x > xs[-1]:
-                    continue
-                y = _interp(grid[:keep], means[:keep], tt)
-                if y is None:
-                    continue
-                ax.plot([x], [y], "o", color=color, ms=7, zorder=5)
-                upgrades.append((ax.annotate(
-                    f"{tech}  {_secs(tt)}", (x, y), textcoords="offset points", xytext=(0, 12),
-                    ha="center", fontsize=10, zorder=6,
-                    bbox=dict(boxstyle="round,pad=0.3", fc=fc, ec=color, alpha=0.95),
-                    arrowprops=dict(arrowstyle="-", color=color, lw=0.7, alpha=0.5, shrinkA=0, shrinkB=1)), x))
-
-        add_marks(curve.get("eco", []), vm, GREEN, "#e9f6ee")
-        add_marks(curve.get("mil_upg", []), mm, RED, "#fbeaea")
+        add_marks(curve.get("eco", []), grid[:keep], vm[:keep], xs[-1], GREEN, "#e9f6ee", False)
+        add_marks(curve.get("mil_upg", []), grid[:keep], mm[:keep], xs[-1], RED, "#fbeaea", False)
 
     ax.set_ylim(0, ymax)
     ax.set_xlim(0, max(xs[-1], xs2[-1]) if compare else xs[-1])
@@ -279,15 +303,16 @@ def render_growth_curve(name, curve, days, curve2=None, name2=None):
     ax.legend(h1 + h2, l1 + l2, fontsize=13, loc="center left", framealpha=0.95)
     if compare:
         title = (f"{_short(name)}  vs  {_short(name2)} — production timeline  ·  last {days} days\n"
-                 f"green = villagers   ·   red = military   ·   solid = {_short(name)}   ·   "
-                 f"dotted = {_short(name2)}   ·   ({curve['n']} vs {curve2['n']} games)")
+                 f"green = villagers · red = military   |   solid = {_short(name)} · "
+                 f"dotted = {_short(name2)}   |   age-ups coloured per player   ·   "
+                 f"{curve['n']} vs {curve2['n']} games")
     else:
         title = (f"{name} — production timeline  ·  last {days} days  ·  {curve['n']} games\n"
                  "green = villagers + economy upgrades   |   red = military + attack/armour upgrades   "
                  "|   shaded = 95% CI   ·   dotted = games still in progress")
     fig.suptitle(title, fontsize=18, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
-    if upgrades or age_texts:               # de-collide research/age labels (single-player only)
+    if upgrades or age_texts:               # de-collide research labels against age labels + table
         _decollide(fig, upgrades, age_texts)
 
     buf = io.BytesIO()
