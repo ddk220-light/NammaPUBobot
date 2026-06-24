@@ -16,6 +16,12 @@ def test_result_row_winner_none_stays_none():
     assert shape.result_row("archer_rush", 999, player, played_at=1)["winner"] is None
 
 
+def test_result_row_winner_false_becomes_zero():
+    player = {"player_number": 3, "profile_id": 333, "identity": "Cara", "civ": "Huns",
+              "team": "1", "winner": False}
+    assert shape.result_row("archer_rush", 999, player, played_at=1)["winner"] == 0
+
+
 def test_metric_rows_skips_none_values():
     factors = {"archers_pre_castle": 12.0, "commit_to_castle_s": None, "reached_castle": 1.0}
     rows = shape.metric_rows("archer_rush", 999, 1, factors)

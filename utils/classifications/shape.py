@@ -4,6 +4,7 @@ row dicts. No DB. None-valued metrics are dropped (a missing row = the factor di
 
 def result_row(key, aoe2_match_id, player, played_at):
     winner = player.get("winner")
+    team = player.get("team")
     return {
         "key": key,
         "aoe2_match_id": aoe2_match_id,
@@ -11,7 +12,7 @@ def result_row(key, aoe2_match_id, player, played_at):
         "profile_id": player.get("profile_id"),
         "identity": player.get("identity"),
         "civ": player.get("civ"),
-        "team": str(player.get("team")) if player.get("team") is not None else None,
+        "team": str(team) if team is not None else None,
         "winner": None if winner is None else (1 if winner else 0),
         "played_at": played_at,
     }
