@@ -25,8 +25,9 @@ Every classification is a structured record with **three parts**:
 
 These definitions and their results live in a **reviewable database** (`cls_*` MySQL tables).
 All processing runs **offline on a local machine**; results are pushed to the app's MySQL; the
-bot only *reads* them for `/classification`. (Future: the bot runs registered classifications
-automatically.)
+bot only *reads* them for `/insights <use_case> [days] [player]` — a leaderboard of who used the
+classification + winners-vs-losers aggregate facts (no quality scores — facts only). (Future: the
+bot runs registered classifications automatically.)
 
 ---
 
@@ -44,9 +45,9 @@ automatically.)
         ▼
  MySQL  cls_classifications · cls_data_requirements · cls_results · cls_result_metrics
         ▲ read
- bot/classifications/query.py (summarize + fetch_games) ──► bot/commands/classification.py
+ bot/classifications/query.py (roster + winners_vs_losers + fetch_results) ──► bot/commands/insights.py
         ▲ slash
- /classification <key> [days] [player]
+ /insights <use_case> [days] [player]
 ```
 
 ### Layers (each independently testable)
@@ -62,8 +63,8 @@ automatically.)
 | Async DB I/O (aiomysql) | `utils/classifications/dbio.py` | I/O |
 | Runner CLI (orchestration) | `utils/classifications/runner.py` | I/O |
 | `cls_*` schema for the bot (`ensure_table`) | `bot/classifications/__init__.py` | I/O |
-| Read aggregation (`summarize` pure, `fetch_games` DB) | `bot/classifications/query.py` | mixed |
-| Slash command | `bot/commands/classification.py` | I/O |
+| Read aggregation (`roster`/`winners_vs_losers` pure, `fetch_results` DB) | `bot/classifications/query.py` | mixed |
+| Slash command | `bot/commands/insights.py` | I/O |
 
 > Indentation: `utils/` uses **4 spaces**; `bot/` uses **tabs** (`ruff.toml` `indent-style = "tab"`).
 
@@ -130,11 +131,9 @@ excluded**) **before the Castle-age click**. A fast-castle→crossbow player cli
 so their archers land *after* the click and score zero pre-castle archers; any archer before the
 click reveals aggressive-feudal *intent*. **Rush ≠ win** — execution is what's graded.
 
-**Factors:** `archers_pre_castle`, `feudal_s`, `castle_s`, `reached_castle`,
-`feudal_to_castle_s`, `first_archer_s`, `first_archer_after_feudal_s`,
-`archers_within_3min_of_feudal`, `fletching_pre_castle`, `fletching_after_feudal_s`,
-`commit_to_castle_s` (= Castle click − max(time of 10th archer, Fletching click); **None unless
-≥10 archers AND Fletching before Castle**), `eapm`.
+**Factors** (declared in `factor_specs` for the `/insights` report): `archers_pre_castle`,
+`feudal_s`, `castle_s`, `fletching_click_s`, `fletching_pre_castle`, `reached_castle`,
+`feudal_to_castle_s`.
 
 **Calibrated against the real corpus:** doing an archer rush wins ≈ the baseline rate —
 *execution* decides. **Fletching before Castle** is the strongest single signal (~48% win vs

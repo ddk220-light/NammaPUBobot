@@ -1,73 +1,72 @@
 # -*- coding: utf-8 -*-
-"""Read aggregations for /classification. summarize() is pure (unit-tested); fetch_games()
-pulls a classification's matched player-games (with the two metrics summarize needs) from
-cls_results + cls_result_metrics over a date window."""
+"""Read side for /insights. Pure roster() + winners_vs_losers() over matched player-games;
+fetch_results() pulls them (with their full metrics dict) from cls_results + cls_result_metrics."""
 import time
 
 from core.database import db
 
-_BUCKETS = [(1, 3, "1-3"), (4, 10, "4-10"), (11, 20, "11-20"), (21, 10 ** 9, "21+")]
+
+def roster(results):
+	"""results: [{identity, profile_id, winner}]. -> leaderboard rows sorted by games desc."""
+	by = {}
+	for r in results:
+		p = by.setdefault(r["profile_id"], {"identity": r["identity"], "games": 0, "wins": 0, "known": 0})
+		p["games"] += 1
+		if r["winner"] in (0, 1, True, False) and r["winner"] is not None:
+			p["known"] += 1
+			if r["winner"]:
+				p["wins"] += 1
+	rows = list(by.values())
+	for p in rows:
+		p["win_pct"] = round(100 * p["wins"] / p["known"]) if p["known"] else None
+	rows.sort(key=lambda p: (-p["games"], p["identity"] or ""))
+	return rows
 
 
-def _winrate(games):
-	known = [g for g in games if g.get("winner") in (0, 1, True, False)]
-	wins = sum(1 for g in known if g["winner"]) if known else 0
-	return {"wins": wins, "known": len(known), "rate": round(wins / len(known), 3) if known else 0.0}
+def _avg(vals):
+	vals = [v for v in vals if v is not None]
+	return sum(vals) / len(vals) if vals else None
 
 
-def summarize(games):
-	"""games: list of dicts {identity, profile_id, winner(bool|None), archers_pre_castle(float),
-	fletching_pre_castle(float 0/1)}. Returns the report structure the command renders."""
-	by_player = {}
-	for g in games:
-		p = by_player.setdefault(g["profile_id"], {"identity": g["identity"], "rows": []})
-		p["rows"].append(g)
-
-	top = []
-	for pid, p in by_player.items():
-		wr = _winrate(p["rows"])
-		top.append({"identity": p["identity"], "profile_id": pid, "games": len(p["rows"]),
-		            "wins": wr["wins"], "known": wr["known"], "rate": wr["rate"]})
-	top.sort(key=lambda t: (-t["games"], t["identity"]))
-
-	by_commit = []
-	for lo, hi, label in _BUCKETS:
-		sub = [g for g in games if lo <= (g.get("archers_pre_castle") or 0) <= hi]
-		if sub:
-			wr = _winrate(sub)
-			by_commit.append({"bucket": label, "games": len(sub), **wr})
-
-	with_f = [g for g in games if (g.get("fletching_pre_castle") or 0) >= 1]
-	without_f = [g for g in games if (g.get("fletching_pre_castle") or 0) < 1]
-
-	return {
-		"n_games": len(games),
-		"n_players": len(by_player),
-		"overall": _winrate(games),
-		"by_commit": by_commit,
-		"by_fletching": {"with": _winrate(with_f), "without": _winrate(without_f)},
-		"top_players": top[:10],
-	}
+def winners_vs_losers(results, factor_specs):
+	"""For each spec metric, average its value over winners vs losers. Each result carries a
+	'metrics' dict. Games with unknown result (winner None) are excluded from both sides."""
+	W = [r for r in results if r["winner"] in (1, True)]
+	L = [r for r in results if r["winner"] in (0, False)]
+	factors = []
+	for s in factor_specs:
+		m = s["metric"]
+		factors.append({"metric": m, "label": s["label"], "kind": s["kind"],
+		                "winners": _avg([r["metrics"].get(m) for r in W]),
+		                "losers": _avg([r["metrics"].get(m) for r in L])})
+	return {"n_winners": len(W), "n_losers": len(L), "factors": factors}
 
 
-async def fetch_games(key, days, profile_ids=None):
-	"""Matched player-games for `key` in the last `days`, with the archers_pre_castle and
-	fletching_pre_castle metrics joined in. profile_ids: optional filter (a single player)."""
+async def fetch_results(use_case, days, profile_ids=None):
+	"""Matched player-games for `use_case` in the window, each with its full metrics dict."""
 	since = int(time.time()) - days * 86400
-	args = [key, since]
+	args = [use_case, since]
 	pid_clause = ""
 	if profile_ids:
-		pid_clause = " AND r.profile_id IN ({})".format(", ".join(["%s"] * len(profile_ids)))
+		pid_clause = " AND profile_id IN ({})".format(", ".join(["%s"] * len(profile_ids)))
 		args.extend(profile_ids)
-	rows = await db.fetchall(
-		"SELECT r.aoe2_match_id, r.player_number, r.profile_id, r.identity, r.winner, "
-		"MAX(CASE WHEN m.metric='archers_pre_castle' THEN m.value END) AS archers_pre_castle, "
-		"MAX(CASE WHEN m.metric='fletching_pre_castle' THEN m.value END) AS fletching_pre_castle "
-		"FROM cls_results r LEFT JOIN cls_result_metrics m "
-		"ON m.`key`=r.`key` AND m.aoe2_match_id=r.aoe2_match_id AND m.player_number=r.player_number "
-		"WHERE r.`key`=%s AND r.played_at >= %s" + pid_clause +
-		" GROUP BY r.aoe2_match_id, r.player_number, r.profile_id, r.identity, r.winner", args)
-	return [dict(r) for r in (rows or [])]
+	res = await db.fetchall(
+		"SELECT aoe2_match_id, player_number, profile_id, identity, winner FROM cls_results "
+		"WHERE `key`=%s AND played_at >= %s" + pid_clause, args)
+	res = [dict(r) for r in (res or [])]
+	if not res:
+		return []
+	mids = sorted({r["aoe2_match_id"] for r in res})
+	mets = await db.fetchall(
+		"SELECT aoe2_match_id, player_number, metric, value FROM cls_result_metrics "
+		"WHERE `key`=%s AND aoe2_match_id IN ({})".format(", ".join(["%s"] * len(mids))),
+		[use_case] + mids)
+	mmap = {}
+	for m in (mets or []):
+		mmap.setdefault((m["aoe2_match_id"], m["player_number"]), {})[m["metric"]] = m["value"]
+	for r in res:
+		r["metrics"] = mmap.get((r["aoe2_match_id"], r["player_number"]), {})
+	return res
 
 
 async def resolve_profile_ids(user_id):

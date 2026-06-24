@@ -1,46 +1,40 @@
-from bot.classifications.query import summarize
+from bot.classifications.query import roster, winners_vs_losers
 
 
-def _g(identity, profile_id, winner, archers, fletch):
-    return {"identity": identity, "profile_id": profile_id, "winner": winner,
-            "archers_pre_castle": archers, "fletching_pre_castle": fletch}
+def _r(identity, pid, winner, metrics):
+    return {"identity": identity, "profile_id": pid, "winner": winner, "metrics": metrics}
 
 
-GAMES = [
-    _g("Alice", 111, True, 17, 1.0),
-    _g("Alice", 111, False, 4, 0.0),
-    _g("Bob", 222, True, 12, 1.0),
-    _g("Bob", 222, None, 20, 1.0),    # unknown result -> excluded from win rate
+RESULTS = [
+    _r("Alice", 111, True, {"archers_pre_castle": 17.0, "fletching_pre_castle": 1.0, "castle_s": 1400.0}),
+    _r("Alice", 111, False, {"archers_pre_castle": 4.0, "fletching_pre_castle": 0.0, "castle_s": 1300.0}),
+    _r("Bob", 222, True, {"archers_pre_castle": 12.0, "fletching_pre_castle": 1.0, "castle_s": 1500.0}),
+    _r("Bob", 222, None, {"archers_pre_castle": 20.0, "fletching_pre_castle": 1.0, "castle_s": 1600.0}),
+]
+
+SPECS = [
+    {"metric": "archers_pre_castle", "label": "Archers before Castle", "kind": "count"},
+    {"metric": "fletching_pre_castle", "label": "Got Fletching before Castle", "kind": "percent"},
+    {"metric": "castle_s", "label": "Castle click", "kind": "seconds"},
 ]
 
 
-def test_summarize_counts_and_overall_winrate():
-    s = summarize(GAMES)
-    assert s["n_games"] == 4
-    assert s["n_players"] == 2
-    # known-result games: Alice W, Alice L, Bob W -> 2/3
-    assert s["overall"] == {"wins": 2, "known": 3, "rate": round(2 / 3, 3)}
+def test_roster_counts_and_sort():
+    rows = roster(RESULTS)
+    by = {r["identity"]: r for r in rows}
+    assert by["Alice"]["games"] == 2 and by["Alice"]["wins"] == 1 and by["Alice"]["known"] == 2
+    assert by["Alice"]["win_pct"] == 50
+    assert by["Bob"]["games"] == 2 and by["Bob"]["wins"] == 1 and by["Bob"]["known"] == 1
+    assert by["Bob"]["win_pct"] == 100
+    assert [r["identity"] for r in rows] == ["Alice", "Bob"]
 
 
-def test_summarize_winrate_by_fletching():
-    s = summarize(GAMES)
-    fl = s["by_fletching"]
-    # with fletching: Alice(W), Bob(W), Bob(None->excluded) -> 2/2 ; without: Alice(L) -> 0/1
-    assert fl["with"] == {"wins": 2, "known": 2, "rate": 1.0}
-    assert fl["without"] == {"wins": 0, "known": 1, "rate": 0.0}
-
-
-def test_summarize_top_players():
-    s = summarize(GAMES)
-    top = {p["identity"]: p for p in s["top_players"]}
-    assert top["Alice"]["games"] == 2 and top["Bob"]["games"] == 2
-    assert top["Alice"]["wins"] == 1 and top["Alice"]["known"] == 2     # rate 0.5
-
-
-def test_summarize_by_commit_buckets():
-    s = summarize(GAMES)
-    by_bucket = {b["bucket"]: b for b in s["by_commit"]}
-    # Alice(4) -> "4-10"; Alice(17), Bob(12), Bob(20) -> "11-20"
-    assert by_bucket["4-10"]["games"] == 1
-    assert by_bucket["11-20"]["games"] == 3
-    assert "1-3" not in by_bucket and "21+" not in by_bucket   # empty buckets omitted
+def test_winners_vs_losers_averages():
+    wl = winners_vs_losers(RESULTS, SPECS)
+    assert wl["n_winners"] == 2 and wl["n_losers"] == 1
+    f = {x["metric"]: x for x in wl["factors"]}
+    assert f["archers_pre_castle"]["winners"] == 14.5
+    assert f["archers_pre_castle"]["losers"] == 4.0
+    assert f["fletching_pre_castle"]["winners"] == 1.0
+    assert f["fletching_pre_castle"]["losers"] == 0.0
+    assert f["castle_s"]["kind"] == "seconds"
