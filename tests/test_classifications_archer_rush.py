@@ -39,3 +39,51 @@ def test_trigger_ignores_skirmishers():
                     "amount": 20, "t_s": 700}],
     }
     assert trigger(skirmisher_only, 1) is False
+
+
+from utils.classifications.defs.archer_rush import factors
+
+
+def test_factors_counts_and_timing():
+    f = factors(GAME, 1)
+    assert f["archers_pre_castle"] == 7.0                 # 3 + 4 (skirmishers excluded)
+    assert f["feudal_s"] == 600.0 and f["castle_s"] == 1200.0
+    assert f["reached_castle"] == 1.0
+    assert f["feudal_to_castle_s"] == 600.0
+    assert f["first_archer_s"] == 700.0
+    assert f["first_archer_after_feudal_s"] == 100.0
+    assert f["archers_within_3min_of_feudal"] == 7.0      # both queues within 600+180=780
+    assert f["fletching_pre_castle"] == 1.0
+    assert f["fletching_after_feudal_s"] == 180.0         # 780 - 600
+
+
+def test_factors_commit_to_castle_none_when_under_ten_archers():
+    # only 7 archers (<10) -> commit_to_castle_s undefined
+    assert factors(GAME, 1)["commit_to_castle_s"] is None
+
+
+def test_factors_commit_to_castle_when_committed():
+    game = {
+        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": 1400, "eapm": 90}],
+        "techs": [{"player_number": 1, "tech": "Fletching", "click_s": 800}],
+        "events": [
+            {"player_number": 1, "category": "archer_line", "name": "Archer", "amount": 6, "t_s": 700},
+            {"player_number": 1, "category": "archer_line", "name": "Archer", "amount": 6, "t_s": 900},
+        ],
+    }
+    f = factors(game, 1)
+    assert f["archers_pre_castle"] == 12.0
+    # 10th archer reached at the 900 queue; commit = max(900, fletch 800) = 900; 1400-900 = 500
+    assert f["commit_to_castle_s"] == 500.0
+
+
+def test_factors_fletching_after_castle_does_not_count():
+    game = {
+        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": 900, "eapm": 50}],
+        "techs": [{"player_number": 1, "tech": "Fletching", "click_s": 1000}],   # after castle
+        "events": [{"player_number": 1, "category": "archer_line", "name": "Archer",
+                    "amount": 3, "t_s": 700}],
+    }
+    f = factors(game, 1)
+    assert f["fletching_pre_castle"] == 0.0
+    assert f["fletching_after_feudal_s"] is None
