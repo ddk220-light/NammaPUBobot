@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Read-side of the classification framework: the cls_* tables (written offline by
 utils/classifications/runner.py) are declared here via ensure_table so the bot can read them
-for /classification. Columns mirror utils/classifications/schema.py exactly."""
+for /insights. Columns mirror utils/classifications/schema.py exactly."""
 from core.database import db
 
 db.ensure_table(dict(

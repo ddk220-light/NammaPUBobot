@@ -97,8 +97,8 @@ declare the same columns two ways; **keep them in sync**.
 2. Append it to `utils/classifications/registry.py`.
 3. Add pure unit tests in `tests/test_classifications_<key>.py` (synthetic game dicts — no DB,
    no mgz).
-4. Run the runner; it auto-registers the classification + ledger and stores results. The
-   `/classification <key>` command works immediately (autocomplete-free; pass the key).
+4. Run the runner; it auto-registers the classification + ledger and stores results. Add the new
+   key to the `/insights` command's `use_case` choices (`bot/context/slash/commands.py`) to surface it.
 
 No schema migration is needed — metrics are stored long-form.
 
@@ -135,18 +135,19 @@ click reveals aggressive-feudal *intent*. **Rush ≠ win** — execution is what
 `feudal_s`, `castle_s`, `fletching_click_s`, `fletching_pre_castle`, `reached_castle`,
 `feudal_to_castle_s`.
 
-**Calibrated against the real corpus:** doing an archer rush wins ≈ the baseline rate —
-*execution* decides. **Fletching before Castle** is the strongest single signal (~48% win vs
-~22% without); commitment (more archers) beats dabbling (1–3 archers ≈ 12% win). Note:
-`W_SECONDS = 180` ("within 3 min of Feudal") is empirically a touch tight — real first-archer
-timing clusters ~180–196s after Feudal — so `archers_within_3min_of_feudal` often reads 0;
-bumping `W_SECONDS` to ~240 is a reasonable future tweak (left at 3 min per the owner's choice).
+**Calibrated against the real corpus (350 games, 267 archer rushes):** doing an archer rush wins
+≈ the baseline rate — *execution* decides. **Fletching before Castle** is the strongest single
+signal (~48% win vs ~22% without); commitment (more archers) beats dabbling (1–3 archers ≈ 12%
+win). Tempo factors were **tested and dropped**: archer production rate, time-to-5-archers, and
+first-archer-after-Feudal are all flat between winners and losers — *when* the archers come does
+not separate outcomes, only *whether* they commit (count) and tech the upgrade (Fletching). The
+`/insights` report is **facts only** (roster + winners-vs-losers averages); no quality score.
 
 ---
 
 ## Testing
 
-- Pure logic (`gamedata`, `contract`, every `defs/*`, `shape`, `summarize`) is DB/mgz-free and
-  unit-tested in `tests/test_classifications_*.py`. CI runs `ruff check .` + `pytest tests/`.
+- Pure logic (`gamedata`, `contract`, every `defs/*`, `shape`, `roster`/`winners_vs_losers`) is
+  DB/mgz-free and unit-tested in `tests/test_classifications_*.py`. CI runs `ruff check .` + `pytest tests/`.
 - The runner/DB/Discord paths are I/O and validated by a real offline run + spot-checks (the mgz
   and network paths are offline-only, skipped in CI like the rest of the replay tooling).
