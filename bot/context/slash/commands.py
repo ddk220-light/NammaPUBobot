@@ -551,6 +551,19 @@ async def _lobby2(
 ): await run_slash(bot.commands.lobby2, interaction=interaction, gameid=gameid)
 
 
+@dc.slash_command(
+	name='classification',
+	description='Show who used a play-style (e.g. archer_rush) recently and whether it won.',
+	**guild_kwargs
+)
+async def _classification(
+		interaction: Interaction,
+		key: str = SlashOption(name="key", description="Classification key", required=False, default="archer_rush"),
+		days: int = SlashOption(name="days", description="Lookback window in days (default 90)", required=False, default=90),
+		player: Member = SlashOption(name="player", description="Filter to one player", required=False, default=None, verify=False),
+): await run_slash(bot.commands.classification, interaction=interaction, key=key, days=days, player=player)
+
+
 @dc.slash_command(name='subfor', description='Become a substitute', **guild_kwargs)
 async def _sub_for(
 		interaction: Interaction,

@@ -68,3 +68,9 @@ async def fetch_games(key, days, profile_ids=None):
 		"WHERE r.`key`=%s AND r.played_at >= %s" + pid_clause +
 		" GROUP BY r.aoe2_match_id, r.player_number, r.profile_id, r.identity, r.winner", args)
 	return [dict(r) for r in (rows or [])]
+
+
+async def resolve_profile_ids(user_id):
+	"""Reuse the replay-stats resolver: discord user_id -> the AoE2 profile_ids linked to it."""
+	from bot.replay_stats import query as rs_query
+	return await rs_query.resolve_profile_ids(user_id)
