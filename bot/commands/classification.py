@@ -6,6 +6,7 @@ __all__ = ["classification"]
 from nextcord import Member, Embed
 
 from core.database import db
+from core.utils import get_nick
 
 import bot
 
@@ -37,6 +38,8 @@ async def classification(ctx, key: str = "archer_rush", days: int = 90, player: 
 		if not target:
 			raise bot.Exc.NotFoundError(ctx.qc.gt("Specified user not found."))
 		profile_ids = await query.resolve_profile_ids(target.id)
+		if not profile_ids:
+			return await ctx.error("No AoE2 data linked for {}.".format(get_nick(target)), title=title)
 
 	games = await query.fetch_games(key, days, profile_ids=profile_ids)
 	if not games:

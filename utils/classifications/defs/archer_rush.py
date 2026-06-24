@@ -4,6 +4,7 @@ archers land after the click and score zero pre-castle archers; any archer befor
 reveals aggressive-feudal intent (even a botched, low-count attempt). Rush != win — execution
 is graded by factors() (Task 4)."""
 from utils.classifications import gamedata as gd
+from utils.classifications.contract import Classification, req
 
 W_SECONDS = 180            # "shortly after Feudal" window for the tempo factor
 COMMIT_ARCHERS = 10        # the "committed" archer count for commit_to_castle_s
@@ -75,8 +76,6 @@ def factors(game, pnum):
         "eapm": _f(p.get("eapm")),
     }
 
-
-from utils.classifications.contract import Classification, req  # noqa: E402
 
 CLASSIFICATION = Classification(
     key="archer_rush",
