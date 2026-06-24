@@ -41,60 +41,40 @@ def test_trigger_ignores_skirmishers():
     assert trigger(skirmisher_only, 1) is False
 
 
-def test_factors_counts_and_timing():
+def test_factors_new_set():
     f = factors(GAME, 1)
-    assert f["archers_pre_castle"] == 7.0                 # 3 + 4 (skirmishers excluded)
+    assert f["archers_pre_castle"] == 7.0
     assert f["feudal_s"] == 600.0 and f["castle_s"] == 1200.0
     assert f["reached_castle"] == 1.0
     assert f["feudal_to_castle_s"] == 600.0
-    assert f["first_archer_s"] == 700.0
-    assert f["first_archer_after_feudal_s"] == 100.0
-    assert f["archers_within_3min_of_feudal"] == 7.0      # both queues within 600+180=780
     assert f["fletching_pre_castle"] == 1.0
-    assert f["fletching_after_feudal_s"] == 180.0         # 780 - 600
+    assert f["fletching_click_s"] == 780.0
+    # dropped metrics are gone
+    for k in ("commit_to_castle_s", "eapm", "first_archer_after_feudal_s", "archers_within_3min_of_feudal"):
+        assert k not in f
 
 
-def test_factors_commit_to_castle_none_when_under_ten_archers():
-    # only 7 archers (<10) -> commit_to_castle_s undefined
-    assert factors(GAME, 1)["commit_to_castle_s"] is None
-
-
-def test_factors_commit_to_castle_when_committed():
+def test_factors_fletching_after_castle_not_counted_but_click_recorded():
     game = {
-        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": 1400, "eapm": 90}],
-        "techs": [{"player_number": 1, "tech": "Fletching", "click_s": 800}],
-        "events": [
-            {"player_number": 1, "category": "archer_line", "name": "Archer", "amount": 6, "t_s": 700},
-            {"player_number": 1, "category": "archer_line", "name": "Archer", "amount": 6, "t_s": 900},
-        ],
-    }
-    f = factors(game, 1)
-    assert f["archers_pre_castle"] == 12.0
-    # 10th archer reached at the 900 queue; commit = max(900, fletch 800) = 900; 1400-900 = 500
-    assert f["commit_to_castle_s"] == 500.0
-
-
-def test_factors_fletching_after_castle_does_not_count():
-    game = {
-        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": 900, "eapm": 50}],
+        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": 900}],
         "techs": [{"player_number": 1, "tech": "Fletching", "click_s": 1000}],   # after castle
         "events": [{"player_number": 1, "category": "archer_line", "name": "Archer",
                     "amount": 3, "t_s": 700}],
     }
     f = factors(game, 1)
     assert f["fletching_pre_castle"] == 0.0
-    assert f["fletching_after_feudal_s"] is None
+    assert f["fletching_click_s"] == 1000.0    # raw click still recorded
 
 
-def test_factors_commit_to_castle_none_without_fletching():
+def test_factors_never_castled():
     game = {
-        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": 1400, "eapm": 90}],
-        "techs": [],   # no Fletching at all
-        "events": [
-            {"player_number": 1, "category": "archer_line", "name": "Archer", "amount": 6, "t_s": 700},
-            {"player_number": 1, "category": "archer_line", "name": "Archer", "amount": 6, "t_s": 900},
-        ],
+        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": None}],
+        "techs": [],
+        "events": [{"player_number": 1, "category": "archer_line", "name": "Archer",
+                    "amount": 4, "t_s": 700}],
     }
     f = factors(game, 1)
-    assert f["archers_pre_castle"] == 12.0
-    assert f["commit_to_castle_s"] is None   # Fletching is a required co-signal
+    assert f["reached_castle"] == 0.0
+    assert f["castle_s"] is None and f["feudal_to_castle_s"] is None
+    assert f["archers_pre_castle"] == 4.0
+    assert f["fletching_pre_castle"] == 0.0 and f["fletching_click_s"] is None

@@ -1,7 +1,7 @@
 """The classification contract: each classification is a trigger predicate + a factors
 function + a static data-requirements ledger, all keyed under a stable string `key`."""
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 def req(field_name, source, status, note=""):
@@ -21,3 +21,4 @@ class Classification:
     trigger: Callable                  # (game, pnum) -> bool   (pure)
     factors: Callable                  # (game, pnum) -> dict[str, float|None]  (pure)
     status: str = "active"             # 'active' or 'draft'
+    factor_specs: list = field(default_factory=list)  # ordered [{metric,label,kind}] for reports

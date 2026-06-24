@@ -31,5 +31,13 @@ def test_registry_contains_archer_rush():
 def test_archer_rush_requirements_all_available():
     c = REGISTRY["archer_rush"]
     assert c.requirements, "archer_rush must declare its data requirements"
-    assert len(c.requirements) == 6
+    assert len(c.requirements) == 5
     assert all(r["status"] == "available" for r in c.requirements)
+
+
+def test_archer_rush_factor_specs():
+    c = REGISTRY["archer_rush"]
+    metrics = {s["metric"] for s in c.factor_specs}
+    assert {"archers_pre_castle", "fletching_pre_castle", "castle_s"} <= metrics
+    assert all({"metric", "label", "kind"} <= set(s) for s in c.factor_specs)
+    assert all(s["kind"] in ("count", "seconds", "percent") for s in c.factor_specs)
