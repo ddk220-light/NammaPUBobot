@@ -35,3 +35,12 @@ def test_summarize_top_players():
     top = {p["identity"]: p for p in s["top_players"]}
     assert top["Alice"]["games"] == 2 and top["Bob"]["games"] == 2
     assert top["Alice"]["wins"] == 1 and top["Alice"]["known"] == 2     # rate 0.5
+
+
+def test_summarize_by_commit_buckets():
+    s = summarize(GAMES)
+    by_bucket = {b["bucket"]: b for b in s["by_commit"]}
+    # Alice(4) -> "4-10"; Alice(17), Bob(12), Bob(20) -> "11-20"
+    assert by_bucket["4-10"]["games"] == 1
+    assert by_bucket["11-20"]["games"] == 3
+    assert "1-3" not in by_bucket and "21+" not in by_bucket   # empty buckets omitted

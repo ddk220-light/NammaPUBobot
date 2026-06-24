@@ -10,7 +10,7 @@ _BUCKETS = [(1, 3, "1-3"), (4, 10, "4-10"), (11, 20, "11-20"), (21, 10 ** 9, "21
 
 
 def _winrate(games):
-	known = [g for g in games if g.get("winner") in (0, 1, True, False) and g.get("winner") is not None]
+	known = [g for g in games if g.get("winner") in (0, 1, True, False)]
 	wins = sum(1 for g in known if g["winner"]) if known else 0
 	return {"wins": wins, "known": len(known), "rate": round(wins / len(known), 3) if known else 0.0}
 
