@@ -31,4 +31,5 @@ def test_registry_contains_archer_rush():
 def test_archer_rush_requirements_all_available():
     c = REGISTRY["archer_rush"]
     assert c.requirements, "archer_rush must declare its data requirements"
+    assert len(c.requirements) == 6
     assert all(r["status"] == "available" for r in c.requirements)
