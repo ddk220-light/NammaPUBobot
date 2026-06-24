@@ -28,7 +28,7 @@ async def classification(ctx, key: str = "archer_rush", days: int = 90, player: 
 
 	reg = await db.select_one(["*"], "cls_classifications", {"key": key})
 	if not reg:
-		return ctx.error("Unknown classification '{}'.".format(key), title="Classification")
+		return await ctx.error("Unknown classification '{}'.".format(key), title="Classification")
 	title = reg.get("title") or key
 
 	profile_ids = None
@@ -36,12 +36,12 @@ async def classification(ctx, key: str = "archer_rush", days: int = 90, player: 
 		target = await ctx.get_member(player)
 		if not target:
 			raise bot.Exc.NotFoundError(ctx.qc.gt("Specified user not found."))
-		profile_ids = await query.resolve_profile_ids(target.id) if hasattr(query, "resolve_profile_ids") else None
+		profile_ids = await query.resolve_profile_ids(target.id)
 
 	games = await query.fetch_games(key, days, profile_ids=profile_ids)
 	if not games:
-		return ctx.error("No {} games found in the last {} days.".format(title, days),
-		                 title=title)
+		return await ctx.error("No {} games found in the last {} days.".format(title, days),
+		                       title=title)
 
 	s = query.summarize(games)
 	embed = Embed(title="{} - last {} days".format(title, days))
@@ -56,8 +56,7 @@ async def classification(ctx, key: str = "archer_rush", days: int = 90, player: 
 	                                                     _wr(s["by_fletching"]["without"])),
 	                inline=False)
 	embed.add_field(name="Top players",
-	                value="\n".join("{} - {} games, {}/{} ({:.0%})".format(
-		                t["identity"], t["games"], t["wins"], t["known"],
-		                (t["wins"] / t["known"]) if t["known"] else 0) for t in s["top_players"]) or "n/a",
+	                value="\n".join("{} - {} games, {}".format(t["identity"], t["games"], _wr(t))
+	                                for t in s["top_players"]) or "n/a",
 	                inline=False)
 	await ctx.reply(embed=embed)
