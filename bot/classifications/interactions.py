@@ -10,19 +10,29 @@ import nextcord
 from core.console import log
 
 
+async def _eph(interaction, **kwargs):
+	"""Respond ephemerally whether or not the interaction was already acknowledged (mirrors the
+	quiz router's _eph) — so a click is never silently dropped."""
+	if not interaction.response.is_done():
+		await interaction.response.send_message(ephemeral=True, **kwargs)
+	else:
+		await interaction.followup.send(ephemeral=True, **kwargs)
+
+
 async def on_insights_interaction(interaction):
 	try:
 		if interaction.type != nextcord.InteractionType.component:
 			return
 		cid = (interaction.data or {}).get("custom_id", "")
-		parts = cid.split(":")
-		if len(parts) != 4 or parts[0] != "insights" or parts[1] != "full":
+		# 'insights:full:<use_case>:<days>' — split off days from the right so a use_case key
+		# is free to contain ':' in the future.
+		if not cid.startswith("insights:full:"):
 			return
-		use_case = parts[2]
 		try:
-			days = int(parts[3])
-		except ValueError:
+			days = int(cid.rsplit(":", 1)[1])
+		except (ValueError, IndexError):
 			return
+		use_case = cid[len("insights:full:"):cid.rfind(":")]
 		from bot.classifications import query
 		results = await query.fetch_results(use_case, days)
 		board = query.roster(results)
@@ -30,13 +40,10 @@ async def on_insights_interaction(interaction):
 		embed = nextcord.Embed(
 			title="{} - full leaderboard ({} players, last {}d)".format(use_case, len(board), days),
 			description=text)
-		if not interaction.response.is_done():
-			await interaction.response.send_message(embed=embed, ephemeral=True)
+		await _eph(interaction, embed=embed)
 	except Exception as e:
 		log.error("insights interaction error: {}\n{}".format(e, traceback.format_exc()))
 		try:
-			if not interaction.response.is_done():
-				await interaction.response.send_message(
-					"Couldn't load the full leaderboard - try again.", ephemeral=True)
+			await _eph(interaction, content="Couldn't load the full leaderboard - try again.")
 		except Exception:
 			pass
