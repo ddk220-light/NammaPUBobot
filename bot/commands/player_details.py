@@ -4,7 +4,7 @@ reusing the daily-quiz metric categories. Thin handler — aggregation lives in
 bot.replay_stats.query (lazily imported so this module loads cheaply with the others)."""
 __all__ = ["player_details"]
 
-from nextcord import Member, Embed, Colour
+from nextcord import Member, Embed, Colour, File
 
 from core.utils import get_nick
 
@@ -47,7 +47,7 @@ def _build_embed(target, card):
     return embed
 
 
-async def player_details(ctx, player: Member = None, days: int = 90):
+async def player_details(ctx, player: Member = None, days: int = 90, chart: bool = False):
     target = ctx.author if not player else await ctx.get_member(player)
     if not target:
         raise bot.Exc.NotFoundError(ctx.qc.gt("Specified user not found."))
@@ -56,7 +56,8 @@ async def player_details(ctx, player: Member = None, days: int = 90):
     except (TypeError, ValueError):
         days = 90
 
-    # Aggregation hits the DB across several tables; defer so we don't blow the 3s ack window.
+    # Aggregation (and the chart) hit the DB across several tables; defer so we don't blow the
+    # 3s ack window.
     interaction = getattr(ctx, "interaction", None)
     if interaction is not None and not interaction.response.is_done():
         await interaction.response.defer()
@@ -69,4 +70,13 @@ async def player_details(ctx, player: Member = None, days: int = 90):
             f"No replay stats for {get_nick(target)} in the last {days} days. Replay stats "
             "cover linked players' standard-map games once their replays have been parsed.",
             title="Player details")
-    await ctx.reply(embed=_build_embed(target, card))
+
+    embed = _build_embed(target, card)
+    file = None
+    if chart:
+        from bot.replay_stats import chart as chart_mod
+        tdata = await query.gather_timeline_data(profile_ids, days=days)
+        if tdata:
+            file = File(fp=chart_mod.render_timeline(get_nick(target), tdata, days),
+                        filename="build_timeline.png")
+    await ctx.reply(embed=embed, file=file) if file else await ctx.reply(embed=embed)
