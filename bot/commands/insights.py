@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
-"""/insights <use_case> [days] [player]: a shareable leaderboard + winners-vs-losers aggregate
-facts for a play-style classification (e.g. archer_rush). Reads cls_* via bot.classifications.query;
-factor labels/order/formatting come from the classification's factor_specs."""
+"""/insights <use_case> [days] [aggregate_stats] [player]: a shareable leaderboard (+ optional
+winners-vs-losers aggregate facts) for a play-style classification (e.g. archer_rush). The full
+leaderboard is one tap away via a 'Show all players' button routed through the global
+on_insights_interaction handler (redeploy-safe, like the quiz). Reads cls_* via
+bot.classifications.query; factor labels/order/formatting come from the classification's factor_specs."""
 __all__ = ["insights"]
 
+import nextcord
 from nextcord import Member, Embed
 
 from core.database import db
@@ -22,7 +25,18 @@ def _fmt(kind, v):
 	return "{:.1f}".format(v)
 
 
-async def insights(ctx, use_case: str = "archer_rush", days: int = 90, player: Member = None):
+def _full_button(use_case, days, n):
+	# auto_defer=False + custom_id routed via bot.events -> on_insights_interaction (redeploy-safe,
+	# never relies on a live View object). See bot/quiz/embeds.py card_view for the same pattern.
+	v = nextcord.ui.View(timeout=None, auto_defer=False)
+	v.add_item(nextcord.ui.Button(
+		style=nextcord.ButtonStyle.secondary, label="Show all {} players".format(n),
+		custom_id="insights:full:{}:{}".format(use_case, days)))
+	return v
+
+
+async def insights(ctx, use_case: str = "archer_rush", days: int = 90,
+                   aggregate_stats: bool = False, player: Member = None):
 	from bot.classifications import query
 	from utils.classifications.registry import REGISTRY
 
@@ -56,32 +70,21 @@ async def insights(ctx, use_case: str = "archer_rush", days: int = 90, player: M
 
 	board = query.roster(results)
 	wl = query.winners_vs_losers(results, specs)
+	prev, hidden = query.leaderboard_text(board, 980)
 
 	embed = Embed(title="{} - insights (last {}d)".format(title, days))
 	embed.description = "{} games | {} players | {} winners / {} losers".format(
 		len(results), len(board), wl["n_winners"], wl["n_losers"])
+	embed.add_field(name="Leaderboard (by games)", value=prev, inline=False)
+	if aggregate_stats:
+		flines = ["{:<28} {:>8} {:>8}".format("fact", "winners", "losers")]
+		for f in wl["factors"]:
+			flines.append("{:<28} {:>8} {:>8}".format(
+				f["label"][:28], _fmt(f["kind"], f["winners"]), _fmt(f["kind"], f["losers"])))
+		embed.add_field(name="Winners vs losers (averages)",
+		                value="```\n" + "\n".join(flines) + "\n```", inline=False)
 
-	# Leaderboard, capped to fit Discord's 1024-char field limit (code block keeps alignment).
-	lines = ["{:<18} {:>3} {:>3} {:>5}".format("player", "g", "w", "win%")]
-	used = len(lines[0])
-	shown = 0
-	for p in board:
-		line = "{:<18} {:>3} {:>3} {:>5}".format(
-			(p["identity"] or "?")[:18], p["games"], p["wins"],
-			("{}%".format(p["win_pct"]) if p["win_pct"] is not None else "-"))
-		if used + len(line) + 1 > 960:
-			break
-		lines.append(line)
-		used += len(line) + 1
-		shown += 1
-	if shown < len(board):
-		lines.append("...and {} more".format(len(board) - shown))
-	embed.add_field(name="Leaderboard (by games)", value="```\n" + "\n".join(lines) + "\n```", inline=False)
-
-	flines = ["{:<28} {:>8} {:>8}".format("fact", "winners", "losers")]
-	for f in wl["factors"]:
-		flines.append("{:<28} {:>8} {:>8}".format(
-			f["label"][:28], _fmt(f["kind"], f["winners"]), _fmt(f["kind"], f["losers"])))
-	embed.add_field(name="Winners vs losers (averages)", value="```\n" + "\n".join(flines) + "\n```", inline=False)
-
-	await ctx.reply(embed=embed)
+	kwargs = {"embed": embed}
+	if hidden > 0 and not player:
+		kwargs["view"] = _full_button(use_case, days, len(board))
+	await ctx.reply(**kwargs)

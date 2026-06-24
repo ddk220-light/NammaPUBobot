@@ -1,4 +1,4 @@
-from bot.classifications.query import roster, winners_vs_losers
+from bot.classifications.query import roster, winners_vs_losers, leaderboard_line, leaderboard_text
 
 
 def _r(identity, pid, winner, metrics):
@@ -38,3 +38,24 @@ def test_winners_vs_losers_averages():
     assert f["fletching_pre_castle"]["winners"] == 1.0
     assert f["fletching_pre_castle"]["losers"] == 0.0
     assert f["castle_s"]["kind"] == "seconds"
+
+
+def test_leaderboard_line_format():
+    p = {"identity": "thelivi", "games": 33, "wins": 18, "win_pct": 55}
+    line = leaderboard_line(p)
+    assert "thelivi" in line and "33" in line and "18" in line and "55%" in line
+
+
+def test_leaderboard_text_fits_all_when_small():
+    board = [{"identity": "A" + str(i), "games": 3, "wins": 1, "win_pct": 33} for i in range(5)]
+    text, hidden = leaderboard_text(board, 980)
+    assert hidden == 0
+    assert text.startswith("```") and text.rstrip().endswith("```")
+    assert all("A" + str(i) in text for i in range(5))
+
+
+def test_leaderboard_text_truncates_when_over_budget():
+    board = [{"identity": "Player" + str(i), "games": 3, "wins": 1, "win_pct": 33} for i in range(200)]
+    text, hidden = leaderboard_text(board, 400)
+    assert hidden > 0
+    assert "and {} more".format(hidden) in text

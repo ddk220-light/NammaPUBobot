@@ -560,8 +560,9 @@ async def _insights(
 		interaction: Interaction,
 		use_case: str = SlashOption(name="use_case", description="Which play-style", required=False, default="archer_rush", choices=["archer_rush"]),
 		days: int = SlashOption(name="days", description="Lookback window in days (default 90)", required=False, default=90),
+		aggregate_stats: bool = SlashOption(name="aggregate_stats", description="Also show winners-vs-losers averages (default off)", required=False, default=False),
 		player: Member = SlashOption(name="player", description="Filter to one player", required=False, default=None, verify=False),
-): await run_slash(bot.commands.insights, interaction=interaction, use_case=use_case, days=days, player=player)
+): await run_slash(bot.commands.insights, interaction=interaction, use_case=use_case, days=days, aggregate_stats=aggregate_stats, player=player)
 
 
 @dc.slash_command(name='subfor', description='Become a substitute', **guild_kwargs)

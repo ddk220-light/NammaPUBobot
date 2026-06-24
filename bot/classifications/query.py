@@ -73,3 +73,27 @@ async def resolve_profile_ids(user_id):
 	"""Reuse the replay-stats resolver: discord user_id -> the AoE2 profile_ids linked to it."""
 	from bot.replay_stats import query as rs_query
 	return await rs_query.resolve_profile_ids(user_id)
+
+
+def leaderboard_line(p):
+	return "{:<18} {:>3} {:>3} {:>5}".format(
+		(p["identity"] or "?")[:18], p["games"], p["wins"],
+		("{}%".format(p["win_pct"]) if p["win_pct"] is not None else "-"))
+
+
+def leaderboard_text(board, max_chars):
+	"""Render the roster into ONE ```code block``` whose total length stays <= max_chars. If it
+	doesn't all fit, stop and append a '...and N more' line. Returns (text, n_hidden)."""
+	header = "{:<18} {:>3} {:>3} {:>5}".format("player", "g", "w", "win%")
+	lines, used, shown = [header], len(header) + 8, 0   # +8 leaves room for the ``` fences
+	for p in board:
+		line = leaderboard_line(p)
+		if used + len(line) + 1 > max_chars:
+			break
+		lines.append(line)
+		used += len(line) + 1
+		shown += 1
+	hidden = len(board) - shown
+	if hidden > 0:
+		lines.append("...and {} more".format(hidden))
+	return "```\n" + "\n".join(lines) + "\n```", hidden
