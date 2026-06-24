@@ -135,7 +135,7 @@ def _ann(names, techs):
     return out
 
 
-def build_growth_curve(games, grid_step=30, cap_s=None, max_cap_s=5400):
+def build_growth_curve(games, grid_step=30, cap_s=None, max_cap_s=3600):   # hard-cap the axis at 60 min
     """Pure: average each game's cumulative villager/military count onto a common time grid,
     over the games still LIVE at each t (duration_s >= t). Returns per-point mean, 95% CI band,
     and n (games contributing) — so the chart can fade where data thins. `games`: list of dicts
