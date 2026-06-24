@@ -149,7 +149,7 @@ class Adapter:
 
 		columns = [self._mysql_column({**column_blank, **col}) for col in table['columns']]
 		fkeys = ["FOREIGN KEY " + self._mysql_fkey({**fkey_blank, **fkey}) for fkey in table['foreign_keys']]
-		pkeys = ", PRIMARY KEY(" + ", ".join(table['primary_keys']) + ')' if len(table['primary_keys']) else ''
+		pkeys = ", PRIMARY KEY(" + ", ".join("`{}`".format(k) for k in table['primary_keys']) + ')' if len(table['primary_keys']) else ''
 
 		request = "CREATE TABLE {tname} ({tdeskr})".format(
 			tname=table['tname'],
