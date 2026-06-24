@@ -74,3 +74,24 @@ def factors(game, pnum):
         "commit_to_castle_s": _f(commit_to_castle_s),
         "eapm": _f(p.get("eapm")),
     }
+
+
+from utils.classifications.contract import Classification, req  # noqa: E402
+
+CLASSIFICATION = Classification(
+    key="archer_rush",
+    title="Archer Rush",
+    version=1,
+    trigger_spec="Queued >=1 foot Archer (archer line; NOT skirmisher) before the Castle-age click.",
+    requirements=[
+        req("foot_archer_queue_events", source="extract.events[category=archer_line]",
+            status="available", note="per-queue timestamps; emitted by extract.py:147"),
+        req("feudal_click_s", source="extract.players.feudal_s", status="available"),
+        req("castle_click_s", source="extract.players.castle_s", status="available"),
+        req("fletching_click_s", source="extract.techs[Fletching].click_s", status="available"),
+        req("winner", source="extract.players.winner", status="available"),
+        req("eapm", source="extract.players.eapm", status="available"),
+    ],
+    trigger=trigger,
+    factors=factors,
+)
