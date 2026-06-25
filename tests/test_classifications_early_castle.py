@@ -89,18 +89,26 @@ def test_cav_archer_counts_by_category():
 
 # --- camel_rush --------------------------------------------------------------------------------
 
-def test_camel_counts_riders_and_mamelukes_excludes_scout_and_archer():
-    # Mameluke (Saracen camel UU) counts -- it is the camel actually massed in the corpus;
-    # the feudal Camel Scout and ranged Camel Archer do not.
+def test_camel_counts_camel_scout_line_excludes_mameluke_flaming_archer():
+    # Camel Scout is the trained base of the camel line (= Camel Rider in Castle Age); it counts.
+    # Per request, Mameluke and Flaming Camel are NOT camels here; Camel Archer (ranged) is excluded too.
     g = {"players": [_p(tc_build_s=[600, 1800])], "techs": [],
          "events": [
-             {"player_number": 1, "category": "camel_line", "name": "Camel Rider", "amount": 11, "t_s": 1000},
-             {"player_number": 1, "category": "unique_other", "name": "Mameluke", "amount": 12, "t_s": 1100},
-             {"player_number": 1, "category": "scout", "name": "Camel Scout", "amount": 40, "t_s": 1000},   # excluded
+             {"player_number": 1, "category": "scout", "name": "Camel Scout", "amount": 15, "t_s": 1000},
+             {"player_number": 1, "category": "camel_line", "name": "Camel Rider", "amount": 8, "t_s": 1100},
+             {"player_number": 1, "category": "unique_other", "name": "Mameluke", "amount": 40, "t_s": 1100},   # excluded
+             {"player_number": 1, "category": "camel_line", "name": "Flaming Camel", "amount": 40, "t_s": 1100},  # excluded
              {"player_number": 1, "category": "archer_line", "name": "Camel Archer", "amount": 40, "t_s": 1000},  # excluded
          ]}
     assert CAMEL.trigger(g, 1) is True
-    assert CAMEL.factors(g, 1)["units_in_window"] == 23.0   # 11 Camel Rider + 12 Mameluke
+    assert CAMEL.factors(g, 1)["units_in_window"] == 23.0   # 15 Camel Scout + 8 Camel Rider
+
+
+def test_camel_scout_before_castle_not_counted():
+    # a feudal Camel Scout (before the Castle click at 900) is scout play, not a castle camel rush
+    g = {"players": [_p(tc_build_s=[600, 1800])], "techs": [],
+         "events": [{"player_number": 1, "category": "scout", "name": "Camel Scout", "amount": 30, "t_s": 700}]}
+    assert CAMEL.trigger(g, 1) is False
 
 
 # --- ram_push ----------------------------------------------------------------------------------
