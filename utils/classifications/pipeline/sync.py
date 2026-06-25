@@ -3,7 +3,6 @@ ever run on explicit go-ahead. Per table: DELETE all, then multi-row INSERT in c
 row counts local-vs-remote."""
 import argparse
 import re
-import sys
 
 import pymysql
 

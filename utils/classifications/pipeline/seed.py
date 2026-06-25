@@ -2,7 +2,6 @@
 (or alongside) the Downloader/Ingester. Reuses config.cfg DB_URI."""
 import argparse
 import re
-import sys
 import time
 
 import pymysql
