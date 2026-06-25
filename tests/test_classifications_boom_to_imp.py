@@ -47,6 +47,14 @@ def test_military_after_imp_not_counted():
     assert BOOM.factors(g, 1)["military_before_imp"] == 0.0
 
 
+def test_excluded_if_triggers_another_use_case():
+    # a boomer who also produced scouts in Feudal triggers scout_rush -> not a PURE boom
+    g = {"players": [_pl()], "techs": [],
+         "events": [{"player_number": 1, "category": "scout", "name": "Scout Cavalry",
+                     "amount": 5, "t_s": 700, "is_military": True}]}
+    assert BOOM.trigger(g, 1) is False
+
+
 def test_nomad_starting_tc_not_counted_as_extra():
     # a Dark-Age TC at 60 (before Feudal 500) is the Nomad start, not an "extra" TC
     g = _game(5, tc_build_s=[60, 1100])                              # only 1 extra (1100) >= feudal

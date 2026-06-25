@@ -1,8 +1,8 @@
-"""Boom to Imp: a greedy economic boom -- the player added at least 2 EXTRA Town Centers and made
+"""Boom to Imp: a PURE economic boom -- the player added at least 2 EXTRA Town Centers and made
 FEWER than 20 military units (Feudal + Castle, i.e. everything before the Imperial click) before
-clicking Imperial Age. Reaching Imperial is required (the boom is the path to Imperial). "Extra"
-TCs = those built at/after the Feudal click (excludes a Nomad Dark-Age starting TC). Facts-only;
-no exclusivity -- the <20-military condition already keeps committed rushers out."""
+clicking Imperial Age, AND triggered no other use case (no rush, no castle drop, no late army).
+Reaching Imperial is required (the boom is the path to Imperial). "Extra" TCs = those built at/after
+the Feudal click (excludes a Nomad Dark-Age starting TC). Facts-only."""
 from utils.classifications import gamedata as gd
 from utils.classifications.contract import Classification, req
 
@@ -30,7 +30,12 @@ def trigger(game, pnum):
         return False
     if len(_extra_tcs_before_imp(p)) < MIN_EXTRA_TC:
         return False
-    return _military_before_imp(game, pnum, p["imperial_s"]) < MIL_LIMIT
+    if _military_before_imp(game, pnum, p["imperial_s"]) >= MIL_LIMIT:
+        return False
+    # a PURE boom: exclude anyone who triggered any OTHER use case (rush / castle / late army).
+    # Lazy import (the registry imports this module).
+    from utils.classifications.registry import REGISTRY
+    return not any(c.trigger(game, pnum) for k, c in REGISTRY.items() if k != "boom_to_imp")
 
 
 def _f(x):
@@ -62,12 +67,14 @@ FACTOR_SPECS = [
 ]
 
 CLASSIFICATION = Classification(
-    key="boom_to_imp", title="Boom to Imp", version=1,
-    trigger_spec="a player who built at least 2 extra Town Centers and made fewer than 20 military units (Feudal + Castle) before clicking Imperial Age",
+    key="boom_to_imp", title="Boom to Imp", version=2,
+    trigger_spec="a player who built at least 2 extra Town Centers and made fewer than 20 military units (Feudal + Castle) before clicking Imperial Age, and did not trigger any other play-style (a pure boom)",
     requirements=[
         req("extra_tc_count", source="extract.players.tc_build_s (>=feudal, <imperial)", status="available"),
         req("military_before_imp", source="extract.events[is_military, t<imperial]", status="available"),
         req("imperial_click_s", source="extract.players.imperial_s", status="available"),
+        req("not_other_use_cases", source="registry (every other classification's trigger)", status="available",
+            note="pure boom -- excluded if the player triggered any other use case"),
         req("villagers_before_imp", source="extract.players.vil_pre_imperial", status="available",
             note="boom-size context for the report"),
         req("winner", source="extract.players.winner", status="available",
