@@ -43,6 +43,15 @@ async def upsert_classification(pool, c):
             "VALUES (%s,%s,%s,%s,%s)", [c.key, r["field"], r["source"], r["status"], r["note"]])
 
 
+async def wipe_results(pool, key):
+    """Delete ALL stored rows for a classification (results + metrics). The runner calls this once
+    per classification before a full-window rebuild, so that matches which no longer match (e.g.
+    after a trigger change) leave no stale rows behind -- the per-match upsert only deletes matches
+    it re-inserts, so a match that drops to zero would otherwise keep its old rows."""
+    await _exec(pool, "DELETE FROM cls_results WHERE `key`=%s", [key])
+    await _exec(pool, "DELETE FROM cls_result_metrics WHERE `key`=%s", [key])
+
+
 async def upsert_results(pool, key, aoe2_match_id, result_rows, metric_rows):
     """Replace all rows for (key, aoe2_match_id): delete then insert. Idempotent re-ingest."""
     await _exec(pool, "DELETE FROM cls_results WHERE `key`=%s AND aoe2_match_id=%s",

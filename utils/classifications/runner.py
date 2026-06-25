@@ -78,6 +78,8 @@ async def run(days, only_key=None, no_download=False):
         await dbio.ensure_tables(pool)
         for c in classifications:
             await dbio.upsert_classification(pool, c)
+            await dbio.wipe_results(pool, c.key)   # full-window rebuild: clear stale rows so a match
+            #                                        that no longer matches leaves nothing behind
 
         matches = await dbio.window_matches(pool, days)
         print("window: {} matches in last {}d across {} classification(s)".format(
