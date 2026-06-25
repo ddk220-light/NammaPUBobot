@@ -14,20 +14,21 @@ def _p(pnum=1, feudal_s=500, castle_s=900, imperial_s=None, tc_build_s=None):
 
 # --- window ------------------------------------------------------------------------------------
 
-def test_window_2nd_additional_tc_ends_window():
+def test_window_3rd_additional_tc_ends_window():
     g = {"players": [_p(tc_build_s=[600, 1500, 2000])], "events": [], "techs": []}
-    assert gd.early_castle_window(g, 1) == (900, 1500)   # 2nd build at/after feudal(500) = 1500
+    assert gd.early_castle_window(g, 1) == (900, 2000)   # 3rd build at/after feudal(500) = 2000
 
 
-def test_window_open_when_fewer_than_2_extra_tcs():
-    g = {"players": [_p(tc_build_s=[600])], "events": [], "techs": []}
+def test_window_open_when_fewer_than_3_extra_tcs():
+    # a 1st and 2nd additional TC are allowed inside the window -> stays open
+    g = {"players": [_p(tc_build_s=[600, 1500])], "events": [], "techs": []}
     assert gd.early_castle_window(g, 1) == (900, None)
 
 
 def test_window_ignores_nomad_dark_age_starting_tc():
-    # 60s TC is the Nomad starting TC (pre-Feudal) -> not "additional"; 2nd additional = 2000
-    g = {"players": [_p(tc_build_s=[60, 1500, 2000])], "events": [], "techs": []}
-    assert gd.early_castle_window(g, 1) == (900, 2000)
+    # 60s TC is the Nomad starting TC (pre-Feudal) -> not "additional"; 3rd additional = 2500
+    g = {"players": [_p(tc_build_s=[60, 1500, 2000, 2500])], "events": [], "techs": []}
+    assert gd.early_castle_window(g, 1) == (900, 2500)
 
 
 def test_window_none_when_never_castled():
@@ -38,11 +39,12 @@ def test_window_none_when_never_castled():
 # --- knight_rush -------------------------------------------------------------------------------
 
 KNIGHT_GAME = {
-    "players": [_p(tc_build_s=[600, 1500], imperial_s=None)],
+    # 3 additional TCs (600,1500,1800) -> window ends at the 3rd = 1800
+    "players": [_p(tc_build_s=[600, 1500, 1800], imperial_s=None)],
     "techs": [{"player_number": 1, "tech": "Cavalier", "click_s": 1100}],
     "events": [
         {"player_number": 1, "category": "knight_line", "name": "Knight", "amount": 25, "t_s": 1000},
-        {"player_number": 1, "category": "knight_line", "name": "Knight", "amount": 9, "t_s": 1600},   # after window
+        {"player_number": 1, "category": "knight_line", "name": "Knight", "amount": 9, "t_s": 1900},   # after the 3rd TC -> window closed
         {"player_number": 1, "category": "knight_line", "name": "Teutonic Knight", "amount": 30, "t_s": 1000},  # excluded
     ],
 }
@@ -56,7 +58,7 @@ def test_knight_excludes_teutonic_and_post_window():
     f = KNIGHT.factors(KNIGHT_GAME, 1)
     assert f["units_in_window"] == 25.0          # 9 after-window + 30 Teutonic both excluded
     assert f["castle_s"] == 900.0
-    assert f["built_2nd_tc"] == 1.0 and f["castle_to_2nd_tc_s"] == 600.0
+    assert f["built_3rd_tc"] == 1.0 and f["castle_to_3rd_tc_s"] == 900.0   # 1800 - 900
     assert f["sig_upgrade_in_window"] == 1.0 and f["sig_upgrade_click_s"] == 1100.0
     assert f["reached_imperial"] == 0.0
 

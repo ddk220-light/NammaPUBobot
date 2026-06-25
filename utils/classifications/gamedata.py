@@ -73,21 +73,22 @@ def tech_click_s(game, pnum, tech):
 
 
 # --- Early-Castle window (the "Early Castle Builds" rush family) ---------------------------------
-# The window is [Castle-age click, build of the 2nd ADDITIONAL Town Center) -- i.e. castle-age
-# aggression before the player commits to a 3-TC boom. tc_build_s (sorted TC build timestamps) is
-# emitted by extract.py from v2 on; older caches won't have it (treated as "never boomed").
+# The window is [Castle-age click, build of the 3rd ADDITIONAL Town Center) -- i.e. castle-age
+# aggression before the player commits to a heavy (4-TC) boom. A 1st and 2nd additional TC are
+# allowed INSIDE the window. tc_build_s (sorted TC build timestamps) is emitted by extract.py from
+# v2 on; older caches won't have it (treated as "never boomed").
 
 def early_castle_window(game, pnum):
-    """(start, end) seconds. start = Castle-age click; end = the 2nd ADDITIONAL TC's build time
-    (None = never built a 2nd extra TC, so the window stays open). (None, None) if the player
-    never clicked Castle. "Additional" TCs = those built at/after the Feudal click, which excludes
-    a Nomad-map starting TC (constructed in the Dark Age) so the rule holds on every map type."""
+    """(start, end) seconds. start = Castle-age click; end = the 3rd ADDITIONAL TC's build time
+    (None = never built a 3rd extra TC, so the window stays open; a 1st/2nd extra TC is allowed).
+    (None, None) if the player never clicked Castle. "Additional" TCs = those built at/after the
+    Feudal click, which excludes a Nomad-map starting TC (Dark Age) so the rule holds on every map."""
     p = player(game, pnum)
     if not p or p.get("castle_s") is None:
         return (None, None)
     feudal_s = p.get("feudal_s") or 0
     extra = [t for t in (p.get("tc_build_s") or []) if t >= feudal_s]
-    return (p["castle_s"], extra[1] if len(extra) >= 2 else None)
+    return (p["castle_s"], extra[2] if len(extra) >= 3 else None)
 
 
 def _in_window(t, start, end):

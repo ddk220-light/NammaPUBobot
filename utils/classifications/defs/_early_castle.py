@@ -1,5 +1,5 @@
 """Shared builder for the Early-Castle rush family. Each rush is "the player made MORE THAN N of
-a unit type within the early-Castle window [Castle click, 2nd additional TC)". They share the
+a unit type within the early-Castle window [Castle click, 3rd additional TC)". They share the
 window + factor shape and differ only in (unit predicate, threshold, signature upgrade tech).
 Each defs/<x>_rush.py is a thin wrapper around make(). Facts-only, like the other classifications.
 
@@ -27,12 +27,12 @@ def make(*, key, title, count_label, unit_pred, threshold, sig_tech, trigger_spe
         start, end = gd.early_castle_window(game, pnum)
         n = gd.queued_in_window(game, pnum, unit_pred, start, end)
         sig_in, sig_click = gd.tech_in_window(game, pnum, sig_tech, start, end)
-        built_2nd = end is not None
+        built_3rd = end is not None
         return {
             "units_in_window": float(n),
             "castle_s": _f(start),
-            "built_2nd_tc": 1.0 if built_2nd else 0.0,
-            "castle_to_2nd_tc_s": _f((end - start) if (built_2nd and start is not None) else None),
+            "built_3rd_tc": 1.0 if built_3rd else 0.0,
+            "castle_to_3rd_tc_s": _f((end - start) if (built_3rd and start is not None) else None),
             "sig_upgrade_in_window": sig_in,
             "sig_upgrade_click_s": sig_click,
             "reached_imperial": 1.0 if p.get("imperial_s") is not None else 0.0,
@@ -41,8 +41,8 @@ def make(*, key, title, count_label, unit_pred, threshold, sig_tech, trigger_spe
     factor_specs = [
         dict(metric="units_in_window", label=count_label, kind="count"),
         dict(metric="castle_s", label="Castle click", kind="seconds"),
-        dict(metric="castle_to_2nd_tc_s", label="Castle->2nd TC (window length)", kind="seconds"),
-        dict(metric="built_2nd_tc", label="Built a 2nd extra TC (boomed)", kind="percent"),
+        dict(metric="castle_to_3rd_tc_s", label="Castle->3rd TC (window length)", kind="seconds"),
+        dict(metric="built_3rd_tc", label="Built a 3rd extra TC (boomed)", kind="percent"),
         dict(metric="sig_upgrade_in_window", label="Got {} in window".format(sig_tech), kind="percent"),
         dict(metric="sig_upgrade_click_s", label="{} click".format(sig_tech), kind="seconds"),
         dict(metric="reached_imperial", label="Reached Imperial", kind="percent"),
@@ -54,7 +54,7 @@ def make(*, key, title, count_label, unit_pred, threshold, sig_tech, trigger_spe
         requirements=[
             req("early_castle_window", source="extract.players.castle_s + tc_build_s (>=feudal)[1]",
                 status="available",
-                note="window = [Castle click, 2nd additional TC build); tc_build_s added in extract v2"),
+                note="window = [Castle click, 3rd additional TC build); tc_build_s added in extract v2"),
             req(unit_source[0], source=unit_source[1], status="available"),
             req("castle_click_s", source="extract.players.castle_s", status="available"),
             req(sig_field, source="extract.techs[{}].click_s".format(sig_tech), status="available",

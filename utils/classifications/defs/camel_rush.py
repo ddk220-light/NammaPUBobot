@@ -1,5 +1,5 @@
 """Camel rush (Early-Castle family): >20 Camels in the early-Castle window
-[Castle click, 2nd additional TC).
+[Castle click, 3rd additional TC).
 
 GROUNDED IN THE MECHANIC: the camel cavalry line is *trained* as the "Camel Scout" -- the only
 camel unit before Castle Age, which upgrades automatically/free into the Camel Rider on reaching
@@ -27,6 +27,6 @@ CLASSIFICATION = make(
     count_label="Camels in window",
     unit_pred=_is_camel, threshold=20,
     sig_tech="Bloodlines",
-    trigger_spec="a player who made more than 20 Camels (the Camel Scout / Camel Rider line; Flaming Camel, Mameluke and Camel Archer excluded) between clicking Castle Age and building a 2nd additional Town Center",
+    trigger_spec="a player who made more than 20 Camels (the Camel Scout / Camel Rider line; Flaming Camel, Mameluke and Camel Archer excluded) between clicking Castle Age and building a 3rd additional Town Center",
     unit_source=("camel_queue_events", "extract.events[name in Camel Scout/Rider/Heavy Camel/Imperial Camel]"),
 )
