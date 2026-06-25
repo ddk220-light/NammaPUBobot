@@ -105,3 +105,71 @@ def tech_in_window(game, pnum, tech, start, end):
     """(1.0 if `tech` was clicked within [start, end) else 0.0, click_s or None)."""
     click = tech_click_s(game, pnum, tech)
     return (1.0 if _in_window(click, start, end) else 0.0, float(click) if click is not None else None)
+
+
+# --- Castle placement: forward vs safe (needs extract v3 positions) ------------------------------
+
+def _xy(d):
+    return (d["x"], d["y"]) if d else None
+
+
+def _dist(a, b):
+    if a is None or b is None:
+        return None
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
+
+
+def home_tc_xy(game, pnum):
+    """The player's home Town Center position = the LAST TC they place before the Castle click
+    (so a delete->replace lands on the surviving replacement), falling back to the pre-placed
+    starting TC. None if neither is known."""
+    p = player(game, pnum)
+    if not p:
+        return None
+    castle_s = p.get("castle_s")
+    pre = [b for b in (p.get("tc_builds") or [])
+           if b.get("t_s") is not None and (castle_s is None or b["t_s"] < castle_s)]
+    if pre:
+        return _xy(max(pre, key=lambda b: b["t_s"]))
+    return _xy(p.get("start_tc_xy"))
+
+
+def primary_castle(game, pnum):
+    """The player's primary Castle: the first Castle built in Castle Age BEFORE any additional TC
+    of the Castle Age (i.e. a castle drop, not a boom). Returns {x,y,t_s} or None."""
+    p = player(game, pnum)
+    if not p:
+        return None
+    castle_s = p.get("castle_s")
+    if castle_s is None:
+        return None
+    castle_age_tc = min((t for t in (p.get("tc_build_s") or []) if t >= castle_s), default=None)
+    end = castle_age_tc if castle_age_tc is not None else float("inf")
+    cands = [c for c in (p.get("castle_builds") or [])
+             if c.get("t_s") is not None and castle_s <= c["t_s"] < end]
+    return min(cands, key=lambda c: c["t_s"]) if cands else None
+
+
+def castle_placement(game, pnum):
+    """For a primary castle, return (is_forward, dist_own, dist_enemy) or None if it can't be
+    judged (no primary castle, or missing own/enemy home TC). Forward = the castle is closer to
+    the nearest opponent's home TC than to the player's own home TC. Opponents = different team."""
+    castle = primary_castle(game, pnum)
+    own = home_tc_xy(game, pnum)
+    if not castle or own is None:
+        return None
+    cxy = (castle["x"], castle["y"])
+    me = player(game, pnum)
+    my_team = me.get("team")
+    enemy_dists = []
+    for op in game.get("players", []):
+        if op["player_number"] == pnum or op.get("team") == my_team:
+            continue
+        d = _dist(cxy, home_tc_xy(game, op["player_number"]))
+        if d is not None:
+            enemy_dists.append(d)
+    if not enemy_dists:
+        return None
+    dist_own = _dist(cxy, own)
+    dist_enemy = min(enemy_dists)
+    return (dist_enemy < dist_own, dist_own, dist_enemy)

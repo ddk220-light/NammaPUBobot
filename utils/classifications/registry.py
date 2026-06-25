@@ -5,9 +5,11 @@ from utils.classifications.defs import (
     cav_archer_rush,
     camel_rush,
     crossbow_rush,
+    forward_castle,
     knight_rush,
     maa_rush,
     ram_push,
+    safe_castle,
     scout_rush,
 )
 
@@ -20,6 +22,8 @@ _ALL = [
     cav_archer_rush.CLASSIFICATION,
     camel_rush.CLASSIFICATION,
     ram_push.CLASSIFICATION,
+    forward_castle.CLASSIFICATION,
+    safe_castle.CLASSIFICATION,
 ]
 
 REGISTRY = {c.key: c for c in _ALL}

@@ -558,7 +558,7 @@ async def _lobby2(
 )
 async def _insights(
 		interaction: Interaction,
-		use_case: str = SlashOption(name="use_case", description="Which play-style", required=False, default="archer_rush", choices=["archer_rush", "scout_rush", "maa_rush", "knight_rush", "crossbow_rush", "cav_archer_rush", "camel_rush", "ram_push"]),
+		use_case: str = SlashOption(name="use_case", description="Which play-style", required=False, default="archer_rush", choices=["archer_rush", "scout_rush", "maa_rush", "knight_rush", "crossbow_rush", "cav_archer_rush", "camel_rush", "ram_push", "forward_castle", "safe_castle"]),
 		days: int = SlashOption(name="days", description="Lookback window in days (default 385)", required=False, default=385),
 		aggregate_stats: bool = SlashOption(name="aggregate_stats", description="Also show winners-vs-losers averages (default off)", required=False, default=False),
 		player: Member = SlashOption(name="player", description="Filter to one player", required=False, default=None, verify=False),

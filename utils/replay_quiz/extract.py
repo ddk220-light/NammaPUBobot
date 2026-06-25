@@ -98,6 +98,9 @@ def extract_match(path, resolved, date_map=None):
     first_unit = {}                     # (pnum, unit) -> first_s
     builds = {}                         # (pnum, building) -> count
     tc_build_times = {n: [] for n in players}
+    tc_xy = {n: [] for n in players}        # (pnum) -> [{x,y,t_s}] Town Center build positions
+    castle_xy = {n: [] for n in players}    # (pnum) -> [{x,y,t_s}] Castle build positions
+    start_tc_xy = {}                        # (pnum) -> {x,y} pre-placed starting TC position
     deletes = {n: [] for n in players}
     tc_instances = {n: set() for n in players}
     events = []                         # production timeline: one row per timestamped DE_QUEUE click
@@ -107,6 +110,9 @@ def extract_match(path, resolved, date_map=None):
         for o in (p.objects or []):
             if "town center" in (getattr(o, "name", "") or "").lower():
                 tc_instances[p.number].add(o.instance_id)
+                pos = getattr(o, "position", None)
+                if pos is not None and p.number not in start_tc_xy:
+                    start_tc_xy[p.number] = dict(x=round(pos.x, 1), y=round(pos.y, 1))
 
     # first pass: capture age-up clicks (needed for the before-age splits)
     for a in m.actions:
@@ -162,8 +168,15 @@ def extract_match(path, resolved, date_map=None):
             b = pl.get("building")
             if b:
                 builds[(pnum, b)] = builds.get((pnum, b), 0) + 1
+                pos = getattr(a, "position", None)
+                xy = (dict(x=round(pos.x, 1), y=round(pos.y, 1), t_s=round(ts))
+                      if (pos is not None and ts is not None) else None)
                 if b == "Town Center":
                     tc_build_times[pnum].append(ts)
+                    if xy:
+                        tc_xy[pnum].append(xy)
+                elif b == "Castle" and xy:
+                    castle_xy[pnum].append(xy)
         elif t == "DELETE":
             deletes[pnum].append((ts, pl.get("object_ids", [])))
 
@@ -228,6 +241,9 @@ def extract_match(path, resolved, date_map=None):
             feudal_s=round(fc) if fc else None, castle_s=round(cc) if cc else None,
             imperial_s=round(ic) if ic else None, first_tc_s=round(first_tc) if first_tc else None,
             tc_build_s=sorted(round(t) for t in tc_build_times[pnum] if t is not None),
+            start_tc_xy=start_tc_xy.get(pnum),
+            tc_builds=tc_xy[pnum],
+            castle_builds=castle_xy[pnum],
             age_reliable=age_reliable,
             villagers=vil[0], vil_pre_feudal=vil[1], vil_pre_castle=vil[2], vil_pre_imperial=vil[3],
             military=mil[0], mil_pre_feudal=mil[1], mil_pre_castle=mil[2], mil_pre_imperial=mil[3],
