@@ -47,3 +47,31 @@ def ensure_schema(conn):
     for ddl in _SCHEMA:
         conn.execute(ddl)
     conn.commit()
+
+
+def seed_ledger(conn, matches):
+    """matches: iterable of (aoe2_match_id, played_at). New ids -> status 'pending'; existing
+    ids are left untouched (idempotent re-seed)."""
+    conn.executemany(
+        "INSERT OR IGNORE INTO ingest_ledger (aoe2_match_id, played_at, status) "
+        "VALUES (?, ?, 'pending')", [(int(m), int(p or 0)) for m, p in matches])
+    conn.commit()
+
+
+def pending_match_ids(conn):
+    """Ledger ids still awaiting a terminal state (newest-first by played_at)."""
+    return [r[0] for r in conn.execute(
+        "SELECT aoe2_match_id FROM ingest_ledger WHERE status IN ('pending','downloaded') "
+        "ORDER BY played_at DESC").fetchall()]
+
+
+def set_status(conn, mid, status, save_version=None, error=None):
+    conn.execute(
+        "UPDATE ingest_ledger SET status=?, save_version=?, error=?, ingested_at=? "
+        "WHERE aoe2_match_id=?", [status, save_version, error, int(time.time()), int(mid)])
+    conn.commit()
+
+
+def played_at(conn, mid):
+    r = conn.execute("SELECT played_at FROM ingest_ledger WHERE aoe2_match_id=?", [int(mid)]).fetchone()
+    return r[0] if r else None
