@@ -628,6 +628,13 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 
   .content-title { font-size: 1.1rem; padding: 1rem 0.75rem 0; }
 }
+/* ─── Strategy insights ─── */
+.strat-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.strat-tab { background: #2c3034; color: #bbb; border: 1px solid #484c54; padding: 7px 16px; cursor: pointer; font-size: 14px; border-radius: 6px; }
+.strat-tab.selected { background: #376ace; color: #fff; border-color: #376ace; }
+#strat-player-select { background: #2c3034; color: #eee; border: 1px solid #484c54; padding: 7px 10px; border-radius: 6px; font-size: 14px; min-width: 200px; }
+table.stats-table td.phase-cell { color: #9aa0a6; font-weight: 400; }
+table.stats-table td.strat-cond { color: #8a8d93; font-size: 12px; font-weight: 400; max-width: 460px; white-space: normal; }
 </style>
 </head>
 <body>
@@ -642,6 +649,9 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   <div id="tb-botinfo">PUBobot2</div>
   <div id="tb-botinfo-version">v0.8-Beta</div>
 
+  <div class="tb-link" onclick="showPage('strategies')" style="cursor:pointer;">
+    <span>Strategies</span>
+  </div>
   <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
     <span>Civ Stats</span>
   </div>
@@ -672,8 +682,32 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 
 <!-- Main Area -->
 <div id="main_area">
+  <!-- Strategies Page (default) -->
+  <div class="page active" id="page-strategies">
+    <div class="stats-container">
+      <header>
+        <h1>Strategy Insights</h1>
+        <div class="subtitle">How players open &mdash; rushes, castle drops, late armies &amp; booms</div>
+      </header>
+      <div class="strat-controls">
+        <div class="strat-toggle">
+          <button id="strat-tab-total" class="strat-tab selected" onclick="setStratView('total')">By strategy</button>
+          <button id="strat-tab-player" class="strat-tab" onclick="setStratView('player')">By player</button>
+        </div>
+        <select id="strat-player-select" style="display:none" onchange="onStratPlayer(this.value)"></select>
+      </div>
+      <div class="table-wrap">
+        <table class="stats-table" id="strat-table">
+          <thead><tr id="strat-header"></tr></thead>
+          <tbody id="strat-body"><tr><td class="loading">Loading strategies&hellip;</td></tr></tbody>
+        </table>
+      </div>
+      <footer>Facts only &mdash; derived from offline replay analysis of pickup matches.</footer>
+    </div>
+  </div>
+
   <!-- Civ Stats Page -->
-  <div class="page active" id="page-civ-stats">
+  <div class="page" id="page-civ-stats">
     <div class="stats-container">
       <header>
         <h1>Civilization Statistics</h1>
@@ -720,7 +754,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 <script>
 /* ─── State ─── */
 var currentUser = null;
-var currentPage = 'civ-stats';
+var currentPage = 'strategies';
 
 // Civ stats
 var COLUMNS = [
@@ -922,6 +956,82 @@ async function initCivStats() {
   } catch(e) {
     document.getElementById('table-body').innerHTML='<tr><td colspan="11" class="error">Failed to load: '+esc(e.message)+'</td></tr>';
   }
+}
+
+/* ─── Strategy Insights ─── */
+var stratData = [], stratView = 'total', stratPlayer = '';
+var stratSort = { col: 'games', asc: false };
+
+function wrPctClass(v) { return v == null ? '' : (v >= 55 ? 'wr wr-high' : v >= 45 ? 'wr wr-mid' : 'wr wr-low'); }
+function wrPctCell(v) { return '<td class="' + wrPctClass(v) + '">' + (v == null ? '-' : v + '%') + '</td>'; }
+
+async function initStrategies() {
+  try {
+    var resp = await fetch('/api/strategies');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var d = await resp.json();
+    stratData = d.strategies || [];
+    buildStratPlayerSelect();
+    renderStrategies();
+  } catch (e) {
+    document.getElementById('strat-body').innerHTML = '<tr><td colspan="6" class="error">Failed to load: ' + esc(e.message) + '</td></tr>';
+  }
+}
+
+function buildStratPlayerSelect() {
+  var tot = {};
+  stratData.forEach(function (s) { (s.roster || []).forEach(function (p) { tot[p.player] = (tot[p.player] || 0) + p.games; }); });
+  var players = Object.keys(tot).sort(function (a, b) { return tot[b] - tot[a]; });
+  if (!stratPlayer && players.length) stratPlayer = players[0];
+  var sel = document.getElementById('strat-player-select');
+  sel.innerHTML = players.map(function (p) { return '<option value="' + esc(p) + '"' + (p === stratPlayer ? ' selected' : '') + '>' + esc(p) + ' (' + tot[p] + ')</option>'; }).join('');
+}
+
+function setStratView(v) {
+  stratView = v;
+  document.getElementById('strat-tab-total').classList.toggle('selected', v === 'total');
+  document.getElementById('strat-tab-player').classList.toggle('selected', v === 'player');
+  document.getElementById('strat-player-select').style.display = v === 'player' ? '' : 'none';
+  renderStrategies();
+}
+
+function onStratPlayer(p) { stratPlayer = p; renderStrategies(); }
+
+function stratSortBy(col) {
+  if (stratSort.col === col) stratSort.asc = !stratSort.asc; else { stratSort.col = col; stratSort.asc = false; }
+  renderStrategies();
+}
+
+function renderStrategies() { if (stratView === 'total') renderStratTotal(); else renderStratPlayer(); }
+
+function renderStratTotal() {
+  var cols = [['title', 'Strategy'], ['phase', 'Phase'], ['games', 'Games'], ['players', 'Players'], ['winrate', 'Win %']];
+  document.getElementById('strat-header').innerHTML = cols.map(function (c) { return '<th onclick="stratSortBy(\'' + c[0] + '\')">' + c[1] + '</th>'; }).join('') + '<th>Condition</th>';
+  var rows = stratData.slice().sort(function (a, b) {
+    var va = a[stratSort.col], vb = b[stratSort.col];
+    if (typeof va === 'string') return stratSort.asc ? (va || '').localeCompare(vb || '') : (vb || '').localeCompare(va || '');
+    va = va == null ? -1 : va; vb = vb == null ? -1 : vb;
+    return stratSort.asc ? va - vb : vb - va;
+  });
+  document.getElementById('strat-body').innerHTML = rows.map(function (s) {
+    return '<tr><td>' + esc(s.title) + '</td><td class="phase-cell">' + esc(s.phase || '') + '</td>'
+      + '<td class="games">' + s.games + '</td><td class="games">' + s.players + '</td>'
+      + wrPctCell(s.winrate) + '<td class="strat-cond">' + esc(s.condition || '') + '</td></tr>';
+  }).join('');
+}
+
+function renderStratPlayer() {
+  document.getElementById('strat-header').innerHTML = '<th>Strategy</th><th>Phase</th><th>Games</th><th>Wins</th><th>Win %</th>';
+  var rows = [];
+  stratData.forEach(function (s) {
+    var p = (s.roster || []).find(function (x) { return x.player === stratPlayer; });
+    if (p) rows.push({ title: s.title, phase: s.phase, games: p.games, wins: p.wins, winrate: p.winrate });
+  });
+  rows.sort(function (a, b) { return b.games - a.games; });
+  if (!rows.length) { document.getElementById('strat-body').innerHTML = '<tr><td colspan="5" class="loading">No strategies recorded for this player.</td></tr>'; return; }
+  document.getElementById('strat-body').innerHTML = rows.map(function (r) {
+    return '<tr><td>' + esc(r.title) + '</td><td class="phase-cell">' + esc(r.phase || '') + '</td><td class="games">' + r.games + '</td><td class="games">' + r.wins + '</td>' + wrPctCell(r.winrate) + '</tr>';
+  }).join('');
 }
 
 /* ─── Dashboard ─── */
@@ -1375,6 +1485,7 @@ document.getElementById('guild_menu').style.display = 'none';
 document.getElementById('mobile-menu-btn').style.display = 'none';
 
 checkAuth();
+initStrategies();
 initCivStats();
 </script>
 </body>

@@ -371,6 +371,55 @@ async def handle_civ_stats(request):
 	})
 
 
+# ─── Strategy insights API (public) ───
+
+# Phase label per classification key, for grouping in the dashboard.
+_STRATEGY_PHASE = {
+	"scout_rush": "Feudal", "archer_rush": "Feudal", "maa_rush": "Feudal",
+	"knight_rush": "Early Castle", "crossbow_rush": "Early Castle", "cav_archer_rush": "Early Castle",
+	"camel_rush": "Early Castle", "ram_push": "Early Castle",
+	"forward_castle": "Castle", "safe_castle": "Castle",
+	"late_knight": "Late Castle", "late_crossbow": "Late Castle", "late_cav_archer": "Late Castle",
+	"late_camel": "Late Castle", "late_unique": "Late Castle", "late_ram": "Late Castle",
+	"boom_to_imp": "Boom",
+}
+
+
+async def handle_strategies(request):
+	"""Public: play-style ('strategy') leaderboards from the cls_* tables — per-strategy totals
+	plus a per-player roster, for the dashboard Strategies tab. Titles/conditions come from the
+	classification registry; counts from cls_results."""
+	from utils.classifications.registry import REGISTRY
+
+	rows = await db.fetchall(
+		"SELECT `key` AS k, identity AS player, COUNT(*) AS games, "
+		"SUM(winner=1) AS wins, SUM(winner=0) AS losses "
+		"FROM cls_results GROUP BY `key`, identity")
+	by_key = {}
+	for r in (rows or []):
+		by_key.setdefault(r["k"], []).append({
+			"player": r["player"] or "?", "games": int(r["games"]),
+			"wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0)})
+
+	strategies = []
+	for key, c in REGISTRY.items():
+		roster = sorted(by_key.get(key, []), key=lambda p: -p["games"])
+		for p in roster:
+			dec = p["wins"] + p["losses"]
+			p["winrate"] = round(100 * p["wins"] / dec) if dec else None
+		tg = sum(p["games"] for p in roster)
+		tw = sum(p["wins"] for p in roster)
+		tl = sum(p["losses"] for p in roster)
+		strategies.append({
+			"key": key, "title": c.title, "phase": _STRATEGY_PHASE.get(key, ""),
+			"condition": c.trigger_spec, "games": tg, "players": len(roster),
+			"wins": tw, "losses": tl,
+			"winrate": round(100 * tw / (tw + tl)) if (tw + tl) else None,
+			"roster": roster,
+		})
+	return web.json_response({"strategies": strategies})
+
+
 # ─── Auth routes ───
 
 async def handle_auth_login(request):
@@ -785,6 +834,7 @@ def create_app():
 	app.router.add_get('/auth/logout', handle_auth_logout)
 	# Public API
 	app.router.add_get('/api/civ-stats', handle_civ_stats)
+	app.router.add_get('/api/strategies', handle_strategies)
 	app.router.add_get('/api/me', handle_api_me)
 	# Dashboard API
 	app.router.add_get('/api/debug', handle_api_debug)
