@@ -56,3 +56,16 @@ def test_write_match_then_player_totals(tmp_path):
     assert conn.execute("SELECT COUNT(*) FROM cls_results").fetchone()[0] == 1
     localdb.rebuild_player_totals(conn)
     assert dict(conn.execute("SELECT identity, games FROM cls_player_totals").fetchall()) == {"Al": 1, "Bo": 1}
+
+
+def test_player_totals_merge_case_insensitive_nicks(tmp_path):
+    # MySQL's identity PK is case-insensitive; the local aggregate must merge 'Thiru'/'thiru' into
+    # ONE row so a sync doesn't hit a duplicate-PK error. (regression for the sync 1062 error)
+    conn = localdb.connect(str(tmp_path / "ci.db"))
+    localdb.ensure_schema(conn)
+    localdb.write_match(conn, 1, [], [], [(1, 1, "Thiru", 1)])
+    localdb.write_match(conn, 2, [], [], [(2, 1, "thiru", 0)])
+    localdb.rebuild_player_totals(conn)
+    rows = conn.execute("SELECT identity, games, wins, losses FROM cls_player_totals").fetchall()
+    assert len(rows) == 1
+    assert (rows[0][1], rows[0][2], rows[0][3]) == (2, 1, 1)   # merged: 2 games, 1 win, 1 loss

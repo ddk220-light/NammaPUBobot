@@ -103,12 +103,15 @@ def write_match(conn, mid, result_rows, metric_rows, player_rows):
 
 
 def rebuild_player_totals(conn):
-    """cls_player_totals = aggregate of ingest_players (every scanned player-game)."""
+    """cls_player_totals = aggregate of ingest_players (every scanned player-game). Groups
+    case-INSENSITIVELY (COLLATE NOCASE) to match MySQL's case-insensitive identity PK on the prod
+    side -- otherwise nicks differing only by case (e.g. 'Thiru'/'thiru') are two SQLite rows that
+    collide as a duplicate PK when synced. MIN(identity) picks a stable casing for the merged row."""
     conn.execute("DELETE FROM cls_player_totals")
     conn.execute(
         "INSERT INTO cls_player_totals (identity, games, wins, losses) "
-        "SELECT identity, COUNT(*), SUM(winner=1), SUM(winner=0) FROM ingest_players "
-        "GROUP BY identity")
+        "SELECT MIN(identity), COUNT(*), SUM(winner=1), SUM(winner=0) FROM ingest_players "
+        "GROUP BY identity COLLATE NOCASE")
     conn.commit()
 
 
