@@ -91,6 +91,21 @@ def early_castle_window(game, pnum):
     return (p["castle_s"], extra[2] if len(extra) >= 3 else None)
 
 
+def late_castle_window(game, pnum):
+    """[3rd additional TC build, Imperial click) -- the late-castle army phase, which begins exactly
+    where early_castle_window ends. (None, None) if the player never built a 3rd additional TC (no
+    late phase). end = imperial_s, or None (open to game end) if Imperial was never clicked.
+    "Additional" TCs = built at/after the Feudal click (excludes a Nomad Dark-Age starting TC)."""
+    p = player(game, pnum)
+    if not p:
+        return (None, None)
+    feudal_s = p.get("feudal_s") or 0
+    extra = [t for t in (p.get("tc_build_s") or []) if t >= feudal_s]
+    if len(extra) < 3:
+        return (None, None)
+    return (extra[2], p.get("imperial_s"))
+
+
 def _in_window(t, start, end):
     return t is not None and start is not None and t >= start and (end is None or t < end)
 

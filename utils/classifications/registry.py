@@ -7,6 +7,12 @@ from utils.classifications.defs import (
     crossbow_rush,
     forward_castle,
     knight_rush,
+    late_camel,
+    late_cav_archer,
+    late_crossbow,
+    late_knight,
+    late_ram,
+    late_unique,
     maa_rush,
     ram_push,
     safe_castle,
@@ -24,6 +30,12 @@ _ALL = [
     ram_push.CLASSIFICATION,
     forward_castle.CLASSIFICATION,
     safe_castle.CLASSIFICATION,
+    late_knight.CLASSIFICATION,
+    late_crossbow.CLASSIFICATION,
+    late_cav_archer.CLASSIFICATION,
+    late_camel.CLASSIFICATION,
+    late_unique.CLASSIFICATION,
+    late_ram.CLASSIFICATION,
 ]
 
 REGISTRY = {c.key: c for c in _ALL}

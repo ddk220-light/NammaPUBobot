@@ -17,10 +17,13 @@ def _f(x):
 
 def make(*, key, title, count_label, unit_pred, threshold, sig_tech, trigger_spec, unit_source):
     def trigger(game, pnum):
+        from utils.classifications.defs import _phases   # lazy import (avoids an import cycle)
         start, end = gd.early_castle_window(game, pnum)
         if start is None:
             return False
-        return gd.queued_in_window(game, pnum, unit_pred, start, end) > threshold
+        if gd.queued_in_window(game, pnum, unit_pred, start, end) <= threshold:
+            return False
+        return not _phases.did_feudal_rush(game, pnum)   # a feudal rusher's castle army is a continuation
 
     def factors(game, pnum):
         p = gd.player(game, pnum) or {}
