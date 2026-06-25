@@ -2,6 +2,7 @@
 Add a new classification by importing its module here and appending its CLASSIFICATION."""
 from utils.classifications.defs import (
     archer_rush,
+    boom_to_imp,
     cav_archer_rush,
     camel_rush,
     crossbow_rush,
@@ -36,6 +37,7 @@ _ALL = [
     late_camel.CLASSIFICATION,
     late_unique.CLASSIFICATION,
     late_ram.CLASSIFICATION,
+    boom_to_imp.CLASSIFICATION,
 ]
 
 REGISTRY = {c.key: c for c in _ALL}
