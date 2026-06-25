@@ -65,6 +65,19 @@ def test_trigger_serjeant_alone_counts():
     assert trigger(serjeant_only, 1) is True
 
 
+def test_trigger_champi_scout_counts_as_militia():
+    # modded New-World civs' club-infantry unit -- counts as MAA, NOT scout (it carries the
+    # extractor's "scout" category but is matched into the militia line by name).
+    champi_only = {
+        "players": [{"player_number": 1, "feudal_s": 600, "castle_s": 1200}],
+        "techs": [],
+        "events": [{"player_number": 1, "category": "scout", "name": "Champi Scout",
+                    "amount": 3, "t_s": 700}],
+    }
+    assert trigger(champi_only, 1) is True
+    assert factors(champi_only, 1)["militia_pre_castle"] == 3.0
+
+
 def test_factors():
     f = factors(GAME, 1)
     assert f["militia_pre_castle"] == 5.0   # 3 Militia + 2 Serjeant; Flemish + spearman excluded

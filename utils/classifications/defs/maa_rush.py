@@ -1,5 +1,6 @@
-"""MAA rush: the player queued >=1 Militia-line unit (Militia, or the Sicilian Serjeant) before
-the Castle-age CLICK. Spearmen are a separate category and never count. NOTE: the militia line is
+"""MAA rush: the player queued >=1 Militia-line unit (Militia; the Sicilian Serjeant; or the
+modded New-World civs' Champi Scout, a club-infantry unit) before the Castle-age CLICK.
+Spearmen are a separate category and never count. NOTE: the militia line is
 only ever *produced* as 'Militia' -- Man-at-Arms / Long Swordsman / Champion are upgrades, not
 trained units -- so the Man-at-Arms upgrade timing is a FACTOR (not a trigger gate): it separates
 a committed MAA rush from incidental dark-age militia. Rush != win -- execution is graded by
@@ -66,8 +67,8 @@ CLASSIFICATION = Classification(
     version=1,
     trigger_spec="a player who made at least one Militia-line unit (Militia/Man-at-Arms, or Serjeant; spearmen excluded) before clicking up to Castle Age",
     requirements=[
-        req("militia_queue_events", source="extract.events[category=militia_line minus Flemish Militia, plus Serjeant]",
-            status="available", note="militia line + Sicilian Serjeant; spearman_line is a separate category, never included"),
+        req("militia_queue_events", source="extract.events[category=militia_line minus Flemish Militia, plus Serjeant/Champi Scout]",
+            status="available", note="militia line + Sicilian Serjeant + modded New-World Champi Scout (club infantry); spearman_line is a separate category, never included"),
         req("feudal_click_s", source="extract.players.feudal_s", status="available"),
         req("castle_click_s", source="extract.players.castle_s", status="available"),
         req("man_at_arms_upgrade_click_s", source="extract.techs[Man-at-Arms].click_s", status="available"),

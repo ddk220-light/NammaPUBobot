@@ -38,12 +38,20 @@ def scout_queue_events(game, pnum):
     return sorted(evs, key=lambda e: e["t_s"])
 
 
+# Militia-line equivalents the extractor buckets elsewhere, matched by name:
+#  - Serjeant: Sicilian unique infantry (bucketed unique_other)
+#  - Champi Scout: the militia/club-infantry unit of the modded New-World civs
+#    (Tupi/Incas/Mapuche/Muisca); a "champi" is an Andean war club, so it is infantry despite
+#    the "Scout" name -- and is excluded from the scout-cavalry allowlist above.
+MILITIA_LINE_BY_NAME = ("Serjeant", "Champi Scout")
+
+
 def _is_militia_line(e):
-    """Militia line (incl. Man-at-Arms upgrades) plus the Sicilian Serjeant; excludes the
-    imperial Burgundian 'Flemish Militia' (not a feudal rush unit). Spearmen are a separate
-    category and never match. Serjeant is bucketed as unique_other, so it is matched by name."""
+    """Militia line (incl. Man-at-Arms upgrades) plus militia-equivalent infantry matched by
+    name (see MILITIA_LINE_BY_NAME); excludes the imperial Burgundian 'Flemish Militia' (not a
+    feudal rush unit). Spearmen are a separate category and never match."""
     name = e.get("name") or ""
-    if name == "Serjeant":
+    if name in MILITIA_LINE_BY_NAME:
         return True
     return e.get("category") == "militia_line" and name != "Flemish Militia"
 
