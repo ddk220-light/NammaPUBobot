@@ -70,3 +70,38 @@ def tech_click_s(game, pnum, tech):
         if t["player_number"] == pnum and t.get("tech") == tech:
             return t.get("click_s")
     return None
+
+
+# --- Early-Castle window (the "Early Castle Builds" rush family) ---------------------------------
+# The window is [Castle-age click, build of the 2nd ADDITIONAL Town Center) -- i.e. castle-age
+# aggression before the player commits to a 3-TC boom. tc_build_s (sorted TC build timestamps) is
+# emitted by extract.py from v2 on; older caches won't have it (treated as "never boomed").
+
+def early_castle_window(game, pnum):
+    """(start, end) seconds. start = Castle-age click; end = the 2nd ADDITIONAL TC's build time
+    (None = never built a 2nd extra TC, so the window stays open). (None, None) if the player
+    never clicked Castle. "Additional" TCs = those built at/after the Feudal click, which excludes
+    a Nomad-map starting TC (constructed in the Dark Age) so the rule holds on every map type."""
+    p = player(game, pnum)
+    if not p or p.get("castle_s") is None:
+        return (None, None)
+    feudal_s = p.get("feudal_s") or 0
+    extra = [t for t in (p.get("tc_build_s") or []) if t >= feudal_s]
+    return (p["castle_s"], extra[1] if len(extra) >= 2 else None)
+
+
+def _in_window(t, start, end):
+    return t is not None and start is not None and t >= start and (end is None or t < end)
+
+
+def queued_in_window(game, pnum, pred, start, end):
+    """Sum of queued amounts for production events matching pred(event) within [start, end)."""
+    return sum((e.get("amount") or 1)
+               for e in game.get("events", [])
+               if e["player_number"] == pnum and _in_window(e.get("t_s"), start, end) and pred(e))
+
+
+def tech_in_window(game, pnum, tech, start, end):
+    """(1.0 if `tech` was clicked within [start, end) else 0.0, click_s or None)."""
+    click = tech_click_s(game, pnum, tech)
+    return (1.0 if _in_window(click, start, end) else 0.0, float(click) if click is not None else None)

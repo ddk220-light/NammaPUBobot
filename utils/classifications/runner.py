@@ -23,7 +23,8 @@ from utils.classifications.registry import REGISTRY           # noqa: E402
 
 CACHE_DIR = os.path.join(_ROOT, "data", ".replay_extract_cache")
 REPLAY_DIR = os.path.join(_ROOT, "data", "replays")
-EXTRACT_VERSION = "v1"     # bump to invalidate the parse cache when extract output changes
+EXTRACT_VERSION = "v2"     # bump to invalidate the parse cache when extract output changes
+                           # v2: adds players[].tc_build_s (TC build timestamps) for window logic
 
 
 def _cache_path(aoe2_match_id):

@@ -227,6 +227,7 @@ def extract_match(path, resolved, date_map=None):
             civ=civ, team=team, winner=bool(p.winner) if p.winner is not None else None, eapm=p.eapm,
             feudal_s=round(fc) if fc else None, castle_s=round(cc) if cc else None,
             imperial_s=round(ic) if ic else None, first_tc_s=round(first_tc) if first_tc else None,
+            tc_build_s=sorted(round(t) for t in tc_build_times[pnum] if t is not None),
             age_reliable=age_reliable,
             villagers=vil[0], vil_pre_feudal=vil[1], vil_pre_castle=vil[2], vil_pre_imperial=vil[3],
             military=mil[0], mil_pre_feudal=mil[1], mil_pre_castle=mil[2], mil_pre_imperial=mil[3],
