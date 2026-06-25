@@ -559,7 +559,7 @@ async def _lobby2(
 async def _insights(
 		interaction: Interaction,
 		use_case: str = SlashOption(name="use_case", description="Which play-style", required=False, default="archer_rush", choices=["archer_rush"]),
-		days: int = SlashOption(name="days", description="Lookback window in days (default 90)", required=False, default=90),
+		days: int = SlashOption(name="days", description="Lookback window in days (default 385)", required=False, default=385),
 		aggregate_stats: bool = SlashOption(name="aggregate_stats", description="Also show winners-vs-losers averages (default off)", required=False, default=False),
 		player: Member = SlashOption(name="player", description="Filter to one player", required=False, default=None, verify=False),
 ): await run_slash(bot.commands.insights, interaction=interaction, use_case=use_case, days=days, aggregate_stats=aggregate_stats, player=player)

@@ -124,6 +124,40 @@ PYTHONPATH=.replay_scratch python -m utils.classifications.runner --days 90 [--k
 
 ---
 
+## Operating it in production (populating the bot's DB)
+
+The bot **creates the empty `cls_*` tables** in the Railway MySQL at startup (`ensure_table` in
+`bot/classifications/__init__.py`) and only ever **reads** them. The **offline runner fills them**,
+and it must run **where the replays + mgz fork live** (locally) — those are gitignored and not in the
+Railway image.
+
+**Connecting to prod from your machine:** `mysql.railway.internal` only resolves *inside* Railway. To
+write to the prod DB from a laptop, put Railway's **public** MySQL URL (`MYSQL_PUBLIC_URL`, the
+`…proxy.rlwy.net:PORT` one) in `config.cfg`'s `DB_URI`, then run:
+
+```bash
+PYTHONPATH=.replay_scratch python -m utils.classifications.runner --days 400 --key archer_rush --no-download
+```
+
+`--no-download` uses only already-cached replays (fast, no aoe.ms hammering). The runner is
+**idempotent** — re-running overwrites a match's rows, never duplicates. It writes the registry row +
+data-requirements ledger first, then the per-player results, so even a brief run clears the
+"Unknown use case" error.
+
+**Troubleshooting:**
+- `/insights` says **"Unknown use case 'archer_rush'"** → `cls_classifications` is **empty**: the
+  runner hasn't run against that DB. Run it (above).
+- **`1064 … near 'key))'` at deploy** (historical) → `key` is a MySQL reserved word; fixed by
+  backticking `PRIMARY KEY` columns in `core/DBAdapters/mysql.py::create_table`.
+
+**Window vs. data freshness (important):** `/insights` defaults to **385 days**. A one-time backfill
+from cached replays is only as fresh as the cache (the initial corpus stopped ~Apr 2026), so a short
+window can look empty even though the DB holds hundreds of games. Match the `days:` window to how far
+back the populated data actually goes (or keep it current via a future live-ingest job). The DB holds
+it all cheaply (~270 rows for archer rush); the window only controls the view.
+
+---
+
 ## The archer-rush classification (`defs/archer_rush.py`)
 
 **Trigger:** the player queued **≥1 foot Archer** (`category == "archer_line"`; **Skirmishers

@@ -35,7 +35,7 @@ def _full_button(use_case, days, n):
 	return v
 
 
-async def insights(ctx, use_case: str = "archer_rush", days: int = 90,
+async def insights(ctx, use_case: str = "archer_rush", days: int = 385,
                    aggregate_stats: bool = False, player: Member = None):
 	from bot.classifications import query
 	from utils.classifications.registry import REGISTRY
@@ -43,7 +43,7 @@ async def insights(ctx, use_case: str = "archer_rush", days: int = 90,
 	try:
 		days = max(1, min(int(days), 3650))
 	except (TypeError, ValueError):
-		days = 90
+		days = 385
 
 	interaction = getattr(ctx, "interaction", None)
 	if interaction is not None and not interaction.response.is_done():
