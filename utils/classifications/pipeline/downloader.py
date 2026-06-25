@@ -19,6 +19,9 @@ def _paths(mid):
 
 def run(space=4.0):
     os.makedirs(REPLAY_DIR, exist_ok=True)
+    done_marker = os.path.join(REPLAY_DIR, ".done")
+    if os.path.exists(done_marker):
+        os.remove(done_marker)          # clear stale sentinel from a prior run
     conn = localdb.connect()
     localdb.ensure_schema(conn)
     ids = localdb.pending_match_ids(conn)          # read-only snapshot, newest-first
@@ -47,6 +50,7 @@ def run(space=4.0):
             print("  downloader [{}/{}] got={} unavail={}".format(i, len(todo), got, unavail), flush=True)
         time.sleep(space)                       # pace every attempt (aoe.ms rate-limits hard)
     print("downloader DONE: got={} unavail={}".format(got, unavail), flush=True)
+    open(done_marker, "w").close()      # signal the Ingester that downloads are finished
     return 0
 
 

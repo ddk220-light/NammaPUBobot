@@ -12,7 +12,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".replay_scratch"))
 
 from utils.classifications.pipeline import classify, localdb
-from utils.classifications.pipeline.downloader import _paths
+from utils.classifications.pipeline.downloader import REPLAY_DIR, _paths
 from utils.classifications.registry import REGISTRY
 
 CACHE_DIR = os.path.join(os.path.dirname(localdb.DEFAULT_DB), ".replay_extract_cache")
@@ -69,6 +69,7 @@ def run(idle_exits=3, poll=10.0):
     from utils.replay_quiz.extract import load_resolved, load_date_map
     resolved, date_map = load_resolved(), load_date_map()
     idle = 0
+    done_marker = os.path.join(REPLAY_DIR, ".done")
     while True:
         pend = localdb.pending_match_ids(conn)
         if not pend:
@@ -85,9 +86,10 @@ def run(idle_exits=3, poll=10.0):
         print("ingester: ingested={} parse_failed={} unavailable={} pending={}".format(
             done, fail, na, len(localdb.pending_match_ids(conn))), flush=True)
         if progressed == 0:
-            idle += 1
-            if idle >= idle_exits:      # nothing new across N sweeps -> downloader is done
-                break
+            if os.path.exists(done_marker):   # only count idle once the Downloader has finished
+                idle += 1
+                if idle >= idle_exits:
+                    break
             time.sleep(poll)
         else:
             idle = 0

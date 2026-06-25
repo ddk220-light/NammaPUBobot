@@ -1,12 +1,12 @@
 """Seed the local ingest_ledger from the Railway match list (READ-ONLY on prod). Run once before
 (or alongside) the Downloader/Ingester. Reuses config.cfg DB_URI."""
 import argparse
-import re
 import time
 
 import pymysql
 
 from utils.classifications.pipeline import localdb
+from utils.db_helpers import parse_db_uri
 
 
 def window_query(days):
@@ -20,9 +20,8 @@ def window_query(days):
 def _railway_conn():
     from importlib.machinery import SourceFileLoader
     cfg = SourceFileLoader("cfg", "config.cfg").load_module()
-    mm = re.match(r"mysql://([^:]+):([^@]+)@([^:/]+):(\d+)/(.+)", cfg.DB_URI)
-    return pymysql.connect(host=mm.group(3), port=int(mm.group(4)), user=mm.group(1),
-                           password=mm.group(2), db=mm.group(5), connect_timeout=20)
+    kwargs = parse_db_uri(cfg.DB_URI)
+    return pymysql.connect(**kwargs, connect_timeout=20)
 
 
 def run(days=365):

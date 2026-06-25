@@ -2,11 +2,11 @@
 ever run on explicit go-ahead. Per table: DELETE all, then multi-row INSERT in chunks, then compare
 row counts local-vs-remote."""
 import argparse
-import re
 
 import pymysql
 
 from utils.classifications.pipeline import localdb
+from utils.db_helpers import parse_db_uri
 
 TABLES = {
     "cls_results": ["key", "aoe2_match_id", "player_number", "profile_id", "identity", "civ", "team",
@@ -32,25 +32,29 @@ def insert_sql(table, cols, nrows):
 def _railway_conn():
     from importlib.machinery import SourceFileLoader
     cfg = SourceFileLoader("cfg", "config.cfg").load_module()
-    mm = re.match(r"mysql://([^:]+):([^@]+)@([^:/]+):(\d+)/(.+)", cfg.DB_URI)
-    return pymysql.connect(host=mm.group(3), port=int(mm.group(4)), user=mm.group(1),
-                           password=mm.group(2), db=mm.group(5), connect_timeout=20, autocommit=False)
+    kwargs = parse_db_uri(cfg.DB_URI)
+    return pymysql.connect(**kwargs, connect_timeout=20, autocommit=False)
 
 
 def run():
     lconn = localdb.connect()
     rconn = _railway_conn()
     cur = rconn.cursor()
-    summary = {}
-    for table, cols in TABLES.items():
-        rows = [list(r) for r in lconn.execute(
-            "SELECT {} FROM {}".format(",".join(cols), table)).fetchall()]
-        cur.execute("DELETE FROM `{}`".format(table))
-        for chunk in chunked(rows, CHUNK):
-            flat = [v for row in chunk for v in row]
-            cur.execute(insert_sql(table, cols, len(chunk)), flat)
-        summary[table] = len(rows)
-    rconn.commit()
+    try:
+        for table, cols in TABLES.items():
+            rows = [list(r) for r in lconn.execute(
+                "SELECT {} FROM {}".format(",".join(cols), table)).fetchall()]
+            cur.execute("DELETE FROM `{}`".format(table))
+            for chunk in chunked(rows, CHUNK):
+                flat = [v for row in chunk for v in row]
+                cur.execute(insert_sql(table, cols, len(chunk)), flat)
+        rconn.commit()
+    except Exception as e:
+        rconn.rollback()
+        rconn.close()
+        lconn.close()
+        print("SYNC ERROR: {}".format(e), flush=True)
+        return 1
     # verify
     ok = True
     for table in TABLES:
@@ -62,6 +66,7 @@ def run():
             ok = False
         print("  {:22} local={} remote={} {}".format(table, local, remote, flag), flush=True)
     rconn.close()
+    lconn.close()
     print("SYNC {}".format("VERIFIED" if ok else "FAILED — counts mismatch"), flush=True)
     return 0 if ok else 1
 
