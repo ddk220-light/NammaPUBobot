@@ -38,3 +38,21 @@ def test_pending_ids_and_status_setters(tmp_path):
     assert localdb.pending_match_ids(conn) == [101]
     r = conn.execute("SELECT status, save_version, error FROM ingest_ledger WHERE aoe2_match_id=103").fetchone()
     assert r == ("parse_failed", 37.0, "bad")
+
+
+def test_write_match_then_player_totals(tmp_path):
+    conn = localdb.connect(str(tmp_path / "w.db"))
+    localdb.ensure_schema(conn)
+    results = [{"key": "archer_rush", "aoe2_match_id": 9, "player_number": 1, "profile_id": 5,
+                "identity": "Al", "civ": "Mayans", "team": "1", "winner": 1, "played_at": 100}]
+    metrics = [{"key": "archer_rush", "aoe2_match_id": 9, "player_number": 1,
+                "metric": "archers_pre_castle", "value": 7.0}]
+    players = [(9, 1, "Al", 1), (9, 2, "Bo", 0)]              # all player-games this match
+    localdb.write_match(conn, 9, results, metrics, players)
+    assert conn.execute("SELECT COUNT(*) FROM cls_results").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM ingest_players").fetchone()[0] == 2
+    # re-writing the same match replaces, never duplicates
+    localdb.write_match(conn, 9, results, metrics, players)
+    assert conn.execute("SELECT COUNT(*) FROM cls_results").fetchone()[0] == 1
+    localdb.rebuild_player_totals(conn)
+    assert dict(conn.execute("SELECT identity, games FROM cls_player_totals").fetchall()) == {"Al": 1, "Bo": 1}
