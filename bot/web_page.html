@@ -634,7 +634,9 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .strat-tab.selected { background: #376ace; color: #fff; border-color: #376ace; }
 #strat-player-select { background: #2c3034; color: #eee; border: 1px solid #484c54; padding: 7px 10px; border-radius: 6px; font-size: 14px; min-width: 200px; }
 table.stats-table td.phase-cell { color: #9aa0a6; font-weight: 400; }
-table.stats-table td.strat-cond { color: #8a8d93; font-size: 12px; font-weight: 400; max-width: 460px; white-space: normal; }
+table.stats-table td.strat-cond { color: #8a8d93; font-size: 12px; font-weight: 400; max-width: 420px; white-space: normal; }
+table.stats-table td.strat-sub { color: #c7c9cd; font-weight: 400; font-size: 12.5px; white-space: normal; max-width: 220px; }
+table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-child { color: #9aa0a6; font-style: italic; }
 </style>
 </head>
 <body>
@@ -960,6 +962,7 @@ async function initCivStats() {
 
 /* ─── Strategy Insights ─── */
 var stratData = [], stratView = 'total', stratPlayer = '';
+var stratTotals = {}, stratCategorized = {};
 var stratSort = { col: 'games', asc: false };
 
 function wrPctClass(v) { return v == null ? '' : (v >= 55 ? 'wr wr-high' : v >= 45 ? 'wr wr-mid' : 'wr wr-low'); }
@@ -971,6 +974,8 @@ async function initStrategies() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var d = await resp.json();
     stratData = d.strategies || [];
+    stratTotals = d.player_totals || {};
+    stratCategorized = d.player_categorized || {};
     buildStratPlayerSelect();
     renderStrategies();
   } catch (e) {
@@ -1006,7 +1011,7 @@ function renderStrategies() { if (stratView === 'total') renderStratTotal(); els
 
 function renderStratTotal() {
   var cols = [['title', 'Strategy'], ['phase', 'Phase'], ['games', 'Games'], ['players', 'Players'], ['winrate', 'Win %']];
-  document.getElementById('strat-header').innerHTML = cols.map(function (c) { return '<th onclick="stratSortBy(\'' + c[0] + '\')">' + c[1] + '</th>'; }).join('') + '<th>Condition</th>';
+  document.getElementById('strat-header').innerHTML = cols.map(function (c) { return '<th onclick="stratSortBy(\'' + c[0] + '\')">' + c[1] + '</th>'; }).join('') + '<th>Top civs</th><th>Top players (win%)</th><th>Condition</th>';
   var rows = stratData.slice().sort(function (a, b) {
     var va = a[stratSort.col], vb = b[stratSort.col];
     if (typeof va === 'string') return stratSort.asc ? (va || '').localeCompare(vb || '') : (vb || '').localeCompare(va || '');
@@ -1014,24 +1019,40 @@ function renderStratTotal() {
     return stratSort.asc ? va - vb : vb - va;
   });
   document.getElementById('strat-body').innerHTML = rows.map(function (s) {
+    var civs = (s.top_civs || []).join(', ');
+    var tops = (s.top_players || []).map(function (p) { return esc(p.player) + ' ' + p.winrate + '%'; }).join(', ');
     return '<tr><td>' + esc(s.title) + '</td><td class="phase-cell">' + esc(s.phase || '') + '</td>'
       + '<td class="games">' + s.games + '</td><td class="games">' + s.players + '</td>'
-      + wrPctCell(s.winrate) + '<td class="strat-cond">' + esc(s.condition || '') + '</td></tr>';
+      + wrPctCell(s.winrate)
+      + '<td class="strat-sub">' + esc(civs) + '</td><td class="strat-sub">' + tops + '</td>'
+      + '<td class="strat-cond">' + esc(s.condition || '') + '</td></tr>';
   }).join('');
 }
 
 function renderStratPlayer() {
-  document.getElementById('strat-header').innerHTML = '<th>Strategy</th><th>Phase</th><th>Games</th><th>Wins</th><th>Win %</th>';
+  document.getElementById('strat-header').innerHTML = '<th>Strategy</th><th>Phase</th><th>Games</th><th>% of total</th><th>Wins</th><th>Win %</th>';
+  var tot = stratTotals[stratPlayer], cat = stratCategorized[stratPlayer];
+  var totGames = tot ? tot.games : 0;
+  var pctCell = function (g) { return '<td class="games">' + (totGames ? Math.round(100 * g / totGames) + '%' : '-') + '</td>'; };
   var rows = [];
   stratData.forEach(function (s) {
     var p = (s.roster || []).find(function (x) { return x.player === stratPlayer; });
     if (p) rows.push({ title: s.title, phase: s.phase, games: p.games, wins: p.wins, winrate: p.winrate });
   });
   rows.sort(function (a, b) { return b.games - a.games; });
-  if (!rows.length) { document.getElementById('strat-body').innerHTML = '<tr><td colspan="5" class="loading">No strategies recorded for this player.</td></tr>'; return; }
-  document.getElementById('strat-body').innerHTML = rows.map(function (r) {
-    return '<tr><td>' + esc(r.title) + '</td><td class="phase-cell">' + esc(r.phase || '') + '</td><td class="games">' + r.games + '</td><td class="games">' + r.wins + '</td>' + wrPctCell(r.winrate) + '</tr>';
+  var html = rows.map(function (r) {
+    return '<tr><td>' + esc(r.title) + '</td><td class="phase-cell">' + esc(r.phase || '') + '</td><td class="games">' + r.games + '</td>'
+      + pctCell(r.games) + '<td class="games">' + r.wins + '</td>' + wrPctCell(r.winrate) + '</tr>';
   }).join('');
+  if (tot) {  // "Mixed / other" = the player's games that matched no strategy
+    var mg = tot.games - (cat ? cat.games : 0), mw = tot.wins - (cat ? cat.wins : 0), ml = tot.losses - (cat ? cat.losses : 0);
+    if (mg > 0) {
+      var mwr = (mw + ml) > 0 ? Math.round(100 * mw / (mw + ml)) : null;
+      html += '<tr class="strat-mixed"><td>Mixed / other</td><td class="phase-cell">&mdash;</td><td class="games">' + mg + '</td>'
+        + pctCell(mg) + '<td class="games">' + mw + '</td>' + wrPctCell(mwr) + '</tr>';
+    }
+  }
+  document.getElementById('strat-body').innerHTML = html || '<tr><td colspan="6" class="loading">No data for this player.</td></tr>';
 }
 
 /* ─── Dashboard ─── */

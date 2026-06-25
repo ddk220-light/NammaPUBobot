@@ -85,6 +85,7 @@ async def run(days, only_key=None, no_download=False):
         print("window: {} matches in last {}d across {} classification(s)".format(
             len(matches), days, len(classifications)))
         stats = {c.key: 0 for c in classifications}
+        player_totals = {}   # identity -> [games, wins, losses] over ALL scanned player-games
         scanned = fetched = failed = 0
 
         for m in matches:
@@ -103,6 +104,14 @@ async def run(days, only_key=None, no_download=False):
                 print("  parse failed {}: {}".format(mid, e))
                 continue
             scanned += 1
+            for p in game.get("players", []):
+                ident = p.get("identity") or "?"
+                t = player_totals.setdefault(ident, [0, 0, 0])
+                t[0] += 1
+                if p.get("winner") in (1, True):
+                    t[1] += 1
+                elif p.get("winner") in (0, False):
+                    t[2] += 1
             for c in classifications:
                 result_rows, metric_rows = [], []
                 for p in game.get("players", []):
@@ -115,6 +124,8 @@ async def run(days, only_key=None, no_download=False):
                     await dbio.upsert_results(pool, c.key, mid, result_rows, metric_rows)
                     stats[c.key] += len(result_rows)
 
+        if only_key is None:   # full run -> rebuild the per-player corpus totals
+            await dbio.write_player_totals(pool, {k: tuple(v) for k, v in player_totals.items()})
         print("scanned={} newly_downloaded={} failed/unavailable={}".format(
             scanned, fetched, failed))
         for k, n in stats.items():

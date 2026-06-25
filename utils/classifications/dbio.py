@@ -43,6 +43,17 @@ async def upsert_classification(pool, c):
             "VALUES (%s,%s,%s,%s,%s)", [c.key, r["field"], r["source"], r["status"], r["note"]])
 
 
+async def write_player_totals(pool, totals):
+    """Full rebuild of cls_player_totals. totals: {identity: (games, wins, losses)} over EVERY
+    scanned player-game (categorized or not) -- the denominator for the web's '% of total games'
+    and the source of the 'mixed / uncategorized' remainder."""
+    await _exec(pool, "DELETE FROM cls_player_totals")
+    for ident, (games, wins, losses) in totals.items():
+        await _exec(pool,
+            "INSERT INTO cls_player_totals (identity, games, wins, losses) VALUES (%s,%s,%s,%s)",
+            [ident, games, wins, losses])
+
+
 async def wipe_results(pool, key):
     """Delete ALL stored rows for a classification (results + metrics). The runner calls this once
     per classification before a full-window rebuild, so that matches which no longer match (e.g.

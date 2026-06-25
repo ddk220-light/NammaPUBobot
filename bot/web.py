@@ -401,6 +401,13 @@ async def handle_strategies(request):
 			"player": r["player"] or "?", "games": int(r["games"]),
 			"wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0)})
 
+	# Top civs per strategy.
+	civ_by_key = {}
+	for r in (await db.fetchall(
+			"SELECT `key` AS k, civ, COUNT(*) AS n FROM cls_results "
+			"WHERE civ IS NOT NULL AND civ <> '' GROUP BY `key`, civ") or []):
+		civ_by_key.setdefault(r["k"], []).append((r["civ"], int(r["n"])))
+
 	strategies = []
 	for key, c in REGISTRY.items():
 		roster = sorted(by_key.get(key, []), key=lambda p: -p["games"])
@@ -410,14 +417,40 @@ async def handle_strategies(request):
 		tg = sum(p["games"] for p in roster)
 		tw = sum(p["wins"] for p in roster)
 		tl = sum(p["losses"] for p in roster)
+		# Top 3 players by win rate among the top 10 by games (decided win rate only) — this
+		# filters out 1-game wonders without an arbitrary min-games cutoff.
+		ranked = sorted([p for p in roster[:10] if p["winrate"] is not None],
+		                key=lambda p: (-p["winrate"], -p["games"]))[:3]
+		top_players = [{"player": p["player"], "winrate": p["winrate"], "games": p["games"]} for p in ranked]
+		top_civs = [civ for civ, _ in sorted(civ_by_key.get(key, []), key=lambda x: -x[1])[:3]]
 		strategies.append({
 			"key": key, "title": c.title, "phase": _STRATEGY_PHASE.get(key, ""),
 			"condition": c.trigger_spec, "games": tg, "players": len(roster),
 			"wins": tw, "losses": tl,
 			"winrate": round(100 * tw / (tw + tl)) if (tw + tl) else None,
-			"roster": roster,
+			"roster": roster, "top_civs": top_civs, "top_players": top_players,
 		})
-	return web.json_response({"strategies": strategies})
+
+	# Per-player corpus totals (the denominator for "% of total") + distinct categorized matches
+	# (so the web can derive the "mixed / uncategorized" remainder = total - categorized).
+	totals = {}
+	for r in (await db.fetchall("SELECT identity, games, wins, losses FROM cls_player_totals") or []):
+		totals[r["identity"]] = {"games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+		                         "losses": int(r["losses"] or 0)}
+	categorized = {}
+	for r in (await db.fetchall(
+			"SELECT identity, COUNT(DISTINCT aoe2_match_id) AS g, "
+			"COUNT(DISTINCT IF(winner=1, aoe2_match_id, NULL)) AS w, "
+			"COUNT(DISTINCT IF(winner=0, aoe2_match_id, NULL)) AS l "
+			"FROM cls_results GROUP BY identity") or []):
+		categorized[r["identity"]] = {"games": int(r["g"] or 0), "wins": int(r["w"] or 0),
+		                              "losses": int(r["l"] or 0)}
+
+	return web.json_response({
+		"strategies": strategies,
+		"player_totals": totals,
+		"player_categorized": categorized,
+	})
 
 
 # ─── Auth routes ───

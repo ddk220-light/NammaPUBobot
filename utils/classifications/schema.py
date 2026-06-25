@@ -44,4 +44,13 @@ CLS_TABLES = [
         PRIMARY KEY (`key`, aoe2_match_id, player_number, metric),
         INDEX cls_metrics_metric (`key`, metric)
     )""",
+    # Per-player corpus totals (ALL scanned player-games, categorized or not). The denominator
+    # for "% of total games" and the source of the "mixed / uncategorized" remainder on the web.
+    """CREATE TABLE IF NOT EXISTS cls_player_totals (
+        identity VARCHAR(191) NOT NULL,
+        games BIGINT,
+        wins BIGINT,
+        losses BIGINT,
+        PRIMARY KEY (identity)
+    )""",
 ]

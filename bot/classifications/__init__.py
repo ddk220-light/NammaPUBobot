@@ -57,3 +57,14 @@ db.ensure_table(dict(
 	],
 	primary_keys=["key", "aoe2_match_id", "player_number", "metric"],
 ))
+
+db.ensure_table(dict(
+	tname="cls_player_totals",
+	columns=[
+		dict(cname="identity", ctype=db.types.str),
+		dict(cname="games", ctype=db.types.int, notnull=False),
+		dict(cname="wins", ctype=db.types.int, notnull=False),
+		dict(cname="losses", ctype=db.types.int, notnull=False),
+	],
+	primary_keys=["identity"],
+))
