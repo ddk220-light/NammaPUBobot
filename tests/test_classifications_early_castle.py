@@ -89,15 +89,18 @@ def test_cav_archer_counts_by_category():
 
 # --- camel_rush --------------------------------------------------------------------------------
 
-def test_camel_counts_riders_excludes_scout_and_archer():
+def test_camel_counts_riders_and_mamelukes_excludes_scout_and_archer():
+    # Mameluke (Saracen camel UU) counts -- it is the camel actually massed in the corpus;
+    # the feudal Camel Scout and ranged Camel Archer do not.
     g = {"players": [_p(tc_build_s=[600, 1800])], "techs": [],
          "events": [
-             {"player_number": 1, "category": "camel_line", "name": "Camel Rider", "amount": 21, "t_s": 1000},
+             {"player_number": 1, "category": "camel_line", "name": "Camel Rider", "amount": 11, "t_s": 1000},
+             {"player_number": 1, "category": "unique_other", "name": "Mameluke", "amount": 12, "t_s": 1100},
              {"player_number": 1, "category": "scout", "name": "Camel Scout", "amount": 40, "t_s": 1000},   # excluded
              {"player_number": 1, "category": "archer_line", "name": "Camel Archer", "amount": 40, "t_s": 1000},  # excluded
          ]}
     assert CAMEL.trigger(g, 1) is True
-    assert CAMEL.factors(g, 1)["units_in_window"] == 21.0
+    assert CAMEL.factors(g, 1)["units_in_window"] == 23.0   # 11 Camel Rider + 12 Mameluke
 
 
 # --- ram_push ----------------------------------------------------------------------------------
