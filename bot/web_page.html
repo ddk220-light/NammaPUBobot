@@ -926,6 +926,10 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
       <div id="player-detail" style="display:none;">
         <div class="metric-grid" id="player-detail-summary"></div>
         <section class="detail-section">
+          <h2>Frequent allies</h2>
+          <div class="opponent-strip" id="player-allies"></div>
+        </section>
+        <section class="detail-section">
           <h2>Frequent opponents</h2>
           <div class="opponent-strip" id="player-opponents"></div>
         </section>
@@ -1272,6 +1276,12 @@ function scoutTraits(profile) {
   var traits = report.traits || [];
   return traits.length ? traits.join(', ') : styleTags(profile);
 }
+function relationSummary(r, empty) {
+  return r ? (r.games + ' matches, ' + fmtPct(r.winrate) + ' win rate') : empty;
+}
+function relationName(r, empty) {
+  return r ? (r.nick || '-') : empty;
+}
 function gainClass(v) {
   v = Number(v) || 0;
   return v > 0 ? 'gain-pos' : v < 0 ? 'gain-neg' : '';
@@ -1394,6 +1404,12 @@ function avatarImg(url, name) {
 }
 function playerCell(name, avatar) {
   return '<span class="player-cell">' + avatarImg(avatar, name) + '<span>' + esc(name || '-') + '</span></span>';
+}
+function relationStripCard(r) {
+  return '<div class="opponent-card">' + avatarImg(r.avatar, r.nick)
+    + '<div><div class="opponent-name">' + esc(r.nick) + '</div>'
+    + '<div class="opponent-rate">' + fmtPct(r.winrate) + '</div>'
+    + '<div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div></div>';
 }
 function civSlug(civ) {
   return String(civ || '').trim().toLowerCase()
@@ -1666,6 +1682,8 @@ function renderPlayerDetail(d) {
     card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
     card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
     card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
+    card('Best ally', relationName(s.best_ally, 'No ally sample'), relationSummary(s.best_ally, 'ranked teammate sample')),
+    card('Worst enemy', relationName(s.worst_enemy, 'No enemy sample'), relationSummary(s.worst_enemy, 'ranked opponent sample')),
     card('Scout report', report.headline || p.style || 'No replay style',
       report.description || p.summary || 'No parsed replay impact data'),
     card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
@@ -1676,10 +1694,11 @@ function renderPlayerDetail(d) {
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
 
+  var allies = d.allies || [];
+  document.getElementById('player-allies').innerHTML = allies.length ? allies.map(relationStripCard).join('') : '<div class="empty-panel">No ally sample in this period.</div>';
+
   var opp = d.opponents || [];
-  document.getElementById('player-opponents').innerHTML = opp.length ? opp.map(function (r) {
-    return '<div class="opponent-card">' + avatarImg(r.avatar, r.nick) + '<div><div class="opponent-name">' + esc(r.nick) + '</div><div class="opponent-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div></div>';
-  }).join('') : '<div class="empty-panel">No opponent sample in this period.</div>';
+  document.getElementById('player-opponents').innerHTML = opp.length ? opp.map(relationStripCard).join('') : '<div class="empty-panel">No opponent sample in this period.</div>';
 
   var dur = d.durations || [];
   document.getElementById('player-durations').innerHTML = dur.length ? dur.map(function (r) {

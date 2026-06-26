@@ -870,6 +870,36 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 	}
 
 
+def _relationship_payload(row):
+	if not row:
+		return None
+	wins = int(row.get("wins") or 0)
+	losses = int(row.get("losses") or 0)
+	return {
+		"user_id": str(row["user_id"]),
+		"nick": row["nick"] or str(row["user_id"]),
+		"games": int(row.get("games") or 0),
+		"wins": wins,
+		"losses": losses,
+		"winrate": _winrate(wins, losses),
+		"avatar": _avatar_for_user_id(row["user_id"]),
+	}
+
+
+def _best_relationship(rows, kind):
+	payloads = [_relationship_payload(r) for r in rows or []]
+	payloads = [p for p in payloads if p]
+	if not payloads:
+		return None
+	qualified = [p for p in payloads if p["games"] >= 2] or payloads
+	if kind == "ally":
+		return sorted(qualified, key=lambda p: (-(p["winrate"] or 0), -p["wins"], -p["games"], p["nick"]))[0]
+	return sorted(
+		qualified,
+		key=lambda p: (p["winrate"] if p["winrate"] is not None else 101, -p["losses"], -p["games"], p["nick"])
+	)[0]
+
+
 async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
@@ -1225,6 +1255,16 @@ async def handle_player_stats(request):
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"WHERE pm.user_id=%s" + at_clause,
 		base_args)
+	allies = await db.fetchall(
+		"SELECT ally.user_id, MAX(ally.nick) AS nick, COUNT(*) AS games, "
+		"SUM(m.winner=pm.team) AS wins, SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN qc_player_matches ally ON ally.match_id=pm.match_id AND ally.channel_id=pm.channel_id "
+		"AND ally.team=pm.team AND ally.user_id<>pm.user_id" + _visible_user_clause("ally") +
+		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		" GROUP BY ally.user_id HAVING games >= 1 ORDER BY games DESC, wins DESC LIMIT 12",
+		base_args)
 	opponents = await db.fetchall(
 		"SELECT opp.user_id, MAX(opp.nick) AS nick, COUNT(*) AS games, "
 		"SUM(m.winner=pm.team) AS wins, SUM(m.winner IS NOT NULL AND m.winner=opp.team) AS losses "
@@ -1320,7 +1360,10 @@ async def handle_player_stats(request):
 			"winrate": _winrate((summary or {}).get("wins"), (summary or {}).get("losses")),
 			"last_match_at": (summary or {}).get("last_match_at"),
 			"impact_profile": impact_profile,
+			"best_ally": _best_relationship(allies, "ally"),
+			"worst_enemy": _best_relationship(opponents, "enemy"),
 		},
+		"allies": [_relationship_payload(r) for r in allies or []],
 		"opponents": [
 			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
 			 "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
