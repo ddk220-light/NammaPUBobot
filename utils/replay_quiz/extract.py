@@ -19,8 +19,6 @@ via stable profile_id -> data/profile_resolved.csv. Run with PYTHONPATH=.replay_
 import csv
 import os
 
-import mgz.model
-
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 NON_MILITARY = ("villager", "fishing ship", "trade cart", "trade cog",
@@ -104,6 +102,8 @@ def _age_of(uptime_age):
 
 
 def extract_match(path, resolved, date_map=None):
+    import mgz.model
+
     m = mgz.model.parse_match(open(path, "rb"))
     aoe2_id = int(os.path.basename(path).split(".")[0])
     date_map = date_map or {}
