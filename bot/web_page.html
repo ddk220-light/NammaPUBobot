@@ -610,7 +610,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   color: #969aa2; text-transform: uppercase; letter-spacing: 0.06em;
   font-size: 0.72rem; font-weight: 700; margin-bottom: 0.35rem;
 }
-.metric-value { color: white; font-size: 1.55rem; font-weight: 700; line-height: 1.1; }
+.metric-value { color: white; font-size: 1.55rem; font-weight: 700; line-height: 1.1; overflow-wrap: anywhere; }
 .metric-sub { color: #b9bbbe; font-size: 0.83rem; margin-top: 0.35rem; }
 .trend-panel {
   background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
@@ -1257,6 +1257,16 @@ function impactTags(i) {
   var tags = i && i.impact_tags ? i.impact_tags : [];
   return tags.length ? tags.map(esc).join(', ') : '-';
 }
+function fmtImpactAvg(v) {
+  return v === null || v === undefined ? '-' : String(v);
+}
+function styleTags(profile) {
+  var tags = profile && profile.top_tags ? profile.top_tags : [];
+  if (!tags.length) return 'No style tags';
+  return tags.slice(0, 3).map(function (t) {
+    return t.tag + ' ' + t.count + 'x';
+  }).join(', ');
+}
 function gainClass(v) {
   v = Number(v) || 0;
   return v > 0 ? 'gain-pos' : v < 0 ? 'gain-neg' : '';
@@ -1644,11 +1654,17 @@ async function loadPlayerDetail(userId) {
 
 function renderPlayerDetail(d) {
   var s = d.summary || {};
+  var p = s.impact_profile || {};
   document.getElementById('player-detail-summary').innerHTML = [
     selectedPlayerCard(s),
     card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
     card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
     card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
+    card('Style', p.style || 'No replay style', p.summary || 'No parsed replay impact data'),
+    card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
+    card('Impact mix', 'Army ' + fmtImpactAvg(p.avg_army) + ' / Eco ' + fmtImpactAvg(p.avg_eco),
+      'Timing ' + fmtImpactAvg(p.avg_timing) + ' / Recovery ' + fmtImpactAvg(p.avg_recovery)),
+    card('Top tags', styleTags(p), 'aggregated match tags'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
 

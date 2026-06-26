@@ -743,6 +743,75 @@ def _impact_payload(row, group):
 	}
 
 
+def _avg_impact(impacts, key):
+	vals = [float(i[key]) for i in impacts if i.get(key) is not None]
+	return round(sum(vals) / len(vals), 1) if vals else None
+
+
+def _player_impact_profile(impacts):
+	impacts = list(impacts or [])
+	if not impacts:
+		return {
+			"style": "No replay style",
+			"summary": "No parsed replay impact data",
+			"matches": 0,
+			"avg_impact": None,
+			"avg_army": None,
+			"avg_eco": None,
+			"avg_timing": None,
+			"avg_recovery": None,
+			"top_tags": [],
+		}
+
+	tag_counts = {}
+	for impact in impacts:
+		for tag in impact.get("impact_tags") or []:
+			tag_counts[tag] = tag_counts.get(tag, 0) + 1
+	top_tags = [
+		{"tag": tag, "count": count, "rate": round(count * 100 / len(impacts), 1)}
+		for tag, count in sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+	]
+	avg_impact = _avg_impact(impacts, "impact_score")
+	avg_army = _avg_impact(impacts, "army_score")
+	avg_eco = _avg_impact(impacts, "eco_score")
+	avg_timing = _avg_impact(impacts, "timing_score")
+	avg_recovery = _avg_impact(impacts, "recovery_score")
+	scores = {
+		"Army": avg_army or 0,
+		"Eco": avg_eco or 0,
+		"Timing": avg_timing or 0,
+		"Recovery": avg_recovery or 0,
+	}
+	top_component, top_score = max(scores.items(), key=lambda kv: kv[1])
+	if top_component == "Army" and top_score >= 58 and top_score >= scores["Eco"] + 5:
+		style = "Pressure player"
+	elif top_component == "Eco" and top_score >= 58 and top_score >= scores["Army"] + 5:
+		style = "Economy carry"
+	elif top_component == "Timing" and top_score >= 58:
+		style = "Timing specialist"
+	elif top_component == "Recovery" and top_score >= 58:
+		style = "Recovery anchor"
+	elif avg_impact is not None and avg_impact >= 62:
+		style = "High-impact flex"
+	else:
+		style = "Balanced flex"
+	summary_bits = []
+	if top_tags:
+		summary_bits.append(", ".join(t["tag"] for t in top_tags[:2]))
+	summary_bits.append(f"{top_component.lower()} led")
+	return {
+		"style": style,
+		"summary": "; ".join(summary_bits),
+		"matches": len(impacts),
+		"avg_impact": avg_impact,
+		"avg_army": avg_army,
+		"avg_eco": avg_eco,
+		"avg_timing": avg_timing,
+		"avg_recovery": avg_recovery,
+		"top_tags": top_tags,
+	}
+
+
 async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
@@ -1150,12 +1219,18 @@ async def handle_player_stats(request):
 		"WHERE pm.user_id=%s" + at_clause +
 		" ORDER BY m.at DESC, m.match_id DESC LIMIT 50",
 		base_args)
+	impact_match_rows = await db.fetchall(
+		"SELECT DISTINCT m.match_id FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"WHERE pm.user_id=%s" + at_clause,
+		base_args)
+	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+	impact_profile = _player_impact_profile(period_impacts.values())
 	match_civs = {}
 	opp_match_civs = {}
-	impacts = {}
 	if matches:
 		match_ids = [r["match_id"] for r in matches]
-		impacts = await _match_impacts(match_ids, user_id, profile_ids)
 		match_id_clause = ",".join(["%s"] * len(match_ids))
 		civ_rows = await db.fetchall(
 			"SELECT bot_match_id, civ FROM qc_match_civs WHERE bot_match_id IN ("
@@ -1186,6 +1261,7 @@ async def handle_player_stats(request):
 			"draws": int((summary or {}).get("draws") or 0),
 			"winrate": _winrate((summary or {}).get("wins"), (summary or {}).get("losses")),
 			"last_match_at": (summary or {}).get("last_match_at"),
+			"impact_profile": impact_profile,
 		},
 		"opponents": [
 			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
@@ -1217,7 +1293,8 @@ async def handle_player_stats(request):
 				"L" if r["winner"] is not None else "-"
 			 ), "map": ((r.get("maps") or "").split("\n")[0] or "").strip(),
 			 "duration_s": r.get("duration_s"), "civ": match_civs.get(r["match_id"]),
-			 "opponent_civs": opp_match_civs.get(r["match_id"]), "impact": impacts.get(r["match_id"])}
+			 "opponent_civs": opp_match_civs.get(r["match_id"]),
+			 "impact": period_impacts.get(r["match_id"])}
 			for r in matches or []
 		],
 	})
