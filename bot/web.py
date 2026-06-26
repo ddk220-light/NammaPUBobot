@@ -468,11 +468,18 @@ async def handle_strategies(request):
 
 # ─── Match stats API (public) ───
 
-def _period_filter(period, alias="m"):
+def _period_start(period):
 	days = MATCH_STAT_PERIODS.get(period, MATCH_STAT_PERIODS["week"])
 	if days is None:
+		return None
+	return int(time.time()) - days * 86400
+
+
+def _period_filter(period, alias="m"):
+	start = _period_start(period)
+	if start is None:
 		return "", []
-	return f" AND {alias}.at >= %s", [int(time.time()) - days * 86400]
+	return f" AND {alias}.at >= %s", [start]
 
 
 def _winrate(wins, losses):
@@ -630,6 +637,47 @@ def _linked_civ_clause(alias=""):
 	return f"{prefix}bot_match_id IS NOT NULL AND {prefix}user_id IS NOT NULL"
 
 
+def _rating_payload(row):
+	if not row:
+		return {"rating_start": None, "rating_end": None, "rating_delta": None}
+	start = row.get("rating_start")
+	end = row.get("rating_end")
+	delta = row.get("rating_delta")
+	return {
+		"rating_start": int(start) if start is not None else None,
+		"rating_end": int(end) if end is not None else None,
+		"rating_delta": int(delta) if delta is not None else None,
+	}
+
+
+async def _rating_deltas(period, user_ids=None):
+	clauses = []
+	args = []
+	start = _period_start(period)
+	if start is not None:
+		clauses.append("at >= %s")
+		args.append(start)
+	if user_ids is not None:
+		user_ids = sorted({int(u) for u in user_ids})
+		if not user_ids:
+			return {}
+		clauses.append("user_id IN (" + ",".join(["%s"] * len(user_ids)) + ")")
+		args.extend(user_ids)
+	where = " WHERE " + " AND ".join(clauses) if clauses else ""
+	rows = await db.fetchall(
+		"SELECT user_id, "
+		"SUBSTRING_INDEX(GROUP_CONCAT(rating_before ORDER BY at ASC, id ASC), ',', 1) AS rating_start, "
+		"SUBSTRING_INDEX(GROUP_CONCAT(rating_before + rating_change ORDER BY at DESC, id DESC), ',', 1) AS rating_end, "
+		"SUM(rating_change) AS rating_delta "
+		"FROM qc_rating_history" + where + " GROUP BY user_id",
+		args)
+	return {int(r["user_id"]): _rating_payload(r) for r in rows or []}
+
+
+async def _rating_delta(period, user_id):
+	return (await _rating_deltas(period, [user_id])).get(int(user_id), _rating_payload(None))
+
+
 async def _match_stats_overall(period):
 	at_clause, params = _period_filter(period)
 	summary = await db.fetchone(
@@ -650,6 +698,7 @@ async def _match_stats_overall(period):
 		"WHERE 1=1" + _visible_user_clause("pm") + at_clause +
 		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 50",
 		params)
+	ratings = await _rating_deltas(period, [r["user_id"] for r in board or []])
 	civs = await db.fetchall(
 		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
 		"FROM qc_match_civs WHERE " + _linked_civ_clause() + " AND civ IS NOT NULL AND civ<>''"
@@ -669,10 +718,19 @@ async def _match_stats_overall(period):
 			"last_match_at": (summary or {}).get("last_match_at"),
 		},
 		"leaderboard": [
-			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
-			 "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
-			 "losses": int(r["losses"] or 0), "draws": int(r["draws"] or 0),
-			 "winrate": _winrate(r["wins"], r["losses"]), "avatar": _avatar_for_user_id(r["user_id"])}
+			{
+				**{
+					"user_id": str(r["user_id"]),
+					"nick": r["nick"] or str(r["user_id"]),
+					"games": int(r["games"] or 0),
+					"wins": int(r["wins"] or 0),
+					"losses": int(r["losses"] or 0),
+					"draws": int(r["draws"] or 0),
+					"winrate": _winrate(r["wins"], r["losses"]),
+					"avatar": _avatar_for_user_id(r["user_id"]),
+				},
+				**ratings.get(int(r["user_id"]), _rating_payload(None)),
+			}
 			for r in board or []
 		],
 		"civs": [
@@ -705,6 +763,7 @@ async def _player_streak(user_id, at_clause, params):
 async def _match_stats_player(user_id, period):
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
+	rating = await _rating_delta(period, user_id)
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -777,6 +836,7 @@ async def _match_stats_player(user_id, period):
 			"nick": (summary or {}).get("nick") or str(user_id),
 			"avatar": _avatar_for_user_id(user_id),
 			"profile_ids": profile_ids,
+			**rating,
 			"games": int((summary or {}).get("games") or 0),
 			"wins": int((summary or {}).get("wins") or 0),
 			"losses": int((summary or {}).get("losses") or 0),
@@ -874,15 +934,25 @@ async def handle_leaderboard(request):
 		"WHERE 1=1" + _visible_user_clause("pm") + at_clause +
 		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 100",
 		params)
+	ratings = await _rating_deltas(period, [r["user_id"] for r in rows or []])
 	return web.json_response({
 		"period": period,
 		"mode": "players",
 		"rows": [
-			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
-			 "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
-			 "losses": int(r["losses"] or 0), "draws": int(r["draws"] or 0),
-			 "rating": r.get("rating"), "winrate": _winrate(r["wins"], r["losses"]),
-			 "avatar": _avatar_for_user_id(r["user_id"])}
+			{
+				**{
+					"user_id": str(r["user_id"]),
+					"nick": r["nick"] or str(r["user_id"]),
+					"games": int(r["games"] or 0),
+					"wins": int(r["wins"] or 0),
+					"losses": int(r["losses"] or 0),
+					"draws": int(r["draws"] or 0),
+					"rating": r.get("rating"),
+					"winrate": _winrate(r["wins"], r["losses"]),
+					"avatar": _avatar_for_user_id(r["user_id"]),
+				},
+				**ratings.get(int(r["user_id"]), _rating_payload(None)),
+			}
 			for r in rows or []
 		],
 	})
@@ -903,6 +973,7 @@ async def handle_player_stats(request):
 
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
+	rating = await _rating_delta(period, user_id)
 	base_args = [user_id, *params]
 	summary = await db.fetchone(
 		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
@@ -992,6 +1063,7 @@ async def handle_player_stats(request):
 			"nick": (summary or {}).get("nick") or str(user_id),
 			"avatar": _avatar_for_user_id(user_id),
 			"profile_ids": profile_ids,
+			**rating,
 			"games": int((summary or {}).get("games") or 0),
 			"wins": int((summary or {}).get("wins") or 0),
 			"losses": int((summary or {}).get("losses") or 0),

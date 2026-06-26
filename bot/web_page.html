@@ -641,8 +641,13 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   color: #969aa2; background: #202225; text-transform: uppercase;
   font-size: 0.68rem; letter-spacing: 0.06em; padding: 0.55rem 0.7rem; text-align: left;
 }
+.mini-table th.sortable { cursor: pointer; user-select: none; }
+.mini-table th.sortable:hover { color: #dcddde; }
+.sort-mark { color: #5b8cee; margin-left: 4px; }
 .mini-table td { padding: 0.58rem 0.7rem; border-top: 1px solid rgba(72,76,84,0.5); }
 .mini-table td.num { color: #b9bbbe; text-align: right; font-variant-numeric: tabular-nums; }
+.mini-table td.gain-pos { color: #57d98b; font-weight: 700; }
+.mini-table td.gain-neg { color: #e06060; font-weight: 700; }
 .mini-table td.result-W { color: #57d98b; font-weight: 700; }
 .mini-table td.result-L { color: #e06060; font-weight: 700; }
 .mini-table td.result-D { color: #b9bbbe; font-weight: 700; }
@@ -1047,6 +1052,7 @@ var civData = [], sortCol = 'civ', sortAsc = true;
 // Match stats
 var matchData = null, matchPeriod = 'week', matchPlayer = 'all';
 var leaderboardData = null, leaderboardPeriod = 'day', leaderboardMode = 'players', leaderboardPlayer = null;
+var playerDetailData = null, miniSort = {};
 
 // Dashboard
 var dashGuilds = [], dashChannels = [], dashQueues = [];
@@ -1237,6 +1243,16 @@ async function initCivStats() {
 
 /* ─── Match Stats ─── */
 function fmtPct(v) { return v === null || v === undefined ? '-' : v + '%'; }
+function fmtElo(v) { return v === null || v === undefined ? '-' : String(v); }
+function fmtGain(v) {
+  if (v === null || v === undefined) return '-';
+  v = Number(v) || 0;
+  return (v > 0 ? '+' : '') + v;
+}
+function gainClass(v) {
+  v = Number(v) || 0;
+  return v > 0 ? 'gain-pos' : v < 0 ? 'gain-neg' : '';
+}
 function fmtAgo(ts) {
   if (!ts) return 'No matches';
   var s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
@@ -1380,6 +1396,7 @@ function renderMatchSummary() {
       selectedPlayerCard(s),
       card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
+      card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
         + '</div></div>'
@@ -1416,36 +1433,97 @@ function table(title, headers, rows, empty) {
     + '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
 }
 
-function renderMatchTables() {
-  var civRows = (matchData.civs || []).map(function (r) {
-    return '<tr><td>' + esc(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
-  });
-  document.getElementById('match-civs-panel').innerHTML = table('Best civs', ['Civ', 'Matches', 'Won', 'Lost', 'Win %'], civRows, 'No civ data yet.');
+function sortValue(row, col, idx) {
+  var v = col.value ? col.value(row, idx) : row[col.key];
+  if (col.type === 'number') return v === null || v === undefined || v === '' ? -Infinity : Number(v);
+  return String(v === null || v === undefined ? '' : v).toLowerCase();
+}
 
-  var mapRows = (matchData.maps || []).map(function (r) {
-    return '<tr><td>' + esc(r.map) + '</td><td class="num">' + r.games + '</td></tr>';
-  });
-  document.getElementById('match-maps-panel').innerHTML = table('Maps', ['Map', 'Matches'], mapRows, 'No map data yet.');
+function setMiniSort(tableId, key, type) {
+  var cur = miniSort[tableId];
+  miniSort[tableId] = cur && cur.key === key ? { key: key, asc: !cur.asc } : { key: key, asc: type !== 'number' };
+  if (currentPage === 'match-stats') renderMatchStats();
+  if (currentPage === 'leaderboard') {
+    renderLeaderboard();
+    if (playerDetailData) renderPlayerDetail(playerDetailData);
+  }
+}
+
+function sortableTable(tableId, title, columns, rows, empty, rowAttrs) {
+  if (!rows || !rows.length) return '<h2>' + esc(title) + '</h2><div class="empty-panel">' + esc(empty || 'No data.') + '</div>';
+  var state = miniSort[tableId];
+  var sorted = rows.slice();
+  if (state) {
+    var col = columns.find(function (c) { return c.key === state.key; });
+    if (col) {
+      sorted.sort(function (a, b) {
+        var av = sortValue(a, col, 0), bv = sortValue(b, col, 0);
+        if (av < bv) return state.asc ? -1 : 1;
+        if (av > bv) return state.asc ? 1 : -1;
+        return 0;
+      });
+    }
+  }
+  return '<h2>' + esc(title) + '</h2><table class="mini-table"><thead><tr>'
+    + columns.map(function (col) {
+      var active = state && state.key === col.key;
+      return '<th class="sortable" onclick="setMiniSort(\'' + esc(tableId) + '\',\'' + esc(col.key) + '\',\'' + esc(col.type || 'string') + '\')">'
+        + esc(col.label) + (active ? '<span class="sort-mark">' + (state.asc ? '\u25B2' : '\u25BC') + '</span>' : '') + '</th>';
+    }).join('')
+    + '</tr></thead><tbody>' + sorted.map(function (row, idx) {
+      var attrs = rowAttrs ? rowAttrs(row, idx) : '';
+      return '<tr' + (attrs ? ' ' + attrs : '') + '>' + columns.map(function (col) {
+        var cls = col.className ? (typeof col.className === 'function' ? col.className(row, idx) : col.className) : '';
+        var html = col.render ? col.render(row, idx) : esc(row[col.key]);
+        return '<td' + (cls ? ' class="' + esc(cls) + '"' : '') + '>' + html + '</td>';
+      }).join('') + '</tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function renderMatchTables() {
+  document.getElementById('match-civs-panel').innerHTML = sortableTable('match-civs', 'Best civs', [
+    { key: 'civ', label: 'Civ', render: function (r) { return esc(r.civ); } },
+    { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+    { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+    { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+    { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+  ], matchData.civs || [], 'No civ data yet.');
+
+  document.getElementById('match-maps-panel').innerHTML = sortableTable('match-maps', 'Maps', [
+    { key: 'map', label: 'Map' },
+    { key: 'games', label: 'Matches', type: 'number', className: 'num' }
+  ], matchData.maps || [], 'No map data yet.');
 
   if (matchData.scope === 'player') {
-    var mates = (matchData.teammates || []).map(function (r) {
-      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
-    });
-    var opps = (matchData.opponents || []).map(function (r) {
-      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
-    });
+    var playerStatCols = [
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+      { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+      { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+      { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+      { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+    ];
     document.getElementById('match-primary-panel').innerHTML =
-      table('Best teammates', ['Player', 'Matches', 'Won', 'Lost', 'Win %'], mates, 'No teammate sample yet.')
-      + table('Tough opponents', ['Player', 'Matches', 'Won', 'Lost', 'Win %'], opps, 'No opponent sample yet.');
-    var rec = (matchData.recent || []).map(function (r) {
-      return '<tr><td class="result-' + esc(r.result) + '">' + esc(r.result) + '</td><td>' + esc(r.queue || '-') + '</td><td>' + civIcon(r.civ) + '</td><td>' + esc(r.map || '-') + '</td><td class="num">#' + esc(r.match_id) + '</td></tr>';
-    });
-    document.getElementById('match-recent-panel').innerHTML = table('Recent matches', ['R', 'Queue', 'Civ', 'Map', 'ID'], rec, 'No recent matches.');
+      sortableTable('match-teammates', 'Best teammates', playerStatCols, matchData.teammates || [], 'No teammate sample yet.')
+      + sortableTable('match-opponents', 'Tough opponents', playerStatCols, matchData.opponents || [], 'No opponent sample yet.');
+    document.getElementById('match-recent-panel').innerHTML = sortableTable('match-recent', 'Recent matches', [
+      { key: 'result', label: 'R', className: function (r) { return 'result-' + r.result; } },
+      { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
+      { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
+      { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+      { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
+    ], matchData.recent || [], 'No recent matches.');
   } else {
-    var board = (matchData.leaderboard || []).map(function (r) {
-      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num">' + r.draws + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
-    });
-    document.getElementById('match-primary-panel').innerHTML = table('Player leaderboard', ['Player', 'Matches', 'Won', 'Lost', 'Drawn', 'Win %'], board, 'No player data.');
+    document.getElementById('match-primary-panel').innerHTML = sortableTable('match-player-board', 'Player leaderboard', [
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+      { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+      { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+      { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+      { key: 'draws', label: 'Drawn', type: 'number', className: 'num' },
+      { key: 'rating_start', label: 'Start Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_start); } },
+      { key: 'rating_end', label: 'End Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_end); } },
+      { key: 'rating_delta', label: 'Gain/Loss', type: 'number', className: function (r) { return 'num ' + gainClass(r.rating_delta); }, render: function (r) { return fmtGain(r.rating_delta); } },
+      { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+    ], matchData.leaderboard || [], 'No player data.');
     document.getElementById('match-recent-panel').innerHTML = '<h2>Recent matches</h2><div class="empty-panel">Select a player to see recent matches and form.</div>';
   }
 }
@@ -1476,6 +1554,7 @@ function setLeaderboardMode(m) {
     b.classList.toggle('selected', b.dataset.lbMode === m);
   });
   leaderboardPlayer = null;
+  playerDetailData = null;
   document.getElementById('player-detail').style.display = 'none';
   loadLeaderboard();
 }
@@ -1494,18 +1573,36 @@ async function loadLeaderboard() {
 }
 
 function renderLeaderboard() {
-  var rows = leaderboardData.rows || [];
+  var rows = (leaderboardData.rows || []).map(function (r, i) {
+    r.rank = i + 1;
+    return r;
+  });
   if (leaderboardMode === 'civs') {
-    var civRows = rows.map(function (r, i) {
-      return '<tr><td class="num">' + (i + 1) + '</td><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
-    });
-    document.getElementById('leaderboard-panel').innerHTML = table('Civilization leaderboard', ['#', 'Civ', 'Matches', 'Won', 'Lost', 'Win %'], civRows, 'No civ data.');
+    document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-civs', 'Civilization leaderboard', [
+      { key: 'rank', label: '#', type: 'number', className: 'num' },
+      { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
+      { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+      { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+      { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+      { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+    ], rows, 'No civ data.');
     return;
   }
-  var playerRows = rows.map(function (r, i) {
-    return '<tr class="leader-row" onclick="loadPlayerDetail(\'' + esc(r.user_id) + '\')"><td class="num">' + (i + 1) + '</td><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + (r.rating || '-') + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num">' + r.draws + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+  document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-players', 'Player leaderboard', [
+    { key: 'rank', label: '#', type: 'number', className: 'num' },
+    { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+    { key: 'rating', label: 'Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating); } },
+    { key: 'rating_start', label: 'Start Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_start); } },
+    { key: 'rating_end', label: 'End Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_end); } },
+    { key: 'rating_delta', label: 'Gain/Loss', type: 'number', className: function (r) { return 'num ' + gainClass(r.rating_delta); }, render: function (r) { return fmtGain(r.rating_delta); } },
+    { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+    { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+    { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+    { key: 'draws', label: 'Drawn', type: 'number', className: 'num' },
+    { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+  ], rows, 'No player data.', function (r) {
+    return 'class="leader-row" onclick="loadPlayerDetail(\'' + esc(r.user_id) + '\')"';
   });
-  document.getElementById('leaderboard-panel').innerHTML = table('Player leaderboard', ['#', 'Player', 'Elo', 'Matches', 'Won', 'Lost', 'Drawn', 'Win %'], playerRows, 'No player data.');
 }
 
 async function loadPlayerDetail(userId) {
@@ -1516,6 +1613,7 @@ async function loadPlayerDetail(userId) {
     var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(leaderboardPeriod) + '&player_id=' + encodeURIComponent(userId));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var d = await resp.json();
+    playerDetailData = d;
     renderPlayerDetail(d);
   } catch (e) {
     document.getElementById('player-detail-summary').innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
@@ -1528,6 +1626,7 @@ function renderPlayerDetail(d) {
     selectedPlayerCard(s),
     card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
     card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
+    card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
 
@@ -1541,23 +1640,29 @@ function renderPlayerDetail(d) {
     return '<div class="duration-card"><div class="duration-title">' + esc(r.bucket) + '</div><div class="duration-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div>';
   }).join('') : '<div class="empty-panel">No parsed replay duration data in this period.</div>';
 
-  var civRows = (d.civs || []).map(function (r) {
-    return '<tr><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
-  });
-  document.getElementById('player-civs').innerHTML = table('Win rates by civilization', ['Civilization', 'Matches', 'Won', 'Lost', 'Win %'], civRows, 'No civ data.');
+  var civCols = [
+    { key: 'civ', label: 'Civilization', render: function (r) { return civIcon(r.civ); } },
+    { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+    { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+    { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+    { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+  ];
+  document.getElementById('player-civs').innerHTML =
+    sortableTable('player-civs-table', 'Win rates by civilization', civCols, d.civs || [], 'No civ data.');
 
-  var oppCivRows = (d.opponent_civs || []).map(function (r) {
-    return '<tr><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
-  });
-  document.getElementById('player-opp-civs').innerHTML = table('Win rates by opponent civilization', ['Civilization', 'Matches', 'Won', 'Lost', 'Win %'], oppCivRows, 'No opponent civ data.');
+  document.getElementById('player-opp-civs').innerHTML =
+    sortableTable('player-opp-civs-table', 'Win rates by opponent civilization', civCols, d.opponent_civs || [], 'No opponent civ data.');
 
-  var matchRows = (d.matches || []).map(function (r) {
-    return '<tr><td class="result-' + esc(r.result) + '">' + esc(r.result) + '</td><td>' + esc(r.queue || '-') + '</td>'
-      + '<td>' + civIcon(r.civ) + '</td><td>' + esc(r.opponent_civs || '-') + '</td>'
-      + '<td>' + esc(r.map || '-') + '</td><td class="num">' + fmtDuration(r.duration_s) + '</td>'
-      + '<td class="num">' + esc(fmtAgo(r.at)) + '</td><td class="num">#' + esc(r.match_id) + '</td></tr>';
-  });
-  document.getElementById('player-matches').innerHTML = table('Match details', ['R', 'Queue', 'Civ', 'Opponent civs', 'Map', 'Duration', 'When', 'ID'], matchRows, 'No matches in this period.');
+  document.getElementById('player-matches').innerHTML = sortableTable('player-matches-table', 'Match details', [
+    { key: 'result', label: 'R', className: function (r) { return 'result-' + r.result; } },
+    { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
+    { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
+    { key: 'opponent_civs', label: 'Opponent civs', render: function (r) { return esc(r.opponent_civs || '-'); } },
+    { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+    { key: 'duration_s', label: 'Duration', type: 'number', className: 'num', render: function (r) { return fmtDuration(r.duration_s); } },
+    { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
+    { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
+  ], d.matches || [], 'No matches in this period.');
 }
 
 /* ─── Strategy Insights ─── */
