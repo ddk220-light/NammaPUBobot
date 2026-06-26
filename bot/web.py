@@ -18,6 +18,7 @@ from core.cfg_factory import (
 from core.client import dc
 from core.database import db
 import bot
+from bot.web_guard import RateLimiter, TTLCache, make_guard_middleware
 
 # --- Paths ---
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
@@ -29,6 +30,20 @@ MATCH_STAT_PERIODS = {
 	"month": 30,
 	"all": None,
 }
+
+# --- Public stats endpoint hardening (availability) ---
+# /api/match-stats, /api/leaderboard and /api/player-stats are PUBLIC and unauthenticated, and each
+# runs several DB queries on the bot's shared asyncio loop + aiomysql pool. A short response cache
+# (these payloads are user-agnostic) collapses repeated/concurrent identical requests to one DB
+# round-trip, and a per-IP fixed-window rate limit caps anonymous floods. All three knobs are
+# optional env overrides with sane defaults, so no config.cfg / start.py change is required.
+_PUBLIC_STATS_PATHS = ('/api/match-stats', '/api/leaderboard', '/api/player-stats')
+_stats_cache = TTLCache(ttl=float(os.environ.get('WS_STATS_CACHE_TTL', 30)))
+_stats_rate_limiter = RateLimiter(
+	limit=int(os.environ.get('WS_STATS_RATE_LIMIT', 120)),
+	window=float(os.environ.get('WS_STATS_RATE_WINDOW', 60)),
+)
+_public_stats_guard = make_guard_middleware(_PUBLIC_STATS_PATHS, _stats_cache, _stats_rate_limiter)
 
 # --- Session store (Layer 5: migrated from in-memory dicts to MySQL) ---
 #
@@ -1508,7 +1523,7 @@ async def handle_lobby_spectate(request):
 # ─── App setup ───
 
 def create_app():
-	app = web.Application()
+	app = web.Application(middlewares=[_public_stats_guard])
 	app.router.add_get('/', handle_index)
 	# Health check (Railway healthcheckPath)
 	app.router.add_get('/health', handle_health)
