@@ -513,6 +513,162 @@ td.games { color: #b9bbbe; }
 
 footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a; }
 
+/* ─── Match Stats ─── */
+.match-stats-container { max-width: 1500px; }
+.match-controls {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 1rem; flex-wrap: wrap;
+}
+.period-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.period-tab {
+  background: #2c3034; color: #b9bbbe; border: 1px solid #484c54;
+  padding: 7px 14px; border-radius: 6px; cursor: pointer;
+  font-weight: 600; transition: background 0.15s, color 0.15s;
+}
+.period-tab:hover, .period-tab.selected { background: #376ace; color: white; border-color: #376ace; }
+.player-picker { position: relative; min-width: 300px; max-width: 420px; }
+.player-picker-button {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; background: #202225; color: #dcddde; border: 1px solid #484c54;
+  border-radius: 6px; padding: 7px 10px; cursor: pointer;
+}
+.player-picker-button:hover, .player-picker.open .player-picker-button { border-color: #5b8cee; }
+.player-picker-current { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.player-picker-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-picker-meta { color: #85868a; font-size: 0.75rem; margin-left: 4px; white-space: nowrap; }
+.player-picker-caret { color: #969aa2; flex: 0 0 auto; }
+.player-picker-menu {
+  display: none; position: absolute; right: 0; top: calc(100% + 6px);
+  width: 100%; z-index: 30; background: #202225; border: 1px solid #484c54;
+  border-radius: 6px; box-shadow: 0 12px 28px rgba(0,0,0,0.45); overflow: hidden;
+}
+.player-picker.open .player-picker-menu { display: block; }
+.player-picker-search {
+  width: 100%; background: #2f3136; color: #dcddde; border: 0;
+  border-bottom: 1px solid #484c54; padding: 9px 10px; outline: none;
+}
+.player-picker-options { max-height: 320px; overflow-y: auto; }
+.player-picker-option {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 8px 10px; cursor: pointer; color: #dcddde; border: 0;
+  background: transparent; text-align: left;
+}
+.player-picker-option:hover, .player-picker-option.selected { background: #36393f; }
+.player-picker-option .player-avatar { width: 26px; height: 26px; }
+.player-picker-empty { color: #85868a; padding: 12px; }
+.civ-cell { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.civ-icon {
+  width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+  background: #202225; border: 1px solid rgba(255,255,255,0.08); flex: 0 0 auto;
+}
+.civ-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.leader-row { cursor: pointer; }
+.leader-row:hover td { background: #36393f; }
+.detail-section { margin-top: 1rem; }
+.detail-section h2 {
+  font-family: 'Oswald', sans-serif; font-weight: 400; color: white;
+  letter-spacing: 0.7px; font-size: 1.1rem; margin-bottom: 0.6rem;
+}
+.opponent-strip {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.65rem;
+}
+.opponent-card {
+  display: flex; align-items: center; gap: 12px; background: #2f3136;
+  border: 1px solid #484c54; border-radius: 6px; padding: 0.85rem;
+}
+.opponent-card .player-avatar { width: 52px; height: 52px; }
+.opponent-name { color: white; font-weight: 700; font-size: 1rem; }
+.opponent-rate { color: white; font-size: 1.45rem; font-weight: 700; line-height: 1.1; }
+.duration-grid {
+  display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 0.7rem;
+}
+.duration-card {
+  background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
+  text-align: center; padding: 1rem 0.8rem;
+}
+.duration-title {
+  color: #969aa2; text-transform: uppercase; letter-spacing: 0.06em;
+  font-weight: 700; font-size: 0.75rem; padding-bottom: 0.6rem;
+  border-bottom: 1px solid #484c54; margin-bottom: 0.8rem;
+}
+.duration-rate { color: white; font-size: 1.65rem; font-weight: 700; }
+.detail-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem; margin-top: 1rem;
+}
+.metric-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 0.75rem; margin-bottom: 0.85rem;
+}
+.metric-card {
+  background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
+  padding: 1rem;
+}
+.metric-label {
+  color: #969aa2; text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.72rem; font-weight: 700; margin-bottom: 0.35rem;
+}
+.metric-value { color: white; font-size: 1.55rem; font-weight: 700; line-height: 1.1; }
+.metric-sub { color: #b9bbbe; font-size: 0.83rem; margin-top: 0.35rem; }
+.trend-panel {
+  background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
+  padding: 0.9rem 1rem; margin-bottom: 0.85rem;
+}
+.trend-title { color: white; font-weight: 700; margin-bottom: 0.65rem; }
+.trend-bars { display: flex; align-items: flex-end; gap: 5px; min-height: 90px; }
+.trend-bar-wrap { flex: 1 1 0; min-width: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.trend-bar {
+  width: 100%; min-height: 3px; background: #5b8cee; border-radius: 3px 3px 0 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+}
+.trend-label { color: #85868a; font-size: 0.68rem; white-space: nowrap; }
+.match-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+.match-panel {
+  background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
+  min-height: 180px; overflow: hidden;
+}
+.match-panel h2 {
+  font-family: 'Oswald', sans-serif; font-weight: 400; letter-spacing: 0.7px;
+  font-size: 1.05rem; color: white; padding: 0.85rem 1rem 0.5rem;
+}
+.mini-table { width: 100%; border-collapse: collapse; }
+.mini-table th {
+  color: #969aa2; background: #202225; text-transform: uppercase;
+  font-size: 0.68rem; letter-spacing: 0.06em; padding: 0.55rem 0.7rem; text-align: left;
+}
+.mini-table th.sortable { cursor: pointer; user-select: none; }
+.mini-table th.sortable:hover { color: #dcddde; }
+.sort-mark { color: #5b8cee; margin-left: 4px; }
+.mini-table td { padding: 0.58rem 0.7rem; border-top: 1px solid rgba(72,76,84,0.5); }
+.mini-table td.num { color: #b9bbbe; text-align: right; font-variant-numeric: tabular-nums; }
+.mini-table td.gain-pos { color: #57d98b; font-weight: 700; }
+.mini-table td.gain-neg { color: #e06060; font-weight: 700; }
+.mini-table td.result-W { color: #57d98b; font-weight: 700; }
+.mini-table td.result-L { color: #e06060; font-weight: 700; }
+.mini-table td.result-D { color: #b9bbbe; font-weight: 700; }
+.player-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.player-avatar {
+  width: 24px; height: 24px; border-radius: 50%; background: #484c54;
+  flex: 0 0 auto; object-fit: cover;
+}
+.metric-player { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.metric-player .player-avatar { width: 38px; height: 38px; }
+.metric-player-name { color: white; font-size: 1.1rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-run { display: flex; gap: 4px; flex-wrap: wrap; }
+.form-pill {
+  width: 22px; height: 22px; border-radius: 4px; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 800;
+}
+.form-pill.W { background: rgba(87,217,139,0.15); color: #57d98b; border: 1px solid rgba(87,217,139,0.35); }
+.form-pill.L { background: rgba(224,96,96,0.14); color: #e06060; border: 1px solid rgba(224,96,96,0.35); }
+.form-pill.D { background: rgba(185,187,190,0.12); color: #b9bbbe; border: 1px solid rgba(185,187,190,0.25); }
+.empty-panel { padding: 1.25rem 1rem; color: #969aa2; }
+
 /* ─── Toast ─── */
 .toast-container {
   position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
@@ -607,6 +763,12 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   /* Stats page */
   .stats-container { padding: 1rem 0.75rem; }
   .stats-container h1 { font-size: 1.2rem; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .match-grid { grid-template-columns: 1fr; }
+  .detail-grid { grid-template-columns: 1fr; }
+  .duration-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .player-picker { min-width: 100%; max-width: 100%; }
+  .match-controls { align-items: stretch; }
   table.stats-table { min-width: 500px; font-size: 12px; }
   table.stats-table th { font-size: 10px; padding: 0.5rem 0.4rem; }
   table.stats-table td { padding: 0.4rem 0.4rem; }
@@ -656,6 +818,12 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   </div>
   <div class="tb-link" onclick="showPage('luck')" style="cursor:pointer;">
     <span>Luck</span>
+  </div>
+  <div class="tb-link" onclick="showPage('match-stats')" style="cursor:pointer;">
+    <span>Match Stats</span>
+  </div>
+  <div class="tb-link" onclick="showPage('leaderboard')" style="cursor:pointer;">
+    <span>Leaderboard</span>
   </div>
   <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
     <span>Civ Stats</span>
@@ -735,6 +903,84 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
     </div>
   </div>
 
+  <!-- Leaderboard Page -->
+  <div class="page" id="page-leaderboard">
+    <div class="stats-container match-stats-container">
+      <header>
+        <h1>Leaderboard</h1>
+        <div class="subtitle">Slice by duration, player, and civilization</div>
+      </header>
+      <div class="match-controls">
+        <div class="period-tabs">
+          <button class="period-tab selected" data-lb-period="day" onclick="setLeaderboardPeriod('day')">Today</button>
+          <button class="period-tab" data-lb-period="week" onclick="setLeaderboardPeriod('week')">7 days</button>
+          <button class="period-tab" data-lb-period="month" onclick="setLeaderboardPeriod('month')">30 days</button>
+          <button class="period-tab" data-lb-period="all" onclick="setLeaderboardPeriod('all')">All</button>
+        </div>
+        <div class="period-tabs">
+          <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
+          <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
+        </div>
+      </div>
+      <div class="match-panel" id="leaderboard-panel"></div>
+      <div id="player-detail" style="display:none;">
+        <div class="metric-grid" id="player-detail-summary"></div>
+        <section class="detail-section">
+          <h2>Frequent opponents</h2>
+          <div class="opponent-strip" id="player-opponents"></div>
+        </section>
+        <section class="detail-section">
+          <h2>Win rates by match duration</h2>
+          <div class="duration-grid" id="player-durations"></div>
+        </section>
+        <div class="detail-grid">
+          <section class="match-panel" id="player-civs"></section>
+          <section class="match-panel" id="player-opp-civs"></section>
+        </div>
+        <section class="match-panel detail-section" id="player-matches"></section>
+      </div>
+      <footer>Player rows are clickable. Duration stats require parsed replay data.</footer>
+    </div>
+  </div>
+
+  <!-- Match Stats Page -->
+  <div class="page" id="page-match-stats">
+    <div class="stats-container match-stats-container">
+      <header>
+        <h1>Match Statistics</h1>
+        <div class="subtitle">Player-filtered form, win rates, civs, maps, teammates and recent games</div>
+      </header>
+      <div class="match-controls">
+        <div class="period-tabs">
+          <button class="period-tab" data-period="day" onclick="setMatchPeriod('day')">Today</button>
+          <button class="period-tab selected" data-period="week" onclick="setMatchPeriod('week')">7 days</button>
+          <button class="period-tab" data-period="month" onclick="setMatchPeriod('month')">30 days</button>
+          <button class="period-tab" data-period="all" onclick="setMatchPeriod('all')">All</button>
+        </div>
+        <div class="player-picker" id="match-player-picker">
+          <button class="player-picker-button" type="button" onclick="toggleMatchPlayerPicker()">
+            <span id="match-player-current" class="player-picker-current"></span>
+            <span class="player-picker-caret">&#9662;</span>
+          </button>
+          <div class="player-picker-menu" id="match-player-menu">
+            <input id="match-player-search" class="player-picker-search" type="text"
+              placeholder="Search player" oninput="filterMatchPlayers(this.value)" onfocus="openMatchPlayerPicker()">
+            <div class="player-picker-options" id="match-player-options"></div>
+          </div>
+        </div>
+      </div>
+      <div class="metric-grid" id="match-summary"></div>
+      <div class="trend-panel" id="match-trend"></div>
+      <div class="match-grid">
+        <section class="match-panel" id="match-primary-panel"></section>
+        <section class="match-panel" id="match-civs-panel"></section>
+        <section class="match-panel" id="match-maps-panel"></section>
+        <section class="match-panel" id="match-recent-panel"></section>
+      </div>
+      <footer>Win rate uses decided ranked games. Civ data appears once a match links to AoE2 data.</footer>
+    </div>
+  </div>
+
   <!-- Civ Stats Page -->
   <div class="page" id="page-civ-stats">
     <div class="stats-container">
@@ -803,6 +1049,11 @@ var COLUMNS = [
 var MIN_ANOMALY_GAMES = 20, ANOMALY_GAP = 0.15;
 var civData = [], sortCol = 'civ', sortAsc = true;
 
+// Match stats
+var matchData = null, matchPeriod = 'week', matchPlayer = 'all';
+var leaderboardData = null, leaderboardPeriod = 'day', leaderboardMode = 'players', leaderboardPlayer = null;
+var playerDetailData = null, miniSort = {};
+
 // Dashboard
 var dashGuilds = [], dashChannels = [], dashQueues = [];
 var dashGuildId = null, dashGuildName = null;
@@ -859,6 +1110,8 @@ function showPage(page) {
   if (p) p.classList.add('active');
   if (page === 'dashboard') loadDashboard();
   if (page === 'luck') initLuck();
+  if (page === 'match-stats') initMatchStats();
+  if (page === 'leaderboard') initLeaderboard();
   // Show/hide guild nav + menu for dashboard only
   var isDash = page === 'dashboard';
   document.getElementById('guild_nav').style.display = isDash ? 'flex' : 'none';
@@ -986,6 +1239,430 @@ async function initCivStats() {
   } catch(e) {
     document.getElementById('table-body').innerHTML='<tr><td colspan="11" class="error">Failed to load: '+esc(e.message)+'</td></tr>';
   }
+}
+
+/* ─── Match Stats ─── */
+function fmtPct(v) { return v === null || v === undefined ? '-' : v + '%'; }
+function fmtElo(v) { return v === null || v === undefined ? '-' : String(v); }
+function fmtGain(v) {
+  if (v === null || v === undefined) return '-';
+  v = Number(v) || 0;
+  return (v > 0 ? '+' : '') + v;
+}
+function gainClass(v) {
+  v = Number(v) || 0;
+  return v > 0 ? 'gain-pos' : v < 0 ? 'gain-neg' : '';
+}
+function fmtAgo(ts) {
+  if (!ts) return 'No matches';
+  var s = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+function fmtDuration(seconds) {
+  if (!seconds) return '-';
+  var s = Math.max(0, Number(seconds) || 0);
+  var m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return m + ':' + String(r).padStart(2, '0');
+}
+function shortBucket(b) {
+  var parts = String(b || '').split('-');
+  return parts.length === 3 ? parts[1] + '/' + parts[2] : String(b || '');
+}
+function setMatchPeriod(p) {
+  matchPeriod = p;
+  document.querySelectorAll('[data-period]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.period === p);
+  });
+  loadMatchStats();
+}
+function setMatchPlayer(p) { matchPlayer = p || 'all'; loadMatchStats(); }
+
+async function initMatchStats() {
+  if (!matchData) await loadMatchStats();
+}
+
+async function loadMatchStats() {
+  ['match-summary','match-trend','match-primary-panel','match-civs-panel','match-maps-panel','match-recent-panel'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = '<div class="loading">Loading match stats...</div>';
+  });
+  try {
+    var url = '/api/match-stats?period=' + encodeURIComponent(matchPeriod) + '&player_id=' + encodeURIComponent(matchPlayer);
+    var resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    matchData = await resp.json();
+    renderMatchPlayerPicker('');
+    renderMatchStats();
+  } catch (e) {
+    document.getElementById('match-summary').innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function matchPlayerRows(query) {
+  var q = (query || '').trim().toLowerCase();
+  var rows = [{ user_id: 'all', nick: 'All players', games: null, avatar: null, profile_ids: [] }].concat(matchData.players || []);
+  if (!q) return rows;
+  return rows.filter(function (p) {
+    return String(p.nick || '').toLowerCase().indexOf(q) !== -1
+      || String(p.user_id || '').indexOf(q) !== -1
+      || (p.profile_ids || []).join(' ').indexOf(q) !== -1;
+  });
+}
+
+function selectedMatchPlayer() {
+  if (matchPlayer === 'all') return { user_id: 'all', nick: 'All players', games: null, avatar: null, profile_ids: [] };
+  return (matchData.players || []).find(function (p) { return String(p.user_id) === String(matchPlayer); })
+    || { user_id: matchPlayer, nick: matchPlayer, games: 0, avatar: null, profile_ids: [] };
+}
+
+function renderMatchPlayerPicker(query) {
+  var cur = selectedMatchPlayer();
+  document.getElementById('match-player-current').innerHTML =
+    avatarImg(cur.avatar, cur.nick) + '<span class="player-picker-name">' + esc(cur.nick) + '</span>'
+    + (cur.games === null ? '' : '<span class="player-picker-meta">' + cur.games + '</span>');
+  var rows = matchPlayerRows(query);
+  document.getElementById('match-player-options').innerHTML = rows.length ? rows.map(function (p) {
+    var meta = p.games === null ? 'all matches' : p.games + ' games' + ((p.profile_ids || []).length ? ' · ' + p.profile_ids.length + ' profile' + (p.profile_ids.length === 1 ? '' : 's') : '');
+    return '<button class="player-picker-option' + (String(p.user_id) === String(matchPlayer) ? ' selected' : '') + '" type="button" onclick="chooseMatchPlayer(\'' + esc(p.user_id) + '\')">'
+      + avatarImg(p.avatar, p.nick) + '<span class="player-picker-name">' + esc(p.nick) + '</span><span class="player-picker-meta">' + esc(meta) + '</span></button>';
+  }).join('') : '<div class="player-picker-empty">No players found.</div>';
+}
+
+function openMatchPlayerPicker() {
+  var picker = document.getElementById('match-player-picker');
+  picker.classList.add('open');
+}
+
+function closeMatchPlayerPicker() {
+  var picker = document.getElementById('match-player-picker');
+  picker.classList.remove('open');
+}
+
+function toggleMatchPlayerPicker() {
+  var picker = document.getElementById('match-player-picker');
+  if (picker.classList.contains('open')) closeMatchPlayerPicker();
+  else {
+    openMatchPlayerPicker();
+    var search = document.getElementById('match-player-search');
+    search.value = '';
+    renderMatchPlayerPicker('');
+    setTimeout(function () { search.focus(); }, 0);
+  }
+}
+
+function filterMatchPlayers(q) { renderMatchPlayerPicker(q); }
+
+function chooseMatchPlayer(id) {
+  matchPlayer = id || 'all';
+  closeMatchPlayerPicker();
+  loadMatchStats();
+}
+
+function card(label, value, sub) {
+  return '<div class="metric-card"><div class="metric-label">' + esc(label) + '</div>'
+    + '<div class="metric-value">' + esc(value) + '</div>'
+    + '<div class="metric-sub">' + esc(sub || '') + '</div></div>';
+}
+function avatarImg(url, name) {
+  if (!url) return '<span class="player-avatar"></span>';
+  return '<img class="player-avatar" src="' + esc(url) + '" alt="' + esc(name || 'player') + '">';
+}
+function playerCell(name, avatar) {
+  return '<span class="player-cell">' + avatarImg(avatar, name) + '<span>' + esc(name || '-') + '</span></span>';
+}
+function civSlug(civ) {
+  return String(civ || '').trim().toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+function civIcon(civ) {
+  if (!civ) return '-';
+  var url = 'https://raw.githubusercontent.com/SiegeEngineers/aoe2techtree/master/img/Civs/' + civSlug(civ) + '.png';
+  return '<span class="civ-cell"><img class="civ-icon" src="' + esc(url) + '" alt="' + esc(civ) + '" onerror="this.style.display=\'none\'"><span class="civ-name">' + esc(civ) + '</span></span>';
+}
+function selectedPlayerCard(s) {
+  return '<div class="metric-card"><div class="metric-label">Player</div>'
+    + '<div class="metric-player">' + avatarImg(s.avatar, s.nick) + '<div><div class="metric-player-name">' + esc(s.nick || '-') + '</div>'
+    + '<div class="metric-sub">' + esc(fmtAgo(s.last_match_at)) + '</div></div></div></div>';
+}
+
+function renderMatchSummary() {
+  var s = matchData.summary || {};
+  if (matchData.scope === 'player') {
+    document.getElementById('match-summary').innerHTML = [
+      selectedPlayerCard(s),
+      card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
+      card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
+      card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
+      '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
+        + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
+        + '</div></div>'
+    ].join('');
+  } else {
+    document.getElementById('match-summary').innerHTML = [
+      card('Matches played', s.games || 0, fmtAgo(s.last_match_at)),
+      card('Ranked', s.ranked_games || 0, 'reported results'),
+      card('Players', s.players || 0, 'active in period'),
+      card('Scope', 'All players', matchPeriod === 'all' ? 'full history' : matchPeriod)
+    ].join('');
+  }
+}
+
+function renderTrend() {
+  var rows = matchData.trend || [];
+  if (!rows.length) {
+    document.getElementById('match-trend').innerHTML = '<div class="trend-title">Activity</div><div class="empty-panel">No games in this period.</div>';
+    return;
+  }
+  var max = Math.max.apply(null, rows.map(function (r) { return r.games || 0; })) || 1;
+  document.getElementById('match-trend').innerHTML = '<div class="trend-title">Activity</div><div class="trend-bars">'
+    + rows.map(function (r) {
+      var h = Math.max(3, Math.round(78 * (r.games || 0) / max));
+      return '<div class="trend-bar-wrap" title="' + esc(r.bucket + ': ' + r.games + ' games') + '">'
+        + '<div class="trend-bar" style="height:' + h + 'px"></div><div class="trend-label">' + esc(shortBucket(r.bucket)) + '</div></div>';
+    }).join('') + '</div>';
+}
+
+function table(title, headers, rows, empty) {
+  if (!rows || !rows.length) return '<h2>' + esc(title) + '</h2><div class="empty-panel">' + esc(empty || 'No data.') + '</div>';
+  return '<h2>' + esc(title) + '</h2><table class="mini-table"><thead><tr>'
+    + headers.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('')
+    + '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+}
+
+function sortValue(row, col, idx) {
+  var v = col.value ? col.value(row, idx) : row[col.key];
+  if (col.type === 'number') return v === null || v === undefined || v === '' ? -Infinity : Number(v);
+  return String(v === null || v === undefined ? '' : v).toLowerCase();
+}
+
+function setMiniSort(tableId, key, type) {
+  var cur = miniSort[tableId];
+  miniSort[tableId] = cur && cur.key === key ? { key: key, asc: !cur.asc } : { key: key, asc: type !== 'number' };
+  if (currentPage === 'match-stats') renderMatchStats();
+  if (currentPage === 'leaderboard') {
+    renderLeaderboard();
+    if (playerDetailData) renderPlayerDetail(playerDetailData);
+  }
+}
+
+function sortableTable(tableId, title, columns, rows, empty, rowAttrs) {
+  if (!rows || !rows.length) return '<h2>' + esc(title) + '</h2><div class="empty-panel">' + esc(empty || 'No data.') + '</div>';
+  var state = miniSort[tableId];
+  var sorted = rows.slice();
+  if (state) {
+    var col = columns.find(function (c) { return c.key === state.key; });
+    if (col) {
+      sorted.sort(function (a, b) {
+        var av = sortValue(a, col, 0), bv = sortValue(b, col, 0);
+        if (av < bv) return state.asc ? -1 : 1;
+        if (av > bv) return state.asc ? 1 : -1;
+        return 0;
+      });
+    }
+  }
+  return '<h2>' + esc(title) + '</h2><table class="mini-table"><thead><tr>'
+    + columns.map(function (col) {
+      var active = state && state.key === col.key;
+      return '<th class="sortable" onclick="setMiniSort(\'' + esc(tableId) + '\',\'' + esc(col.key) + '\',\'' + esc(col.type || 'string') + '\')">'
+        + esc(col.label) + (active ? '<span class="sort-mark">' + (state.asc ? '\u25B2' : '\u25BC') + '</span>' : '') + '</th>';
+    }).join('')
+    + '</tr></thead><tbody>' + sorted.map(function (row, idx) {
+      var attrs = rowAttrs ? rowAttrs(row, idx) : '';
+      return '<tr' + (attrs ? ' ' + attrs : '') + '>' + columns.map(function (col) {
+        var cls = col.className ? (typeof col.className === 'function' ? col.className(row, idx) : col.className) : '';
+        var html = col.render ? col.render(row, idx) : esc(row[col.key]);
+        return '<td' + (cls ? ' class="' + esc(cls) + '"' : '') + '>' + html + '</td>';
+      }).join('') + '</tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function renderMatchTables() {
+  document.getElementById('match-civs-panel').innerHTML = sortableTable('match-civs', 'Best civs', [
+    { key: 'civ', label: 'Civ', render: function (r) { return esc(r.civ); } },
+    { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+    { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+    { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+    { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+  ], matchData.civs || [], 'No civ data yet.');
+
+  document.getElementById('match-maps-panel').innerHTML = sortableTable('match-maps', 'Maps', [
+    { key: 'map', label: 'Map' },
+    { key: 'games', label: 'Matches', type: 'number', className: 'num' }
+  ], matchData.maps || [], 'No map data yet.');
+
+  if (matchData.scope === 'player') {
+    var playerStatCols = [
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+      { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+      { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+      { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+      { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+    ];
+    document.getElementById('match-primary-panel').innerHTML =
+      sortableTable('match-teammates', 'Best teammates', playerStatCols, matchData.teammates || [], 'No teammate sample yet.')
+      + sortableTable('match-opponents', 'Tough opponents', playerStatCols, matchData.opponents || [], 'No opponent sample yet.');
+    document.getElementById('match-recent-panel').innerHTML = sortableTable('match-recent', 'Recent matches', [
+      { key: 'result', label: 'R', className: function (r) { return 'result-' + r.result; } },
+      { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
+      { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
+      { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+      { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
+    ], matchData.recent || [], 'No recent matches.');
+  } else {
+    document.getElementById('match-primary-panel').innerHTML = sortableTable('match-player-board', 'Player leaderboard', [
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+      { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+      { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+      { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+      { key: 'draws', label: 'Drawn', type: 'number', className: 'num' },
+      { key: 'rating_start', label: 'Start Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_start); } },
+      { key: 'rating_end', label: 'End Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_end); } },
+      { key: 'rating_delta', label: 'Gain/Loss', type: 'number', className: function (r) { return 'num ' + gainClass(r.rating_delta); }, render: function (r) { return fmtGain(r.rating_delta); } },
+      { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+    ], matchData.leaderboard || [], 'No player data.');
+    document.getElementById('match-recent-panel').innerHTML = '<h2>Recent matches</h2><div class="empty-panel">Select a player to see recent matches and form.</div>';
+  }
+}
+
+function renderMatchStats() {
+  renderMatchSummary();
+  renderTrend();
+  renderMatchTables();
+}
+
+/* ─── Leaderboard ─── */
+async function initLeaderboard() {
+  if (!leaderboardData) await loadLeaderboard();
+}
+
+function setLeaderboardPeriod(p) {
+  leaderboardPeriod = p;
+  document.querySelectorAll('[data-lb-period]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.lbPeriod === p);
+  });
+  loadLeaderboard();
+  if (leaderboardPlayer) loadPlayerDetail(leaderboardPlayer);
+}
+
+function setLeaderboardMode(m) {
+  leaderboardMode = m;
+  document.querySelectorAll('[data-lb-mode]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.lbMode === m);
+  });
+  leaderboardPlayer = null;
+  playerDetailData = null;
+  document.getElementById('player-detail').style.display = 'none';
+  loadLeaderboard();
+}
+
+async function loadLeaderboard() {
+  var panel = document.getElementById('leaderboard-panel');
+  panel.innerHTML = '<div class="loading">Loading leaderboard...</div>';
+  try {
+    var resp = await fetch('/api/leaderboard?period=' + encodeURIComponent(leaderboardPeriod) + '&mode=' + encodeURIComponent(leaderboardMode));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    leaderboardData = await resp.json();
+    renderLeaderboard();
+  } catch (e) {
+    panel.innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderLeaderboard() {
+  var rows = (leaderboardData.rows || []).map(function (r, i) {
+    r.rank = i + 1;
+    return r;
+  });
+  if (leaderboardMode === 'civs') {
+    document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-civs', 'Civilization leaderboard', [
+      { key: 'rank', label: '#', type: 'number', className: 'num' },
+      { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
+      { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+      { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+      { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+      { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+    ], rows, 'No civ data.');
+    return;
+  }
+  document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-players', 'Player leaderboard', [
+    { key: 'rank', label: '#', type: 'number', className: 'num' },
+    { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+    { key: 'rating', label: 'Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating); } },
+    { key: 'rating_start', label: 'Start Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_start); } },
+    { key: 'rating_end', label: 'End Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_end); } },
+    { key: 'rating_delta', label: 'Gain/Loss', type: 'number', className: function (r) { return 'num ' + gainClass(r.rating_delta); }, render: function (r) { return fmtGain(r.rating_delta); } },
+    { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+    { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+    { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+    { key: 'draws', label: 'Drawn', type: 'number', className: 'num' },
+    { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+  ], rows, 'No player data.', function (r) {
+    return 'class="leader-row" onclick="loadPlayerDetail(\'' + esc(r.user_id) + '\')"';
+  });
+}
+
+async function loadPlayerDetail(userId) {
+  leaderboardPlayer = userId;
+  document.getElementById('player-detail').style.display = 'block';
+  document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
+  try {
+    var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(leaderboardPeriod) + '&player_id=' + encodeURIComponent(userId));
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var d = await resp.json();
+    playerDetailData = d;
+    renderPlayerDetail(d);
+  } catch (e) {
+    document.getElementById('player-detail-summary').innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderPlayerDetail(d) {
+  var s = d.summary || {};
+  document.getElementById('player-detail-summary').innerHTML = [
+    selectedPlayerCard(s),
+    card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
+    card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
+    card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
+    card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
+  ].join('');
+
+  var opp = d.opponents || [];
+  document.getElementById('player-opponents').innerHTML = opp.length ? opp.map(function (r) {
+    return '<div class="opponent-card">' + avatarImg(r.avatar, r.nick) + '<div><div class="opponent-name">' + esc(r.nick) + '</div><div class="opponent-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div></div>';
+  }).join('') : '<div class="empty-panel">No opponent sample in this period.</div>';
+
+  var dur = d.durations || [];
+  document.getElementById('player-durations').innerHTML = dur.length ? dur.map(function (r) {
+    return '<div class="duration-card"><div class="duration-title">' + esc(r.bucket) + '</div><div class="duration-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div>';
+  }).join('') : '<div class="empty-panel">No parsed replay duration data in this period.</div>';
+
+  var civCols = [
+    { key: 'civ', label: 'Civilization', render: function (r) { return civIcon(r.civ); } },
+    { key: 'games', label: 'Matches', type: 'number', className: 'num' },
+    { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+    { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+    { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
+  ];
+  document.getElementById('player-civs').innerHTML =
+    sortableTable('player-civs-table', 'Win rates by civilization', civCols, d.civs || [], 'No civ data.');
+
+  document.getElementById('player-opp-civs').innerHTML =
+    sortableTable('player-opp-civs-table', 'Win rates by opponent civilization', civCols, d.opponent_civs || [], 'No opponent civ data.');
+
+  document.getElementById('player-matches').innerHTML = sortableTable('player-matches-table', 'Match details', [
+    { key: 'result', label: 'R', className: function (r) { return 'result-' + r.result; } },
+    { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
+    { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
+    { key: 'opponent_civs', label: 'Opponent civs', render: function (r) { return esc(r.opponent_civs || '-'); } },
+    { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+    { key: 'duration_s', label: 'Duration', type: 'number', className: 'num', render: function (r) { return fmtDuration(r.duration_s); } },
+    { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
+    { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
+  ], d.matches || [], 'No matches in this period.');
 }
 
 /* ─── Strategy Insights ─── */
@@ -1598,6 +2275,11 @@ var _origSelectChannel = selectChannel;
 selectChannel = async function(id, name) { closeMobileMenu(); return _origSelectChannel(id, name); };
 var _origSelectQueue = selectQueue;
 selectQueue = async function(name) { closeMobileMenu(); return _origSelectQueue(name); };
+
+document.addEventListener('click', function (e) {
+  var picker = document.getElementById('match-player-picker');
+  if (picker && !picker.contains(e.target)) closeMatchPlayerPicker();
+});
 
 /* ─── Init ─── */
 // Hide sidebar panels initially (shown when dashboard loads)
