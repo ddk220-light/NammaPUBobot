@@ -681,6 +681,30 @@ async def _rating_delta(period, user_id):
 	return (await _rating_deltas(period, [user_id])).get(int(user_id), _rating_payload(None))
 
 
+async def _rating_history(period, user_id):
+	clauses = ["user_id=%s"]
+	args = [int(user_id)]
+	start = _period_start(period)
+	if start is not None:
+		clauses.append("at >= %s")
+		args.append(start)
+	rows = await db.fetchall(
+		"SELECT at, rating_before, rating_change FROM qc_rating_history "
+		"WHERE " + " AND ".join(clauses) + " ORDER BY at ASC, id ASC",
+		args)
+	out = []
+	for idx, row in enumerate(rows or []):
+		before = row.get("rating_before")
+		change = row.get("rating_change")
+		at = row.get("at")
+		if before is None or change is None or at is None:
+			continue
+		if idx == 0:
+			out.append({"at": at, "rating": int(before)})
+		out.append({"at": at, "rating": int(before + change)})
+	return out
+
+
 def _avg(rows, key):
 	vals = [float(r[key]) for r in rows if r.get(key) is not None]
 	return sum(vals) / len(vals) if vals else None
@@ -1248,6 +1272,7 @@ async def handle_player_stats(request):
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
+	rating_history = await _rating_history(period, user_id)
 	base_args = [user_id, *params]
 	summary = await db.fetchone(
 		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
@@ -1367,6 +1392,7 @@ async def handle_player_stats(request):
 			"worst_enemy": _best_relationship(opponents, "enemy"),
 		},
 		"allies": [_relationship_payload(r) for r in allies or []],
+		"rating_history": rating_history,
 		"opponents": [
 			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
 			 "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),

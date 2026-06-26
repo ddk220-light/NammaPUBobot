@@ -634,6 +634,14 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
 }
 .trend-label { color: #85868a; font-size: 0.68rem; white-space: nowrap; }
+.elo-chart {
+  width: 100%; height: 180px; display: block;
+}
+.elo-grid-line { stroke: rgba(185,187,190,0.16); stroke-width: 1; }
+.elo-line { fill: none; stroke: #57d98b; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.elo-fill { fill: rgba(87,217,139,0.10); }
+.elo-dot { fill: #57d98b; stroke: #202225; stroke-width: 2; }
+.elo-label { fill: #969aa2; font-size: 11px; font-family: 'Outfit', sans-serif; }
 .match-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
@@ -943,6 +951,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
       <div class="match-panel" id="leaderboard-panel"></div>
       <div id="player-detail" style="display:none;">
         <div class="metric-grid" id="player-detail-summary"></div>
+        <div class="trend-panel" id="player-elo-trend"></div>
         <section class="detail-section">
           <h2>Frequent allies</h2>
           <div class="opponent-strip" id="player-allies"></div>
@@ -1319,6 +1328,11 @@ function fmtAgo(ts) {
   if (s < 86400) return Math.floor(s / 3600) + 'h ago';
   return Math.floor(s / 86400) + 'd ago';
 }
+function fmtDate(ts) {
+  if (!ts) return '-';
+  var d = new Date(Number(ts) * 1000);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+}
 function fmtDuration(seconds) {
   if (!seconds) return '-';
   var s = Math.max(0, Number(seconds) || 0);
@@ -1498,6 +1512,48 @@ function renderTrend() {
       return '<div class="trend-bar-wrap" title="' + esc(r.bucket + ': ' + r.games + ' games') + '">'
         + '<div class="trend-bar" style="height:' + h + 'px"></div><div class="trend-label">' + esc(shortBucket(r.bucket)) + '</div></div>';
     }).join('') + '</div>';
+}
+
+function renderEloTrend(rows) {
+  rows = rows || [];
+  var panel = document.getElementById('player-elo-trend');
+  if (!rows.length) {
+    panel.innerHTML = '<div class="trend-title">Elo over time</div><div class="empty-panel">No Elo changes in this period.</div>';
+    return;
+  }
+  var width = 640, height = 180, padL = 42, padR = 16, padT = 18, padB = 32;
+  var ratings = rows.map(function (r) { return Number(r.rating) || 0; });
+  var times = rows.map(function (r) { return Number(r.at) || 0; });
+  var minR = Math.min.apply(null, ratings), maxR = Math.max.apply(null, ratings);
+  var minT = Math.min.apply(null, times), maxT = Math.max.apply(null, times);
+  var rangeR = Math.max(1, maxR - minR);
+  var rangeT = Math.max(1, maxT - minT);
+  minR = Math.floor((minR - Math.max(20, rangeR * 0.12)) / 10) * 10;
+  maxR = Math.ceil((maxR + Math.max(20, rangeR * 0.12)) / 10) * 10;
+  rangeR = Math.max(1, maxR - minR);
+  function x(r, i) {
+    if (rows.length === 1) return Math.round((padL + width - padR) / 2);
+    return padL + ((Number(r.at) - minT) / rangeT) * (width - padL - padR);
+  }
+  function y(r) {
+    return padT + ((maxR - Number(r.rating)) / rangeR) * (height - padT - padB);
+  }
+  var points = rows.map(function (r, i) { return x(r, i).toFixed(1) + ',' + y(r).toFixed(1); }).join(' ');
+  var fillPoints = padL + ',' + (height - padB) + ' ' + points + ' ' + (width - padR) + ',' + (height - padB);
+  var dots = rows.length <= 40 ? rows.map(function (r, i) {
+    return '<circle class="elo-dot" cx="' + x(r, i).toFixed(1) + '" cy="' + y(r).toFixed(1) + '" r="3"><title>'
+      + esc(fmtDate(r.at) + ': ' + r.rating) + '</title></circle>';
+  }).join('') : '';
+  panel.innerHTML = '<div class="trend-title">Elo over time</div><svg class="elo-chart" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Elo over time">'
+    + '<line class="elo-grid-line" x1="' + padL + '" y1="' + padT + '" x2="' + (width - padR) + '" y2="' + padT + '"></line>'
+    + '<line class="elo-grid-line" x1="' + padL + '" y1="' + (height - padB) + '" x2="' + (width - padR) + '" y2="' + (height - padB) + '"></line>'
+    + '<text class="elo-label" x="4" y="' + (padT + 4) + '">' + esc(maxR) + '</text>'
+    + '<text class="elo-label" x="4" y="' + (height - padB + 4) + '">' + esc(minR) + '</text>'
+    + '<polygon class="elo-fill" points="' + fillPoints + '"></polygon>'
+    + '<polyline class="elo-line" points="' + points + '"></polyline>' + dots
+    + '<text class="elo-label" x="' + padL + '" y="' + (height - 8) + '">' + esc(fmtDate(rows[0].at)) + '</text>'
+    + '<text class="elo-label" text-anchor="end" x="' + (width - padR) + '" y="' + (height - 8) + '">' + esc(fmtDate(rows[rows.length - 1].at)) + '</text>'
+    + '</svg>';
 }
 
 function table(title, headers, rows, empty) {
@@ -1705,6 +1761,7 @@ async function loadPlayerDetail(userId) {
   leaderboardPlayer = userId;
   document.getElementById('player-detail').style.display = 'block';
   document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
+  document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
   try {
     var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(leaderboardPeriod) + '&player_id=' + encodeURIComponent(userId));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -1713,6 +1770,7 @@ async function loadPlayerDetail(userId) {
     renderPlayerDetail(d);
   } catch (e) {
     document.getElementById('player-detail-summary').innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
+    document.getElementById('player-elo-trend').innerHTML = '';
   }
 }
 
@@ -1736,6 +1794,8 @@ function renderPlayerDetail(d) {
     card('Top tags', styleTags(p), 'aggregated match tags'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
+
+  renderEloTrend(d.rating_history || []);
 
   var allies = d.allies || [];
   document.getElementById('player-allies').innerHTML = allies.length ? allies.map(relationStripCard).join('') : '<div class="empty-panel">No ally sample in this period.</div>';
