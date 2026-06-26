@@ -23,6 +23,12 @@ import bot
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 HTML_PATH = os.path.join(os.path.dirname(__file__), 'web_page.html')
 MIN_GAMES = 50
+MATCH_STAT_PERIODS = {
+	"day": 1,
+	"week": 7,
+	"month": 30,
+	"all": None,
+}
 
 # --- Session store (Layer 5: migrated from in-memory dicts to MySQL) ---
 #
@@ -460,6 +466,532 @@ async def handle_strategies(request):
 	})
 
 
+# ─── Match stats API (public) ───
+
+def _period_filter(period, alias="m"):
+	days = MATCH_STAT_PERIODS.get(period, MATCH_STAT_PERIODS["week"])
+	if days is None:
+		return "", []
+	return f" AND {alias}.at >= %s", [int(time.time()) - days * 86400]
+
+
+def _winrate(wins, losses):
+	decided = int(wins or 0) + int(losses or 0)
+	return round(100 * int(wins or 0) / decided) if decided else None
+
+
+def _avatar_for_user_id(user_id):
+	try:
+		uid = int(user_id)
+	except (TypeError, ValueError):
+		return None
+	user = dc.get_user(uid)
+	if user is not None and getattr(user, "display_avatar", None):
+		return str(user.display_avatar.url)
+	for guild in dc.guilds:
+		member = guild.get_member(uid)
+		if member is not None and getattr(member, "display_avatar", None):
+			return str(member.display_avatar.url)
+	return None
+
+
+def _map_counts(rows):
+	counts = {}
+	for r in rows or []:
+		for name in (r.get("maps") or "").split("\n"):
+			name = name.strip()
+			if name:
+				counts[name] = counts.get(name, 0) + 1
+	return [{"map": k, "games": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:12]]
+
+
+def _csv_profile_rows():
+	path = os.path.join(DATA_DIR, "player_profile_map.csv")
+	if not os.path.exists(path):
+		return []
+	rows = []
+	with open(path, newline="") as f:
+		for r in csv.DictReader(f):
+			uid = (r.get("user_id") or "").strip()
+			if not uid.isdigit():
+				continue
+			pids = [p.strip() for p in (r.get("profile_id") or "").split("/") if p.strip().isdigit()]
+			names = [n.strip() for n in (r.get("aoe2_name") or "").split("/") if n.strip()]
+			rows.append({
+				"user_id": int(uid),
+				"nick": r.get("nick") or "",
+				"profile_ids": [int(p) for p in pids],
+				"aoe2_names": names,
+			})
+	return rows
+
+
+async def _mapped_profiles_by_user():
+	"""Existing Discord-user -> AoE2 profile/name mapping from live DBs + CSV fallback."""
+	out = {}
+
+	def add(uid, profile_id=None, name=None, nick=None):
+		if not uid:
+			return
+		d = out.setdefault(int(uid), {"profile_ids": set(), "aoe2_names": set(), "nick": ""})
+		if profile_id:
+			d["profile_ids"].add(int(profile_id))
+		if name:
+			d["aoe2_names"].add(str(name).strip())
+		if nick and not d["nick"]:
+			d["nick"] = str(nick).strip()
+
+	for r in await db.fetchall("SELECT user_id, profile_id, name FROM qc_profile_map"):
+		add(r.get("user_id"), r.get("profile_id"), r.get("name"))
+	for r in await db.fetchall("SELECT user_id, profile_id, name FROM rs_profiles WHERE user_id IS NOT NULL"):
+		add(r.get("user_id"), r.get("profile_id"), r.get("name"))
+	for r in _csv_profile_rows():
+		for pid in r["profile_ids"]:
+			add(r["user_id"], pid, nick=r["nick"])
+		for name in r["aoe2_names"]:
+			add(r["user_id"], name=name, nick=r["nick"])
+	return out
+
+
+async def _match_stat_players():
+	rows = await db.fetchall(
+		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT pm.match_id) AS games "
+		"FROM qc_player_matches pm GROUP BY pm.user_id ORDER BY games DESC, nick ASC LIMIT 250")
+	mapped = await _mapped_profiles_by_user()
+	players = {}
+	for r in rows or []:
+		uid = int(r["user_id"])
+		players[uid] = {
+			"user_id": str(uid),
+			"nick": r["nick"] or mapped.get(uid, {}).get("nick") or str(uid),
+			"games": int(r["games"] or 0),
+			"profile_ids": sorted(mapped.get(uid, {}).get("profile_ids", [])),
+			"avatar": _avatar_for_user_id(uid),
+		}
+	for uid, m in mapped.items():
+		if uid not in players:
+			players[uid] = {
+				"user_id": str(uid),
+				"nick": m.get("nick") or next(iter(m.get("aoe2_names") or []), str(uid)),
+				"games": 0,
+				"profile_ids": sorted(m.get("profile_ids", [])),
+				"avatar": _avatar_for_user_id(uid),
+			}
+	return sorted(players.values(), key=lambda p: (-p["games"], p["nick"].lower()))[:500]
+
+
+async def _mapped_player_identity(user_id):
+	mapped = (await _mapped_profiles_by_user()).get(int(user_id), {})
+	return sorted(mapped.get("profile_ids", [])), sorted(n.lower() for n in mapped.get("aoe2_names", []) if n)
+
+
+def _civ_player_clause(user_id, aoe2_names):
+	clauses = ["user_id=%s"]
+	args = [user_id]
+	if aoe2_names:
+		clauses.append("LOWER(aoe2_name) IN (" + ",".join(["%s"] * len(aoe2_names)) + ")")
+		args.extend(aoe2_names)
+	return "(" + " OR ".join(clauses) + ")", args
+
+
+async def _match_stats_overall(period):
+	at_clause, params = _period_filter(period)
+	summary = await db.fetchone(
+		"SELECT COUNT(DISTINCT m.match_id) AS games, "
+		"COUNT(DISTINCT IF(m.ranked=1, m.match_id, NULL)) AS ranked_games, "
+		"COUNT(DISTINCT pm.user_id) AS players, MAX(m.at) AS last_match_at "
+		"FROM qc_matches m LEFT JOIN qc_player_matches pm "
+		"ON pm.match_id=m.match_id AND pm.channel_id=m.channel_id WHERE 1=1" + at_clause,
+		params)
+	board = await db.fetchall(
+		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
+		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
+		"SUM(m.ranked=1 AND m.winner IS NOT NULL AND m.winner<>pm.team) AS losses, "
+		"SUM(m.ranked=1 AND m.winner IS NULL) AS draws "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE 1=1" + at_clause +
+		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 50",
+		params)
+	civs = await db.fetchall(
+		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
+		"FROM qc_match_civs WHERE civ IS NOT NULL AND civ<>''"
+		+ (" AND at >= %s" if params else "") +
+		" GROUP BY civ ORDER BY games DESC LIMIT 20",
+		params)
+	maps = _map_counts(await db.fetchall("SELECT maps FROM qc_matches m WHERE maps IS NOT NULL" + at_clause, params))
+	trend = await db.fetchall(
+		"SELECT DATE(CONVERT_TZ(FROM_UNIXTIME(m.at), '+00:00', '+05:30')) AS bucket, COUNT(*) AS games "
+		"FROM qc_matches m WHERE 1=1" + at_clause + " GROUP BY bucket ORDER BY bucket ASC",
+		params)
+	return {
+		"summary": {
+			"games": int((summary or {}).get("games") or 0),
+			"ranked_games": int((summary or {}).get("ranked_games") or 0),
+			"players": int((summary or {}).get("players") or 0),
+			"last_match_at": (summary or {}).get("last_match_at"),
+		},
+		"leaderboard": [
+			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
+			 "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+			 "losses": int(r["losses"] or 0), "draws": int(r["draws"] or 0),
+			 "winrate": _winrate(r["wins"], r["losses"]), "avatar": _avatar_for_user_id(r["user_id"])}
+			for r in board or []
+		],
+		"civs": [
+			{"civ": r["civ"], "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+			 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"])}
+			for r in civs or []
+		],
+		"maps": maps,
+		"trend": [{"bucket": str(r["bucket"]), "games": int(r["games"] or 0)} for r in trend or []],
+	}
+
+
+async def _player_streak(user_id, at_clause, params):
+	rows = await db.fetchall(
+		"SELECT m.winner, pm.team FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE pm.user_id=%s AND m.ranked=1" + at_clause + " ORDER BY m.at DESC, m.match_id DESC LIMIT 20",
+		[user_id, *params])
+	streak = []
+	for r in rows or []:
+		if r["winner"] is None:
+			streak.append("D")
+		elif r["winner"] == r["team"]:
+			streak.append("W")
+		else:
+			streak.append("L")
+	return streak
+
+
+async def _match_stats_player(user_id, period):
+	at_clause, params = _period_filter(period)
+	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
+	summary = await db.fetchone(
+		"SELECT COUNT(DISTINCT m.match_id) AS games, "
+		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
+		"SUM(m.ranked=1 AND m.winner IS NOT NULL AND m.winner<>pm.team) AS losses, "
+		"SUM(m.ranked=1 AND m.winner IS NULL) AS draws, MAX(m.at) AS last_match_at, MAX(pm.nick) AS nick "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE pm.user_id=%s" + at_clause,
+		[user_id, *params])
+	civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
+	civs = await db.fetchall(
+		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
+		"FROM qc_match_civs WHERE " + civ_clause + " AND civ IS NOT NULL AND civ<>''"
+		+ (" AND at >= %s" if params else "") +
+		" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 12",
+		[*civ_args, *params])
+	maps = _map_counts(await db.fetchall(
+		"SELECT m.maps FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE pm.user_id=%s AND m.maps IS NOT NULL" + at_clause,
+		[user_id, *params]))
+	teammates = await db.fetchall(
+		"SELECT mate.user_id, MAX(mate.nick) AS nick, COUNT(*) AS games, "
+		"SUM(m.winner=pm.team) AS wins, SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN qc_player_matches mate ON mate.match_id=pm.match_id AND mate.channel_id=pm.channel_id "
+		"AND mate.team=pm.team AND mate.user_id<>pm.user_id "
+		"WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		" GROUP BY mate.user_id HAVING games >= 2 ORDER BY wins DESC, games DESC LIMIT 8",
+		[user_id, *params])
+	opponents = await db.fetchall(
+		"SELECT opp.user_id, MAX(opp.nick) AS nick, COUNT(*) AS games, "
+		"SUM(m.winner=pm.team) AS wins, SUM(m.winner IS NOT NULL AND m.winner=opp.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN qc_player_matches opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
+		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id "
+		"WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		" GROUP BY opp.user_id HAVING games >= 2 ORDER BY losses DESC, games DESC LIMIT 8",
+		[user_id, *params])
+	recent = await db.fetchall(
+		"SELECT m.match_id, m.queue_name, m.at, m.ranked, m.winner, m.maps, pm.team "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE pm.user_id=%s" + at_clause + " ORDER BY m.at DESC, m.match_id DESC LIMIT 12",
+		[user_id, *params])
+	recent_civs = {}
+	if recent:
+		match_ids = [r["match_id"] for r in recent]
+		civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
+		rows = await db.fetchall(
+			"SELECT bot_match_id, civ FROM qc_match_civs WHERE bot_match_id IN ("
+			+ ",".join(["%s"] * len(match_ids)) + ") AND " + civ_clause,
+			[*match_ids, *civ_args])
+		for r in rows or []:
+			if r.get("civ") and r["bot_match_id"] not in recent_civs:
+				recent_civs[r["bot_match_id"]] = r["civ"]
+	trend = await db.fetchall(
+		"SELECT DATE(CONVERT_TZ(FROM_UNIXTIME(m.at), '+00:00', '+05:30')) AS bucket, "
+		"COUNT(*) AS games, SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
+		"SUM(m.ranked=1 AND m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE pm.user_id=%s" + at_clause + " GROUP BY bucket ORDER BY bucket ASC",
+		[user_id, *params])
+	return {
+		"summary": {
+			"nick": (summary or {}).get("nick") or str(user_id),
+			"avatar": _avatar_for_user_id(user_id),
+			"profile_ids": profile_ids,
+			"games": int((summary or {}).get("games") or 0),
+			"wins": int((summary or {}).get("wins") or 0),
+			"losses": int((summary or {}).get("losses") or 0),
+			"draws": int((summary or {}).get("draws") or 0),
+			"winrate": _winrate((summary or {}).get("wins"), (summary or {}).get("losses")),
+			"last_match_at": (summary or {}).get("last_match_at"),
+			"streak": await _player_streak(user_id, at_clause, params),
+		},
+		"civs": [
+			{"civ": r["civ"], "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+			 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"])}
+			for r in civs or []
+		],
+		"maps": maps,
+		"teammates": [
+			{"nick": r["nick"] or str(r["user_id"]), "games": int(r["games"] or 0),
+			 "wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0),
+			 "winrate": _winrate(r["wins"], r["losses"]), "avatar": _avatar_for_user_id(r["user_id"])}
+			for r in teammates or []
+		],
+		"opponents": [
+			{"nick": r["nick"] or str(r["user_id"]), "games": int(r["games"] or 0),
+			 "wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0),
+			 "winrate": _winrate(r["wins"], r["losses"]), "avatar": _avatar_for_user_id(r["user_id"])}
+			for r in opponents or []
+		],
+		"recent": [
+			{"match_id": r["match_id"], "queue": r["queue_name"], "at": r["at"],
+			 "ranked": bool(r["ranked"]), "result": (
+				"D" if r["ranked"] and r["winner"] is None else
+				"W" if r["winner"] == r["team"] else
+				"L" if r["winner"] is not None else "-"
+			 ), "map": ((r.get("maps") or "").split("\n")[0] or "").strip(),
+			 "civ": recent_civs.get(r["match_id"])}
+			for r in recent or []
+		],
+		"trend": [{"bucket": str(r["bucket"]), "games": int(r["games"] or 0),
+		           "wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0)}
+		          for r in trend or []],
+	}
+
+
+async def handle_match_stats(request):
+	period = request.query.get("period", "week")
+	if period not in MATCH_STAT_PERIODS:
+		period = "week"
+	player_raw = request.query.get("player_id") or ""
+	players = await _match_stat_players()
+	payload = {"period": period, "players": players, "scope": "overall"}
+	if player_raw and player_raw != "all":
+		try:
+			user_id = int(player_raw)
+		except ValueError:
+			return web.json_response({"error": "Invalid player_id"}, status=400)
+		payload["scope"] = "player"
+		payload["selected_player_id"] = str(user_id)
+		payload.update(await _match_stats_player(user_id, period))
+	else:
+		payload.update(await _match_stats_overall(period))
+	return web.json_response(payload)
+
+
+async def handle_leaderboard(request):
+	period = request.query.get("period", "week")
+	if period not in MATCH_STAT_PERIODS:
+		period = "week"
+	mode = request.query.get("mode", "players")
+	at_clause, params = _period_filter(period)
+	if mode == "civs":
+		rows = await db.fetchall(
+			"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
+			"FROM qc_match_civs WHERE civ IS NOT NULL AND civ<>''"
+			+ (" AND at >= %s" if params else "") +
+			" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 100",
+			params)
+		return web.json_response({
+			"period": period,
+			"mode": "civs",
+			"rows": [
+				{"civ": r["civ"], "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+				 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"])}
+				for r in rows or []
+			],
+		})
+	rows = await db.fetchall(
+		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
+		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
+		"SUM(m.ranked=1 AND m.winner IS NOT NULL AND m.winner<>pm.team) AS losses, "
+		"SUM(m.ranked=1 AND m.winner IS NULL) AS draws, MAX(p.rating) AS rating "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"LEFT JOIN qc_players p ON p.user_id=pm.user_id AND p.channel_id=pm.channel_id "
+		"WHERE 1=1" + at_clause +
+		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 100",
+		params)
+	return web.json_response({
+		"period": period,
+		"mode": "players",
+		"rows": [
+			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
+			 "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+			 "losses": int(r["losses"] or 0), "draws": int(r["draws"] or 0),
+			 "rating": r.get("rating"), "winrate": _winrate(r["wins"], r["losses"]),
+			 "avatar": _avatar_for_user_id(r["user_id"])}
+			for r in rows or []
+		],
+	})
+
+
+async def handle_player_stats(request):
+	period = request.query.get("period", "week")
+	if period not in MATCH_STAT_PERIODS:
+		period = "week"
+	try:
+		user_id = int(request.query.get("player_id") or "0")
+	except ValueError:
+		return web.json_response({"error": "Invalid player_id"}, status=400)
+	if not user_id:
+		return web.json_response({"error": "Missing player_id"}, status=400)
+
+	at_clause, params = _period_filter(period)
+	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
+	base_args = [user_id, *params]
+	summary = await db.fetchone(
+		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
+		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
+		"SUM(m.ranked=1 AND m.winner IS NOT NULL AND m.winner<>pm.team) AS losses, "
+		"SUM(m.ranked=1 AND m.winner IS NULL) AS draws, MAX(m.at) AS last_match_at "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE pm.user_id=%s" + at_clause,
+		base_args)
+	opponents = await db.fetchall(
+		"SELECT opp.user_id, MAX(opp.nick) AS nick, COUNT(*) AS games, "
+		"SUM(m.winner=pm.team) AS wins, SUM(m.winner IS NOT NULL AND m.winner=opp.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN qc_player_matches opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
+		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id "
+		"WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		" GROUP BY opp.user_id HAVING games >= 1 ORDER BY games DESC, wins DESC LIMIT 12",
+		base_args)
+	durations = await db.fetchall(
+		"SELECT CASE "
+		"WHEN rm.duration_s < 300 THEN 'Less than 5 min' "
+		"WHEN rm.duration_s < 900 THEN '5 - <15 min' "
+		"WHEN rm.duration_s < 1500 THEN '15 - <25 min' "
+		"WHEN rm.duration_s < 2400 THEN '25 - <40 min' "
+		"ELSE 'More than 40 min' END AS bucket, "
+		"CASE WHEN rm.duration_s < 300 THEN 1 WHEN rm.duration_s < 900 THEN 2 "
+		"WHEN rm.duration_s < 1500 THEN 3 WHEN rm.duration_s < 2400 THEN 4 ELSE 5 END AS ord, "
+		"COUNT(*) AS games, SUM(m.winner=pm.team) AS wins, "
+		"SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"WHERE pm.user_id=%s AND m.ranked=1 AND rm.duration_s IS NOT NULL" + at_clause +
+		" GROUP BY bucket, ord ORDER BY ord",
+		base_args)
+	civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
+	civs = await db.fetchall(
+		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
+		"FROM qc_match_civs WHERE " + civ_clause + " AND civ IS NOT NULL AND civ<>''"
+		+ (" AND at >= %s" if params else "") +
+		" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 30",
+		[*civ_args, *params])
+	opp_civs = await db.fetchall(
+		"SELECT oc.civ, COUNT(*) AS games, SUM(m.winner=pm.team) AS wins, "
+		"SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN qc_match_civs oc ON oc.bot_match_id=m.match_id AND oc.team<>pm.team "
+		"WHERE pm.user_id=%s AND m.ranked=1 AND oc.civ IS NOT NULL AND oc.civ<>''" + at_clause +
+		" GROUP BY oc.civ ORDER BY wins DESC, games DESC LIMIT 30",
+		base_args)
+	matches = await db.fetchall(
+		"SELECT m.match_id, m.queue_name, m.at, m.ranked, m.winner, m.maps, pm.team, rm.duration_s "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"LEFT JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"WHERE pm.user_id=%s" + at_clause +
+		" ORDER BY m.at DESC, m.match_id DESC LIMIT 50",
+		base_args)
+	match_civs = {}
+	opp_match_civs = {}
+	if matches:
+		match_ids = [r["match_id"] for r in matches]
+		match_id_clause = ",".join(["%s"] * len(match_ids))
+		civ_rows = await db.fetchall(
+			"SELECT bot_match_id, civ FROM qc_match_civs WHERE bot_match_id IN ("
+			+ match_id_clause + ") AND " + civ_clause,
+			[*match_ids, *civ_args])
+		for r in civ_rows or []:
+			if r.get("civ") and r["bot_match_id"] not in match_civs:
+				match_civs[r["bot_match_id"]] = r["civ"]
+		opp_rows = await db.fetchall(
+			"SELECT oc.bot_match_id, GROUP_CONCAT(DISTINCT oc.civ ORDER BY oc.civ SEPARATOR ', ') AS civs "
+			"FROM qc_player_matches pm JOIN qc_match_civs oc "
+			"ON oc.bot_match_id=pm.match_id AND oc.team<>pm.team "
+			"WHERE pm.user_id=%s AND pm.match_id IN (" + match_id_clause + ") "
+			"AND oc.civ IS NOT NULL AND oc.civ<>'' GROUP BY oc.bot_match_id",
+			[user_id, *match_ids])
+		opp_match_civs = {r["bot_match_id"]: r["civs"] for r in opp_rows or []}
+	return web.json_response({
+		"period": period,
+		"summary": {
+			"user_id": str(user_id),
+			"nick": (summary or {}).get("nick") or str(user_id),
+			"avatar": _avatar_for_user_id(user_id),
+			"profile_ids": profile_ids,
+			"games": int((summary or {}).get("games") or 0),
+			"wins": int((summary or {}).get("wins") or 0),
+			"losses": int((summary or {}).get("losses") or 0),
+			"draws": int((summary or {}).get("draws") or 0),
+			"winrate": _winrate((summary or {}).get("wins"), (summary or {}).get("losses")),
+			"last_match_at": (summary or {}).get("last_match_at"),
+		},
+		"opponents": [
+			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
+			 "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+			 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"]),
+			 "avatar": _avatar_for_user_id(r["user_id"])}
+			for r in opponents or []
+		],
+		"durations": [
+			{"bucket": r["bucket"], "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+			 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"])}
+			for r in durations or []
+		],
+		"civs": [
+			{"civ": r["civ"], "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+			 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"])}
+			for r in civs or []
+		],
+		"opponent_civs": [
+			{"civ": r["civ"], "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
+			 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"])}
+			for r in opp_civs or []
+		],
+		"matches": [
+			{"match_id": r["match_id"], "queue": r["queue_name"], "at": r["at"],
+			 "ranked": bool(r["ranked"]), "result": (
+				"D" if r["ranked"] and r["winner"] is None else
+				"W" if r["winner"] == r["team"] else
+				"L" if r["winner"] is not None else "-"
+			 ), "map": ((r.get("maps") or "").split("\n")[0] or "").strip(),
+			 "duration_s": r.get("duration_s"), "civ": match_civs.get(r["match_id"]),
+			 "opponent_civs": opp_match_civs.get(r["match_id"])}
+			for r in matches or []
+		],
+	})
+
+
 # ─── Auth routes ───
 
 async def handle_auth_login(request):
@@ -875,6 +1407,9 @@ def create_app():
 	# Public API
 	app.router.add_get('/api/civ-stats', handle_civ_stats)
 	app.router.add_get('/api/strategies', handle_strategies)
+	app.router.add_get('/api/match-stats', handle_match_stats)
+	app.router.add_get('/api/leaderboard', handle_leaderboard)
+	app.router.add_get('/api/player-stats', handle_player_stats)
 	app.router.add_get('/api/me', handle_api_me)
 	# Dashboard API
 	app.router.add_get('/api/debug', handle_api_debug)
