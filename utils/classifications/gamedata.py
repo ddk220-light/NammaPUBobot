@@ -189,3 +189,52 @@ def castle_placement(game, pnum):
     dist_own = _dist(cxy, own)
     dist_enemy = min(enemy_dists)
     return (dist_enemy < dist_own, dist_own, dist_enemy)
+
+
+# --- Luck (spawn/map-factor) accessors (needs extract v4) ----------------------------------------
+
+LUCK_MAPS = ("Land Nomad", "Nomad")
+
+
+def settle_tc_xy(game, pnum):
+    """The player's settle position = first built TC (extract stores it as settle_tc_xy), as (x,y)."""
+    p = player(game, pnum)
+    return _xy(p.get("settle_tc_xy")) if p else None
+
+
+def spawn_proximity(game, pnum):
+    """(d_ally, d_enemy, d_any): distance from this player's settle TC to the nearest same-team /
+    different-team / any other player's settle TC. Each is None if no such settle is known."""
+    me = player(game, pnum)
+    mine = settle_tc_xy(game, pnum)
+    if not me or mine is None:
+        return (None, None, None)
+    my_team = me.get("team")
+    ally, enemy = [], []
+    for op in game.get("players", []):
+        if op["player_number"] == pnum:
+            continue
+        d = _dist(mine, settle_tc_xy(game, op["player_number"]))
+        if d is None:
+            continue
+        (ally if op.get("team") == my_team else enemy).append(d)
+    alld = ally + enemy
+    return (min(ally) if ally else None, min(enemy) if enemy else None, min(alld) if alld else None)
+
+
+def spawn_metric(game, pnum, key):
+    """Read a stored per-player spawn metric (spawn_gold_d / spawn_stone_d / spawn_food_d / vil_perim)."""
+    p = player(game, pnum)
+    return p.get(key) if p else None
+
+
+def is_valid_luck_game(game):
+    """True for an in-scope luck game: map is Nomad, 6 or 8 players, and a balanced recorded result
+    (winners == half the players). Drops non-Nomad, odd sizes, and games with no/partial winner."""
+    mp = (game.get("match") or {}).get("map", "")
+    players = game.get("players", [])
+    n = len(players)
+    if mp not in LUCK_MAPS or n not in (6, 8):
+        return False
+    winners = sum(1 for p in players if p.get("winner") in (1, True))
+    return winners * 2 == n
