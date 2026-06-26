@@ -438,12 +438,18 @@ async def handle_strategies(request):
 	for r in (await db.fetchall("SELECT identity, games, wins, losses FROM cls_player_totals") or []):
 		totals[r["identity"]] = {"games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
 		                         "losses": int(r["losses"] or 0)}
+	# "categorized" feeds the STRATEGIES "mixed / uncategorized" remainder, so it must count only
+	# strategy keys — luck keys (esp. luck_baseline, which fires every valid game) would otherwise
+	# mark nearly every game as categorized and collapse the remainder to ~0.
+	luck_keys = [k for k, cc in REGISTRY.items() if getattr(cc, "category", "strategy") == "luck"]
+	cat_filter = ("WHERE `key` NOT IN ({}) ".format(",".join(["%s"] * len(luck_keys)))
+	              if luck_keys else "")
 	categorized = {}
 	for r in (await db.fetchall(
 			"SELECT identity, COUNT(DISTINCT aoe2_match_id) AS g, "
 			"COUNT(DISTINCT IF(winner=1, aoe2_match_id, NULL)) AS w, "
 			"COUNT(DISTINCT IF(winner=0, aoe2_match_id, NULL)) AS l "
-			"FROM cls_results GROUP BY identity") or []):
+			"FROM cls_results " + cat_filter + "GROUP BY identity", luck_keys) or []):
 		categorized[r["identity"]] = {"games": int(r["g"] or 0), "wins": int(r["w"] or 0),
 		                              "losses": int(r["l"] or 0)}
 
