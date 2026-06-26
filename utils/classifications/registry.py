@@ -14,6 +14,7 @@ from utils.classifications.defs import (
     late_knight,
     late_ram,
     late_unique,
+    luck,
     maa_rush,
     ram_push,
     safe_castle,
@@ -38,6 +39,6 @@ _ALL = [
     late_unique.CLASSIFICATION,
     late_ram.CLASSIFICATION,
     boom_to_imp.CLASSIFICATION,
-]
+] + luck.CLASSIFICATIONS
 
 REGISTRY = {c.key: c for c in _ALL}

@@ -81,7 +81,7 @@ def _baseline():
                "stone_dist": gd.spawn_metric(game, pnum, "spawn_stone_d"),
                "food_dist": gd.spawn_metric(game, pnum, "spawn_food_d"),
                "vil_perimeter": gd.spawn_metric(game, pnum, "vil_perim")}
-        return {k: round(v, 1) for k, v in out.items() if v is not None}
+        return {k: (round(v, 1) if v is not None else None) for k, v in out.items()}
 
     return Classification(
         key="luck_baseline", title="All valid spawns (baseline)", version=1, category="luck",
