@@ -748,7 +748,41 @@ def _avg_impact(impacts, key):
 	return round(sum(vals) / len(vals), 1) if vals else None
 
 
-def _player_impact_profile(impacts):
+def _style_scout_report(style, top_tags, best_civs, duration_edges, has_impacts):
+	if not has_impacts:
+		return {
+			"headline": "Replay sample needed",
+			"description": "No parsed replay sample yet, so style read is unavailable.",
+			"traits": [],
+		}
+	openers = {
+		"Pressure player": "Tempo-forward profile: creates map space through army presence before full boom.",
+		"Economy carry": "Boom-and-carry profile: scales well when allowed to build economy and take late fights.",
+		"Timing specialist": "Timing-window profile: impact spikes around age-up or upgrade windows.",
+		"Recovery anchor": "Stabilizer profile: absorbs rough starts and rebuilds into useful team position.",
+		"High-impact flex": "Flex profile: contributes across army, economy, timing, and recovery lanes.",
+		"Balanced flex": "Balanced team profile: no single lane dominates, but output stays steady.",
+	}
+	parts = [openers.get(style, openers["Balanced flex"])]
+	traits = [t["tag"] for t in top_tags[:3]]
+	if best_civs:
+		civ_names = ", ".join(c["civ"] for c in best_civs[:3])
+		parts.append(f"Best civ results: {civ_names}.")
+		traits.extend(f"{c['civ']} comfort pick" for c in best_civs[:2])
+	if duration_edges:
+		buckets = ", ".join(d["bucket"] for d in duration_edges[:2])
+		parts.append(f"Strongest match window: {buckets}.")
+		traits.extend(f"{d['bucket']} window" for d in duration_edges[:1])
+	if top_tags:
+		parts.append("Recurring tags: " + ", ".join(t["tag"] for t in top_tags[:3]) + ".")
+	return {
+		"headline": style,
+		"description": " ".join(parts),
+		"traits": traits[:6],
+	}
+
+
+def _player_impact_profile(impacts, civs=None, durations=None):
 	impacts = list(impacts or [])
 	if not impacts:
 		return {
@@ -761,6 +795,9 @@ def _player_impact_profile(impacts):
 			"avg_timing": None,
 			"avg_recovery": None,
 			"top_tags": [],
+			"best_civs": [],
+			"duration_edges": [],
+			"scout_report": _style_scout_report("No replay style", [], [], [], False),
 		}
 
 	tag_counts = {}
@@ -771,6 +808,24 @@ def _player_impact_profile(impacts):
 		{"tag": tag, "count": count, "rate": round(count * 100 / len(impacts), 1)}
 		for tag, count in sorted(tag_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
 	]
+	best_civs = []
+	for row in civs or []:
+		games = int(row.get("games") or 0)
+		if games < 3:
+			continue
+		winrate = _winrate(row.get("wins"), row.get("losses"))
+		if winrate is not None:
+			best_civs.append({"civ": row["civ"], "games": games, "winrate": winrate})
+	best_civs = sorted(best_civs, key=lambda r: (-r["winrate"], -r["games"], r["civ"]))[:3]
+	duration_edges = []
+	for row in durations or []:
+		games = int(row.get("games") or 0)
+		if games < 3:
+			continue
+		winrate = _winrate(row.get("wins"), row.get("losses"))
+		if winrate is not None:
+			duration_edges.append({"bucket": row["bucket"], "games": games, "winrate": winrate})
+	duration_edges = sorted(duration_edges, key=lambda r: (-r["winrate"], -r["games"], r["bucket"]))[:2]
 	avg_impact = _avg_impact(impacts, "impact_score")
 	avg_army = _avg_impact(impacts, "army_score")
 	avg_eco = _avg_impact(impacts, "eco_score")
@@ -809,6 +864,9 @@ def _player_impact_profile(impacts):
 		"avg_timing": avg_timing,
 		"avg_recovery": avg_recovery,
 		"top_tags": top_tags,
+		"best_civs": best_civs,
+		"duration_edges": duration_edges,
+		"scout_report": _style_scout_report(style, top_tags, best_civs, duration_edges, True),
 	}
 
 
@@ -1226,7 +1284,7 @@ async def handle_player_stats(request):
 		"WHERE pm.user_id=%s" + at_clause,
 		base_args)
 	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
-	impact_profile = _player_impact_profile(period_impacts.values())
+	impact_profile = _player_impact_profile(period_impacts.values(), civs, durations)
 	match_civs = {}
 	opp_match_civs = {}
 	if matches:
