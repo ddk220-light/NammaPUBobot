@@ -1090,7 +1090,8 @@ async def _match_stats_player(user_id, period):
 		"JOIN qc_player_matches mate ON mate.match_id=pm.match_id AND mate.channel_id=pm.channel_id "
 		"AND mate.team=pm.team AND mate.user_id<>pm.user_id" + _visible_user_clause("mate") +
 		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
-		" GROUP BY mate.user_id HAVING games >= 2 ORDER BY wins DESC, games DESC LIMIT 8",
+		" GROUP BY mate.user_id HAVING games >= 2 AND wins + losses > 0 "
+		"ORDER BY wins / NULLIF(wins + losses, 0) DESC, games DESC, wins DESC LIMIT 8",
 		[user_id, *params])
 	opponents = await db.fetchall(
 		"SELECT opp.user_id, MAX(opp.nick) AS nick, COUNT(*) AS games, "
@@ -1100,7 +1101,8 @@ async def _match_stats_player(user_id, period):
 		"JOIN qc_player_matches opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
 		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
 		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
-		" GROUP BY opp.user_id HAVING games >= 2 ORDER BY losses DESC, games DESC LIMIT 8",
+		" GROUP BY opp.user_id HAVING games >= 2 AND wins + losses > 0 "
+		"ORDER BY wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC LIMIT 8",
 		[user_id, *params])
 	recent = await db.fetchall(
 		"SELECT m.match_id, m.queue_name, m.at, m.ranked, m.winner, m.maps, pm.team "
@@ -1291,7 +1293,8 @@ async def handle_player_stats(request):
 		"JOIN qc_player_matches ally ON ally.match_id=pm.match_id AND ally.channel_id=pm.channel_id "
 		"AND ally.team=pm.team AND ally.user_id<>pm.user_id" + _visible_user_clause("ally") +
 		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
-		" GROUP BY ally.user_id HAVING games >= 1 ORDER BY games DESC, wins DESC LIMIT 12",
+		" GROUP BY ally.user_id HAVING games >= 1 AND wins + losses > 0 "
+		"ORDER BY wins / NULLIF(wins + losses, 0) DESC, games DESC, wins DESC LIMIT 12",
 		base_args)
 	opponents = await db.fetchall(
 		"SELECT opp.user_id, MAX(opp.nick) AS nick, COUNT(*) AS games, "
@@ -1301,7 +1304,8 @@ async def handle_player_stats(request):
 		"JOIN qc_player_matches opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
 		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
 		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
-		" GROUP BY opp.user_id HAVING games >= 1 ORDER BY games DESC, wins DESC LIMIT 12",
+		" GROUP BY opp.user_id HAVING games >= 1 AND wins + losses > 0 "
+		"ORDER BY wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC LIMIT 12",
 		base_args)
 	durations = await db.fetchall(
 		"SELECT CASE "
