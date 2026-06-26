@@ -654,6 +654,9 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <div class="tb-link" onclick="showPage('strategies')" style="cursor:pointer;">
     <span>Strategies</span>
   </div>
+  <div class="tb-link" onclick="showPage('luck')" style="cursor:pointer;">
+    <span>Luck</span>
+  </div>
   <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
     <span>Civ Stats</span>
   </div>
@@ -705,6 +708,30 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         </table>
       </div>
       <footer>Facts only &mdash; derived from offline replay analysis of pickup matches.</footer>
+    </div>
+  </div>
+
+  <!-- Luck Page (spawn / map factors) -->
+  <div class="page" id="page-luck">
+    <div class="stats-container">
+      <header>
+        <h1>Luck Insights</h1>
+        <div class="subtitle">Map-given spawn factors &mdash; settle position, nearby resources &amp; villager spread vs win rate (baseline 50%)</div>
+      </header>
+      <div class="strat-controls">
+        <div class="strat-toggle">
+          <button id="luck-tab-total" class="strat-tab selected" onclick="setLuckView('total')">By factor</button>
+          <button id="luck-tab-player" class="strat-tab" onclick="setLuckView('player')">By player</button>
+        </div>
+        <select id="luck-player-select" style="display:none" onchange="onLuckPlayer(this.value)"></select>
+      </div>
+      <div class="table-wrap">
+        <table class="stats-table" id="luck-table">
+          <thead><tr id="luck-header"></tr></thead>
+          <tbody id="luck-body"><tr><td class="loading">Loading luck factors&hellip;</td></tr></tbody>
+        </table>
+      </div>
+      <footer>Facts only &mdash; Nomad 4v4 player-games; 50% baseline by construction.</footer>
     </div>
   </div>
 
@@ -831,6 +858,7 @@ function showPage(page) {
   var p = document.getElementById('page-' + page);
   if (p) p.classList.add('active');
   if (page === 'dashboard') loadDashboard();
+  if (page === 'luck') initLuck();
   // Show/hide guild nav + menu for dashboard only
   var isDash = page === 'dashboard';
   document.getElementById('guild_nav').style.display = isDash ? 'flex' : 'none';
@@ -1012,7 +1040,7 @@ function renderStrategies() { if (stratView === 'total') renderStratTotal(); els
 function renderStratTotal() {
   var cols = [['title', 'Strategy'], ['phase', 'Phase'], ['games', 'Games'], ['players', 'Players'], ['winrate', 'Win %']];
   document.getElementById('strat-header').innerHTML = cols.map(function (c) { return '<th onclick="stratSortBy(\'' + c[0] + '\')">' + c[1] + '</th>'; }).join('') + '<th>Top civs</th><th>Top players (win%)</th><th>Condition</th>';
-  var rows = stratData.slice().sort(function (a, b) {
+  var rows = stratData.filter(function (s) { return s.category !== 'luck'; }).sort(function (a, b) {
     var va = a[stratSort.col], vb = b[stratSort.col];
     if (typeof va === 'string') return stratSort.asc ? (va || '').localeCompare(vb || '') : (vb || '').localeCompare(va || '');
     va = va == null ? -1 : va; vb = vb == null ? -1 : vb;
@@ -1036,6 +1064,7 @@ function renderStratPlayer() {
   var pctCell = function (g) { return '<td class="games">' + (totGames ? Math.round(100 * g / totGames) + '%' : '-') + '</td>'; };
   var rows = [];
   stratData.forEach(function (s) {
+    if (s.category === 'luck') return;
     var p = (s.roster || []).find(function (x) { return x.player === stratPlayer; });
     if (p) rows.push({ title: s.title, phase: s.phase, games: p.games, wins: p.wins, winrate: p.winrate });
   });
@@ -1053,6 +1082,77 @@ function renderStratPlayer() {
     }
   }
   document.getElementById('strat-body').innerHTML = html || '<tr><td colspan="6" class="loading">No data for this player.</td></tr>';
+}
+
+/* ─── Luck Insights (spawn / map factors) ─── */
+var luckView = 'total', luckPlayer = '';
+
+function luckRows() { return stratData.filter(function (s) { return s.category === 'luck' && s.key !== 'luck_baseline'; }); }
+function luckBaseline() { return stratData.find(function (s) { return s.key === 'luck_baseline'; }); }
+
+async function initLuck() {
+  if (!stratData.length) { try { await initStrategies(); } catch (e) {} }
+  buildLuckPlayerSelect();
+  renderLuck();
+}
+
+function buildLuckPlayerSelect() {
+  var base = luckBaseline();
+  var players = base ? (base.roster || []).slice().sort(function (a, b) { return b.games - a.games; }).map(function (p) { return p.player; }) : [];
+  if (!luckPlayer && players.length) luckPlayer = players[0];
+  document.getElementById('luck-player-select').innerHTML = players.map(function (p) {
+    return '<option value="' + esc(p) + '"' + (p === luckPlayer ? ' selected' : '') + '>' + esc(p) + '</option>';
+  }).join('');
+}
+
+function setLuckView(v) {
+  luckView = v;
+  document.getElementById('luck-tab-total').classList.toggle('selected', v === 'total');
+  document.getElementById('luck-tab-player').classList.toggle('selected', v === 'player');
+  document.getElementById('luck-player-select').style.display = v === 'player' ? '' : 'none';
+  renderLuck();
+}
+
+function onLuckPlayer(p) { luckPlayer = p; renderLuck(); }
+
+function deltaCell(wr) {
+  if (wr == null) return '<td>-</td>';
+  var d = wr - 50, cls = d > 0 ? 'wr wr-high' : d < 0 ? 'wr wr-low' : 'wr wr-mid';
+  return '<td class="' + cls + '">' + (d > 0 ? '+' : '') + d + '</td>';
+}
+
+function renderLuck() { if (luckView === 'total') renderLuckTotal(); else renderLuckPlayer(); }
+
+function renderLuckTotal() {
+  document.getElementById('luck-header').innerHTML =
+    '<th>Factor</th><th>Games</th><th>% of games</th><th>Win %</th><th>&Delta; vs 50</th><th>Condition</th>';
+  var base = luckBaseline(), N = base ? base.games : 0;
+  var rows = luckRows().slice().sort(function (a, b) {
+    return Math.abs((b.winrate == null ? 50 : b.winrate) - 50) - Math.abs((a.winrate == null ? 50 : a.winrate) - 50);
+  });
+  document.getElementById('luck-body').innerHTML = rows.map(function (s) {
+    var pct = N ? Math.round(100 * s.games / N) + '%' : '-';
+    return '<tr><td>' + esc(s.title) + '</td><td class="games">' + s.games + '</td><td class="games">' + pct + '</td>'
+      + wrPctCell(s.winrate) + deltaCell(s.winrate)
+      + '<td class="strat-cond">' + esc(s.condition || '') + '</td></tr>';
+  }).join('') || '<tr><td colspan="6" class="loading">No luck data yet.</td></tr>';
+}
+
+function renderLuckPlayer() {
+  document.getElementById('luck-header').innerHTML =
+    '<th>Factor</th><th>Games</th><th>% of luck games</th><th>Win %</th><th>&Delta; vs 50</th>';
+  var base = luckBaseline();
+  var pb = base ? (base.roster || []).find(function (x) { return x.player === luckPlayer; }) : null;
+  var N = pb ? pb.games : 0;
+  var rows = luckRows().map(function (s) {
+    var p = (s.roster || []).find(function (x) { return x.player === luckPlayer; });
+    return { title: s.title, games: p ? p.games : 0, winrate: p ? p.winrate : null };
+  }).sort(function (a, b) { return b.games - a.games; });
+  document.getElementById('luck-body').innerHTML = rows.map(function (r) {
+    var pct = N ? Math.round(100 * r.games / N) + '%' : '-';
+    return '<tr><td>' + esc(r.title) + '</td><td class="games">' + r.games + '</td><td class="games">' + pct + '</td>'
+      + wrPctCell(r.winrate) + deltaCell(r.winrate) + '</tr>';
+  }).join('') || '<tr><td colspan="5" class="loading">No data for this player.</td></tr>';
 }
 
 /* ─── Dashboard ─── */

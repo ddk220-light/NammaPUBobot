@@ -425,6 +425,7 @@ async def handle_strategies(request):
 		top_civs = [civ for civ, _ in sorted(civ_by_key.get(key, []), key=lambda x: -x[1])[:3]]
 		strategies.append({
 			"key": key, "title": c.title, "phase": _STRATEGY_PHASE.get(key, ""),
+			"category": getattr(c, "category", "strategy"),
 			"condition": c.trigger_spec, "games": tg, "players": len(roster),
 			"wins": tw, "losses": tl,
 			"winrate": round(100 * tw / (tw + tl)) if (tw + tl) else None,
