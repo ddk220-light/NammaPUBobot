@@ -1249,6 +1249,14 @@ function fmtGain(v) {
   v = Number(v) || 0;
   return (v > 0 ? '+' : '') + v;
 }
+function fmtImpact(i, key) {
+  return i && i[key] !== null && i[key] !== undefined ? String(i[key]) : '-';
+}
+function impactName(i) { return i && i.nick ? esc(i.nick) : '-'; }
+function impactTags(i) {
+  var tags = i && i.impact_tags ? i.impact_tags : [];
+  return tags.length ? tags.map(esc).join(', ') : '-';
+}
 function gainClass(v) {
   v = Number(v) || 0;
   return v > 0 ? 'gain-pos' : v < 0 ? 'gain-neg' : '';
@@ -1510,6 +1518,10 @@ function renderMatchTables() {
       { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
       { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
       { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+      { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
+      { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
+      { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
     ], matchData.recent || [], 'No recent matches.');
   } else {
@@ -1524,7 +1536,17 @@ function renderMatchTables() {
       { key: 'rating_delta', label: 'Gain/Loss', type: 'number', className: function (r) { return 'num ' + gainClass(r.rating_delta); }, render: function (r) { return fmtGain(r.rating_delta); } },
       { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
     ], matchData.leaderboard || [], 'No player data.');
-    document.getElementById('match-recent-panel').innerHTML = '<h2>Recent matches</h2><div class="empty-panel">Select a player to see recent matches and form.</div>';
+    document.getElementById('match-recent-panel').innerHTML = sortableTable('match-recent-all', 'Recent matches', [
+      { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
+      { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+      { key: 'impact_player', label: 'Top impact', value: function (r) { return r.impact ? r.impact.nick : ''; }, render: function (r) { return impactName(r.impact); } },
+      { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
+      { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
+      { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
+      { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
+      { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
+    ], matchData.recent || [], 'No recent matches.');
   }
 }
 
@@ -1659,6 +1681,10 @@ function renderPlayerDetail(d) {
     { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
     { key: 'opponent_civs', label: 'Opponent civs', render: function (r) { return esc(r.opponent_civs || '-'); } },
     { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+    { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
+    { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
+    { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
+    { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
     { key: 'duration_s', label: 'Duration', type: 'number', className: 'num', render: function (r) { return fmtDuration(r.duration_s); } },
     { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
