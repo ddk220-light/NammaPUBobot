@@ -277,9 +277,11 @@ def extract_match(path, resolved, date_map=None):
                 relo += 1
 
         settle_builds = tc_xy[pnum]
-        settle = ({"x": min(settle_builds, key=lambda b: b["t_s"])["x"],
-                   "y": min(settle_builds, key=lambda b: b["t_s"])["y"]} if settle_builds
-                  else start_tc_xy.get(pnum))
+        if settle_builds:
+            _first_build = min(settle_builds, key=lambda b: b["t_s"])
+            settle = {"x": _first_build["x"], "y": _first_build["y"]}
+        else:
+            settle = start_tc_xy.get(pnum)
         spos = (settle["x"], settle["y"]) if settle else None
 
         tid = p.team_id

@@ -8,7 +8,7 @@ LUCK_KEYS = {
 
 
 def test_all_luck_keys_registered_with_category_luck():
-    assert LUCK_KEYS <= set(REGISTRY)
+    assert set(REGISTRY) >= LUCK_KEYS
     for k in LUCK_KEYS:
         assert REGISTRY[k].category == "luck"
 
