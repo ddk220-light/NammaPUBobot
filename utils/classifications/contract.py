@@ -21,4 +21,5 @@ class Classification:
     trigger: Callable                  # (game, pnum) -> bool   (pure)
     factors: Callable                  # (game, pnum) -> dict[str, float|None]  (pure)
     status: str = "active"             # 'active' or 'draft'
+    category: str = "strategy"         # 'strategy' (default) or 'luck' (map/spawn factors)
     factor_specs: list = field(default_factory=list)  # ordered [{metric,label,kind}] for reports
