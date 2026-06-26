@@ -526,6 +526,16 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   font-weight: 600; transition: background 0.15s, color 0.15s;
 }
 .period-tab:hover, .period-tab.selected { background: #376ace; color: white; border-color: #376ace; }
+.filter-control {
+  background: #2c3034; color: #dcddde; border: 1px solid #484c54;
+  padding: 7px 10px; border-radius: 6px; font-weight: 600; min-height: 38px;
+}
+.filter-control:focus { outline: none; border-color: #5b8cee; }
+.filter-label {
+  display: flex; align-items: center; gap: 7px; color: #969aa2;
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.filter-input { width: 82px; }
 .player-picker { position: relative; min-width: 300px; max-width: 420px; }
 .player-picker-button {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
@@ -911,12 +921,20 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         <div class="subtitle">Slice by duration, player, and civilization</div>
       </header>
       <div class="match-controls">
-        <div class="period-tabs">
-          <button class="period-tab selected" data-lb-period="day" onclick="setLeaderboardPeriod('day')">Today</button>
-          <button class="period-tab" data-lb-period="week" onclick="setLeaderboardPeriod('week')">7 days</button>
-          <button class="period-tab" data-lb-period="month" onclick="setLeaderboardPeriod('month')">30 days</button>
-          <button class="period-tab" data-lb-period="all" onclick="setLeaderboardPeriod('all')">All</button>
-        </div>
+        <label class="filter-label">Duration
+          <select id="leaderboard-period-select" class="filter-control" onchange="setLeaderboardPeriod(this.value)">
+            <option value="all" selected>All time</option>
+            <option value="year">1 year</option>
+            <option value="month6">6 months</option>
+            <option value="month3">3 months</option>
+            <option value="month">1 month</option>
+            <option value="week">1 week</option>
+          </select>
+        </label>
+        <label class="filter-label">Min matches
+          <input id="leaderboard-min-matches" class="filter-control filter-input" type="number" min="0" step="1" value="0"
+            oninput="setLeaderboardMinMatches(this.value)">
+        </label>
         <div class="period-tabs">
           <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
           <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
@@ -955,12 +973,16 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         <div class="subtitle">Player-filtered form, win rates, civs, maps, teammates and recent games</div>
       </header>
       <div class="match-controls">
-        <div class="period-tabs">
-          <button class="period-tab" data-period="day" onclick="setMatchPeriod('day')">Today</button>
-          <button class="period-tab selected" data-period="week" onclick="setMatchPeriod('week')">7 days</button>
-          <button class="period-tab" data-period="month" onclick="setMatchPeriod('month')">30 days</button>
-          <button class="period-tab" data-period="all" onclick="setMatchPeriod('all')">All</button>
-        </div>
+        <label class="filter-label">Duration
+          <select id="match-period-select" class="filter-control" onchange="setMatchPeriod(this.value)">
+            <option value="all" selected>All time</option>
+            <option value="year">1 year</option>
+            <option value="month6">6 months</option>
+            <option value="month3">3 months</option>
+            <option value="month">1 month</option>
+            <option value="week">1 week</option>
+          </select>
+        </label>
         <div class="player-picker" id="match-player-picker">
           <button class="player-picker-button" type="button" onclick="toggleMatchPlayerPicker()">
             <span id="match-player-current" class="player-picker-current"></span>
@@ -1054,9 +1076,13 @@ var MIN_ANOMALY_GAMES = 20, ANOMALY_GAP = 0.15;
 var civData = [], sortCol = 'civ', sortAsc = true;
 
 // Match stats
-var matchData = null, matchPeriod = 'week', matchPlayer = 'all';
-var leaderboardData = null, leaderboardPeriod = 'day', leaderboardMode = 'players', leaderboardPlayer = null;
-var playerDetailData = null, miniSort = {};
+var matchData = null, matchPeriod = 'all', matchPlayer = 'all';
+var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
+var leaderboardMinMatches = 0;
+var playerDetailData = null, miniSort = {
+  'leader-players': { key: 'rating_end', asc: false },
+  'match-player-board': { key: 'rating_end', asc: false }
+};
 
 // Dashboard
 var dashGuilds = [], dashChannels = [], dashQueues = [];
@@ -1303,11 +1329,20 @@ function shortBucket(b) {
   var parts = String(b || '').split('-');
   return parts.length === 3 ? parts[1] + '/' + parts[2] : String(b || '');
 }
+function periodLabel(p) {
+  return {
+    all: 'all time',
+    year: '1 year',
+    month6: '6 months',
+    month3: '3 months',
+    month: '1 month',
+    week: '1 week'
+  }[p] || p;
+}
 function setMatchPeriod(p) {
   matchPeriod = p;
-  document.querySelectorAll('[data-period]').forEach(function (b) {
-    b.classList.toggle('selected', b.dataset.period === p);
-  });
+  var sel = document.getElementById('match-period-select');
+  if (sel) sel.value = p;
   loadMatchStats();
 }
 function setMatchPlayer(p) { matchPlayer = p || 'all'; loadMatchStats(); }
@@ -1445,7 +1480,7 @@ function renderMatchSummary() {
       card('Matches played', s.games || 0, fmtAgo(s.last_match_at)),
       card('Ranked', s.ranked_games || 0, 'reported results'),
       card('Players', s.players || 0, 'active in period'),
-      card('Scope', 'All players', matchPeriod === 'all' ? 'full history' : matchPeriod)
+      card('Scope', 'All players', periodLabel(matchPeriod))
     ].join('');
   }
 }
@@ -1594,11 +1629,17 @@ async function initLeaderboard() {
 
 function setLeaderboardPeriod(p) {
   leaderboardPeriod = p;
-  document.querySelectorAll('[data-lb-period]').forEach(function (b) {
-    b.classList.toggle('selected', b.dataset.lbPeriod === p);
-  });
+  var sel = document.getElementById('leaderboard-period-select');
+  if (sel) sel.value = p;
   loadLeaderboard();
   if (leaderboardPlayer) loadPlayerDetail(leaderboardPlayer);
+}
+
+function setLeaderboardMinMatches(v) {
+  leaderboardMinMatches = Math.max(0, parseInt(v, 10) || 0);
+  var input = document.getElementById('leaderboard-min-matches');
+  if (input && String(input.value) !== String(leaderboardMinMatches)) input.value = leaderboardMinMatches;
+  renderLeaderboard();
 }
 
 function setLeaderboardMode(m) {
@@ -1626,13 +1667,15 @@ async function loadLeaderboard() {
 }
 
 function renderLeaderboard() {
-  var rows = (leaderboardData.rows || []).map(function (r, i) {
+  var rows = (leaderboardData.rows || []).filter(function (r) {
+    return Number(r.games || 0) >= leaderboardMinMatches;
+  }).map(function (r, i) {
     r.rank = i + 1;
     return r;
   });
   if (leaderboardMode === 'civs') {
     document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-civs', 'Civilization leaderboard', [
-      { key: 'rank', label: '#', type: 'number', className: 'num' },
+      { key: 'rank', label: '#', type: 'number', className: 'num', render: function (r, i) { return String(i + 1); } },
       { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
       { key: 'games', label: 'Matches', type: 'number', className: 'num' },
       { key: 'wins', label: 'Won', type: 'number', className: 'num' },
@@ -1642,7 +1685,7 @@ function renderLeaderboard() {
     return;
   }
   document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-players', 'Player leaderboard', [
-    { key: 'rank', label: '#', type: 'number', className: 'num' },
+    { key: 'rank', label: '#', type: 'number', className: 'num', render: function (r, i) { return String(i + 1); } },
     { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
     { key: 'rating', label: 'Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating); } },
     { key: 'rating_start', label: 'Start Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_start); } },

@@ -23,11 +23,14 @@ import bot
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 HTML_PATH = os.path.join(os.path.dirname(__file__), 'web_page.html')
 MIN_GAMES = 50
+DEFAULT_STATS_PERIOD = "all"
 MATCH_STAT_PERIODS = {
-	"day": 1,
-	"week": 7,
-	"month": 30,
 	"all": None,
+	"year": 365,
+	"month6": 183,
+	"month3": 92,
+	"month": 30,
+	"week": 7,
 }
 
 # --- Session store (Layer 5: migrated from in-memory dicts to MySQL) ---
@@ -469,7 +472,7 @@ async def handle_strategies(request):
 # ─── Match stats API (public) ───
 
 def _period_start(period):
-	days = MATCH_STAT_PERIODS.get(period, MATCH_STAT_PERIODS["week"])
+	days = MATCH_STAT_PERIODS.get(period, MATCH_STAT_PERIODS[DEFAULT_STATS_PERIOD])
 	if days is None:
 		return None
 	return int(time.time()) - days * 86400
@@ -952,7 +955,7 @@ async def _match_stats_overall(period):
 		"FROM qc_player_matches pm JOIN qc_matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"WHERE 1=1" + _visible_user_clause("pm") + at_clause +
-		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 50",
+		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 500",
 		params)
 	ratings = await _rating_deltas(period, [r["user_id"] for r in board or []])
 	civs = await db.fetchall(
@@ -1151,9 +1154,9 @@ async def _match_stats_player(user_id, period):
 
 
 async def handle_match_stats(request):
-	period = request.query.get("period", "week")
+	period = request.query.get("period", DEFAULT_STATS_PERIOD)
 	if period not in MATCH_STAT_PERIODS:
-		period = "week"
+		period = DEFAULT_STATS_PERIOD
 	player_raw = request.query.get("player_id") or ""
 	players = await _match_stat_players()
 	payload = {"period": period, "players": players, "scope": "overall"}
@@ -1173,9 +1176,9 @@ async def handle_match_stats(request):
 
 
 async def handle_leaderboard(request):
-	period = request.query.get("period", "week")
+	period = request.query.get("period", DEFAULT_STATS_PERIOD)
 	if period not in MATCH_STAT_PERIODS:
-		period = "week"
+		period = DEFAULT_STATS_PERIOD
 	mode = request.query.get("mode", "players")
 	at_clause, params = _period_filter(period)
 	if mode == "civs":
@@ -1183,7 +1186,7 @@ async def handle_leaderboard(request):
 			"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
 			"FROM qc_match_civs WHERE " + _linked_civ_clause() + " AND civ IS NOT NULL AND civ<>''"
 			+ (" AND at >= %s" if params else "") +
-			" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 100",
+			" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 500",
 			params)
 		return web.json_response({
 			"period": period,
@@ -1203,7 +1206,7 @@ async def handle_leaderboard(request):
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"LEFT JOIN qc_players p ON p.user_id=pm.user_id AND p.channel_id=pm.channel_id "
 		"WHERE 1=1" + _visible_user_clause("pm") + at_clause +
-		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 100",
+		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 500",
 		params)
 	ratings = await _rating_deltas(period, [r["user_id"] for r in rows or []])
 	return web.json_response({
@@ -1230,9 +1233,9 @@ async def handle_leaderboard(request):
 
 
 async def handle_player_stats(request):
-	period = request.query.get("period", "week")
+	period = request.query.get("period", DEFAULT_STATS_PERIOD)
 	if period not in MATCH_STAT_PERIODS:
-		period = "week"
+		period = DEFAULT_STATS_PERIOD
 	try:
 		user_id = int(request.query.get("player_id") or "0")
 	except ValueError:
