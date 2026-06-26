@@ -1378,7 +1378,7 @@ function renderMatchSummary() {
   if (matchData.scope === 'player') {
     document.getElementById('match-summary').innerHTML = [
       selectedPlayerCard(s),
-      card('Games', s.games || 0, (s.wins || 0) + 'W ' + (s.losses || 0) + 'L ' + (s.draws || 0) + 'D'),
+      card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
@@ -1386,7 +1386,7 @@ function renderMatchSummary() {
     ].join('');
   } else {
     document.getElementById('match-summary').innerHTML = [
-      card('Matches', s.games || 0, fmtAgo(s.last_match_at)),
+      card('Matches played', s.games || 0, fmtAgo(s.last_match_at)),
       card('Ranked', s.ranked_games || 0, 'reported results'),
       card('Players', s.players || 0, 'active in period'),
       card('Scope', 'All players', matchPeriod === 'all' ? 'full history' : matchPeriod)
@@ -1418,34 +1418,34 @@ function table(title, headers, rows, empty) {
 
 function renderMatchTables() {
   var civRows = (matchData.civs || []).map(function (r) {
-    return '<tr><td>' + esc(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '-' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+    return '<tr><td>' + esc(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
   });
-  document.getElementById('match-civs-panel').innerHTML = table('Best civs', ['Civ', 'Games', 'W-L', 'Win %'], civRows, 'No civ data yet.');
+  document.getElementById('match-civs-panel').innerHTML = table('Best civs', ['Civ', 'Matches', 'Won', 'Lost', 'Win %'], civRows, 'No civ data yet.');
 
   var mapRows = (matchData.maps || []).map(function (r) {
     return '<tr><td>' + esc(r.map) + '</td><td class="num">' + r.games + '</td></tr>';
   });
-  document.getElementById('match-maps-panel').innerHTML = table('Maps', ['Map', 'Games'], mapRows, 'No map data yet.');
+  document.getElementById('match-maps-panel').innerHTML = table('Maps', ['Map', 'Matches'], mapRows, 'No map data yet.');
 
   if (matchData.scope === 'player') {
     var mates = (matchData.teammates || []).map(function (r) {
-      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '-' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
     });
     var opps = (matchData.opponents || []).map(function (r) {
-      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '-' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
     });
     document.getElementById('match-primary-panel').innerHTML =
-      table('Best teammates', ['Player', 'Games', 'W-L', 'Win %'], mates, 'No teammate sample yet.')
-      + table('Tough opponents', ['Player', 'Games', 'W-L', 'Win %'], opps, 'No opponent sample yet.');
+      table('Best teammates', ['Player', 'Matches', 'Won', 'Lost', 'Win %'], mates, 'No teammate sample yet.')
+      + table('Tough opponents', ['Player', 'Matches', 'Won', 'Lost', 'Win %'], opps, 'No opponent sample yet.');
     var rec = (matchData.recent || []).map(function (r) {
       return '<tr><td class="result-' + esc(r.result) + '">' + esc(r.result) + '</td><td>' + esc(r.queue || '-') + '</td><td>' + civIcon(r.civ) + '</td><td>' + esc(r.map || '-') + '</td><td class="num">#' + esc(r.match_id) + '</td></tr>';
     });
     document.getElementById('match-recent-panel').innerHTML = table('Recent matches', ['R', 'Queue', 'Civ', 'Map', 'ID'], rec, 'No recent matches.');
   } else {
     var board = (matchData.leaderboard || []).map(function (r) {
-      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '-' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+      return '<tr><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num">' + r.draws + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
     });
-    document.getElementById('match-primary-panel').innerHTML = table('Player leaderboard', ['Player', 'Games', 'W-L', 'Win %'], board, 'No player data.');
+    document.getElementById('match-primary-panel').innerHTML = table('Player leaderboard', ['Player', 'Matches', 'Won', 'Lost', 'Drawn', 'Win %'], board, 'No player data.');
     document.getElementById('match-recent-panel').innerHTML = '<h2>Recent matches</h2><div class="empty-panel">Select a player to see recent matches and form.</div>';
   }
 }
@@ -1497,15 +1497,15 @@ function renderLeaderboard() {
   var rows = leaderboardData.rows || [];
   if (leaderboardMode === 'civs') {
     var civRows = rows.map(function (r, i) {
-      return '<tr><td class="num">' + (i + 1) + '</td><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '-' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+      return '<tr><td class="num">' + (i + 1) + '</td><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
     });
-    document.getElementById('leaderboard-panel').innerHTML = table('Civilization leaderboard', ['#', 'Civ', 'Games', 'W-L', 'Win %'], civRows, 'No civ data.');
+    document.getElementById('leaderboard-panel').innerHTML = table('Civilization leaderboard', ['#', 'Civ', 'Matches', 'Won', 'Lost', 'Win %'], civRows, 'No civ data.');
     return;
   }
   var playerRows = rows.map(function (r, i) {
-    return '<tr class="leader-row" onclick="loadPlayerDetail(\'' + esc(r.user_id) + '\')"><td class="num">' + (i + 1) + '</td><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + (r.rating || '-') + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '-' + r.losses + '-' + r.draws + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+    return '<tr class="leader-row" onclick="loadPlayerDetail(\'' + esc(r.user_id) + '\')"><td class="num">' + (i + 1) + '</td><td>' + playerCell(r.nick, r.avatar) + '</td><td class="num">' + (r.rating || '-') + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num">' + r.draws + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
   });
-  document.getElementById('leaderboard-panel').innerHTML = table('Player leaderboard', ['#', 'Player', 'Elo', 'Games', 'W-L-D', 'Win %'], playerRows, 'No player data.');
+  document.getElementById('leaderboard-panel').innerHTML = table('Player leaderboard', ['#', 'Player', 'Elo', 'Matches', 'Won', 'Lost', 'Drawn', 'Win %'], playerRows, 'No player data.');
 }
 
 async function loadPlayerDetail(userId) {
@@ -1526,30 +1526,30 @@ function renderPlayerDetail(d) {
   var s = d.summary || {};
   document.getElementById('player-detail-summary').innerHTML = [
     selectedPlayerCard(s),
-    card('Games', s.games || 0, (s.wins || 0) + 'W ' + (s.losses || 0) + 'L ' + (s.draws || 0) + 'D'),
+    card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
     card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
 
   var opp = d.opponents || [];
   document.getElementById('player-opponents').innerHTML = opp.length ? opp.map(function (r) {
-    return '<div class="opponent-card">' + avatarImg(r.avatar, r.nick) + '<div><div class="opponent-name">' + esc(r.nick) + '</div><div class="opponent-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' wins</div></div></div>';
+    return '<div class="opponent-card">' + avatarImg(r.avatar, r.nick) + '<div><div class="opponent-name">' + esc(r.nick) + '</div><div class="opponent-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div></div>';
   }).join('') : '<div class="empty-panel">No opponent sample in this period.</div>';
 
   var dur = d.durations || [];
   document.getElementById('player-durations').innerHTML = dur.length ? dur.map(function (r) {
-    return '<div class="duration-card"><div class="duration-title">' + esc(r.bucket) + '</div><div class="duration-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' wins</div></div>';
+    return '<div class="duration-card"><div class="duration-title">' + esc(r.bucket) + '</div><div class="duration-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div>';
   }).join('') : '<div class="empty-panel">No parsed replay duration data in this period.</div>';
 
   var civRows = (d.civs || []).map(function (r) {
-    return '<tr><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+    return '<tr><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
   });
-  document.getElementById('player-civs').innerHTML = table('Win rates by civilization', ['Civilization', 'Matches', 'Wins', 'Win %'], civRows, 'No civ data.');
+  document.getElementById('player-civs').innerHTML = table('Win rates by civilization', ['Civilization', 'Matches', 'Won', 'Lost', 'Win %'], civRows, 'No civ data.');
 
   var oppCivRows = (d.opponent_civs || []).map(function (r) {
-    return '<tr><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
+    return '<tr><td>' + civIcon(r.civ) + '</td><td class="num">' + r.games + '</td><td class="num">' + r.wins + '</td><td class="num">' + r.losses + '</td><td class="num ' + wrPctClass(r.winrate) + '">' + fmtPct(r.winrate) + '</td></tr>';
   });
-  document.getElementById('player-opp-civs').innerHTML = table('Win rates by opponent civilization', ['Civilization', 'Matches', 'Wins', 'Win %'], oppCivRows, 'No opponent civ data.');
+  document.getElementById('player-opp-civs').innerHTML = table('Win rates by opponent civilization', ['Civilization', 'Matches', 'Won', 'Lost', 'Win %'], oppCivRows, 'No opponent civ data.');
 
   var matchRows = (d.matches || []).map(function (r) {
     return '<tr><td class="result-' + esc(r.result) + '">' + esc(r.result) + '</td><td>' + esc(r.queue || '-') + '</td>'
