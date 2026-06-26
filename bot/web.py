@@ -495,6 +495,32 @@ def _avatar_for_user_id(user_id):
 	return None
 
 
+def _visible_user_clause(alias="pm"):
+	return (
+		" AND NOT EXISTS (SELECT 1 FROM qc_players hp "
+		f"WHERE hp.user_id={alias}.user_id AND hp.is_hidden=1)"
+	)
+
+
+async def _player_is_hidden(user_id):
+	row = await db.fetchone(
+		"SELECT 1 AS hidden FROM qc_players WHERE user_id=%s AND is_hidden=1 LIMIT 1",
+		[user_id])
+	return bool(row)
+
+
+async def _player_has_public_stats(user_id):
+	if await _player_is_hidden(user_id):
+		return False
+	row = await db.fetchone(
+		"SELECT 1 AS x FROM qc_player_matches pm WHERE pm.user_id=%s" +
+		_visible_user_clause("pm") + " LIMIT 1",
+		[user_id])
+	if row:
+		return True
+	return int(user_id) in await _mapped_profiles_by_user()
+
+
 def _map_counts(rows):
 	counts = {}
 	for r in rows or []:
@@ -554,13 +580,18 @@ async def _mapped_profiles_by_user():
 
 
 async def _match_stat_players():
+	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM qc_players WHERE is_hidden=1")
+	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
 	rows = await db.fetchall(
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT pm.match_id) AS games "
-		"FROM qc_player_matches pm GROUP BY pm.user_id ORDER BY games DESC, nick ASC LIMIT 250")
+		"FROM qc_player_matches pm WHERE 1=1" + _visible_user_clause("pm") +
+		" GROUP BY pm.user_id ORDER BY games DESC, nick ASC LIMIT 250")
 	mapped = await _mapped_profiles_by_user()
 	players = {}
 	for r in rows or []:
 		uid = int(r["user_id"])
+		if uid in hidden_users:
+			continue
 		players[uid] = {
 			"user_id": str(uid),
 			"nick": r["nick"] or mapped.get(uid, {}).get("nick") or str(uid),
@@ -569,7 +600,7 @@ async def _match_stat_players():
 			"avatar": _avatar_for_user_id(uid),
 		}
 	for uid, m in mapped.items():
-		if uid not in players:
+		if uid not in players and uid not in hidden_users:
 			players[uid] = {
 				"user_id": str(uid),
 				"nick": m.get("nick") or next(iter(m.get("aoe2_names") or []), str(uid)),
@@ -594,6 +625,11 @@ def _civ_player_clause(user_id, aoe2_names):
 	return "(" + " OR ".join(clauses) + ")", args
 
 
+def _linked_civ_clause(alias=""):
+	prefix = f"{alias}." if alias else ""
+	return f"{prefix}bot_match_id IS NOT NULL AND {prefix}user_id IS NOT NULL"
+
+
 async def _match_stats_overall(period):
 	at_clause, params = _period_filter(period)
 	summary = await db.fetchone(
@@ -601,7 +637,8 @@ async def _match_stats_overall(period):
 		"COUNT(DISTINCT IF(m.ranked=1, m.match_id, NULL)) AS ranked_games, "
 		"COUNT(DISTINCT pm.user_id) AS players, MAX(m.at) AS last_match_at "
 		"FROM qc_matches m LEFT JOIN qc_player_matches pm "
-		"ON pm.match_id=m.match_id AND pm.channel_id=m.channel_id WHERE 1=1" + at_clause,
+		"ON pm.match_id=m.match_id AND pm.channel_id=m.channel_id" + _visible_user_clause("pm") +
+		" WHERE 1=1" + at_clause,
 		params)
 	board = await db.fetchall(
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
@@ -610,12 +647,12 @@ async def _match_stats_overall(period):
 		"SUM(m.ranked=1 AND m.winner IS NULL) AS draws "
 		"FROM qc_player_matches pm JOIN qc_matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE 1=1" + at_clause +
+		"WHERE 1=1" + _visible_user_clause("pm") + at_clause +
 		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 50",
 		params)
 	civs = await db.fetchall(
 		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
-		"FROM qc_match_civs WHERE civ IS NOT NULL AND civ<>''"
+		"FROM qc_match_civs WHERE " + _linked_civ_clause() + " AND civ IS NOT NULL AND civ<>''"
 		+ (" AND at >= %s" if params else "") +
 		" GROUP BY civ ORDER BY games DESC LIMIT 20",
 		params)
@@ -680,7 +717,8 @@ async def _match_stats_player(user_id, period):
 	civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
 	civs = await db.fetchall(
 		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
-		"FROM qc_match_civs WHERE " + civ_clause + " AND civ IS NOT NULL AND civ<>''"
+		"FROM qc_match_civs WHERE " + _linked_civ_clause() + " AND " + civ_clause +
+		" AND civ IS NOT NULL AND civ<>''"
 		+ (" AND at >= %s" if params else "") +
 		" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 12",
 		[*civ_args, *params])
@@ -695,8 +733,8 @@ async def _match_stats_player(user_id, period):
 		"FROM qc_player_matches pm JOIN qc_matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"JOIN qc_player_matches mate ON mate.match_id=pm.match_id AND mate.channel_id=pm.channel_id "
-		"AND mate.team=pm.team AND mate.user_id<>pm.user_id "
-		"WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		"AND mate.team=pm.team AND mate.user_id<>pm.user_id" + _visible_user_clause("mate") +
+		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
 		" GROUP BY mate.user_id HAVING games >= 2 ORDER BY wins DESC, games DESC LIMIT 8",
 		[user_id, *params])
 	opponents = await db.fetchall(
@@ -705,8 +743,8 @@ async def _match_stats_player(user_id, period):
 		"FROM qc_player_matches pm JOIN qc_matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"JOIN qc_player_matches opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
-		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id "
-		"WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
+		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
 		" GROUP BY opp.user_id HAVING games >= 2 ORDER BY losses DESC, games DESC LIMIT 8",
 		[user_id, *params])
 	recent = await db.fetchall(
@@ -793,6 +831,8 @@ async def handle_match_stats(request):
 			user_id = int(player_raw)
 		except ValueError:
 			return web.json_response({"error": "Invalid player_id"}, status=400)
+		if not await _player_has_public_stats(user_id):
+			return web.json_response({"error": "Player not found"}, status=404)
 		payload["scope"] = "player"
 		payload["selected_player_id"] = str(user_id)
 		payload.update(await _match_stats_player(user_id, period))
@@ -810,7 +850,7 @@ async def handle_leaderboard(request):
 	if mode == "civs":
 		rows = await db.fetchall(
 			"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
-			"FROM qc_match_civs WHERE civ IS NOT NULL AND civ<>''"
+			"FROM qc_match_civs WHERE " + _linked_civ_clause() + " AND civ IS NOT NULL AND civ<>''"
 			+ (" AND at >= %s" if params else "") +
 			" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 100",
 			params)
@@ -831,7 +871,7 @@ async def handle_leaderboard(request):
 		"FROM qc_player_matches pm JOIN qc_matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"LEFT JOIN qc_players p ON p.user_id=pm.user_id AND p.channel_id=pm.channel_id "
-		"WHERE 1=1" + at_clause +
+		"WHERE 1=1" + _visible_user_clause("pm") + at_clause +
 		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 100",
 		params)
 	return web.json_response({
@@ -858,6 +898,8 @@ async def handle_player_stats(request):
 		return web.json_response({"error": "Invalid player_id"}, status=400)
 	if not user_id:
 		return web.json_response({"error": "Missing player_id"}, status=400)
+	if not await _player_has_public_stats(user_id):
+		return web.json_response({"error": "Player not found"}, status=404)
 
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
@@ -877,8 +919,8 @@ async def handle_player_stats(request):
 		"FROM qc_player_matches pm JOIN qc_matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"JOIN qc_player_matches opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
-		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id "
-		"WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
+		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
 		" GROUP BY opp.user_id HAVING games >= 1 ORDER BY games DESC, wins DESC LIMIT 12",
 		base_args)
 	durations = await db.fetchall(
@@ -901,7 +943,8 @@ async def handle_player_stats(request):
 	civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
 	civs = await db.fetchall(
 		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
-		"FROM qc_match_civs WHERE " + civ_clause + " AND civ IS NOT NULL AND civ<>''"
+		"FROM qc_match_civs WHERE " + _linked_civ_clause() + " AND " + civ_clause +
+		" AND civ IS NOT NULL AND civ<>''"
 		+ (" AND at >= %s" if params else "") +
 		" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 30",
 		[*civ_args, *params])

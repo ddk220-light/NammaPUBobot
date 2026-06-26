@@ -1256,7 +1256,7 @@ function shortBucket(b) {
 }
 function setMatchPeriod(p) {
   matchPeriod = p;
-  document.querySelectorAll('.period-tab').forEach(function (b) {
+  document.querySelectorAll('[data-period]').forEach(function (b) {
     b.classList.toggle('selected', b.dataset.period === p);
   });
   loadMatchStats();
