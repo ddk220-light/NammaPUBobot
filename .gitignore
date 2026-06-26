@@ -26,3 +26,7 @@ data/replays/
 data/.replay_profiles_cache.json
 data/_crosspatch_ids.txt
 data/.replay_extract_cache/
+
+# luck analysis local artifacts
+data/analysis.db
+data/.luck_calib.json
