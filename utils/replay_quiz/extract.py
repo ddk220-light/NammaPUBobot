@@ -30,6 +30,29 @@ SIEGE = ("ram", "mangonel", "onager", "scorpion", "bombard cannon", "siege tower
 WARSHIP = ("galley", "galleon", "fire ship", "fire galley", "demolition", "longboat",
            "turtle ship", "caravel", "dromon", "cannon galleon")
 
+EXTRACT_VERSION = "v4"   # parse-cache version; bump when extract_match output changes.
+                         # v4: per-player settle_tc_xy + nearest gold/stone/food distances + vil_perim
+
+RES_GOLD = {"Gold Mine"}
+RES_STONE = {"Stone Mine"}
+RES_FOOD = {"Wild Boar", "Deer", "Ibex", "Pig"}   # huntable food (herdables excluded)
+
+
+def _nearest(pos, pts):
+    """Min euclidean distance from pos=(x,y) to any point in pts; None if pos or pts is empty."""
+    if pos is None or not pts:
+        return None
+    return min(((pos[0] - x) ** 2 + (pos[1] - y) ** 2) ** 0.5 for x, y in pts)
+
+
+def _perimeter(pts):
+    """Sum of all pairwise distances among pts (triangle perimeter for the 3 starting villagers).
+    None if fewer than 2 points."""
+    if len(pts) < 2:
+        return None
+    return sum(((pts[i][0] - pts[j][0]) ** 2 + (pts[i][1] - pts[j][1]) ** 2) ** 0.5
+               for i in range(len(pts)) for j in range(i + 1, len(pts)))
+
 
 def classify_unit(name):
     """-> (category, is_military). Raw name is kept by callers for exact queries."""
@@ -113,6 +136,26 @@ def extract_match(path, resolved, date_map=None):
                 pos = getattr(o, "position", None)
                 if pos is not None and p.number not in start_tc_xy:
                     start_tc_xy[p.number] = dict(x=round(pos.x, 1), y=round(pos.y, 1))
+
+    # neutral (gaia) resource positions for spawn-quality metrics
+    gold_pts, stone_pts, food_pts = [], [], []
+    for o in (m.gaia or []):
+        pos = getattr(o, "position", None)
+        if pos is None:
+            continue
+        nm = getattr(o, "name", "") or ""
+        if nm in RES_GOLD:
+            gold_pts.append((pos.x, pos.y))
+        elif nm in RES_STONE:
+            stone_pts.append((pos.x, pos.y))
+        elif nm in RES_FOOD:
+            food_pts.append((pos.x, pos.y))
+    start_vils = {n: [] for n in players}
+    for p in m.players:
+        for o in (p.objects or []):
+            pos = getattr(o, "position", None)
+            if pos is not None and (getattr(o, "name", "") or "") == "Villager":
+                start_vils[p.number].append((pos.x, pos.y))
 
     # first pass: capture age-up clicks (needed for the before-age splits)
     for a in m.actions:
@@ -233,6 +276,12 @@ def extract_match(path, resolved, date_map=None):
             if any(o in tcset for o in oids) and any(b > dts for b in bt):
                 relo += 1
 
+        settle_builds = tc_xy[pnum]
+        settle = ({"x": min(settle_builds, key=lambda b: b["t_s"])["x"],
+                   "y": min(settle_builds, key=lambda b: b["t_s"])["y"]} if settle_builds
+                  else start_tc_xy.get(pnum))
+        spos = (settle["x"], settle["y"]) if settle else None
+
         tid = p.team_id
         team = "+".join(str(x) for x in sorted(tid)) if isinstance(tid, (list, set, frozenset, tuple)) else tid
         out_players.append(dict(
@@ -244,6 +293,11 @@ def extract_match(path, resolved, date_map=None):
             start_tc_xy=start_tc_xy.get(pnum),
             tc_builds=tc_xy[pnum],
             castle_builds=castle_xy[pnum],
+            settle_tc_xy=settle,
+            spawn_gold_d=_nearest(spos, gold_pts),
+            spawn_stone_d=_nearest(spos, stone_pts),
+            spawn_food_d=_nearest(spos, food_pts),
+            vil_perim=_perimeter(start_vils[pnum]),
             age_reliable=age_reliable,
             villagers=vil[0], vil_pre_feudal=vil[1], vil_pre_castle=vil[2], vil_pre_imperial=vil[3],
             military=mil[0], mil_pre_feudal=mil[1], mil_pre_castle=mil[2], mil_pre_imperial=mil[3],

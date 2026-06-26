@@ -20,13 +20,10 @@ sys.path.insert(0, os.path.join(_ROOT, ".replay_scratch"))   # vendored mgz fork
 from utils.db_helpers import create_pool                      # noqa: E402
 from utils.classifications import dbio, shape                 # noqa: E402
 from utils.classifications.registry import REGISTRY           # noqa: E402
+from utils.replay_quiz.extract import EXTRACT_VERSION   # noqa: E402  (single source of cache version)
 
 CACHE_DIR = os.path.join(_ROOT, "data", ".replay_extract_cache")
 REPLAY_DIR = os.path.join(_ROOT, "data", "replays")
-EXTRACT_VERSION = "v3"     # bump to invalidate the parse cache when extract output changes
-                           # v2: adds players[].tc_build_s (TC build timestamps) for window logic
-                           # v3: adds players[].start_tc_xy / tc_builds / castle_builds (positions)
-                           #     for forward/safe castle placement
 
 
 def _cache_path(aoe2_match_id):

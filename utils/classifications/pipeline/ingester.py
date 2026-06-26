@@ -14,9 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".r
 from utils.classifications.pipeline import classify, localdb
 from utils.classifications.pipeline.downloader import REPLAY_DIR, _paths
 from utils.classifications.registry import REGISTRY
+from utils.replay_quiz.extract import EXTRACT_VERSION
 
 CACHE_DIR = os.path.join(os.path.dirname(localdb.DEFAULT_DB), ".replay_extract_cache")
-EXTRACT_VERSION = "v3"
 
 
 def _cache_path(mid):
