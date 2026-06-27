@@ -1006,6 +1006,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
       </div>
       <div class="metric-grid" id="match-summary"></div>
       <div class="trend-panel" id="match-trend"></div>
+      <div class="trend-panel" id="match-elo-trend"></div>
       <div class="match-grid">
         <section class="match-panel" id="match-primary-panel"></section>
         <section class="match-panel" id="match-civs-panel"></section>
@@ -1366,7 +1367,7 @@ async function initMatchStats() {
 }
 
 async function loadMatchStats() {
-  ['match-summary','match-trend','match-primary-panel','match-civs-panel','match-maps-panel','match-recent-panel'].forEach(function (id) {
+  ['match-summary','match-trend','match-elo-trend','match-primary-panel','match-civs-panel','match-maps-panel','match-recent-panel'].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.innerHTML = '<div class="loading">Loading match stats...</div>';
   });
@@ -1480,11 +1481,17 @@ function selectedPlayerCard(s) {
 function renderMatchSummary() {
   var s = matchData.summary || {};
   if (matchData.scope === 'player') {
+    var p = s.impact_profile || {};
+    var report = p.scout_report || {};
     document.getElementById('match-summary').innerHTML = [
       selectedPlayerCard(s),
       card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
+      card('Scout report', report.headline || p.style || 'No replay style',
+        report.description || p.summary || 'No parsed replay impact data'),
+      card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
+      card('Top tags', styleTags(p), 'aggregated match tags'),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
         + '</div></div>'
@@ -1500,7 +1507,7 @@ function renderMatchSummary() {
 }
 
 function renderTrend() {
-  var rows = matchData.trend || [];
+  var rows = aggregateActivityRows(matchData.trend || []);
   if (!rows.length) {
     document.getElementById('match-trend').innerHTML = '<div class="trend-title">Activity</div><div class="empty-panel">No games in this period.</div>';
     return;
@@ -1514,9 +1521,21 @@ function renderTrend() {
     }).join('') + '</div>';
 }
 
-function renderEloTrend(rows) {
+function aggregateActivityRows(rows) {
+  if (!rows || rows.length <= 40) return rows || [];
+  var grouped = {};
+  rows.forEach(function (r) {
+    var key = String(r.bucket || '').slice(0, 7) || 'unknown';
+    if (!grouped[key]) grouped[key] = { bucket: key, games: 0 };
+    grouped[key].games += Number(r.games || 0);
+  });
+  return Object.keys(grouped).sort().map(function (k) { return grouped[k]; });
+}
+
+function renderEloTrend(rows, targetId) {
   rows = rows || [];
-  var panel = document.getElementById('player-elo-trend');
+  var panel = document.getElementById(targetId || 'player-elo-trend');
+  if (!panel) return;
   if (!rows.length) {
     panel.innerHTML = '<div class="trend-title">Elo over time</div><div class="empty-panel">No Elo changes in this period.</div>';
     return;
@@ -1675,6 +1694,13 @@ function renderMatchTables() {
 function renderMatchStats() {
   renderMatchSummary();
   renderTrend();
+  if (matchData.scope === 'player') {
+    document.getElementById('match-elo-trend').style.display = '';
+    renderEloTrend(matchData.rating_history || [], 'match-elo-trend');
+  } else {
+    document.getElementById('match-elo-trend').style.display = 'none';
+    document.getElementById('match-elo-trend').innerHTML = '';
+  }
   renderMatchTables();
 }
 
@@ -1795,7 +1821,7 @@ function renderPlayerDetail(d) {
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
 
-  renderEloTrend(d.rating_history || []);
+  renderEloTrend(d.rating_history || [], 'player-elo-trend');
 
   var allies = d.allies || [];
   document.getElementById('player-allies').innerHTML = allies.length ? allies.map(relationStripCard).join('') : '<div class="empty-panel">No ally sample in this period.</div>';

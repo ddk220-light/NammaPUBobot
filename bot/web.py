@@ -485,6 +485,15 @@ def _period_filter(period, alias="m"):
 	return f" AND {alias}.at >= %s", [start]
 
 
+def _trend_bucket_expr(period, alias="m"):
+	local_at = f"CONVERT_TZ(FROM_UNIXTIME({alias}.at), '+00:00', '+05:30')"
+	if period in ("all", "year", "month6"):
+		return f"DATE_FORMAT({local_at}, '%Y-%m')"
+	if period == "month3":
+		return f"DATE_FORMAT(DATE_SUB({local_at}, INTERVAL WEEKDAY({local_at}) DAY), '%Y-%m-%d')"
+	return f"DATE({local_at})"
+
+
 def _winrate(wins, losses):
 	decided = int(wins or 0) + int(losses or 0)
 	return round(100 * int(wins or 0) / decided) if decided else None
@@ -989,8 +998,9 @@ async def _match_stats_overall(period):
 		" GROUP BY civ ORDER BY games DESC LIMIT 20",
 		params)
 	maps = _map_counts(await db.fetchall("SELECT maps FROM qc_matches m WHERE maps IS NOT NULL" + at_clause, params))
+	trend_bucket = _trend_bucket_expr(period)
 	trend = await db.fetchall(
-		"SELECT DATE(CONVERT_TZ(FROM_UNIXTIME(m.at), '+00:00', '+05:30')) AS bucket, COUNT(*) AS games "
+		"SELECT " + trend_bucket + " AS bucket, COUNT(*) AS games "
 		"FROM qc_matches m WHERE 1=1" + at_clause + " GROUP BY bucket ORDER BY bucket ASC",
 		params)
 	recent = await db.fetchall(
@@ -1060,6 +1070,7 @@ async def _match_stats_player(user_id, period):
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
+	rating_history = await _rating_history(period, user_id)
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -1112,9 +1123,19 @@ async def _match_stats_player(user_id, period):
 		[user_id, *params])
 	recent_civs = {}
 	impacts = {}
+	impact_profile = _player_impact_profile([], civs)
+	impact_match_rows = await db.fetchall(
+		"SELECT DISTINCT m.match_id FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"WHERE pm.user_id=%s" + at_clause,
+		[user_id, *params])
+	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+	if period_impacts:
+		impact_profile = _player_impact_profile(period_impacts.values(), civs)
 	if recent:
 		match_ids = [r["match_id"] for r in recent]
-		impacts = await _match_impacts(match_ids, user_id, profile_ids)
+		impacts = {match_id: period_impacts.get(match_id) for match_id in match_ids}
 		civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
 		rows = await db.fetchall(
 			"SELECT bot_match_id, civ FROM qc_match_civs WHERE bot_match_id IN ("
@@ -1123,8 +1144,9 @@ async def _match_stats_player(user_id, period):
 		for r in rows or []:
 			if r.get("civ") and r["bot_match_id"] not in recent_civs:
 				recent_civs[r["bot_match_id"]] = r["civ"]
+	trend_bucket = _trend_bucket_expr(period)
 	trend = await db.fetchall(
-		"SELECT DATE(CONVERT_TZ(FROM_UNIXTIME(m.at), '+00:00', '+05:30')) AS bucket, "
+		"SELECT " + trend_bucket + " AS bucket, "
 		"COUNT(*) AS games, SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
 		"SUM(m.ranked=1 AND m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
 		"FROM qc_player_matches pm JOIN qc_matches m "
@@ -1144,7 +1166,9 @@ async def _match_stats_player(user_id, period):
 			"winrate": _winrate((summary or {}).get("wins"), (summary or {}).get("losses")),
 			"last_match_at": (summary or {}).get("last_match_at"),
 			"streak": await _player_streak(user_id, at_clause, params),
+			"impact_profile": impact_profile,
 		},
+		"rating_history": rating_history,
 		"civs": [
 			{"civ": r["civ"], "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
 			 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"])}
