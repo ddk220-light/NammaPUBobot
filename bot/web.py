@@ -1118,9 +1118,10 @@ async def _match_stats_overall(period):
 		"SELECT m.match_id, m.queue_name, m.at, m.ranked, m.winner, m.maps, rm.duration_s "
 		"FROM qc_matches m LEFT JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
 		"WHERE 1=1" + at_clause +
-		" ORDER BY m.at DESC, m.match_id DESC LIMIT 20",
+		" ORDER BY m.at DESC, m.match_id DESC LIMIT 50",
 		params)
 	impacts = await _match_impacts([r["match_id"] for r in recent or []])
+	rosters = await _match_rosters([r["match_id"] for r in recent or []])
 	return {
 		"summary": {
 			"games": int((summary or {}).get("games") or 0),
@@ -1154,7 +1155,15 @@ async def _match_stats_overall(period):
 		"recent": [
 			{"match_id": r["match_id"], "queue": r["queue_name"], "at": r["at"],
 			 "ranked": bool(r["ranked"]), "map": ((r.get("maps") or "").split("\n")[0] or "").strip(),
-			 "duration_s": r.get("duration_s"), "impact": impacts.get(r["match_id"])}
+			 "duration_s": r.get("duration_s"), "impact": impacts.get(r["match_id"]),
+			 "players": rosters.get(r["match_id"], [])}
+			for r in recent or []
+		],
+		"matches": [
+			{"match_id": r["match_id"], "queue": r["queue_name"], "at": r["at"],
+			 "ranked": bool(r["ranked"]), "map": ((r.get("maps") or "").split("\n")[0] or "").strip(),
+			 "duration_s": r.get("duration_s"), "impact": impacts.get(r["match_id"]),
+			 "players": rosters.get(r["match_id"], [])}
 			for r in recent or []
 		],
 	}
@@ -1230,7 +1239,7 @@ async def _match_stats_player(user_id, period):
 		"SELECT m.match_id, m.queue_name, m.at, m.ranked, m.winner, m.maps, pm.team "
 		"FROM qc_player_matches pm JOIN qc_matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE pm.user_id=%s" + at_clause + " ORDER BY m.at DESC, m.match_id DESC LIMIT 12",
+		"WHERE pm.user_id=%s" + at_clause + " ORDER BY m.at DESC, m.match_id DESC LIMIT 50",
 		[user_id, *params])
 	recent_civs = {}
 	impacts = {}
@@ -1302,6 +1311,17 @@ async def _match_stats_player(user_id, period):
 			for r in opponents or []
 		],
 		"recent": [
+			{"match_id": r["match_id"], "queue": r["queue_name"], "at": r["at"],
+			 "ranked": bool(r["ranked"]), "result": (
+				"D" if r["ranked"] and r["winner"] is None else
+				"W" if r["winner"] == r["team"] else
+				"L" if r["winner"] is not None else "-"
+			 ), "map": ((r.get("maps") or "").split("\n")[0] or "").strip(),
+			 "civ": recent_civs.get(r["match_id"]), "impact": impacts.get(r["match_id"]),
+			 "players": match_rosters.get(r["match_id"], [])}
+			for r in recent or []
+		],
+		"matches": [
 			{"match_id": r["match_id"], "queue": r["queue_name"], "at": r["at"],
 			 "ranked": bool(r["ranked"]), "result": (
 				"D" if r["ranked"] and r["winner"] is None else

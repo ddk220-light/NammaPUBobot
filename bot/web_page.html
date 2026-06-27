@@ -594,6 +594,26 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .roster-player { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(96px, 1fr) minmax(140px, 1fr) auto; gap: 0.5rem; align-items: center; padding: 0.5rem 0.6rem; border-top: 1px solid #3d4148; }
 .roster-tags { color: #c4c7cc; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster-impact { color: #a9adb5; font-size: 0.82rem; text-align: right; white-space: nowrap; }
+.match-card-list { display: flex; flex-direction: column; gap: 1rem; }
+.match-card { border: 1px solid #484c54; background: #2f3136; border-radius: 6px; padding: 1rem; }
+.match-card-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; border-bottom: 1px solid #484c54; padding-bottom: 0.7rem; margin-bottom: 0.8rem; }
+.match-card-title { font-family: 'Oswald', sans-serif; color: white; font-size: 1.2rem; letter-spacing: 0.4px; }
+.match-card-meta { color: #a9adb5; font-size: 0.9rem; margin-top: 0.25rem; }
+.match-card-id { color: #85868a; font-weight: 700; white-space: nowrap; }
+.match-card-body { display: grid; grid-template-columns: 230px 1fr 48px 1fr; gap: 1rem; align-items: stretch; }
+.match-map-box { color: #d9dadd; border-right: 1px solid #484c54; padding-right: 1rem; }
+.match-map-name { color: white; font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem; }
+.match-vs { display: flex; align-items: center; justify-content: center; color: #8b8e94; font-weight: 700; }
+.match-team { border: 1px solid transparent; border-radius: 6px; padding: 0.55rem; }
+.match-team.winning-team { border-color: #d99026; box-shadow: inset 0 0 0 1px rgba(217,144,38,0.25); }
+.match-team-title { color: #a9adb5; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.35rem; }
+.match-card-player { display: grid; grid-template-columns: minmax(120px,1fr) minmax(100px,0.8fr) minmax(120px,0.9fr) auto; align-items: center; gap: 0.5rem; padding: 0.42rem 0; border-top: 1px solid rgba(255,255,255,0.07); }
+.match-card-player:first-of-type { border-top: 0; }
+.match-card-player.top-impact { background: rgba(217,144,38,0.10); border-radius: 5px; padding-left: 0.35rem; padding-right: 0.35rem; }
+.impact-badge { color: #d99026; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; }
+.profile-description { background: #2f3136; border: 1px solid #484c54; border-radius: 6px; color: #f0f1f3; padding: 1rem 1.1rem; margin-bottom: 1rem; font-size: 1rem; line-height: 1.55; }
+.profile-description p { margin: 0 0 0.75rem; }
+.profile-description p:last-child { margin-bottom: 0; }
 .opponent-card {
   display: flex; align-items: center; gap: 12px; background: #2f3136;
   border: 1px solid #484c54; border-radius: 6px; padding: 0.85rem;
@@ -797,6 +817,11 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   .detail-grid { grid-template-columns: 1fr; }
   .duration-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .player-picker { min-width: 100%; max-width: 100%; }
+  .match-card-body { grid-template-columns: 1fr; }
+  .match-map-box { border-right: 0; border-bottom: 1px solid #484c54; padding-right: 0; padding-bottom: 0.75rem; }
+  .match-vs { min-height: 24px; }
+  .match-card-player { grid-template-columns: 1fr; align-items: start; }
+  .profile-description { font-size: 0.95rem; }
   .match-controls { align-items: stretch; }
   table.stats-table { min-width: 500px; font-size: 12px; }
   table.stats-table th { font-size: 10px; padding: 0.5rem 0.4rem; }
@@ -985,6 +1010,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         </label>
       </div>
       <div id="player-detail">
+        <section class="profile-description" id="player-description"></section>
         <div class="metric-grid" id="player-detail-summary"></div>
         <div class="trend-panel" id="player-elo-trend"></div>
         <section class="detail-section">
@@ -1037,6 +1063,10 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
               placeholder="Search player" oninput="filterMatchPlayers(this.value)" onfocus="openMatchPlayerPicker()">
             <div class="player-picker-options" id="match-player-options"></div>
           </div>
+        </div>
+        <div class="period-tabs">
+          <button class="period-tab selected" data-match-view="overview" onclick="setMatchView('overview')">Overview</button>
+          <button class="period-tab" data-match-view="matches" onclick="setMatchView('matches')">All matches</button>
         </div>
       </div>
       <div class="metric-grid" id="match-summary"></div>
@@ -1122,6 +1152,7 @@ var civData = [], sortCol = 'civ', sortAsc = true;
 
 // Match stats
 var matchData = null, matchPeriod = 'all', matchPlayer = 'all';
+var matchView = 'overview';
 var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
 var leaderboardMinMatches = 0;
 var playerProfileUserId = null, playerProfilePeriod = 'all';
@@ -1397,6 +1428,13 @@ function setMatchPeriod(p) {
   loadMatchStats();
 }
 function setMatchPlayer(p) { matchPlayer = p || 'all'; loadMatchStats(); }
+function setMatchView(v) {
+  matchView = v || 'overview';
+  document.querySelectorAll('[data-match-view]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.matchView === matchView);
+  });
+  renderMatchStats();
+}
 
 async function initMatchStats() {
   if (!matchData) await loadMatchStats();
@@ -1544,6 +1582,60 @@ function matchRosterDetails(r) {
       + grouped[team].map(rosterPlayer).join('') + '</div>';
   }).join('');
   return '<details class="match-roster-details"><summary>' + players.length + ' players</summary><div class="match-roster">' + html + '</div></details>';
+}
+function playerImpactValue(p) {
+  return p && p.impact && p.impact.impact_score != null ? Number(p.impact.impact_score) : -1;
+}
+function topImpactPlayer(players) {
+  var rows = (players || []).filter(function (p) { return playerImpactValue(p) >= 0; });
+  if (!rows.length) return null;
+  rows.sort(function (a, b) { return playerImpactValue(b) - playerImpactValue(a); });
+  return rows[0];
+}
+function matchTeamCard(teamName, players, topPlayer) {
+  players = players || [];
+  var winning = players.some(function (p) { return p.result === 'W'; });
+  var rows = players.map(function (p) {
+    var impact = p.impact || {};
+    var tags = impact.impact_tags && impact.impact_tags.length ? impact.impact_tags.join(', ') : 'No tags';
+    var isTop = topPlayer && p === topPlayer;
+    var result = p.result ? '<span class="form-pill ' + esc(p.result) + '">' + esc(p.result) + '</span>' : '';
+    var score = impact.impact_score == null ? '-' : String(impact.impact_score);
+    return '<div class="match-card-player' + (isTop ? ' top-impact' : '') + '">'
+      + playerCell(p.nick, p.avatar, p.user_id)
+      + civIcon(p.civ)
+      + '<span class="roster-tags" title="' + esc(tags) + '">' + esc(tags) + '</span>'
+      + '<span class="roster-impact">' + result + ' ' + esc(score) + (isTop ? ' <span class="impact-badge">Carry</span>' : '') + '</span>'
+      + '</div>';
+  }).join('');
+  return '<div class="match-team' + (winning ? ' winning-team' : '') + '"><div class="match-team-title">' + esc(teamName) + '</div>' + rows + '</div>';
+}
+function matchCard(r) {
+  var players = r.players || [];
+  var grouped = {};
+  players.forEach(function (p) {
+    var key = p.team === null || p.team === undefined || p.team === '' ? 'Unknown team' : 'Team ' + p.team;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(p);
+  });
+  var teams = Object.keys(grouped).sort();
+  var top = topImpactPlayer(players);
+  var left = teams[0] ? matchTeamCard(teams[0], grouped[teams[0]], top) : '<div class="empty-panel">No roster data.</div>';
+  var right = teams[1] ? matchTeamCard(teams[1], grouped[teams[1]], top) : (teams.length > 1 ? '' : '<div class="empty-panel">No opponent roster.</div>');
+  var title = (r.queue || 'Match').replace(/_/g, ' ');
+  var meta = [fmtDuration(r.duration_s), fmtAgo(r.at)].filter(function (x) { return x && x !== '-'; }).join(' - ');
+  return '<article class="match-card">'
+    + '<div class="match-card-head"><div><div class="match-card-title">' + esc(title) + '</div>'
+    + '<div class="match-card-meta">' + esc(meta || 'Match details') + '</div></div>'
+    + '<div class="match-card-id">#' + esc(r.match_id) + '</div></div>'
+    + '<div class="match-card-body"><div class="match-map-box"><div class="match-map-name">' + esc(r.map || '-') + '</div>'
+    + '<div class="match-card-meta">' + (top ? 'Carry: ' + esc(top.nick || '-') + ' (' + esc(playerImpactValue(top)) + ')' : 'No impact data') + '</div></div>'
+    + left + '<div class="match-vs">VS</div>' + right + '</div></article>';
+}
+function renderMatchCards(rows) {
+  rows = rows || [];
+  if (!rows.length) return '<h2>All matches</h2><div class="empty-panel">No matches in this period.</div>';
+  return '<h2>All matches</h2><div class="match-card-list">' + rows.map(matchCard).join('') + '</div>';
 }
 function selectedPlayerCard(s) {
   var nameHtml = '<div class="metric-player-name">' + esc(s.nick || '-') + '</div>';
@@ -1704,6 +1796,16 @@ function sortableTable(tableId, title, columns, rows, empty, rowAttrs) {
 }
 
 function renderMatchTables() {
+  var allMatches = matchData.matches || matchData.recent || [];
+  var showCards = matchView === 'matches';
+  document.getElementById('match-primary-panel').style.display = showCards ? 'none' : '';
+  document.getElementById('match-civs-panel').style.display = showCards ? 'none' : '';
+  document.getElementById('match-maps-panel').style.display = showCards ? 'none' : '';
+  document.getElementById('match-recent-panel').style.gridColumn = showCards ? '1 / -1' : '';
+  if (showCards) {
+    document.getElementById('match-recent-panel').innerHTML = renderMatchCards(allMatches);
+    return;
+  }
   document.getElementById('match-civs-panel').innerHTML = sortableTable('match-civs', 'Best civs', [
     { key: 'civ', label: 'Civ', render: function (r) { return esc(r.civ); } },
     { key: 'games', label: 'Matches', type: 'number', className: 'num' },
@@ -1739,7 +1841,7 @@ function renderMatchTables() {
       { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
       { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
-    ], matchData.recent || [], 'No recent matches.');
+    ], (matchData.recent || []).slice(0, 12), 'No recent matches.');
   } else {
     document.getElementById('match-primary-panel').innerHTML = sortableTable('match-player-board', 'Player leaderboard', [
       { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
@@ -1762,11 +1864,15 @@ function renderMatchTables() {
       { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
       { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
-    ], matchData.recent || [], 'No recent matches.');
+    ], (matchData.recent || []).slice(0, 20), 'No recent matches.');
   }
 }
 
 function renderMatchStats() {
+  if (!matchData) return;
+  document.querySelectorAll('[data-match-view]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.matchView === matchView);
+  });
   renderMatchSummary();
   renderTrend();
   if (matchData.scope === 'player') {
@@ -1900,6 +2006,7 @@ function renderPlayerDetail(d) {
   var report = p.scout_report || {};
   var subtitle = document.getElementById('player-profile-subtitle');
   if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + (p.style || 'No replay style');
+  document.getElementById('player-description').innerHTML = playerProfileDescription(d);
   document.getElementById('player-detail-summary').innerHTML = [
     selectedPlayerCard(s),
     card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
@@ -1958,6 +2065,38 @@ function renderPlayerDetail(d) {
     { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
   ], d.matches || [], 'No matches in this period.');
+}
+
+function bestRow(rows, sortKey) {
+  rows = (rows || []).filter(function (r) { return r && r[sortKey] != null; });
+  if (!rows.length) return null;
+  rows.sort(function (a, b) {
+    if (Number(b[sortKey]) !== Number(a[sortKey])) return Number(b[sortKey]) - Number(a[sortKey]);
+    return Number(b.games || 0) - Number(a.games || 0);
+  });
+  return rows[0];
+}
+function playerProfileDescription(d) {
+  var s = d.summary || {};
+  var p = s.impact_profile || {};
+  var report = p.scout_report || {};
+  var name = s.nick || 'This player';
+  var civRows = p.best_civs && p.best_civs.length ? p.best_civs : (d.civs || []);
+  var durRows = p.duration_edges && p.duration_edges.length ? p.duration_edges : (d.durations || []);
+  var civ = bestRow(civRows, 'winrate');
+  var dur = bestRow(durRows, 'winrate');
+  var tags = (p.top_tags || []).slice(0, 3).map(function (t) { return t.tag; });
+  var elo = s.rating_end == null ? '' : ' Current end Elo is ' + fmtElo(s.rating_end) + '.';
+  var first = name + ' profiles as a ' + (p.style || 'developing') + ' in ' + periodLabel(playerProfilePeriod)
+    + ', with ' + (s.games || 0) + ' matches and a ' + fmtPct(s.winrate) + ' win rate.' + elo;
+  var second = report.description || p.summary || 'No parsed replay sample is available yet.';
+  if (tags.length) second += ' Recurring game tags: ' + tags.join(', ') + '.';
+  var third = '';
+  if (civ) third += name + ' gets best civ results with ' + civ.civ + ' at ' + fmtPct(civ.winrate) + ' across ' + civ.games + ' games. ';
+  if (dur) third += 'Best duration window is ' + dur.bucket + ' at ' + fmtPct(dur.winrate) + ' across ' + dur.games + ' games. ';
+  if (s.best_ally) third += 'Best ally pairing is ' + (s.best_ally.nick || '-') + ' at ' + fmtPct(s.best_ally.winrate) + '. ';
+  if (s.worst_enemy) third += 'Toughest opponent is ' + (s.worst_enemy.nick || '-') + ' with only ' + fmtPct(s.worst_enemy.winrate) + ' wins against them.';
+  return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '');
 }
 
 /* ─── Strategy Insights ─── */
