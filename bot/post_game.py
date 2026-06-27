@@ -236,9 +236,9 @@ def _tag_word(tags):
 	if "Eco carry" in tags:
 		return "eco carry with banker energy"
 	if "Timing edge" in tags:
-		return "upgrade timing hit on the bell"
+		return "age-up tempo into power-window play"
 	if "Recovery" in tags:
-		return "reboom monk-level patience"
+		return "hold-and-reboom anchor work"
 	if "High impact" in tags:
 		return "high-impact flex"
 	return ", ".join(tags).lower()

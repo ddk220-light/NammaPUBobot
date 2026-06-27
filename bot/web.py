@@ -32,6 +32,25 @@ MATCH_STAT_PERIODS = {
 	"month": 30,
 	"week": 7,
 }
+STRATEGY_TAG_LABELS = {
+	"archer_rush": "Feudal archer poke",
+	"scout_rush": "Scout-map opener",
+	"maa_rush": "MAA opening",
+	"knight_rush": "Knight flood",
+	"crossbow_rush": "Xbow timing",
+	"cav_archer_rush": "CA switch",
+	"camel_rush": "Camel counter-punch",
+	"ram_push": "Siege shove",
+	"forward_castle": "Castle dropper",
+	"safe_castle": "Home-castle turtle",
+	"late_knight": "Late knight flood",
+	"late_crossbow": "Late xbow mass",
+	"late_cav_archer": "CA snowball",
+	"late_camel": "Camel mass",
+	"late_unique": "UU spam",
+	"late_ram": "Late siege push",
+	"boom_to_imp": "Greedy boom to Imp",
+}
 
 # --- Session store (Layer 5: migrated from in-memory dicts to MySQL) ---
 #
@@ -945,6 +964,64 @@ async def _player_strategy_profile(user_id, profile_ids, period):
 	}
 
 
+def _strategy_tag_payload(row):
+	key = row.get("key")
+	games = int(row.get("games") or 0)
+	wins = int(row.get("wins") or 0)
+	losses = int(row.get("losses") or 0)
+	return {
+		"key": key,
+		"label": STRATEGY_TAG_LABELS.get(key, row.get("title") or str(key or "").replace("_", " ").title()),
+		"games": games,
+		"wins": wins,
+		"losses": losses,
+		"winrate": _winrate(wins, losses),
+	}
+
+
+async def _player_strategy_tags(profile_ids, period, limit=8):
+	profile_ids = [str(p) for p in profile_ids or []]
+	if not profile_ids:
+		return []
+	start = _period_start(period)
+	args = [*profile_ids, *STRATEGY_TAG_LABELS.keys()]
+	time_clause = ""
+	if start is not None:
+		time_clause = " AND r.played_at >= %s"
+		args.append(start)
+	rows = await db.fetchall(
+		"SELECT r.`key`, MAX(c.title) AS title, COUNT(*) AS games, "
+		"SUM(r.winner=1) AS wins, SUM(r.winner=0) AS losses "
+		"FROM cls_results r LEFT JOIN cls_classifications c ON c.`key`=r.`key` "
+		"WHERE r.profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ") "
+		"AND r.`key` IN (" + ",".join(["%s"] * len(STRATEGY_TAG_LABELS)) + ")" + time_clause +
+		" GROUP BY r.`key` ORDER BY games DESC, wins DESC, r.`key` LIMIT %s",
+		[*args, limit])
+	return [_strategy_tag_payload(r) for r in rows or []]
+
+
+async def _classification_tags_for_bot_matches(match_ids):
+	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
+	if not match_ids:
+		return {}, {}
+	rows = await db.fetchall(
+		"SELECT rm.bot_match_id, r.profile_id, r.identity, r.`key`, c.title "
+		"FROM rs_matches rm JOIN cls_results r ON r.aoe2_match_id=rm.aoe2_match_id "
+		"LEFT JOIN cls_classifications c ON c.`key`=r.`key` "
+		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ") "
+		"AND r.`key` IN (" + ",".join(["%s"] * len(STRATEGY_TAG_LABELS)) + ")",
+		[*match_ids, *STRATEGY_TAG_LABELS.keys()])
+	by_profile = {}
+	by_name = {}
+	for row in rows or []:
+		tag = {"key": row.get("key"), "label": STRATEGY_TAG_LABELS.get(row.get("key"), row.get("title") or row.get("key"))}
+		if row.get("profile_id") is not None:
+			by_profile.setdefault((row["bot_match_id"], str(row["profile_id"])), []).append(tag)
+		if row.get("identity"):
+			by_name.setdefault((row["bot_match_id"], str(row["identity"]).lower()), []).append(tag)
+	return by_profile, by_name
+
+
 def _style_scout_report(style, top_tags, best_civs, duration_edges, has_impacts):
 	if not has_impacts:
 		return {
@@ -1114,6 +1191,7 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 		"FROM rs_matches rm JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
+	strategy_by_profile, strategy_by_name = await _classification_tags_for_bot_matches(match_ids)
 	groups = {}
 	for r in rows or []:
 		groups.setdefault(r["bot_match_id"], []).append(r)
@@ -1130,7 +1208,13 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 					continue
 			elif row_user_id is None:
 				continue
-			payloads.append(_impact_payload(row, group))
+			payload = _impact_payload(row, group)
+			payload["strategy_tags"] = (
+				strategy_by_profile.get((match_id, str(row.get("profile_id"))))
+				or strategy_by_name.get((match_id, str(row.get("identity") or "").lower()))
+				or []
+			)[:3]
+			payloads.append(payload)
 		if payloads:
 			out[match_id] = max(payloads, key=lambda p: p["impact_score"])
 	return out
@@ -1149,6 +1233,7 @@ async def _match_player_impacts(match_ids):
 		"FROM rs_matches rm JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
+	strategy_by_profile, strategy_by_name = await _classification_tags_for_bot_matches(match_ids)
 	groups = {}
 	for r in rows or []:
 		groups.setdefault(r["bot_match_id"], []).append(r)
@@ -1159,7 +1244,13 @@ async def _match_player_impacts(match_ids):
 			row_user_id = row.get("user_id")
 			if row_user_id is not None and int(row_user_id) in hidden_users:
 				continue
-			payloads.append(_impact_payload(row, group))
+			payload = _impact_payload(row, group)
+			payload["strategy_tags"] = (
+				strategy_by_profile.get((match_id, str(row.get("profile_id"))))
+				or strategy_by_name.get((match_id, str(row.get("identity") or "").lower()))
+				or []
+			)[:3]
+			payloads.append(payload)
 		out[match_id] = sorted(payloads, key=lambda p: (str(p.get("team") or ""), -(p.get("impact_score") or 0), p.get("nick") or ""))
 	return out
 
@@ -1353,6 +1444,7 @@ async def _match_stats_player(user_id, period):
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
 	rating_history = await _rating_history(period, user_id)
+	strategy_tags = await _player_strategy_tags(profile_ids, period)
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -1452,6 +1544,7 @@ async def _match_stats_player(user_id, period):
 			"last_match_at": (summary or {}).get("last_match_at"),
 			"streak": await _player_streak(user_id, at_clause, params),
 			"impact_profile": impact_profile,
+			"strategy_tags": strategy_tags,
 		},
 		"rating_history": rating_history,
 		"civs": [
@@ -1596,6 +1689,7 @@ async def handle_player_stats(request):
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
 	rating_history = await _rating_history(period, user_id)
+	strategy_tags = await _player_strategy_tags(profile_ids, period)
 	base_args = [user_id, *params]
 	summary = await db.fetchone(
 		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
@@ -1717,6 +1811,7 @@ async def handle_player_stats(request):
 			"last_match_at": (summary or {}).get("last_match_at"),
 			"impact_profile": impact_profile,
 			"strategy_profile": strategy_profile,
+			"strategy_tags": strategy_tags,
 			"best_ally": _best_relationship(allies, "ally"),
 			"worst_enemy": _best_relationship(opponents, "enemy"),
 		},

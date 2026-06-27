@@ -1524,24 +1524,52 @@ function fmtImpact(i, key) {
   return i && i[key] !== null && i[key] !== undefined ? String(i[key]) : '-';
 }
 function impactName(i) { return i && i.nick ? playerLink(i.user_id, i.nick) : '-'; }
+function impactTagLabels(i) {
+  var tags = [];
+  (i && i.impact_tags ? i.impact_tags : []).forEach(function (tag) { tags.push(tagLabel(tag)); });
+  strategyTagLabels(i && i.strategy_tags ? i.strategy_tags : []).forEach(function (tag) { tags.push(tag); });
+  var seen = {};
+  return tags.filter(function (tag) {
+    if (!tag || seen[tag]) return false;
+    seen[tag] = true;
+    return true;
+  });
+}
 function impactTags(i) {
-  var tags = i && i.impact_tags ? i.impact_tags : [];
+  var tags = impactTagLabels(i);
   return tags.length ? tags.map(esc).join(', ') : '-';
+}
+function impactTagSortValue(i) {
+  return impactTagLabels(i).join(', ');
 }
 function fmtImpactAvg(v) {
   return v === null || v === undefined ? '-' : String(v);
 }
-function styleTags(profile) {
+function tagLabel(tag) {
+  var labels = {
+    'Timing edge': 'Age-up tempo',
+    'Recovery': 'Reboom',
+    'Low-eco pressure': 'All-in pressure',
+    'Army pressure': 'Map pressure'
+  };
+  return labels[tag] || tag;
+}
+function strategyTagLabels(tags) {
+  return (tags || []).map(function (t) { return t && t.label ? t.label : String(t || ''); }).filter(Boolean);
+}
+function profileTagLabels(profile, strategyTags) {
   var tags = profile && profile.top_tags ? profile.top_tags : [];
-  if (!tags.length) return 'No style tags';
-  return tags.slice(0, 3).map(function (t) {
-    return t.tag + ' ' + t.count + 'x';
-  }).join(', ');
+  var out = tags.slice(0, 3).map(function (t) { return tagLabel(t.tag) + ' ' + t.count + 'x'; });
+  strategyTagLabels(strategyTags).slice(0, 3).forEach(function (tag) { out.push(tag); });
+  return out.length ? out.join(', ') : 'No style tags';
+}
+function styleTags(profile) {
+  return profileTagLabels(profile, []);
 }
 function scoutTraits(profile) {
   var report = profile && profile.scout_report ? profile.scout_report : {};
   var traits = report.traits || [];
-  return traits.length ? traits.join(', ') : styleTags(profile);
+  return traits.length ? traits.map(tagLabel).join(', ') : styleTags(profile);
 }
 function relationSummary(r, empty) {
   return r ? (r.games + ' matches, ' + fmtPct(r.winrate) + ' win rate') : empty;
@@ -1785,10 +1813,10 @@ function rowPlayerImpactData(r, userId) {
 function rosterTagClass(tag) {
   tag = String(tag || '').toLowerCase();
   if (tag.indexOf('boom') >= 0) return 'boom';
-  if (tag.indexOf('army') >= 0 || tag.indexOf('pressure') >= 0) return 'army';
-  if (tag.indexOf('eco') >= 0 || tag.indexOf('carry') >= 0) return 'eco';
-  if (tag.indexOf('timing') >= 0) return 'timing';
-  if (tag.indexOf('recovery') >= 0) return 'recovery';
+  if (tag.indexOf('army') >= 0 || tag.indexOf('pressure') >= 0 || tag.indexOf('scout') >= 0 || tag.indexOf('maa') >= 0) return 'army';
+  if (tag.indexOf('eco') >= 0 || tag.indexOf('carry') >= 0 || tag.indexOf('greedy') >= 0) return 'eco';
+  if (tag.indexOf('timing') >= 0 || tag.indexOf('tempo') >= 0 || tag.indexOf('xbow') >= 0 || tag.indexOf('castle') >= 0) return 'timing';
+  if (tag.indexOf('recovery') >= 0 || tag.indexOf('reboom') >= 0 || tag.indexOf('turtle') >= 0) return 'recovery';
   return '';
 }
 function rosterTagPills(tags) {
@@ -1805,7 +1833,7 @@ function matchTeamCard(teamName, players) {
   var resultClass = teamResult === 'W' ? ' winning-team' : teamResult === 'L' ? ' losing-team' : '';
   var rows = players.map(function (p) {
     var impact = p.impact || {};
-    var tagList = impact.impact_tags || [];
+    var tagList = impactTagLabels(impact);
     var tags = tagList.length ? tagList.join(', ') : 'No tags';
     var isTop = topPlayer && p === topPlayer;
     var score = impact.impact_score == null ? '-' : String(impact.impact_score);
@@ -1854,8 +1882,8 @@ function renderMatchSummary() {
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
       card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
-      card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
-      card('Top tags', styleTags(p), 'aggregated match tags'),
+      card('Style traits', profileTagLabels(p, s.strategy_tags), 'impact + strategy tags'),
+      card('Top tags', profileTagLabels(p, s.strategy_tags), 'aggregated match tags'),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
         + '</div></div>'
@@ -2039,7 +2067,7 @@ function renderMatchTables() {
       { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'impact_score'); } },
       { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'army_score'); } },
       { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'eco_score'); } },
-      { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowPlayerImpactData(r, matchPlayer)); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { return impactTagSortValue(rowPlayerImpactData(r, matchPlayer)); }, render: function (r) { return impactTags(rowPlayerImpactData(r, matchPlayer)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
     ], (matchData.recent || []).slice(0, 12), 'No recent matches.', null, matchDetailRow);
   } else {
@@ -2061,7 +2089,7 @@ function renderMatchTables() {
       { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'impact_score'); } },
       { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'army_score'); } },
       { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'eco_score'); } },
-      { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowImpactData(r); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowImpactData(r)); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { return impactTagSortValue(rowImpactData(r)); }, render: function (r) { return impactTags(rowImpactData(r)); } },
       { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
     ], (matchData.recent || []).slice(0, 20), 'No recent matches.', null, matchDetailRow);
@@ -2242,11 +2270,11 @@ function renderPlayerDetail(d) {
     card('Best ally', relationName(s.best_ally, 'No ally sample'), relationSummary(s.best_ally, 'ranked teammate sample')),
     card('Worst enemy', relationName(s.worst_enemy, 'No enemy sample'), relationSummary(s.worst_enemy, 'ranked opponent sample')),
     card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
-    card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
+    card('Style traits', profileTagLabels(p, s.strategy_tags), 'impact + strategy tags'),
     card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
     card('Impact mix', 'Army ' + fmtImpactAvg(p.avg_army) + ' / Eco ' + fmtImpactAvg(p.avg_eco),
-      'Timing ' + fmtImpactAvg(p.avg_timing) + ' / Recovery ' + fmtImpactAvg(p.avg_recovery)),
-    card('Top tags', styleTags(p), 'aggregated match tags'),
+      'Age-up tempo ' + fmtImpactAvg(p.avg_timing) + ' / Reboom ' + fmtImpactAvg(p.avg_recovery)),
+    card('Top tags', profileTagLabels(p, s.strategy_tags), 'aggregated match tags'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
 
@@ -2286,7 +2314,7 @@ function renderPlayerDetail(d) {
     { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'impact_score'); } },
     { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'army_score'); } },
     { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'eco_score'); } },
-    { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowPlayerImpactData(r, playerProfileUserId)); } },
+    { key: 'impact_tags', label: 'Tags', value: function (r) { return impactTagSortValue(rowPlayerImpactData(r, playerProfileUserId)); }, render: function (r) { return impactTags(rowPlayerImpactData(r, playerProfileUserId)); } },
     { key: 'duration_s', label: 'Duration', type: 'number', className: 'num', render: function (r) { return fmtDuration(r.duration_s); } },
     { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
@@ -2419,6 +2447,18 @@ function tagStat(profile, tag) {
   return row || { tag: tag, count: 0, rate: 0 };
 }
 
+function hasStrategyKey(tags, keys) {
+  var set = {};
+  keys.forEach(function (k) { set[k] = true; });
+  return (tags || []).some(function (t) { return t && set[t.key]; });
+}
+
+function strategyTagEvidence(tags) {
+  tags = tags || [];
+  if (!tags.length) return '';
+  return strategyTagLabels(tags).slice(0, 3).join(', ');
+}
+
 function strategyTopCategory(strategy) {
   var mix = strategy && strategy.army_mix ? strategy.army_mix : [];
   return mix.length ? String(mix[0].category || '') : '';
@@ -2457,6 +2497,7 @@ function scoredPlaystyle(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
   var strategy = s.strategy_profile || {};
+  var strategyTags = s.strategy_tags || [];
   var luck = luckProfileForPlayer(s.nick);
   var leader = impactLeader(p);
   var army = impactNum(p.avg_army) || 0;
@@ -2493,32 +2534,39 @@ function scoredPlaystyle(d) {
   var nearEnemyBest = luck && luck.best && luck.best.key === 'spawn_near_enemy' && luck.best.delta >= 3;
   var nearEnemyFrequent = luck && luck.exposure[0] && luck.exposure[0].key === 'spawn_near_enemy';
   var candidates = [];
+  var boomStrategy = hasStrategyKey(strategyTags, ['boom_to_imp']);
+  var scoutKnightStrategy = hasStrategyKey(strategyTags, ['scout_rush', 'knight_rush', 'late_knight', 'camel_rush', 'late_camel']);
+  var archerStrategy = hasStrategyKey(strategyTags, ['archer_rush', 'crossbow_rush', 'late_crossbow', 'cav_archer_rush', 'late_cav_archer']);
+  var castleSiegeStrategy = hasStrategyKey(strategyTags, ['forward_castle', 'safe_castle', 'ram_push', 'late_ram']);
+  var maaStrategy = hasStrategyKey(strategyTags, ['maa_rush']);
 
   addStyleCandidate(candidates, 'Pocket boom carry',
-    eco + quietBoomRate * 0.45 + boomTagRate * 0.45 + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.7,
+    eco + quietBoomRate * 0.45 + boomTagRate * 0.45 + (boomStrategy ? 14 : 0) + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.7,
     'Pocket-boom read: wants space, adds TCs/eco techs, then converts villager lead into late Castle or Imperial army mass.',
     [
       quietBoomRate ? quietBoomRate + '% quiet-boom openings' : '',
       eco ? 'eco score ' + fmtImpactAvg(eco) : '',
       strategy.avg_imperial_min ? 'Imp around ' + minutesText(strategy.avg_imperial_min) : '',
-      isolatedBest ? 'best on isolated/free-boom starts' : ''
+      isolatedBest ? 'best on isolated/free-boom starts' : '',
+      boomStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
     ]);
 
   addStyleCandidate(candidates, 'Flank pressure engine',
-    army + armyPressureRate * 0.4 + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.25,
+    army + armyPressureRate * 0.4 + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.25,
     'Pressure-flank read: makes army before comfort boom, contests map, raids, and buys team economy time.',
     [
       armyPressureTags ? armyPressureTags + ' pressure tags (' + Math.round(armyPressureRate) + '% rate)' : '',
       preCastleMil ? preCastleMil + ' military before Castle' : '',
       nearEnemyBest ? 'wins near-enemy spawns' : '',
-      army ? 'army score ' + fmtImpactAvg(army) : ''
+      army ? 'army score ' + fmtImpactAvg(army) : '',
+      maaStrategy ? 'strategy tag: MAA opening' : ''
     ]);
 
   addStyleCandidate(candidates, 'Castle-age timing hitter',
     timing + timingTagRate * 0.4 + (castleMin && castleMin <= 19.5 ? 8 : 0) + (hasStrategyTech(strategy, 'Bodkin|Bloodlines|Scale|Chain|Wheelbarrow') ? 3 : 0),
     'Timing-push read: value spikes around Castle-age clicks, upgrades, and first coordinated fights.',
     [
-      timingTagCount ? timingTagCount + ' timing tags (' + Math.round(timingTagRate) + '% rate)' : '',
+      timingTagCount ? timingTagCount + ' age-up tempo tags (' + Math.round(timingTagRate) + '% rate)' : '',
       castleMin ? 'Castle at ' + minutesText(castleMin) : '',
       hasStrategyTech(strategy, 'Bodkin|Bloodlines|Scale|Chain|Wheelbarrow') ? 'upgrade timing sample present' : ''
     ]);
@@ -2527,27 +2575,29 @@ function scoredPlaystyle(d) {
     recovery + recoveryTagRate * 0.35 + (poorSpawnBest ? 5 : 0) + (tagStat(p, 'Low-eco pressure').rate ? 2 : 0),
     'Anchor read: can take messy starts, reboom after damage, and keep a side alive until team stabilizes.',
     [
-      recoveryTagCount ? recoveryTagCount + ' recovery tags (' + Math.round(recoveryTagRate) + '% rate)' : '',
+      recoveryTagCount ? recoveryTagCount + ' reboom tags (' + Math.round(recoveryTagRate) + '% rate)' : '',
       recovery ? 'recovery score ' + fmtImpactAvg(recovery) : '',
       poorSpawnBest ? 'adapts to poor-resource starts' : ''
     ]);
 
   addStyleCandidate(candidates, 'Cavalry map-control pocket',
-    (cavalryLean ? 22 : 0) + army * 0.5 + timing * 0.35 + (boomTagCount ? 4 : 0),
+    (cavalryLean ? 22 : 0) + (scoutKnightStrategy ? 14 : 0) + army * 0.5 + timing * 0.35 + (boomTagCount ? 4 : 0),
     'Cavalry-pocket read: uses mobility for raids, cleanup, relic/map control, and fast swing fights after eco setup.',
     [
       cavalryLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       army ? 'army score ' + fmtImpactAvg(army) : '',
-      timing ? 'timing score ' + fmtImpactAvg(timing) : ''
+      timing ? 'timing score ' + fmtImpactAvg(timing) : '',
+      scoutKnightStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
     ]);
 
   addStyleCandidate(candidates, 'Archer pressure flank',
-    (archerLean ? 22 : 0) + army * 0.55 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
+    (archerLean ? 22 : 0) + (archerStrategy ? 14 : 0) + army * 0.55 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
     'Archer-flank read: wants early ranges, ranged mass, upgrade windows, and pressure that forces defensive skirms/towers.',
     [
       archerLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       preCastleMil ? preCastleMil + ' pre-Castle military' : '',
-      timingTagCount ? timingTagCount + ' timing tags' : ''
+      timingTagCount ? timingTagCount + ' age-up tempo tags' : '',
+      archerStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
     ]);
 
   addStyleCandidate(candidates, 'Trash-war stabilizer',
@@ -2561,12 +2611,13 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Siege-support closer',
-    (siegeLean ? 24 : 0) + timing * 0.5 + avgImpact * 0.35,
+    (siegeLean ? 24 : 0) + (castleSiegeStrategy ? 14 : 0) + timing * 0.5 + avgImpact * 0.35,
     'Siege-support read: converts map control into push power, treb/ram/mango pressure, and late-game closing fights.',
     [
       siegeLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       timing ? 'timing score ' + fmtImpactAvg(timing) : '',
-      avgImpact ? 'impact score ' + fmtImpactAvg(avgImpact) : ''
+      avgImpact ? 'impact score ' + fmtImpactAvg(avgImpact) : '',
+      castleSiegeStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
     ]);
 
   addStyleCandidate(candidates, impactStyleLabel(p.style, leader),
@@ -2600,19 +2651,19 @@ function tagRead(tags) {
   if (primary === 'Army pressure') return 'Primary tag says pressure player: likely raids, contests map, and forces reactions.';
   if (primary === 'Boom carry') return 'Primary tag says boom carry: quiet early army, fast eco mass, then late-game carry if protected.';
   if (primary === 'Eco carry') return 'Primary tag says eco carry: give space, protect trade/boom lanes, expect scaling value.';
-  if (primary === 'Timing edge') return 'Primary tag says timing edge: strongest when team follows upgrade or age-up windows.';
-  if (primary === 'Recovery') return 'Primary tag says recovery: useful when early plan breaks and team needs stabilizing.';
+  if (primary === 'Timing edge') return 'Primary tag says age-up tempo: faster click-up windows than lobby peers, especially around Castle timing.';
+  if (primary === 'Recovery') return 'Primary tag says reboom: useful when early plan breaks and team needs eco rebuilt.';
   if (primary === 'Low-eco pressure') return 'Primary tag says low-eco pressure: can buy time, but may need teammate economy behind it.';
   if (primary === 'High impact') return 'Primary tag says high impact: broad contribution across win/loss samples.';
-  return 'Recurring tags: ' + tags.join(', ') + '.';
+  return 'Recurring tags: ' + tags.map(tagLabel).join(', ') + '.';
 }
 
 function profileWatchout(p, s) {
   var vals = [
     ['army pressure', p.avg_army],
     ['eco scaling', p.avg_eco],
-    ['timing windows', p.avg_timing],
-    ['recovery', p.avg_recovery]
+    ['age-up tempo', p.avg_timing],
+    ['reboom', p.avg_recovery]
   ].filter(function (x) { return x[1] !== null && x[1] !== undefined; });
   if (s.winrate !== null && s.winrate !== undefined && Number(s.winrate) < 45) return 'Win rate is under 45% in this slice; treat sample as form dip or rough matchup pool.';
   if (!vals.length) return 'Needs more parsed replays before weak spots are reliable.';
@@ -2670,6 +2721,14 @@ function armyMixText(strategy) {
   }).join(', ') + '.';
 }
 
+function strategyTagsText(tags) {
+  tags = tags || [];
+  if (!tags.length) return 'No classified strategy tags yet.';
+  return tags.slice(0, 5).map(function (t) {
+    return (t.label || t.key || '-') + ' ' + t.games + 'x' + (t.winrate == null ? '' : ' at ' + fmtPct(t.winrate));
+  }).join(', ') + '.';
+}
+
 function techText(rows, empty) {
   rows = rows || [];
   if (!rows.length) return empty;
@@ -2683,6 +2742,7 @@ function playerProfileDescription(d) {
   var p = s.impact_profile || {};
   var report = p.scout_report || {};
   var strategy = s.strategy_profile || {};
+  var strategyTags = s.strategy_tags || [];
   var name = s.nick || 'This player';
   var civRows = p.best_civs && p.best_civs.length ? p.best_civs : (d.civs || []);
   var durRows = p.duration_edges && p.duration_edges.length ? p.duration_edges : (d.durations || []);
@@ -2698,7 +2758,8 @@ function playerProfileDescription(d) {
     + ', with ' + (s.games || 0) + ' matches and a ' + fmtPct(s.winrate) + ' win rate.' + elo;
   var second = style.read || report.description || p.summary || 'No parsed replay sample is available yet.';
   if (style.reasons && style.reasons.length) second += ' Evidence: ' + style.reasons.slice(0, 3).join('; ') + '.';
-  if (tags.length) second += ' Recurring game tags: ' + tags.join(', ') + '.';
+  if (tags.length) second += ' Recurring game tags: ' + tags.map(tagLabel).join(', ') + '.';
+  if (strategyTags.length) second += ' Classified strategy tags: ' + strategyTagLabels(strategyTags).slice(0, 3).join(', ') + '.';
   if (strategy.games) second += ' Strategy read: ' + strategyProfileText(strategy);
   var luckText = luckSummary(luck);
   var third = '';
@@ -2716,6 +2777,7 @@ function playerProfileDescription(d) {
     commentaryCard('AoE read', style.read),
     commentaryCard('Style evidence', style.reasons && style.reasons.length ? style.reasons.slice(0, 4).join('; ') + '.' : 'Needs more parsed replay data.'),
     commentaryCard('Tag signal', tagRead(tags)),
+    commentaryCard('Strategy tags', strategyTagsText(strategyTags)),
     commentaryCard('Boom profile', boomRead(p)),
     commentaryCard('Game plan', strategyProfileText(strategy)),
     commentaryCard('Army comp', armyCompText(strategy)),
