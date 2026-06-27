@@ -587,18 +587,12 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 0.65rem;
 }
-.match-roster-details summary { cursor: pointer; color: #8fb4ff; white-space: nowrap; }
-.match-roster-details[open] summary { margin-bottom: 0.75rem; }
 .match-roster-inline { min-width: 760px; overflow-x: auto; }
 .match-roster-inline .match-card-body { grid-template-columns: 180px 1fr 40px 1fr; }
 .match-roster-inline .match-map-box { font-size: 0.9rem; }
 .match-detail-row td { background: #2b2d32; padding: 0.9rem 1rem; border-top: 0; }
 .match-expand-btn { background: none; border: 0; color: #8fb4ff; cursor: pointer; font: inherit; font-weight: 700; padding: 0; white-space: nowrap; }
 .match-expand-btn:hover { text-decoration: underline; }
-.match-roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; padding: 0.75rem 0 0.25rem; }
-.roster-team { border: 1px solid #484c54; border-radius: 6px; overflow: hidden; background: rgba(0,0,0,0.12); }
-.roster-team-title { padding: 0.45rem 0.6rem; color: white; background: #202225; font-family: 'Oswald', sans-serif; letter-spacing: 0.5px; }
-.roster-player { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(96px, 1fr) minmax(140px, 1fr) auto; gap: 0.5rem; align-items: center; padding: 0.5rem 0.6rem; border-top: 1px solid #3d4148; }
 .roster-tags { color: #c4c7cc; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster-impact { color: #a9adb5; font-size: 0.82rem; text-align: right; white-space: nowrap; }
 .match-card-list { display: flex; flex-direction: column; gap: 1rem; }
@@ -612,8 +606,13 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .match-map-name { color: white; font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem; }
 .match-vs { display: flex; align-items: center; justify-content: center; color: #8b8e94; font-weight: 700; }
 .match-team { border: 1px solid transparent; border-radius: 6px; padding: 0.55rem; }
-.match-team.winning-team { border-color: #d99026; box-shadow: inset 0 0 0 1px rgba(217,144,38,0.25); }
-.match-team-title { color: #a9adb5; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.35rem; }
+.match-team.winning-team { border-color: rgba(94, 209, 139, 0.34); background: rgba(54, 140, 83, 0.08); }
+.match-team.losing-team { border-color: rgba(255, 109, 115, 0.28); background: rgba(150, 55, 59, 0.07); }
+.match-team-title { color: #a9adb5; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.35rem; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.team-result-pill { border: 1px solid #555b63; border-radius: 5px; padding: 0.1rem 0.4rem; font-size: 0.72rem; font-weight: 800; letter-spacing: 0; }
+.team-result-pill.W { color: #63d98b; border-color: rgba(99,217,139,0.42); background: rgba(54,140,83,0.12); }
+.team-result-pill.L { color: #ff6d73; border-color: rgba(255,109,115,0.38); background: rgba(150,55,59,0.12); }
+.team-result-pill.D { color: #c4c7cc; }
 .match-card-player { display: grid; grid-template-columns: minmax(120px,1fr) minmax(100px,0.8fr) minmax(120px,0.9fr) auto; align-items: center; gap: 0.5rem; padding: 0.42rem 0; border-top: 1px solid rgba(255,255,255,0.07); }
 .match-card-player:first-of-type { border-top: 0; }
 .match-card-player.top-impact { background: rgba(217,144,38,0.10); border-radius: 5px; padding-left: 0.35rem; padding-right: 0.35rem; }
@@ -1566,24 +1565,6 @@ function civIcon(civ) {
   var url = 'https://raw.githubusercontent.com/SiegeEngineers/aoe2techtree/master/img/Civs/' + civSlug(civ) + '.png';
   return '<span class="civ-cell"><img class="civ-icon" src="' + esc(url) + '" alt="' + esc(civ) + '" onerror="this.style.display=\'none\'"><span class="civ-name">' + esc(civ) + '</span></span>';
 }
-function rosterPlayer(p) {
-  var impact = p.impact || {};
-  var tags = impact.impact_tags && impact.impact_tags.length ? impact.impact_tags.join(', ') : 'No tags';
-  var scores = impact.impact_score == null ? '-' : ('Impact ' + impact.impact_score + ' · A ' + impact.army_score + ' · E ' + impact.eco_score);
-  var result = p.result ? '<span class="form-pill ' + esc(p.result) + '">' + esc(p.result) + '</span>' : '';
-  return '<div class="roster-player">'
-    + playerCell(p.nick, p.avatar, p.user_id)
-    + civIcon(p.civ)
-    + '<div class="roster-impact">' + result + ' ' + esc(scores) + '</div>'
-    + '<div class="roster-tags" title="' + esc(tags) + '">' + esc(tags) + '</div>'
-    + '</div>';
-}
-function matchRosterDetails(r) {
-  var players = r.players || [];
-  if (!players.length) return '-';
-  return '<details class="match-roster-details"><summary>' + players.length + ' players</summary>'
-    + '<div class="match-roster-inline">' + matchCardBody(r) + '</div></details>';
-}
 function matchExpandButton(r) {
   var n = (r.players || []).length;
   if (!n) return '-';
@@ -1627,21 +1608,23 @@ function topImpactPlayer(players) {
 }
 function matchTeamCard(teamName, players, topPlayer) {
   players = players || [];
-  var winning = players.some(function (p) { return p.result === 'W'; });
+  var teamResult = (players.find(function (p) { return p.result; }) || {}).result || '';
+  var resultClass = teamResult === 'W' ? ' winning-team' : teamResult === 'L' ? ' losing-team' : '';
   var rows = players.map(function (p) {
     var impact = p.impact || {};
     var tags = impact.impact_tags && impact.impact_tags.length ? impact.impact_tags.join(', ') : 'No tags';
     var isTop = topPlayer && p === topPlayer;
-    var result = p.result ? '<span class="form-pill ' + esc(p.result) + '">' + esc(p.result) + '</span>' : '';
     var score = impact.impact_score == null ? '-' : String(impact.impact_score);
     return '<div class="match-card-player' + (isTop ? ' top-impact' : '') + '">'
       + playerCell(p.nick, p.avatar, p.user_id)
       + civIcon(p.civ)
       + '<span class="roster-tags" title="' + esc(tags) + '">' + esc(tags) + '</span>'
-      + '<span class="roster-impact">' + result + ' ' + esc(score) + (isTop ? ' <span class="impact-badge">Carry</span>' : '') + '</span>'
+      + '<span class="roster-impact">' + esc(score) + (isTop ? ' <span class="impact-badge">Carry</span>' : '') + '</span>'
       + '</div>';
   }).join('');
-  return '<div class="match-team' + (winning ? ' winning-team' : '') + '"><div class="match-team-title">' + esc(teamName) + '</div>' + rows + '</div>';
+  return '<div class="match-team' + resultClass + '"><div class="match-team-title"><span>' + esc(teamName) + '</span>'
+    + (teamResult ? '<span class="team-result-pill ' + esc(teamResult) + '">' + esc(teamResult) + '</span>' : '')
+    + '</div>' + rows + '</div>';
 }
 function matchCard(r) {
   var title = (r.queue || 'Match').replace(/_/g, ' ');
