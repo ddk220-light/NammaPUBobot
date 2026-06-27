@@ -589,9 +589,12 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 }
 .match-roster-details summary { cursor: pointer; color: #8fb4ff; white-space: nowrap; }
 .match-roster-details[open] summary { margin-bottom: 0.75rem; }
-.match-roster-inline { min-width: 760px; }
+.match-roster-inline { min-width: 760px; overflow-x: auto; }
 .match-roster-inline .match-card-body { grid-template-columns: 180px 1fr 40px 1fr; }
 .match-roster-inline .match-map-box { font-size: 0.9rem; }
+.match-detail-row td { background: #2b2d32; padding: 0.9rem 1rem; border-top: 0; }
+.match-expand-btn { background: none; border: 0; color: #8fb4ff; cursor: pointer; font: inherit; font-weight: 700; padding: 0; white-space: nowrap; }
+.match-expand-btn:hover { text-decoration: underline; }
 .match-roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; padding: 0.75rem 0 0.25rem; }
 .roster-team { border: 1px solid #484c54; border-radius: 6px; overflow: hidden; background: rgba(0,0,0,0.12); }
 .roster-team-title { padding: 0.45rem 0.6rem; color: white; background: #202225; font-family: 'Oswald', sans-serif; letter-spacing: 0.5px; }
@@ -1159,6 +1162,7 @@ var civData = [], sortCol = 'civ', sortAsc = true;
 // Match stats
 var matchData = null, matchPeriod = 'all', matchPlayer = 'all';
 var matchView = 'overview';
+var expandedMatches = {};
 var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
 var leaderboardMinMatches = 0;
 var playerProfileUserId = null, playerProfilePeriod = 'all';
@@ -1580,6 +1584,22 @@ function matchRosterDetails(r) {
   return '<details class="match-roster-details"><summary>' + players.length + ' players</summary>'
     + '<div class="match-roster-inline">' + matchCardBody(r) + '</div></details>';
 }
+function matchExpandButton(r) {
+  var n = (r.players || []).length;
+  if (!n) return '-';
+  var open = !!expandedMatches[r.match_id];
+  return '<button class="match-expand-btn" type="button" onclick="toggleMatchDetail(\'' + esc(r.match_id) + '\'); event.stopPropagation();">'
+    + (open ? '\u25BC ' : '\u25B6 ') + n + ' players</button>';
+}
+function toggleMatchDetail(matchId) {
+  expandedMatches[matchId] = !expandedMatches[matchId];
+  if (currentPage === 'match-stats') renderMatchStats();
+  if (currentPage === 'player-profile' && playerDetailData) renderPlayerDetail(playerDetailData);
+}
+function matchDetailRow(r, colSpan) {
+  if (!expandedMatches[r.match_id]) return '';
+  return '<tr class="match-detail-row"><td colspan="' + esc(colSpan) + '"><div class="match-roster-inline">' + matchCardBody(r) + '</div></td></tr>';
+}
 function matchCardBody(r) {
   var players = r.players || [];
   var grouped = {};
@@ -1764,7 +1784,7 @@ function setMiniSort(tableId, key, type) {
   if (currentPage === 'player-profile' && playerDetailData) renderPlayerDetail(playerDetailData);
 }
 
-function sortableTable(tableId, title, columns, rows, empty, rowAttrs) {
+function sortableTable(tableId, title, columns, rows, empty, rowAttrs, detailRender) {
   if (!rows || !rows.length) return '<h2>' + esc(title) + '</h2><div class="empty-panel">' + esc(empty || 'No data.') + '</div>';
   var state = miniSort[tableId];
   var sorted = rows.slice();
@@ -1787,11 +1807,13 @@ function sortableTable(tableId, title, columns, rows, empty, rowAttrs) {
     }).join('')
     + '</tr></thead><tbody>' + sorted.map(function (row, idx) {
       var attrs = rowAttrs ? rowAttrs(row, idx) : '';
-      return '<tr' + (attrs ? ' ' + attrs : '') + '>' + columns.map(function (col) {
+      var main = '<tr' + (attrs ? ' ' + attrs : '') + '>' + columns.map(function (col) {
         var cls = col.className ? (typeof col.className === 'function' ? col.className(row, idx) : col.className) : '';
         var html = col.render ? col.render(row, idx) : esc(row[col.key]);
         return '<td' + (cls ? ' class="' + esc(cls) + '"' : '') + '>' + html + '</td>';
       }).join('') + '</tr>';
+      var detail = detailRender ? detailRender(row, columns.length) : '';
+      return main + detail;
     }).join('') + '</tbody></table>';
 }
 
@@ -1835,13 +1857,13 @@ function renderMatchTables() {
       { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
       { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
       { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
-      { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchRosterDetails(r); } },
+      { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchExpandButton(r); } },
       { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
       { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
       { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
       { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
-    ], (matchData.recent || []).slice(0, 12), 'No recent matches.');
+    ], (matchData.recent || []).slice(0, 12), 'No recent matches.', null, matchDetailRow);
   } else {
     document.getElementById('match-primary-panel').innerHTML = sortableTable('match-player-board', 'Player leaderboard', [
       { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
@@ -1864,7 +1886,7 @@ function renderMatchTables() {
       { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
       { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
-    ], (matchData.recent || []).slice(0, 20), 'No recent matches.');
+    ], (matchData.recent || []).slice(0, 20), 'No recent matches.', null, matchDetailRow);
   }
 }
 
@@ -2056,7 +2078,7 @@ function renderPlayerDetail(d) {
     { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
     { key: 'opponent_civs', label: 'Opponent civs', render: function (r) { return esc(r.opponent_civs || '-'); } },
     { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
-    { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchRosterDetails(r); } },
+    { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchExpandButton(r); } },
     { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
     { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
     { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
@@ -2064,7 +2086,7 @@ function renderPlayerDetail(d) {
     { key: 'duration_s', label: 'Duration', type: 'number', className: 'num', render: function (r) { return fmtDuration(r.duration_s); } },
     { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
-  ], d.matches || [], 'No matches in this period.');
+  ], d.matches || [], 'No matches in this period.', null, matchDetailRow);
 }
 
 function bestRow(rows, sortKey) {
