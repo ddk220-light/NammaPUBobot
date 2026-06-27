@@ -588,8 +588,13 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   gap: 0.65rem;
 }
 .match-roster-inline { min-width: 0; overflow-x: auto; }
-.match-roster-inline .match-card-body { min-width: 860px; grid-template-columns: 190px minmax(300px, 1fr) 40px minmax(300px, 1fr); }
+.match-roster-inline .match-card-body { min-width: 0; grid-template-columns: 155px minmax(0, 1fr) 32px minmax(0, 1fr); gap: 0.75rem; }
 .match-roster-inline .match-map-box { font-size: 0.9rem; }
+.match-roster-inline .match-map-name { font-size: 1rem; }
+.match-roster-inline .match-card-player { grid-template-columns: minmax(88px,1fr) minmax(60px,0.75fr) minmax(88px,1fr) 42px; gap: 0.35rem; padding: 0.34rem 0.38rem; }
+.match-roster-inline .roster-tag { font-size: 0.66rem; padding: 0.08rem 0.32rem; }
+.match-roster-inline .roster-impact { gap: 0.22rem; font-size: 0.76rem; }
+.match-roster-inline .impact-badge { font-size: 0.58rem; padding: 0.06rem 0.28rem; }
 .match-detail-row td { background: #2b2d32; padding: 0.9rem 1rem; border-top: 0; }
 .match-expand-btn { background: none; border: 0; color: #8fb4ff; cursor: pointer; font: inherit; font-weight: 700; padding: 0; white-space: nowrap; }
 .match-expand-btn:hover { text-decoration: underline; }
@@ -698,13 +703,13 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 }
 .match-panel {
   background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
-  min-height: 180px; overflow: hidden;
+  min-height: 180px; overflow: visible;
 }
 .match-panel h2 {
   font-family: 'Oswald', sans-serif; font-weight: 400; letter-spacing: 0.7px;
   font-size: 1.05rem; color: white; padding: 0.85rem 1rem 0.5rem;
 }
-.mini-table { width: 100%; border-collapse: collapse; }
+.mini-table { width: 100%; border-collapse: collapse; table-layout: auto; }
 .mini-table th {
   color: #969aa2; background: #202225; text-transform: uppercase;
   font-size: 0.68rem; letter-spacing: 0.06em; padding: 0.55rem 0.7rem; text-align: left;
