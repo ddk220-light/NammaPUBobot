@@ -620,6 +620,10 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .profile-description { background: #2f3136; border: 1px solid #484c54; border-radius: 6px; color: #f0f1f3; padding: 1rem 1.1rem; margin-bottom: 1rem; font-size: 1rem; line-height: 1.55; }
 .profile-description p { margin: 0 0 0.75rem; }
 .profile-description p:last-child { margin-bottom: 0; }
+.commentary-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 0.65rem; margin-top: 0.9rem; }
+.commentary-card { border: 1px solid #484c54; border-radius: 6px; background: rgba(31,33,36,0.55); padding: 0.75rem; min-width: 0; }
+.commentary-title { color: #a9adb5; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; margin-bottom: 0.35rem; }
+.commentary-text { color: #f0f1f3; font-weight: 700; overflow-wrap: anywhere; }
 .opponent-card {
   display: flex; align-items: center; gap: 12px; background: #2f3136;
   border: 1px solid #484c54; border-radius: 6px; padding: 0.85rem;
@@ -830,6 +834,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   .match-vs { min-height: 24px; }
   .match-card-player { grid-template-columns: 1fr; align-items: start; }
   .profile-description { font-size: 0.95rem; }
+  .commentary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-controls { align-items: stretch; }
   table.stats-table { min-width: 500px; font-size: 12px; }
   table.stats-table th { font-size: 10px; padding: 0.5rem 0.4rem; }
@@ -861,6 +866,9 @@ table.stats-table td.phase-cell { color: #9aa0a6; font-weight: 400; }
 table.stats-table td.strat-cond { color: #8a8d93; font-size: 12px; font-weight: 400; max-width: 420px; white-space: normal; }
 table.stats-table td.strat-sub { color: #c7c9cd; font-weight: 400; font-size: 12.5px; white-space: normal; max-width: 220px; }
 table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-child { color: #9aa0a6; font-style: italic; }
+@media (max-width: 640px) {
+  .commentary-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
@@ -2081,6 +2089,60 @@ function bestRow(rows, sortKey) {
   });
   return rows[0];
 }
+
+function impactLeader(p) {
+  var scores = [
+    ['army', p.avg_army],
+    ['eco', p.avg_eco],
+    ['timing', p.avg_timing],
+    ['recovery', p.avg_recovery]
+  ].filter(function (x) { return x[1] !== null && x[1] !== undefined; });
+  if (!scores.length) return null;
+  scores.sort(function (a, b) { return Number(b[1]) - Number(a[1]); });
+  return scores[0];
+}
+
+function styleRead(style) {
+  var reads = {
+    'Pressure player': 'tempo/flank read: makes space early, keeps enemy economy busy, and lets pocket-style allies scale',
+    'Economy carry': 'boom/carry read: wants safe setup, then wins through economy lead and late-game weight',
+    'Timing specialist': 'timing-push read: spikes around upgrades, age-ups, and coordinated power windows',
+    'Recovery anchor': 'anchor read: absorbs pressure, re-booms, and keeps team position playable',
+    'High-impact flex': 'flex read: useful across army, eco, timing, and recovery lanes',
+    'Balanced flex': 'balanced read: steady output without one dominant lane'
+  };
+  return reads[style] || reads['Balanced flex'];
+}
+
+function tagRead(tags) {
+  if (!tags.length) return 'No replay tags yet; style read falls back to win rates and Elo movement.';
+  var primary = tags[0];
+  if (primary === 'Army pressure') return 'Primary tag says pressure player: likely raids, contests map, and forces reactions.';
+  if (primary === 'Eco carry') return 'Primary tag says eco carry: give space, protect trade/boom lanes, expect scaling value.';
+  if (primary === 'Timing edge') return 'Primary tag says timing edge: strongest when team follows upgrade or age-up windows.';
+  if (primary === 'Recovery') return 'Primary tag says recovery: useful when early plan breaks and team needs stabilizing.';
+  if (primary === 'Low-eco pressure') return 'Primary tag says low-eco pressure: can buy time, but may need teammate economy behind it.';
+  if (primary === 'High impact') return 'Primary tag says high impact: broad contribution across win/loss samples.';
+  return 'Recurring tags: ' + tags.join(', ') + '.';
+}
+
+function profileWatchout(p, s) {
+  var vals = [
+    ['army pressure', p.avg_army],
+    ['eco scaling', p.avg_eco],
+    ['timing windows', p.avg_timing],
+    ['recovery', p.avg_recovery]
+  ].filter(function (x) { return x[1] !== null && x[1] !== undefined; });
+  if (s.winrate !== null && s.winrate !== undefined && Number(s.winrate) < 45) return 'Win rate is under 45% in this slice; treat sample as form dip or rough matchup pool.';
+  if (!vals.length) return 'Needs more parsed replays before weak spots are reliable.';
+  vals.sort(function (a, b) { return Number(a[1]) - Number(b[1]); });
+  return 'Lowest impact lane is ' + vals[0][0] + ' (' + fmtImpactAvg(vals[0][1]) + '), so pair/strategy should cover that lane.';
+}
+
+function commentaryCard(title, text) {
+  return '<div class="commentary-card"><div class="commentary-title">' + esc(title) + '</div><div class="commentary-text">' + esc(text) + '</div></div>';
+}
+
 function playerProfileDescription(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
@@ -2091,6 +2153,7 @@ function playerProfileDescription(d) {
   var civ = bestRow(civRows, 'winrate');
   var dur = bestRow(durRows, 'winrate');
   var tags = (p.top_tags || []).slice(0, 3).map(function (t) { return t.tag; });
+  var leader = impactLeader(p);
   var elo = s.rating_end == null ? '' : ' Current end Elo is ' + fmtElo(s.rating_end) + '.';
   var first = name + ' profiles as a ' + (p.style || 'developing') + ' in ' + periodLabel(playerProfilePeriod)
     + ', with ' + (s.games || 0) + ' matches and a ' + fmtPct(s.winrate) + ' win rate.' + elo;
@@ -2101,7 +2164,24 @@ function playerProfileDescription(d) {
   if (dur) third += 'Best duration window is ' + dur.bucket + ' at ' + fmtPct(dur.winrate) + ' across ' + dur.games + ' games. ';
   if (s.best_ally) third += 'Best ally pairing is ' + (s.best_ally.nick || '-') + ' at ' + fmtPct(s.best_ally.winrate) + '. ';
   if (s.worst_enemy) third += 'Toughest opponent is ' + (s.worst_enemy.nick || '-') + ' with only ' + fmtPct(s.worst_enemy.winrate) + ' wins against them.';
-  return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '');
+  var strength = leader ? 'Best impact lane is ' + leader[0] + ' (' + fmtImpactAvg(leader[1]) + ').' : 'More replay samples needed.';
+  if (civ) strength += ' Comfort pick: ' + civ.civ + '.';
+  var setup = [];
+  if (s.best_ally) setup.push('with ' + (s.best_ally.nick || '-') + ' (' + fmtPct(s.best_ally.winrate) + ')');
+  if (dur) setup.push(dur.bucket + ' games');
+  if (setup.length === 0) setup.push('larger replay sample');
+  var cards = [
+    commentaryCard('AoE read', styleRead(p.style)),
+    commentaryCard('Tag signal', tagRead(tags)),
+    commentaryCard('Strength', strength),
+    commentaryCard('Watchout', profileWatchout(p, s)),
+    commentaryCard('Best setup', setup.join(' + ')),
+    commentaryCard('Enemy prep', s.worst_enemy ? 'Plan specifically for ' + (s.worst_enemy.nick || '-') + '; this is lowest head-to-head win rate.' : 'No tough-opponent sample yet.'),
+    commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.'),
+    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, and opponents.')
+  ].join('');
+  return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
+    + '<div class="commentary-grid">' + cards + '</div>';
 }
 
 /* ─── Strategy Insights ─── */
