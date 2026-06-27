@@ -1037,28 +1037,35 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
             <option value="week">1 week</option>
           </select>
         </label>
+        <div class="period-tabs">
+          <button class="period-tab selected" data-player-view="overview" onclick="setPlayerProfileView('overview')">Overview</button>
+          <button class="period-tab" data-player-view="matches" onclick="setPlayerProfileView('matches')">All matches</button>
+        </div>
       </div>
       <div id="player-detail">
-        <section class="profile-description" id="player-description"></section>
-        <div class="metric-grid" id="player-detail-summary"></div>
-        <div class="trend-panel" id="player-elo-trend"></div>
-        <section class="detail-section">
-          <h2>Best allies</h2>
-          <div class="opponent-strip" id="player-allies"></div>
-        </section>
-        <section class="detail-section">
-          <h2>Tough opponents</h2>
-          <div class="opponent-strip" id="player-opponents"></div>
-        </section>
-        <section class="detail-section">
-          <h2>Win rates by match duration</h2>
-          <div class="duration-grid" id="player-durations"></div>
-        </section>
-        <div class="detail-grid">
-          <section class="match-panel" id="player-civs"></section>
-          <section class="match-panel" id="player-opp-civs"></section>
+        <div id="player-profile-overview">
+          <section class="profile-description" id="player-description"></section>
+          <div class="metric-grid" id="player-detail-summary"></div>
+          <div class="trend-panel" id="player-elo-trend"></div>
+          <section class="detail-section">
+            <h2>Best allies</h2>
+            <div class="opponent-strip" id="player-allies"></div>
+          </section>
+          <section class="detail-section">
+            <h2>Tough opponents</h2>
+            <div class="opponent-strip" id="player-opponents"></div>
+          </section>
+          <section class="detail-section">
+            <h2>Win rates by match duration</h2>
+            <div class="duration-grid" id="player-durations"></div>
+          </section>
+          <div class="detail-grid">
+            <section class="match-panel" id="player-civs"></section>
+            <section class="match-panel" id="player-opp-civs"></section>
+          </div>
+          <section class="match-panel detail-section" id="player-matches"></section>
         </div>
-        <section class="match-panel detail-section" id="player-matches"></section>
+        <section class="detail-section" id="player-profile-matches" style="display:none"></section>
       </div>
       <footer>Profile style is inferred from replay tags, impact scores, best civs, and duration windows.</footer>
     </div>
@@ -1186,6 +1193,7 @@ var expandedMatches = {};
 var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
 var leaderboardMinMatches = 0;
 var playerProfileUserId = null, playerProfilePeriod = 'all';
+var playerProfileView = 'overview';
 var playerDetailData = null, miniSort = {
   'leader-players': { key: 'rating_end', asc: false },
   'match-player-board': { key: 'rating_end', asc: false }
@@ -2038,6 +2046,18 @@ function setPlayerProfilePeriod(p) {
   if (playerProfileUserId) loadPlayerDetail(playerProfileUserId, playerProfilePeriod);
 }
 
+function setPlayerProfileView(v) {
+  playerProfileView = v || 'overview';
+  document.querySelectorAll('[data-player-view]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.playerView === playerProfileView);
+  });
+  var overview = document.getElementById('player-profile-overview');
+  var matches = document.getElementById('player-profile-matches');
+  if (overview) overview.style.display = playerProfileView === 'overview' ? '' : 'none';
+  if (matches) matches.style.display = playerProfileView === 'matches' ? '' : 'none';
+  if (playerDetailData) renderPlayerMatchesView(playerDetailData);
+}
+
 async function loadPlayerDetail(userId, period) {
   leaderboardPlayer = userId;
   playerProfileUserId = userId;
@@ -2048,6 +2068,13 @@ async function loadPlayerDetail(userId, period) {
   document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
   document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
   try {
+    if (!stratData.length) {
+      try {
+        await loadStrategyData();
+      } catch (e) {
+        console.warn('Luck profile data unavailable', e);
+      }
+    }
     var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(playerProfilePeriod) + '&player_id=' + encodeURIComponent(userId));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var d = await resp.json();
@@ -2064,7 +2091,8 @@ function renderPlayerDetail(d) {
   var p = s.impact_profile || {};
   var report = p.scout_report || {};
   var subtitle = document.getElementById('player-profile-subtitle');
-  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + (p.style || 'No replay style');
+  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + playstyleHeadline(d);
+  setPlayerProfileView(playerProfileView);
   document.getElementById('player-description').innerHTML = playerProfileDescription(d);
   document.getElementById('player-detail-summary').innerHTML = [
     selectedPlayerCard(s),
@@ -2073,7 +2101,7 @@ function renderPlayerDetail(d) {
     card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
     card('Best ally', relationName(s.best_ally, 'No ally sample'), relationSummary(s.best_ally, 'ranked teammate sample')),
     card('Worst enemy', relationName(s.worst_enemy, 'No enemy sample'), relationSummary(s.worst_enemy, 'ranked opponent sample')),
-    card('Generated scout report', report.headline || p.style || 'No replay style',
+    card('Generated scout report', playstyleHeadline(d),
       report.description || p.summary || 'No parsed replay impact data'),
     card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
     card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
@@ -2124,6 +2152,13 @@ function renderPlayerDetail(d) {
     { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
   ], d.matches || [], 'No matches in this period.', null, matchDetailRow);
+  renderPlayerMatchesView(d);
+}
+
+function renderPlayerMatchesView(d) {
+  var panel = document.getElementById('player-profile-matches');
+  if (!panel) return;
+  panel.innerHTML = renderMatchCards(d && d.matches ? d.matches : []);
 }
 
 function bestRow(rows, sortKey) {
@@ -2158,6 +2193,93 @@ function styleRead(style) {
     'Balanced flex': 'balanced read: steady output without one dominant lane'
   };
   return reads[style] || reads['Balanced flex'];
+}
+
+function impactStyleLabel(style, leader) {
+  if (style === 'Pressure player') return 'Tempo pressure player';
+  if (style === 'Economy carry') return 'Boom-and-carry player';
+  if (style === 'Timing specialist') return 'Timing-window specialist';
+  if (style === 'Recovery anchor') return 'Recovery anchor';
+  if (style === 'High-impact flex') return 'High-impact flex';
+  if (leader && leader[0] === 'army') return 'Army-first flex';
+  if (leader && leader[0] === 'eco') return 'Eco-leaning flex';
+  if (leader && leader[0] === 'timing') return 'Timing-leaning flex';
+  if (leader && leader[0] === 'recovery') return 'Stabilizing flex';
+  return 'Map-adaptive team-game flex';
+}
+
+function luckFactorText(key) {
+  var map = {
+    spawn_isolated: 'free-boom isolated starts',
+    spawn_near_enemy: 'near-enemy pressure spawns',
+    spawn_near_ally: 'close ally / shared-space spawns',
+    spawn_near_gold: 'safe early gold access',
+    spawn_gold_poor: 'gold-starved openings',
+    spawn_near_stone: 'stone-access starts',
+    spawn_stone_poor: 'stone-poor map states',
+    spawn_near_food: 'food-safe openings',
+    spawn_food_poor: 'food-poor openings',
+    tight_villagers: 'tight villager spawns',
+    scattered_villagers: 'scattered villager starts'
+  };
+  return map[key] || String(key || '').replace(/_/g, ' ');
+}
+
+function luckProfileForPlayer(name) {
+  if (!name || !stratData.length) return null;
+  var base = luckBaseline();
+  var norm = String(name).toLowerCase();
+  var pb = base ? (base.roster || []).find(function (x) { return String(x.player || '').toLowerCase() === norm; }) : null;
+  var total = pb ? Number(pb.games || 0) : 0;
+  if (!total) return null;
+  var rows = luckRows().map(function (s) {
+    var p = (s.roster || []).find(function (x) { return String(x.player || '').toLowerCase() === norm; });
+    var games = p ? Number(p.games || 0) : 0;
+    var winrate = p ? p.winrate : null;
+    return {
+      key: s.key,
+      title: s.title,
+      games: games,
+      pct: Math.round(100 * games / total),
+      winrate: winrate,
+      delta: winrate == null ? null : winrate - 50
+    };
+  }).filter(function (r) { return r.games > 0; });
+  var meaningful = rows.filter(function (r) { return r.games >= Math.max(3, Math.round(total * 0.08)); });
+  var exposure = meaningful.slice().sort(function (a, b) { return b.pct - a.pct || b.games - a.games; });
+  var best = meaningful.filter(function (r) { return r.delta !== null; }).sort(function (a, b) { return b.delta - a.delta || b.games - a.games; })[0] || null;
+  var worst = meaningful.filter(function (r) { return r.delta !== null; }).sort(function (a, b) { return a.delta - b.delta || b.games - a.games; })[0] || null;
+  return { total: total, rows: rows, exposure: exposure, best: best, worst: worst };
+}
+
+function luckSummary(profile) {
+  if (!profile) return 'Luck/spawn data is not available for this player yet.';
+  var parts = [];
+  if (profile.exposure[0]) parts.push('Most common map state: ' + luckFactorText(profile.exposure[0].key) + ' (' + profile.exposure[0].pct + '% of valid Nomad starts).');
+  if (profile.best) parts.push('Best spawn adaptation: ' + luckFactorText(profile.best.key) + ' at ' + fmtPct(profile.best.winrate) + ' (' + (profile.best.delta > 0 ? '+' : '') + profile.best.delta + ' vs 50).');
+  if (profile.worst && profile.worst !== profile.best) parts.push('Hardest spawn state: ' + luckFactorText(profile.worst.key) + ' at ' + fmtPct(profile.worst.winrate) + ' (' + (profile.worst.delta > 0 ? '+' : '') + profile.worst.delta + ' vs 50).');
+  return parts.join(' ');
+}
+
+function luckCardText(profile, key, empty) {
+  if (!profile) return empty || 'No spawn sample yet.';
+  var row = profile.rows.find(function (r) { return r.key === key; });
+  if (!row) return empty || 'No sample yet.';
+  return row.games + ' games, ' + row.pct + '% of valid starts, ' + fmtPct(row.winrate) + ' win rate';
+}
+
+function playstyleHeadline(d) {
+  var s = d.summary || {};
+  var p = s.impact_profile || {};
+  var leader = impactLeader(p);
+  var luck = luckProfileForPlayer(s.nick);
+  if (luck && luck.best && luck.best.delta >= 4) {
+    if (luck.best.key === 'spawn_isolated') return 'Free-boom map adapter';
+    if (luck.best.key === 'spawn_near_enemy') return 'Close-spawn pressure fighter';
+    if (luck.best.key === 'spawn_near_ally') return 'Ally-cluster team fighter';
+    if (luck.best.key.indexOf('_poor') >= 0) return 'Scrappy bad-spawn stabilizer';
+  }
+  return impactStyleLabel(p.style, leader);
 }
 
 function tagRead(tags) {
@@ -2200,11 +2322,14 @@ function playerProfileDescription(d) {
   var dur = bestRow(durRows, 'winrate');
   var tags = (p.top_tags || []).slice(0, 3).map(function (t) { return t.tag; });
   var leader = impactLeader(p);
+  var luck = luckProfileForPlayer(name);
+  var headline = playstyleHeadline(d);
   var elo = s.rating_end == null ? '' : ' Current end Elo is ' + fmtElo(s.rating_end) + '.';
-  var first = name + ' profiles as a ' + (p.style || 'developing') + ' in ' + periodLabel(playerProfilePeriod)
+  var first = name + ' reads as a ' + headline + ' in ' + periodLabel(playerProfilePeriod)
     + ', with ' + (s.games || 0) + ' matches and a ' + fmtPct(s.winrate) + ' win rate.' + elo;
   var second = report.description || p.summary || 'No parsed replay sample is available yet.';
   if (tags.length) second += ' Recurring game tags: ' + tags.join(', ') + '.';
+  var luckText = luckSummary(luck);
   var third = '';
   if (civ) third += name + ' gets best civ results with ' + civ.civ + ' at ' + fmtPct(civ.winrate) + ' across ' + civ.games + ' games. ';
   if (dur) third += 'Best duration window is ' + dur.bucket + ' at ' + fmtPct(dur.winrate) + ' across ' + dur.games + ' games. ';
@@ -2219,14 +2344,17 @@ function playerProfileDescription(d) {
   var cards = [
     commentaryCard('AoE read', styleRead(p.style)),
     commentaryCard('Tag signal', tagRead(tags)),
+    commentaryCard('Spawn read', luckText),
+    commentaryCard('Free boom', luckCardText(luck, 'spawn_isolated', 'No isolated-start sample yet.')),
+    commentaryCard('Early contact', luckCardText(luck, 'spawn_near_enemy', 'No near-enemy sample yet.')),
     commentaryCard('Strength', strength),
     commentaryCard('Watchout', profileWatchout(p, s)),
     commentaryCard('Best setup', setup.join(' + ')),
     commentaryCard('Enemy prep', s.worst_enemy ? 'Plan specifically for ' + (s.worst_enemy.nick || '-') + '; this is lowest head-to-head win rate.' : 'No tough-opponent sample yet.'),
     commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.'),
-    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, and opponents.')
+    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, opponents, and Luck spawn factors.')
   ].join('');
-  return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
+  return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p><p>' + esc(luckText) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
     + '<div class="commentary-grid">' + cards + '</div>';
 }
 
@@ -2238,14 +2366,19 @@ var stratSort = { col: 'games', asc: false };
 function wrPctClass(v) { return v == null ? '' : (v >= 55 ? 'wr wr-high' : v >= 45 ? 'wr wr-mid' : 'wr wr-low'); }
 function wrPctCell(v) { return '<td class="' + wrPctClass(v) + '">' + (v == null ? '-' : v + '%') + '</td>'; }
 
+async function loadStrategyData() {
+  if (stratData.length) return;
+  var resp = await fetch('/api/strategies');
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  var d = await resp.json();
+  stratData = d.strategies || [];
+  stratTotals = d.player_totals || {};
+  stratCategorized = d.player_categorized || {};
+}
+
 async function initStrategies() {
   try {
-    var resp = await fetch('/api/strategies');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    var d = await resp.json();
-    stratData = d.strategies || [];
-    stratTotals = d.player_totals || {};
-    stratCategorized = d.player_categorized || {};
+    await loadStrategyData();
     buildStratPlayerSelect();
     renderStrategies();
   } catch (e) {

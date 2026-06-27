@@ -488,9 +488,9 @@ def _period_filter(period, alias="m"):
 def _trend_bucket_expr(period, alias="m"):
 	local_at = f"CONVERT_TZ(FROM_UNIXTIME({alias}.at), '+00:00', '+05:30')"
 	if period in ("all", "year", "month6"):
-		return f"DATE_FORMAT({local_at}, '%Y-%m')"
+		return f"DATE_FORMAT({local_at}, '%%Y-%%m')"
 	if period == "month3":
-		return f"DATE_FORMAT(DATE_SUB({local_at}, INTERVAL WEEKDAY({local_at}) DAY), '%Y-%m-%d')"
+		return f"DATE_FORMAT(DATE_SUB({local_at}, INTERVAL WEEKDAY({local_at}) DAY), '%%Y-%%m-%%d')"
 	return f"DATE({local_at})"
 
 
