@@ -58,6 +58,7 @@ class Adapter:
 			# well inside the server's idle window.
 			self.pool = await aiomysql.create_pool(
 				host=self.dbHost,
+				port=int(self.dbPort),
 				user=self.dbUser,
 				password=self.dbPassword,
 				db=self.dbName,

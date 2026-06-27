@@ -526,6 +526,16 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   font-weight: 600; transition: background 0.15s, color 0.15s;
 }
 .period-tab:hover, .period-tab.selected { background: #376ace; color: white; border-color: #376ace; }
+.filter-control {
+  background: #2c3034; color: #dcddde; border: 1px solid #484c54;
+  padding: 7px 10px; border-radius: 6px; font-weight: 600; min-height: 38px;
+}
+.filter-control:focus { outline: none; border-color: #5b8cee; }
+.filter-label {
+  display: flex; align-items: center; gap: 7px; color: #969aa2;
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.filter-input { width: 82px; }
 .player-picker { position: relative; min-width: 300px; max-width: 420px; }
 .player-picker-button {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
@@ -564,6 +574,10 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .civ-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .leader-row { cursor: pointer; }
 .leader-row:hover td { background: #36393f; }
+.player-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; min-width: 0; }
+.player-link:hover .player-name-text, .player-link:hover .metric-player-name, .player-link:hover .opponent-name {
+  color: #8fb4ff; text-decoration: underline;
+}
 .detail-section { margin-top: 1rem; }
 .detail-section h2 {
   font-family: 'Oswald', sans-serif; font-weight: 400; color: white;
@@ -573,6 +587,60 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 0.65rem;
 }
+.match-roster-inline { min-width: 0; overflow-x: auto; }
+.match-roster-inline .match-card-body { min-width: 0; grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr); gap: 0.75rem; }
+.match-roster-inline .match-map-box { grid-column: 1 / -1; font-size: 0.9rem; border-right: 0; border-bottom: 1px solid #484c54; padding-right: 0; padding-bottom: 0.65rem; }
+.match-roster-inline .match-map-name { font-size: 1rem; }
+.match-roster-inline .match-card-player { grid-template-columns: minmax(0,1fr) minmax(70px,0.75fr) 42px; gap: 0.25rem 0.35rem; padding: 0.34rem 0.38rem; }
+.match-roster-inline .roster-tag { font-size: 0.66rem; padding: 0.08rem 0.32rem; }
+.match-roster-inline .roster-impact { gap: 0.22rem; font-size: 0.76rem; }
+.match-roster-inline .impact-badge { font-size: 0.58rem; padding: 0.06rem 0.28rem; }
+.match-detail-row td { background: #2b2d32; padding: 0.9rem 1rem; border-top: 0; }
+.match-expand-btn { background: none; border: 0; color: #8fb4ff; cursor: pointer; font: inherit; font-weight: 700; padding: 0; white-space: nowrap; }
+.match-expand-btn:hover { text-decoration: underline; }
+.roster-tags { grid-area: tags; display: flex; flex-wrap: wrap; gap: 0.22rem; min-width: 0; max-height: none; padding-left: 2rem; }
+.roster-tag { color: #d8dade; background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.07); border-radius: 999px; padding: 0.12rem 0.45rem; font-size: 0.72rem; line-height: 1.25; white-space: nowrap; }
+.roster-tag.army { color: #ffc6c9; background: rgba(191,84,88,0.13); border-color: rgba(255,109,115,0.18); }
+.roster-tag.boom { color: #f4e1b5; background: rgba(197,148,58,0.15); border-color: rgba(229,178,80,0.24); }
+.roster-tag.eco { color: #bdf2d1; background: rgba(76,158,103,0.13); border-color: rgba(99,217,139,0.20); }
+.roster-tag.timing { color: #cfe0ff; background: rgba(91,140,238,0.13); border-color: rgba(143,180,255,0.20); }
+.roster-tag.recovery { color: #f3d6aa; background: rgba(217,144,38,0.13); border-color: rgba(217,144,38,0.22); }
+.roster-tag.empty { color: #8e929a; background: transparent; border-color: rgba(255,255,255,0.05); }
+.roster-impact { display: flex; align-items: center; justify-content: flex-end; gap: 0.35rem; color: #c4c7cc; font-size: 0.82rem; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.match-card-list { display: flex; flex-direction: column; gap: 1rem; }
+.match-card { border: 1px solid #484c54; background: #2f3136; border-radius: 6px; padding: 1rem; }
+.match-card-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; border-bottom: 1px solid #484c54; padding-bottom: 0.7rem; margin-bottom: 0.8rem; }
+.match-card-title { font-family: 'Oswald', sans-serif; color: white; font-size: 1.2rem; letter-spacing: 0.4px; }
+.match-card-meta { color: #a9adb5; font-size: 0.9rem; margin-top: 0.25rem; }
+.match-card-id { color: #85868a; font-weight: 700; white-space: nowrap; }
+.match-card-body { display: grid; grid-template-columns: 220px minmax(360px, 1fr) 46px minmax(360px, 1fr); gap: 1rem; align-items: stretch; }
+.match-map-box { color: #d9dadd; border-right: 1px solid #484c54; padding-right: 1rem; }
+.match-map-name { color: white; font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem; }
+.match-detail-meta { color: #a9adb5; font-size: 0.82rem; margin-top: 0.18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match-vs { display: flex; align-items: center; justify-content: center; color: #8b8e94; font-weight: 800; letter-spacing: 0.08em; }
+.match-team { border: 1px solid transparent; border-radius: 7px; padding: 0.55rem 0.62rem; min-width: 0; }
+.match-team.winning-team { border-color: rgba(94, 209, 139, 0.34); background: linear-gradient(180deg, rgba(54, 140, 83, 0.11), rgba(54, 140, 83, 0.055)); }
+.match-team.losing-team { border-color: rgba(255, 109, 115, 0.28); background: linear-gradient(180deg, rgba(150, 55, 59, 0.085), rgba(150, 55, 59, 0.045)); }
+.match-team-title { color: #a9adb5; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.35rem; padding-bottom: 0.35rem; border-bottom: 1px solid rgba(255,255,255,0.065); display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.team-result-pill { border: 1px solid #555b63; border-radius: 5px; padding: 0.1rem 0.4rem; font-size: 0.72rem; font-weight: 800; letter-spacing: 0; }
+.team-result-pill.W { color: #63d98b; border-color: rgba(99,217,139,0.42); background: rgba(54,140,83,0.12); }
+.team-result-pill.L { color: #ff6d73; border-color: rgba(255,109,115,0.38); background: rgba(150,55,59,0.12); }
+.team-result-pill.D { color: #c4c7cc; }
+.match-card-player { position: relative; display: grid; grid-template-columns: minmax(0,1fr) minmax(100px,auto) minmax(42px,auto); grid-template-areas: "player civ score" "tags tags tags"; align-items: center; gap: 0.22rem 0.55rem; min-height: 44px; padding: 0.42rem 0.5rem; border-top: 1px solid rgba(255,255,255,0.07); border-radius: 5px; }
+.match-card-player:first-of-type { border-top: 0; }
+.match-card-player.top-impact { background: linear-gradient(90deg, rgba(217,144,38,0.22), rgba(217,144,38,0.08)); box-shadow: inset 3px 0 0 #d99026; border-top-color: rgba(217,144,38,0.20); }
+.match-card-player.top-impact .player-name-text { color: #fff4d6; font-weight: 800; }
+.match-card-player > .player-link { grid-area: player; min-width: 0; }
+.match-card-player > .civ-cell { grid-area: civ; justify-content: flex-start; min-width: 0; }
+.match-card-player > .roster-impact { grid-area: score; }
+.impact-badge { color: #1f2124; background: #d99026; border-radius: 999px; padding: 0.08rem 0.42rem; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 900; line-height: 1.35; }
+.profile-description { background: #2f3136; border: 1px solid #484c54; border-radius: 6px; color: #f0f1f3; padding: 1rem 1.1rem; margin-bottom: 1rem; font-size: 1rem; line-height: 1.55; }
+.profile-description p { margin: 0 0 0.75rem; }
+.profile-description p:last-child { margin-bottom: 0; }
+.commentary-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 0.65rem; margin-top: 0.9rem; }
+.commentary-card { border: 1px solid #484c54; border-radius: 6px; background: rgba(31,33,36,0.55); padding: 0.75rem; min-width: 0; }
+.commentary-title { color: #a9adb5; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 800; margin-bottom: 0.35rem; }
+.commentary-text { color: #f0f1f3; font-weight: 700; overflow-wrap: anywhere; }
 .opponent-card {
   display: flex; align-items: center; gap: 12px; background: #2f3136;
   border: 1px solid #484c54; border-radius: 6px; padding: 0.85rem;
@@ -610,7 +678,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   color: #969aa2; text-transform: uppercase; letter-spacing: 0.06em;
   font-size: 0.72rem; font-weight: 700; margin-bottom: 0.35rem;
 }
-.metric-value { color: white; font-size: 1.55rem; font-weight: 700; line-height: 1.1; }
+.metric-value { color: white; font-size: 1.55rem; font-weight: 700; line-height: 1.1; overflow-wrap: anywhere; }
 .metric-sub { color: #b9bbbe; font-size: 0.83rem; margin-top: 0.35rem; }
 .trend-panel {
   background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
@@ -624,19 +692,27 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
 }
 .trend-label { color: #85868a; font-size: 0.68rem; white-space: nowrap; }
+.elo-chart {
+  width: 100%; height: 180px; display: block;
+}
+.elo-grid-line { stroke: rgba(185,187,190,0.16); stroke-width: 1; }
+.elo-line { fill: none; stroke: #57d98b; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.elo-fill { fill: rgba(87,217,139,0.10); }
+.elo-dot { fill: #57d98b; stroke: #202225; stroke-width: 2; }
+.elo-label { fill: #969aa2; font-size: 11px; font-family: 'Outfit', sans-serif; }
 .match-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
 }
 .match-panel {
   background: #2f3136; border: 1px solid #484c54; border-radius: 6px;
-  min-height: 180px; overflow: hidden;
+  min-height: 180px; overflow: visible;
 }
 .match-panel h2 {
   font-family: 'Oswald', sans-serif; font-weight: 400; letter-spacing: 0.7px;
   font-size: 1.05rem; color: white; padding: 0.85rem 1rem 0.5rem;
 }
-.mini-table { width: 100%; border-collapse: collapse; }
+.mini-table { width: 100%; border-collapse: collapse; table-layout: auto; }
 .mini-table th {
   color: #969aa2; background: #202225; text-transform: uppercase;
   font-size: 0.68rem; letter-spacing: 0.06em; padding: 0.55rem 0.7rem; text-align: left;
@@ -768,6 +844,15 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   .detail-grid { grid-template-columns: 1fr; }
   .duration-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .player-picker { min-width: 100%; max-width: 100%; }
+  .match-card-body { grid-template-columns: 1fr; }
+  .match-roster-inline { min-width: 0; }
+  .match-roster-inline .match-card-body { min-width: 0; grid-template-columns: 1fr; }
+  .match-map-box { border-right: 0; border-bottom: 1px solid #484c54; padding-right: 0; padding-bottom: 0.75rem; }
+  .match-vs { min-height: 24px; }
+  .match-card-player { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "player score" "civ civ" "tags tags"; align-items: start; }
+  .roster-tags { padding-left: 0; }
+  .profile-description { font-size: 0.95rem; }
+  .commentary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-controls { align-items: stretch; }
   table.stats-table { min-width: 500px; font-size: 12px; }
   table.stats-table th { font-size: 10px; padding: 0.5rem 0.4rem; }
@@ -799,6 +884,9 @@ table.stats-table td.phase-cell { color: #9aa0a6; font-weight: 400; }
 table.stats-table td.strat-cond { color: #8a8d93; font-size: 12px; font-weight: 400; max-width: 420px; white-space: normal; }
 table.stats-table td.strat-sub { color: #c7c9cd; font-weight: 400; font-size: 12.5px; white-space: normal; max-width: 220px; }
 table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-child { color: #9aa0a6; font-style: italic; }
+@media (max-width: 640px) {
+  .commentary-grid { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
@@ -911,35 +999,80 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         <div class="subtitle">Slice by duration, player, and civilization</div>
       </header>
       <div class="match-controls">
-        <div class="period-tabs">
-          <button class="period-tab selected" data-lb-period="day" onclick="setLeaderboardPeriod('day')">Today</button>
-          <button class="period-tab" data-lb-period="week" onclick="setLeaderboardPeriod('week')">7 days</button>
-          <button class="period-tab" data-lb-period="month" onclick="setLeaderboardPeriod('month')">30 days</button>
-          <button class="period-tab" data-lb-period="all" onclick="setLeaderboardPeriod('all')">All</button>
-        </div>
+        <label class="filter-label">Duration
+          <select id="leaderboard-period-select" class="filter-control" onchange="setLeaderboardPeriod(this.value)">
+            <option value="all" selected>All time</option>
+            <option value="year">1 year</option>
+            <option value="month6">6 months</option>
+            <option value="month3">3 months</option>
+            <option value="month">1 month</option>
+            <option value="week">1 week</option>
+          </select>
+        </label>
+        <label class="filter-label">Min matches
+          <input id="leaderboard-min-matches" class="filter-control filter-input" type="number" min="0" step="1" value="0"
+            oninput="setLeaderboardMinMatches(this.value)">
+        </label>
         <div class="period-tabs">
           <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
           <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
         </div>
       </div>
       <div class="match-panel" id="leaderboard-panel"></div>
-      <div id="player-detail" style="display:none;">
-        <div class="metric-grid" id="player-detail-summary"></div>
-        <section class="detail-section">
-          <h2>Frequent opponents</h2>
-          <div class="opponent-strip" id="player-opponents"></div>
-        </section>
-        <section class="detail-section">
-          <h2>Win rates by match duration</h2>
-          <div class="duration-grid" id="player-durations"></div>
-        </section>
-        <div class="detail-grid">
-          <section class="match-panel" id="player-civs"></section>
-          <section class="match-panel" id="player-opp-civs"></section>
+      <footer>Player names open profile details. Duration stats require parsed replay data.</footer>
+    </div>
+  </div>
+
+  <!-- Player Profile Page -->
+  <div class="page" id="page-player-profile">
+    <div class="stats-container match-stats-container">
+      <header>
+        <h1>Player Profile</h1>
+        <div class="subtitle" id="player-profile-subtitle">Player style, win rates, tags, allies, opponents, and matches</div>
+      </header>
+      <div class="match-controls">
+        <button class="period-tab" type="button" onclick="showPage('leaderboard')">Leaderboard</button>
+        <label class="filter-label">Duration
+          <select id="player-profile-period-select" class="filter-control" onchange="setPlayerProfilePeriod(this.value)">
+            <option value="all" selected>All time</option>
+            <option value="year">1 year</option>
+            <option value="month6">6 months</option>
+            <option value="month3">3 months</option>
+            <option value="month">1 month</option>
+            <option value="week">1 week</option>
+          </select>
+        </label>
+        <div class="period-tabs">
+          <button class="period-tab selected" data-player-view="overview" onclick="setPlayerProfileView('overview')">Overview</button>
+          <button class="period-tab" data-player-view="matches" onclick="setPlayerProfileView('matches')">All matches</button>
         </div>
-        <section class="match-panel detail-section" id="player-matches"></section>
       </div>
-      <footer>Player rows are clickable. Duration stats require parsed replay data.</footer>
+      <div id="player-detail">
+        <div id="player-profile-overview">
+          <section class="profile-description" id="player-description"></section>
+          <div class="metric-grid" id="player-detail-summary"></div>
+          <div class="trend-panel" id="player-elo-trend"></div>
+          <section class="detail-section">
+            <h2>Best allies</h2>
+            <div class="opponent-strip" id="player-allies"></div>
+          </section>
+          <section class="detail-section">
+            <h2>Tough opponents</h2>
+            <div class="opponent-strip" id="player-opponents"></div>
+          </section>
+          <section class="detail-section">
+            <h2>Win rates by match duration</h2>
+            <div class="duration-grid" id="player-durations"></div>
+          </section>
+          <div class="detail-grid">
+            <section class="match-panel" id="player-civs"></section>
+            <section class="match-panel" id="player-opp-civs"></section>
+          </div>
+          <section class="match-panel detail-section" id="player-matches"></section>
+        </div>
+        <section class="detail-section" id="player-profile-matches" style="display:none"></section>
+      </div>
+      <footer>Profile style is inferred from replay tags, impact scores, best civs, and duration windows.</footer>
     </div>
   </div>
 
@@ -951,12 +1084,16 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         <div class="subtitle">Player-filtered form, win rates, civs, maps, teammates and recent games</div>
       </header>
       <div class="match-controls">
-        <div class="period-tabs">
-          <button class="period-tab" data-period="day" onclick="setMatchPeriod('day')">Today</button>
-          <button class="period-tab selected" data-period="week" onclick="setMatchPeriod('week')">7 days</button>
-          <button class="period-tab" data-period="month" onclick="setMatchPeriod('month')">30 days</button>
-          <button class="period-tab" data-period="all" onclick="setMatchPeriod('all')">All</button>
-        </div>
+        <label class="filter-label">Duration
+          <select id="match-period-select" class="filter-control" onchange="setMatchPeriod(this.value)">
+            <option value="all" selected>All time</option>
+            <option value="year">1 year</option>
+            <option value="month6">6 months</option>
+            <option value="month3">3 months</option>
+            <option value="month">1 month</option>
+            <option value="week">1 week</option>
+          </select>
+        </label>
         <div class="player-picker" id="match-player-picker">
           <button class="player-picker-button" type="button" onclick="toggleMatchPlayerPicker()">
             <span id="match-player-current" class="player-picker-current"></span>
@@ -968,9 +1105,14 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
             <div class="player-picker-options" id="match-player-options"></div>
           </div>
         </div>
+        <div class="period-tabs">
+          <button class="period-tab selected" data-match-view="overview" onclick="setMatchView('overview')">Overview</button>
+          <button class="period-tab" data-match-view="matches" onclick="setMatchView('matches')">All matches</button>
+        </div>
       </div>
       <div class="metric-grid" id="match-summary"></div>
       <div class="trend-panel" id="match-trend"></div>
+      <div class="trend-panel" id="match-elo-trend"></div>
       <div class="match-grid">
         <section class="match-panel" id="match-primary-panel"></section>
         <section class="match-panel" id="match-civs-panel"></section>
@@ -1050,9 +1192,17 @@ var MIN_ANOMALY_GAMES = 20, ANOMALY_GAP = 0.15;
 var civData = [], sortCol = 'civ', sortAsc = true;
 
 // Match stats
-var matchData = null, matchPeriod = 'week', matchPlayer = 'all';
-var leaderboardData = null, leaderboardPeriod = 'day', leaderboardMode = 'players', leaderboardPlayer = null;
-var playerDetailData = null, miniSort = {};
+var matchData = null, matchPeriod = 'all', matchPlayer = 'all';
+var matchView = 'overview';
+var expandedMatches = {};
+var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
+var leaderboardMinMatches = 0;
+var playerProfileUserId = null, playerProfilePeriod = 'all';
+var playerProfileView = 'overview';
+var playerDetailData = null, miniSort = {
+  'leader-players': { key: 'rating_end', asc: false },
+  'match-player-board': { key: 'rating_end', asc: false }
+};
 
 // Dashboard
 var dashGuilds = [], dashChannels = [], dashQueues = [];
@@ -1249,6 +1399,35 @@ function fmtGain(v) {
   v = Number(v) || 0;
   return (v > 0 ? '+' : '') + v;
 }
+function fmtImpact(i, key) {
+  return i && i[key] !== null && i[key] !== undefined ? String(i[key]) : '-';
+}
+function impactName(i) { return i && i.nick ? playerLink(i.user_id, i.nick) : '-'; }
+function impactTags(i) {
+  var tags = i && i.impact_tags ? i.impact_tags : [];
+  return tags.length ? tags.map(esc).join(', ') : '-';
+}
+function fmtImpactAvg(v) {
+  return v === null || v === undefined ? '-' : String(v);
+}
+function styleTags(profile) {
+  var tags = profile && profile.top_tags ? profile.top_tags : [];
+  if (!tags.length) return 'No style tags';
+  return tags.slice(0, 3).map(function (t) {
+    return t.tag + ' ' + t.count + 'x';
+  }).join(', ');
+}
+function scoutTraits(profile) {
+  var report = profile && profile.scout_report ? profile.scout_report : {};
+  var traits = report.traits || [];
+  return traits.length ? traits.join(', ') : styleTags(profile);
+}
+function relationSummary(r, empty) {
+  return r ? (r.games + ' matches, ' + fmtPct(r.winrate) + ' win rate') : empty;
+}
+function relationName(r, empty) {
+  return r ? (r.nick || '-') : empty;
+}
 function gainClass(v) {
   v = Number(v) || 0;
   return v > 0 ? 'gain-pos' : v < 0 ? 'gain-neg' : '';
@@ -1260,6 +1439,11 @@ function fmtAgo(ts) {
   if (s < 86400) return Math.floor(s / 3600) + 'h ago';
   return Math.floor(s / 86400) + 'd ago';
 }
+function fmtDate(ts) {
+  if (!ts) return '-';
+  var d = new Date(Number(ts) * 1000);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' });
+}
 function fmtDuration(seconds) {
   if (!seconds) return '-';
   var s = Math.max(0, Number(seconds) || 0);
@@ -1270,21 +1454,37 @@ function shortBucket(b) {
   var parts = String(b || '').split('-');
   return parts.length === 3 ? parts[1] + '/' + parts[2] : String(b || '');
 }
+function periodLabel(p) {
+  return {
+    all: 'all time',
+    year: '1 year',
+    month6: '6 months',
+    month3: '3 months',
+    month: '1 month',
+    week: '1 week'
+  }[p] || p;
+}
 function setMatchPeriod(p) {
   matchPeriod = p;
-  document.querySelectorAll('[data-period]').forEach(function (b) {
-    b.classList.toggle('selected', b.dataset.period === p);
-  });
+  var sel = document.getElementById('match-period-select');
+  if (sel) sel.value = p;
   loadMatchStats();
 }
 function setMatchPlayer(p) { matchPlayer = p || 'all'; loadMatchStats(); }
+function setMatchView(v) {
+  matchView = v || 'overview';
+  document.querySelectorAll('[data-match-view]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.matchView === matchView);
+  });
+  renderMatchStats();
+}
 
 async function initMatchStats() {
   if (!matchData) await loadMatchStats();
 }
 
 async function loadMatchStats() {
-  ['match-summary','match-trend','match-primary-panel','match-civs-panel','match-maps-panel','match-recent-panel'].forEach(function (id) {
+  ['match-summary','match-trend','match-elo-trend','match-primary-panel','match-civs-panel','match-maps-panel','match-recent-panel'].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.innerHTML = '<div class="loading">Loading match stats...</div>';
   });
@@ -1369,8 +1569,24 @@ function avatarImg(url, name) {
   if (!url) return '<span class="player-avatar"></span>';
   return '<img class="player-avatar" src="' + esc(url) + '" alt="' + esc(name || 'player') + '">';
 }
-function playerCell(name, avatar) {
-  return '<span class="player-cell">' + avatarImg(avatar, name) + '<span>' + esc(name || '-') + '</span></span>';
+function playerProfileHref(userId) {
+  return '#player-profile-' + encodeURIComponent(userId || '');
+}
+function playerLink(userId, name, html) {
+  if (!userId) return html || esc(name || '-');
+  return '<a class="player-link" href="' + esc(playerProfileHref(userId)) + '" onclick="openPlayerProfile(\'' + esc(userId) + '\'); event.stopPropagation(); return false;">'
+    + (html || esc(name || '-')) + '</a>';
+}
+function playerCell(name, avatar, userId) {
+  var html = '<span class="player-cell">' + avatarImg(avatar, name) + '<span class="player-name-text">' + esc(name || '-') + '</span></span>';
+  return playerLink(userId, name, html);
+}
+function relationStripCard(r) {
+  var html = avatarImg(r.avatar, r.nick)
+    + '<div><div class="opponent-name">' + esc(r.nick) + '</div>'
+    + '<div class="opponent-rate">' + fmtPct(r.winrate) + '</div>'
+    + '<div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div>';
+  return '<div class="opponent-card">' + playerLink(r.user_id, r.nick, html) + '</div>';
 }
 function civSlug(civ) {
   return String(civ || '').trim().toLowerCase()
@@ -1383,20 +1599,136 @@ function civIcon(civ) {
   var url = 'https://raw.githubusercontent.com/SiegeEngineers/aoe2techtree/master/img/Civs/' + civSlug(civ) + '.png';
   return '<span class="civ-cell"><img class="civ-icon" src="' + esc(url) + '" alt="' + esc(civ) + '" onerror="this.style.display=\'none\'"><span class="civ-name">' + esc(civ) + '</span></span>';
 }
+function matchExpandButton(r) {
+  var n = (r.players || []).length;
+  if (!n) return '-';
+  var open = !!expandedMatches[r.match_id];
+  return '<button class="match-expand-btn" type="button" onclick="toggleMatchDetail(\'' + esc(r.match_id) + '\'); event.stopPropagation();">'
+    + (open ? '\u25BC ' : '\u25B6 ') + n + ' players</button>';
+}
+function toggleMatchDetail(matchId) {
+  expandedMatches[matchId] = !expandedMatches[matchId];
+  if (currentPage === 'match-stats') renderMatchStats();
+  if (currentPage === 'player-profile' && playerDetailData) renderPlayerDetail(playerDetailData);
+}
+function matchDetailRow(r, colSpan) {
+  if (!expandedMatches[r.match_id]) return '';
+  return '<tr class="match-detail-row"><td colspan="' + esc(colSpan) + '"><div class="match-roster-inline">' + matchCardBody(r) + '</div></td></tr>';
+}
+function matchCardBody(r) {
+  var players = r.players || [];
+  var grouped = {};
+  players.forEach(function (p) {
+    var key = p.team === null || p.team === undefined || p.team === '' ? 'Unknown team' : 'Team ' + p.team;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(p);
+  });
+  var teams = Object.keys(grouped).sort();
+  var left = teams[0] ? matchTeamCard(teams[0], grouped[teams[0]]) : '<div class="empty-panel">No roster data.</div>';
+  var right = teams[1] ? matchTeamCard(teams[1], grouped[teams[1]]) : (teams.length > 1 ? '' : '<div class="empty-panel">No opponent roster.</div>');
+  var details = [r.queue || null, fmtDuration(r.duration_s), fmtAgo(r.at), r.match_id ? '#' + r.match_id : null].filter(function (x) { return x && x !== '-'; }).join(' · ');
+  return '<div class="match-card-body"><div class="match-map-box"><div class="match-map-name">' + esc(r.map || '-') + '</div>'
+    + '<div class="match-detail-meta">' + esc(details || 'Match details') + '</div></div>'
+    + left + '<div class="match-vs">VS</div>' + right + '</div>';
+}
+function playerImpactValue(p) {
+  return p && p.impact && p.impact.impact_score != null ? Number(p.impact.impact_score) : -1;
+}
+function topImpactPlayer(players) {
+  var rows = (players || []).filter(function (p) { return playerImpactValue(p) >= 0; });
+  if (!rows.length) return null;
+  rows.sort(function (a, b) { return playerImpactValue(b) - playerImpactValue(a); });
+  return rows[0];
+}
+function rowImpactPlayer(r) {
+  if (r && r.impact && r.impact.nick) return r.impact;
+  return topImpactPlayer((r && r.players) || []);
+}
+function rowImpactData(r) {
+  var top = rowImpactPlayer(r);
+  return top && top.impact ? top.impact : (top || null);
+}
+function rowPlayerImpactData(r, userId) {
+  if (r && r.impact) return r.impact;
+  var id = userId === null || userId === undefined ? '' : String(userId);
+  var player = ((r && r.players) || []).find(function (p) { return String(p.user_id || '') === id; });
+  return player && player.impact ? player.impact : null;
+}
+function rosterTagClass(tag) {
+  tag = String(tag || '').toLowerCase();
+  if (tag.indexOf('boom') >= 0) return 'boom';
+  if (tag.indexOf('army') >= 0 || tag.indexOf('pressure') >= 0) return 'army';
+  if (tag.indexOf('eco') >= 0 || tag.indexOf('carry') >= 0) return 'eco';
+  if (tag.indexOf('timing') >= 0) return 'timing';
+  if (tag.indexOf('recovery') >= 0) return 'recovery';
+  return '';
+}
+function rosterTagPills(tags) {
+  tags = tags || [];
+  if (!tags.length) return '<span class="roster-tag empty">No tags</span>';
+  return tags.slice(0, 3).map(function (tag) {
+    return '<span class="roster-tag ' + rosterTagClass(tag) + '">' + esc(tag) + '</span>';
+  }).join('');
+}
+function matchTeamCard(teamName, players) {
+  players = players || [];
+  var topPlayer = topImpactPlayer(players);
+  var teamResult = (players.find(function (p) { return p.result; }) || {}).result || '';
+  var resultClass = teamResult === 'W' ? ' winning-team' : teamResult === 'L' ? ' losing-team' : '';
+  var rows = players.map(function (p) {
+    var impact = p.impact || {};
+    var tagList = impact.impact_tags || [];
+    var tags = tagList.length ? tagList.join(', ') : 'No tags';
+    var isTop = topPlayer && p === topPlayer;
+    var score = impact.impact_score == null ? '-' : String(impact.impact_score);
+    var nameHtml = '<span class="player-cell">' + avatarImg(p.avatar, p.nick) + '<span class="player-name-text">' + esc(p.nick || '-') + '</span>'
+      + (isTop ? '<span class="impact-badge">Carry</span>' : '') + '</span>';
+    return '<div class="match-card-player' + (isTop ? ' top-impact' : '') + '">'
+      + playerLink(p.user_id, p.nick, nameHtml)
+      + civIcon(p.civ)
+      + '<span class="roster-tags" title="' + esc(tags) + '">' + rosterTagPills(tagList) + '</span>'
+      + '<span class="roster-impact">' + esc(score) + '</span>'
+      + '</div>';
+  }).join('');
+  return '<div class="match-team' + resultClass + '"><div class="match-team-title"><span>' + esc(teamName) + '</span>'
+    + (teamResult ? '<span class="team-result-pill ' + esc(teamResult) + '">' + esc(teamResult) + '</span>' : '')
+    + '</div>' + rows + '</div>';
+}
+function matchCard(r) {
+  var title = (r.queue || 'Match').replace(/_/g, ' ');
+  var meta = [fmtDuration(r.duration_s), fmtAgo(r.at)].filter(function (x) { return x && x !== '-'; }).join(' - ');
+  return '<article class="match-card">'
+    + '<div class="match-card-head"><div><div class="match-card-title">' + esc(title) + '</div>'
+    + '<div class="match-card-meta">' + esc(meta || 'Match details') + '</div></div>'
+    + '<div class="match-card-id">#' + esc(r.match_id) + '</div></div>'
+    + matchCardBody(r) + '</article>';
+}
+function renderMatchCards(rows) {
+  rows = rows || [];
+  if (!rows.length) return '<h2>All matches</h2><div class="empty-panel">No matches in this period.</div>';
+  return '<h2>All matches</h2><div class="match-card-list">' + rows.map(matchCard).join('') + '</div>';
+}
 function selectedPlayerCard(s) {
+  var nameHtml = '<div class="metric-player-name">' + esc(s.nick || '-') + '</div>';
   return '<div class="metric-card"><div class="metric-label">Player</div>'
-    + '<div class="metric-player">' + avatarImg(s.avatar, s.nick) + '<div><div class="metric-player-name">' + esc(s.nick || '-') + '</div>'
+    + '<div class="metric-player">' + avatarImg(s.avatar, s.nick) + '<div>' + playerLink(s.user_id, s.nick, nameHtml)
     + '<div class="metric-sub">' + esc(fmtAgo(s.last_match_at)) + '</div></div></div></div>';
 }
 
 function renderMatchSummary() {
   var s = matchData.summary || {};
   if (matchData.scope === 'player') {
+    var p = s.impact_profile || {};
+    var report = p.scout_report || {};
     document.getElementById('match-summary').innerHTML = [
       selectedPlayerCard(s),
       card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
+      card('Generated scout report', report.headline || p.style || 'No replay style',
+        report.description || p.summary || 'No parsed replay impact data'),
+      card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
+      card('Top tags', styleTags(p), 'aggregated match tags'),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
         + '</div></div>'
@@ -1406,13 +1738,13 @@ function renderMatchSummary() {
       card('Matches played', s.games || 0, fmtAgo(s.last_match_at)),
       card('Ranked', s.ranked_games || 0, 'reported results'),
       card('Players', s.players || 0, 'active in period'),
-      card('Scope', 'All players', matchPeriod === 'all' ? 'full history' : matchPeriod)
+      card('Scope', 'All players', periodLabel(matchPeriod))
     ].join('');
   }
 }
 
 function renderTrend() {
-  var rows = matchData.trend || [];
+  var rows = aggregateActivityRows(matchData.trend || []);
   if (!rows.length) {
     document.getElementById('match-trend').innerHTML = '<div class="trend-title">Activity</div><div class="empty-panel">No games in this period.</div>';
     return;
@@ -1424,6 +1756,60 @@ function renderTrend() {
       return '<div class="trend-bar-wrap" title="' + esc(r.bucket + ': ' + r.games + ' games') + '">'
         + '<div class="trend-bar" style="height:' + h + 'px"></div><div class="trend-label">' + esc(shortBucket(r.bucket)) + '</div></div>';
     }).join('') + '</div>';
+}
+
+function aggregateActivityRows(rows) {
+  if (!rows || rows.length <= 40) return rows || [];
+  var grouped = {};
+  rows.forEach(function (r) {
+    var key = String(r.bucket || '').slice(0, 7) || 'unknown';
+    if (!grouped[key]) grouped[key] = { bucket: key, games: 0 };
+    grouped[key].games += Number(r.games || 0);
+  });
+  return Object.keys(grouped).sort().map(function (k) { return grouped[k]; });
+}
+
+function renderEloTrend(rows, targetId) {
+  rows = rows || [];
+  var panel = document.getElementById(targetId || 'player-elo-trend');
+  if (!panel) return;
+  if (!rows.length) {
+    panel.innerHTML = '<div class="trend-title">Elo over time</div><div class="empty-panel">No Elo changes in this period.</div>';
+    return;
+  }
+  var width = 640, height = 180, padL = 42, padR = 16, padT = 18, padB = 32;
+  var ratings = rows.map(function (r) { return Number(r.rating) || 0; });
+  var times = rows.map(function (r) { return Number(r.at) || 0; });
+  var minR = Math.min.apply(null, ratings), maxR = Math.max.apply(null, ratings);
+  var minT = Math.min.apply(null, times), maxT = Math.max.apply(null, times);
+  var rangeR = Math.max(1, maxR - minR);
+  var rangeT = Math.max(1, maxT - minT);
+  minR = Math.floor((minR - Math.max(20, rangeR * 0.12)) / 10) * 10;
+  maxR = Math.ceil((maxR + Math.max(20, rangeR * 0.12)) / 10) * 10;
+  rangeR = Math.max(1, maxR - minR);
+  function x(r, i) {
+    if (rows.length === 1) return Math.round((padL + width - padR) / 2);
+    return padL + ((Number(r.at) - minT) / rangeT) * (width - padL - padR);
+  }
+  function y(r) {
+    return padT + ((maxR - Number(r.rating)) / rangeR) * (height - padT - padB);
+  }
+  var points = rows.map(function (r, i) { return x(r, i).toFixed(1) + ',' + y(r).toFixed(1); }).join(' ');
+  var fillPoints = padL + ',' + (height - padB) + ' ' + points + ' ' + (width - padR) + ',' + (height - padB);
+  var dots = rows.length <= 40 ? rows.map(function (r, i) {
+    return '<circle class="elo-dot" cx="' + x(r, i).toFixed(1) + '" cy="' + y(r).toFixed(1) + '" r="3"><title>'
+      + esc(fmtDate(r.at) + ': ' + r.rating) + '</title></circle>';
+  }).join('') : '';
+  panel.innerHTML = '<div class="trend-title">Elo over time</div><svg class="elo-chart" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="Elo over time">'
+    + '<line class="elo-grid-line" x1="' + padL + '" y1="' + padT + '" x2="' + (width - padR) + '" y2="' + padT + '"></line>'
+    + '<line class="elo-grid-line" x1="' + padL + '" y1="' + (height - padB) + '" x2="' + (width - padR) + '" y2="' + (height - padB) + '"></line>'
+    + '<text class="elo-label" x="4" y="' + (padT + 4) + '">' + esc(maxR) + '</text>'
+    + '<text class="elo-label" x="4" y="' + (height - padB + 4) + '">' + esc(minR) + '</text>'
+    + '<polygon class="elo-fill" points="' + fillPoints + '"></polygon>'
+    + '<polyline class="elo-line" points="' + points + '"></polyline>' + dots
+    + '<text class="elo-label" x="' + padL + '" y="' + (height - 8) + '">' + esc(fmtDate(rows[0].at)) + '</text>'
+    + '<text class="elo-label" text-anchor="end" x="' + (width - padR) + '" y="' + (height - 8) + '">' + esc(fmtDate(rows[rows.length - 1].at)) + '</text>'
+    + '</svg>';
 }
 
 function table(title, headers, rows, empty) {
@@ -1445,11 +1831,11 @@ function setMiniSort(tableId, key, type) {
   if (currentPage === 'match-stats') renderMatchStats();
   if (currentPage === 'leaderboard') {
     renderLeaderboard();
-    if (playerDetailData) renderPlayerDetail(playerDetailData);
   }
+  if (currentPage === 'player-profile' && playerDetailData) renderPlayerDetail(playerDetailData);
 }
 
-function sortableTable(tableId, title, columns, rows, empty, rowAttrs) {
+function sortableTable(tableId, title, columns, rows, empty, rowAttrs, detailRender) {
   if (!rows || !rows.length) return '<h2>' + esc(title) + '</h2><div class="empty-panel">' + esc(empty || 'No data.') + '</div>';
   var state = miniSort[tableId];
   var sorted = rows.slice();
@@ -1472,15 +1858,27 @@ function sortableTable(tableId, title, columns, rows, empty, rowAttrs) {
     }).join('')
     + '</tr></thead><tbody>' + sorted.map(function (row, idx) {
       var attrs = rowAttrs ? rowAttrs(row, idx) : '';
-      return '<tr' + (attrs ? ' ' + attrs : '') + '>' + columns.map(function (col) {
+      var main = '<tr' + (attrs ? ' ' + attrs : '') + '>' + columns.map(function (col) {
         var cls = col.className ? (typeof col.className === 'function' ? col.className(row, idx) : col.className) : '';
         var html = col.render ? col.render(row, idx) : esc(row[col.key]);
         return '<td' + (cls ? ' class="' + esc(cls) + '"' : '') + '>' + html + '</td>';
       }).join('') + '</tr>';
+      var detail = detailRender ? detailRender(row, columns.length) : '';
+      return main + detail;
     }).join('') + '</tbody></table>';
 }
 
 function renderMatchTables() {
+  var allMatches = matchData.matches || matchData.recent || [];
+  var showCards = matchView === 'matches';
+  document.getElementById('match-primary-panel').style.display = showCards ? 'none' : '';
+  document.getElementById('match-civs-panel').style.display = showCards ? 'none' : '';
+  document.getElementById('match-maps-panel').style.display = showCards ? 'none' : '';
+  document.getElementById('match-recent-panel').style.gridColumn = showCards ? '1 / -1' : '';
+  if (showCards) {
+    document.getElementById('match-recent-panel').innerHTML = renderMatchCards(allMatches);
+    return;
+  }
   document.getElementById('match-civs-panel').innerHTML = sortableTable('match-civs', 'Best civs', [
     { key: 'civ', label: 'Civ', render: function (r) { return esc(r.civ); } },
     { key: 'games', label: 'Matches', type: 'number', className: 'num' },
@@ -1496,7 +1894,7 @@ function renderMatchTables() {
 
   if (matchData.scope === 'player') {
     var playerStatCols = [
-      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
       { key: 'games', label: 'Matches', type: 'number', className: 'num' },
       { key: 'wins', label: 'Won', type: 'number', className: 'num' },
       { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
@@ -1510,11 +1908,16 @@ function renderMatchTables() {
       { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
       { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
       { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+      { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchExpandButton(r); } },
+      { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'impact_score'); } },
+      { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'army_score'); } },
+      { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'eco_score'); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowPlayerImpactData(r, matchPlayer)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
-    ], matchData.recent || [], 'No recent matches.');
+    ], (matchData.recent || []).slice(0, 12), 'No recent matches.', null, matchDetailRow);
   } else {
     document.getElementById('match-primary-panel').innerHTML = sortableTable('match-player-board', 'Player leaderboard', [
-      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
       { key: 'games', label: 'Matches', type: 'number', className: 'num' },
       { key: 'wins', label: 'Won', type: 'number', className: 'num' },
       { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
@@ -1524,13 +1927,34 @@ function renderMatchTables() {
       { key: 'rating_delta', label: 'Gain/Loss', type: 'number', className: function (r) { return 'num ' + gainClass(r.rating_delta); }, render: function (r) { return fmtGain(r.rating_delta); } },
       { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
     ], matchData.leaderboard || [], 'No player data.');
-    document.getElementById('match-recent-panel').innerHTML = '<h2>Recent matches</h2><div class="empty-panel">Select a player to see recent matches and form.</div>';
+    document.getElementById('match-recent-panel').innerHTML = sortableTable('match-recent-all', 'Recent matches', [
+      { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
+      { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+      { key: 'impact_player', label: 'Top impact', value: function (r) { var p = rowImpactPlayer(r); return p ? p.nick : ''; }, render: function (r) { return impactName(rowImpactPlayer(r)); } },
+      { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'impact_score'); } },
+      { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'army_score'); } },
+      { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'eco_score'); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowImpactData(r); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowImpactData(r)); } },
+      { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
+      { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
+    ], (matchData.recent || []).slice(0, 20), 'No recent matches.', null, matchDetailRow);
   }
 }
 
 function renderMatchStats() {
+  if (!matchData) return;
+  document.querySelectorAll('[data-match-view]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.matchView === matchView);
+  });
   renderMatchSummary();
   renderTrend();
+  if (matchData.scope === 'player') {
+    document.getElementById('match-elo-trend').style.display = '';
+    renderEloTrend(matchData.rating_history || [], 'match-elo-trend');
+  } else {
+    document.getElementById('match-elo-trend').style.display = 'none';
+    document.getElementById('match-elo-trend').innerHTML = '';
+  }
   renderMatchTables();
 }
 
@@ -1541,11 +1965,16 @@ async function initLeaderboard() {
 
 function setLeaderboardPeriod(p) {
   leaderboardPeriod = p;
-  document.querySelectorAll('[data-lb-period]').forEach(function (b) {
-    b.classList.toggle('selected', b.dataset.lbPeriod === p);
-  });
+  var sel = document.getElementById('leaderboard-period-select');
+  if (sel) sel.value = p;
   loadLeaderboard();
-  if (leaderboardPlayer) loadPlayerDetail(leaderboardPlayer);
+}
+
+function setLeaderboardMinMatches(v) {
+  leaderboardMinMatches = Math.max(0, parseInt(v, 10) || 0);
+  var input = document.getElementById('leaderboard-min-matches');
+  if (input && String(input.value) !== String(leaderboardMinMatches)) input.value = leaderboardMinMatches;
+  renderLeaderboard();
 }
 
 function setLeaderboardMode(m) {
@@ -1555,7 +1984,6 @@ function setLeaderboardMode(m) {
   });
   leaderboardPlayer = null;
   playerDetailData = null;
-  document.getElementById('player-detail').style.display = 'none';
   loadLeaderboard();
 }
 
@@ -1573,13 +2001,15 @@ async function loadLeaderboard() {
 }
 
 function renderLeaderboard() {
-  var rows = (leaderboardData.rows || []).map(function (r, i) {
+  var rows = (leaderboardData.rows || []).filter(function (r) {
+    return Number(r.games || 0) >= leaderboardMinMatches;
+  }).map(function (r, i) {
     r.rank = i + 1;
     return r;
   });
   if (leaderboardMode === 'civs') {
     document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-civs', 'Civilization leaderboard', [
-      { key: 'rank', label: '#', type: 'number', className: 'num' },
+      { key: 'rank', label: '#', type: 'number', className: 'num', render: function (r, i) { return String(i + 1); } },
       { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
       { key: 'games', label: 'Matches', type: 'number', className: 'num' },
       { key: 'wins', label: 'Won', type: 'number', className: 'num' },
@@ -1589,8 +2019,8 @@ function renderLeaderboard() {
     return;
   }
   document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-players', 'Player leaderboard', [
-    { key: 'rank', label: '#', type: 'number', className: 'num' },
-    { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+    { key: 'rank', label: '#', type: 'number', className: 'num', render: function (r, i) { return String(i + 1); } },
+    { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
     { key: 'rating', label: 'Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating); } },
     { key: 'rating_start', label: 'Start Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_start); } },
     { key: 'rating_end', label: 'End Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_end); } },
@@ -1601,39 +2031,99 @@ function renderLeaderboard() {
     { key: 'draws', label: 'Drawn', type: 'number', className: 'num' },
     { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
   ], rows, 'No player data.', function (r) {
-    return 'class="leader-row" onclick="loadPlayerDetail(\'' + esc(r.user_id) + '\')"';
+    return 'class="leader-row" onclick="openPlayerProfile(\'' + esc(r.user_id) + '\')"';
   });
 }
 
-async function loadPlayerDetail(userId) {
+function profilePeriodForCurrentPage() {
+  if (currentPage === 'match-stats') return matchPeriod;
+  if (currentPage === 'leaderboard') return leaderboardPeriod;
+  return playerProfilePeriod || 'all';
+}
+
+function openPlayerProfile(userId, period) {
+  loadPlayerDetail(userId, period || profilePeriodForCurrentPage());
+}
+
+function setPlayerProfilePeriod(p) {
+  playerProfilePeriod = p || 'all';
+  var sel = document.getElementById('player-profile-period-select');
+  if (sel) sel.value = playerProfilePeriod;
+  if (playerProfileUserId) loadPlayerDetail(playerProfileUserId, playerProfilePeriod);
+}
+
+function setPlayerProfileView(v) {
+  playerProfileView = v || 'overview';
+  document.querySelectorAll('[data-player-view]').forEach(function (b) {
+    b.classList.toggle('selected', b.dataset.playerView === playerProfileView);
+  });
+  var overview = document.getElementById('player-profile-overview');
+  var matches = document.getElementById('player-profile-matches');
+  if (overview) overview.style.display = playerProfileView === 'overview' ? '' : 'none';
+  if (matches) matches.style.display = playerProfileView === 'matches' ? '' : 'none';
+  if (playerDetailData) renderPlayerMatchesView(playerDetailData);
+}
+
+async function loadPlayerDetail(userId, period) {
   leaderboardPlayer = userId;
-  document.getElementById('player-detail').style.display = 'block';
+  playerProfileUserId = userId;
+  playerProfilePeriod = period || playerProfilePeriod || 'all';
+  var sel = document.getElementById('player-profile-period-select');
+  if (sel) sel.value = playerProfilePeriod;
+  showPage('player-profile');
   document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
+  document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
   try {
-    var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(leaderboardPeriod) + '&player_id=' + encodeURIComponent(userId));
+    if (!stratData.length) {
+      try {
+        await loadStrategyData();
+      } catch (e) {
+        console.warn('Luck profile data unavailable', e);
+      }
+    }
+    var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(playerProfilePeriod) + '&player_id=' + encodeURIComponent(userId));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var d = await resp.json();
     playerDetailData = d;
     renderPlayerDetail(d);
   } catch (e) {
     document.getElementById('player-detail-summary').innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
+    document.getElementById('player-elo-trend').innerHTML = '';
   }
 }
 
 function renderPlayerDetail(d) {
   var s = d.summary || {};
+  var p = s.impact_profile || {};
+  var report = p.scout_report || {};
+  var subtitle = document.getElementById('player-profile-subtitle');
+  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + playstyleHeadline(d);
+  setPlayerProfileView(playerProfileView);
+  document.getElementById('player-description').innerHTML = playerProfileDescription(d);
   document.getElementById('player-detail-summary').innerHTML = [
     selectedPlayerCard(s),
     card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
     card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
     card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
+    card('Best ally', relationName(s.best_ally, 'No ally sample'), relationSummary(s.best_ally, 'ranked teammate sample')),
+    card('Worst enemy', relationName(s.worst_enemy, 'No enemy sample'), relationSummary(s.worst_enemy, 'ranked opponent sample')),
+    card('Generated scout report', playstyleHeadline(d),
+      report.description || p.summary || 'No parsed replay impact data'),
+    card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
+    card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
+    card('Impact mix', 'Army ' + fmtImpactAvg(p.avg_army) + ' / Eco ' + fmtImpactAvg(p.avg_eco),
+      'Timing ' + fmtImpactAvg(p.avg_timing) + ' / Recovery ' + fmtImpactAvg(p.avg_recovery)),
+    card('Top tags', styleTags(p), 'aggregated match tags'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
 
+  renderEloTrend(d.rating_history || [], 'player-elo-trend');
+
+  var allies = d.allies || [];
+  document.getElementById('player-allies').innerHTML = allies.length ? allies.map(relationStripCard).join('') : '<div class="empty-panel">No ally sample in this period.</div>';
+
   var opp = d.opponents || [];
-  document.getElementById('player-opponents').innerHTML = opp.length ? opp.map(function (r) {
-    return '<div class="opponent-card">' + avatarImg(r.avatar, r.nick) + '<div><div class="opponent-name">' + esc(r.nick) + '</div><div class="opponent-rate">' + fmtPct(r.winrate) + '</div><div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div></div>';
-  }).join('') : '<div class="empty-panel">No opponent sample in this period.</div>';
+  document.getElementById('player-opponents').innerHTML = opp.length ? opp.map(relationStripCard).join('') : '<div class="empty-panel">No opponent sample in this period.</div>';
 
   var dur = d.durations || [];
   document.getElementById('player-durations').innerHTML = dur.length ? dur.map(function (r) {
@@ -1659,10 +2149,234 @@ function renderPlayerDetail(d) {
     { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
     { key: 'opponent_civs', label: 'Opponent civs', render: function (r) { return esc(r.opponent_civs || '-'); } },
     { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+    { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchExpandButton(r); } },
+    { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'impact_score'); } },
+    { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'army_score'); } },
+    { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'eco_score'); } },
+    { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowPlayerImpactData(r, playerProfileUserId)); } },
     { key: 'duration_s', label: 'Duration', type: 'number', className: 'num', render: function (r) { return fmtDuration(r.duration_s); } },
     { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
-  ], d.matches || [], 'No matches in this period.');
+  ], d.matches || [], 'No matches in this period.', null, matchDetailRow);
+  renderPlayerMatchesView(d);
+}
+
+function renderPlayerMatchesView(d) {
+  var panel = document.getElementById('player-profile-matches');
+  if (!panel) return;
+  panel.innerHTML = renderMatchCards(d && d.matches ? d.matches : []);
+}
+
+function bestRow(rows, sortKey) {
+  rows = (rows || []).filter(function (r) { return r && r[sortKey] != null; });
+  if (!rows.length) return null;
+  rows.sort(function (a, b) {
+    if (Number(b[sortKey]) !== Number(a[sortKey])) return Number(b[sortKey]) - Number(a[sortKey]);
+    return Number(b.games || 0) - Number(a.games || 0);
+  });
+  return rows[0];
+}
+
+function impactLeader(p) {
+  var scores = [
+    ['army', p.avg_army],
+    ['eco', p.avg_eco],
+    ['timing', p.avg_timing],
+    ['recovery', p.avg_recovery]
+  ].filter(function (x) { return x[1] !== null && x[1] !== undefined; });
+  if (!scores.length) return null;
+  scores.sort(function (a, b) { return Number(b[1]) - Number(a[1]); });
+  return scores[0];
+}
+
+function styleRead(style) {
+  var reads = {
+    'Pressure player': 'tempo/flank read: makes space early, keeps enemy economy busy, and lets pocket-style allies scale',
+    'Boom carry': 'boom-first carry read: plays lean early, stacks economy, then converts the villager lead into late-game damage',
+    'Economy carry': 'boom/carry read: wants safe setup, then wins through economy lead and late-game weight',
+    'Timing specialist': 'timing-push read: spikes around upgrades, age-ups, and coordinated power windows',
+    'Recovery anchor': 'anchor read: absorbs pressure, re-booms, and keeps team position playable',
+    'High-impact flex': 'flex read: useful across army, eco, timing, and recovery lanes',
+    'Balanced flex': 'balanced read: steady output without one dominant lane'
+  };
+  return reads[style] || reads['Balanced flex'];
+}
+
+function impactStyleLabel(style, leader) {
+  if (style === 'Pressure player') return 'Tempo pressure player';
+  if (style === 'Boom carry') return 'Boom-first carry';
+  if (style === 'Economy carry') return 'Boom-and-carry player';
+  if (style === 'Timing specialist') return 'Timing-window specialist';
+  if (style === 'Recovery anchor') return 'Recovery anchor';
+  if (style === 'High-impact flex') return 'High-impact flex';
+  if (leader && leader[0] === 'army') return 'Army-first flex';
+  if (leader && leader[0] === 'eco') return 'Eco-leaning flex';
+  if (leader && leader[0] === 'timing') return 'Timing-leaning flex';
+  if (leader && leader[0] === 'recovery') return 'Stabilizing flex';
+  return 'Map-adaptive team-game flex';
+}
+
+function luckFactorText(key) {
+  var map = {
+    spawn_isolated: 'free-boom isolated starts',
+    spawn_near_enemy: 'near-enemy pressure spawns',
+    spawn_near_ally: 'close ally / shared-space spawns',
+    spawn_near_gold: 'safe early gold access',
+    spawn_gold_poor: 'gold-starved openings',
+    spawn_near_stone: 'stone-access starts',
+    spawn_stone_poor: 'stone-poor map states',
+    spawn_near_food: 'food-safe openings',
+    spawn_food_poor: 'food-poor openings',
+    tight_villagers: 'tight villager spawns',
+    scattered_villagers: 'scattered villager starts'
+  };
+  return map[key] || String(key || '').replace(/_/g, ' ');
+}
+
+function luckProfileForPlayer(name) {
+  if (!name || !stratData.length) return null;
+  var base = luckBaseline();
+  var norm = String(name).toLowerCase();
+  var pb = base ? (base.roster || []).find(function (x) { return String(x.player || '').toLowerCase() === norm; }) : null;
+  var total = pb ? Number(pb.games || 0) : 0;
+  if (!total) return null;
+  var rows = luckRows().map(function (s) {
+    var p = (s.roster || []).find(function (x) { return String(x.player || '').toLowerCase() === norm; });
+    var games = p ? Number(p.games || 0) : 0;
+    var winrate = p ? p.winrate : null;
+    return {
+      key: s.key,
+      title: s.title,
+      games: games,
+      pct: Math.round(100 * games / total),
+      winrate: winrate,
+      delta: winrate == null ? null : winrate - 50
+    };
+  }).filter(function (r) { return r.games > 0; });
+  var meaningful = rows.filter(function (r) { return r.games >= Math.max(3, Math.round(total * 0.08)); });
+  var exposure = meaningful.slice().sort(function (a, b) { return b.pct - a.pct || b.games - a.games; });
+  var best = meaningful.filter(function (r) { return r.delta !== null; }).sort(function (a, b) { return b.delta - a.delta || b.games - a.games; })[0] || null;
+  var worst = meaningful.filter(function (r) { return r.delta !== null; }).sort(function (a, b) { return a.delta - b.delta || b.games - a.games; })[0] || null;
+  return { total: total, rows: rows, exposure: exposure, best: best, worst: worst };
+}
+
+function luckSummary(profile) {
+  if (!profile) return 'Luck/spawn data is not available for this player yet.';
+  var parts = [];
+  if (profile.exposure[0]) parts.push('Most common map state: ' + luckFactorText(profile.exposure[0].key) + ' (' + profile.exposure[0].pct + '% of valid Nomad starts).');
+  if (profile.best) parts.push('Best spawn adaptation: ' + luckFactorText(profile.best.key) + ' at ' + fmtPct(profile.best.winrate) + ' (' + (profile.best.delta > 0 ? '+' : '') + profile.best.delta + ' vs 50).');
+  if (profile.worst && profile.worst !== profile.best) parts.push('Hardest spawn state: ' + luckFactorText(profile.worst.key) + ' at ' + fmtPct(profile.worst.winrate) + ' (' + (profile.worst.delta > 0 ? '+' : '') + profile.worst.delta + ' vs 50).');
+  return parts.join(' ');
+}
+
+function luckCardText(profile, key, empty) {
+  if (!profile) return empty || 'No spawn sample yet.';
+  var row = profile.rows.find(function (r) { return r.key === key; });
+  if (!row) return empty || 'No sample yet.';
+  return row.games + ' games, ' + row.pct + '% of valid starts, ' + fmtPct(row.winrate) + ' win rate';
+}
+
+function playstyleHeadline(d) {
+  var s = d.summary || {};
+  var p = s.impact_profile || {};
+  var leader = impactLeader(p);
+  var luck = luckProfileForPlayer(s.nick);
+  if (luck && luck.best && luck.best.delta >= 4) {
+    if (luck.best.key === 'spawn_isolated') return 'Free-boom map adapter';
+    if (luck.best.key === 'spawn_near_enemy') return 'Close-spawn pressure fighter';
+    if (luck.best.key === 'spawn_near_ally') return 'Ally-cluster team fighter';
+    if (luck.best.key.indexOf('_poor') >= 0) return 'Scrappy bad-spawn stabilizer';
+  }
+  if (p.style === 'Boom carry') return 'Boom-into-carry player';
+  return impactStyleLabel(p.style, leader);
+}
+
+function tagRead(tags) {
+  if (!tags.length) return 'No replay tags yet; style read falls back to win rates and Elo movement.';
+  var primary = tags[0];
+  if (primary === 'Army pressure') return 'Primary tag says pressure player: likely raids, contests map, and forces reactions.';
+  if (primary === 'Boom carry') return 'Primary tag says boom carry: quiet early army, fast eco mass, then late-game carry if protected.';
+  if (primary === 'Eco carry') return 'Primary tag says eco carry: give space, protect trade/boom lanes, expect scaling value.';
+  if (primary === 'Timing edge') return 'Primary tag says timing edge: strongest when team follows upgrade or age-up windows.';
+  if (primary === 'Recovery') return 'Primary tag says recovery: useful when early plan breaks and team needs stabilizing.';
+  if (primary === 'Low-eco pressure') return 'Primary tag says low-eco pressure: can buy time, but may need teammate economy behind it.';
+  if (primary === 'High impact') return 'Primary tag says high impact: broad contribution across win/loss samples.';
+  return 'Recurring tags: ' + tags.join(', ') + '.';
+}
+
+function profileWatchout(p, s) {
+  var vals = [
+    ['army pressure', p.avg_army],
+    ['eco scaling', p.avg_eco],
+    ['timing windows', p.avg_timing],
+    ['recovery', p.avg_recovery]
+  ].filter(function (x) { return x[1] !== null && x[1] !== undefined; });
+  if (s.winrate !== null && s.winrate !== undefined && Number(s.winrate) < 45) return 'Win rate is under 45% in this slice; treat sample as form dip or rough matchup pool.';
+  if (!vals.length) return 'Needs more parsed replays before weak spots are reliable.';
+  vals.sort(function (a, b) { return Number(a[1]) - Number(b[1]); });
+  return 'Lowest impact lane is ' + vals[0][0] + ' (' + fmtImpactAvg(vals[0][1]) + '), so pair/strategy should cover that lane.';
+}
+
+function commentaryCard(title, text) {
+  return '<div class="commentary-card"><div class="commentary-title">' + esc(title) + '</div><div class="commentary-text">' + esc(text) + '</div></div>';
+}
+
+function boomRead(profile) {
+  var tags = profile && profile.top_tags ? profile.top_tags : [];
+  var boom = tags.find(function (t) { return t.tag === 'Boom carry'; });
+  if (boom) return 'Boom carry appears in ' + boom.count + ' parsed games (' + boom.rate + '%): low early army, strong eco, then carry impact.';
+  if (profile && profile.avg_eco != null && Number(profile.avg_eco) >= 58) {
+    return 'Eco score is high (' + fmtImpactAvg(profile.avg_eco) + '), but parsed games do not show a consistent low-army boom pattern yet.';
+  }
+  return 'No clear boom-first carry pattern yet.';
+}
+
+function playerProfileDescription(d) {
+  var s = d.summary || {};
+  var p = s.impact_profile || {};
+  var report = p.scout_report || {};
+  var name = s.nick || 'This player';
+  var civRows = p.best_civs && p.best_civs.length ? p.best_civs : (d.civs || []);
+  var durRows = p.duration_edges && p.duration_edges.length ? p.duration_edges : (d.durations || []);
+  var civ = bestRow(civRows, 'winrate');
+  var dur = bestRow(durRows, 'winrate');
+  var tags = (p.top_tags || []).slice(0, 3).map(function (t) { return t.tag; });
+  var leader = impactLeader(p);
+  var luck = luckProfileForPlayer(name);
+  var headline = playstyleHeadline(d);
+  var elo = s.rating_end == null ? '' : ' Current end Elo is ' + fmtElo(s.rating_end) + '.';
+  var first = name + ' reads as a ' + headline + ' in ' + periodLabel(playerProfilePeriod)
+    + ', with ' + (s.games || 0) + ' matches and a ' + fmtPct(s.winrate) + ' win rate.' + elo;
+  var second = report.description || p.summary || 'No parsed replay sample is available yet.';
+  if (tags.length) second += ' Recurring game tags: ' + tags.join(', ') + '.';
+  var luckText = luckSummary(luck);
+  var third = '';
+  if (civ) third += name + ' gets best civ results with ' + civ.civ + ' at ' + fmtPct(civ.winrate) + ' across ' + civ.games + ' games. ';
+  if (dur) third += 'Best duration window is ' + dur.bucket + ' at ' + fmtPct(dur.winrate) + ' across ' + dur.games + ' games. ';
+  if (s.best_ally) third += 'Best ally pairing is ' + (s.best_ally.nick || '-') + ' at ' + fmtPct(s.best_ally.winrate) + '. ';
+  if (s.worst_enemy) third += 'Toughest opponent is ' + (s.worst_enemy.nick || '-') + ' with only ' + fmtPct(s.worst_enemy.winrate) + ' wins against them.';
+  var strength = leader ? 'Best impact lane is ' + leader[0] + ' (' + fmtImpactAvg(leader[1]) + ').' : 'More replay samples needed.';
+  if (civ) strength += ' Comfort pick: ' + civ.civ + '.';
+  var setup = [];
+  if (s.best_ally) setup.push('with ' + (s.best_ally.nick || '-') + ' (' + fmtPct(s.best_ally.winrate) + ')');
+  if (dur) setup.push(dur.bucket + ' games');
+  if (setup.length === 0) setup.push('larger replay sample');
+  var cards = [
+    commentaryCard('AoE read', styleRead(p.style)),
+    commentaryCard('Tag signal', tagRead(tags)),
+    commentaryCard('Boom profile', boomRead(p)),
+    commentaryCard('Spawn read', luckText),
+    commentaryCard('Free boom', luckCardText(luck, 'spawn_isolated', 'No isolated-start sample yet.')),
+    commentaryCard('Early contact', luckCardText(luck, 'spawn_near_enemy', 'No near-enemy sample yet.')),
+    commentaryCard('Strength', strength),
+    commentaryCard('Watchout', profileWatchout(p, s)),
+    commentaryCard('Best setup', setup.join(' + ')),
+    commentaryCard('Enemy prep', s.worst_enemy ? 'Plan specifically for ' + (s.worst_enemy.nick || '-') + '; this is lowest head-to-head win rate.' : 'No tough-opponent sample yet.'),
+    commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.'),
+    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, opponents, and Luck spawn factors.')
+  ].join('');
+  return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p><p>' + esc(luckText) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
+    + '<div class="commentary-grid">' + cards + '</div>';
 }
 
 /* ─── Strategy Insights ─── */
@@ -1673,14 +2387,19 @@ var stratSort = { col: 'games', asc: false };
 function wrPctClass(v) { return v == null ? '' : (v >= 55 ? 'wr wr-high' : v >= 45 ? 'wr wr-mid' : 'wr wr-low'); }
 function wrPctCell(v) { return '<td class="' + wrPctClass(v) + '">' + (v == null ? '-' : v + '%') + '</td>'; }
 
+async function loadStrategyData() {
+  if (stratData.length) return;
+  var resp = await fetch('/api/strategies');
+  if (!resp.ok) throw new Error('HTTP ' + resp.status);
+  var d = await resp.json();
+  stratData = d.strategies || [];
+  stratTotals = d.player_totals || {};
+  stratCategorized = d.player_categorized || {};
+}
+
 async function initStrategies() {
   try {
-    var resp = await fetch('/api/strategies');
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    var d = await resp.json();
-    stratData = d.strategies || [];
-    stratTotals = d.player_totals || {};
-    stratCategorized = d.player_categorized || {};
+    await loadStrategyData();
     buildStratPlayerSelect();
     renderStrategies();
   } catch (e) {

@@ -3,8 +3,6 @@ ever run on explicit go-ahead. Per table: DELETE all, then multi-row INSERT in c
 row counts local-vs-remote."""
 import argparse
 
-import pymysql
-
 from utils.classifications.pipeline import localdb
 from utils.db_helpers import parse_db_uri
 
@@ -30,6 +28,8 @@ def insert_sql(table, cols, nrows):
 
 
 def _railway_conn():
+    import pymysql
+
     from importlib.machinery import SourceFileLoader
     cfg = SourceFileLoader("cfg", "config.cfg").load_module()
     kwargs = parse_db_uri(cfg.DB_URI)

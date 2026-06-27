@@ -3,8 +3,6 @@
 import argparse
 import time
 
-import pymysql
-
 from utils.classifications.pipeline import localdb
 from utils.db_helpers import parse_db_uri
 
@@ -18,6 +16,8 @@ def window_query(days):
 
 
 def _railway_conn():
+    import pymysql
+
     from importlib.machinery import SourceFileLoader
     cfg = SourceFileLoader("cfg", "config.cfg").load_module()
     kwargs = parse_db_uri(cfg.DB_URI)
