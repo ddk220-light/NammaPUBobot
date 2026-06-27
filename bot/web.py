@@ -769,7 +769,10 @@ def _impact_payload(row, group):
 		tags.append("High impact")
 	return {
 		"user_id": str(row["user_id"]) if row.get("user_id") is not None else None,
+		"profile_id": str(row["profile_id"]) if row.get("profile_id") is not None else None,
 		"nick": row.get("identity") or str(row.get("user_id") or ""),
+		"civ": row.get("civ"),
+		"team": row.get("team"),
 		"impact_score": impact,
 		"army_score": army,
 		"eco_score": eco,
@@ -943,7 +946,8 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM qc_players WHERE is_hidden=1")
 	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
 	rows = await db.fetchall(
-		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.villagers, g.vil_pre_castle, "
+		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.civ, g.team, "
+		"g.villagers, g.vil_pre_castle, "
 		"g.military, g.mil_pre_castle, g.feudal_s, g.castle_s, g.imperial_s "
 		"FROM rs_matches rm JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
@@ -968,6 +972,113 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 		if payloads:
 			out[match_id] = max(payloads, key=lambda p: p["impact_score"])
 	return out
+
+
+async def _match_player_impacts(match_ids):
+	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
+	if not match_ids:
+		return {}
+	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM qc_players WHERE is_hidden=1")
+	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
+	rows = await db.fetchall(
+		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.civ, g.team, "
+		"g.villagers, g.vil_pre_castle, g.military, g.mil_pre_castle, "
+		"g.feudal_s, g.castle_s, g.imperial_s "
+		"FROM rs_matches rm JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
+		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
+		match_ids)
+	groups = {}
+	for r in rows or []:
+		groups.setdefault(r["bot_match_id"], []).append(r)
+	out = {}
+	for match_id, group in groups.items():
+		payloads = []
+		for row in group:
+			row_user_id = row.get("user_id")
+			if row_user_id is not None and int(row_user_id) in hidden_users:
+				continue
+			payloads.append(_impact_payload(row, group))
+		out[match_id] = sorted(payloads, key=lambda p: (str(p.get("team") or ""), -(p.get("impact_score") or 0), p.get("nick") or ""))
+	return out
+
+
+async def _match_rosters(match_ids):
+	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
+	if not match_ids:
+		return {}
+	placeholder = ",".join(["%s"] * len(match_ids))
+	impacts = await _match_player_impacts(match_ids)
+	impact_by_user = {}
+	impact_by_name = {}
+	for match_id, rows in impacts.items():
+		for impact in rows:
+			if impact.get("user_id"):
+				impact_by_user[(match_id, str(impact["user_id"]))] = impact
+			if impact.get("nick"):
+				impact_by_name[(match_id, impact["nick"].lower())] = impact
+	civ_rows = await db.fetchall(
+		"SELECT bot_match_id, user_id, nick, team, civ, result FROM qc_match_civs "
+		"WHERE bot_match_id IN (" + placeholder + ")",
+		match_ids)
+	civs_by_user = {}
+	civs_by_name = {}
+	for row in civ_rows or []:
+		match_id = row["bot_match_id"]
+		if row.get("user_id") is not None:
+			civs_by_user[(match_id, str(row["user_id"]))] = row
+		if row.get("nick"):
+			civs_by_name[(match_id, row["nick"].lower())] = row
+		if row.get("aoe2_name"):
+			civs_by_name[(match_id, row["aoe2_name"].lower())] = row
+	players = await db.fetchall(
+		"SELECT pm.match_id, pm.user_id, MAX(pm.nick) AS nick, pm.team, MAX(m.winner) AS winner "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE pm.match_id IN (" + placeholder + ")" + _visible_user_clause("pm") +
+		" GROUP BY pm.match_id, pm.user_id, pm.team ORDER BY pm.match_id, pm.team, nick",
+		match_ids)
+	out = {match_id: [] for match_id in match_ids}
+	seen = set()
+	for row in players or []:
+		match_id = row["match_id"]
+		user_id = str(row["user_id"])
+		nick = row["nick"] or user_id
+		civ = civs_by_user.get((match_id, user_id)) or civs_by_name.get((match_id, nick.lower())) or {}
+		impact = impact_by_user.get((match_id, user_id)) or impact_by_name.get((match_id, nick.lower()))
+		result = civ.get("result")
+		if result is None and row.get("winner") is not None:
+			result = "W" if row["winner"] == row["team"] else "L"
+		payload = {
+			"user_id": user_id,
+			"nick": nick,
+			"avatar": _avatar_for_user_id(user_id),
+			"team": row["team"],
+			"civ": civ.get("civ") or (impact or {}).get("civ"),
+			"result": result,
+			"impact": impact,
+		}
+		out.setdefault(match_id, []).append(payload)
+		seen.add((match_id, user_id))
+	for match_id, rows in impacts.items():
+		for impact in rows:
+			user_id = impact.get("user_id")
+			if user_id and (match_id, user_id) in seen:
+				continue
+			payload = {
+				"user_id": user_id,
+				"profile_id": impact.get("profile_id"),
+				"nick": impact.get("nick") or user_id or "Unknown",
+				"avatar": _avatar_for_user_id(user_id),
+				"team": impact.get("team"),
+				"civ": impact.get("civ"),
+				"result": None,
+				"impact": impact,
+			}
+			out.setdefault(match_id, []).append(payload)
+	return {
+		match_id: sorted(rows, key=lambda p: (str(p.get("team") or ""), p.get("nick") or ""))
+		for match_id, rows in out.items()
+	}
 
 
 async def _match_stats_overall(period):
@@ -1123,6 +1234,7 @@ async def _match_stats_player(user_id, period):
 		[user_id, *params])
 	recent_civs = {}
 	impacts = {}
+	match_rosters = {}
 	impact_profile = _player_impact_profile([], civs)
 	impact_match_rows = await db.fetchall(
 		"SELECT DISTINCT m.match_id FROM qc_player_matches pm JOIN qc_matches m "
@@ -1135,6 +1247,7 @@ async def _match_stats_player(user_id, period):
 		impact_profile = _player_impact_profile(period_impacts.values(), civs)
 	if recent:
 		match_ids = [r["match_id"] for r in recent]
+		match_rosters = await _match_rosters(match_ids)
 		impacts = {match_id: period_impacts.get(match_id) for match_id in match_ids}
 		civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
 		rows = await db.fetchall(
@@ -1195,7 +1308,8 @@ async def _match_stats_player(user_id, period):
 				"W" if r["winner"] == r["team"] else
 				"L" if r["winner"] is not None else "-"
 			 ), "map": ((r.get("maps") or "").split("\n")[0] or "").strip(),
-			 "civ": recent_civs.get(r["match_id"]), "impact": impacts.get(r["match_id"])}
+			 "civ": recent_civs.get(r["match_id"]), "impact": impacts.get(r["match_id"]),
+			 "players": match_rosters.get(r["match_id"], [])}
 			for r in recent or []
 		],
 		"trend": [{"bucket": str(r["bucket"]), "games": int(r["games"] or 0),
@@ -1384,9 +1498,11 @@ async def handle_player_stats(request):
 	impact_profile = _player_impact_profile(period_impacts.values(), civs, durations)
 	match_civs = {}
 	opp_match_civs = {}
+	match_rosters = {}
 	if matches:
 		match_ids = [r["match_id"] for r in matches]
 		match_id_clause = ",".join(["%s"] * len(match_ids))
+		match_rosters = await _match_rosters(match_ids)
 		civ_rows = await db.fetchall(
 			"SELECT bot_match_id, civ FROM qc_match_civs WHERE bot_match_id IN ("
 			+ match_id_clause + ") AND " + civ_clause,
@@ -1453,7 +1569,8 @@ async def handle_player_stats(request):
 			 ), "map": ((r.get("maps") or "").split("\n")[0] or "").strip(),
 			 "duration_s": r.get("duration_s"), "civ": match_civs.get(r["match_id"]),
 			 "opponent_civs": opp_match_civs.get(r["match_id"]),
-			 "impact": period_impacts.get(r["match_id"])}
+			 "impact": period_impacts.get(r["match_id"]),
+			 "players": match_rosters.get(r["match_id"], [])}
 			for r in matches or []
 		],
 	})

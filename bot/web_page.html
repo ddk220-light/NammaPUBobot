@@ -587,6 +587,13 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 0.65rem;
 }
+.match-roster-details summary { cursor: pointer; color: #8fb4ff; white-space: nowrap; }
+.match-roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; padding: 0.75rem 0 0.25rem; }
+.roster-team { border: 1px solid #484c54; border-radius: 6px; overflow: hidden; background: rgba(0,0,0,0.12); }
+.roster-team-title { padding: 0.45rem 0.6rem; color: white; background: #202225; font-family: 'Oswald', sans-serif; letter-spacing: 0.5px; }
+.roster-player { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(96px, 1fr) minmax(140px, 1fr) auto; gap: 0.5rem; align-items: center; padding: 0.5rem 0.6rem; border-top: 1px solid #3d4148; }
+.roster-tags { color: #c4c7cc; font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-impact { color: #a9adb5; font-size: 0.82rem; text-align: right; white-space: nowrap; }
 .opponent-card {
   display: flex; align-items: center; gap: 12px; background: #2f3136;
   border: 1px solid #484c54; border-radius: 6px; padding: 0.85rem;
@@ -1511,6 +1518,33 @@ function civIcon(civ) {
   var url = 'https://raw.githubusercontent.com/SiegeEngineers/aoe2techtree/master/img/Civs/' + civSlug(civ) + '.png';
   return '<span class="civ-cell"><img class="civ-icon" src="' + esc(url) + '" alt="' + esc(civ) + '" onerror="this.style.display=\'none\'"><span class="civ-name">' + esc(civ) + '</span></span>';
 }
+function rosterPlayer(p) {
+  var impact = p.impact || {};
+  var tags = impact.impact_tags && impact.impact_tags.length ? impact.impact_tags.join(', ') : 'No tags';
+  var scores = impact.impact_score == null ? '-' : ('Impact ' + impact.impact_score + ' · A ' + impact.army_score + ' · E ' + impact.eco_score);
+  var result = p.result ? '<span class="form-pill ' + esc(p.result) + '">' + esc(p.result) + '</span>' : '';
+  return '<div class="roster-player">'
+    + playerCell(p.nick, p.avatar, p.user_id)
+    + civIcon(p.civ)
+    + '<div class="roster-impact">' + result + ' ' + esc(scores) + '</div>'
+    + '<div class="roster-tags" title="' + esc(tags) + '">' + esc(tags) + '</div>'
+    + '</div>';
+}
+function matchRosterDetails(r) {
+  var players = r.players || [];
+  if (!players.length) return '-';
+  var grouped = {};
+  players.forEach(function (p) {
+    var key = p.team === null || p.team === undefined || p.team === '' ? 'Unknown team' : 'Team ' + p.team;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(p);
+  });
+  var html = Object.keys(grouped).sort().map(function (team) {
+    return '<div class="roster-team"><div class="roster-team-title">' + esc(team) + '</div>'
+      + grouped[team].map(rosterPlayer).join('') + '</div>';
+  }).join('');
+  return '<details class="match-roster-details"><summary>' + players.length + ' players</summary><div class="match-roster">' + html + '</div></details>';
+}
 function selectedPlayerCard(s) {
   var nameHtml = '<div class="metric-player-name">' + esc(s.nick || '-') + '</div>';
   return '<div class="metric-card"><div class="metric-label">Player</div>'
@@ -1528,7 +1562,7 @@ function renderMatchSummary() {
       card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
-      card('Scout report', report.headline || p.style || 'No replay style',
+      card('Generated scout report', report.headline || p.style || 'No replay style',
         report.description || p.summary || 'No parsed replay impact data'),
       card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
       card('Top tags', styleTags(p), 'aggregated match tags'),
@@ -1699,6 +1733,7 @@ function renderMatchTables() {
       { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
       { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
       { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+      { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchRosterDetails(r); } },
       { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
       { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
       { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
@@ -1872,7 +1907,7 @@ function renderPlayerDetail(d) {
     card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
     card('Best ally', relationName(s.best_ally, 'No ally sample'), relationSummary(s.best_ally, 'ranked teammate sample')),
     card('Worst enemy', relationName(s.worst_enemy, 'No enemy sample'), relationSummary(s.worst_enemy, 'ranked opponent sample')),
-    card('Scout report', report.headline || p.style || 'No replay style',
+    card('Generated scout report', report.headline || p.style || 'No replay style',
       report.description || p.summary || 'No parsed replay impact data'),
     card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
     card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
@@ -1914,6 +1949,7 @@ function renderPlayerDetail(d) {
     { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
     { key: 'opponent_civs', label: 'Opponent civs', render: function (r) { return esc(r.opponent_civs || '-'); } },
     { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
+    { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchRosterDetails(r); } },
     { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
     { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
     { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
