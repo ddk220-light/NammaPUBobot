@@ -930,7 +930,7 @@ def _best_relationship(rows, kind):
 	payloads = [p for p in payloads if p]
 	if not payloads:
 		return None
-	qualified = [p for p in payloads if p["games"] >= 2] or payloads
+	qualified = [p for p in payloads if p["games"] >= 10] or [p for p in payloads if p["games"] >= 2] or payloads
 	if kind == "ally":
 		return sorted(qualified, key=lambda p: (-(p["winrate"] or 0), -p["wins"], -p["games"], p["nick"]))[0]
 	return sorted(
@@ -1453,7 +1453,7 @@ async def handle_player_stats(request):
 		"AND ally.team=pm.team AND ally.user_id<>pm.user_id" + _visible_user_clause("ally") +
 		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
 		" GROUP BY ally.user_id HAVING games >= 1 AND wins + losses > 0 "
-		"ORDER BY wins / NULLIF(wins + losses, 0) DESC, games DESC, wins DESC LIMIT 12",
+		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) DESC, games DESC, wins DESC LIMIT 12",
 		base_args)
 	opponents = await db.fetchall(
 		"SELECT opp.user_id, MAX(opp.nick) AS nick, COUNT(*) AS games, "
@@ -1464,7 +1464,7 @@ async def handle_player_stats(request):
 		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
 		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
 		" GROUP BY opp.user_id HAVING games >= 1 AND wins + losses > 0 "
-		"ORDER BY wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC LIMIT 12",
+		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC LIMIT 12",
 		base_args)
 	durations = await db.fetchall(
 		"SELECT CASE "

@@ -591,14 +591,14 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .match-roster-inline .match-card-body { min-width: 0; grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr); gap: 0.75rem; }
 .match-roster-inline .match-map-box { grid-column: 1 / -1; font-size: 0.9rem; border-right: 0; border-bottom: 1px solid #484c54; padding-right: 0; padding-bottom: 0.65rem; }
 .match-roster-inline .match-map-name { font-size: 1rem; }
-.match-roster-inline .match-card-player { grid-template-columns: minmax(88px,1fr) minmax(60px,0.75fr) minmax(88px,1fr) 42px; gap: 0.35rem; padding: 0.34rem 0.38rem; }
+.match-roster-inline .match-card-player { grid-template-columns: minmax(0,1fr) minmax(70px,0.75fr) 42px; gap: 0.25rem 0.35rem; padding: 0.34rem 0.38rem; }
 .match-roster-inline .roster-tag { font-size: 0.66rem; padding: 0.08rem 0.32rem; }
 .match-roster-inline .roster-impact { gap: 0.22rem; font-size: 0.76rem; }
 .match-roster-inline .impact-badge { font-size: 0.58rem; padding: 0.06rem 0.28rem; }
 .match-detail-row td { background: #2b2d32; padding: 0.9rem 1rem; border-top: 0; }
 .match-expand-btn { background: none; border: 0; color: #8fb4ff; cursor: pointer; font: inherit; font-weight: 700; padding: 0; white-space: nowrap; }
 .match-expand-btn:hover { text-decoration: underline; }
-.roster-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; min-width: 0; overflow: hidden; max-height: 44px; }
+.roster-tags { grid-area: tags; display: flex; flex-wrap: wrap; gap: 0.22rem; min-width: 0; max-height: none; padding-left: 2rem; }
 .roster-tag { color: #d8dade; background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.07); border-radius: 999px; padding: 0.12rem 0.45rem; font-size: 0.72rem; line-height: 1.25; white-space: nowrap; }
 .roster-tag.army { color: #ffc6c9; background: rgba(191,84,88,0.13); border-color: rgba(255,109,115,0.18); }
 .roster-tag.eco { color: #bdf2d1; background: rgba(76,158,103,0.13); border-color: rgba(99,217,139,0.20); }
@@ -625,10 +625,13 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .team-result-pill.W { color: #63d98b; border-color: rgba(99,217,139,0.42); background: rgba(54,140,83,0.12); }
 .team-result-pill.L { color: #ff6d73; border-color: rgba(255,109,115,0.38); background: rgba(150,55,59,0.12); }
 .team-result-pill.D { color: #c4c7cc; }
-.match-card-player { position: relative; display: grid; grid-template-columns: minmax(120px,1.05fr) minmax(92px,0.8fr) minmax(120px,1.25fr) minmax(58px,auto); align-items: center; gap: 0.55rem; min-height: 38px; padding: 0.4rem 0.45rem; border-top: 1px solid rgba(255,255,255,0.07); border-radius: 5px; }
+.match-card-player { position: relative; display: grid; grid-template-columns: minmax(0,1fr) minmax(100px,auto) minmax(42px,auto); grid-template-areas: "player civ score" "tags tags tags"; align-items: center; gap: 0.22rem 0.55rem; min-height: 44px; padding: 0.42rem 0.5rem; border-top: 1px solid rgba(255,255,255,0.07); border-radius: 5px; }
 .match-card-player:first-of-type { border-top: 0; }
 .match-card-player.top-impact { background: linear-gradient(90deg, rgba(217,144,38,0.22), rgba(217,144,38,0.08)); box-shadow: inset 3px 0 0 #d99026; border-top-color: rgba(217,144,38,0.20); }
 .match-card-player.top-impact .player-name-text { color: #fff4d6; font-weight: 800; }
+.match-card-player > .player-link { grid-area: player; min-width: 0; }
+.match-card-player > .civ-cell { grid-area: civ; justify-content: flex-start; min-width: 0; }
+.match-card-player > .roster-impact { grid-area: score; }
 .impact-badge { color: #1f2124; background: #d99026; border-radius: 999px; padding: 0.08rem 0.42rem; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 900; line-height: 1.35; }
 .profile-description { background: #2f3136; border: 1px solid #484c54; border-radius: 6px; color: #f0f1f3; padding: 1rem 1.1rem; margin-bottom: 1rem; font-size: 1rem; line-height: 1.55; }
 .profile-description p { margin: 0 0 0.75rem; }
@@ -845,7 +848,8 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   .match-roster-inline .match-card-body { min-width: 0; grid-template-columns: 1fr; }
   .match-map-box { border-right: 0; border-bottom: 1px solid #484c54; padding-right: 0; padding-bottom: 0.75rem; }
   .match-vs { min-height: 24px; }
-  .match-card-player { grid-template-columns: 1fr; align-items: start; }
+  .match-card-player { grid-template-columns: minmax(0,1fr) auto; grid-template-areas: "player score" "civ civ" "tags tags"; align-items: start; }
+  .roster-tags { padding-left: 0; }
   .profile-description { font-size: 0.95rem; }
   .commentary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-controls { align-items: stretch; }
@@ -1619,9 +1623,8 @@ function matchCardBody(r) {
     grouped[key].push(p);
   });
   var teams = Object.keys(grouped).sort();
-  var top = topImpactPlayer(players);
-  var left = teams[0] ? matchTeamCard(teams[0], grouped[teams[0]], top) : '<div class="empty-panel">No roster data.</div>';
-  var right = teams[1] ? matchTeamCard(teams[1], grouped[teams[1]], top) : (teams.length > 1 ? '' : '<div class="empty-panel">No opponent roster.</div>');
+  var left = teams[0] ? matchTeamCard(teams[0], grouped[teams[0]]) : '<div class="empty-panel">No roster data.</div>';
+  var right = teams[1] ? matchTeamCard(teams[1], grouped[teams[1]]) : (teams.length > 1 ? '' : '<div class="empty-panel">No opponent roster.</div>');
   var details = [r.queue || null, fmtDuration(r.duration_s), fmtAgo(r.at), r.match_id ? '#' + r.match_id : null].filter(function (x) { return x && x !== '-'; }).join(' · ');
   return '<div class="match-card-body"><div class="match-map-box"><div class="match-map-name">' + esc(r.map || '-') + '</div>'
     + '<div class="match-detail-meta">' + esc(details || 'Match details') + '</div></div>'
@@ -1665,8 +1668,9 @@ function rosterTagPills(tags) {
     return '<span class="roster-tag ' + rosterTagClass(tag) + '">' + esc(tag) + '</span>';
   }).join('');
 }
-function matchTeamCard(teamName, players, topPlayer) {
+function matchTeamCard(teamName, players) {
   players = players || [];
+  var topPlayer = topImpactPlayer(players);
   var teamResult = (players.find(function (p) { return p.result; }) || {}).result || '';
   var resultClass = teamResult === 'W' ? ' winning-team' : teamResult === 'L' ? ' losing-team' : '';
   var rows = players.map(function (p) {
