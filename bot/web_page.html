@@ -574,6 +574,10 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .civ-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .leader-row { cursor: pointer; }
 .leader-row:hover td { background: #36393f; }
+.player-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; min-width: 0; }
+.player-link:hover .player-name-text, .player-link:hover .metric-player-name, .player-link:hover .opponent-name {
+  color: #8fb4ff; text-decoration: underline;
+}
 .detail-section { margin-top: 1rem; }
 .detail-section h2 {
   font-family: 'Oswald', sans-serif; font-weight: 400; color: white;
@@ -949,7 +953,31 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         </div>
       </div>
       <div class="match-panel" id="leaderboard-panel"></div>
-      <div id="player-detail" style="display:none;">
+      <footer>Player names open profile details. Duration stats require parsed replay data.</footer>
+    </div>
+  </div>
+
+  <!-- Player Profile Page -->
+  <div class="page" id="page-player-profile">
+    <div class="stats-container match-stats-container">
+      <header>
+        <h1>Player Profile</h1>
+        <div class="subtitle" id="player-profile-subtitle">Player style, win rates, tags, allies, opponents, and matches</div>
+      </header>
+      <div class="match-controls">
+        <button class="period-tab" type="button" onclick="showPage('leaderboard')">Leaderboard</button>
+        <label class="filter-label">Duration
+          <select id="player-profile-period-select" class="filter-control" onchange="setPlayerProfilePeriod(this.value)">
+            <option value="all" selected>All time</option>
+            <option value="year">1 year</option>
+            <option value="month6">6 months</option>
+            <option value="month3">3 months</option>
+            <option value="month">1 month</option>
+            <option value="week">1 week</option>
+          </select>
+        </label>
+      </div>
+      <div id="player-detail">
         <div class="metric-grid" id="player-detail-summary"></div>
         <div class="trend-panel" id="player-elo-trend"></div>
         <section class="detail-section">
@@ -970,7 +998,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         </div>
         <section class="match-panel detail-section" id="player-matches"></section>
       </div>
-      <footer>Player rows are clickable. Duration stats require parsed replay data.</footer>
+      <footer>Profile style is inferred from replay tags, impact scores, best civs, and duration windows.</footer>
     </div>
   </div>
 
@@ -1089,6 +1117,7 @@ var civData = [], sortCol = 'civ', sortAsc = true;
 var matchData = null, matchPeriod = 'all', matchPlayer = 'all';
 var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
 var leaderboardMinMatches = 0;
+var playerProfileUserId = null, playerProfilePeriod = 'all';
 var playerDetailData = null, miniSort = {
   'leader-players': { key: 'rating_end', asc: false },
   'match-player-board': { key: 'rating_end', asc: false }
@@ -1292,7 +1321,7 @@ function fmtGain(v) {
 function fmtImpact(i, key) {
   return i && i[key] !== null && i[key] !== undefined ? String(i[key]) : '-';
 }
-function impactName(i) { return i && i.nick ? esc(i.nick) : '-'; }
+function impactName(i) { return i && i.nick ? playerLink(i.user_id, i.nick) : '-'; }
 function impactTags(i) {
   var tags = i && i.impact_tags ? i.impact_tags : [];
   return tags.length ? tags.map(esc).join(', ') : '-';
@@ -1452,14 +1481,24 @@ function avatarImg(url, name) {
   if (!url) return '<span class="player-avatar"></span>';
   return '<img class="player-avatar" src="' + esc(url) + '" alt="' + esc(name || 'player') + '">';
 }
-function playerCell(name, avatar) {
-  return '<span class="player-cell">' + avatarImg(avatar, name) + '<span>' + esc(name || '-') + '</span></span>';
+function playerProfileHref(userId) {
+  return '#player-profile-' + encodeURIComponent(userId || '');
+}
+function playerLink(userId, name, html) {
+  if (!userId) return html || esc(name || '-');
+  return '<a class="player-link" href="' + esc(playerProfileHref(userId)) + '" onclick="openPlayerProfile(\'' + esc(userId) + '\'); event.stopPropagation(); return false;">'
+    + (html || esc(name || '-')) + '</a>';
+}
+function playerCell(name, avatar, userId) {
+  var html = '<span class="player-cell">' + avatarImg(avatar, name) + '<span class="player-name-text">' + esc(name || '-') + '</span></span>';
+  return playerLink(userId, name, html);
 }
 function relationStripCard(r) {
-  return '<div class="opponent-card">' + avatarImg(r.avatar, r.nick)
+  var html = avatarImg(r.avatar, r.nick)
     + '<div><div class="opponent-name">' + esc(r.nick) + '</div>'
     + '<div class="opponent-rate">' + fmtPct(r.winrate) + '</div>'
-    + '<div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div></div>';
+    + '<div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div>';
+  return '<div class="opponent-card">' + playerLink(r.user_id, r.nick, html) + '</div>';
 }
 function civSlug(civ) {
   return String(civ || '').trim().toLowerCase()
@@ -1473,8 +1512,9 @@ function civIcon(civ) {
   return '<span class="civ-cell"><img class="civ-icon" src="' + esc(url) + '" alt="' + esc(civ) + '" onerror="this.style.display=\'none\'"><span class="civ-name">' + esc(civ) + '</span></span>';
 }
 function selectedPlayerCard(s) {
+  var nameHtml = '<div class="metric-player-name">' + esc(s.nick || '-') + '</div>';
   return '<div class="metric-card"><div class="metric-label">Player</div>'
-    + '<div class="metric-player">' + avatarImg(s.avatar, s.nick) + '<div><div class="metric-player-name">' + esc(s.nick || '-') + '</div>'
+    + '<div class="metric-player">' + avatarImg(s.avatar, s.nick) + '<div>' + playerLink(s.user_id, s.nick, nameHtml)
     + '<div class="metric-sub">' + esc(fmtAgo(s.last_match_at)) + '</div></div></div></div>';
 }
 
@@ -1594,8 +1634,8 @@ function setMiniSort(tableId, key, type) {
   if (currentPage === 'match-stats') renderMatchStats();
   if (currentPage === 'leaderboard') {
     renderLeaderboard();
-    if (playerDetailData) renderPlayerDetail(playerDetailData);
   }
+  if (currentPage === 'player-profile' && playerDetailData) renderPlayerDetail(playerDetailData);
 }
 
 function sortableTable(tableId, title, columns, rows, empty, rowAttrs) {
@@ -1645,7 +1685,7 @@ function renderMatchTables() {
 
   if (matchData.scope === 'player') {
     var playerStatCols = [
-      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
       { key: 'games', label: 'Matches', type: 'number', className: 'num' },
       { key: 'wins', label: 'Won', type: 'number', className: 'num' },
       { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
@@ -1667,7 +1707,7 @@ function renderMatchTables() {
     ], matchData.recent || [], 'No recent matches.');
   } else {
     document.getElementById('match-primary-panel').innerHTML = sortableTable('match-player-board', 'Player leaderboard', [
-      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
       { key: 'games', label: 'Matches', type: 'number', className: 'num' },
       { key: 'wins', label: 'Won', type: 'number', className: 'num' },
       { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
@@ -1714,7 +1754,6 @@ function setLeaderboardPeriod(p) {
   var sel = document.getElementById('leaderboard-period-select');
   if (sel) sel.value = p;
   loadLeaderboard();
-  if (leaderboardPlayer) loadPlayerDetail(leaderboardPlayer);
 }
 
 function setLeaderboardMinMatches(v) {
@@ -1731,7 +1770,6 @@ function setLeaderboardMode(m) {
   });
   leaderboardPlayer = null;
   playerDetailData = null;
-  document.getElementById('player-detail').style.display = 'none';
   loadLeaderboard();
 }
 
@@ -1768,7 +1806,7 @@ function renderLeaderboard() {
   }
   document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-players', 'Player leaderboard', [
     { key: 'rank', label: '#', type: 'number', className: 'num', render: function (r, i) { return String(i + 1); } },
-    { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar); } },
+    { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
     { key: 'rating', label: 'Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating); } },
     { key: 'rating_start', label: 'Start Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_start); } },
     { key: 'rating_end', label: 'End Elo', type: 'number', className: 'num', render: function (r) { return fmtElo(r.rating_end); } },
@@ -1779,17 +1817,38 @@ function renderLeaderboard() {
     { key: 'draws', label: 'Drawn', type: 'number', className: 'num' },
     { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
   ], rows, 'No player data.', function (r) {
-    return 'class="leader-row" onclick="loadPlayerDetail(\'' + esc(r.user_id) + '\')"';
+    return 'class="leader-row" onclick="openPlayerProfile(\'' + esc(r.user_id) + '\')"';
   });
 }
 
-async function loadPlayerDetail(userId) {
+function profilePeriodForCurrentPage() {
+  if (currentPage === 'match-stats') return matchPeriod;
+  if (currentPage === 'leaderboard') return leaderboardPeriod;
+  return playerProfilePeriod || 'all';
+}
+
+function openPlayerProfile(userId, period) {
+  loadPlayerDetail(userId, period || profilePeriodForCurrentPage());
+}
+
+function setPlayerProfilePeriod(p) {
+  playerProfilePeriod = p || 'all';
+  var sel = document.getElementById('player-profile-period-select');
+  if (sel) sel.value = playerProfilePeriod;
+  if (playerProfileUserId) loadPlayerDetail(playerProfileUserId, playerProfilePeriod);
+}
+
+async function loadPlayerDetail(userId, period) {
   leaderboardPlayer = userId;
-  document.getElementById('player-detail').style.display = 'block';
+  playerProfileUserId = userId;
+  playerProfilePeriod = period || playerProfilePeriod || 'all';
+  var sel = document.getElementById('player-profile-period-select');
+  if (sel) sel.value = playerProfilePeriod;
+  showPage('player-profile');
   document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
   document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
   try {
-    var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(leaderboardPeriod) + '&player_id=' + encodeURIComponent(userId));
+    var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(playerProfilePeriod) + '&player_id=' + encodeURIComponent(userId));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var d = await resp.json();
     playerDetailData = d;
@@ -1804,6 +1863,8 @@ function renderPlayerDetail(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
   var report = p.scout_report || {};
+  var subtitle = document.getElementById('player-profile-subtitle');
+  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + (p.style || 'No replay style');
   document.getElementById('player-detail-summary').innerHTML = [
     selectedPlayerCard(s),
     card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),

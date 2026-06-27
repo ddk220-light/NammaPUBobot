@@ -1155,6 +1155,7 @@ async def _match_stats_player(user_id, period):
 		[user_id, *params])
 	return {
 		"summary": {
+			"user_id": str(user_id),
 			"nick": (summary or {}).get("nick") or str(user_id),
 			"avatar": _avatar_for_user_id(user_id),
 			"profile_ids": profile_ids,
@@ -1176,13 +1177,13 @@ async def _match_stats_player(user_id, period):
 		],
 		"maps": maps,
 		"teammates": [
-			{"nick": r["nick"] or str(r["user_id"]), "games": int(r["games"] or 0),
+			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]), "games": int(r["games"] or 0),
 			 "wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0),
 			 "winrate": _winrate(r["wins"], r["losses"]), "avatar": _avatar_for_user_id(r["user_id"])}
 			for r in teammates or []
 		],
 		"opponents": [
-			{"nick": r["nick"] or str(r["user_id"]), "games": int(r["games"] or 0),
+			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]), "games": int(r["games"] or 0),
 			 "wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0),
 			 "winrate": _winrate(r["wins"], r["losses"]), "avatar": _avatar_for_user_id(r["user_id"])}
 			for r in opponents or []
