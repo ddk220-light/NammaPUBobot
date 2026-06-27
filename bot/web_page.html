@@ -588,6 +588,10 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   gap: 0.65rem;
 }
 .match-roster-details summary { cursor: pointer; color: #8fb4ff; white-space: nowrap; }
+.match-roster-details[open] summary { margin-bottom: 0.75rem; }
+.match-roster-inline { min-width: 760px; }
+.match-roster-inline .match-card-body { grid-template-columns: 180px 1fr 40px 1fr; }
+.match-roster-inline .match-map-box { font-size: 0.9rem; }
 .match-roster { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; padding: 0.75rem 0 0.25rem; }
 .roster-team { border: 1px solid #484c54; border-radius: 6px; overflow: hidden; background: rgba(0,0,0,0.12); }
 .roster-team-title { padding: 0.45rem 0.6rem; color: white; background: #202225; font-family: 'Oswald', sans-serif; letter-spacing: 0.5px; }
@@ -818,6 +822,8 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   .duration-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .player-picker { min-width: 100%; max-width: 100%; }
   .match-card-body { grid-template-columns: 1fr; }
+  .match-roster-inline { min-width: 0; }
+  .match-roster-inline .match-card-body { grid-template-columns: 1fr; }
   .match-map-box { border-right: 0; border-bottom: 1px solid #484c54; padding-right: 0; padding-bottom: 0.75rem; }
   .match-vs { min-height: 24px; }
   .match-card-player { grid-template-columns: 1fr; align-items: start; }
@@ -1571,17 +1577,24 @@ function rosterPlayer(p) {
 function matchRosterDetails(r) {
   var players = r.players || [];
   if (!players.length) return '-';
+  return '<details class="match-roster-details"><summary>' + players.length + ' players</summary>'
+    + '<div class="match-roster-inline">' + matchCardBody(r) + '</div></details>';
+}
+function matchCardBody(r) {
+  var players = r.players || [];
   var grouped = {};
   players.forEach(function (p) {
     var key = p.team === null || p.team === undefined || p.team === '' ? 'Unknown team' : 'Team ' + p.team;
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(p);
   });
-  var html = Object.keys(grouped).sort().map(function (team) {
-    return '<div class="roster-team"><div class="roster-team-title">' + esc(team) + '</div>'
-      + grouped[team].map(rosterPlayer).join('') + '</div>';
-  }).join('');
-  return '<details class="match-roster-details"><summary>' + players.length + ' players</summary><div class="match-roster">' + html + '</div></details>';
+  var teams = Object.keys(grouped).sort();
+  var top = topImpactPlayer(players);
+  var left = teams[0] ? matchTeamCard(teams[0], grouped[teams[0]], top) : '<div class="empty-panel">No roster data.</div>';
+  var right = teams[1] ? matchTeamCard(teams[1], grouped[teams[1]], top) : (teams.length > 1 ? '' : '<div class="empty-panel">No opponent roster.</div>');
+  return '<div class="match-card-body"><div class="match-map-box"><div class="match-map-name">' + esc(r.map || '-') + '</div>'
+    + '<div class="match-card-meta">' + (top ? 'Carry: ' + esc(top.nick || '-') + ' (' + esc(playerImpactValue(top)) + ')' : 'No impact data') + '</div></div>'
+    + left + '<div class="match-vs">VS</div>' + right + '</div>';
 }
 function playerImpactValue(p) {
   return p && p.impact && p.impact.impact_score != null ? Number(p.impact.impact_score) : -1;
@@ -1611,26 +1624,13 @@ function matchTeamCard(teamName, players, topPlayer) {
   return '<div class="match-team' + (winning ? ' winning-team' : '') + '"><div class="match-team-title">' + esc(teamName) + '</div>' + rows + '</div>';
 }
 function matchCard(r) {
-  var players = r.players || [];
-  var grouped = {};
-  players.forEach(function (p) {
-    var key = p.team === null || p.team === undefined || p.team === '' ? 'Unknown team' : 'Team ' + p.team;
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(p);
-  });
-  var teams = Object.keys(grouped).sort();
-  var top = topImpactPlayer(players);
-  var left = teams[0] ? matchTeamCard(teams[0], grouped[teams[0]], top) : '<div class="empty-panel">No roster data.</div>';
-  var right = teams[1] ? matchTeamCard(teams[1], grouped[teams[1]], top) : (teams.length > 1 ? '' : '<div class="empty-panel">No opponent roster.</div>');
   var title = (r.queue || 'Match').replace(/_/g, ' ');
   var meta = [fmtDuration(r.duration_s), fmtAgo(r.at)].filter(function (x) { return x && x !== '-'; }).join(' - ');
   return '<article class="match-card">'
     + '<div class="match-card-head"><div><div class="match-card-title">' + esc(title) + '</div>'
     + '<div class="match-card-meta">' + esc(meta || 'Match details') + '</div></div>'
     + '<div class="match-card-id">#' + esc(r.match_id) + '</div></div>'
-    + '<div class="match-card-body"><div class="match-map-box"><div class="match-map-name">' + esc(r.map || '-') + '</div>'
-    + '<div class="match-card-meta">' + (top ? 'Carry: ' + esc(top.nick || '-') + ' (' + esc(playerImpactValue(top)) + ')' : 'No impact data') + '</div></div>'
-    + left + '<div class="match-vs">VS</div>' + right + '</div></article>';
+    + matchCardBody(r) + '</article>';
 }
 function renderMatchCards(rows) {
   rows = rows || [];
