@@ -748,10 +748,13 @@ def _impact_payload(row, group):
 	army_z = (_z(row, group, "military") * 0.65) + (_z(row, group, "mil_pre_castle") * 0.35)
 	timing_z = (_z(row, group, "feudal_s", invert=True) * 0.35) + (_z(row, group, "castle_s", invert=True) * 0.45) + (_z(row, group, "imperial_s", invert=True) * 0.20)
 	early_eco_z = _z(row, group, "vil_pre_castle")
+	early_army_z = _z(row, group, "mil_pre_castle")
 	recovery_z = _z(row, group, "villagers") - early_eco_z
 	eco = _score_component(eco_z)
 	army = _score_component(army_z)
 	timing = _score_component(timing_z)
+	early_eco = _score_component(early_eco_z)
+	early_army = _score_component(early_army_z)
 	recovery = _score_component(recovery_z)
 	impact = round((army * 0.34) + (eco * 0.30) + (timing * 0.18) + (recovery * 0.18))
 	tags = []
@@ -759,7 +762,9 @@ def _impact_payload(row, group):
 		tags.append("Low-eco pressure")
 	elif army >= 66:
 		tags.append("Army pressure")
-	if eco >= 66:
+	if eco >= 64 and early_eco >= 56 and early_army <= 55 and impact >= 58:
+		tags.append("Boom carry")
+	elif eco >= 66:
 		tags.append("Eco carry")
 	if timing >= 66:
 		tags.append("Timing edge")
@@ -775,11 +780,13 @@ def _impact_payload(row, group):
 		"team": row.get("team"),
 		"impact_score": impact,
 		"army_score": army,
-		"eco_score": eco,
-		"timing_score": timing,
-		"recovery_score": recovery,
-		"impact_tags": tags[:3],
-	}
+			"eco_score": eco,
+			"timing_score": timing,
+			"early_eco_score": early_eco,
+			"early_army_score": early_army,
+			"recovery_score": recovery,
+			"impact_tags": tags[:3],
+		}
 
 
 def _avg_impact(impacts, key):
@@ -796,6 +803,7 @@ def _style_scout_report(style, top_tags, best_civs, duration_edges, has_impacts)
 		}
 	openers = {
 		"Pressure player": "Tempo-forward profile: creates map space through army presence before full boom.",
+		"Boom carry": "Boom-first carry profile: keeps early army lean, banks economy, then turns the villager lead into late-game weight.",
 		"Economy carry": "Boom-and-carry profile: scales well when allowed to build economy and take late fights.",
 		"Timing specialist": "Timing-window profile: impact spikes around age-up or upgrade windows.",
 		"Recovery anchor": "Stabilizer profile: absorbs rough starts and rebuilds into useful team position.",
@@ -877,7 +885,10 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 		"Recovery": avg_recovery or 0,
 	}
 	top_component, top_score = max(scores.items(), key=lambda kv: kv[1])
-	if top_component == "Army" and top_score >= 58 and top_score >= scores["Eco"] + 5:
+	top_tag = top_tags[0]["tag"] if top_tags else None
+	if top_tag == "Boom carry" and (avg_eco or 0) >= 56:
+		style = "Boom carry"
+	elif top_component == "Army" and top_score >= 58 and top_score >= scores["Eco"] + 5:
 		style = "Pressure player"
 	elif top_component == "Eco" and top_score >= 58 and top_score >= scores["Army"] + 5:
 		style = "Economy carry"

@@ -601,6 +601,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .roster-tags { grid-area: tags; display: flex; flex-wrap: wrap; gap: 0.22rem; min-width: 0; max-height: none; padding-left: 2rem; }
 .roster-tag { color: #d8dade; background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.07); border-radius: 999px; padding: 0.12rem 0.45rem; font-size: 0.72rem; line-height: 1.25; white-space: nowrap; }
 .roster-tag.army { color: #ffc6c9; background: rgba(191,84,88,0.13); border-color: rgba(255,109,115,0.18); }
+.roster-tag.boom { color: #f4e1b5; background: rgba(197,148,58,0.15); border-color: rgba(229,178,80,0.24); }
 .roster-tag.eco { color: #bdf2d1; background: rgba(76,158,103,0.13); border-color: rgba(99,217,139,0.20); }
 .roster-tag.timing { color: #cfe0ff; background: rgba(91,140,238,0.13); border-color: rgba(143,180,255,0.20); }
 .roster-tag.recovery { color: #f3d6aa; background: rgba(217,144,38,0.13); border-color: rgba(217,144,38,0.22); }
@@ -1655,6 +1656,7 @@ function rowPlayerImpactData(r, userId) {
 }
 function rosterTagClass(tag) {
   tag = String(tag || '').toLowerCase();
+  if (tag.indexOf('boom') >= 0) return 'boom';
   if (tag.indexOf('army') >= 0 || tag.indexOf('pressure') >= 0) return 'army';
   if (tag.indexOf('eco') >= 0 || tag.indexOf('carry') >= 0) return 'eco';
   if (tag.indexOf('timing') >= 0) return 'timing';
@@ -2190,6 +2192,7 @@ function impactLeader(p) {
 function styleRead(style) {
   var reads = {
     'Pressure player': 'tempo/flank read: makes space early, keeps enemy economy busy, and lets pocket-style allies scale',
+    'Boom carry': 'boom-first carry read: plays lean early, stacks economy, then converts the villager lead into late-game damage',
     'Economy carry': 'boom/carry read: wants safe setup, then wins through economy lead and late-game weight',
     'Timing specialist': 'timing-push read: spikes around upgrades, age-ups, and coordinated power windows',
     'Recovery anchor': 'anchor read: absorbs pressure, re-booms, and keeps team position playable',
@@ -2201,6 +2204,7 @@ function styleRead(style) {
 
 function impactStyleLabel(style, leader) {
   if (style === 'Pressure player') return 'Tempo pressure player';
+  if (style === 'Boom carry') return 'Boom-first carry';
   if (style === 'Economy carry') return 'Boom-and-carry player';
   if (style === 'Timing specialist') return 'Timing-window specialist';
   if (style === 'Recovery anchor') return 'Recovery anchor';
@@ -2283,6 +2287,7 @@ function playstyleHeadline(d) {
     if (luck.best.key === 'spawn_near_ally') return 'Ally-cluster team fighter';
     if (luck.best.key.indexOf('_poor') >= 0) return 'Scrappy bad-spawn stabilizer';
   }
+  if (p.style === 'Boom carry') return 'Boom-into-carry player';
   return impactStyleLabel(p.style, leader);
 }
 
@@ -2290,6 +2295,7 @@ function tagRead(tags) {
   if (!tags.length) return 'No replay tags yet; style read falls back to win rates and Elo movement.';
   var primary = tags[0];
   if (primary === 'Army pressure') return 'Primary tag says pressure player: likely raids, contests map, and forces reactions.';
+  if (primary === 'Boom carry') return 'Primary tag says boom carry: quiet early army, fast eco mass, then late-game carry if protected.';
   if (primary === 'Eco carry') return 'Primary tag says eco carry: give space, protect trade/boom lanes, expect scaling value.';
   if (primary === 'Timing edge') return 'Primary tag says timing edge: strongest when team follows upgrade or age-up windows.';
   if (primary === 'Recovery') return 'Primary tag says recovery: useful when early plan breaks and team needs stabilizing.';
@@ -2313,6 +2319,16 @@ function profileWatchout(p, s) {
 
 function commentaryCard(title, text) {
   return '<div class="commentary-card"><div class="commentary-title">' + esc(title) + '</div><div class="commentary-text">' + esc(text) + '</div></div>';
+}
+
+function boomRead(profile) {
+  var tags = profile && profile.top_tags ? profile.top_tags : [];
+  var boom = tags.find(function (t) { return t.tag === 'Boom carry'; });
+  if (boom) return 'Boom carry appears in ' + boom.count + ' parsed games (' + boom.rate + '%): low early army, strong eco, then carry impact.';
+  if (profile && profile.avg_eco != null && Number(profile.avg_eco) >= 58) {
+    return 'Eco score is high (' + fmtImpactAvg(profile.avg_eco) + '), but parsed games do not show a consistent low-army boom pattern yet.';
+  }
+  return 'No clear boom-first carry pattern yet.';
 }
 
 function playerProfileDescription(d) {
@@ -2348,6 +2364,7 @@ function playerProfileDescription(d) {
   var cards = [
     commentaryCard('AoE read', styleRead(p.style)),
     commentaryCard('Tag signal', tagRead(tags)),
+    commentaryCard('Boom profile', boomRead(p)),
     commentaryCard('Spawn read', luckText),
     commentaryCard('Free boom', luckCardText(luck, 'spawn_isolated', 'No isolated-start sample yet.')),
     commentaryCard('Early contact', luckCardText(luck, 'spawn_near_enemy', 'No near-enemy sample yet.')),
