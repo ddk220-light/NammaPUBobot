@@ -794,6 +794,157 @@ def _avg_impact(impacts, key):
 	return round(sum(vals) / len(vals), 1) if vals else None
 
 
+def _num(v, digits=1):
+	if v is None:
+		return None
+	return round(float(v), digits)
+
+
+def _identity_clause(user_id, profile_ids, alias="g"):
+	clauses = [f"{alias}.user_id=%s"]
+	args = [user_id]
+	if profile_ids:
+		clauses.append(f"{alias}.profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ")")
+		args.extend(profile_ids)
+	return "(" + " OR ".join(clauses) + ")", args
+
+
+def _phase_minutes(seconds):
+	return None if seconds is None else round(float(seconds) / 60, 1)
+
+
+_ECO_TECHS = {
+	"Loom", "Wheelbarrow", "Hand Cart",
+	"Double-Bit Axe", "Bow Saw", "Two-Man Saw",
+	"Horse Collar", "Heavy Plow", "Crop Rotation",
+	"Gold Mining", "Gold Shaft Mining", "Stone Mining", "Stone Shaft Mining",
+}
+
+
+_ARMY_TECH_HINTS = (
+	"Fletching", "Bodkin Arrow", "Bracer",
+	"Forging", "Iron Casting", "Blast Furnace",
+	"Bloodlines", "Husbandry",
+	"Scale Barding Armor", "Chain Barding Armor", "Plate Barding Armor",
+	"Padded Archer Armor", "Leather Archer Armor", "Ring Archer Armor",
+	"Scale Mail Armor", "Chain Mail Armor", "Plate Mail Armor",
+	"Ballistics", "Chemistry", "Thumb Ring", "Conscription",
+)
+
+
+def _cat_label(cat):
+	labels = {
+		"archer_line": "archers",
+		"cav_archer": "cavalry archers",
+		"elephant": "elephants",
+		"knight_line": "knights",
+		"militia_line": "infantry",
+		"monk": "monks",
+		"scout": "scouts",
+		"siege": "siege",
+		"skirmisher": "skirmishers",
+		"spearman_line": "spears",
+		"unique_other": "unique units",
+	}
+	return labels.get(cat, str(cat or "").replace("_", " "))
+
+
+async def _player_strategy_profile(user_id, profile_ids, period):
+	at_clause, at_params = _period_filter(period)
+	identity_clause, identity_args = _identity_clause(user_id, profile_ids)
+	args = [*identity_args, *at_params]
+	base_join = (
+		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"JOIN qc_matches m ON m.match_id=rm.bot_match_id "
+		"WHERE " + identity_clause + at_clause
+	)
+	summary = await db.fetchone(
+		"SELECT COUNT(DISTINCT g.aoe2_match_id) AS games, "
+		"AVG(g.villagers) AS avg_villagers, AVG(g.vil_pre_castle) AS avg_vil_pre_castle, "
+		"AVG(g.military) AS avg_military, AVG(g.mil_pre_castle) AS avg_mil_pre_castle, "
+		"AVG(g.castle_s) AS avg_castle_s, AVG(g.imperial_s) AS avg_imperial_s, "
+		"SUM(g.vil_pre_castle >= 30 AND g.mil_pre_castle <= 6) AS quiet_boom_games "
+		+ base_join,
+		args)
+	if not summary or not summary.get("games"):
+		return {"games": 0, "summary": "No parsed strategy sample yet.", "army_mix": [], "top_units": [], "eco_techs": [], "army_techs": []}
+	unit_join = (
+		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"JOIN qc_matches m ON m.match_id=rm.bot_match_id "
+		"JOIN rs_player_units u ON u.aoe2_match_id=g.aoe2_match_id AND u.player_number=g.player_number "
+		"WHERE " + identity_clause + at_clause + " AND u.is_military=1 AND u.total>0 "
+	)
+	army_mix = await db.fetchall(
+		"SELECT u.category, COUNT(DISTINCT u.aoe2_match_id) AS games, SUM(u.total) AS total, "
+		"SUM(u.pre_castle) AS pre_castle "
+		+ unit_join +
+		"GROUP BY u.category ORDER BY total DESC LIMIT 8",
+		args)
+	top_units = await db.fetchall(
+		"SELECT u.unit, u.category, COUNT(DISTINCT u.aoe2_match_id) AS games, SUM(u.total) AS total, "
+		"SUM(u.pre_castle) AS pre_castle "
+		+ unit_join +
+		"GROUP BY u.unit, u.category ORDER BY total DESC LIMIT 8",
+		args)
+	tech_join = (
+		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"JOIN qc_matches m ON m.match_id=rm.bot_match_id "
+		"JOIN rs_player_techs t ON t.aoe2_match_id=g.aoe2_match_id AND t.player_number=g.player_number "
+		"WHERE " + identity_clause + at_clause + " "
+	)
+	techs = await db.fetchall(
+		"SELECT t.tech, t.phase, COUNT(DISTINCT t.aoe2_match_id) AS games, AVG(t.click_s) AS avg_click_s "
+		+ tech_join +
+		"GROUP BY t.tech, t.phase ORDER BY games DESC LIMIT 120",
+		args)
+	games = int(summary.get("games") or 0)
+	quiet_boom_games = int(summary.get("quiet_boom_games") or 0)
+	eco_techs = [r for r in techs or [] if r.get("tech") in _ECO_TECHS]
+	army_techs = [r for r in techs or [] if r.get("tech") in _ARMY_TECH_HINTS]
+	eco_techs = sorted(eco_techs, key=lambda r: (-int(r.get("games") or 0), float(r.get("avg_click_s") or 999999)))[:8]
+	army_techs = sorted(army_techs, key=lambda r: (-int(r.get("games") or 0), float(r.get("avg_click_s") or 999999)))[:8]
+	top_mix = [
+		{
+			"category": _cat_label(r.get("category")),
+			"games": int(r.get("games") or 0),
+			"total": int(r.get("total") or 0),
+			"pre_castle": int(r.get("pre_castle") or 0),
+		}
+		for r in army_mix or []
+	]
+	unit_mix = [
+		{
+			"unit": r.get("unit"),
+			"category": _cat_label(r.get("category")),
+			"games": int(r.get("games") or 0),
+			"total": int(r.get("total") or 0),
+			"pre_castle": int(r.get("pre_castle") or 0),
+		}
+		for r in top_units or []
+	]
+	return {
+		"games": games,
+		"avg_villagers": _num(summary.get("avg_villagers")),
+		"avg_pre_castle_villagers": _num(summary.get("avg_vil_pre_castle")),
+		"avg_military": _num(summary.get("avg_military")),
+		"avg_pre_castle_military": _num(summary.get("avg_mil_pre_castle")),
+		"avg_castle_min": _phase_minutes(summary.get("avg_castle_s")),
+		"avg_imperial_min": _phase_minutes(summary.get("avg_imperial_s")),
+		"quiet_boom_games": quiet_boom_games,
+		"quiet_boom_rate": round(100 * quiet_boom_games / games, 1) if games else 0,
+		"army_mix": top_mix,
+		"top_units": unit_mix,
+		"eco_techs": [
+			{"tech": r.get("tech"), "phase": r.get("phase"), "games": int(r.get("games") or 0), "avg_min": _phase_minutes(r.get("avg_click_s"))}
+			for r in eco_techs
+		],
+		"army_techs": [
+			{"tech": r.get("tech"), "phase": r.get("phase"), "games": int(r.get("games") or 0), "avg_min": _phase_minutes(r.get("avg_click_s"))}
+			for r in army_techs
+		],
+	}
+
+
 def _style_scout_report(style, top_tags, best_civs, duration_edges, has_impacts):
 	if not has_impacts:
 		return {
@@ -1527,6 +1678,7 @@ async def handle_player_stats(request):
 		base_args)
 	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
 	impact_profile = _player_impact_profile(period_impacts.values(), civs, durations)
+	strategy_profile = await _player_strategy_profile(user_id, profile_ids, period)
 	match_civs = {}
 	opp_match_civs = {}
 	match_rosters = {}
@@ -1564,6 +1716,7 @@ async def handle_player_stats(request):
 			"winrate": _winrate((summary or {}).get("wins"), (summary or {}).get("losses")),
 			"last_match_at": (summary or {}).get("last_match_at"),
 			"impact_profile": impact_profile,
+			"strategy_profile": strategy_profile,
 			"best_ally": _best_relationship(allies, "ally"),
 			"worst_enemy": _best_relationship(opponents, "enemy"),
 		},
@@ -2035,6 +2188,15 @@ def create_app():
 	app.router.add_get('/api/channels/{channel_id}/queues', handle_api_queues)
 	app.router.add_get('/api/channels/{channel_id}/queues/{queue_name}/config', handle_api_queue_config)
 	app.router.add_post('/api/channels/{channel_id}/queues/{queue_name}/config', handle_api_queue_config)
+	# SPA routes. Keep after API/auth/lobby routes so refresh preserves app views without shadowing endpoints.
+	app.router.add_get('/strategies', handle_index)
+	app.router.add_get('/luck', handle_index)
+	app.router.add_get('/match-stats', handle_index)
+	app.router.add_get('/leaderboard', handle_index)
+	app.router.add_get('/civ-stats', handle_index)
+	app.router.add_get('/dashboard', handle_index)
+	app.router.add_get('/player/{user_id}', handle_index)
+	app.router.add_get('/player-profile/{user_id}', handle_index)
 	return app
 
 

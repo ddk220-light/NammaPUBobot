@@ -514,11 +514,20 @@ td.games { color: #b9bbbe; }
 footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a; }
 
 /* ─── Match Stats ─── */
-.match-stats-container { max-width: 1500px; }
+.match-stats-container { max-width: 1500px; --sticky-panel-top: 118px; --sticky-table-top: 160px; }
 .match-controls {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 1rem; flex-wrap: wrap;
 }
+.sticky-page-context {
+  position: sticky; top: 0; z-index: 40;
+  background: #36393f; padding-top: 0.1rem; padding-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(72,76,84,0.65);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.14);
+}
+.sticky-page-context header { margin-bottom: 0.9rem; }
+.sticky-page-context + .metric-grid,
+.sticky-page-context + .match-panel { margin-top: 1rem; }
 .period-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .period-tab {
   background: #2c3034; color: #b9bbbe; border: 1px solid #484c54;
@@ -711,8 +720,11 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .match-panel h2 {
   font-family: 'Oswald', sans-serif; font-weight: 400; letter-spacing: 0.7px;
   font-size: 1.05rem; color: white; padding: 0.85rem 1rem 0.5rem;
+  position: sticky; top: var(--sticky-panel-top); z-index: 12; background: #2f3136;
+  border-bottom: 1px solid rgba(72,76,84,0.55);
 }
 .mini-table { width: 100%; border-collapse: collapse; table-layout: auto; }
+.mini-table thead { position: sticky; top: var(--sticky-table-top); z-index: 11; }
 .mini-table th {
   color: #969aa2; background: #202225; text-transform: uppercase;
   font-size: 0.68rem; letter-spacing: 0.06em; padding: 0.55rem 0.7rem; text-align: left;
@@ -839,6 +851,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   /* Stats page */
   .stats-container { padding: 1rem 0.75rem; }
   .stats-container h1 { font-size: 1.2rem; }
+  .match-stats-container { --sticky-panel-top: 152px; --sticky-table-top: 194px; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-grid { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr; }
@@ -994,28 +1007,30 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <!-- Leaderboard Page -->
   <div class="page" id="page-leaderboard">
     <div class="stats-container match-stats-container">
-      <header>
-        <h1>Leaderboard</h1>
-        <div class="subtitle">Slice by duration, player, and civilization</div>
-      </header>
-      <div class="match-controls">
-        <label class="filter-label">Duration
-          <select id="leaderboard-period-select" class="filter-control" onchange="setLeaderboardPeriod(this.value)">
-            <option value="all" selected>All time</option>
-            <option value="year">1 year</option>
-            <option value="month6">6 months</option>
-            <option value="month3">3 months</option>
-            <option value="month">1 month</option>
-            <option value="week">1 week</option>
-          </select>
-        </label>
-        <label class="filter-label">Min matches
-          <input id="leaderboard-min-matches" class="filter-control filter-input" type="number" min="0" step="1" value="0"
-            oninput="setLeaderboardMinMatches(this.value)">
-        </label>
-        <div class="period-tabs">
-          <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
-          <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
+      <div class="sticky-page-context">
+        <header>
+          <h1>Leaderboard</h1>
+          <div class="subtitle">Slice by duration, player, and civilization</div>
+        </header>
+        <div class="match-controls">
+          <label class="filter-label">Duration
+            <select id="leaderboard-period-select" class="filter-control" onchange="setLeaderboardPeriod(this.value)">
+              <option value="all" selected>All time</option>
+              <option value="year">1 year</option>
+              <option value="month6">6 months</option>
+              <option value="month3">3 months</option>
+              <option value="month">1 month</option>
+              <option value="week">1 week</option>
+            </select>
+          </label>
+          <label class="filter-label">Min matches
+            <input id="leaderboard-min-matches" class="filter-control filter-input" type="number" min="0" step="1" value="0"
+              oninput="setLeaderboardMinMatches(this.value)">
+          </label>
+          <div class="period-tabs">
+            <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
+            <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
+          </div>
         </div>
       </div>
       <div class="match-panel" id="leaderboard-panel"></div>
@@ -1026,25 +1041,27 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <!-- Player Profile Page -->
   <div class="page" id="page-player-profile">
     <div class="stats-container match-stats-container">
-      <header>
-        <h1>Player Profile</h1>
-        <div class="subtitle" id="player-profile-subtitle">Player style, win rates, tags, allies, opponents, and matches</div>
-      </header>
-      <div class="match-controls">
-        <button class="period-tab" type="button" onclick="showPage('leaderboard')">Leaderboard</button>
-        <label class="filter-label">Duration
-          <select id="player-profile-period-select" class="filter-control" onchange="setPlayerProfilePeriod(this.value)">
-            <option value="all" selected>All time</option>
-            <option value="year">1 year</option>
-            <option value="month6">6 months</option>
-            <option value="month3">3 months</option>
-            <option value="month">1 month</option>
-            <option value="week">1 week</option>
-          </select>
-        </label>
-        <div class="period-tabs">
-          <button class="period-tab selected" data-player-view="overview" onclick="setPlayerProfileView('overview')">Overview</button>
-          <button class="period-tab" data-player-view="matches" onclick="setPlayerProfileView('matches')">All matches</button>
+      <div class="sticky-page-context">
+        <header>
+          <h1>Player Profile</h1>
+          <div class="subtitle" id="player-profile-subtitle">Player style, win rates, tags, allies, opponents, and matches</div>
+        </header>
+        <div class="match-controls">
+          <button class="period-tab" type="button" onclick="showPage('leaderboard')">Leaderboard</button>
+          <label class="filter-label">Duration
+            <select id="player-profile-period-select" class="filter-control" onchange="setPlayerProfilePeriod(this.value)">
+              <option value="all" selected>All time</option>
+              <option value="year">1 year</option>
+              <option value="month6">6 months</option>
+              <option value="month3">3 months</option>
+              <option value="month">1 month</option>
+              <option value="week">1 week</option>
+            </select>
+          </label>
+          <div class="period-tabs">
+            <button class="period-tab selected" data-player-view="overview" onclick="setPlayerProfileView('overview')">Overview</button>
+            <button class="period-tab" data-player-view="matches" onclick="setPlayerProfileView('matches')">All matches</button>
+          </div>
         </div>
       </div>
       <div id="player-detail">
@@ -1079,35 +1096,37 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <!-- Match Stats Page -->
   <div class="page" id="page-match-stats">
     <div class="stats-container match-stats-container">
-      <header>
-        <h1>Match Statistics</h1>
-        <div class="subtitle">Player-filtered form, win rates, civs, maps, teammates and recent games</div>
-      </header>
-      <div class="match-controls">
-        <label class="filter-label">Duration
-          <select id="match-period-select" class="filter-control" onchange="setMatchPeriod(this.value)">
-            <option value="all" selected>All time</option>
-            <option value="year">1 year</option>
-            <option value="month6">6 months</option>
-            <option value="month3">3 months</option>
-            <option value="month">1 month</option>
-            <option value="week">1 week</option>
-          </select>
-        </label>
-        <div class="player-picker" id="match-player-picker">
-          <button class="player-picker-button" type="button" onclick="toggleMatchPlayerPicker()">
-            <span id="match-player-current" class="player-picker-current"></span>
-            <span class="player-picker-caret">&#9662;</span>
-          </button>
-          <div class="player-picker-menu" id="match-player-menu">
-            <input id="match-player-search" class="player-picker-search" type="text"
-              placeholder="Search player" oninput="filterMatchPlayers(this.value)" onfocus="openMatchPlayerPicker()">
-            <div class="player-picker-options" id="match-player-options"></div>
+      <div class="sticky-page-context">
+        <header>
+          <h1>Match Statistics</h1>
+          <div class="subtitle">Player-filtered form, win rates, civs, maps, teammates and recent games</div>
+        </header>
+        <div class="match-controls">
+          <label class="filter-label">Duration
+            <select id="match-period-select" class="filter-control" onchange="setMatchPeriod(this.value)">
+              <option value="all" selected>All time</option>
+              <option value="year">1 year</option>
+              <option value="month6">6 months</option>
+              <option value="month3">3 months</option>
+              <option value="month">1 month</option>
+              <option value="week">1 week</option>
+            </select>
+          </label>
+          <div class="player-picker" id="match-player-picker">
+            <button class="player-picker-button" type="button" onclick="toggleMatchPlayerPicker()">
+              <span id="match-player-current" class="player-picker-current"></span>
+              <span class="player-picker-caret">&#9662;</span>
+            </button>
+            <div class="player-picker-menu" id="match-player-menu">
+              <input id="match-player-search" class="player-picker-search" type="text"
+                placeholder="Search player" oninput="filterMatchPlayers(this.value)" onfocus="openMatchPlayerPicker()">
+              <div class="player-picker-options" id="match-player-options"></div>
+            </div>
           </div>
-        </div>
-        <div class="period-tabs">
-          <button class="period-tab selected" data-match-view="overview" onclick="setMatchView('overview')">Overview</button>
-          <button class="period-tab" data-match-view="matches" onclick="setMatchView('matches')">All matches</button>
+          <div class="period-tabs">
+            <button class="period-tab selected" data-match-view="overview" onclick="setMatchView('overview')">Overview</button>
+            <button class="period-tab" data-match-view="matches" onclick="setMatchView('matches')">All matches</button>
+          </div>
         </div>
       </div>
       <div class="metric-grid" id="match-summary"></div>
@@ -1252,12 +1271,114 @@ function showToast(msg, type) {
 }
 
 /* ─── Navigation ─── */
-function showPage(page) {
+var routeApplying = false;
+
+function routePath(page) {
+  if (page === 'player-profile' && playerProfileUserId) return '/player/' + encodeURIComponent(playerProfileUserId);
+  return {
+    strategies: '/strategies',
+    luck: '/luck',
+    'match-stats': '/match-stats',
+    leaderboard: '/leaderboard',
+    'civ-stats': '/civ-stats',
+    dashboard: '/dashboard'
+  }[page] || '/strategies';
+}
+
+function routeQuery(page) {
+  var q = new URLSearchParams();
+  if (page === 'match-stats') {
+    q.set('period', matchPeriod || 'all');
+    q.set('player_id', matchPlayer || 'all');
+    q.set('view', matchView || 'overview');
+  } else if (page === 'leaderboard') {
+    q.set('period', leaderboardPeriod || 'all');
+    q.set('mode', leaderboardMode || 'players');
+    q.set('min', String(leaderboardMinMatches || 0));
+  } else if (page === 'player-profile') {
+    q.set('period', playerProfilePeriod || 'all');
+    q.set('view', playerProfileView || 'overview');
+  } else if (page === 'luck') {
+    q.set('view', luckView || 'total');
+    if (luckPlayer) q.set('player', luckPlayer);
+  } else if (page === 'strategies') {
+    q.set('view', stratView || 'total');
+    if (stratPlayer) q.set('player', stratPlayer);
+  }
+  var s = q.toString();
+  return s ? '?' + s : '';
+}
+
+function updateRoute(page, replace) {
+  if (routeApplying) return;
+  var next = routePath(page) + routeQuery(page);
+  if (next === window.location.pathname + window.location.search) return;
+  var fn = replace ? 'replaceState' : 'pushState';
+  history[fn]({ page: page }, '', next);
+}
+
+function validPeriod(p) {
+  return ['all','year','month6','month3','month','week'].indexOf(p) >= 0 ? p : 'all';
+}
+
+function applyRouteFromLocation() {
+  var path = window.location.pathname.replace(/\/+$/, '') || '/';
+  var q = new URLSearchParams(window.location.search);
+  routeApplying = true;
+  try {
+    if (path === '/leaderboard') {
+      leaderboardPeriod = validPeriod(q.get('period'));
+      leaderboardMode = q.get('mode') === 'civs' ? 'civs' : 'players';
+      leaderboardMinMatches = Math.max(0, parseInt(q.get('min'), 10) || 0);
+      var lbSel = document.getElementById('leaderboard-period-select');
+      var lbMin = document.getElementById('leaderboard-min-matches');
+      if (lbSel) lbSel.value = leaderboardPeriod;
+      if (lbMin) lbMin.value = leaderboardMinMatches;
+      document.querySelectorAll('[data-lb-mode]').forEach(function (b) {
+        b.classList.toggle('selected', b.dataset.lbMode === leaderboardMode);
+      });
+      leaderboardData = null;
+      showPage('leaderboard', { route: false });
+    } else if (path === '/match-stats') {
+      matchPeriod = validPeriod(q.get('period'));
+      matchPlayer = q.get('player_id') || 'all';
+      matchView = q.get('view') === 'matches' ? 'matches' : 'overview';
+      var msSel = document.getElementById('match-period-select');
+      if (msSel) msSel.value = matchPeriod;
+      matchData = null;
+      showPage('match-stats', { route: false });
+    } else if (path.indexOf('/player/') === 0 || path.indexOf('/player-profile/') === 0) {
+      var id = decodeURIComponent(path.split('/').pop() || '');
+      playerProfileView = q.get('view') === 'matches' ? 'matches' : 'overview';
+      loadPlayerDetail(id, validPeriod(q.get('period')), { route: false });
+    } else if (path === '/luck') {
+      luckView = q.get('view') === 'player' ? 'player' : 'total';
+      luckPlayer = q.get('player') || luckPlayer;
+      showPage('luck', { route: false });
+    } else if (path === '/civ-stats') {
+      showPage('civ-stats', { route: false });
+    } else if (path === '/dashboard') {
+      showPage('dashboard', { route: false });
+    } else {
+      stratView = q.get('view') === 'player' ? 'player' : 'total';
+      stratPlayer = q.get('player') || stratPlayer;
+      showPage('strategies', { route: false });
+    }
+  } finally {
+    routeApplying = false;
+  }
+}
+
+function showPage(page, opts) {
+  opts = opts || {};
   currentPage = page;
   closeMobileMenu();
   document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
   var p = document.getElementById('page-' + page);
   if (p) p.classList.add('active');
+  if (opts.route !== false) updateRoute(page, !!opts.replaceRoute);
+  if (page === 'strategies') initStrategies();
+  if (page === 'civ-stats') initCivStats();
   if (page === 'dashboard') loadDashboard();
   if (page === 'luck') initLuck();
   if (page === 'match-stats') initMatchStats();
@@ -1468,14 +1589,20 @@ function setMatchPeriod(p) {
   matchPeriod = p;
   var sel = document.getElementById('match-period-select');
   if (sel) sel.value = p;
+  updateRoute('match-stats', true);
   loadMatchStats();
 }
-function setMatchPlayer(p) { matchPlayer = p || 'all'; loadMatchStats(); }
+function setMatchPlayer(p) {
+  matchPlayer = p || 'all';
+  updateRoute('match-stats', true);
+  loadMatchStats();
+}
 function setMatchView(v) {
   matchView = v || 'overview';
   document.querySelectorAll('[data-match-view]').forEach(function (b) {
     b.classList.toggle('selected', b.dataset.matchView === matchView);
   });
+  updateRoute('match-stats', true);
   renderMatchStats();
 }
 
@@ -1557,6 +1684,7 @@ function filterMatchPlayers(q) { renderMatchPlayerPicker(q); }
 function chooseMatchPlayer(id) {
   matchPlayer = id || 'all';
   closeMatchPlayerPicker();
+  updateRoute('match-stats', true);
   loadMatchStats();
 }
 
@@ -1570,7 +1698,7 @@ function avatarImg(url, name) {
   return '<img class="player-avatar" src="' + esc(url) + '" alt="' + esc(name || 'player') + '">';
 }
 function playerProfileHref(userId) {
-  return '#player-profile-' + encodeURIComponent(userId || '');
+  return '/player/' + encodeURIComponent(userId || '') + '?period=' + encodeURIComponent(profilePeriodForCurrentPage()) + '&view=overview';
 }
 function playerLink(userId, name, html) {
   if (!userId) return html || esc(name || '-');
@@ -1967,6 +2095,7 @@ function setLeaderboardPeriod(p) {
   leaderboardPeriod = p;
   var sel = document.getElementById('leaderboard-period-select');
   if (sel) sel.value = p;
+  updateRoute('leaderboard', true);
   loadLeaderboard();
 }
 
@@ -1974,6 +2103,7 @@ function setLeaderboardMinMatches(v) {
   leaderboardMinMatches = Math.max(0, parseInt(v, 10) || 0);
   var input = document.getElementById('leaderboard-min-matches');
   if (input && String(input.value) !== String(leaderboardMinMatches)) input.value = leaderboardMinMatches;
+  updateRoute('leaderboard', true);
   renderLeaderboard();
 }
 
@@ -1984,6 +2114,7 @@ function setLeaderboardMode(m) {
   });
   leaderboardPlayer = null;
   playerDetailData = null;
+  updateRoute('leaderboard', true);
   loadLeaderboard();
 }
 
@@ -2049,6 +2180,7 @@ function setPlayerProfilePeriod(p) {
   playerProfilePeriod = p || 'all';
   var sel = document.getElementById('player-profile-period-select');
   if (sel) sel.value = playerProfilePeriod;
+  updateRoute('player-profile', true);
   if (playerProfileUserId) loadPlayerDetail(playerProfileUserId, playerProfilePeriod);
 }
 
@@ -2062,15 +2194,18 @@ function setPlayerProfileView(v) {
   if (overview) overview.style.display = playerProfileView === 'overview' ? '' : 'none';
   if (matches) matches.style.display = playerProfileView === 'matches' ? '' : 'none';
   if (playerDetailData) renderPlayerMatchesView(playerDetailData);
+  updateRoute('player-profile', true);
 }
 
-async function loadPlayerDetail(userId, period) {
+async function loadPlayerDetail(userId, period, opts) {
+  opts = opts || {};
   leaderboardPlayer = userId;
   playerProfileUserId = userId;
   playerProfilePeriod = period || playerProfilePeriod || 'all';
   var sel = document.getElementById('player-profile-period-select');
   if (sel) sel.value = playerProfilePeriod;
-  showPage('player-profile');
+  showPage('player-profile', { route: false });
+  if (opts.route !== false) updateRoute('player-profile', false);
   document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
   document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
   try {
@@ -2331,10 +2466,55 @@ function boomRead(profile) {
   return 'No clear boom-first carry pattern yet.';
 }
 
+function minutesText(v) {
+  return v === null || v === undefined ? '-' : String(v) + 'm';
+}
+
+function strategyProfileText(strategy) {
+  if (!strategy || !strategy.games) return 'No unit/tech strategy sample yet.';
+  var parts = [];
+  if (strategy.quiet_boom_games) {
+    parts.push('quiet-boom openings in ' + strategy.quiet_boom_games + ' games (' + strategy.quiet_boom_rate + '%)');
+  } else if (strategy.avg_pre_castle_military !== null && strategy.avg_pre_castle_military !== undefined) {
+    parts.push('averages ' + strategy.avg_pre_castle_military + ' military before Castle');
+  }
+  if (strategy.avg_pre_castle_villagers !== null && strategy.avg_pre_castle_villagers !== undefined) {
+    parts.push(strategy.avg_pre_castle_villagers + ' villagers before Castle on average');
+  }
+  if (strategy.avg_castle_min) parts.push('Castle around ' + minutesText(strategy.avg_castle_min));
+  if (strategy.avg_imperial_min) parts.push('Imp around ' + minutesText(strategy.avg_imperial_min));
+  return parts.length ? parts.join('; ') + '.' : 'Parsed games do not show a strong economy/age-up pattern yet.';
+}
+
+function armyCompText(strategy) {
+  var units = strategy && strategy.top_units ? strategy.top_units : [];
+  if (!units.length) return 'No army composition sample yet.';
+  return units.slice(0, 4).map(function (u) {
+    return (u.unit || u.category || '-') + ' ' + u.total + 'x';
+  }).join(', ') + '.';
+}
+
+function armyMixText(strategy) {
+  var mix = strategy && strategy.army_mix ? strategy.army_mix : [];
+  if (!mix.length) return 'No army mix sample yet.';
+  return mix.slice(0, 3).map(function (m) {
+    return m.category + ' in ' + m.games + ' games';
+  }).join(', ') + '.';
+}
+
+function techText(rows, empty) {
+  rows = rows || [];
+  if (!rows.length) return empty;
+  return rows.slice(0, 4).map(function (t) {
+    return t.tech + ' (' + t.games + ' games, avg ' + minutesText(t.avg_min) + ')';
+  }).join(', ') + '.';
+}
+
 function playerProfileDescription(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
   var report = p.scout_report || {};
+  var strategy = s.strategy_profile || {};
   var name = s.nick || 'This player';
   var civRows = p.best_civs && p.best_civs.length ? p.best_civs : (d.civs || []);
   var durRows = p.duration_edges && p.duration_edges.length ? p.duration_edges : (d.durations || []);
@@ -2349,6 +2529,7 @@ function playerProfileDescription(d) {
     + ', with ' + (s.games || 0) + ' matches and a ' + fmtPct(s.winrate) + ' win rate.' + elo;
   var second = report.description || p.summary || 'No parsed replay sample is available yet.';
   if (tags.length) second += ' Recurring game tags: ' + tags.join(', ') + '.';
+  if (strategy.games) second += ' Strategy read: ' + strategyProfileText(strategy);
   var luckText = luckSummary(luck);
   var third = '';
   if (civ) third += name + ' gets best civ results with ' + civ.civ + ' at ' + fmtPct(civ.winrate) + ' across ' + civ.games + ' games. ';
@@ -2365,6 +2546,11 @@ function playerProfileDescription(d) {
     commentaryCard('AoE read', styleRead(p.style)),
     commentaryCard('Tag signal', tagRead(tags)),
     commentaryCard('Boom profile', boomRead(p)),
+    commentaryCard('Game plan', strategyProfileText(strategy)),
+    commentaryCard('Army comp', armyCompText(strategy)),
+    commentaryCard('Army mix', armyMixText(strategy)),
+    commentaryCard('Eco techs', techText(strategy.eco_techs, 'No economy tech timing sample yet.')),
+    commentaryCard('Army techs', techText(strategy.army_techs, 'No army tech timing sample yet.')),
     commentaryCard('Spawn read', luckText),
     commentaryCard('Free boom', luckCardText(luck, 'spawn_isolated', 'No isolated-start sample yet.')),
     commentaryCard('Early contact', luckCardText(luck, 'spawn_near_enemy', 'No near-enemy sample yet.')),
@@ -2373,7 +2559,7 @@ function playerProfileDescription(d) {
     commentaryCard('Best setup', setup.join(' + ')),
     commentaryCard('Enemy prep', s.worst_enemy ? 'Plan specifically for ' + (s.worst_enemy.nick || '-') + '; this is lowest head-to-head win rate.' : 'No tough-opponent sample yet.'),
     commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.'),
-    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, opponents, and Luck spawn factors.')
+    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, opponents, unit mix, tech timings, and Luck spawn factors.')
   ].join('');
   return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p><p>' + esc(luckText) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
     + '<div class="commentary-grid">' + cards + '</div>';
@@ -2421,17 +2607,27 @@ function setStratView(v) {
   document.getElementById('strat-tab-total').classList.toggle('selected', v === 'total');
   document.getElementById('strat-tab-player').classList.toggle('selected', v === 'player');
   document.getElementById('strat-player-select').style.display = v === 'player' ? '' : 'none';
+  if (currentPage === 'strategies') updateRoute('strategies', true);
   renderStrategies();
 }
 
-function onStratPlayer(p) { stratPlayer = p; renderStrategies(); }
+function onStratPlayer(p) {
+  stratPlayer = p;
+  if (currentPage === 'strategies') updateRoute('strategies', true);
+  renderStrategies();
+}
 
 function stratSortBy(col) {
   if (stratSort.col === col) stratSort.asc = !stratSort.asc; else { stratSort.col = col; stratSort.asc = false; }
   renderStrategies();
 }
 
-function renderStrategies() { if (stratView === 'total') renderStratTotal(); else renderStratPlayer(); }
+function renderStrategies() {
+  document.getElementById('strat-tab-total').classList.toggle('selected', stratView === 'total');
+  document.getElementById('strat-tab-player').classList.toggle('selected', stratView === 'player');
+  document.getElementById('strat-player-select').style.display = stratView === 'player' ? '' : 'none';
+  if (stratView === 'total') renderStratTotal(); else renderStratPlayer();
+}
 
 function renderStratTotal() {
   var cols = [['title', 'Strategy'], ['phase', 'Phase'], ['games', 'Games'], ['players', 'Players'], ['winrate', 'Win %']];
@@ -2506,10 +2702,15 @@ function setLuckView(v) {
   document.getElementById('luck-tab-total').classList.toggle('selected', v === 'total');
   document.getElementById('luck-tab-player').classList.toggle('selected', v === 'player');
   document.getElementById('luck-player-select').style.display = v === 'player' ? '' : 'none';
+  if (currentPage === 'luck') updateRoute('luck', true);
   renderLuck();
 }
 
-function onLuckPlayer(p) { luckPlayer = p; renderLuck(); }
+function onLuckPlayer(p) {
+  luckPlayer = p;
+  if (currentPage === 'luck') updateRoute('luck', true);
+  renderLuck();
+}
 
 function deltaCell(wr) {
   if (wr == null) return '<td>-</td>';
@@ -2517,7 +2718,12 @@ function deltaCell(wr) {
   return '<td class="' + cls + '">' + (d > 0 ? '+' : '') + d + '</td>';
 }
 
-function renderLuck() { if (luckView === 'total') renderLuckTotal(); else renderLuckPlayer(); }
+function renderLuck() {
+  document.getElementById('luck-tab-total').classList.toggle('selected', luckView === 'total');
+  document.getElementById('luck-tab-player').classList.toggle('selected', luckView === 'player');
+  document.getElementById('luck-player-select').style.display = luckView === 'player' ? '' : 'none';
+  if (luckView === 'total') renderLuckTotal(); else renderLuckPlayer();
+}
 
 function renderLuckTotal() {
   document.getElementById('luck-header').innerHTML =
@@ -3000,15 +3206,20 @@ document.addEventListener('click', function (e) {
   if (picker && !picker.contains(e.target)) closeMatchPlayerPicker();
 });
 
+window.addEventListener('popstate', applyRouteFromLocation);
+
 /* ─── Init ─── */
 // Hide sidebar panels initially (shown when dashboard loads)
 document.getElementById('guild_nav').style.display = 'none';
 document.getElementById('guild_menu').style.display = 'none';
 document.getElementById('mobile-menu-btn').style.display = 'none';
 
-checkAuth();
-initStrategies();
-initCivStats();
+async function bootApp() {
+  await checkAuth();
+  applyRouteFromLocation();
+}
+
+bootApp();
 </script>
 </body>
 </html>
