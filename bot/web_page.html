@@ -588,8 +588,8 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   gap: 0.65rem;
 }
 .match-roster-inline { min-width: 0; overflow-x: auto; }
-.match-roster-inline .match-card-body { min-width: 0; grid-template-columns: 155px minmax(0, 1fr) 32px minmax(0, 1fr); gap: 0.75rem; }
-.match-roster-inline .match-map-box { font-size: 0.9rem; }
+.match-roster-inline .match-card-body { min-width: 0; grid-template-columns: minmax(0, 1fr) 32px minmax(0, 1fr); gap: 0.75rem; }
+.match-roster-inline .match-map-box { grid-column: 1 / -1; font-size: 0.9rem; border-right: 0; border-bottom: 1px solid #484c54; padding-right: 0; padding-bottom: 0.65rem; }
 .match-roster-inline .match-map-name { font-size: 1rem; }
 .match-roster-inline .match-card-player { grid-template-columns: minmax(88px,1fr) minmax(60px,0.75fr) minmax(88px,1fr) 42px; gap: 0.35rem; padding: 0.34rem 0.38rem; }
 .match-roster-inline .roster-tag { font-size: 0.66rem; padding: 0.08rem 0.32rem; }
@@ -615,8 +615,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .match-card-body { display: grid; grid-template-columns: 220px minmax(360px, 1fr) 46px minmax(360px, 1fr); gap: 1rem; align-items: stretch; }
 .match-map-box { color: #d9dadd; border-right: 1px solid #484c54; padding-right: 1rem; }
 .match-map-name { color: white; font-size: 1.15rem; font-weight: 700; margin-bottom: 0.35rem; }
-.match-carry-line { display: inline-flex; align-items: center; gap: 0.35rem; color: #f1c06f; background: rgba(217,144,38,0.10); border: 1px solid rgba(217,144,38,0.22); border-radius: 999px; padding: 0.18rem 0.55rem; margin-top: 0.25rem; max-width: 100%; }
-.match-carry-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match-detail-meta { color: #a9adb5; font-size: 0.82rem; margin-top: 0.18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .match-vs { display: flex; align-items: center; justify-content: center; color: #8b8e94; font-weight: 800; letter-spacing: 0.08em; }
 .match-team { border: 1px solid transparent; border-radius: 7px; padding: 0.55rem 0.62rem; min-width: 0; }
 .match-team.winning-team { border-color: rgba(94, 209, 139, 0.34); background: linear-gradient(180deg, rgba(54, 140, 83, 0.11), rgba(54, 140, 83, 0.055)); }
@@ -1615,9 +1614,9 @@ function matchCardBody(r) {
   var top = topImpactPlayer(players);
   var left = teams[0] ? matchTeamCard(teams[0], grouped[teams[0]], top) : '<div class="empty-panel">No roster data.</div>';
   var right = teams[1] ? matchTeamCard(teams[1], grouped[teams[1]], top) : (teams.length > 1 ? '' : '<div class="empty-panel">No opponent roster.</div>');
-  var carry = top ? '<div class="match-carry-line"><span>Carry</span><span class="match-carry-name">' + esc(top.nick || '-') + ' (' + esc(playerImpactValue(top)) + ')</span></div>' : '<div class="match-card-meta">No impact data</div>';
+  var details = [r.queue || null, fmtDuration(r.duration_s), fmtAgo(r.at), r.match_id ? '#' + r.match_id : null].filter(function (x) { return x && x !== '-'; }).join(' · ');
   return '<div class="match-card-body"><div class="match-map-box"><div class="match-map-name">' + esc(r.map || '-') + '</div>'
-    + carry + '</div>'
+    + '<div class="match-detail-meta">' + esc(details || 'Match details') + '</div></div>'
     + left + '<div class="match-vs">VS</div>' + right + '</div>';
 }
 function playerImpactValue(p) {
@@ -1628,6 +1627,20 @@ function topImpactPlayer(players) {
   if (!rows.length) return null;
   rows.sort(function (a, b) { return playerImpactValue(b) - playerImpactValue(a); });
   return rows[0];
+}
+function rowImpactPlayer(r) {
+  if (r && r.impact && r.impact.nick) return r.impact;
+  return topImpactPlayer((r && r.players) || []);
+}
+function rowImpactData(r) {
+  var top = rowImpactPlayer(r);
+  return top && top.impact ? top.impact : (top || null);
+}
+function rowPlayerImpactData(r, userId) {
+  if (r && r.impact) return r.impact;
+  var id = userId === null || userId === undefined ? '' : String(userId);
+  var player = ((r && r.players) || []).find(function (p) { return String(p.user_id || '') === id; });
+  return player && player.impact ? player.impact : null;
 }
 function rosterTagClass(tag) {
   tag = String(tag || '').toLowerCase();
@@ -1654,11 +1667,13 @@ function matchTeamCard(teamName, players, topPlayer) {
     var tags = tagList.length ? tagList.join(', ') : 'No tags';
     var isTop = topPlayer && p === topPlayer;
     var score = impact.impact_score == null ? '-' : String(impact.impact_score);
+    var nameHtml = '<span class="player-cell">' + avatarImg(p.avatar, p.nick) + '<span class="player-name-text">' + esc(p.nick || '-') + '</span>'
+      + (isTop ? '<span class="impact-badge">Carry</span>' : '') + '</span>';
     return '<div class="match-card-player' + (isTop ? ' top-impact' : '') + '">'
-      + playerCell(p.nick, p.avatar, p.user_id)
+      + playerLink(p.user_id, p.nick, nameHtml)
       + civIcon(p.civ)
       + '<span class="roster-tags" title="' + esc(tags) + '">' + rosterTagPills(tagList) + '</span>'
-      + '<span class="roster-impact">' + esc(score) + (isTop ? ' <span class="impact-badge">Carry</span>' : '') + '</span>'
+      + '<span class="roster-impact">' + esc(score) + '</span>'
       + '</div>';
   }).join('');
   return '<div class="match-team' + resultClass + '"><div class="match-team-title"><span>' + esc(teamName) + '</span>'
@@ -1880,10 +1895,10 @@ function renderMatchTables() {
       { key: 'civ', label: 'Civ', render: function (r) { return civIcon(r.civ); } },
       { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
       { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchExpandButton(r); } },
-      { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
-      { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
-      { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
-      { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
+      { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'impact_score'); } },
+      { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'army_score'); } },
+      { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'eco_score'); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowPlayerImpactData(r, matchPlayer)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
     ], (matchData.recent || []).slice(0, 12), 'No recent matches.', null, matchDetailRow);
   } else {
@@ -1901,11 +1916,11 @@ function renderMatchTables() {
     document.getElementById('match-recent-panel').innerHTML = sortableTable('match-recent-all', 'Recent matches', [
       { key: 'queue', label: 'Queue', render: function (r) { return esc(r.queue || '-'); } },
       { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
-      { key: 'impact_player', label: 'Top impact', value: function (r) { return r.impact ? r.impact.nick : ''; }, render: function (r) { return impactName(r.impact); } },
-      { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
-      { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
-      { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
-      { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
+      { key: 'impact_player', label: 'Top impact', value: function (r) { var p = rowImpactPlayer(r); return p ? p.nick : ''; }, render: function (r) { return impactName(rowImpactPlayer(r)); } },
+      { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'impact_score'); } },
+      { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'army_score'); } },
+      { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'eco_score'); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowImpactData(r); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowImpactData(r)); } },
       { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
     ], (matchData.recent || []).slice(0, 20), 'No recent matches.', null, matchDetailRow);
@@ -2101,10 +2116,10 @@ function renderPlayerDetail(d) {
     { key: 'opponent_civs', label: 'Opponent civs', render: function (r) { return esc(r.opponent_civs || '-'); } },
     { key: 'map', label: 'Map', render: function (r) { return esc(r.map || '-'); } },
     { key: 'players', label: 'Players', type: 'number', value: function (r) { return (r.players || []).length; }, render: function (r) { return matchExpandButton(r); } },
-    { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.impact_score : null; }, render: function (r) { return fmtImpact(r.impact, 'impact_score'); } },
-    { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.army_score : null; }, render: function (r) { return fmtImpact(r.impact, 'army_score'); } },
-    { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { return r.impact ? r.impact.eco_score : null; }, render: function (r) { return fmtImpact(r.impact, 'eco_score'); } },
-    { key: 'impact_tags', label: 'Tags', value: function (r) { return r.impact ? (r.impact.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(r.impact); } },
+    { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'impact_score'); } },
+    { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'army_score'); } },
+    { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'eco_score'); } },
+    { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowPlayerImpactData(r, playerProfileUserId)); } },
     { key: 'duration_s', label: 'Duration', type: 'number', className: 'num', render: function (r) { return fmtDuration(r.duration_s); } },
     { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
