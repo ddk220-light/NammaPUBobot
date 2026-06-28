@@ -164,3 +164,42 @@ def test_team_card_fields_render_two_teams_with_carry_and_tags():
 	assert "**Boomer** 👑 **CARRY**" in fields[0]["value"]
 	assert "`Boom carry`" in fields[0]["value"]
 	assert "`No tags`" in fields[1]["value"]
+
+
+def test_merge_analysis_rows_keeps_replay_players_missing_from_bot_civ_rows():
+	mc_rows = [
+		{"user_id": 1, "nick": "A", "bot_team": 0, "civ": "Huns", "result": "W"},
+		{"user_id": 2, "nick": "B", "bot_team": 0, "civ": "Franks", "result": "W"},
+		{"user_id": 5, "nick": "E", "bot_team": 1, "civ": "Saracens", "result": "L"},
+		{"user_id": 6, "nick": "F", "bot_team": 1, "civ": "Mongols", "result": "L"},
+	]
+	replay_rows = [
+		{"user_id": 1, "identity": "A", "civ": "Huns", "replay_team": "1", "winner": 1, "villagers": 80},
+		{"user_id": 2, "identity": "B", "civ": "Franks", "replay_team": "1", "winner": 1, "villagers": 82},
+		{"user_id": 3, "identity": "C", "civ": "Teutons", "replay_team": "1", "winner": 1, "villagers": 78},
+		{"user_id": 4, "identity": "D", "civ": "Vietnamese", "replay_team": "1", "winner": 1, "villagers": 90},
+		{"user_id": 5, "identity": "E", "civ": "Saracens", "replay_team": "2", "winner": 0, "villagers": 70},
+		{"user_id": 6, "identity": "F", "civ": "Mongols", "replay_team": "2", "winner": 0, "villagers": 71},
+		{"user_id": 7, "identity": "G", "civ": "Lithuanians", "replay_team": "2", "winner": 0, "villagers": 68},
+		{"user_id": 8, "identity": "H", "civ": "Burmese", "replay_team": "2", "winner": 0, "villagers": 67},
+	]
+	merged = pg._merge_analysis_rows(mc_rows, replay_rows)
+	assert len(merged) == 8
+	assert {r["nick"] for r in merged if r["bot_team"] == 0} == {"A", "B", "C", "D"}
+	assert {r["nick"] for r in merged if r["bot_team"] == 1} == {"E", "F", "G", "H"}
+	assert all(r["result"] == "W" for r in merged if r["bot_team"] == 0)
+	assert all(r["result"] == "L" for r in merged if r["bot_team"] == 1)
+
+
+def test_merge_analysis_rows_keeps_bot_players_missing_replay_mapping():
+	mc_rows = [
+		{"user_id": 1, "nick": "Mapped", "bot_team": 0, "civ": "Huns", "result": "W"},
+		{"user_id": 9, "nick": "BotOnly", "bot_team": 0, "civ": "Mayans", "result": "W"},
+	]
+	replay_rows = [
+		{"user_id": 1, "identity": "Mapped", "civ": "Huns", "replay_team": "1", "winner": 1, "villagers": 80},
+	]
+	merged = pg._merge_analysis_rows(mc_rows, replay_rows)
+	assert [r["nick"] for r in merged] == ["Mapped", "BotOnly"]
+	assert merged[1]["civ"] == "Mayans"
+	assert merged[1]["result"] == "W"
