@@ -29,7 +29,8 @@ async def _work_items(all_parsed, limit):
 			"SELECT 1 FROM cls_results cr WHERE cr.aoe2_match_id=rm.aoe2_match_id"
 			") AND NOT EXISTS ("
 			"SELECT 1 FROM cls_match_ingest ci "
-			"WHERE ci.aoe2_match_id=rm.aoe2_match_id AND ci.status='done'"
+			"WHERE ci.aoe2_match_id=rm.aoe2_match_id "
+			"AND (ci.status='done' OR ci.status LIKE 'unavailable:%%')"
 			") "
 		)
 	sql = (
@@ -95,6 +96,15 @@ async def _write_classifications(extracted, played_at_epoch):
 	return len(result_rows)
 
 
+async def _mark_unavailable(aoe2_match_id, status):
+	await db.insert("cls_match_ingest", {
+		"aoe2_match_id": int(aoe2_match_id),
+		"classified_at": int(time.time()),
+		"result_rows": 0,
+		"status": "unavailable:{}".format(str(status or "unknown")[:175]),
+	}, on_dublicate="replace")
+
+
 async def _rebuild_player_totals():
 	await db.execute("DELETE FROM cls_player_totals")
 	await db.execute(
@@ -145,6 +155,7 @@ async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
 					_extract_for_match, mid, r.get("at"), resolved, date_map)
 				if not extracted:
 					failed += 1
+					await _mark_unavailable(mid, status)
 					print("unavailable {}: {}".format(mid, status), flush=True)
 				else:
 					written = await _write_classifications(extracted, r.get("at"))
