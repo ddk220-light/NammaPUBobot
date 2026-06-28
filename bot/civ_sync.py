@@ -35,6 +35,7 @@ db.ensure_table(dict(
 # In-memory buffer of parsed LobbyBOT match results (max 20)
 _lobby_buffer = []
 MAX_BUFFER = 20
+FULL_TEAM_OVERLAP = 8
 
 
 async def persist_lobby_civs(channel_id, parsed):
@@ -122,7 +123,7 @@ async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at
 
 	lobby_players = _lobby_players_by_profile(parsed)
 	overlap = len(active_pids & set(lobby_players))
-	threshold = max(2, min(4, len(player_info)))
+	threshold = min(FULL_TEAM_OVERLAP, len(player_info))
 	if overlap < threshold:
 		return False
 
@@ -375,7 +376,7 @@ def load_profile_map():
 def find_matching_lobby(elo_parsed, elo_timestamp):
 	"""Find a buffered LobbyBOT result that matches the Pubobot ELO message.
 
-	Matching: time proximity (within 2 hours) + player overlap (>= 4).
+	Matching: time proximity (within 2 hours) + full 8-player overlap.
 	Returns the matched lobby dict or None.
 	"""
 	profile_map = load_profile_map()
@@ -404,7 +405,7 @@ def find_matching_lobby(elo_parsed, elo_timestamp):
 				lobby_names.add(player['aoe2_name'].lower())
 
 		overlap = len(elo_aoe2_names & lobby_names)
-		if overlap >= 4 and overlap > best_overlap:
+		if overlap >= FULL_TEAM_OVERLAP and overlap > best_overlap:
 			best_overlap = overlap
 			best_match = lobby
 
@@ -448,7 +449,7 @@ async def find_matching_lobby_from_history(channel, elo_parsed, elo_timestamp):
 			time_diff = elo_timestamp - parsed['timestamp']
 			overlap = len(elo_aoe2_names & lobby_names)
 
-			if overlap >= 4 and 0 <= time_diff <= 7200:
+			if overlap >= FULL_TEAM_OVERLAP and 0 <= time_diff <= 7200:
 				log.info(f"Civ sync: found match in channel history (overlap={overlap})")
 				return parsed
 	except Exception as e:
