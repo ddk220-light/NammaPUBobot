@@ -37,7 +37,7 @@ STRATEGY_TAG_LABELS = {
 	"archer_rush": "Feudal archer poke",
 	"scout_rush": "Scout-map opener",
 	"maa_rush": "MAA opening",
-	"knight_rush": "Knight flood",
+	"knight_rush": "Knight rush opener",
 	"crossbow_rush": "Xbow timing",
 	"cav_archer_rush": "CA switch",
 	"camel_rush": "Camel counter-punch",
