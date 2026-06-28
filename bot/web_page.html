@@ -2200,6 +2200,12 @@ function renderLeaderboardTagPicker() {
 }
 
 function tagCell(r) {
+  if (r.tag_key === 'all') {
+    var chips = (r.top_tags || []).slice(0, 3).map(function (t) {
+      return '<span class="roster-tag ' + rosterTagClass(t.label || t.key) + '">' + esc(t.label || t.key) + '</span>';
+    }).join('');
+    return (chips || '<span class="roster-tag">All tags</span>') + '<div class="metric-sub">aggregate score</div>';
+  }
   return '<span class="roster-tag ' + rosterTagClass(r.tag_label || r.tag_key) + '">' + esc(r.tag_label || r.tag_key) + '</span>'
     + '<div class="metric-sub">' + esc(r.tag_type || '') + '</div>';
 }
