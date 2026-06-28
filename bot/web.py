@@ -18,7 +18,7 @@ from core.cfg_factory import (
 from core.client import dc
 from core.database import db
 import bot
-from bot.tag_leaderboard import aggregate_tag_rows_by_player, tag_leaderboard_score
+from bot.tag_leaderboard import tag_leaderboard_score
 
 # --- Paths ---
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
@@ -994,11 +994,16 @@ async def _tag_leaderboard(period, tag_key="all"):
 	tags = {}
 	for tag in strategy_tags + stored_tags:
 		tags[(tag["type"], tag["key"])] = tag
+	tag_options = sorted(tags.values(), key=lambda t: (t["type"], t["label"]))
+	selected_tag = tag_key
+	if selected_tag in (None, "", "all"):
+		selected_tag = tag_options[0]["key"] if tag_options else ""
+	if selected_tag:
+		rows_by_key = {k: v for k, v in rows_by_key.items() if k[1] == selected_tag}
 	rows = _finish_tag_rows(rows_by_key, parsed_games)
-	if tag_key == "all":
-		rows = aggregate_tag_rows_by_player(rows)
 	return {
-		"tags": sorted(tags.values(), key=lambda t: (t["type"], t["label"])),
+		"tag": selected_tag,
+		"tags": tag_options,
 		"rows": rows,
 	}
 
@@ -1167,14 +1172,17 @@ def _strategy_tag_payload(row):
 	return {
 		"key": key,
 		"label": STRATEGY_TAG_LABELS.get(key, row.get("title") or str(key or "").replace("_", " ").title()),
+		"category": "strategy",
+		"type": "strategy",
 		"games": games,
 		"wins": wins,
 		"losses": losses,
 		"winrate": _winrate(wins, losses),
+		"avg_impact": None,
 	}
 
 
-async def _player_strategy_tags(profile_ids, period, limit=8):
+async def _player_strategy_tags(profile_ids, period, limit=24):
 	profile_ids = [str(p) for p in profile_ids or []]
 	if not profile_ids:
 		return []
@@ -1207,7 +1215,7 @@ async def _player_stored_tags(profile_ids, period, limit=12):
 		args.append(start)
 	rows = await db.fetchall(
 		"SELECT tag AS `key`, MAX(tag_label) AS label, MAX(category) AS category, "
-		"COUNT(*) AS games, SUM(winner=1) AS wins, SUM(winner=0) AS losses "
+		"COUNT(*) AS games, SUM(winner=1) AS wins, SUM(winner=0) AS losses, AVG(score) AS avg_impact "
 		"FROM rs_player_game_tags WHERE profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ")" +
 		time_clause + " GROUP BY tag ORDER BY games DESC, wins DESC, tag LIMIT %s",
 		[*args, limit])
@@ -1216,10 +1224,12 @@ async def _player_stored_tags(profile_ids, period, limit=12):
 			"key": r.get("key"),
 			"label": r.get("label") or r.get("key"),
 			"category": r.get("category"),
+			"type": r.get("category") or "impact",
 			"games": int(r.get("games") or 0),
 			"wins": int(r.get("wins") or 0),
 			"losses": int(r.get("losses") or 0),
 			"winrate": _winrate(r.get("wins"), r.get("losses")),
+			"avg_impact": _num(r.get("avg_impact")),
 		}
 		for r in rows or []
 	]
@@ -1232,11 +1242,12 @@ async def _player_profile_tags(profile_ids, period):
 	seen = set()
 	for tag in stored + strategy:
 		key = tag.get("key")
-		if not key or key in seen:
+		tag_type = tag.get("type") or tag.get("category") or "tag"
+		if not key or (tag_type, key) in seen:
 			continue
-		seen.add(key)
+		seen.add((tag_type, key))
 		out.append(tag)
-	return out[:16]
+	return sorted(out, key=lambda t: (-int(t.get("games") or 0), -(t.get("winrate") or 0), str(t.get("label") or "")))[:24]
 
 
 async def _classification_tags_for_bot_matches(match_ids):

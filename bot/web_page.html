@@ -1034,7 +1034,6 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
           </div>
           <label class="filter-label" id="leaderboard-tag-filter" style="display:none;">Tag
             <select id="leaderboard-tag-select" class="filter-control" onchange="setLeaderboardTag(this.value)">
-              <option value="all">All tags</option>
             </select>
           </label>
         </div>
@@ -1074,6 +1073,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         <div id="player-profile-overview">
           <section class="profile-description" id="player-description"></section>
           <div class="metric-grid" id="player-detail-summary"></div>
+          <section class="match-panel detail-section" id="player-tags-panel"></section>
           <div class="trend-panel" id="player-elo-trend"></div>
           <section class="detail-section">
             <h2>Best allies</h2>
@@ -1222,7 +1222,7 @@ var matchView = 'overview';
 var expandedMatches = {};
 var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
 var leaderboardMinMatches = 0;
-var leaderboardTag = 'all';
+var leaderboardTag = '';
 var playerProfileUserId = null, playerProfilePeriod = 'all';
 var playerProfileView = 'overview';
 var playerDetailData = null, miniSort = {
@@ -1303,7 +1303,7 @@ function routeQuery(page) {
     q.set('period', leaderboardPeriod || 'all');
     q.set('mode', leaderboardMode || 'players');
     q.set('min', String(leaderboardMinMatches || 0));
-    if (leaderboardMode === 'tags') q.set('tag', leaderboardTag || 'all');
+    if (leaderboardMode === 'tags' && leaderboardTag) q.set('tag', leaderboardTag);
   } else if (page === 'player-profile') {
     q.set('period', playerProfilePeriod || 'all');
     q.set('view', playerProfileView || 'overview');
@@ -1339,7 +1339,7 @@ function applyRouteFromLocation() {
       leaderboardPeriod = validPeriod(q.get('period'));
       leaderboardMode = ['players','civs','tags'].indexOf(q.get('mode')) >= 0 ? q.get('mode') : 'players';
       leaderboardMinMatches = Math.max(0, parseInt(q.get('min'), 10) || 0);
-      leaderboardTag = q.get('tag') || 'all';
+      leaderboardTag = q.get('tag') === 'all' ? '' : (q.get('tag') || '');
       var lbSel = document.getElementById('leaderboard-period-select');
       var lbMin = document.getElementById('leaderboard-min-matches');
       if (lbSel) lbSel.value = leaderboardPeriod;
@@ -2157,13 +2157,13 @@ function setLeaderboardMode(m) {
   });
   leaderboardPlayer = null;
   playerDetailData = null;
-  if (m !== 'tags') leaderboardTag = 'all';
+  if (m !== 'tags') leaderboardTag = '';
   updateRoute('leaderboard', true);
   loadLeaderboard();
 }
 
 function setLeaderboardTag(tag) {
-  leaderboardTag = tag || 'all';
+  leaderboardTag = tag || '';
   updateRoute('leaderboard', true);
   loadLeaderboard();
 }
@@ -2173,10 +2173,11 @@ async function loadLeaderboard() {
   panel.innerHTML = '<div class="loading">Loading leaderboard...</div>';
   try {
     var url = '/api/leaderboard?period=' + encodeURIComponent(leaderboardPeriod) + '&mode=' + encodeURIComponent(leaderboardMode);
-    if (leaderboardMode === 'tags') url += '&tag=' + encodeURIComponent(leaderboardTag || 'all');
+    if (leaderboardMode === 'tags' && leaderboardTag) url += '&tag=' + encodeURIComponent(leaderboardTag);
     var resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     leaderboardData = await resp.json();
+    if (leaderboardMode === 'tags') leaderboardTag = leaderboardData.tag || leaderboardTag || '';
     renderLeaderboard();
   } catch (e) {
     panel.innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
@@ -2190,26 +2191,24 @@ function renderLeaderboardTagPicker() {
   wrap.style.display = leaderboardMode === 'tags' ? '' : 'none';
   if (leaderboardMode !== 'tags') return;
   var tags = (leaderboardData && leaderboardData.tags ? leaderboardData.tags : []).slice();
-  if (leaderboardTag !== 'all' && !tags.some(function (t) { return String(t.key) === String(leaderboardTag); })) {
-    leaderboardTag = 'all';
+  if (!tags.length) {
+    sel.innerHTML = '';
+    return;
   }
-  sel.innerHTML = '<option value="all">All tags</option>' + tags.map(function (t) {
+  if (!leaderboardTag || !tags.some(function (t) { return String(t.key) === String(leaderboardTag); })) {
+    leaderboardTag = String(tags[0].key || '');
+  }
+  sel.innerHTML = tags.map(function (t) {
     var key = String(t.key || '');
     var prefix = (t.type || 'tag').replace(/_/g, ' ');
     prefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
     var label = prefix + ': ' + (t.label || key) + ' (' + (t.games || 0) + ')';
     return '<option value="' + esc(key) + '"' + (key === leaderboardTag ? ' selected' : '') + '>' + esc(label) + '</option>';
   }).join('');
-  sel.value = leaderboardTag || 'all';
+  sel.value = leaderboardTag;
 }
 
 function tagCell(r) {
-  if (r.tag_key === 'all') {
-    var chips = (r.top_tags || []).slice(0, 3).map(function (t) {
-      return '<span class="roster-tag ' + rosterTagClass(t.label || t.key) + '">' + esc(t.label || t.key) + '</span>';
-    }).join('');
-    return (chips || '<span class="roster-tag">All tags</span>') + '<div class="metric-sub">aggregate score</div>';
-  }
   return '<span class="roster-tag ' + rosterTagClass(r.tag_label || r.tag_key) + '">' + esc(r.tag_label || r.tag_key) + '</span>'
     + '<div class="metric-sub">' + esc(r.tag_type || '') + '</div>';
 }
@@ -2325,6 +2324,7 @@ async function loadPlayerDetail(userId, period, opts) {
     renderPlayerDetail(d);
   } catch (e) {
     document.getElementById('player-detail-summary').innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
+    document.getElementById('player-tags-panel').innerHTML = '';
     document.getElementById('player-elo-trend').innerHTML = '';
   }
 }
@@ -2352,6 +2352,7 @@ function renderPlayerDetail(d) {
     card('Top tags', profileTagLabels(p, s.strategy_tags), 'aggregated match tags'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
+  renderPlayerTagDetails(d);
 
   renderEloTrend(d.rating_history || [], 'player-elo-trend');
 
@@ -2395,6 +2396,43 @@ function renderPlayerDetail(d) {
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
   ], d.matches || [], 'No matches in this period.', null, matchDetailRow);
   renderPlayerMatchesView(d);
+}
+
+function tagTypeLabel(type) {
+  type = String(type || 'tag').replace(/_/g, ' ');
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function renderPlayerTagDetails(d) {
+  var s = d.summary || {};
+  var totalGames = Number(s.games || 0);
+  var tags = (s.strategy_tags || []).map(function (t) {
+    var games = Number(t.games || 0);
+    var wins = Number(t.wins || 0);
+    var losses = Number(t.losses || 0);
+    var rate = totalGames ? Math.round(games * 1000 / totalGames) / 10 : null;
+    return {
+      key: t.key,
+      label: t.label || t.key || '-',
+      type: t.type || t.category || 'tag',
+      games: games,
+      wins: wins,
+      losses: losses,
+      winrate: t.winrate,
+      tag_rate: rate,
+      avg_impact: t.avg_impact
+    };
+  });
+  document.getElementById('player-tags-panel').innerHTML = sortableTable('player-tags-table', 'Tag details', [
+    { key: 'label', label: 'Tag', render: function (r) { return '<span class="roster-tag ' + rosterTagClass(r.label) + '">' + esc(r.label) + '</span>'; } },
+    { key: 'type', label: 'Type', render: function (r) { return esc(tagTypeLabel(r.type)); } },
+    { key: 'games', label: 'Tag games', type: 'number', className: 'num' },
+    { key: 'tag_rate', label: 'Tag rate', type: 'number', className: 'num', render: function (r) { return fmtPct(r.tag_rate); } },
+    { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+    { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+    { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } },
+    { key: 'avg_impact', label: 'Avg impact', type: 'number', className: 'num', render: function (r) { return fmtImpactAvg(r.avg_impact); } }
+  ], tags, 'No tag data for this period.');
 }
 
 function renderPlayerMatchesView(d) {
