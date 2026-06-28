@@ -68,3 +68,14 @@ db.ensure_table(dict(
 	],
 	primary_keys=["identity"],
 ))
+
+db.ensure_table(dict(
+	tname="cls_match_ingest",
+	columns=[
+		dict(cname="aoe2_match_id", ctype=db.types.int),
+		dict(cname="classified_at", ctype=db.types.int, notnull=False),
+		dict(cname="result_rows", ctype=db.types.int, notnull=False),
+		dict(cname="status", ctype=db.types.str, notnull=False),
+	],
+	primary_keys=["aoe2_match_id"],
+))
