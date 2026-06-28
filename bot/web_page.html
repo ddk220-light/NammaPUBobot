@@ -719,6 +719,17 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .tag-map-point { fill-opacity: 0.34; stroke-width: 2; }
 .tag-map-point:hover { fill-opacity: 0.62; stroke-width: 3; }
 .tag-map-name { fill: #dcddde; font-size: 11px; font-family: 'Outfit', sans-serif; font-weight: 700; pointer-events: none; }
+.tag-map-hover { opacity: 0; pointer-events: none; transition: opacity 0.08s ease; }
+.tag-map-bubble:hover .tag-map-hover { opacity: 1; }
+.tag-map-bubble:hover .tag-map-name { opacity: 0; }
+.tag-map-hover-label {
+  fill: #fff; stroke: #202225; stroke-width: 5; paint-order: stroke;
+  font-size: 12px; font-family: 'Outfit', sans-serif; font-weight: 800;
+}
+.tag-map-hover-meta {
+  fill: #dcddde; stroke: #202225; stroke-width: 4; paint-order: stroke;
+  font-size: 10px; font-family: 'Outfit', sans-serif; font-weight: 700;
+}
 .tag-map-legend { display: flex; gap: 0.8rem; flex-wrap: wrap; color: #969aa2; font-size: 0.76rem; margin-top: 0.3rem; }
 .tag-map-key { display: inline-flex; align-items: center; gap: 0.35rem; }
 .tag-map-swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
@@ -2100,11 +2111,18 @@ function renderTagBubbleChart(title, rows, cfg) {
     var labelKey = r.label + '|' + r.x + '|' + r.y;
     var textAnchor = cx > width - 140 ? 'end' : 'start';
     var textX = textAnchor === 'end' ? cx - rr - 5 : cx + rr + 5;
+    var hoverAnchor = cx > width - 190 ? 'end' : 'start';
+    var hoverX = hoverAnchor === 'end' ? cx - rr - 8 : cx + rr + 8;
+    var hoverY = cy < padT + 34 ? cy + rr + 16 : cy - rr - 10;
+    var hoverMetaY = hoverY + 14;
+    var hover = '<g class="tag-map-hover"><text class="tag-map-hover-label" text-anchor="' + hoverAnchor + '" x="' + hoverX.toFixed(1) + '" y="' + hoverY.toFixed(1) + '">'
+      + esc(r.label) + '</text><text class="tag-map-hover-meta" text-anchor="' + hoverAnchor + '" x="' + hoverX.toFixed(1) + '" y="' + hoverMetaY.toFixed(1) + '">'
+      + esc(tagTypeLabel(r.type) + ' · ' + r.x + ' games · ' + fmtPct(r.y) + ' win') + '</text></g>';
     var text = labelSet[labelKey]
       ? '<text class="tag-map-name" text-anchor="' + textAnchor + '" x="' + textX.toFixed(1) + '" y="' + (cy + 4).toFixed(1) + '">' + esc(shortChartLabel(r.label)) + '</text>'
       : '';
-    return '<g><circle class="tag-map-point" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + rr.toFixed(1)
-      + '" fill="' + color + '" stroke="' + color + '"><title>' + esc(r.label + ' · ' + r.x + ' games · ' + fmtPct(r.y) + ' win · ' + tagTypeLabel(r.type)) + '</title></circle>' + text + '</g>';
+    return '<g class="tag-map-bubble"><circle class="tag-map-point" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + rr.toFixed(1)
+      + '" fill="' + color + '" stroke="' + color + '"><title>' + esc(r.label + ' · ' + r.x + ' games · ' + fmtPct(r.y) + ' win · ' + tagTypeLabel(r.type)) + '</title></circle>' + text + hover + '</g>';
   }).join('');
   var seenTypes = {};
   var legend = chartRows.map(function (r) { return tagTypeLabel(r.type); }).filter(function (type) {
