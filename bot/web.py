@@ -19,6 +19,7 @@ from core.client import dc
 from core.database import db
 import bot
 from bot.tag_leaderboard import tag_leaderboard_score
+from utils.player_style_tags import STYLE_TAG_LABELS
 
 # --- Paths ---
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
@@ -51,6 +52,7 @@ STRATEGY_TAG_LABELS = {
 	"late_unique": "UU spam",
 	"late_ram": "Late siege push",
 	"boom_to_imp": "Greedy boom to Imp",
+	**STYLE_TAG_LABELS,
 }
 IMPACT_TAG_LABELS = {
 	"Low-eco pressure": "All-in pressure",
@@ -420,6 +422,11 @@ _STRATEGY_PHASE = {
 	"late_knight": "Late Castle", "late_crossbow": "Late Castle", "late_cav_archer": "Late Castle",
 	"late_camel": "Late Castle", "late_unique": "Late Castle", "late_ram": "Late Castle",
 	"boom_to_imp": "Boom",
+	"role_fast_castle_pocket": "Role", "role_greedy_boom": "Role",
+	"role_opening_pressure": "Role", "role_knight_pocket": "Role",
+	"role_archer_tempo": "Role", "role_camel_guard": "Role",
+	"role_ca_switch": "Role", "role_siege_closer": "Role",
+	"role_trash_stabilizer": "Role",
 }
 
 
@@ -884,6 +891,63 @@ def _finish_tag_rows(rows_by_key, parsed_games):
 	return sorted(rows, key=lambda r: (-r["score"], -r["tag_games"], -(r["winrate"] or 0), r["nick"].lower()))
 
 
+def _aggregate_tag_rows_by_player(tag_rows):
+	by_user = {}
+	for row in tag_rows:
+		uid = int(row["user_id"])
+		cur = by_user.setdefault(uid, {
+			"user_id": row["user_id"],
+			"nick": row["nick"],
+			"avatar": row.get("avatar"),
+			"tag_key": "all",
+			"tag_label": "All tags",
+			"tag_type": "aggregate",
+			"games": 0,
+			"tag_games": 0,
+			"parsed_games": row.get("parsed_games") or 0,
+			"wins": 0,
+			"losses": 0,
+			"winrate": None,
+			"tag_rate": 0,
+			"avg_impact": None,
+			"score": 0,
+			"last_tagged_at": None,
+			"top_tags": [],
+			"_impact_sum": 0,
+			"_impact_count": 0,
+		})
+		cur["tag_games"] += int(row.get("tag_games") or 0)
+		cur["wins"] += int(row.get("wins") or 0)
+		cur["losses"] += int(row.get("losses") or 0)
+		cur["parsed_games"] = max(int(cur["parsed_games"] or 0), int(row.get("parsed_games") or 0))
+		cur["last_tagged_at"] = max(cur["last_tagged_at"] or 0, int(row.get("last_tagged_at") or 0)) or None
+		if row.get("avg_impact") is not None and row.get("tag_games"):
+			cur["_impact_sum"] += float(row["avg_impact"]) * int(row["tag_games"])
+			cur["_impact_count"] += int(row["tag_games"])
+		cur["top_tags"].append({
+			"key": row.get("tag_key"),
+			"label": row.get("tag_label"),
+			"type": row.get("tag_type"),
+			"games": int(row.get("tag_games") or 0),
+			"score": row.get("score"),
+		})
+	out = []
+	for row in by_user.values():
+		tag_games = int(row["tag_games"] or 0)
+		decided = int(row["wins"] or 0) + int(row["losses"] or 0)
+		row["games"] = tag_games
+		row["winrate"] = _winrate(row["wins"], row["losses"]) if decided else None
+		row["tag_rate"] = min(100, round(tag_games * 100 / row["parsed_games"], 1)) if row["parsed_games"] else 0
+		row["avg_impact"] = round(row["_impact_sum"] / row["_impact_count"], 1) if row["_impact_count"] else None
+		row["score"] = tag_leaderboard_score(
+			tag_games, row["wins"], row["losses"], row["tag_rate"], row.get("avg_impact"))
+		row["top_tags"] = sorted(row["top_tags"], key=lambda t: (-t["games"], -(t.get("score") or 0), t["label"]))[:4]
+		row.pop("_impact_sum", None)
+		row.pop("_impact_count", None)
+		out.append(row)
+	return sorted(out, key=lambda r: (-r["score"], -r["tag_games"], -(r["winrate"] or 0), r["nick"].lower()))
+
+
 async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
 	start = _period_start(period)
 	keys = list(STRATEGY_TAG_LABELS)
@@ -975,9 +1039,12 @@ async def _tag_leaderboard(period, tag_key="all"):
 	tags = {}
 	for tag in strategy_tags + impact_tags:
 		tags[(tag["type"], tag["key"])] = tag
+	rows = _finish_tag_rows(rows_by_key, parsed_games)
+	if tag_key == "all":
+		rows = _aggregate_tag_rows_by_player(rows)
 	return {
 		"tags": sorted(tags.values(), key=lambda t: (t["type"], t["label"])),
-		"rows": _finish_tag_rows(rows_by_key, parsed_games),
+		"rows": rows,
 	}
 
 
