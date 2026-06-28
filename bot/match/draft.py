@@ -151,7 +151,7 @@ class Draft:
 		else:
 			await self.print(ctx)
 
-	async def sub_auto(self, ctx, author):
+	async def sub_auto(self, ctx, out_member):
 		if self.m.state not in [self.m.DRAFT, self.m.WAITING_REPORT]:
 			raise bot.Exc.MatchStateError(self.m.gt("The match must be on the draft or waiting report stage."))
 
@@ -165,10 +165,10 @@ class Draft:
 
 		# Swap the caller out for the candidate and recompute ratings for the
 		# new roster so the rebalance below sees correct ELOs.
-		self.m.players.remove(author)
+		self.m.players.remove(out_member)
 		self.m.players.append(candidate)
-		if author in self.sub_queue:
-			self.sub_queue.remove(author)
+		if out_member in self.sub_queue:
+			self.sub_queue.remove(out_member)
 		self.m.ratings = {
 			p['user_id']: p['rating'] for p in await self.m.qc.rating.get_players((p.id for p in self.m.players))
 		}
@@ -183,7 +183,7 @@ class Draft:
 		self.m.init_teams("matchmaking")
 
 		await ctx.notice(self.m.gt("{old} was substituted by {new}. Teams have been rebalanced.").format(
-			old=author.mention, new=candidate.mention
+			old=out_member.mention, new=candidate.mention
 		))
 
 		if self.m.state == self.m.WAITING_REPORT:

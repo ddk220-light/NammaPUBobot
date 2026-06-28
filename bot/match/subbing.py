@@ -19,3 +19,15 @@ def pick_available(candidates, busy_ids):
 		if candidate.id not in busy_ids:
 			return candidate
 	return None
+
+
+def should_warn(frame_time, end_time, already_warned, num_not_ready):
+	"""True when the one-time 1-minute check-in warning should fire now.
+
+	Fires once, only while players are still not ready, and only inside the
+	final 60 seconds before ``end_time`` (not after the deadline itself —
+	timeout handling takes over then).
+	"""
+	if already_warned or num_not_ready <= 0:
+		return False
+	return end_time - 60 <= frame_time <= end_time

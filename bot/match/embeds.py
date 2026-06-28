@@ -38,14 +38,14 @@ class Embeds:
 		)
 		embed.add_field(
 			name=self.m.gt("Waiting on:"),
-			value="\n".join((f" \u200b {'❌ ' if p in self.m.check_in.discarded_players else ''}<@{p.id}>" for p in not_ready)),
+			value="\n".join((f" \u200b <@{p.id}>" for p in not_ready)),
 			inline=False
 		)
 		if not len(self.m.check_in.maps):
 			embed.add_field(
 				name="—",
 				value=self.m.gt(
-					"Please react with {ready_emoji} to **check-in** or {not_ready_emoji} to **abort**!").format(
+					"Please react with {ready_emoji} to **check-in** or {not_ready_emoji} to **back out**!").format(
 					ready_emoji=self.m.check_in.READY_EMOJI, not_ready_emoji=self.m.check_in.NOT_READY_EMOJI
 				) + "\n\u200b",
 				inline=False
@@ -57,7 +57,7 @@ class Embeds:
 					self.m.gt("Please react with {ready_emoji} or vote for a map to **check-in**.").format(
 						ready_emoji=self.m.check_in.READY_EMOJI
 					),
-					self.m.gt("React with {not_ready_emoji} to **abort**!").format(
+					self.m.gt("React with {not_ready_emoji} to **back out**!").format(
 						not_ready_emoji=self.m.check_in.NOT_READY_EMOJI
 					) + "\n\u200b\nMaps:",
 					"\n".join([
@@ -65,6 +65,12 @@ class Embeds:
 						for i in range(len(self.m.check_in.maps))
 					])
 				]),
+				inline=False
+			)
+		if self.m.check_in.timeout:
+			embed.add_field(
+				name=self.m.gt("Check-in ends:"),
+				value=f"<t:{self.m.check_in.end_time}:R>",
 				inline=False
 			)
 		embed.set_footer(**self.footer)

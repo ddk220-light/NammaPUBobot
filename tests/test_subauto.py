@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from bot.match.subbing import pick_available
+from bot.match.subbing import pick_available, should_warn
 
 
 def _member(id_):
@@ -35,3 +35,24 @@ class TestPickAvailable:
 	def test_returns_none_when_all_busy(self):
 		a, b = _member(1), _member(2)
 		assert pick_available([a, b], {1, 2}) is None
+
+
+class TestShouldWarn:
+	# end_time = 1000; the 1-minute window is [940, 1000].
+	def test_fires_inside_final_minute_when_players_not_ready(self):
+		assert should_warn(frame_time=950, end_time=1000, already_warned=False, num_not_ready=2) is True
+
+	def test_fires_at_exact_window_start(self):
+		assert should_warn(940, 1000, False, 1) is True
+
+	def test_silent_before_final_minute(self):
+		assert should_warn(900, 1000, False, 2) is False
+
+	def test_silent_when_already_warned(self):
+		assert should_warn(950, 1000, True, 2) is False
+
+	def test_silent_when_everyone_ready(self):
+		assert should_warn(950, 1000, False, 0) is False
+
+	def test_silent_after_deadline_timeout_takes_over(self):
+		assert should_warn(1001, 1000, False, 2) is False
