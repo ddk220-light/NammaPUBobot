@@ -102,6 +102,14 @@ class ReplayStatsJobs:
                                                  next_attempt_at=now + 3600, error_reason="parse error")
 
             await store.write_match(result, bot_match_id, now, PARSER_VERSION)
+            try:
+                from .classification_sync import sync_match
+                cls_rows, cls_metrics = await sync_match(result, played_at_epoch or now)
+                log.info(
+                    f"Replay-stats classified aoe2 match {aoe2_match_id} "
+                    f"({cls_rows} tags, {cls_metrics} metrics).")
+            except Exception as e:
+                log.error(f"Replay-stats classification sync failed ({aoe2_match_id}): {e}")
             await store.upsert_ingest(aoe2_match_id, status="done", save_version=sv,
                                       parser_version=PARSER_VERSION, attempts=attempts + 1)
             if post_summary and bot_match_id:
