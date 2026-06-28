@@ -150,3 +150,17 @@ def test_match_analysis_lines_include_win_loss_and_carry():
 	assert "**Beta** (L)" in body
 	assert "**Boomer**" in body
 	assert "Carry check" in body
+
+
+def test_team_card_fields_render_two_teams_with_carry_and_tags():
+	player_rows = [
+		{"nick": "Boomer", "civ": "Bengalis", "team": 0, "result": "W", "impact_score": 70, "impact_tags": ["Boom carry", "Recovery"]},
+		{"nick": "Wall", "civ": "Teutons", "team": 0, "result": "W", "impact_score": 55, "impact_tags": ["Recovery"]},
+		{"nick": "Raider", "civ": "Huns", "team": 1, "result": "L", "impact_score": 68, "impact_tags": ["Army pressure"]},
+		{"nick": "Pocket", "civ": "Franks", "team": 1, "result": "L", "impact_score": 48, "impact_tags": []},
+	]
+	fields = pg._team_card_fields(player_rows, {0: "Alpha", 1: "Beta"})
+	assert [f["name"] for f in fields] == ["🟩 Alpha · W", "🟥 Beta · L"]
+	assert "**Boomer** 👑 **CARRY**" in fields[0]["value"]
+	assert "`Boom carry`" in fields[0]["value"]
+	assert "`No tags`" in fields[1]["value"]
