@@ -24,6 +24,7 @@ from core.console import log
 from core.database import db
 
 from .civ_matcher import _find_and_record
+from .civ_sync import find_and_record_lobby_from_history
 
 # Tracks reconcile attempts per bot match so we don't re-hit the API forever for
 # matches that will never link. status: 'pending' (keep trying) | 'done' | 'gaveup'.
@@ -120,6 +121,15 @@ class CivReconcile:
 				done = await _find_and_record(
 					r["channel_id"], match_id, players, r["winner"], r["at"], post_replay=False
 				)
+				if not done:
+					try:
+						from core.client import dc
+						channel = dc.get_channel(r["channel_id"])
+						done = await find_and_record_lobby_from_history(
+							channel, r["channel_id"], match_id, players, r["winner"], r["at"]
+						)
+					except Exception as e:
+						log.error(f"Civ history reconcile error for match {match_id}: {e}")
 				if await db.fetchone("SELECT 1 AS x FROM qc_match_civs WHERE bot_match_id=%s LIMIT 1", [match_id]):
 					status, linked = "done", linked + 1
 				elif done:

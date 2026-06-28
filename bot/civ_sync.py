@@ -77,6 +77,112 @@ async def persist_lobby_civs(channel_id, parsed):
 	log.info(f"Civ record: stored {len(rows)} civs for aoe2 match {aoe2_match_id} in channel {channel_id}.")
 
 
+def _lobby_players_by_profile(parsed):
+	players = {}
+	for team in parsed.get('teams', []):
+		for p in team.get('players', []):
+			pid = p.get('profile_id')
+			if pid:
+				players[int(pid)] = {
+					"aoe2_name": p.get("aoe2_name", ""),
+					"civ": p.get("civ", ""),
+					"is_winner": team.get("is_winner"),
+				}
+	return players
+
+
+def _bot_player_profiles(players, uid_to_pids, nick_to_pids):
+	out = {}
+	active_pids = set()
+	for user_id, nick, team in players:
+		pids = uid_to_pids.get(user_id) or nick_to_pids.get(nick, [])
+		pids = [int(p) for p in pids if str(p).isdigit()]
+		if not pids:
+			continue
+		out[user_id] = (nick, team, pids)
+		active_pids.update(pids)
+	return out, active_pids
+
+
+async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at, parsed,
+							 db_adapter=None, uid_to_pids=None, nick_to_pids=None):
+	"""Link one parsed LobbyBOT result to a bot match by profile overlap and write qc_match_civs."""
+	dbw = db_adapter or db
+	if await dbw.fetchone("SELECT 1 AS x FROM qc_match_civs WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
+		return True
+
+	if uid_to_pids is None or nick_to_pids is None:
+		from bot.civ_matcher import _load_profile_map, _load_profile_uid_map
+		uid_to_pids = _load_profile_uid_map()
+		nick_to_pids = _load_profile_map()
+
+	player_info, active_pids = _bot_player_profiles(players, uid_to_pids or {}, nick_to_pids or {})
+	if len(player_info) < 2:
+		return False
+
+	lobby_players = _lobby_players_by_profile(parsed)
+	overlap = len(active_pids & set(lobby_players))
+	threshold = max(2, min(4, len(player_info)))
+	if overlap < threshold:
+		return False
+
+	rows = []
+	for user_id, (nick, team, pids) in player_info.items():
+		match = next((lobby_players[pid] for pid in pids if pid in lobby_players), None)
+		if not match:
+			continue
+		civ = (match.get("civ") or "").strip()
+		if not civ or civ.lower() == "unknown":
+			continue
+		result = ("W" if team == winner else "L") if (winner is not None and team is not None) else (
+			"W" if match.get("is_winner") else "L" if match.get("is_winner") is False else None
+		)
+		rows.append(dict(
+			channel_id=channel_id,
+			aoe2_match_id=parsed.get("aoe2_match_id"),
+			aoe2_name=match.get("aoe2_name", ""),
+			civ=civ,
+			at=match_at,
+			bot_match_id=bot_match_id,
+			user_id=user_id,
+			nick=nick,
+			team=team,
+			result=result,
+		))
+	if not rows:
+		return False
+
+	await dbw.insert_many("qc_match_civs", rows)
+	log.info(
+		f"Civ history: bot match {bot_match_id} -> aoe2 {parsed.get('aoe2_match_id')}, "
+		f"recorded {len(rows)} civs (overlap {overlap}).")
+	return True
+
+
+async def find_and_record_lobby_from_history(channel, channel_id, bot_match_id, players, winner, match_at,
+											 limit=300):
+	"""Scan LobbyBOT messages around a bot match time and backfill qc_match_civs if profiles overlap."""
+	from core.config import cfg
+	lobbybot_id = getattr(cfg, 'LOBBYBOT_USER_ID', None)
+	if not lobbybot_id or channel is None:
+		return False
+
+	after = datetime.fromtimestamp(max(0, int(match_at) - 4 * 3600), tz=timezone.utc)
+	before = datetime.fromtimestamp(int(match_at) + 90 * 60, tz=timezone.utc)
+	try:
+		async for msg in channel.history(limit=limit, after=after, before=before, oldest_first=False):
+			if msg.author.id != lobbybot_id or not getattr(msg.author, "bot", False) or not msg.embeds:
+				continue
+			parsed = parse_lobby_embed(msg)
+			if not parsed:
+				continue
+			if await record_lobby_match(channel_id, bot_match_id, players, winner, match_at, parsed):
+				return True
+	except Exception as e:
+		log.error(f"Civ history scan failed for match {bot_match_id}: {e}")
+	return False
+
+
 def parse_lobby_embed(message):
 	"""Parse an AOE2LobbyBOT match completion embed.
 
