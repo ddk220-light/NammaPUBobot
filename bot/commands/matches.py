@@ -46,9 +46,20 @@ async def sub_me(ctx, match: bot.Match):
 	await match.draft.sub_me(ctx, ctx.author)
 
 
-@author_match
-async def sub_auto(ctx, match: bot.Match):
-	await match.draft.sub_auto(ctx, ctx.author)
+async def sub_auto(ctx, player: Member = None):
+	who = player or ctx.author
+	if (match := find(lambda m: m.qc == ctx.qc and who in m.players, bot.active_matches)) is None:
+		raise bot.Exc.NotInMatchError(ctx.qc.gt("Specified user is not in an active match."))
+	if match.state == bot.Match.CHECK_IN:
+		swapped = await match.check_in.replace_player(ctx, who)
+		if swapped is None:
+			raise bot.Exc.NotFoundError(ctx.qc.gt("There are no available players in the queue to substitute in."))
+		await ctx.notice(match.qc.gt("{out} was substituted by {sub}. {sub}, please check in!").format(
+			out=who.mention, sub=swapped.mention
+		))
+		await match.check_in.refresh(ctx)
+	else:
+		await match.draft.sub_auto(ctx, who)
 
 
 async def sub_for(ctx, player: Member):
