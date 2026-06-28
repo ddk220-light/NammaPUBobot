@@ -709,6 +709,17 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .elo-fill { fill: rgba(87,217,139,0.10); }
 .elo-dot { fill: #57d98b; stroke: #202225; stroke-width: 2; }
 .elo-label { fill: #969aa2; font-size: 11px; font-family: 'Outfit', sans-serif; }
+.tag-map-panel { padding: 0.9rem 1rem 1rem; border-bottom: 1px solid rgba(72,76,84,0.55); }
+.tag-map-chart { width: 100%; height: 260px; display: block; }
+.tag-map-grid { stroke: rgba(185,187,190,0.13); stroke-width: 1; }
+.tag-map-axis { stroke: rgba(185,187,190,0.32); stroke-width: 1; }
+.tag-map-label { fill: #969aa2; font-size: 11px; font-family: 'Outfit', sans-serif; }
+.tag-map-point { fill-opacity: 0.34; stroke-width: 2; }
+.tag-map-point:hover { fill-opacity: 0.62; stroke-width: 3; }
+.tag-map-name { fill: #dcddde; font-size: 11px; font-family: 'Outfit', sans-serif; font-weight: 700; pointer-events: none; }
+.tag-map-legend { display: flex; gap: 0.8rem; flex-wrap: wrap; color: #969aa2; font-size: 0.76rem; margin-top: 0.3rem; }
+.tag-map-key { display: inline-flex; align-items: center; gap: 0.35rem; }
+.tag-map-swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .match-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
@@ -1984,6 +1995,112 @@ function renderEloTrend(rows, targetId) {
     + '</svg>';
 }
 
+function tagTypeColor(type) {
+  type = String(type || '').toLowerCase();
+  if (type.indexOf('strategy') >= 0) return '#7aa2ff';
+  if (type.indexOf('impact') >= 0) return '#57d98b';
+  if (type.indexOf('tech') >= 0) return '#d6b057';
+  if (type.indexOf('composition') >= 0) return '#b9bbbe';
+  if (type.indexOf('style') >= 0) return '#e28b8b';
+  return '#9b8cff';
+}
+
+function numericValue(v) {
+  if (v === null || v === undefined || v === '') return null;
+  v = Number(v);
+  return Number.isFinite(v) ? v : null;
+}
+
+function renderTagBubbleChart(title, rows, cfg) {
+  cfg = cfg || {};
+  var chartRows = (rows || []).map(function (r) {
+    var x = numericValue(cfg.x ? cfg.x(r) : r[cfg.xKey || 'tag_games']);
+    var y = numericValue(cfg.y ? cfg.y(r) : r[cfg.yKey || 'winrate']);
+    if (x === null || y === null) return null;
+    return {
+      row: r,
+      x: x,
+      y: y,
+      size: numericValue(cfg.size ? cfg.size(r) : r[cfg.sizeKey || 'avg_impact'])
+        || numericValue(cfg.fallbackSizeKey ? r[cfg.fallbackSizeKey] : null)
+        || x,
+      label: cfg.label ? cfg.label(r) : (r[cfg.labelKey || 'label'] || r.nick || r.tag_label || '-'),
+      type: cfg.type ? cfg.type(r) : (r[cfg.typeKey || 'tag_type'] || r.type || 'tag')
+    };
+  }).filter(Boolean);
+  if (!chartRows.length) {
+    return '<h2>' + esc(title || 'Tag map') + '</h2><div class="empty-panel">No tag map data for this selection.</div>';
+  }
+
+  var width = 900, height = 260, padL = 58, padR = 28, padT = 18, padB = 42;
+  var xs = chartRows.map(function (r) { return r.x; });
+  var ys = chartRows.map(function (r) { return r.y; });
+  var sizes = chartRows.map(function (r) { return r.size; });
+  var xMax = Math.max(1, Math.max.apply(null, xs));
+  var yMin = Math.max(0, Math.min.apply(null, ys) - 5);
+  var yMax = Math.min(100, Math.max.apply(null, ys) + 5);
+  if (yMax - yMin < 10) {
+    var mid = (yMax + yMin) / 2;
+    yMin = Math.max(0, mid - 5);
+    yMax = Math.min(100, mid + 5);
+  }
+  var sizeMin = Math.min.apply(null, sizes);
+  var sizeMax = Math.max.apply(null, sizes);
+  function xPos(v) { return padL + (v / xMax) * (width - padL - padR); }
+  function yPos(v) { return padT + ((yMax - v) / Math.max(1, yMax - yMin)) * (height - padT - padB); }
+  function radius(v) {
+    if (sizeMax === sizeMin) return 10;
+    return 6 + ((v - sizeMin) / (sizeMax - sizeMin)) * 12;
+  }
+  function tickLabel(v) {
+    v = Math.round(v * 10) / 10;
+    return String(v).replace(/\.0$/, '');
+  }
+  var xTicks = [0, xMax / 2, xMax];
+  var yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  var grids = yTicks.map(function (t) {
+    var y = yPos(t);
+    return '<line class="tag-map-grid" x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (width - padR) + '" y2="' + y.toFixed(1) + '"></line>'
+      + '<text class="tag-map-label" text-anchor="end" x="' + (padL - 9) + '" y="' + (y + 4).toFixed(1) + '">' + esc(tickLabel(t)) + '%</text>';
+  }).join('');
+  var xLabels = xTicks.map(function (t) {
+    var x = xPos(t);
+    return '<text class="tag-map-label" text-anchor="middle" x="' + x.toFixed(1) + '" y="' + (height - 17) + '">' + esc(tickLabel(t)) + '</text>';
+  }).join('');
+  var labelSet = {};
+  chartRows.slice().sort(function (a, b) {
+    return (b.size - a.size) || (b.x - a.x);
+  }).slice(0, 10).forEach(function (r) { labelSet[r.label + '|' + r.x + '|' + r.y] = true; });
+  var points = chartRows.map(function (r) {
+    var color = tagTypeColor(r.type);
+    var cx = xPos(r.x), cy = yPos(r.y), rr = radius(r.size);
+    var labelKey = r.label + '|' + r.x + '|' + r.y;
+    var textAnchor = cx > width - 140 ? 'end' : 'start';
+    var textX = textAnchor === 'end' ? cx - rr - 5 : cx + rr + 5;
+    var text = labelSet[labelKey]
+      ? '<text class="tag-map-name" text-anchor="' + textAnchor + '" x="' + textX.toFixed(1) + '" y="' + (cy + 4).toFixed(1) + '">' + esc(r.label) + '</text>'
+      : '';
+    return '<g><circle class="tag-map-point" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + rr.toFixed(1)
+      + '" fill="' + color + '" stroke="' + color + '"><title>' + esc(r.label + ' · ' + r.x + ' games · ' + fmtPct(r.y) + ' win · ' + tagTypeLabel(r.type)) + '</title></circle>' + text + '</g>';
+  }).join('');
+  var seenTypes = {};
+  var legend = chartRows.map(function (r) { return tagTypeLabel(r.type); }).filter(function (type) {
+    if (seenTypes[type]) return false;
+    seenTypes[type] = true;
+    return true;
+  }).slice(0, 6).map(function (type) {
+    return '<span class="tag-map-key"><span class="tag-map-swatch" style="background:' + tagTypeColor(type) + '"></span>' + esc(type) + '</span>';
+  }).join('');
+  return '<h2>' + esc(title || 'Tag map') + '</h2><div class="tag-map-panel"><svg class="tag-map-chart" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="' + esc(title || 'Tag map') + '">'
+    + grids
+    + '<line class="tag-map-axis" x1="' + padL + '" y1="' + (height - padB) + '" x2="' + (width - padR) + '" y2="' + (height - padB) + '"></line>'
+    + '<line class="tag-map-axis" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (height - padB) + '"></line>'
+    + xLabels
+    + '<text class="tag-map-label" text-anchor="middle" x="' + ((padL + width - padR) / 2) + '" y="' + (height - 2) + '">' + esc(cfg.xLabel || 'Tag games') + '</text>'
+    + '<text class="tag-map-label" transform="translate(13 ' + ((padT + height - padB) / 2) + ') rotate(-90)" text-anchor="middle">Win %</text>'
+    + points + '</svg><div class="tag-map-legend">' + legend + '</div></div>';
+}
+
 function table(title, headers, rows, empty) {
   if (!rows || !rows.length) return '<h2>' + esc(title) + '</h2><div class="empty-panel">' + esc(empty || 'No data.') + '</div>';
   return '<h2>' + esc(title) + '</h2><table class="mini-table"><thead><tr>'
@@ -2237,7 +2354,16 @@ function renderLeaderboard() {
     return;
   }
   if (leaderboardMode === 'tags') {
-    document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-tags', 'Tag leaderboard', [
+    var tagMap = renderTagBubbleChart('Tag map', rows, {
+      xKey: 'tag_games',
+      xLabel: 'Tag games',
+      yKey: 'winrate',
+      sizeKey: 'avg_impact',
+      fallbackSizeKey: 'score',
+      labelKey: 'nick',
+      typeKey: 'tag_type'
+    });
+    document.getElementById('leaderboard-panel').innerHTML = tagMap + sortableTable('leader-tags', 'Tag leaderboard', [
       { key: 'rank', label: '#', type: 'number', className: 'num', render: function (r, i) { return String(i + 1); } },
       { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
       { key: 'tag_label', label: 'Tag', render: tagCell },
@@ -2427,7 +2553,16 @@ function renderPlayerTagDetails(d) {
       avg_impact: t.avg_impact
     };
   });
-  document.getElementById('player-tags-panel').innerHTML = sortableTable('player-tags-table', 'Tag details', [
+  var tagMap = renderTagBubbleChart('Tag map', tags, {
+    xKey: 'games',
+    xLabel: 'Tag games',
+    yKey: 'winrate',
+    sizeKey: 'avg_impact',
+    fallbackSizeKey: 'tag_rate',
+    labelKey: 'label',
+    typeKey: 'type'
+  });
+  document.getElementById('player-tags-panel').innerHTML = tagMap + sortableTable('player-tags-table', 'Tag details', [
     { key: 'label', label: 'Tag', render: function (r) { return '<span class="roster-tag ' + rosterTagClass(r.label) + '">' + esc(r.label) + '</span>'; } },
     { key: 'type', label: 'Type', render: function (r) { return esc(tagTypeLabel(r.type)); } },
     { key: 'games', label: 'Tag games', type: 'number', className: 'num' },
