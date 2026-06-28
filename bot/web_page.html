@@ -1907,6 +1907,12 @@ function topImpactPlayer(players) {
   rows.sort(function (a, b) { return playerImpactValue(b) - playerImpactValue(a); });
   return rows[0];
 }
+function hasCarryTag(tags) {
+  return (tags || []).some(function (tag) { return String(tag || '').toLowerCase().indexOf('carry') >= 0; });
+}
+function impactBadgeLabel(tags) {
+  return hasCarryTag(tags) ? 'Carry' : 'Top impact';
+}
 function rowImpactPlayer(r) {
   if (r && r.impact && r.impact.nick) return r.impact;
   return topImpactPlayer((r && r.players) || []);
@@ -1948,8 +1954,9 @@ function matchTeamCard(teamName, players) {
     var tags = tagList.length ? tagList.join(', ') : 'No tags';
     var isTop = topPlayer && p === topPlayer;
     var score = impact.impact_score == null ? '-' : String(impact.impact_score);
+    var badge = isTop ? impactBadgeLabel(tagList) : '';
     var nameHtml = '<span class="player-cell">' + avatarImg(p.avatar, p.nick) + '<span class="player-name-text">' + esc(p.nick || '-') + '</span>'
-      + (isTop ? '<span class="impact-badge">Carry</span>' : '') + '</span>';
+      + (badge ? '<span class="impact-badge" title="Replay-model top impact; Carry only when carry-style tags are present.">' + esc(badge) + '</span>' : '') + '</span>';
     return '<div class="match-card-player' + (isTop ? ' top-impact' : '') + '">'
       + playerLink(p.user_id, p.nick, nameHtml)
       + civIcon(p.civ)
