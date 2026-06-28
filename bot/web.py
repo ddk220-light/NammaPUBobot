@@ -19,6 +19,7 @@ from core.client import dc
 from core.database import db
 import bot
 from bot.tag_leaderboard import tag_leaderboard_score
+from utils.player_style_tags import STYLE_TAG_LABELS
 
 # --- Paths ---
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
@@ -51,6 +52,7 @@ STRATEGY_TAG_LABELS = {
 	"late_unique": "UU spam",
 	"late_ram": "Late siege push",
 	"boom_to_imp": "Greedy boom to Imp",
+	**STYLE_TAG_LABELS,
 }
 IMPACT_TAG_LABELS = {
 	"Low-eco pressure": "All-in pressure",
@@ -420,6 +422,11 @@ _STRATEGY_PHASE = {
 	"late_knight": "Late Castle", "late_crossbow": "Late Castle", "late_cav_archer": "Late Castle",
 	"late_camel": "Late Castle", "late_unique": "Late Castle", "late_ram": "Late Castle",
 	"boom_to_imp": "Boom",
+	"role_fast_castle_pocket": "Role", "role_greedy_boom": "Role",
+	"role_opening_pressure": "Role", "role_knight_pocket": "Role",
+	"role_archer_tempo": "Role", "role_camel_guard": "Role",
+	"role_ca_switch": "Role", "role_siege_closer": "Role",
+	"role_trash_stabilizer": "Role",
 }
 
 
