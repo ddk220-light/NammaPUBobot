@@ -64,7 +64,7 @@ class ReplayStatsJobs:
                                   first_seen_at=retry.get("first_seen_at") or now)
 
     async def ingest_one(self, aoe2_match_id, bot_match_id, played_at_epoch, now,
-                         attempts=0, first_seen_at=None):
+                         attempts=0, first_seen_at=None, post_summary=True):
         """Run one match through fetch -> gate/parse -> store. Updates rs_ingest. Bulletproof."""
         first_seen_at = first_seen_at or now
         try:
@@ -104,6 +104,14 @@ class ReplayStatsJobs:
             await store.write_match(result, bot_match_id, now, PARSER_VERSION)
             await store.upsert_ingest(aoe2_match_id, status="done", save_version=sv,
                                       parser_version=PARSER_VERSION, attempts=attempts + 1)
+            if post_summary and bot_match_id:
+                try:
+                    from bot.post_game import post_match_analysis
+                    posted = await post_match_analysis(bot_match_id)
+                    if posted:
+                        log.info(f"Replay-stats posted match analysis for bot match {bot_match_id}.")
+                except Exception as e:
+                    log.error(f"Replay-stats analysis post failed (bot match {bot_match_id}): {e}")
             log.info(f"Replay-stats ingested aoe2 match {aoe2_match_id} (save {sv}).")
         except Exception as e:
             log.error(f"Replay-stats ingest({aoe2_match_id}) failed: {e}")

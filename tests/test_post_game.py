@@ -104,3 +104,49 @@ def test_select_one_line_per_player_and_one_team_line():
 def test_select_respects_limit():
 	obs = [{"type": "winner_top", "nick": f"P{i}", "score": i} for i in range(6)]
 	assert len(pg._select(obs, limit=3)) == 3
+
+
+# ── Replay analysis commentary ───────────────────────────────────────────
+def test_impact_payload_tags_boom_carry():
+	rows = [
+		{
+			"nick": "Boomer", "civ": "Bengalis", "team": "2", "bot_team": 0, "winner": 1,
+			"villagers": 160, "vil_pre_castle": 40, "military": 75, "mil_pre_castle": 1,
+			"feudal_s": 600, "castle_s": 1000, "imperial_s": 2100,
+		},
+		{
+			"nick": "Raider", "civ": "Huns", "team": "1", "bot_team": 1, "winner": 0,
+			"villagers": 70, "vil_pre_castle": 18, "military": 70, "mil_pre_castle": 15,
+			"feudal_s": 700, "castle_s": 1300, "imperial_s": 3200,
+		},
+	]
+	impact = pg._impact_payload(rows[0], rows)
+	assert impact["result"] == "W"
+	assert impact["team"] == 0
+	assert "Boom carry" in impact["impact_tags"]
+
+
+def test_impact_payload_uses_bot_team_not_replay_team():
+	row = {
+		"nick": "Mapped", "civ": "Franks", "team": "2", "bot_team": 1, "result": "L",
+		"villagers": 80, "vil_pre_castle": 20, "military": 40, "mil_pre_castle": 5,
+		"feudal_s": 800, "castle_s": 1400, "imperial_s": 3000,
+	}
+	impact = pg._impact_payload(row, [row])
+	assert impact["team"] == 1
+	assert impact["result"] == "L"
+
+
+def test_match_analysis_lines_include_win_loss_and_carry():
+	player_rows = [
+		{"nick": "Boomer", "civ": "Bengalis", "team": 0, "result": "W", "impact_score": 70, "impact_tags": ["Boom carry"]},
+		{"nick": "Wall", "civ": "Teutons", "team": 0, "result": "W", "impact_score": 55, "impact_tags": ["Recovery"]},
+		{"nick": "Raider", "civ": "Huns", "team": 1, "result": "L", "impact_score": 68, "impact_tags": ["Army pressure"]},
+		{"nick": "Pocket", "civ": "Franks", "team": 1, "result": "L", "impact_score": 48, "impact_tags": []},
+	]
+	lines = pg._match_analysis_lines(player_rows, {0: "Alpha", 1: "Beta"})
+	body = "\n".join(lines)
+	assert "**Alpha** (W)" in body
+	assert "**Beta** (L)" in body
+	assert "**Boomer**" in body
+	assert "Carry check" in body

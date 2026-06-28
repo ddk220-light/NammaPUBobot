@@ -32,6 +32,7 @@ TOP_PCT = 0.15      # ...or inside the top 15% by rank
 BOT_PCT = 0.15      # bottom 15% counts as a weak pick
 TEAM_GAP_MIN = 0.03  # min avg-winrate gap between team civ pools to comment on
 MAX_BULLETS = 4
+MAX_ANALYSIS_LINES = 6
 
 
 # ── Pure analysis helpers (no DB / Discord — unit tested) ────────────────
@@ -147,6 +148,150 @@ def _select(obs, limit=MAX_BULLETS):
 	return chosen
 
 
+def _score_component(value):
+	return max(0, min(100, round(50 + value * 15)))
+
+
+def _avg(rows, key):
+	vals = [float(r[key]) for r in rows if r.get(key) is not None]
+	return sum(vals) / len(vals) if vals else None
+
+
+def _std(rows, key):
+	vals = [float(r[key]) for r in rows if r.get(key) is not None]
+	if len(vals) < 2:
+		return 1.0
+	mean = sum(vals) / len(vals)
+	variance = sum((v - mean) ** 2 for v in vals) / len(vals)
+	return max(variance ** 0.5, 1.0)
+
+
+def _z(row, rows, key, invert=False):
+	if row.get(key) is None:
+		return 0.0
+	mean = _avg(rows, key)
+	if mean is None:
+		return 0.0
+	val = float(row[key])
+	score = (mean - val if invert else val - mean) / _std(rows, key)
+	return max(-2.0, min(2.0, score))
+
+
+def _impact_payload(row, group):
+	eco_z = (_z(row, group, "villagers") * 0.65) + (_z(row, group, "vil_pre_castle") * 0.35)
+	army_z = (_z(row, group, "military") * 0.65) + (_z(row, group, "mil_pre_castle") * 0.35)
+	timing_z = (
+		(_z(row, group, "feudal_s", invert=True) * 0.35)
+		+ (_z(row, group, "castle_s", invert=True) * 0.45)
+		+ (_z(row, group, "imperial_s", invert=True) * 0.20)
+	)
+	early_eco_z = _z(row, group, "vil_pre_castle")
+	early_army_z = _z(row, group, "mil_pre_castle")
+	recovery_z = _z(row, group, "villagers") - early_eco_z
+	eco = _score_component(eco_z)
+	army = _score_component(army_z)
+	timing = _score_component(timing_z)
+	early_eco = _score_component(early_eco_z)
+	early_army = _score_component(early_army_z)
+	recovery = _score_component(recovery_z)
+	impact = round((army * 0.34) + (eco * 0.30) + (timing * 0.18) + (recovery * 0.18))
+	tags = []
+	if army >= 68 and eco < 52:
+		tags.append("Low-eco pressure")
+	elif army >= 66:
+		tags.append("Army pressure")
+	if eco >= 64 and early_eco >= 56 and early_army <= 55 and impact >= 58:
+		tags.append("Boom carry")
+	elif eco >= 66:
+		tags.append("Eco carry")
+	if timing >= 66:
+		tags.append("Timing edge")
+	if recovery >= 66:
+		tags.append("Recovery")
+	if impact >= 72 and not tags:
+		tags.append("High impact")
+	return {
+		"nick": row.get("nick") or row.get("identity") or str(row.get("user_id") or ""),
+		"civ": row.get("civ"),
+		"team": int(row["bot_team"]) if row.get("bot_team") in (0, 1, "0", "1") else None,
+		"result": row.get("result") or ("W" if row.get("winner") else "L" if row.get("winner") is not None else None),
+		"impact_score": impact,
+		"army_score": army,
+		"eco_score": eco,
+		"timing_score": timing,
+		"recovery_score": recovery,
+		"impact_tags": tags[:3],
+	}
+
+
+def _tag_word(tags):
+	if not tags:
+		return "solid fundamentals"
+	if "Boom carry" in tags:
+		return "greedy boom into castle-age invoice"
+	if "Low-eco pressure" in tags:
+		return "all-in pressure, farms optional"
+	if "Army pressure" in tags:
+		return "map control and villager anxiety"
+	if "Eco carry" in tags:
+		return "eco carry with banker energy"
+	if "Timing edge" in tags:
+		return "age-up tempo into power-window play"
+	if "Recovery" in tags:
+		return "hold-and-reboom anchor work"
+	if "High impact" in tags:
+		return "high-impact flex"
+	return ", ".join(tags).lower()
+
+
+def _team_impact_rows(player_rows):
+	by_team = {}
+	for p in player_rows:
+		if p.get("team") not in (0, 1):
+			continue
+		by_team.setdefault(p["team"], []).append(p)
+	return by_team
+
+
+def _team_tag_summary(team_rows):
+	counts = {}
+	for p in team_rows:
+		for tag in p.get("impact_tags") or []:
+			counts[tag] = counts.get(tag, 0) + 1
+	return [tag for tag, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]]
+
+
+def _match_analysis_lines(player_rows, team_names=None):
+	team_names = team_names or {0: "Alpha", 1: "Beta"}
+	teams = _team_impact_rows(player_rows)
+	if not teams:
+		return []
+	lines = []
+	for team in sorted(teams):
+		rows = sorted(teams[team], key=lambda p: (p.get("impact_score") or 0), reverse=True)
+		result = next((p.get("result") for p in rows if p.get("result")), None)
+		icon = "🟩" if result == "W" else "🟥" if result == "L" else "⬜"
+		tags = _team_tag_summary(rows)
+		carry = rows[0]
+		team_name = team_names.get(team, f"Team {team}")
+		lines.append(
+			f"{icon} **{team_name}** ({result or '?'}) — "
+			f"team read: {_tag_word(tags)}. "
+			f"Top pop: **{carry['nick']}** on **{carry.get('civ') or '?'}** "
+			f"({carry['impact_score']}, {_tag_word(carry.get('impact_tags') or [])})."
+		)
+	if 0 in teams and 1 in teams:
+		all_rows = sorted(player_rows, key=lambda p: (p.get("impact_score") or 0), reverse=True)
+		carries = all_rows[:2]
+		if len(carries) >= 2:
+			lines.append(
+				f"👑 Carry check: **{carries[0]['nick']}** edged **{carries[1]['nick']}** "
+				f"{carries[0]['impact_score']}–{carries[1]['impact_score']}. "
+				"GG, villagers had opinions."
+			)
+	return lines[:MAX_ANALYSIS_LINES]
+
+
 # ── Phrasing (pure, but cosmetic — not unit tested) ──────────────────────
 def _tier_desc(info):
 	"""A descriptor that folds in rank and win-rate, e.g. "a top-3 win-rate
@@ -224,6 +369,12 @@ async def _team_names(channel_id, bot_match_id):
 	return {0: "Alpha", 1: "Beta"}
 
 
+async def _match_channel_id(bot_match_id):
+	from core.database import db
+	row = await db.fetchone("SELECT channel_id FROM qc_matches WHERE match_id=%s", [bot_match_id])
+	return row.get("channel_id") if row else None
+
+
 async def build_post_game_embed(channel_id, bot_match_id, player_civ_rows, winner):
 	"""Civ-vs-result wrap-up for a finished match.
 
@@ -267,3 +418,70 @@ async def build_post_game_embed(channel_id, bot_match_id, player_civ_rows, winne
 	embed = Embed(title=title, colour=Colour(0x9b59b6), description="\n\n".join(lines))
 	embed.set_footer(text="Civ win-rates from community match history · just for fun")
 	return embed
+
+
+async def _analysis_rows(bot_match_id):
+	from core.database import db
+	return await db.fetchall(
+		"SELECT g.user_id, g.identity, COALESCE(mc.nick, pm.nick, g.identity) AS nick, "
+		"COALESCE(mc.civ, g.civ) AS civ, mc.team AS bot_team, mc.result, g.winner, "
+		"g.villagers, g.vil_pre_castle, g.military, g.mil_pre_castle, "
+		"g.feudal_s, g.castle_s, g.imperial_s "
+		"FROM rs_matches rm "
+		"JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
+		"LEFT JOIN qc_match_civs mc ON mc.bot_match_id=rm.bot_match_id "
+		"AND ((g.user_id IS NOT NULL AND mc.user_id=g.user_id) "
+		"OR (g.user_id IS NULL AND LOWER(mc.nick)=LOWER(g.identity))) "
+		"LEFT JOIN qc_player_matches pm ON pm.match_id=rm.bot_match_id AND pm.user_id=g.user_id "
+		"WHERE rm.bot_match_id=%s AND mc.team IN (0, 1) AND mc.result IN ('W', 'L') "
+		"ORDER BY mc.team, nick",
+		[bot_match_id])
+
+
+async def build_match_analysis_embed(channel_id, bot_match_id):
+	"""Replay-derived post-game team read. Built only after rs_* rows exist."""
+	rows = await _analysis_rows(bot_match_id)
+	if not rows:
+		return None
+	player_rows = [_impact_payload(row, rows) for row in rows]
+	if not any(p.get("result") in ("W", "L") for p in player_rows):
+		return None
+	lines = _match_analysis_lines(player_rows, await _team_names(channel_id, bot_match_id))
+	if not lines:
+		return None
+
+	from nextcord import Colour, Embed
+
+	embed = Embed(
+		title=random.choice([
+			"⚔️ Final Tale of the Tape",
+			"🧾 Post-Imp Damage Report",
+			"🏰 After-Action Scout Report",
+		]),
+		colour=Colour(0xe67e22),
+		description="\n\n".join(lines),
+	)
+	embed.set_footer(text="Replay-derived tags · impact is relative inside this match")
+	return embed
+
+
+async def post_match_analysis(bot_match_id):
+	"""Best-effort Discord post once replay analysis is stored."""
+	try:
+		from core.client import dc
+		from core.console import log
+
+		channel_id = await _match_channel_id(bot_match_id)
+		if channel_id is None:
+			return False
+		channel = dc.get_channel(channel_id)
+		if channel is None:
+			return False
+		embed = await build_match_analysis_embed(channel_id, bot_match_id)
+		if embed is None:
+			return False
+		await channel.send(embed=embed)
+		return True
+	except Exception as e:
+		log.error(f"Replay post-game analysis send failed (bot match {bot_match_id}): {e}")
+		return False

@@ -514,11 +514,20 @@ td.games { color: #b9bbbe; }
 footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a; }
 
 /* ─── Match Stats ─── */
-.match-stats-container { max-width: 1500px; }
+.match-stats-container { max-width: 1500px; --sticky-panel-top: 118px; --sticky-table-top: 160px; }
 .match-controls {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; margin-bottom: 1rem; flex-wrap: wrap;
 }
+.sticky-page-context {
+  position: sticky; top: 0; z-index: 40;
+  background: #36393f; padding-top: 0.1rem; padding-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(72,76,84,0.65);
+  box-shadow: 0 10px 18px rgba(0,0,0,0.14);
+}
+.sticky-page-context header { margin-bottom: 0.9rem; }
+.sticky-page-context + .metric-grid,
+.sticky-page-context + .match-panel { margin-top: 1rem; }
 .period-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .period-tab {
   background: #2c3034; color: #b9bbbe; border: 1px solid #484c54;
@@ -711,8 +720,11 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .match-panel h2 {
   font-family: 'Oswald', sans-serif; font-weight: 400; letter-spacing: 0.7px;
   font-size: 1.05rem; color: white; padding: 0.85rem 1rem 0.5rem;
+  position: sticky; top: var(--sticky-panel-top); z-index: 12; background: #2f3136;
+  border-bottom: 1px solid rgba(72,76,84,0.55);
 }
 .mini-table { width: 100%; border-collapse: collapse; table-layout: auto; }
+.mini-table thead { position: sticky; top: var(--sticky-table-top); z-index: 11; }
 .mini-table th {
   color: #969aa2; background: #202225; text-transform: uppercase;
   font-size: 0.68rem; letter-spacing: 0.06em; padding: 0.55rem 0.7rem; text-align: left;
@@ -839,6 +851,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   /* Stats page */
   .stats-container { padding: 1rem 0.75rem; }
   .stats-container h1 { font-size: 1.2rem; }
+  .match-stats-container { --sticky-panel-top: 152px; --sticky-table-top: 194px; }
   .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .match-grid { grid-template-columns: 1fr; }
   .detail-grid { grid-template-columns: 1fr; }
@@ -994,28 +1007,30 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <!-- Leaderboard Page -->
   <div class="page" id="page-leaderboard">
     <div class="stats-container match-stats-container">
-      <header>
-        <h1>Leaderboard</h1>
-        <div class="subtitle">Slice by duration, player, and civilization</div>
-      </header>
-      <div class="match-controls">
-        <label class="filter-label">Duration
-          <select id="leaderboard-period-select" class="filter-control" onchange="setLeaderboardPeriod(this.value)">
-            <option value="all" selected>All time</option>
-            <option value="year">1 year</option>
-            <option value="month6">6 months</option>
-            <option value="month3">3 months</option>
-            <option value="month">1 month</option>
-            <option value="week">1 week</option>
-          </select>
-        </label>
-        <label class="filter-label">Min matches
-          <input id="leaderboard-min-matches" class="filter-control filter-input" type="number" min="0" step="1" value="0"
-            oninput="setLeaderboardMinMatches(this.value)">
-        </label>
-        <div class="period-tabs">
-          <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
-          <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
+      <div class="sticky-page-context">
+        <header>
+          <h1>Leaderboard</h1>
+          <div class="subtitle">Slice by duration, player, and civilization</div>
+        </header>
+        <div class="match-controls">
+          <label class="filter-label">Duration
+            <select id="leaderboard-period-select" class="filter-control" onchange="setLeaderboardPeriod(this.value)">
+              <option value="all" selected>All time</option>
+              <option value="year">1 year</option>
+              <option value="month6">6 months</option>
+              <option value="month3">3 months</option>
+              <option value="month">1 month</option>
+              <option value="week">1 week</option>
+            </select>
+          </label>
+          <label class="filter-label">Min matches
+            <input id="leaderboard-min-matches" class="filter-control filter-input" type="number" min="0" step="1" value="0"
+              oninput="setLeaderboardMinMatches(this.value)">
+          </label>
+          <div class="period-tabs">
+            <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
+            <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
+          </div>
         </div>
       </div>
       <div class="match-panel" id="leaderboard-panel"></div>
@@ -1026,25 +1041,27 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <!-- Player Profile Page -->
   <div class="page" id="page-player-profile">
     <div class="stats-container match-stats-container">
-      <header>
-        <h1>Player Profile</h1>
-        <div class="subtitle" id="player-profile-subtitle">Player style, win rates, tags, allies, opponents, and matches</div>
-      </header>
-      <div class="match-controls">
-        <button class="period-tab" type="button" onclick="showPage('leaderboard')">Leaderboard</button>
-        <label class="filter-label">Duration
-          <select id="player-profile-period-select" class="filter-control" onchange="setPlayerProfilePeriod(this.value)">
-            <option value="all" selected>All time</option>
-            <option value="year">1 year</option>
-            <option value="month6">6 months</option>
-            <option value="month3">3 months</option>
-            <option value="month">1 month</option>
-            <option value="week">1 week</option>
-          </select>
-        </label>
-        <div class="period-tabs">
-          <button class="period-tab selected" data-player-view="overview" onclick="setPlayerProfileView('overview')">Overview</button>
-          <button class="period-tab" data-player-view="matches" onclick="setPlayerProfileView('matches')">All matches</button>
+      <div class="sticky-page-context">
+        <header>
+          <h1>Player Profile</h1>
+          <div class="subtitle" id="player-profile-subtitle">Player style, win rates, tags, allies, opponents, and matches</div>
+        </header>
+        <div class="match-controls">
+          <button class="period-tab" type="button" onclick="showPage('leaderboard')">Leaderboard</button>
+          <label class="filter-label">Duration
+            <select id="player-profile-period-select" class="filter-control" onchange="setPlayerProfilePeriod(this.value)">
+              <option value="all" selected>All time</option>
+              <option value="year">1 year</option>
+              <option value="month6">6 months</option>
+              <option value="month3">3 months</option>
+              <option value="month">1 month</option>
+              <option value="week">1 week</option>
+            </select>
+          </label>
+          <div class="period-tabs">
+            <button class="period-tab selected" data-player-view="overview" onclick="setPlayerProfileView('overview')">Overview</button>
+            <button class="period-tab" data-player-view="matches" onclick="setPlayerProfileView('matches')">All matches</button>
+          </div>
         </div>
       </div>
       <div id="player-detail">
@@ -1079,35 +1096,37 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <!-- Match Stats Page -->
   <div class="page" id="page-match-stats">
     <div class="stats-container match-stats-container">
-      <header>
-        <h1>Match Statistics</h1>
-        <div class="subtitle">Player-filtered form, win rates, civs, maps, teammates and recent games</div>
-      </header>
-      <div class="match-controls">
-        <label class="filter-label">Duration
-          <select id="match-period-select" class="filter-control" onchange="setMatchPeriod(this.value)">
-            <option value="all" selected>All time</option>
-            <option value="year">1 year</option>
-            <option value="month6">6 months</option>
-            <option value="month3">3 months</option>
-            <option value="month">1 month</option>
-            <option value="week">1 week</option>
-          </select>
-        </label>
-        <div class="player-picker" id="match-player-picker">
-          <button class="player-picker-button" type="button" onclick="toggleMatchPlayerPicker()">
-            <span id="match-player-current" class="player-picker-current"></span>
-            <span class="player-picker-caret">&#9662;</span>
-          </button>
-          <div class="player-picker-menu" id="match-player-menu">
-            <input id="match-player-search" class="player-picker-search" type="text"
-              placeholder="Search player" oninput="filterMatchPlayers(this.value)" onfocus="openMatchPlayerPicker()">
-            <div class="player-picker-options" id="match-player-options"></div>
+      <div class="sticky-page-context">
+        <header>
+          <h1>Match Statistics</h1>
+          <div class="subtitle">Player-filtered form, win rates, civs, maps, teammates and recent games</div>
+        </header>
+        <div class="match-controls">
+          <label class="filter-label">Duration
+            <select id="match-period-select" class="filter-control" onchange="setMatchPeriod(this.value)">
+              <option value="all" selected>All time</option>
+              <option value="year">1 year</option>
+              <option value="month6">6 months</option>
+              <option value="month3">3 months</option>
+              <option value="month">1 month</option>
+              <option value="week">1 week</option>
+            </select>
+          </label>
+          <div class="player-picker" id="match-player-picker">
+            <button class="player-picker-button" type="button" onclick="toggleMatchPlayerPicker()">
+              <span id="match-player-current" class="player-picker-current"></span>
+              <span class="player-picker-caret">&#9662;</span>
+            </button>
+            <div class="player-picker-menu" id="match-player-menu">
+              <input id="match-player-search" class="player-picker-search" type="text"
+                placeholder="Search player" oninput="filterMatchPlayers(this.value)" onfocus="openMatchPlayerPicker()">
+              <div class="player-picker-options" id="match-player-options"></div>
+            </div>
           </div>
-        </div>
-        <div class="period-tabs">
-          <button class="period-tab selected" data-match-view="overview" onclick="setMatchView('overview')">Overview</button>
-          <button class="period-tab" data-match-view="matches" onclick="setMatchView('matches')">All matches</button>
+          <div class="period-tabs">
+            <button class="period-tab selected" data-match-view="overview" onclick="setMatchView('overview')">Overview</button>
+            <button class="period-tab" data-match-view="matches" onclick="setMatchView('matches')">All matches</button>
+          </div>
         </div>
       </div>
       <div class="metric-grid" id="match-summary"></div>
@@ -1252,12 +1271,114 @@ function showToast(msg, type) {
 }
 
 /* ─── Navigation ─── */
-function showPage(page) {
+var routeApplying = false;
+
+function routePath(page) {
+  if (page === 'player-profile' && playerProfileUserId) return '/player/' + encodeURIComponent(playerProfileUserId);
+  return {
+    strategies: '/strategies',
+    luck: '/luck',
+    'match-stats': '/match-stats',
+    leaderboard: '/leaderboard',
+    'civ-stats': '/civ-stats',
+    dashboard: '/dashboard'
+  }[page] || '/strategies';
+}
+
+function routeQuery(page) {
+  var q = new URLSearchParams();
+  if (page === 'match-stats') {
+    q.set('period', matchPeriod || 'all');
+    q.set('player_id', matchPlayer || 'all');
+    q.set('view', matchView || 'overview');
+  } else if (page === 'leaderboard') {
+    q.set('period', leaderboardPeriod || 'all');
+    q.set('mode', leaderboardMode || 'players');
+    q.set('min', String(leaderboardMinMatches || 0));
+  } else if (page === 'player-profile') {
+    q.set('period', playerProfilePeriod || 'all');
+    q.set('view', playerProfileView || 'overview');
+  } else if (page === 'luck') {
+    q.set('view', luckView || 'total');
+    if (luckPlayer) q.set('player', luckPlayer);
+  } else if (page === 'strategies') {
+    q.set('view', stratView || 'total');
+    if (stratPlayer) q.set('player', stratPlayer);
+  }
+  var s = q.toString();
+  return s ? '?' + s : '';
+}
+
+function updateRoute(page, replace) {
+  if (routeApplying) return;
+  var next = routePath(page) + routeQuery(page);
+  if (next === window.location.pathname + window.location.search) return;
+  var fn = replace ? 'replaceState' : 'pushState';
+  history[fn]({ page: page }, '', next);
+}
+
+function validPeriod(p) {
+  return ['all','year','month6','month3','month','week'].indexOf(p) >= 0 ? p : 'all';
+}
+
+function applyRouteFromLocation() {
+  var path = window.location.pathname.replace(/\/+$/, '') || '/';
+  var q = new URLSearchParams(window.location.search);
+  routeApplying = true;
+  try {
+    if (path === '/leaderboard') {
+      leaderboardPeriod = validPeriod(q.get('period'));
+      leaderboardMode = q.get('mode') === 'civs' ? 'civs' : 'players';
+      leaderboardMinMatches = Math.max(0, parseInt(q.get('min'), 10) || 0);
+      var lbSel = document.getElementById('leaderboard-period-select');
+      var lbMin = document.getElementById('leaderboard-min-matches');
+      if (lbSel) lbSel.value = leaderboardPeriod;
+      if (lbMin) lbMin.value = leaderboardMinMatches;
+      document.querySelectorAll('[data-lb-mode]').forEach(function (b) {
+        b.classList.toggle('selected', b.dataset.lbMode === leaderboardMode);
+      });
+      leaderboardData = null;
+      showPage('leaderboard', { route: false });
+    } else if (path === '/match-stats') {
+      matchPeriod = validPeriod(q.get('period'));
+      matchPlayer = q.get('player_id') || 'all';
+      matchView = q.get('view') === 'matches' ? 'matches' : 'overview';
+      var msSel = document.getElementById('match-period-select');
+      if (msSel) msSel.value = matchPeriod;
+      matchData = null;
+      showPage('match-stats', { route: false });
+    } else if (path.indexOf('/player/') === 0 || path.indexOf('/player-profile/') === 0) {
+      var id = decodeURIComponent(path.split('/').pop() || '');
+      playerProfileView = q.get('view') === 'matches' ? 'matches' : 'overview';
+      loadPlayerDetail(id, validPeriod(q.get('period')), { route: false });
+    } else if (path === '/luck') {
+      luckView = q.get('view') === 'player' ? 'player' : 'total';
+      luckPlayer = q.get('player') || luckPlayer;
+      showPage('luck', { route: false });
+    } else if (path === '/civ-stats') {
+      showPage('civ-stats', { route: false });
+    } else if (path === '/dashboard') {
+      showPage('dashboard', { route: false });
+    } else {
+      stratView = q.get('view') === 'player' ? 'player' : 'total';
+      stratPlayer = q.get('player') || stratPlayer;
+      showPage('strategies', { route: false });
+    }
+  } finally {
+    routeApplying = false;
+  }
+}
+
+function showPage(page, opts) {
+  opts = opts || {};
   currentPage = page;
   closeMobileMenu();
   document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
   var p = document.getElementById('page-' + page);
   if (p) p.classList.add('active');
+  if (opts.route !== false) updateRoute(page, !!opts.replaceRoute);
+  if (page === 'strategies') initStrategies();
+  if (page === 'civ-stats') initCivStats();
   if (page === 'dashboard') loadDashboard();
   if (page === 'luck') initLuck();
   if (page === 'match-stats') initMatchStats();
@@ -1403,24 +1524,52 @@ function fmtImpact(i, key) {
   return i && i[key] !== null && i[key] !== undefined ? String(i[key]) : '-';
 }
 function impactName(i) { return i && i.nick ? playerLink(i.user_id, i.nick) : '-'; }
+function impactTagLabels(i) {
+  var tags = [];
+  (i && i.impact_tags ? i.impact_tags : []).forEach(function (tag) { tags.push(tagLabel(tag)); });
+  strategyTagLabels(i && i.strategy_tags ? i.strategy_tags : []).forEach(function (tag) { tags.push(tag); });
+  var seen = {};
+  return tags.filter(function (tag) {
+    if (!tag || seen[tag]) return false;
+    seen[tag] = true;
+    return true;
+  });
+}
 function impactTags(i) {
-  var tags = i && i.impact_tags ? i.impact_tags : [];
+  var tags = impactTagLabels(i);
   return tags.length ? tags.map(esc).join(', ') : '-';
+}
+function impactTagSortValue(i) {
+  return impactTagLabels(i).join(', ');
 }
 function fmtImpactAvg(v) {
   return v === null || v === undefined ? '-' : String(v);
 }
-function styleTags(profile) {
+function tagLabel(tag) {
+  var labels = {
+    'Timing edge': 'Age-up tempo',
+    'Recovery': 'Reboom',
+    'Low-eco pressure': 'All-in pressure',
+    'Army pressure': 'Map pressure'
+  };
+  return labels[tag] || tag;
+}
+function strategyTagLabels(tags) {
+  return (tags || []).map(function (t) { return t && t.label ? t.label : String(t || ''); }).filter(Boolean);
+}
+function profileTagLabels(profile, strategyTags) {
   var tags = profile && profile.top_tags ? profile.top_tags : [];
-  if (!tags.length) return 'No style tags';
-  return tags.slice(0, 3).map(function (t) {
-    return t.tag + ' ' + t.count + 'x';
-  }).join(', ');
+  var out = tags.slice(0, 3).map(function (t) { return tagLabel(t.tag) + ' ' + t.count + 'x'; });
+  strategyTagLabels(strategyTags).slice(0, 3).forEach(function (tag) { out.push(tag); });
+  return out.length ? out.join(', ') : 'No style tags';
+}
+function styleTags(profile) {
+  return profileTagLabels(profile, []);
 }
 function scoutTraits(profile) {
   var report = profile && profile.scout_report ? profile.scout_report : {};
   var traits = report.traits || [];
-  return traits.length ? traits.join(', ') : styleTags(profile);
+  return traits.length ? traits.map(tagLabel).join(', ') : styleTags(profile);
 }
 function relationSummary(r, empty) {
   return r ? (r.games + ' matches, ' + fmtPct(r.winrate) + ' win rate') : empty;
@@ -1468,14 +1617,20 @@ function setMatchPeriod(p) {
   matchPeriod = p;
   var sel = document.getElementById('match-period-select');
   if (sel) sel.value = p;
+  updateRoute('match-stats', true);
   loadMatchStats();
 }
-function setMatchPlayer(p) { matchPlayer = p || 'all'; loadMatchStats(); }
+function setMatchPlayer(p) {
+  matchPlayer = p || 'all';
+  updateRoute('match-stats', true);
+  loadMatchStats();
+}
 function setMatchView(v) {
   matchView = v || 'overview';
   document.querySelectorAll('[data-match-view]').forEach(function (b) {
     b.classList.toggle('selected', b.dataset.matchView === matchView);
   });
+  updateRoute('match-stats', true);
   renderMatchStats();
 }
 
@@ -1557,6 +1712,7 @@ function filterMatchPlayers(q) { renderMatchPlayerPicker(q); }
 function chooseMatchPlayer(id) {
   matchPlayer = id || 'all';
   closeMatchPlayerPicker();
+  updateRoute('match-stats', true);
   loadMatchStats();
 }
 
@@ -1570,7 +1726,7 @@ function avatarImg(url, name) {
   return '<img class="player-avatar" src="' + esc(url) + '" alt="' + esc(name || 'player') + '">';
 }
 function playerProfileHref(userId) {
-  return '#player-profile-' + encodeURIComponent(userId || '');
+  return '/player/' + encodeURIComponent(userId || '') + '?period=' + encodeURIComponent(profilePeriodForCurrentPage()) + '&view=overview';
 }
 function playerLink(userId, name, html) {
   if (!userId) return html || esc(name || '-');
@@ -1657,10 +1813,10 @@ function rowPlayerImpactData(r, userId) {
 function rosterTagClass(tag) {
   tag = String(tag || '').toLowerCase();
   if (tag.indexOf('boom') >= 0) return 'boom';
-  if (tag.indexOf('army') >= 0 || tag.indexOf('pressure') >= 0) return 'army';
-  if (tag.indexOf('eco') >= 0 || tag.indexOf('carry') >= 0) return 'eco';
-  if (tag.indexOf('timing') >= 0) return 'timing';
-  if (tag.indexOf('recovery') >= 0) return 'recovery';
+  if (tag.indexOf('army') >= 0 || tag.indexOf('pressure') >= 0 || tag.indexOf('scout') >= 0 || tag.indexOf('maa') >= 0) return 'army';
+  if (tag.indexOf('eco') >= 0 || tag.indexOf('carry') >= 0 || tag.indexOf('greedy') >= 0) return 'eco';
+  if (tag.indexOf('timing') >= 0 || tag.indexOf('tempo') >= 0 || tag.indexOf('xbow') >= 0 || tag.indexOf('castle') >= 0) return 'timing';
+  if (tag.indexOf('recovery') >= 0 || tag.indexOf('reboom') >= 0 || tag.indexOf('turtle') >= 0) return 'recovery';
   return '';
 }
 function rosterTagPills(tags) {
@@ -1677,7 +1833,7 @@ function matchTeamCard(teamName, players) {
   var resultClass = teamResult === 'W' ? ' winning-team' : teamResult === 'L' ? ' losing-team' : '';
   var rows = players.map(function (p) {
     var impact = p.impact || {};
-    var tagList = impact.impact_tags || [];
+    var tagList = impactTagLabels(impact);
     var tags = tagList.length ? tagList.join(', ') : 'No tags';
     var isTop = topPlayer && p === topPlayer;
     var score = impact.impact_score == null ? '-' : String(impact.impact_score);
@@ -1719,16 +1875,15 @@ function renderMatchSummary() {
   var s = matchData.summary || {};
   if (matchData.scope === 'player') {
     var p = s.impact_profile || {};
-    var report = p.scout_report || {};
+    var style = scoredPlaystyle({ summary: s, durations: matchData.durations || [] });
     document.getElementById('match-summary').innerHTML = [
       selectedPlayerCard(s),
       card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
-      card('Generated scout report', report.headline || p.style || 'No replay style',
-        report.description || p.summary || 'No parsed replay impact data'),
-      card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
-      card('Top tags', styleTags(p), 'aggregated match tags'),
+      card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
+      card('Style traits', profileTagLabels(p, s.strategy_tags), 'impact + strategy tags'),
+      card('Top tags', profileTagLabels(p, s.strategy_tags), 'aggregated match tags'),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
         + '</div></div>'
@@ -1912,7 +2067,7 @@ function renderMatchTables() {
       { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'impact_score'); } },
       { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'army_score'); } },
       { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, matchPlayer), 'eco_score'); } },
-      { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowPlayerImpactData(r, matchPlayer); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowPlayerImpactData(r, matchPlayer)); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { return impactTagSortValue(rowPlayerImpactData(r, matchPlayer)); }, render: function (r) { return impactTags(rowPlayerImpactData(r, matchPlayer)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
     ], (matchData.recent || []).slice(0, 12), 'No recent matches.', null, matchDetailRow);
   } else {
@@ -1934,7 +2089,7 @@ function renderMatchTables() {
       { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'impact_score'); } },
       { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'army_score'); } },
       { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowImpactData(r); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowImpactData(r), 'eco_score'); } },
-      { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowImpactData(r); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowImpactData(r)); } },
+      { key: 'impact_tags', label: 'Tags', value: function (r) { return impactTagSortValue(rowImpactData(r)); }, render: function (r) { return impactTags(rowImpactData(r)); } },
       { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
       { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
     ], (matchData.recent || []).slice(0, 20), 'No recent matches.', null, matchDetailRow);
@@ -1967,6 +2122,7 @@ function setLeaderboardPeriod(p) {
   leaderboardPeriod = p;
   var sel = document.getElementById('leaderboard-period-select');
   if (sel) sel.value = p;
+  updateRoute('leaderboard', true);
   loadLeaderboard();
 }
 
@@ -1974,6 +2130,7 @@ function setLeaderboardMinMatches(v) {
   leaderboardMinMatches = Math.max(0, parseInt(v, 10) || 0);
   var input = document.getElementById('leaderboard-min-matches');
   if (input && String(input.value) !== String(leaderboardMinMatches)) input.value = leaderboardMinMatches;
+  updateRoute('leaderboard', true);
   renderLeaderboard();
 }
 
@@ -1984,6 +2141,7 @@ function setLeaderboardMode(m) {
   });
   leaderboardPlayer = null;
   playerDetailData = null;
+  updateRoute('leaderboard', true);
   loadLeaderboard();
 }
 
@@ -2049,6 +2207,7 @@ function setPlayerProfilePeriod(p) {
   playerProfilePeriod = p || 'all';
   var sel = document.getElementById('player-profile-period-select');
   if (sel) sel.value = playerProfilePeriod;
+  updateRoute('player-profile', true);
   if (playerProfileUserId) loadPlayerDetail(playerProfileUserId, playerProfilePeriod);
 }
 
@@ -2062,15 +2221,18 @@ function setPlayerProfileView(v) {
   if (overview) overview.style.display = playerProfileView === 'overview' ? '' : 'none';
   if (matches) matches.style.display = playerProfileView === 'matches' ? '' : 'none';
   if (playerDetailData) renderPlayerMatchesView(playerDetailData);
+  updateRoute('player-profile', true);
 }
 
-async function loadPlayerDetail(userId, period) {
+async function loadPlayerDetail(userId, period, opts) {
+  opts = opts || {};
   leaderboardPlayer = userId;
   playerProfileUserId = userId;
   playerProfilePeriod = period || playerProfilePeriod || 'all';
   var sel = document.getElementById('player-profile-period-select');
   if (sel) sel.value = playerProfilePeriod;
-  showPage('player-profile');
+  showPage('player-profile', { route: false });
+  if (opts.route !== false) updateRoute('player-profile', false);
   document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
   document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
   try {
@@ -2095,9 +2257,9 @@ async function loadPlayerDetail(userId, period) {
 function renderPlayerDetail(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
-  var report = p.scout_report || {};
+  var style = scoredPlaystyle(d);
   var subtitle = document.getElementById('player-profile-subtitle');
-  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + playstyleHeadline(d);
+  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + style.label;
   setPlayerProfileView(playerProfileView);
   document.getElementById('player-description').innerHTML = playerProfileDescription(d);
   document.getElementById('player-detail-summary').innerHTML = [
@@ -2107,13 +2269,12 @@ function renderPlayerDetail(d) {
     card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
     card('Best ally', relationName(s.best_ally, 'No ally sample'), relationSummary(s.best_ally, 'ranked teammate sample')),
     card('Worst enemy', relationName(s.worst_enemy, 'No enemy sample'), relationSummary(s.worst_enemy, 'ranked opponent sample')),
-    card('Generated scout report', playstyleHeadline(d),
-      report.description || p.summary || 'No parsed replay impact data'),
-    card('Style traits', scoutTraits(p), 'tags, civs, duration windows'),
+    card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
+    card('Style traits', profileTagLabels(p, s.strategy_tags), 'impact + strategy tags'),
     card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
     card('Impact mix', 'Army ' + fmtImpactAvg(p.avg_army) + ' / Eco ' + fmtImpactAvg(p.avg_eco),
-      'Timing ' + fmtImpactAvg(p.avg_timing) + ' / Recovery ' + fmtImpactAvg(p.avg_recovery)),
-    card('Top tags', styleTags(p), 'aggregated match tags'),
+      'Age-up tempo ' + fmtImpactAvg(p.avg_timing) + ' / Reboom ' + fmtImpactAvg(p.avg_recovery)),
+    card('Top tags', profileTagLabels(p, s.strategy_tags), 'aggregated match tags'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
 
@@ -2153,7 +2314,7 @@ function renderPlayerDetail(d) {
     { key: 'impact_score', label: 'Impact', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.impact_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'impact_score'); } },
     { key: 'army_score', label: 'Army', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.army_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'army_score'); } },
     { key: 'eco_score', label: 'Eco', type: 'number', className: 'num', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? i.eco_score : null; }, render: function (r) { return fmtImpact(rowPlayerImpactData(r, playerProfileUserId), 'eco_score'); } },
-    { key: 'impact_tags', label: 'Tags', value: function (r) { var i = rowPlayerImpactData(r, playerProfileUserId); return i ? (i.impact_tags || []).join(', ') : ''; }, render: function (r) { return impactTags(rowPlayerImpactData(r, playerProfileUserId)); } },
+    { key: 'impact_tags', label: 'Tags', value: function (r) { return impactTagSortValue(rowPlayerImpactData(r, playerProfileUserId)); }, render: function (r) { return impactTags(rowPlayerImpactData(r, playerProfileUserId)); } },
     { key: 'duration_s', label: 'Duration', type: 'number', className: 'num', render: function (r) { return fmtDuration(r.duration_s); } },
     { key: 'at', label: 'When', type: 'number', className: 'num', render: function (r) { return esc(fmtAgo(r.at)); } },
     { key: 'match_id', label: 'ID', type: 'number', className: 'num', render: function (r) { return '#' + esc(r.match_id); } }
@@ -2203,16 +2364,16 @@ function styleRead(style) {
 }
 
 function impactStyleLabel(style, leader) {
-  if (style === 'Pressure player') return 'Tempo pressure player';
-  if (style === 'Boom carry') return 'Boom-first carry';
-  if (style === 'Economy carry') return 'Boom-and-carry player';
-  if (style === 'Timing specialist') return 'Timing-window specialist';
-  if (style === 'Recovery anchor') return 'Recovery anchor';
+  if (style === 'Pressure player') return 'Flank pressure engine';
+  if (style === 'Boom carry') return 'Pocket boom carry';
+  if (style === 'Economy carry') return 'Eco-to-Imperial carry';
+  if (style === 'Timing specialist') return 'Castle-age timing hitter';
+  if (style === 'Recovery anchor') return 'Reboom anchor';
   if (style === 'High-impact flex') return 'High-impact flex';
-  if (leader && leader[0] === 'army') return 'Army-first flex';
+  if (leader && leader[0] === 'army') return 'Map-control army flex';
   if (leader && leader[0] === 'eco') return 'Eco-leaning flex';
-  if (leader && leader[0] === 'timing') return 'Timing-leaning flex';
-  if (leader && leader[0] === 'recovery') return 'Stabilizing flex';
+  if (leader && leader[0] === 'timing') return 'Upgrade-window flex';
+  if (leader && leader[0] === 'recovery') return 'Hold-and-reboom flex';
   return 'Map-adaptive team-game flex';
 }
 
@@ -2276,19 +2437,212 @@ function luckCardText(profile, key, empty) {
   return row.games + ' games, ' + row.pct + '% of valid starts, ' + fmtPct(row.winrate) + ' win rate';
 }
 
-function playstyleHeadline(d) {
+function impactNum(v) {
+  return v === null || v === undefined || v === '' ? null : Number(v);
+}
+
+function tagStat(profile, tag) {
+  var rows = profile && profile.top_tags ? profile.top_tags : [];
+  var row = rows.find(function (t) { return t.tag === tag; });
+  return row || { tag: tag, count: 0, rate: 0 };
+}
+
+function hasStrategyKey(tags, keys) {
+  var set = {};
+  keys.forEach(function (k) { set[k] = true; });
+  return (tags || []).some(function (t) { return t && set[t.key]; });
+}
+
+function strategyTagEvidence(tags) {
+  tags = tags || [];
+  if (!tags.length) return '';
+  return strategyTagLabels(tags).slice(0, 3).join(', ');
+}
+
+function strategyTopCategory(strategy) {
+  var mix = strategy && strategy.army_mix ? strategy.army_mix : [];
+  return mix.length ? String(mix[0].category || '') : '';
+}
+
+function strategyTopUnit(strategy) {
+  var units = strategy && strategy.top_units ? strategy.top_units : [];
+  return units.length ? String(units[0].unit || units[0].category || '') : '';
+}
+
+function hasStrategyTech(strategy, pattern) {
+  var rows = []
+    .concat(strategy && strategy.eco_techs ? strategy.eco_techs : [])
+    .concat(strategy && strategy.army_techs ? strategy.army_techs : []);
+  var rx = new RegExp(pattern, 'i');
+  return rows.some(function (t) { return rx.test(String(t.tech || '')); });
+}
+
+function strategySignalText(strategy) {
+  if (!strategy || !strategy.games) return 'no unit/tech sample yet';
+  var bits = [];
+  if (strategy.quiet_boom_games) bits.push(strategy.quiet_boom_rate + '% quiet-boom starts');
+  if (strategy.avg_pre_castle_military !== null && strategy.avg_pre_castle_military !== undefined) bits.push(strategy.avg_pre_castle_military + ' pre-Castle military');
+  if (strategy.avg_castle_min) bits.push('Castle at ' + minutesText(strategy.avg_castle_min));
+  if (strategy.avg_imperial_min) bits.push('Imp at ' + minutesText(strategy.avg_imperial_min));
+  if (strategyTopUnit(strategy)) bits.push('leans ' + strategyTopUnit(strategy));
+  return bits.length ? bits.join(', ') : 'sample has no clear army/eco timing';
+}
+
+function addStyleCandidate(candidates, label, score, read, reasons) {
+  if (!score || score < 1) return;
+  candidates.push({ label: label, score: score, read: read, reasons: reasons.filter(Boolean) });
+}
+
+function scoredPlaystyle(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
-  var leader = impactLeader(p);
+  var strategy = s.strategy_profile || {};
+  var strategyTags = s.strategy_tags || [];
   var luck = luckProfileForPlayer(s.nick);
-  if (luck && luck.best && luck.best.delta >= 4) {
-    if (luck.best.key === 'spawn_isolated') return 'Free-boom map adapter';
-    if (luck.best.key === 'spawn_near_enemy') return 'Close-spawn pressure fighter';
-    if (luck.best.key === 'spawn_near_ally') return 'Ally-cluster team fighter';
-    if (luck.best.key.indexOf('_poor') >= 0) return 'Scrappy bad-spawn stabilizer';
+  var leader = impactLeader(p);
+  var army = impactNum(p.avg_army) || 0;
+  var eco = impactNum(p.avg_eco) || 0;
+  var timing = impactNum(p.avg_timing) || 0;
+  var recovery = impactNum(p.avg_recovery) || 0;
+  var avgImpact = impactNum(p.avg_impact) || 0;
+  var quietBoomRate = impactNum(strategy.quiet_boom_rate) || 0;
+  var preCastleMil = impactNum(strategy.avg_pre_castle_military) || 0;
+  var castleMin = impactNum(strategy.avg_castle_min) || 0;
+  var impMin = impactNum(strategy.avg_imperial_min) || 0;
+  var armyPressureTags = tagStat(p, 'Army pressure').count + tagStat(p, 'Low-eco pressure').count;
+  var boomTagCount = tagStat(p, 'Boom carry').count + tagStat(p, 'Eco carry').count;
+  var timingTagCount = tagStat(p, 'Timing edge').count;
+  var recoveryTagCount = tagStat(p, 'Recovery').count;
+  var highImpactTagCount = tagStat(p, 'High impact').count;
+  var armyPressureRate = tagStat(p, 'Army pressure').rate + tagStat(p, 'Low-eco pressure').rate;
+  var boomTagRate = tagStat(p, 'Boom carry').rate + tagStat(p, 'Eco carry').rate;
+  var timingTagRate = tagStat(p, 'Timing edge').rate;
+  var recoveryTagRate = tagStat(p, 'Recovery').rate;
+  var highImpactTagRate = tagStat(p, 'High impact').rate;
+  var topCat = strategyTopCategory(strategy).toLowerCase();
+  var topUnit = strategyTopUnit(strategy).toLowerCase();
+  var durationRows = p.duration_edges && p.duration_edges.length ? p.duration_edges : (d.durations || []);
+  var longGameEdge = durationRows.some(function (r) {
+    return r && r.bucket === 'More than 40 min' && Number(r.games || 0) >= 3 && Number(r.winrate || 0) >= 55;
+  });
+  var cavalryLean = /cavalry|knight|camel|scout|hussar|light cavalry|steppe/.test(topCat + ' ' + topUnit);
+  var archerLean = /archer|skirm|crossbow|chu ko nu|hand cannoneer/.test(topCat + ' ' + topUnit);
+  var infantryLean = /infantry|spear|pikeman|halberd|militia|eagle|champion/.test(topCat + ' ' + topUnit);
+  var siegeLean = /siege|mangonel|ram|scorpion|trebuchet|bombard/.test(topCat + ' ' + topUnit);
+  var poorSpawnBest = luck && luck.best && luck.best.key && luck.best.key.indexOf('_poor') >= 0 && luck.best.delta >= 6;
+  var isolatedBest = luck && luck.best && luck.best.key === 'spawn_isolated' && luck.best.delta >= 4;
+  var nearEnemyBest = luck && luck.best && luck.best.key === 'spawn_near_enemy' && luck.best.delta >= 3;
+  var nearEnemyFrequent = luck && luck.exposure[0] && luck.exposure[0].key === 'spawn_near_enemy';
+  var candidates = [];
+  var boomStrategy = hasStrategyKey(strategyTags, ['boom_to_imp']);
+  var scoutKnightStrategy = hasStrategyKey(strategyTags, ['scout_rush', 'knight_rush', 'late_knight', 'camel_rush', 'late_camel']);
+  var archerStrategy = hasStrategyKey(strategyTags, ['archer_rush', 'crossbow_rush', 'late_crossbow', 'cav_archer_rush', 'late_cav_archer']);
+  var castleSiegeStrategy = hasStrategyKey(strategyTags, ['forward_castle', 'safe_castle', 'ram_push', 'late_ram']);
+  var maaStrategy = hasStrategyKey(strategyTags, ['maa_rush']);
+
+  addStyleCandidate(candidates, 'Pocket boom carry',
+    eco + quietBoomRate * 0.45 + boomTagRate * 0.45 + (boomStrategy ? 14 : 0) + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.7,
+    'Pocket-boom read: wants space, adds TCs/eco techs, then converts villager lead into late Castle or Imperial army mass.',
+    [
+      quietBoomRate ? quietBoomRate + '% quiet-boom openings' : '',
+      eco ? 'eco score ' + fmtImpactAvg(eco) : '',
+      strategy.avg_imperial_min ? 'Imp around ' + minutesText(strategy.avg_imperial_min) : '',
+      isolatedBest ? 'best on isolated/free-boom starts' : '',
+      boomStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Flank pressure engine',
+    army + armyPressureRate * 0.4 + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.25,
+    'Pressure-flank read: makes army before comfort boom, contests map, raids, and buys team economy time.',
+    [
+      armyPressureTags ? armyPressureTags + ' pressure tags (' + Math.round(armyPressureRate) + '% rate)' : '',
+      preCastleMil ? preCastleMil + ' military before Castle' : '',
+      nearEnemyBest ? 'wins near-enemy spawns' : '',
+      army ? 'army score ' + fmtImpactAvg(army) : '',
+      maaStrategy ? 'strategy tag: MAA opening' : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Castle-age timing hitter',
+    timing + timingTagRate * 0.4 + (castleMin && castleMin <= 19.5 ? 8 : 0) + (hasStrategyTech(strategy, 'Bodkin|Bloodlines|Scale|Chain|Wheelbarrow') ? 3 : 0),
+    'Timing-push read: value spikes around Castle-age clicks, upgrades, and first coordinated fights.',
+    [
+      timingTagCount ? timingTagCount + ' age-up tempo tags (' + Math.round(timingTagRate) + '% rate)' : '',
+      castleMin ? 'Castle at ' + minutesText(castleMin) : '',
+      hasStrategyTech(strategy, 'Bodkin|Bloodlines|Scale|Chain|Wheelbarrow') ? 'upgrade timing sample present' : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Reboom anchor',
+    recovery + recoveryTagRate * 0.35 + (poorSpawnBest ? 5 : 0) + (tagStat(p, 'Low-eco pressure').rate ? 2 : 0),
+    'Anchor read: can take messy starts, reboom after damage, and keep a side alive until team stabilizes.',
+    [
+      recoveryTagCount ? recoveryTagCount + ' reboom tags (' + Math.round(recoveryTagRate) + '% rate)' : '',
+      recovery ? 'recovery score ' + fmtImpactAvg(recovery) : '',
+      poorSpawnBest ? 'adapts to poor-resource starts' : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Cavalry map-control pocket',
+    (cavalryLean ? 22 : 0) + (scoutKnightStrategy ? 14 : 0) + army * 0.5 + timing * 0.35 + (boomTagCount ? 4 : 0),
+    'Cavalry-pocket read: uses mobility for raids, cleanup, relic/map control, and fast swing fights after eco setup.',
+    [
+      cavalryLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
+      army ? 'army score ' + fmtImpactAvg(army) : '',
+      timing ? 'timing score ' + fmtImpactAvg(timing) : '',
+      scoutKnightStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Archer pressure flank',
+    (archerLean ? 22 : 0) + (archerStrategy ? 14 : 0) + army * 0.55 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
+    'Archer-flank read: wants early ranges, ranged mass, upgrade windows, and pressure that forces defensive skirms/towers.',
+    [
+      archerLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
+      preCastleMil ? preCastleMil + ' pre-Castle military' : '',
+      timingTagCount ? timingTagCount + ' age-up tempo tags' : '',
+      archerStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Trash-war stabilizer',
+    (infantryLean ? 10 : 0) + recovery * 0.6 + (longGameEdge ? 8 : 0) + (hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 8 : 0),
+    'Trash-war read: survives gold-light games with spear/skirm style utility, rebooms, and keeps fights playable late.',
+    [
+      infantryLean ? 'trash/infantry mix appears' : '',
+      recovery ? 'recovery score ' + fmtImpactAvg(recovery) : '',
+      hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 'trash tech sample present' : '',
+      longGameEdge ? 'strong >40 min sample' : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Siege-support closer',
+    (siegeLean ? 24 : 0) + (castleSiegeStrategy ? 14 : 0) + timing * 0.5 + avgImpact * 0.35,
+    'Siege-support read: converts map control into push power, treb/ram/mango pressure, and late-game closing fights.',
+    [
+      siegeLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
+      timing ? 'timing score ' + fmtImpactAvg(timing) : '',
+      avgImpact ? 'impact score ' + fmtImpactAvg(avgImpact) : '',
+      castleSiegeStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
+    ]);
+
+  addStyleCandidate(candidates, impactStyleLabel(p.style, leader),
+    Math.max(army, eco, timing, recovery, avgImpact) + highImpactTagRate * 0.3,
+    styleRead(p.style),
+    [
+      leader ? 'best lane ' + leader[0] + ' ' + fmtImpactAvg(leader[1]) : '',
+      highImpactTagCount ? highImpactTagCount + ' high-impact tags (' + Math.round(highImpactTagRate) + '% rate)' : '',
+      strategy.games ? strategySignalText(strategy) : ''
+    ]);
+
+  candidates.sort(function (a, b) { return b.score - a.score || a.label.localeCompare(b.label); });
+  var best = candidates[0] || {
+    label: impactStyleLabel(p.style, leader),
+    read: styleRead(p.style),
+    reasons: [strategy.games ? strategySignalText(strategy) : 'needs more parsed replay data']
+  };
+  if (best.label === 'Map-adaptive team-game flex' && luck && luck.best && luck.best.delta >= 6) {
+    best.reasons.push('spawn edge: ' + luckFactorText(luck.best.key) + ' at ' + fmtPct(luck.best.winrate));
   }
-  if (p.style === 'Boom carry') return 'Boom-into-carry player';
-  return impactStyleLabel(p.style, leader);
+  return best;
+}
+
+function playstyleHeadline(d) {
+  return scoredPlaystyle(d).label;
 }
 
 function tagRead(tags) {
@@ -2297,19 +2651,19 @@ function tagRead(tags) {
   if (primary === 'Army pressure') return 'Primary tag says pressure player: likely raids, contests map, and forces reactions.';
   if (primary === 'Boom carry') return 'Primary tag says boom carry: quiet early army, fast eco mass, then late-game carry if protected.';
   if (primary === 'Eco carry') return 'Primary tag says eco carry: give space, protect trade/boom lanes, expect scaling value.';
-  if (primary === 'Timing edge') return 'Primary tag says timing edge: strongest when team follows upgrade or age-up windows.';
-  if (primary === 'Recovery') return 'Primary tag says recovery: useful when early plan breaks and team needs stabilizing.';
+  if (primary === 'Timing edge') return 'Primary tag says age-up tempo: faster click-up windows than lobby peers, especially around Castle timing.';
+  if (primary === 'Recovery') return 'Primary tag says reboom: useful when early plan breaks and team needs eco rebuilt.';
   if (primary === 'Low-eco pressure') return 'Primary tag says low-eco pressure: can buy time, but may need teammate economy behind it.';
   if (primary === 'High impact') return 'Primary tag says high impact: broad contribution across win/loss samples.';
-  return 'Recurring tags: ' + tags.join(', ') + '.';
+  return 'Recurring tags: ' + tags.map(tagLabel).join(', ') + '.';
 }
 
 function profileWatchout(p, s) {
   var vals = [
     ['army pressure', p.avg_army],
     ['eco scaling', p.avg_eco],
-    ['timing windows', p.avg_timing],
-    ['recovery', p.avg_recovery]
+    ['age-up tempo', p.avg_timing],
+    ['reboom', p.avg_recovery]
   ].filter(function (x) { return x[1] !== null && x[1] !== undefined; });
   if (s.winrate !== null && s.winrate !== undefined && Number(s.winrate) < 45) return 'Win rate is under 45% in this slice; treat sample as form dip or rough matchup pool.';
   if (!vals.length) return 'Needs more parsed replays before weak spots are reliable.';
@@ -2331,10 +2685,64 @@ function boomRead(profile) {
   return 'No clear boom-first carry pattern yet.';
 }
 
+function minutesText(v) {
+  return v === null || v === undefined ? '-' : String(v) + 'm';
+}
+
+function strategyProfileText(strategy) {
+  if (!strategy || !strategy.games) return 'No unit/tech strategy sample yet.';
+  var parts = [];
+  if (strategy.quiet_boom_games) {
+    parts.push('quiet-boom openings in ' + strategy.quiet_boom_games + ' games (' + strategy.quiet_boom_rate + '%)');
+  } else if (strategy.avg_pre_castle_military !== null && strategy.avg_pre_castle_military !== undefined) {
+    parts.push('averages ' + strategy.avg_pre_castle_military + ' military before Castle');
+  }
+  if (strategy.avg_pre_castle_villagers !== null && strategy.avg_pre_castle_villagers !== undefined) {
+    parts.push(strategy.avg_pre_castle_villagers + ' villagers before Castle on average');
+  }
+  if (strategy.avg_castle_min) parts.push('Castle around ' + minutesText(strategy.avg_castle_min));
+  if (strategy.avg_imperial_min) parts.push('Imp around ' + minutesText(strategy.avg_imperial_min));
+  return parts.length ? parts.join('; ') + '.' : 'Parsed games do not show a strong economy/age-up pattern yet.';
+}
+
+function armyCompText(strategy) {
+  var units = strategy && strategy.top_units ? strategy.top_units : [];
+  if (!units.length) return 'No army composition sample yet.';
+  return units.slice(0, 4).map(function (u) {
+    return (u.unit || u.category || '-') + ' ' + u.total + 'x';
+  }).join(', ') + '.';
+}
+
+function armyMixText(strategy) {
+  var mix = strategy && strategy.army_mix ? strategy.army_mix : [];
+  if (!mix.length) return 'No army mix sample yet.';
+  return mix.slice(0, 3).map(function (m) {
+    return m.category + ' in ' + m.games + ' games';
+  }).join(', ') + '.';
+}
+
+function strategyTagsText(tags) {
+  tags = tags || [];
+  if (!tags.length) return 'No classified strategy tags yet.';
+  return tags.slice(0, 5).map(function (t) {
+    return (t.label || t.key || '-') + ' ' + t.games + 'x' + (t.winrate == null ? '' : ' at ' + fmtPct(t.winrate));
+  }).join(', ') + '.';
+}
+
+function techText(rows, empty) {
+  rows = rows || [];
+  if (!rows.length) return empty;
+  return rows.slice(0, 4).map(function (t) {
+    return t.tech + ' (' + t.games + ' games, avg ' + minutesText(t.avg_min) + ')';
+  }).join(', ') + '.';
+}
+
 function playerProfileDescription(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
   var report = p.scout_report || {};
+  var strategy = s.strategy_profile || {};
+  var strategyTags = s.strategy_tags || [];
   var name = s.nick || 'This player';
   var civRows = p.best_civs && p.best_civs.length ? p.best_civs : (d.civs || []);
   var durRows = p.duration_edges && p.duration_edges.length ? p.duration_edges : (d.durations || []);
@@ -2343,12 +2751,16 @@ function playerProfileDescription(d) {
   var tags = (p.top_tags || []).slice(0, 3).map(function (t) { return t.tag; });
   var leader = impactLeader(p);
   var luck = luckProfileForPlayer(name);
-  var headline = playstyleHeadline(d);
+  var style = scoredPlaystyle(d);
+  var headline = style.label;
   var elo = s.rating_end == null ? '' : ' Current end Elo is ' + fmtElo(s.rating_end) + '.';
   var first = name + ' reads as a ' + headline + ' in ' + periodLabel(playerProfilePeriod)
     + ', with ' + (s.games || 0) + ' matches and a ' + fmtPct(s.winrate) + ' win rate.' + elo;
-  var second = report.description || p.summary || 'No parsed replay sample is available yet.';
-  if (tags.length) second += ' Recurring game tags: ' + tags.join(', ') + '.';
+  var second = style.read || report.description || p.summary || 'No parsed replay sample is available yet.';
+  if (style.reasons && style.reasons.length) second += ' Evidence: ' + style.reasons.slice(0, 3).join('; ') + '.';
+  if (tags.length) second += ' Recurring game tags: ' + tags.map(tagLabel).join(', ') + '.';
+  if (strategyTags.length) second += ' Classified strategy tags: ' + strategyTagLabels(strategyTags).slice(0, 3).join(', ') + '.';
+  if (strategy.games) second += ' Strategy read: ' + strategyProfileText(strategy);
   var luckText = luckSummary(luck);
   var third = '';
   if (civ) third += name + ' gets best civ results with ' + civ.civ + ' at ' + fmtPct(civ.winrate) + ' across ' + civ.games + ' games. ';
@@ -2362,9 +2774,16 @@ function playerProfileDescription(d) {
   if (dur) setup.push(dur.bucket + ' games');
   if (setup.length === 0) setup.push('larger replay sample');
   var cards = [
-    commentaryCard('AoE read', styleRead(p.style)),
+    commentaryCard('AoE read', style.read),
+    commentaryCard('Style evidence', style.reasons && style.reasons.length ? style.reasons.slice(0, 4).join('; ') + '.' : 'Needs more parsed replay data.'),
     commentaryCard('Tag signal', tagRead(tags)),
+    commentaryCard('Strategy tags', strategyTagsText(strategyTags)),
     commentaryCard('Boom profile', boomRead(p)),
+    commentaryCard('Game plan', strategyProfileText(strategy)),
+    commentaryCard('Army comp', armyCompText(strategy)),
+    commentaryCard('Army mix', armyMixText(strategy)),
+    commentaryCard('Eco techs', techText(strategy.eco_techs, 'No economy tech timing sample yet.')),
+    commentaryCard('Army techs', techText(strategy.army_techs, 'No army tech timing sample yet.')),
     commentaryCard('Spawn read', luckText),
     commentaryCard('Free boom', luckCardText(luck, 'spawn_isolated', 'No isolated-start sample yet.')),
     commentaryCard('Early contact', luckCardText(luck, 'spawn_near_enemy', 'No near-enemy sample yet.')),
@@ -2373,7 +2792,7 @@ function playerProfileDescription(d) {
     commentaryCard('Best setup', setup.join(' + ')),
     commentaryCard('Enemy prep', s.worst_enemy ? 'Plan specifically for ' + (s.worst_enemy.nick || '-') + '; this is lowest head-to-head win rate.' : 'No tough-opponent sample yet.'),
     commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.'),
-    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, opponents, and Luck spawn factors.')
+    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, opponents, unit mix, tech timings, and Luck spawn factors.')
   ].join('');
   return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p><p>' + esc(luckText) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
     + '<div class="commentary-grid">' + cards + '</div>';
@@ -2421,17 +2840,27 @@ function setStratView(v) {
   document.getElementById('strat-tab-total').classList.toggle('selected', v === 'total');
   document.getElementById('strat-tab-player').classList.toggle('selected', v === 'player');
   document.getElementById('strat-player-select').style.display = v === 'player' ? '' : 'none';
+  if (currentPage === 'strategies') updateRoute('strategies', true);
   renderStrategies();
 }
 
-function onStratPlayer(p) { stratPlayer = p; renderStrategies(); }
+function onStratPlayer(p) {
+  stratPlayer = p;
+  if (currentPage === 'strategies') updateRoute('strategies', true);
+  renderStrategies();
+}
 
 function stratSortBy(col) {
   if (stratSort.col === col) stratSort.asc = !stratSort.asc; else { stratSort.col = col; stratSort.asc = false; }
   renderStrategies();
 }
 
-function renderStrategies() { if (stratView === 'total') renderStratTotal(); else renderStratPlayer(); }
+function renderStrategies() {
+  document.getElementById('strat-tab-total').classList.toggle('selected', stratView === 'total');
+  document.getElementById('strat-tab-player').classList.toggle('selected', stratView === 'player');
+  document.getElementById('strat-player-select').style.display = stratView === 'player' ? '' : 'none';
+  if (stratView === 'total') renderStratTotal(); else renderStratPlayer();
+}
 
 function renderStratTotal() {
   var cols = [['title', 'Strategy'], ['phase', 'Phase'], ['games', 'Games'], ['players', 'Players'], ['winrate', 'Win %']];
@@ -2506,10 +2935,15 @@ function setLuckView(v) {
   document.getElementById('luck-tab-total').classList.toggle('selected', v === 'total');
   document.getElementById('luck-tab-player').classList.toggle('selected', v === 'player');
   document.getElementById('luck-player-select').style.display = v === 'player' ? '' : 'none';
+  if (currentPage === 'luck') updateRoute('luck', true);
   renderLuck();
 }
 
-function onLuckPlayer(p) { luckPlayer = p; renderLuck(); }
+function onLuckPlayer(p) {
+  luckPlayer = p;
+  if (currentPage === 'luck') updateRoute('luck', true);
+  renderLuck();
+}
 
 function deltaCell(wr) {
   if (wr == null) return '<td>-</td>';
@@ -2517,7 +2951,12 @@ function deltaCell(wr) {
   return '<td class="' + cls + '">' + (d > 0 ? '+' : '') + d + '</td>';
 }
 
-function renderLuck() { if (luckView === 'total') renderLuckTotal(); else renderLuckPlayer(); }
+function renderLuck() {
+  document.getElementById('luck-tab-total').classList.toggle('selected', luckView === 'total');
+  document.getElementById('luck-tab-player').classList.toggle('selected', luckView === 'player');
+  document.getElementById('luck-player-select').style.display = luckView === 'player' ? '' : 'none';
+  if (luckView === 'total') renderLuckTotal(); else renderLuckPlayer();
+}
 
 function renderLuckTotal() {
   document.getElementById('luck-header').innerHTML =
@@ -3000,15 +3439,20 @@ document.addEventListener('click', function (e) {
   if (picker && !picker.contains(e.target)) closeMatchPlayerPicker();
 });
 
+window.addEventListener('popstate', applyRouteFromLocation);
+
 /* ─── Init ─── */
 // Hide sidebar panels initially (shown when dashboard loads)
 document.getElementById('guild_nav').style.display = 'none';
 document.getElementById('guild_menu').style.display = 'none';
 document.getElementById('mobile-menu-btn').style.display = 'none';
 
-checkAuth();
-initStrategies();
-initCivStats();
+async function bootApp() {
+  await checkAuth();
+  applyRouteFromLocation();
+}
+
+bootApp();
 </script>
 </body>
 </html>

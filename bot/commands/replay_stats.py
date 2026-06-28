@@ -61,7 +61,7 @@ async def replaystats_reingest(ctx, match_id):
         return await ctx.error("A replay-stats sweep is in progress — try again in a moment.")
     jobs._running = True   # coarse lock: keep the tick's sweep from overlapping this match
     try:
-        await jobs.ingest_one(mid, None, None, int(time.time()))
+        await jobs.ingest_one(mid, None, None, int(time.time()), post_summary=False)
     finally:
         jobs._running = False
     await ctx.success(f"Re-ingested aoe2 match {mid} (see /replaystats status).",
