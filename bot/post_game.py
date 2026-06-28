@@ -33,6 +33,12 @@ BOT_PCT = 0.15      # bottom 15% counts as a weak pick
 TEAM_GAP_MIN = 0.03  # min avg-winrate gap between team civ pools to comment on
 MAX_BULLETS = 4
 MAX_ANALYSIS_LINES = 6
+MAX_CARD_TAGS = 3
+
+
+def _clip(text, limit=28):
+	text = str(text or "?")
+	return text if len(text) <= limit else text[:max(1, limit - 1)] + "…"
 
 
 # ── Pure analysis helpers (no DB / Discord — unit tested) ────────────────
@@ -261,6 +267,41 @@ def _team_tag_summary(team_rows):
 	return [tag for tag, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]]
 
 
+def _tag_chip(tag):
+	return f"`{tag}`"
+
+
+def _player_card_line(player, carry=False):
+	tags = [_tag_chip(t) for t in (player.get("impact_tags") or [])[:MAX_CARD_TAGS]]
+	chips = " ".join(tags) if tags else "`No tags`"
+	carry_badge = " 👑 **CARRY**" if carry else ""
+	score = player.get("impact_score")
+	score_text = f"`{score}`" if score is not None else "`?`"
+	return (
+		f"{'⭐ ' if carry else '• '}**{_clip(player.get('nick'), 24)}**{carry_badge} — "
+		f"**{_clip(player.get('civ'), 18)}** · {score_text}\n"
+		f"  {chips}"
+	)
+
+
+def _team_card_fields(player_rows, team_names=None):
+	team_names = team_names or {0: "Alpha", 1: "Beta"}
+	teams = _team_impact_rows(player_rows)
+	fields = []
+	for team in sorted(teams):
+		rows = sorted(teams[team], key=lambda p: (p.get("impact_score") or 0), reverse=True)
+		result = next((p.get("result") for p in rows if p.get("result")), None)
+		icon = "🟩" if result == "W" else "🟥" if result == "L" else "⬜"
+		carry_nick = rows[0].get("nick") if rows else None
+		lines = [_player_card_line(p, carry=(p.get("nick") == carry_nick)) for p in rows]
+		fields.append({
+			"name": f"{icon} {team_names.get(team, f'Team {team}')} · {result or '?'}",
+			"value": "\n".join(lines)[:1024] or "No players",
+			"inline": True,
+		})
+	return fields
+
+
 def _match_analysis_lines(player_rows, team_names=None):
 	team_names = team_names or {0: "Alpha", 1: "Beta"}
 	teams = _team_impact_rows(player_rows)
@@ -465,6 +506,29 @@ async def build_match_analysis_embed(channel_id, bot_match_id):
 	return embed
 
 
+async def build_match_cards_embed(channel_id, bot_match_id):
+	"""Card-like team summary for Discord. Uses embed fields to mimic side-by-side cards."""
+	rows = await _analysis_rows(bot_match_id)
+	if not rows:
+		return None
+	player_rows = [_impact_payload(row, rows) for row in rows]
+	fields = _team_card_fields(player_rows, await _team_names(channel_id, bot_match_id))
+	if not fields:
+		return None
+
+	from nextcord import Colour, Embed
+
+	embed = Embed(
+		title="🧾 Match Cards",
+		colour=Colour(0x2ecc71),
+		description="Impact score is relative inside this match. Tags come from replay timing, eco, and army signals.",
+	)
+	for f in fields[:2]:
+		embed.add_field(name=f["name"], value=f["value"], inline=f["inline"])
+	embed.set_footer(text="Score = replay impact; carry = highest impact on that team")
+	return embed
+
+
 async def post_match_analysis(bot_match_id):
 	"""Best-effort Discord post once replay analysis is stored."""
 	try:
@@ -477,10 +541,14 @@ async def post_match_analysis(bot_match_id):
 		channel = dc.get_channel(channel_id)
 		if channel is None:
 			return False
+		cards = await build_match_cards_embed(channel_id, bot_match_id)
 		embed = await build_match_analysis_embed(channel_id, bot_match_id)
-		if embed is None:
+		if cards is None and embed is None:
 			return False
-		await channel.send(embed=embed)
+		if cards is not None and embed is not None:
+			await channel.send(embeds=[cards, embed])
+		else:
+			await channel.send(embed=cards or embed)
 		return True
 	except Exception as e:
 		log.error(f"Replay post-game analysis send failed (bot match {bot_match_id}): {e}")
