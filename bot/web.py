@@ -18,6 +18,7 @@ from core.cfg_factory import (
 from core.client import dc
 from core.database import db
 import bot
+from bot.tag_leaderboard import tag_leaderboard_score
 
 # --- Paths ---
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
@@ -50,6 +51,15 @@ STRATEGY_TAG_LABELS = {
 	"late_unique": "UU spam",
 	"late_ram": "Late siege push",
 	"boom_to_imp": "Greedy boom to Imp",
+}
+IMPACT_TAG_LABELS = {
+	"Low-eco pressure": "All-in pressure",
+	"Army pressure": "Map pressure",
+	"Boom carry": "Boom carry",
+	"Eco carry": "Eco carry",
+	"Timing edge": "Age-up tempo",
+	"Recovery": "Reboom",
+	"High impact": "High impact",
 }
 
 # --- Session store (Layer 5: migrated from in-memory dicts to MySQL) ---
@@ -806,6 +816,169 @@ def _impact_payload(row, group):
 			"recovery_score": recovery,
 			"impact_tags": tags[:3],
 		}
+
+
+def _tag_meta(key, tag_type):
+	if tag_type == "strategy":
+		return {"key": key, "label": STRATEGY_TAG_LABELS.get(key, str(key or "").replace("_", " ").title()),
+				"type": "strategy"}
+	return {"key": key, "label": IMPACT_TAG_LABELS.get(key, key), "type": "impact"}
+
+
+async def _parsed_games_by_user(period, profile_to_user):
+	at_clause, params = _period_filter(period)
+	rows = await db.fetchall(
+		"SELECT g.user_id, g.profile_id, COUNT(DISTINCT g.aoe2_match_id) AS games "
+		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"JOIN qc_matches m ON m.match_id=rm.bot_match_id "
+		"WHERE 1=1" + at_clause +
+		" GROUP BY g.user_id, g.profile_id",
+		params)
+	out = {}
+	for r in rows or []:
+		uid = r.get("user_id") or profile_to_user.get(int(r["profile_id"])) if r.get("profile_id") else r.get("user_id")
+		if uid is None:
+			continue
+		out[int(uid)] = out.get(int(uid), 0) + int(r.get("games") or 0)
+	return out
+
+
+def _empty_tag_row(uid, nick, avatar, tag_key, tag_type):
+	meta = _tag_meta(tag_key, tag_type)
+	return {
+		"user_id": str(uid),
+		"nick": nick or str(uid),
+		"avatar": avatar,
+		"tag_key": meta["key"],
+		"tag_label": meta["label"],
+		"tag_type": meta["type"],
+		"games": 0,
+		"tag_games": 0,
+		"parsed_games": 0,
+		"wins": 0,
+		"losses": 0,
+		"winrate": None,
+		"tag_rate": 0,
+		"avg_impact": None,
+		"score": 0,
+		"last_tagged_at": None,
+	}
+
+
+def _finish_tag_rows(rows_by_key, parsed_games):
+	rows = []
+	for row in rows_by_key.values():
+		tag_games = int(row["tag_games"] or 0)
+		decided = int(row["wins"] or 0) + int(row["losses"] or 0)
+		row["games"] = tag_games
+		row["parsed_games"] = int(parsed_games.get(int(row["user_id"]), row.get("parsed_games") or tag_games) or 0)
+		row["winrate"] = _winrate(row["wins"], row["losses"]) if decided else None
+		row["tag_rate"] = round(tag_games * 100 / row["parsed_games"], 1) if row["parsed_games"] else 0
+		if row.pop("_impact_count", 0):
+			row["avg_impact"] = round(row.pop("_impact_sum", 0) / tag_games, 1)
+		else:
+			row.pop("_impact_sum", None)
+		row["score"] = tag_leaderboard_score(
+			tag_games, row["wins"], row["losses"], row["tag_rate"], row.get("avg_impact"))
+		rows.append(row)
+	return sorted(rows, key=lambda r: (-r["score"], -r["tag_games"], -(r["winrate"] or 0), r["nick"].lower()))
+
+
+async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
+	start = _period_start(period)
+	keys = list(STRATEGY_TAG_LABELS)
+	args = [*keys]
+	time_clause = ""
+	if start is not None:
+		time_clause = " AND r.played_at >= %s"
+		args.append(start)
+	rows = await db.fetchall(
+		"SELECT r.profile_id, r.identity, r.`key`, MAX(c.title) AS title, COUNT(*) AS games, "
+		"SUM(r.winner=1) AS wins, SUM(r.winner=0) AS losses, MAX(r.played_at) AS last_tagged_at "
+		"FROM cls_results r LEFT JOIN cls_classifications c ON c.`key`=r.`key` "
+		"WHERE r.`key` IN (" + ",".join(["%s"] * len(keys)) + ")" + time_clause +
+		" GROUP BY r.profile_id, r.identity, r.`key`",
+		args)
+	out = {}
+	available = {}
+	for r in rows or []:
+		key = r.get("key")
+		profile_id = r.get("profile_id")
+		uid = profile_to_user.get(int(profile_id)) if profile_id is not None else None
+		if uid is None or uid in hidden_users:
+			continue
+		available.setdefault(key, {**_tag_meta(key, "strategy"), "games": 0})["games"] += int(r.get("games") or 0)
+		if tag_key != "all" and key != tag_key:
+			continue
+		row_key = (uid, key, "strategy")
+		cur = out.setdefault(row_key, _empty_tag_row(
+			uid, mapped.get(uid, {}).get("nick") or r.get("identity"), _avatar_for_user_id(uid), key, "strategy"))
+		cur["tag_games"] += int(r.get("games") or 0)
+		cur["wins"] += int(r.get("wins") or 0)
+		cur["losses"] += int(r.get("losses") or 0)
+		cur["last_tagged_at"] = max(cur["last_tagged_at"] or 0, int(r.get("last_tagged_at") or 0)) or None
+	return list(available.values()), out
+
+
+async def _impact_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
+	at_clause, params = _period_filter(period)
+	rows = await db.fetchall(
+		"SELECT g.aoe2_match_id, g.user_id, g.profile_id, g.identity, g.civ, g.team, g.winner, "
+		"g.villagers, g.vil_pre_castle, g.military, g.mil_pre_castle, "
+		"g.feudal_s, g.castle_s, g.imperial_s, m.at "
+		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"JOIN qc_matches m ON m.match_id=rm.bot_match_id "
+		"WHERE 1=1" + at_clause +
+		" ORDER BY g.aoe2_match_id",
+		params)
+	groups = {}
+	for r in rows or []:
+		groups.setdefault(r["aoe2_match_id"], []).append(r)
+	out = {}
+	available = {}
+	for group in groups.values():
+		for r in group:
+			uid = r.get("user_id") or profile_to_user.get(int(r["profile_id"])) if r.get("profile_id") else r.get("user_id")
+			if uid is None or int(uid) in hidden_users:
+				continue
+			impact = _impact_payload(r, group)
+			for key in impact.get("impact_tags") or []:
+				available.setdefault(key, {**_tag_meta(key, "impact"), "games": 0})["games"] += 1
+				if tag_key != "all" and key != tag_key:
+					continue
+				row_key = (int(uid), key, "impact")
+				cur = out.setdefault(row_key, _empty_tag_row(
+					int(uid), mapped.get(int(uid), {}).get("nick") or impact.get("nick"),
+					_avatar_for_user_id(uid), key, "impact"))
+				cur["tag_games"] += 1
+				cur["wins"] += 1 if r.get("winner") in (1, True) else 0
+				cur["losses"] += 1 if r.get("winner") in (0, False) else 0
+				cur["last_tagged_at"] = max(cur["last_tagged_at"] or 0, int(r.get("at") or 0)) or None
+				cur["_impact_sum"] = cur.get("_impact_sum", 0) + (impact.get("impact_score") or 0)
+				cur["_impact_count"] = cur.get("_impact_count", 0) + 1
+	return list(available.values()), out
+
+
+async def _tag_leaderboard(period, tag_key="all"):
+	mapped = await _mapped_profiles_by_user()
+	profile_to_user = {}
+	for uid, data in mapped.items():
+		for pid in data.get("profile_ids") or []:
+			profile_to_user[int(pid)] = int(uid)
+	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM qc_players WHERE is_hidden=1")
+	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
+	parsed_games = await _parsed_games_by_user(period, profile_to_user)
+	strategy_tags, rows_by_key = await _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users)
+	impact_tags, impact_rows = await _impact_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users)
+	for k, r in impact_rows.items():
+		rows_by_key[k] = r
+	tags = {}
+	for tag in strategy_tags + impact_tags:
+		tags[(tag["type"], tag["key"])] = tag
+	return {
+		"tags": sorted(tags.values(), key=lambda t: (t["type"], t["label"])),
+		"rows": _finish_tag_rows(rows_by_key, parsed_games),
+	}
 
 
 def _avg_impact(impacts, key):
@@ -1636,6 +1809,15 @@ async def handle_leaderboard(request):
 				 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"])}
 				for r in rows or []
 			],
+		})
+	if mode == "tags":
+		tag_key = request.query.get("tag") or "all"
+		payload = await _tag_leaderboard(period, tag_key)
+		return web.json_response({
+			"period": period,
+			"mode": "tags",
+			"tag": tag_key,
+			**payload,
 		})
 	rows = await db.fetchall(
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "

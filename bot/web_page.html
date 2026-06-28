@@ -1030,7 +1030,13 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
           <div class="period-tabs">
             <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
             <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
+            <button class="period-tab" data-lb-mode="tags" onclick="setLeaderboardMode('tags')">By tag</button>
           </div>
+          <label class="filter-label" id="leaderboard-tag-filter" style="display:none;">Tag
+            <select id="leaderboard-tag-select" class="filter-control" onchange="setLeaderboardTag(this.value)">
+              <option value="all">All tags</option>
+            </select>
+          </label>
         </div>
       </div>
       <div class="match-panel" id="leaderboard-panel"></div>
@@ -1216,10 +1222,12 @@ var matchView = 'overview';
 var expandedMatches = {};
 var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
 var leaderboardMinMatches = 0;
+var leaderboardTag = 'all';
 var playerProfileUserId = null, playerProfilePeriod = 'all';
 var playerProfileView = 'overview';
 var playerDetailData = null, miniSort = {
   'leader-players': { key: 'rating_end', asc: false },
+  'leader-tags': { key: 'score', asc: false },
   'match-player-board': { key: 'rating_end', asc: false }
 };
 
@@ -1295,6 +1303,7 @@ function routeQuery(page) {
     q.set('period', leaderboardPeriod || 'all');
     q.set('mode', leaderboardMode || 'players');
     q.set('min', String(leaderboardMinMatches || 0));
+    if (leaderboardMode === 'tags') q.set('tag', leaderboardTag || 'all');
   } else if (page === 'player-profile') {
     q.set('period', playerProfilePeriod || 'all');
     q.set('view', playerProfileView || 'overview');
@@ -1328,8 +1337,9 @@ function applyRouteFromLocation() {
   try {
     if (path === '/leaderboard') {
       leaderboardPeriod = validPeriod(q.get('period'));
-      leaderboardMode = q.get('mode') === 'civs' ? 'civs' : 'players';
+      leaderboardMode = ['players','civs','tags'].indexOf(q.get('mode')) >= 0 ? q.get('mode') : 'players';
       leaderboardMinMatches = Math.max(0, parseInt(q.get('min'), 10) || 0);
+      leaderboardTag = q.get('tag') || 'all';
       var lbSel = document.getElementById('leaderboard-period-select');
       var lbMin = document.getElementById('leaderboard-min-matches');
       if (lbSel) lbSel.value = leaderboardPeriod;
@@ -1744,8 +1754,12 @@ function relationStripCard(r) {
     + '<div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div>';
   return '<div class="opponent-card">' + playerLink(r.user_id, r.nick, html) + '</div>';
 }
+var CIV_ICON_ALIASES = {
+  maya: 'mayans'
+};
 function civSlug(civ) {
-  return String(civ || '').trim().toLowerCase()
+  var key = String(civ || '').trim().toLowerCase();
+  return (CIV_ICON_ALIASES[key] || key)
     .replace(/&/g, 'and')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
@@ -2141,6 +2155,13 @@ function setLeaderboardMode(m) {
   });
   leaderboardPlayer = null;
   playerDetailData = null;
+  if (m !== 'tags') leaderboardTag = 'all';
+  updateRoute('leaderboard', true);
+  loadLeaderboard();
+}
+
+function setLeaderboardTag(tag) {
+  leaderboardTag = tag || 'all';
   updateRoute('leaderboard', true);
   loadLeaderboard();
 }
@@ -2149,7 +2170,9 @@ async function loadLeaderboard() {
   var panel = document.getElementById('leaderboard-panel');
   panel.innerHTML = '<div class="loading">Loading leaderboard...</div>';
   try {
-    var resp = await fetch('/api/leaderboard?period=' + encodeURIComponent(leaderboardPeriod) + '&mode=' + encodeURIComponent(leaderboardMode));
+    var url = '/api/leaderboard?period=' + encodeURIComponent(leaderboardPeriod) + '&mode=' + encodeURIComponent(leaderboardMode);
+    if (leaderboardMode === 'tags') url += '&tag=' + encodeURIComponent(leaderboardTag || 'all');
+    var resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     leaderboardData = await resp.json();
     renderLeaderboard();
@@ -2158,7 +2181,31 @@ async function loadLeaderboard() {
   }
 }
 
+function renderLeaderboardTagPicker() {
+  var wrap = document.getElementById('leaderboard-tag-filter');
+  var sel = document.getElementById('leaderboard-tag-select');
+  if (!wrap || !sel) return;
+  wrap.style.display = leaderboardMode === 'tags' ? '' : 'none';
+  if (leaderboardMode !== 'tags') return;
+  var tags = (leaderboardData && leaderboardData.tags ? leaderboardData.tags : []).slice();
+  if (leaderboardTag !== 'all' && !tags.some(function (t) { return String(t.key) === String(leaderboardTag); })) {
+    leaderboardTag = 'all';
+  }
+  sel.innerHTML = '<option value="all">All tags</option>' + tags.map(function (t) {
+    var key = String(t.key || '');
+    var label = (t.type === 'impact' ? 'Impact: ' : 'Strategy: ') + (t.label || key) + ' (' + (t.games || 0) + ')';
+    return '<option value="' + esc(key) + '"' + (key === leaderboardTag ? ' selected' : '') + '>' + esc(label) + '</option>';
+  }).join('');
+  sel.value = leaderboardTag || 'all';
+}
+
+function tagCell(r) {
+  return '<span class="roster-tag ' + rosterTagClass(r.tag_label || r.tag_key) + '">' + esc(r.tag_label || r.tag_key) + '</span>'
+    + '<div class="metric-sub">' + esc(r.tag_type || '') + '</div>';
+}
+
 function renderLeaderboard() {
+  renderLeaderboardTagPicker();
   var rows = (leaderboardData.rows || []).filter(function (r) {
     return Number(r.games || 0) >= leaderboardMinMatches;
   }).map(function (r, i) {
@@ -2174,6 +2221,24 @@ function renderLeaderboard() {
       { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
       { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
     ], rows, 'No civ data.');
+    return;
+  }
+  if (leaderboardMode === 'tags') {
+    document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-tags', 'Tag leaderboard', [
+      { key: 'rank', label: '#', type: 'number', className: 'num', render: function (r, i) { return String(i + 1); } },
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
+      { key: 'tag_label', label: 'Tag', render: tagCell },
+      { key: 'score', label: 'Score', type: 'number', className: 'num' },
+      { key: 'tag_games', label: 'Tag games', type: 'number', className: 'num' },
+      { key: 'tag_rate', label: 'Tag rate', type: 'number', className: 'num', render: function (r) { return fmtPct(r.tag_rate); } },
+      { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+      { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+      { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } },
+      { key: 'avg_impact', label: 'Avg impact', type: 'number', className: 'num', render: function (r) { return fmtImpactAvg(r.avg_impact); } },
+      { key: 'last_tagged_at', label: 'Last tagged', type: 'number', render: function (r) { return fmtAgo(r.last_tagged_at); } }
+    ], rows, 'No tag data yet.', function (r) {
+      return 'class="leader-row" onclick="openPlayerProfile(\'' + esc(r.user_id) + '\')"';
+    });
     return;
   }
   document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-players', 'Player leaderboard', [
