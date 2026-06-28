@@ -914,23 +914,23 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <div id="tb-botinfo">PUBobot2</div>
   <div id="tb-botinfo-version">v0.8-Beta</div>
 
+  <div class="tb-link" onclick="showPage('leaderboard')" style="cursor:pointer;">
+    <span>Leaderboard</span>
+  </div>
+  <div class="tb-link" onclick="showPage('match-stats')" style="cursor:pointer;">
+    <span>Match Stats</span>
+  </div>
+  <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
+    <span>Civ Stats</span>
+  </div>
   <div class="tb-link" onclick="showPage('strategies')" style="cursor:pointer;">
     <span>Strategies</span>
   </div>
   <div class="tb-link" onclick="showPage('luck')" style="cursor:pointer;">
     <span>Luck</span>
   </div>
-  <div class="tb-link" onclick="showPage('match-stats')" style="cursor:pointer;">
-    <span>Match Stats</span>
-  </div>
-  <div class="tb-link" onclick="showPage('leaderboard')" style="cursor:pointer;">
-    <span>Leaderboard</span>
-  </div>
-  <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
-    <span>Civ Stats</span>
-  </div>
   <div class="tb-link" onclick="showPage('dashboard')" style="cursor:pointer;">
-    <span>Dashboard</span>
+    <span>PUBobot2 Config</span>
   </div>
 
   <div id="tb-whitespace"></div>
@@ -957,7 +957,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
 <!-- Main Area -->
 <div id="main_area">
   <!-- Strategies Page (default) -->
-  <div class="page active" id="page-strategies">
+  <div class="page" id="page-strategies">
     <div class="stats-container">
       <header>
         <h1>Strategy Insights</h1>
@@ -1005,7 +1005,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   </div>
 
   <!-- Leaderboard Page -->
-  <div class="page" id="page-leaderboard">
+  <div class="page active" id="page-leaderboard">
     <div class="stats-container match-stats-container">
       <div class="sticky-page-context">
         <header>
@@ -1196,7 +1196,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
 <script>
 /* ─── State ─── */
 var currentUser = null;
-var currentPage = 'strategies';
+var currentPage = 'leaderboard';
 
 // Civ stats
 var COLUMNS = [
@@ -1290,7 +1290,7 @@ function routePath(page) {
     leaderboard: '/leaderboard',
     'civ-stats': '/civ-stats',
     dashboard: '/dashboard'
-  }[page] || '/strategies';
+  }[page] || '/leaderboard';
 }
 
 function routeQuery(page) {
@@ -1369,10 +1369,12 @@ function applyRouteFromLocation() {
       showPage('civ-stats', { route: false });
     } else if (path === '/dashboard') {
       showPage('dashboard', { route: false });
-    } else {
+    } else if (path === '/strategies') {
       stratView = q.get('view') === 'player' ? 'player' : 'total';
       stratPlayer = q.get('player') || stratPlayer;
       showPage('strategies', { route: false });
+    } else {
+      showPage('leaderboard', { route: false });
     }
   } finally {
     routeApplying = false;
@@ -3153,7 +3155,7 @@ function renderGuildMenu() {
 function renderBreadcrumb() {
   var bc = document.getElementById('dash-breadcrumb');
   if (!dashGuildId) { bc.innerHTML = ''; return; }
-  var parts = ['<a onclick="resetDashboard();return false" href="#">Dashboard</a>'];
+  var parts = ['<a onclick="resetDashboard();return false" href="#">PUBobot2 Config</a>'];
   if (dashGuildId && !dashChannelId) {
     parts.push('<span class="current">'+esc(dashGuildName)+'</span>');
   } else if (dashChannelId && !dashQueueName) {
