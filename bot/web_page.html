@@ -2193,7 +2193,9 @@ function renderLeaderboardTagPicker() {
   }
   sel.innerHTML = '<option value="all">All tags</option>' + tags.map(function (t) {
     var key = String(t.key || '');
-    var label = (t.type === 'impact' ? 'Impact: ' : 'Strategy: ') + (t.label || key) + ' (' + (t.games || 0) + ')';
+    var prefix = (t.type || 'tag').replace(/_/g, ' ');
+    prefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+    var label = prefix + ': ' + (t.label || key) + ' (' + (t.games || 0) + ')';
     return '<option value="' + esc(key) + '"' + (key === leaderboardTag ? ' selected' : '') + '>' + esc(label) + '</option>';
   }).join('');
   sel.value = leaderboardTag || 'all';
@@ -2436,7 +2438,7 @@ function styleRead(style) {
 
 function impactStyleLabel(style, leader) {
   if (style === 'Pressure player') return 'Flank pressure engine';
-  if (style === 'Boom carry') return 'Pocket boom carry';
+  if (style === 'Boom carry') return 'Greedy boom carry';
   if (style === 'Economy carry') return 'Eco-to-Imperial carry';
   if (style === 'Timing specialist') return 'Castle-age timing hitter';
   if (style === 'Recovery anchor') return 'Reboom anchor';
@@ -2530,6 +2532,19 @@ function strategyTagEvidence(tags) {
   return strategyTagLabels(tags).slice(0, 3).join(', ');
 }
 
+function strategyKeyStat(tags, keys) {
+  var set = {};
+  keys.forEach(function (k) { set[k] = true; });
+  return (tags || []).reduce(function (acc, t) {
+    if (t && set[t.key]) {
+      acc.count += Number(t.games || 0);
+      acc.wins += Number(t.wins || 0);
+      acc.losses += Number(t.losses || 0);
+    }
+    return acc;
+  }, { count: 0, wins: 0, losses: 0 });
+}
+
 function strategyTopCategory(strategy) {
   var mix = strategy && strategy.army_mix ? strategy.army_mix : [];
   return mix.length ? String(mix[0].category || '') : '';
@@ -2610,12 +2625,32 @@ function scoredPlaystyle(d) {
   var archerStrategy = hasStrategyKey(strategyTags, ['archer_rush', 'crossbow_rush', 'late_crossbow', 'cav_archer_rush', 'late_cav_archer']);
   var castleSiegeStrategy = hasStrategyKey(strategyTags, ['forward_castle', 'safe_castle', 'ram_push', 'late_ram']);
   var maaStrategy = hasStrategyKey(strategyTags, ['maa_rush']);
+  var roleFastCastle = strategyKeyStat(strategyTags, ['role_fast_castle_pocket', 'Naked FC', 'Fast Castle pocket', 'safe_castle']);
+  var roleGreedyBoom = strategyKeyStat(strategyTags, ['role_greedy_boom', 'boom_to_imp', 'Greedy boom', 'Tech greedy', 'Boom carry', 'Eco carry']);
+  var rolePressure = strategyKeyStat(strategyTags, ['role_opening_pressure', 'archer_rush', 'scout_rush', 'maa_rush', 'Feudal all-in', 'All-in pressure', 'Map pressure']);
+  var roleKnight = strategyKeyStat(strategyTags, ['role_knight_pocket', 'knight_rush', 'late_knight', 'Knight flood']);
+  var roleArcher = strategyKeyStat(strategyTags, ['role_archer_tempo', 'archer_rush', 'crossbow_rush', 'late_crossbow', 'Xbow mass']);
+  var roleCamel = strategyKeyStat(strategyTags, ['role_camel_guard', 'camel_rush', 'late_camel']);
+  var roleCA = strategyKeyStat(strategyTags, ['role_ca_switch', 'cav_archer_rush', 'late_cav_archer', 'CA switch']);
+  var roleSiege = strategyKeyStat(strategyTags, ['role_siege_closer', 'ram_push', 'late_ram', 'forward_castle', 'Siege pusher']);
+  var roleTrash = strategyKeyStat(strategyTags, ['role_trash_stabilizer', 'Trash switch']);
 
-  addStyleCandidate(candidates, 'Pocket boom carry',
-    eco + quietBoomRate * 0.45 + boomTagRate * 0.45 + (boomStrategy ? 14 : 0) + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.7,
-    'Pocket-boom read: wants space, adds TCs/eco techs, then converts villager lead into late Castle or Imperial army mass.',
+  addStyleCandidate(candidates, 'Fast Castle pocket',
+    eco * 0.45 + timing * 0.35 + Math.min(26, roleFastCastle.count * 0.18) + (castleMin && castleMin <= 18.5 ? 8 : 0) + (preCastleMil <= 5 ? 4 : 0),
+    'Pocket-FC read: keeps Dark/Feudal clean, clicks Castle fast, then joins with knights, monks, siege, or defensive boom.',
     [
-      quietBoomRate ? quietBoomRate + '% quiet-boom openings' : '',
+      roleFastCastle.count ? roleFastCastle.count + ' fast-castle pocket games' : '',
+      castleMin ? 'Castle at ' + minutesText(castleMin) : '',
+      preCastleMil || preCastleMil === 0 ? preCastleMil + ' pre-Castle military' : '',
+      timing ? 'timing score ' + fmtImpactAvg(timing) : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Greedy boom carry',
+    eco * 0.75 + Math.min(28, roleGreedyBoom.count * 0.22) + boomTagRate * 0.25 + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.45,
+    'Greedy-boom read: wants space, adds TCs/eco techs, then converts villager lead into late Castle or Imperial army mass.',
+    [
+      roleGreedyBoom.count ? roleGreedyBoom.count + ' greedy-boom games' : '',
+      quietBoomRate ? quietBoomRate + '% quiet starts' : '',
       eco ? 'eco score ' + fmtImpactAvg(eco) : '',
       strategy.avg_imperial_min ? 'Imp around ' + minutesText(strategy.avg_imperial_min) : '',
       isolatedBest ? 'best on isolated/free-boom starts' : '',
@@ -2623,10 +2658,11 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Flank pressure engine',
-    army + armyPressureRate * 0.4 + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.25,
+    army + armyPressureRate * 0.35 + Math.min(24, rolePressure.count * 0.15) + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.2,
     'Pressure-flank read: makes army before comfort boom, contests map, raids, and buys team economy time.',
     [
-      armyPressureTags ? armyPressureTags + ' pressure tags (' + Math.round(armyPressureRate) + '% rate)' : '',
+      rolePressure.count ? rolePressure.count + ' opening-pressure games' : '',
+      armyPressureTags ? armyPressureTags + ' impact pressure tags (' + Math.round(armyPressureRate) + '% rate)' : '',
       preCastleMil ? preCastleMil + ' military before Castle' : '',
       nearEnemyBest ? 'wins near-enemy spawns' : '',
       army ? 'army score ' + fmtImpactAvg(army) : '',
@@ -2652,9 +2688,10 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Cavalry map-control pocket',
-    (cavalryLean ? 22 : 0) + (scoutKnightStrategy ? 14 : 0) + army * 0.5 + timing * 0.35 + (boomTagCount ? 4 : 0),
+    (cavalryLean ? 18 : 0) + (scoutKnightStrategy ? 12 : 0) + Math.min(26, (roleKnight.count + roleCamel.count + roleCA.count) * 0.18) + army * 0.5 + timing * 0.35 + (boomTagCount ? 3 : 0),
     'Cavalry-pocket read: uses mobility for raids, cleanup, relic/map control, and fast swing fights after eco setup.',
     [
+      (roleKnight.count + roleCamel.count + roleCA.count) ? (roleKnight.count + roleCamel.count + roleCA.count) + ' cavalry-role games' : '',
       cavalryLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       army ? 'army score ' + fmtImpactAvg(army) : '',
       timing ? 'timing score ' + fmtImpactAvg(timing) : '',
@@ -2662,9 +2699,10 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Archer pressure flank',
-    (archerLean ? 22 : 0) + (archerStrategy ? 14 : 0) + army * 0.55 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
+    (archerLean ? 18 : 0) + (archerStrategy ? 12 : 0) + Math.min(26, roleArcher.count * 0.22) + army * 0.55 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
     'Archer-flank read: wants early ranges, ranged mass, upgrade windows, and pressure that forces defensive skirms/towers.',
     [
+      roleArcher.count ? roleArcher.count + ' archer-tempo games' : '',
       archerLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       preCastleMil ? preCastleMil + ' pre-Castle military' : '',
       timingTagCount ? timingTagCount + ' age-up tempo tags' : '',
@@ -2672,9 +2710,10 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Trash-war stabilizer',
-    (infantryLean ? 10 : 0) + recovery * 0.6 + (longGameEdge ? 8 : 0) + (hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 8 : 0),
+    (infantryLean ? 8 : 0) + Math.min(22, roleTrash.count * 0.2) + recovery * 0.6 + (longGameEdge ? 8 : 0) + (hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 8 : 0),
     'Trash-war read: survives gold-light games with spear/skirm style utility, rebooms, and keeps fights playable late.',
     [
+      roleTrash.count ? roleTrash.count + ' trash-stabilizer games' : '',
       infantryLean ? 'trash/infantry mix appears' : '',
       recovery ? 'recovery score ' + fmtImpactAvg(recovery) : '',
       hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 'trash tech sample present' : '',
@@ -2682,9 +2721,10 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Siege-support closer',
-    (siegeLean ? 24 : 0) + (castleSiegeStrategy ? 14 : 0) + timing * 0.5 + avgImpact * 0.35,
+    (siegeLean ? 20 : 0) + (castleSiegeStrategy ? 12 : 0) + Math.min(26, roleSiege.count * 0.2) + timing * 0.5 + avgImpact * 0.35,
     'Siege-support read: converts map control into push power, treb/ram/mango pressure, and late-game closing fights.',
     [
+      roleSiege.count ? roleSiege.count + ' siege-closer games' : '',
       siegeLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       timing ? 'timing score ' + fmtImpactAvg(timing) : '',
       avgImpact ? 'impact score ' + fmtImpactAvg(avgImpact) : '',

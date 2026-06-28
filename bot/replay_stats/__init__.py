@@ -158,4 +158,26 @@ db.ensure_table(dict(
     primary_keys=["profile_id"],
 ))
 
+db.ensure_table(dict(
+    tname="rs_player_game_tags",
+    columns=[
+        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="player_number", ctype=db.types.int),
+        dict(cname="tag", ctype=db.types.str),
+        dict(cname="tag_label", ctype=db.types.str, notnull=False),
+        dict(cname="category", ctype=db.types.str, notnull=False),
+        dict(cname="score", ctype=db.types.float, notnull=False),
+        dict(cname="evidence_json", ctype=db.types.dict, notnull=False),
+        dict(cname="played_at", ctype=db.types.int, notnull=False),
+        dict(cname="created_at", ctype=db.types.int, notnull=False),
+        dict(cname="user_id", ctype=db.types.int, notnull=False),
+        dict(cname="profile_id", ctype=db.types.int, notnull=False),
+        dict(cname="identity", ctype=db.types.str, notnull=False),
+        dict(cname="civ", ctype=db.types.str, notnull=False),
+        dict(cname="team", ctype=db.types.str, notnull=False),
+        dict(cname="winner", ctype=db.types.bool, notnull=False),
+    ],
+    primary_keys=["aoe2_match_id", "player_number", "tag"],
+))
+
 from .jobs import jobs  # noqa: E402,F401  (ReplayStatsJobs singleton)
