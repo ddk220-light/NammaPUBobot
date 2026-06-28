@@ -947,15 +947,11 @@ async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidd
 	if start is not None:
 		time_clause = " AND t.played_at >= %s"
 		params.append(start)
-	tag_clause = ""
-	if tag_key != "all":
-		tag_clause = " AND t.tag=%s"
-		params.append(tag_key)
 	rows = await db.fetchall(
 		"SELECT t.user_id, t.profile_id, t.identity, t.tag, MAX(t.tag_label) AS tag_label, "
 		"MAX(t.category) AS category, COUNT(*) AS games, SUM(t.winner=1) AS wins, "
 		"SUM(t.winner=0) AS losses, AVG(t.score) AS avg_score, MAX(t.played_at) AS last_tagged_at "
-		"FROM rs_player_game_tags t WHERE 1=1" + time_clause + tag_clause +
+		"FROM rs_player_game_tags t WHERE 1=1" + time_clause +
 		" GROUP BY t.user_id, t.profile_id, t.identity, t.tag",
 		params)
 	out = {}
@@ -969,6 +965,8 @@ async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidd
 		meta = _tag_meta(key, tag_type)
 		meta["label"] = r.get("tag_label") or meta["label"]
 		available.setdefault(key, {**meta, "games": 0})["games"] += int(r.get("games") or 0)
+		if tag_key != "all" and key != tag_key:
+			continue
 		row_key = (int(uid), key, tag_type)
 		cur = out.setdefault(row_key, _empty_tag_row(
 			int(uid), mapped.get(int(uid), {}).get("nick") or r.get("identity"),
