@@ -1701,11 +1701,14 @@ async def _player_streak(user_id, at_clause, params):
 
 
 async def _match_stats_player(user_id, period):
+	from bot.commentary import query as commentary_query
+
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
 	rating_history = await _rating_history(period, user_id)
 	strategy_tags = await _player_profile_tags(profile_ids, period)
+	commentary = await commentary_query.player_commentary(user_id, period)
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -1851,6 +1854,7 @@ async def _match_stats_player(user_id, period):
 		"trend": [{"bucket": str(r["bucket"]), "games": int(r["games"] or 0),
 		           "wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0)}
 		          for r in trend or []],
+		"commentary": commentary,
 	}
 
 
@@ -1943,6 +1947,8 @@ async def handle_leaderboard(request):
 
 
 async def handle_player_stats(request):
+	from bot.commentary import query as commentary_query
+
 	period = request.query.get("period", DEFAULT_STATS_PERIOD)
 	if period not in MATCH_STAT_PERIODS:
 		period = DEFAULT_STATS_PERIOD
@@ -1960,6 +1966,7 @@ async def handle_player_stats(request):
 	rating = await _rating_delta(period, user_id)
 	rating_history = await _rating_history(period, user_id)
 	strategy_tags = await _player_profile_tags(profile_ids, period)
+	commentary = await commentary_query.player_commentary(user_id, period)
 	base_args = [user_id, *params]
 	summary = await db.fetchone(
 		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
@@ -2067,6 +2074,7 @@ async def handle_player_stats(request):
 		opp_match_civs = {r["bot_match_id"]: r["civs"] for r in opp_rows or []}
 	return web.json_response({
 		"period": period,
+		"commentary": commentary,
 		"summary": {
 			"user_id": str(user_id),
 			"nick": (summary or {}).get("nick") or str(user_id),
