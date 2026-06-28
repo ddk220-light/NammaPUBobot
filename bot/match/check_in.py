@@ -119,7 +119,8 @@ class CheckIn:
 			await self.refresh(bot.SystemContext(self.m.queue.qc))
 
 		elif str(reaction) == self.NOT_READY_EMOJI and self.allow_discard:
-			return await self.back_out(bot.SystemContext(self.m.queue.qc), user)
+			if not remove:
+				return await self.back_out(bot.SystemContext(self.m.queue.qc), user)
 
 	async def set_ready(self, ctx, member, ready):
 		if self.m.state != self.m.CHECK_IN:
