@@ -782,11 +782,27 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .player-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .player-avatar {
   width: 24px; height: 24px; border-radius: 50%; background: #484c54;
-  flex: 0 0 auto; object-fit: cover;
+  flex: 0 0 auto; object-fit: cover; display: inline-flex; align-items: center; justify-content: center;
+  color: #dcddde; font-size: 0.72rem; font-weight: 900; text-transform: uppercase;
 }
 .metric-player { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .metric-player .player-avatar { width: 38px; height: 38px; }
 .metric-player-name { color: white; font-size: 1.1rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.metric-player.compact .player-avatar { width: 32px; height: 32px; }
+.metric-player.compact .metric-player-name { font-size: 1rem; }
+.trait-chip-row { display: flex; flex-wrap: wrap; gap: 0.38rem; align-items: flex-start; }
+.trait-chip {
+  display: inline-flex; align-items: center; gap: 0.28rem; max-width: 100%;
+  border: 1px solid rgba(255,255,255,0.09); border-radius: 999px;
+  padding: 0.22rem 0.55rem; background: rgba(255,255,255,0.055);
+  color: #e4e6eb; font-size: 0.85rem; font-weight: 800; line-height: 1.15;
+}
+.trait-chip .trait-count { color: rgba(255,255,255,0.68); font-weight: 700; }
+.trait-chip.army { color: #ffc6c9; background: rgba(191,84,88,0.13); border-color: rgba(255,109,115,0.20); }
+.trait-chip.boom { color: #f4e1b5; background: rgba(197,148,58,0.16); border-color: rgba(229,178,80,0.26); }
+.trait-chip.eco { color: #bdf2d1; background: rgba(76,158,103,0.14); border-color: rgba(99,217,139,0.22); }
+.trait-chip.timing { color: #cfe0ff; background: rgba(91,140,238,0.14); border-color: rgba(143,180,255,0.22); }
+.trait-chip.recovery { color: #f3d6aa; background: rgba(217,144,38,0.14); border-color: rgba(217,144,38,0.24); }
 .form-run { display: flex; gap: 4px; flex-wrap: wrap; }
 .form-pill {
   width: 22px; height: 22px; border-radius: 4px; display: inline-flex;
@@ -1106,13 +1122,13 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
           </label>
           <div class="period-tabs">
             <button class="period-tab selected" data-player-view="overview" onclick="setPlayerProfileView('overview')">Overview</button>
+            <button class="period-tab" data-player-view="commentary" onclick="setPlayerProfileView('commentary')">Bot commentary</button>
             <button class="period-tab" data-player-view="matches" onclick="setPlayerProfileView('matches')">All matches</button>
           </div>
         </div>
       </div>
       <div id="player-detail">
         <div id="player-profile-overview">
-          <section class="profile-description" id="player-description"></section>
           <div class="metric-grid" id="player-detail-summary"></div>
           <section class="match-panel detail-section" id="player-tags-panel"></section>
           <div class="trend-panel" id="player-elo-trend"></div>
@@ -1134,6 +1150,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
           </div>
           <section class="match-panel detail-section" id="player-matches"></section>
         </div>
+        <section class="profile-description detail-section" id="player-profile-commentary" style="display:none"></section>
         <section class="detail-section" id="player-profile-matches" style="display:none"></section>
       </div>
       <footer>Profile style is inferred from replay tags, impact scores, best civs, and duration windows.</footer>
@@ -1371,6 +1388,10 @@ function validPeriod(p) {
   return ['all','year','month6','month3','month','week'].indexOf(p) >= 0 ? p : 'all';
 }
 
+function validPlayerProfileView(v) {
+  return ['overview','commentary','matches'].indexOf(v) >= 0 ? v : 'overview';
+}
+
 function applyRouteFromLocation() {
   var path = window.location.pathname.replace(/\/+$/, '') || '/';
   var q = new URLSearchParams(window.location.search);
@@ -1400,7 +1421,7 @@ function applyRouteFromLocation() {
       showPage('match-stats', { route: false });
     } else if (path.indexOf('/player/') === 0 || path.indexOf('/player-profile/') === 0) {
       var id = decodeURIComponent(path.split('/').pop() || '');
-      playerProfileView = q.get('view') === 'matches' ? 'matches' : 'overview';
+      playerProfileView = validPlayerProfileView(q.get('view'));
       loadPlayerDetail(id, validPeriod(q.get('period')), { route: false });
     } else if (path === '/luck') {
       luckView = q.get('view') === 'player' ? 'player' : 'total';
@@ -1610,11 +1631,31 @@ function tagLabel(tag) {
 function strategyTagLabels(tags) {
   return (tags || []).map(function (t) { return t && t.label ? t.label : String(t || ''); }).filter(Boolean);
 }
+function profileTagItems(profile, strategyTags) {
+  var out = [];
+  (profile && profile.top_tags ? profile.top_tags : []).slice(0, 3).forEach(function (t) {
+    out.push({ label: tagLabel(t.tag), count: t.count });
+  });
+  strategyTagLabels(strategyTags).slice(0, 3).forEach(function (tag) {
+    if (!out.some(function (x) { return x.label === tag; })) out.push({ label: tag, count: null });
+  });
+  return out;
+}
 function profileTagLabels(profile, strategyTags) {
-  var tags = profile && profile.top_tags ? profile.top_tags : [];
-  var out = tags.slice(0, 3).map(function (t) { return tagLabel(t.tag) + ' ' + t.count + 'x'; });
-  strategyTagLabels(strategyTags).slice(0, 3).forEach(function (tag) { out.push(tag); });
+  var out = profileTagItems(profile, strategyTags).map(function (t) {
+    return t.label + (t.count ? ' ' + t.count + 'x' : '');
+  });
   return out.length ? out.join(', ') : 'No style tags';
+}
+function traitChips(profile, strategyTags) {
+  var rows = profileTagItems(profile, strategyTags);
+  if (!rows.length) return '<span class="trait-chip">No style tags</span>';
+  return '<div class="trait-chip-row">' + rows.map(function (t) {
+    var cls = rosterTagClass(t.label);
+    return '<span class="trait-chip ' + esc(cls) + '">' + esc(t.label)
+      + (t.count ? '<span class="trait-count">' + esc(t.count + 'x') + '</span>' : '')
+      + '</span>';
+  }).join('') + '</div>';
 }
 function styleTags(profile) {
   return profileTagLabels(profile, []);
@@ -1774,8 +1815,13 @@ function card(label, value, sub) {
     + '<div class="metric-value">' + esc(value) + '</div>'
     + '<div class="metric-sub">' + esc(sub || '') + '</div></div>';
 }
+function htmlCard(label, html, sub) {
+  return '<div class="metric-card"><div class="metric-label">' + esc(label) + '</div>'
+    + html + (sub ? '<div class="metric-sub">' + esc(sub) + '</div>' : '') + '</div>';
+}
 function avatarImg(url, name) {
-  if (!url) return '<span class="player-avatar"></span>';
+  var initial = String(name || '?').trim().charAt(0) || '?';
+  if (!url) return '<span class="player-avatar">' + esc(initial) + '</span>';
   return '<img class="player-avatar" src="' + esc(url) + '" alt="' + esc(name || 'player') + '">';
 }
 function playerProfileHref(userId) {
@@ -1800,6 +1846,14 @@ function relationStripCard(r) {
 var CIV_ICON_ALIASES = {
   maya: 'mayans'
 };
+function playerInfoCard(label, r, empty, sub) {
+  if (!r) return card(label, empty || '-', sub || '');
+  var nameHtml = '<div class="metric-player-name">' + esc(r.nick || '-') + '</div>';
+  var html = '<div class="metric-player compact">' + avatarImg(r.avatar, r.nick) + '<div>'
+    + playerLink(r.user_id, r.nick, nameHtml)
+    + '<div class="metric-sub">' + esc(relationSummary(r, sub || '')) + '</div></div></div>';
+  return htmlCard(label, html, '');
+}
 function civSlug(civ) {
   var key = String(civ || '').trim().toLowerCase();
   return (CIV_ICON_ALIASES[key] || key)
@@ -1939,8 +1993,7 @@ function renderMatchSummary() {
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
       card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
-      card('Style traits', profileTagLabels(p, s.strategy_tags), 'impact + strategy tags'),
-      card('Top tags', profileTagLabels(p, s.strategy_tags), 'aggregated match tags'),
+      htmlCard('Style traits', traitChips(p, s.strategy_tags), 'impact + strategy tags'),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
         + '</div></div>'
@@ -2470,13 +2523,15 @@ function setPlayerProfilePeriod(p) {
 }
 
 function setPlayerProfileView(v) {
-  playerProfileView = v || 'overview';
+  playerProfileView = validPlayerProfileView(v || 'overview');
   document.querySelectorAll('[data-player-view]').forEach(function (b) {
     b.classList.toggle('selected', b.dataset.playerView === playerProfileView);
   });
   var overview = document.getElementById('player-profile-overview');
+  var commentary = document.getElementById('player-profile-commentary');
   var matches = document.getElementById('player-profile-matches');
   if (overview) overview.style.display = playerProfileView === 'overview' ? '' : 'none';
+  if (commentary) commentary.style.display = playerProfileView === 'commentary' ? '' : 'none';
   if (matches) matches.style.display = playerProfileView === 'matches' ? '' : 'none';
   if (playerDetailData) renderPlayerMatchesView(playerDetailData);
   updateRoute('player-profile', true);
@@ -2520,20 +2575,19 @@ function renderPlayerDetail(d) {
   var subtitle = document.getElementById('player-profile-subtitle');
   if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + style.label;
   setPlayerProfileView(playerProfileView);
-  document.getElementById('player-description').innerHTML = playerProfileDescription(d);
+  document.getElementById('player-profile-commentary').innerHTML = playerProfileCommentary(d);
   document.getElementById('player-detail-summary').innerHTML = [
     selectedPlayerCard(s),
     card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
     card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
     card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
-    card('Best ally', relationName(s.best_ally, 'No ally sample'), relationSummary(s.best_ally, 'ranked teammate sample')),
-    card('Worst enemy', relationName(s.worst_enemy, 'No enemy sample'), relationSummary(s.worst_enemy, 'ranked opponent sample')),
+    playerInfoCard('Best ally', s.best_ally, 'No ally sample', 'ranked teammate sample'),
+    playerInfoCard('Worst enemy', s.worst_enemy, 'No enemy sample', 'ranked opponent sample'),
     card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
-    card('Style traits', profileTagLabels(p, s.strategy_tags), 'impact + strategy tags'),
+    htmlCard('Style traits', traitChips(p, s.strategy_tags), 'impact + strategy tags'),
     card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
     card('Impact mix', 'Army ' + fmtImpactAvg(p.avg_army) + ' / Eco ' + fmtImpactAvg(p.avg_eco),
       'Age-up tempo ' + fmtImpactAvg(p.avg_timing) + ' / Reboom ' + fmtImpactAvg(p.avg_recovery)),
-    card('Top tags', profileTagLabels(p, s.strategy_tags), 'aggregated match tags'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
   renderPlayerTagDetails(d);
@@ -2731,10 +2785,19 @@ function luckProfileForPlayer(name) {
 function luckSummary(profile) {
   if (!profile) return 'Luck/spawn data is not available for this player yet.';
   var parts = [];
-  if (profile.exposure[0]) parts.push('Most common map state: ' + luckFactorText(profile.exposure[0].key) + ' (' + profile.exposure[0].pct + '% of valid Nomad starts).');
+  if (profile.exposure[0]) parts.push('Most common map state: ' + luckFactorText(profile.exposure[0].key) + ' (' + profile.exposure[0].pct + '% of valid starts).');
   if (profile.best) parts.push('Best spawn adaptation: ' + luckFactorText(profile.best.key) + ' at ' + fmtPct(profile.best.winrate) + ' (' + (profile.best.delta > 0 ? '+' : '') + profile.best.delta + ' vs 50).');
   if (profile.worst && profile.worst !== profile.best) parts.push('Hardest spawn state: ' + luckFactorText(profile.worst.key) + ' at ' + fmtPct(profile.worst.winrate) + ' (' + (profile.worst.delta > 0 ? '+' : '') + profile.worst.delta + ' vs 50).');
   return parts.join(' ');
+}
+
+function spawnRead(profile) {
+  if (!profile) return 'Spawn sample not parsed yet.';
+  var parts = [];
+  if (profile.exposure[0]) parts.push('usual ' + luckFactorText(profile.exposure[0].key) + ' ' + profile.exposure[0].pct + '%');
+  if (profile.best) parts.push('best ' + luckFactorText(profile.best.key) + ' ' + fmtPct(profile.best.winrate));
+  if (profile.worst && profile.worst !== profile.best) parts.push('watch ' + luckFactorText(profile.worst.key) + ' ' + fmtPct(profile.worst.winrate));
+  return parts.length ? parts.join('; ') + '.' : 'Spawn sample too thin.';
 }
 
 function luckCardText(profile, key, empty) {
@@ -3020,6 +3083,166 @@ function commentaryCard(title, text) {
   return '<div class="commentary-card"><div class="commentary-title">' + esc(title) + '</div><div class="commentary-text">' + esc(text) + '</div></div>';
 }
 
+function commentaryText(v) {
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.filter(Boolean).join('; ');
+  if (typeof v === 'object') return Object.keys(v).map(function (k) {
+    return k + ': ' + commentaryText(v[k]);
+  }).filter(Boolean).join('; ');
+  return String(v);
+}
+
+function commentaryParagraphs(v) {
+  if (v == null) return [];
+  if (Array.isArray(v)) return v.map(commentaryText).filter(Boolean);
+  var text = commentaryText(v);
+  return text ? [text] : [];
+}
+
+function stripPureRecordSentence(text) {
+  text = commentaryText(text).trim();
+  if (!/^\S[\s\S]*\b(has played|current Elo|sitting at)\b[\s\S]*\b(matches|Elo)\b/i.test(text)) return text;
+  return text.replace(/^[\s\S]*?\b(?:current Elo|Elo)\b[^.?!]*[.?!]\s*/i, '').trim();
+}
+
+function stripLifetimeTotals(text) {
+  text = commentaryText(text).trim();
+  text = text.replace(/\bLifetime(?:\s+totals?)?:\s*[\s\S]*?(?:[.?!]\s*|$)/gi, '');
+  text = text.replace(/\s*\([^)]*\btotal\b[^)]*\)/gi, '');
+  text = text.replace(/\bOff\s+\d+\s+total\s+[^,.;]+(?:,\s*)?/gi, '');
+  text = text.replace(/\b(unit totals?|raw output)\b[^.?!]*[.?!]\s*/gi, '');
+  return text.replace(/\s{2,}/g, ' ').trim();
+}
+
+function stripRecordStats(text) {
+  text = commentaryText(text).trim();
+  text = text.replace(/\s+at\s+\d+\s+Elo\s*\([^)]*\d+W-\d+L[^)]*\),?\s*/gi, ' ');
+  text = text.replace(/\s*\([^)]*\d+W-\d+L[^)]*\)/gi, '');
+  text = text.replace(/\b\d+W-\d+L\b(?:\s*[\d.]+%\s*clip)?/gi, '');
+  text = text.replace(/\b(?:current\s+)?Elo(?:\s+of|\s+is)?\s+\d+\b/gi, '');
+  text = text.replace(/\b\d+\s+Elo\b\s*/gi, '');
+  text = text.replace(/[,;]?\s*(?:a\s+)?(?:clear\s+)?(?:recent\s+)?(?:slump|heater|run)?\s*(?:well\s+)?(?:below|above|around|at)\s+the\s+[\d.]+%\s+career rate/gi, '');
+  return text.replace(/\s{2,}/g, ' ').replace(/\s+([,.;:])/g, '$1').trim();
+}
+
+function stripMapRedundancy(text) {
+  text = commentaryText(text).trim();
+  text = text.replace(/\bRecent games are almost entirely on [^.?!]*[.?!]\s*/gi, '');
+  text = text.replace(/\bLand Nomad grinder\b/gi, 'spawn-map grinder');
+  text = text.replace(/\bLand Nomad\s*\/\s*closed-map game\b/gi, 'closed-map game');
+  return text.replace(/\s{2,}/g, ' ').trim();
+}
+
+function stripDataCaveats(text) {
+  text = commentaryText(text).trim();
+  text = text.replace(/\bPer the DB's co-occurring response tags[^.?!]*[.?!]\s*/gi, 'Available data is indirect here. ');
+  text = text.replace(/\bNote:\s*vs opponent forward castles[^.?!]*the DB only shows[^.?!]*[.?!]\s*/gi, 'Reaction read is low-confidence from available data. ');
+  text = text.replace(/;\s*the DB only shows[\s\S]*?(?:not directly observed|directly observed reaction)[.?!]?/gi, '.');
+  text = text.replace(/\bthe DB only shows[\s\S]*?(?:not directly observed|directly observed reaction)[.?!]?/gi, 'Available data is indirect here.');
+  text = text.replace(/\bthe DB only shows[^.?!]*[.?!]/gi, 'Available data is indirect here.');
+  text = text.replace(/\bco-occurring response tags\s*\([^)]*\),?\s*not a directly observed reaction[.?!]?/gi, 'available data is indirect here.');
+  text = text.replace(/\bReaction quality is inferred from outcome tags, not directly observed,[^.?!]*[.?!]/gi, 'Reaction read is low-confidence from available data.');
+  return text.replace(/\s{2,}/g, ' ').replace(/\s+([,.;:])/g, '$1').trim();
+}
+
+function aoe2Lingo(text) {
+  text = commentaryText(text).trim();
+  return text
+    .replace(/\bImperial\b/g, 'Imp')
+    .replace(/\bCastle Age\b/g, 'Castle')
+    .replace(/\bFeudal Age\b/g, 'Feudal')
+    .replace(/\bvillagers\b/gi, 'vils')
+    .replace(/\bvillager\b/gi, 'vil')
+    .replace(/\bmilitary units\b/gi, 'army')
+    .replace(/\bmilitary\b/gi, 'army')
+    .replace(/\bfast Castle\b/gi, 'FC')
+    .replace(/\bquiet-boom\b/gi, 'quiet boom')
+    .replace(/\bcorpus average\b/gi, 'field avg')
+    .replace(/\brole_/g, '')
+    .replace(/_/g, ' ');
+}
+
+function tidyCrispText(text) {
+  if ((text.match(/\(/g) || []).length > (text.match(/\)/g) || []).length) {
+    text = text.slice(0, text.lastIndexOf('(')).trim();
+  }
+  return text.replace(/\s+([,.;:])/g, '$1').replace(/\s{2,}/g, ' ').trim();
+}
+
+function crispText(text, limit) {
+  text = aoe2Lingo(cleanCommentaryText(text));
+  if (!text || text.length <= limit) return tidyCrispText(text);
+  var cut = text.slice(0, limit + 1);
+  var sentence = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('; '), cut.lastIndexOf(' — '));
+  if (sentence > Math.floor(limit * 0.55)) return tidyCrispText(cut.slice(0, sentence + 1).trim());
+  return tidyCrispText(cut.slice(0, limit).replace(/\s+\S*$/, '').trim()) + '...';
+}
+
+function cleanCommentaryText(text) {
+  return stripDataCaveats(stripMapRedundancy(stripRecordStats(stripLifetimeTotals(stripPureRecordSentence(text)))));
+}
+
+function storedPlayerCommentary(d) {
+  var row = d && d.commentary ? d.commentary : null;
+  var c = row && row.commentary ? row.commentary : null;
+  if (!c) return '';
+  var paragraphs = [];
+  if (c.headline) paragraphs.push('<p><strong>' + esc(crispText(c.headline, 170)) + '</strong></p>');
+  commentaryParagraphs(c.summary || c.read || c.description).slice(0, 2).forEach(function (p) {
+    p = crispText(p, 430);
+    if (!p) return;
+    paragraphs.push('<p>' + esc(p) + '</p>');
+  });
+  var cards = [];
+  var cardTitles = {};
+  function addCard(title, text) {
+    title = commentaryText(title);
+    text = crispText(text, title.toLowerCase() === 'recent form' ? 260 : 300);
+    var key = title.toLowerCase();
+    if (/^Available data is indirect here[.;]?$/i.test(text)) return;
+    if (!title || !text || cardTitles[key]) return;
+    cardTitles[key] = true;
+    cards.push(commentaryCard(title, text));
+  }
+  var s = d.summary || {};
+  var luck = luckProfileForPlayer(s.nick);
+  [
+    ['Recent form', c.recent_form || c.recentForm],
+    ['Spawn read', c.spawn_read || c.spawnRead || spawnRead(luck)],
+    ['Game plan', c.game_plan || c.gamePlan],
+    ['Strengths', c.strengths],
+    ['Watchouts', c.watchouts || c.watchout],
+    ['Civ plan', c.civ_plan || c.civPlan]
+  ].forEach(function (entry) {
+    addCard(entry[0], entry[1]);
+  });
+  var extraCards = c.cards || c.sections || [];
+  if (!Array.isArray(extraCards) && typeof extraCards === 'object') {
+    extraCards = Object.keys(extraCards).map(function (key) {
+      return { title: key, text: extraCards[key] };
+    });
+  }
+  var extraAllow = {
+    'usual army': true,
+    'eco tech discipline': true,
+    'army techs': true,
+    'castle play': true,
+    'follow-ups': true,
+    'counterplay': true
+  };
+  (extraCards || []).forEach(function (card) {
+    var title = card.label || card.title || card.key;
+    if (!extraAllow[String(title || '').toLowerCase()]) return;
+    addCard(title, card.text || card.body || card.value);
+  });
+  if (!paragraphs.length && !cards.length) return '';
+  return paragraphs.join('') + (cards.length ? '<div class="commentary-grid">' + cards.join('') + '</div>' : '');
+}
+
+function playerProfileCommentary(d) {
+  return storedPlayerCommentary(d) || playerProfileDescription(d);
+}
+
 function boomRead(profile) {
   var tags = profile && profile.top_tags ? profile.top_tags : [];
   var boom = tags.find(function (t) { return t.tag === 'Boom carry'; });
@@ -3098,9 +3321,8 @@ function playerProfileDescription(d) {
   var luck = luckProfileForPlayer(name);
   var style = scoredPlaystyle(d);
   var headline = style.label;
-  var elo = s.rating_end == null ? '' : ' Current end Elo is ' + fmtElo(s.rating_end) + '.';
   var first = name + ' reads as a ' + headline + ' in ' + periodLabel(playerProfilePeriod)
-    + ', with ' + (s.games || 0) + ' matches and a ' + fmtPct(s.winrate) + ' win rate.' + elo;
+    + '.';
   var second = style.read || report.description || p.summary || 'No parsed replay sample is available yet.';
   if (style.reasons && style.reasons.length) second += ' Evidence: ' + style.reasons.slice(0, 3).join('; ') + '.';
   if (tags.length) second += ' Recurring game tags: ' + tags.map(tagLabel).join(', ') + '.';
@@ -3136,8 +3358,7 @@ function playerProfileDescription(d) {
     commentaryCard('Watchout', profileWatchout(p, s)),
     commentaryCard('Best setup', setup.join(' + ')),
     commentaryCard('Enemy prep', s.worst_enemy ? 'Plan specifically for ' + (s.worst_enemy.nick || '-') + '; this is lowest head-to-head win rate.' : 'No tough-opponent sample yet.'),
-    commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.'),
-    commentaryCard('Generator', 'Deterministic commentary from tags, win rates, Elo, civs, durations, allies, opponents, unit mix, tech timings, and Luck spawn factors.')
+    commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.')
   ].join('');
   return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p><p>' + esc(luckText) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
     + '<div class="commentary-grid">' + cards + '</div>';
