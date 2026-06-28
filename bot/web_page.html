@@ -1225,7 +1225,6 @@ var leaderboardMinMatches = 0;
 var leaderboardTag = 'all';
 var playerProfileUserId = null, playerProfilePeriod = 'all';
 var playerProfileView = 'overview';
-var playerDetailRequestSeq = 0;
 var playerDetailData = null, miniSort = {
   'leader-players': { key: 'rating_end', asc: false },
   'leader-tags': { key: 'score', asc: false },
@@ -2201,12 +2200,6 @@ function renderLeaderboardTagPicker() {
 }
 
 function tagCell(r) {
-  if (r.tag_key === 'all') {
-    var chips = (r.top_tags || []).slice(0, 3).map(function (t) {
-      return '<span class="roster-tag ' + rosterTagClass(t.label || t.key) + '">' + esc(t.label || t.key) + '</span>';
-    }).join('');
-    return (chips || '<span class="roster-tag">All tags</span>') + '<div class="metric-sub">aggregate score</div>';
-  }
   return '<span class="roster-tag ' + rosterTagClass(r.tag_label || r.tag_key) + '">' + esc(r.tag_label || r.tag_key) + '</span>'
     + '<div class="metric-sub">' + esc(r.tag_type || '') + '</div>';
 }
@@ -2275,23 +2268,6 @@ function openPlayerProfile(userId, period) {
   loadPlayerDetail(userId, period || profilePeriodForCurrentPage());
 }
 
-function showPlayerProfileLoading() {
-  playerDetailData = null;
-  var subtitle = document.getElementById('player-profile-subtitle');
-  if (subtitle) subtitle.textContent = 'Loading player profile...';
-  document.getElementById('player-description').innerHTML = '<div class="loading">Loading player profile...</div>';
-  document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
-  document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
-  document.getElementById('player-allies').innerHTML = '<div class="loading">Loading allies...</div>';
-  document.getElementById('player-opponents').innerHTML = '<div class="loading">Loading opponents...</div>';
-  document.getElementById('player-durations').innerHTML = '<div class="loading">Loading duration stats...</div>';
-  document.getElementById('player-civs').innerHTML = '<div class="panel-title">Win rates by civilization</div><div class="loading">Loading civ data...</div>';
-  document.getElementById('player-opp-civs').innerHTML = '<div class="panel-title">Win rates by opponent civilization</div><div class="loading">Loading opponent civ data...</div>';
-  document.getElementById('player-matches').innerHTML = '<div class="panel-title">Recent matches</div><div class="loading">Loading matches...</div>';
-  document.getElementById('player-profile-matches').innerHTML = '<div class="match-panel"><div class="panel-title">All matches</div><div class="loading">Loading matches...</div></div>';
-  setPlayerProfileView(playerProfileView, { route: false });
-}
-
 function setPlayerProfilePeriod(p) {
   playerProfilePeriod = p || 'all';
   var sel = document.getElementById('player-profile-period-select');
@@ -2300,8 +2276,7 @@ function setPlayerProfilePeriod(p) {
   if (playerProfileUserId) loadPlayerDetail(playerProfileUserId, playerProfilePeriod);
 }
 
-function setPlayerProfileView(v, opts) {
-  opts = opts || {};
+function setPlayerProfileView(v) {
   playerProfileView = v || 'overview';
   document.querySelectorAll('[data-player-view]').forEach(function (b) {
     b.classList.toggle('selected', b.dataset.playerView === playerProfileView);
@@ -2311,12 +2286,11 @@ function setPlayerProfileView(v, opts) {
   if (overview) overview.style.display = playerProfileView === 'overview' ? '' : 'none';
   if (matches) matches.style.display = playerProfileView === 'matches' ? '' : 'none';
   if (playerDetailData) renderPlayerMatchesView(playerDetailData);
-  if (opts.route !== false) updateRoute('player-profile', true);
+  updateRoute('player-profile', true);
 }
 
 async function loadPlayerDetail(userId, period, opts) {
   opts = opts || {};
-  var requestId = ++playerDetailRequestSeq;
   leaderboardPlayer = userId;
   playerProfileUserId = userId;
   playerProfilePeriod = period || playerProfilePeriod || 'all';
@@ -2324,7 +2298,8 @@ async function loadPlayerDetail(userId, period, opts) {
   if (sel) sel.value = playerProfilePeriod;
   showPage('player-profile', { route: false });
   if (opts.route !== false) updateRoute('player-profile', false);
-  showPlayerProfileLoading();
+  document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
+  document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
   try {
     if (!stratData.length) {
       try {
@@ -2336,11 +2311,9 @@ async function loadPlayerDetail(userId, period, opts) {
     var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(playerProfilePeriod) + '&player_id=' + encodeURIComponent(userId));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var d = await resp.json();
-    if (requestId !== playerDetailRequestSeq) return;
     playerDetailData = d;
     renderPlayerDetail(d);
   } catch (e) {
-    if (requestId !== playerDetailRequestSeq) return;
     document.getElementById('player-detail-summary').innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
     document.getElementById('player-elo-trend').innerHTML = '';
   }
@@ -2545,18 +2518,6 @@ function hasStrategyKey(tags, keys) {
   return (tags || []).some(function (t) { return t && set[t.key]; });
 }
 
-function strategyKeyStat(tags, keys) {
-  var set = {};
-  keys.forEach(function (k) { set[k] = true; });
-  var rows = (tags || []).filter(function (t) { return t && set[t.key]; });
-  return rows.reduce(function (acc, t) {
-    acc.games += Number(t.games || 0);
-    acc.wins += Number(t.wins || 0);
-    acc.losses += Number(t.losses || 0);
-    return acc;
-  }, { games: 0, wins: 0, losses: 0 });
-}
-
 function strategyTagEvidence(tags) {
   tags = tags || [];
   if (!tags.length) return '';
@@ -2643,38 +2604,20 @@ function scoredPlaystyle(d) {
   var archerStrategy = hasStrategyKey(strategyTags, ['archer_rush', 'crossbow_rush', 'late_crossbow', 'cav_archer_rush', 'late_cav_archer']);
   var castleSiegeStrategy = hasStrategyKey(strategyTags, ['forward_castle', 'safe_castle', 'ram_push', 'late_ram']);
   var maaStrategy = hasStrategyKey(strategyTags, ['maa_rush']);
-  var roleFastCastle = strategyKeyStat(strategyTags, ['role_fast_castle_pocket']);
-  var roleGreedyBoom = strategyKeyStat(strategyTags, ['role_greedy_boom', 'boom_to_imp']);
-  var rolePressure = strategyKeyStat(strategyTags, ['role_opening_pressure', 'archer_rush', 'scout_rush', 'maa_rush']);
-  var roleKnight = strategyKeyStat(strategyTags, ['role_knight_pocket', 'knight_rush', 'late_knight']);
-  var roleArcher = strategyKeyStat(strategyTags, ['role_archer_tempo', 'archer_rush', 'crossbow_rush', 'late_crossbow']);
-  var roleCamel = strategyKeyStat(strategyTags, ['role_camel_guard', 'camel_rush', 'late_camel']);
-  var roleCA = strategyKeyStat(strategyTags, ['role_ca_switch', 'cav_archer_rush', 'late_cav_archer']);
-  var roleSiege = strategyKeyStat(strategyTags, ['role_siege_closer', 'ram_push', 'late_ram', 'forward_castle']);
-  var roleTrash = strategyKeyStat(strategyTags, ['role_trash_stabilizer']);
 
-  addStyleCandidate(candidates, 'Greedy boom carry',
-    eco * 0.75 + quietBoomRate * 0.16 + boomTagRate * 0.35 + Math.min(roleGreedyBoom.games, 50) * 0.7 + (boomStrategy ? 8 : 0) + (isolatedBest ? 5 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.9,
+  addStyleCandidate(candidates, 'Pocket boom carry',
+    eco + quietBoomRate * 0.45 + boomTagRate * 0.45 + (boomStrategy ? 14 : 0) + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.7,
     'Pocket-boom read: wants space, adds TCs/eco techs, then converts villager lead into late Castle or Imperial army mass.',
     [
       quietBoomRate ? quietBoomRate + '% quiet-boom openings' : '',
       eco ? 'eco score ' + fmtImpactAvg(eco) : '',
       strategy.avg_imperial_min ? 'Imp around ' + minutesText(strategy.avg_imperial_min) : '',
       isolatedBest ? 'best on isolated/free-boom starts' : '',
-      roleGreedyBoom.games ? roleGreedyBoom.games + ' boom-role tags' : ''
-    ]);
-
-  addStyleCandidate(candidates, 'Fast Castle pocket',
-    Math.min(roleFastCastle.games, 50) * 1.5 + eco * 0.45 + timing * 0.25 + (castleMin && castleMin <= 18.5 ? 12 : 0) - preCastleMil * 0.35,
-    'Fast-Castle pocket read: skips extended Feudal fights, clicks up clean, then hits with first Castle-age power units.',
-    [
-      roleFastCastle.games ? roleFastCastle.games + ' fast-castle pocket tags' : '',
-      castleMin ? 'Castle at ' + minutesText(castleMin) : '',
-      preCastleMil ? preCastleMil + ' pre-Castle military' : ''
+      boomStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
     ]);
 
   addStyleCandidate(candidates, 'Flank pressure engine',
-    army + armyPressureRate * 0.4 + Math.min(rolePressure.games, 50) * 0.75 + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.25,
+    army + armyPressureRate * 0.4 + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.25,
     'Pressure-flank read: makes army before comfort boom, contests map, raids, and buys team economy time.',
     [
       armyPressureTags ? armyPressureTags + ' pressure tags (' + Math.round(armyPressureRate) + '% rate)' : '',
@@ -2703,7 +2646,7 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Cavalry map-control pocket',
-    (cavalryLean ? 16 : 0) + (scoutKnightStrategy ? 10 : 0) + Math.min(roleKnight.games + roleCamel.games, 60) * 0.8 + army * 0.45 + timing * 0.35 + (boomTagCount ? 3 : 0),
+    (cavalryLean ? 22 : 0) + (scoutKnightStrategy ? 14 : 0) + army * 0.5 + timing * 0.35 + (boomTagCount ? 4 : 0),
     'Cavalry-pocket read: uses mobility for raids, cleanup, relic/map control, and fast swing fights after eco setup.',
     [
       cavalryLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
@@ -2713,7 +2656,7 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Archer pressure flank',
-    (archerLean ? 16 : 0) + (archerStrategy ? 10 : 0) + Math.min(roleArcher.games + roleCA.games, 60) * 0.85 + army * 0.5 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
+    (archerLean ? 22 : 0) + (archerStrategy ? 14 : 0) + army * 0.55 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
     'Archer-flank read: wants early ranges, ranged mass, upgrade windows, and pressure that forces defensive skirms/towers.',
     [
       archerLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
@@ -2723,7 +2666,7 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Trash-war stabilizer',
-    (infantryLean ? 10 : 0) + Math.min(roleTrash.games, 40) * 1.1 + recovery * 0.6 + (longGameEdge ? 8 : 0) + (hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 8 : 0),
+    (infantryLean ? 10 : 0) + recovery * 0.6 + (longGameEdge ? 8 : 0) + (hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 8 : 0),
     'Trash-war read: survives gold-light games with spear/skirm style utility, rebooms, and keeps fights playable late.',
     [
       infantryLean ? 'trash/infantry mix appears' : '',
@@ -2733,7 +2676,7 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Siege-support closer',
-    (siegeLean ? 18 : 0) + (castleSiegeStrategy ? 10 : 0) + Math.min(roleSiege.games, 60) * 0.85 + timing * 0.45 + avgImpact * 0.3,
+    (siegeLean ? 24 : 0) + (castleSiegeStrategy ? 14 : 0) + timing * 0.5 + avgImpact * 0.35,
     'Siege-support read: converts map control into push power, treb/ram/mango pressure, and late-game closing fights.',
     [
       siegeLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
