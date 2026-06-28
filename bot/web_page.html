@@ -709,6 +709,45 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .elo-fill { fill: rgba(87,217,139,0.10); }
 .elo-dot { fill: #57d98b; stroke: #202225; stroke-width: 2; }
 .elo-label { fill: #969aa2; font-size: 11px; font-family: 'Outfit', sans-serif; }
+.tag-map-panel { padding: 0.9rem 1rem 1rem; border-bottom: 1px solid rgba(72,76,84,0.55); }
+.tag-map-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 1rem; align-items: stretch; }
+.tag-map-plot { min-width: 0; }
+.tag-map-chart { width: 100%; height: 260px; display: block; }
+.tag-map-grid { stroke: rgba(185,187,190,0.13); stroke-width: 1; }
+.tag-map-axis { stroke: rgba(185,187,190,0.32); stroke-width: 1; }
+.tag-map-label { fill: #969aa2; font-size: 11px; font-family: 'Outfit', sans-serif; }
+.tag-map-point { fill-opacity: 0.34; stroke-width: 2; }
+.tag-map-point:hover { fill-opacity: 0.62; stroke-width: 3; }
+.tag-map-name { fill: #dcddde; font-size: 11px; font-family: 'Outfit', sans-serif; font-weight: 700; pointer-events: none; }
+.tag-map-hover { opacity: 0; pointer-events: none; transition: opacity 0.08s ease; }
+.tag-map-bubble:hover .tag-map-hover { opacity: 1; }
+.tag-map-bubble:hover .tag-map-name { opacity: 0; }
+.tag-map-hover-label {
+  fill: #fff; stroke: #202225; stroke-width: 5; paint-order: stroke;
+  font-size: 12px; font-family: 'Outfit', sans-serif; font-weight: 800;
+}
+.tag-map-hover-meta {
+  fill: #dcddde; stroke: #202225; stroke-width: 4; paint-order: stroke;
+  font-size: 10px; font-family: 'Outfit', sans-serif; font-weight: 700;
+}
+.tag-map-legend { display: flex; gap: 0.8rem; flex-wrap: wrap; color: #969aa2; font-size: 0.76rem; margin-top: 0.3rem; }
+.tag-map-key { display: inline-flex; align-items: center; gap: 0.35rem; }
+.tag-map-swatch { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.tag-map-list {
+  border: 1px solid rgba(72,76,84,0.75); border-radius: 6px; background: rgba(32,34,37,0.46);
+  overflow: hidden; min-height: 0;
+}
+.tag-map-list-title {
+  color: #969aa2; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.06em;
+  text-transform: uppercase; padding: 0.55rem 0.65rem; background: rgba(32,34,37,0.8);
+}
+.tag-map-list-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.65rem;
+  align-items: center; padding: 0.5rem 0.65rem; border-top: 1px solid rgba(72,76,84,0.48);
+}
+.tag-map-list-name { color: #dcddde; font-size: 0.82rem; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-map-list-meta { color: #969aa2; font-size: 0.72rem; margin-top: 0.12rem; }
+.tag-map-list-score { color: white; font-weight: 800; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
 .match-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
@@ -733,6 +772,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .mini-table th.sortable:hover { color: #dcddde; }
 .sort-mark { color: #5b8cee; margin-left: 4px; }
 .mini-table td { padding: 0.58rem 0.7rem; border-top: 1px solid rgba(72,76,84,0.5); }
+.mini-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .mini-table td.num { color: #b9bbbe; text-align: right; font-variant-numeric: tabular-nums; }
 .mini-table td.gain-pos { color: #57d98b; font-weight: 700; }
 .mini-table td.gain-neg { color: #e06060; font-weight: 700; }
@@ -799,6 +839,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   #guild_menu { width: 180px; min-width: 180px; }
   #st_layout { width: 100%; }
   table.stats-table { min-width: 600px; }
+  .tag-map-body { grid-template-columns: 1fr; }
 }
 
 /* Mobile */
@@ -914,23 +955,23 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <div id="tb-botinfo">PUBobot2</div>
   <div id="tb-botinfo-version">v0.8-Beta</div>
 
+  <div class="tb-link" onclick="showPage('leaderboard')" style="cursor:pointer;">
+    <span>Leaderboard</span>
+  </div>
+  <div class="tb-link" onclick="showPage('match-stats')" style="cursor:pointer;">
+    <span>Match Stats</span>
+  </div>
+  <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
+    <span>Civ Stats</span>
+  </div>
   <div class="tb-link" onclick="showPage('strategies')" style="cursor:pointer;">
     <span>Strategies</span>
   </div>
   <div class="tb-link" onclick="showPage('luck')" style="cursor:pointer;">
     <span>Luck</span>
   </div>
-  <div class="tb-link" onclick="showPage('match-stats')" style="cursor:pointer;">
-    <span>Match Stats</span>
-  </div>
-  <div class="tb-link" onclick="showPage('leaderboard')" style="cursor:pointer;">
-    <span>Leaderboard</span>
-  </div>
-  <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
-    <span>Civ Stats</span>
-  </div>
   <div class="tb-link" onclick="showPage('dashboard')" style="cursor:pointer;">
-    <span>Dashboard</span>
+    <span>PUBobot2 Config</span>
   </div>
 
   <div id="tb-whitespace"></div>
@@ -957,7 +998,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
 <!-- Main Area -->
 <div id="main_area">
   <!-- Strategies Page (default) -->
-  <div class="page active" id="page-strategies">
+  <div class="page" id="page-strategies">
     <div class="stats-container">
       <header>
         <h1>Strategy Insights</h1>
@@ -1005,7 +1046,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   </div>
 
   <!-- Leaderboard Page -->
-  <div class="page" id="page-leaderboard">
+  <div class="page active" id="page-leaderboard">
     <div class="stats-container match-stats-container">
       <div class="sticky-page-context">
         <header>
@@ -1030,7 +1071,12 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
           <div class="period-tabs">
             <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
             <button class="period-tab" data-lb-mode="civs" onclick="setLeaderboardMode('civs')">By civ</button>
+            <button class="period-tab" data-lb-mode="tags" onclick="setLeaderboardMode('tags')">By tag</button>
           </div>
+          <label class="filter-label" id="leaderboard-tag-filter" style="display:none;">Tag
+            <select id="leaderboard-tag-select" class="filter-control" onchange="setLeaderboardTag(this.value)">
+            </select>
+          </label>
         </div>
       </div>
       <div class="match-panel" id="leaderboard-panel"></div>
@@ -1068,6 +1114,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
         <div id="player-profile-overview">
           <section class="profile-description" id="player-description"></section>
           <div class="metric-grid" id="player-detail-summary"></div>
+          <section class="match-panel detail-section" id="player-tags-panel"></section>
           <div class="trend-panel" id="player-elo-trend"></div>
           <section class="detail-section">
             <h2>Best allies</h2>
@@ -1190,7 +1237,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
 <script>
 /* ─── State ─── */
 var currentUser = null;
-var currentPage = 'strategies';
+var currentPage = 'leaderboard';
 
 // Civ stats
 var COLUMNS = [
@@ -1216,10 +1263,12 @@ var matchView = 'overview';
 var expandedMatches = {};
 var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
 var leaderboardMinMatches = 0;
+var leaderboardTag = '';
 var playerProfileUserId = null, playerProfilePeriod = 'all';
 var playerProfileView = 'overview';
 var playerDetailData = null, miniSort = {
   'leader-players': { key: 'rating_end', asc: false },
+  'leader-tags': { key: 'score', asc: false },
   'match-player-board': { key: 'rating_end', asc: false }
 };
 
@@ -1282,7 +1331,7 @@ function routePath(page) {
     leaderboard: '/leaderboard',
     'civ-stats': '/civ-stats',
     dashboard: '/dashboard'
-  }[page] || '/strategies';
+  }[page] || '/leaderboard';
 }
 
 function routeQuery(page) {
@@ -1295,6 +1344,7 @@ function routeQuery(page) {
     q.set('period', leaderboardPeriod || 'all');
     q.set('mode', leaderboardMode || 'players');
     q.set('min', String(leaderboardMinMatches || 0));
+    if (leaderboardMode === 'tags' && leaderboardTag) q.set('tag', leaderboardTag);
   } else if (page === 'player-profile') {
     q.set('period', playerProfilePeriod || 'all');
     q.set('view', playerProfileView || 'overview');
@@ -1328,8 +1378,9 @@ function applyRouteFromLocation() {
   try {
     if (path === '/leaderboard') {
       leaderboardPeriod = validPeriod(q.get('period'));
-      leaderboardMode = q.get('mode') === 'civs' ? 'civs' : 'players';
+      leaderboardMode = ['players','civs','tags'].indexOf(q.get('mode')) >= 0 ? q.get('mode') : 'players';
       leaderboardMinMatches = Math.max(0, parseInt(q.get('min'), 10) || 0);
+      leaderboardTag = q.get('tag') === 'all' ? '' : (q.get('tag') || '');
       var lbSel = document.getElementById('leaderboard-period-select');
       var lbMin = document.getElementById('leaderboard-min-matches');
       if (lbSel) lbSel.value = leaderboardPeriod;
@@ -1359,10 +1410,12 @@ function applyRouteFromLocation() {
       showPage('civ-stats', { route: false });
     } else if (path === '/dashboard') {
       showPage('dashboard', { route: false });
-    } else {
+    } else if (path === '/strategies') {
       stratView = q.get('view') === 'player' ? 'player' : 'total';
       stratPlayer = q.get('player') || stratPlayer;
       showPage('strategies', { route: false });
+    } else {
+      showPage('leaderboard', { route: false });
     }
   } finally {
     routeApplying = false;
@@ -1744,8 +1797,12 @@ function relationStripCard(r) {
     + '<div class="metric-sub">' + r.games + ' matches, ' + r.wins + ' won, ' + r.losses + ' lost</div></div>';
   return '<div class="opponent-card">' + playerLink(r.user_id, r.nick, html) + '</div>';
 }
+var CIV_ICON_ALIASES = {
+  maya: 'mayans'
+};
 function civSlug(civ) {
-  return String(civ || '').trim().toLowerCase()
+  var key = String(civ || '').trim().toLowerCase();
+  return (CIV_ICON_ALIASES[key] || key)
     .replace(/&/g, 'and')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
@@ -1967,6 +2024,136 @@ function renderEloTrend(rows, targetId) {
     + '</svg>';
 }
 
+function tagTypeColor(type) {
+  type = String(type || '').toLowerCase();
+  if (type.indexOf('strategy') >= 0) return '#7aa2ff';
+  if (type.indexOf('impact') >= 0) return '#57d98b';
+  if (type.indexOf('tech') >= 0) return '#d6b057';
+  if (type.indexOf('composition') >= 0) return '#b9bbbe';
+  if (type.indexOf('style') >= 0) return '#e28b8b';
+  return '#9b8cff';
+}
+
+function numericValue(v) {
+  if (v === null || v === undefined || v === '') return null;
+  v = Number(v);
+  return Number.isFinite(v) ? v : null;
+}
+
+function shortChartLabel(label) {
+  label = String(label || '-');
+  return label.length > 16 ? label.slice(0, 15) + '...' : label;
+}
+
+function renderTagBubbleChart(title, rows, cfg) {
+  cfg = cfg || {};
+  var chartRows = (rows || []).map(function (r) {
+    var x = numericValue(cfg.x ? cfg.x(r) : r[cfg.xKey || 'tag_games']);
+    var y = numericValue(cfg.y ? cfg.y(r) : r[cfg.yKey || 'winrate']);
+    if (x === null || y === null) return null;
+    return {
+      row: r,
+      x: x,
+      y: y,
+      size: numericValue(cfg.size ? cfg.size(r) : r[cfg.sizeKey || 'avg_impact'])
+        || numericValue(cfg.fallbackSizeKey ? r[cfg.fallbackSizeKey] : null)
+        || x,
+      label: cfg.label ? cfg.label(r) : (r[cfg.labelKey || 'label'] || r.nick || r.tag_label || '-'),
+      type: cfg.type ? cfg.type(r) : (r[cfg.typeKey || 'tag_type'] || r.type || 'tag')
+    };
+  }).filter(Boolean);
+  if (!chartRows.length) {
+    return '<h2>' + esc(title || 'Tag map') + '</h2><div class="empty-panel">No tag map data for this selection.</div>';
+  }
+
+  var width = 900, height = 260, padL = 58, padR = 28, padT = 18, padB = 42;
+  var xs = chartRows.map(function (r) { return r.x; });
+  var ys = chartRows.map(function (r) { return r.y; });
+  var sizes = chartRows.map(function (r) { return r.size; });
+  var xMax = Math.max(1, Math.max.apply(null, xs));
+  var yMin = Math.max(0, Math.min.apply(null, ys) - 5);
+  var yMax = Math.min(100, Math.max.apply(null, ys) + 5);
+  if (yMax - yMin < 10) {
+    var mid = (yMax + yMin) / 2;
+    yMin = Math.max(0, mid - 5);
+    yMax = Math.min(100, mid + 5);
+  }
+  var sizeMin = Math.min.apply(null, sizes);
+  var sizeMax = Math.max.apply(null, sizes);
+  function xPos(v) { return padL + (v / xMax) * (width - padL - padR); }
+  function yPos(v) { return padT + ((yMax - v) / Math.max(1, yMax - yMin)) * (height - padT - padB); }
+  function radius(v) {
+    if (sizeMax === sizeMin) return 10;
+    return 6 + ((v - sizeMin) / (sizeMax - sizeMin)) * 12;
+  }
+  function tickLabel(v) {
+    v = Math.round(v * 10) / 10;
+    return String(v).replace(/\.0$/, '');
+  }
+  var xTicks = [0, xMax / 2, xMax];
+  var yTicks = [yMin, (yMin + yMax) / 2, yMax];
+  var grids = yTicks.map(function (t) {
+    var y = yPos(t);
+    return '<line class="tag-map-grid" x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (width - padR) + '" y2="' + y.toFixed(1) + '"></line>'
+      + '<text class="tag-map-label" text-anchor="end" x="' + (padL - 9) + '" y="' + (y + 4).toFixed(1) + '">' + esc(tickLabel(t)) + '%</text>';
+  }).join('');
+  var xLabels = xTicks.map(function (t) {
+    var x = xPos(t);
+    return '<text class="tag-map-label" text-anchor="middle" x="' + x.toFixed(1) + '" y="' + (height - 17) + '">' + esc(tickLabel(t)) + '</text>';
+  }).join('');
+  var labelSet = {};
+  chartRows.slice().sort(function (a, b) {
+    return (b.size - a.size) || (b.x - a.x);
+  }).slice(0, 5).forEach(function (r) { labelSet[r.label + '|' + r.x + '|' + r.y] = true; });
+  var points = chartRows.map(function (r) {
+    var color = tagTypeColor(r.type);
+    var cx = xPos(r.x), cy = yPos(r.y), rr = radius(r.size);
+    var labelKey = r.label + '|' + r.x + '|' + r.y;
+    var textAnchor = cx > width - 140 ? 'end' : 'start';
+    var textX = textAnchor === 'end' ? cx - rr - 5 : cx + rr + 5;
+    var hoverAnchor = cx > width - 190 ? 'end' : 'start';
+    var hoverX = hoverAnchor === 'end' ? cx - rr - 8 : cx + rr + 8;
+    var hoverY = cy < padT + 34 ? cy + rr + 16 : cy - rr - 10;
+    var hoverMetaY = hoverY + 14;
+    var hover = '<g class="tag-map-hover"><text class="tag-map-hover-label" text-anchor="' + hoverAnchor + '" x="' + hoverX.toFixed(1) + '" y="' + hoverY.toFixed(1) + '">'
+      + esc(r.label) + '</text><text class="tag-map-hover-meta" text-anchor="' + hoverAnchor + '" x="' + hoverX.toFixed(1) + '" y="' + hoverMetaY.toFixed(1) + '">'
+      + esc(tagTypeLabel(r.type) + ' · ' + r.x + ' games · ' + fmtPct(r.y) + ' win') + '</text></g>';
+    var text = labelSet[labelKey]
+      ? '<text class="tag-map-name" text-anchor="' + textAnchor + '" x="' + textX.toFixed(1) + '" y="' + (cy + 4).toFixed(1) + '">' + esc(shortChartLabel(r.label)) + '</text>'
+      : '';
+    return '<g class="tag-map-bubble"><circle class="tag-map-point" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + rr.toFixed(1)
+      + '" fill="' + color + '" stroke="' + color + '"><title>' + esc(r.label + ' · ' + r.x + ' games · ' + fmtPct(r.y) + ' win · ' + tagTypeLabel(r.type)) + '</title></circle>' + text + hover + '</g>';
+  }).join('');
+  var seenTypes = {};
+  var legend = chartRows.map(function (r) { return tagTypeLabel(r.type); }).filter(function (type) {
+    if (seenTypes[type]) return false;
+    seenTypes[type] = true;
+    return true;
+  }).slice(0, 6).map(function (type) {
+    return '<span class="tag-map-key"><span class="tag-map-swatch" style="background:' + tagTypeColor(type) + '"></span>' + esc(type) + '</span>';
+  }).join('');
+  var listRows = chartRows.slice().sort(function (a, b) {
+    return (b.x - a.x) || (b.y - a.y) || String(a.label).localeCompare(String(b.label));
+  }).slice(0, 12).map(function (r) {
+    var type = tagTypeLabel(r.type);
+    return '<div class="tag-map-list-row"><div><div class="tag-map-list-name">'
+      + '<span class="tag-map-swatch" style="background:' + tagTypeColor(r.type) + '"></span> '
+      + esc(r.label) + '</div><div class="tag-map-list-meta">'
+      + esc(type + ' · ' + r.x + ' games') + '</div></div><div class="tag-map-list-score">'
+      + esc(fmtPct(r.y)) + '</div></div>';
+  }).join('');
+  var listTitle = cfg.listTitle || 'Top tags';
+  return '<h2>' + esc(title || 'Tag map') + '</h2><div class="tag-map-panel"><div class="tag-map-body"><div class="tag-map-plot"><svg class="tag-map-chart" viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="' + esc(title || 'Tag map') + '">'
+    + grids
+    + '<line class="tag-map-axis" x1="' + padL + '" y1="' + (height - padB) + '" x2="' + (width - padR) + '" y2="' + (height - padB) + '"></line>'
+    + '<line class="tag-map-axis" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (height - padB) + '"></line>'
+    + xLabels
+    + '<text class="tag-map-label" text-anchor="middle" x="' + ((padL + width - padR) / 2) + '" y="' + (height - 2) + '">' + esc(cfg.xLabel || 'Tag games') + '</text>'
+    + '<text class="tag-map-label" transform="translate(13 ' + ((padT + height - padB) / 2) + ') rotate(-90)" text-anchor="middle">Win %</text>'
+    + points + '</svg><div class="tag-map-legend">' + legend + '</div></div><div class="tag-map-list"><div class="tag-map-list-title">'
+    + esc(listTitle) + '</div>' + listRows + '</div></div></div>';
+}
+
 function table(title, headers, rows, empty) {
   if (!rows || !rows.length) return '<h2>' + esc(title) + '</h2><div class="empty-panel">' + esc(empty || 'No data.') + '</div>';
   return '<h2>' + esc(title) + '</h2><table class="mini-table"><thead><tr>'
@@ -2008,7 +2195,10 @@ function sortableTable(tableId, title, columns, rows, empty, rowAttrs, detailRen
   return '<h2>' + esc(title) + '</h2><table class="mini-table"><thead><tr>'
     + columns.map(function (col) {
       var active = state && state.key === col.key;
-      return '<th class="sortable" onclick="setMiniSort(\'' + esc(tableId) + '\',\'' + esc(col.key) + '\',\'' + esc(col.type || 'string') + '\')">'
+      var hcls = ['sortable'];
+      if (col.type === 'number' || col.headerClassName === 'num') hcls.push('num');
+      if (col.headerClassName && col.headerClassName !== 'num') hcls.push(col.headerClassName);
+      return '<th class="' + esc(hcls.join(' ')) + '" onclick="setMiniSort(\'' + esc(tableId) + '\',\'' + esc(col.key) + '\',\'' + esc(col.type || 'string') + '\')">'
         + esc(col.label) + (active ? '<span class="sort-mark">' + (state.asc ? '\u25B2' : '\u25BC') + '</span>' : '') + '</th>';
     }).join('')
     + '</tr></thead><tbody>' + sorted.map(function (row, idx) {
@@ -2141,6 +2331,13 @@ function setLeaderboardMode(m) {
   });
   leaderboardPlayer = null;
   playerDetailData = null;
+  if (m !== 'tags') leaderboardTag = '';
+  updateRoute('leaderboard', true);
+  loadLeaderboard();
+}
+
+function setLeaderboardTag(tag) {
+  leaderboardTag = tag || '';
   updateRoute('leaderboard', true);
   loadLeaderboard();
 }
@@ -2149,16 +2346,49 @@ async function loadLeaderboard() {
   var panel = document.getElementById('leaderboard-panel');
   panel.innerHTML = '<div class="loading">Loading leaderboard...</div>';
   try {
-    var resp = await fetch('/api/leaderboard?period=' + encodeURIComponent(leaderboardPeriod) + '&mode=' + encodeURIComponent(leaderboardMode));
+    var url = '/api/leaderboard?period=' + encodeURIComponent(leaderboardPeriod) + '&mode=' + encodeURIComponent(leaderboardMode);
+    if (leaderboardMode === 'tags' && leaderboardTag) url += '&tag=' + encodeURIComponent(leaderboardTag);
+    var resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     leaderboardData = await resp.json();
+    if (leaderboardMode === 'tags') leaderboardTag = leaderboardData.tag || leaderboardTag || '';
     renderLeaderboard();
   } catch (e) {
     panel.innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
   }
 }
 
+function renderLeaderboardTagPicker() {
+  var wrap = document.getElementById('leaderboard-tag-filter');
+  var sel = document.getElementById('leaderboard-tag-select');
+  if (!wrap || !sel) return;
+  wrap.style.display = leaderboardMode === 'tags' ? '' : 'none';
+  if (leaderboardMode !== 'tags') return;
+  var tags = (leaderboardData && leaderboardData.tags ? leaderboardData.tags : []).slice();
+  if (!tags.length) {
+    sel.innerHTML = '';
+    return;
+  }
+  if (!leaderboardTag || !tags.some(function (t) { return String(t.key) === String(leaderboardTag); })) {
+    leaderboardTag = String(tags[0].key || '');
+  }
+  sel.innerHTML = tags.map(function (t) {
+    var key = String(t.key || '');
+    var prefix = (t.type || 'tag').replace(/_/g, ' ');
+    prefix = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+    var label = prefix + ': ' + (t.label || key) + ' (' + (t.games || 0) + ')';
+    return '<option value="' + esc(key) + '"' + (key === leaderboardTag ? ' selected' : '') + '>' + esc(label) + '</option>';
+  }).join('');
+  sel.value = leaderboardTag;
+}
+
+function tagCell(r) {
+  return '<span class="roster-tag ' + rosterTagClass(r.tag_label || r.tag_key) + '">' + esc(r.tag_label || r.tag_key) + '</span>'
+    + '<div class="metric-sub">' + esc(r.tag_type || '') + '</div>';
+}
+
 function renderLeaderboard() {
+  renderLeaderboardTagPicker();
   var rows = (leaderboardData.rows || []).filter(function (r) {
     return Number(r.games || 0) >= leaderboardMinMatches;
   }).map(function (r, i) {
@@ -2174,6 +2404,34 @@ function renderLeaderboard() {
       { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
       { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } }
     ], rows, 'No civ data.');
+    return;
+  }
+  if (leaderboardMode === 'tags') {
+    var tagMap = renderTagBubbleChart('Tag map', rows, {
+      xKey: 'tag_games',
+      xLabel: 'Tag games',
+      yKey: 'winrate',
+      sizeKey: 'avg_impact',
+      fallbackSizeKey: 'score',
+      labelKey: 'nick',
+      typeKey: 'tag_type',
+      listTitle: 'Top players'
+    });
+    document.getElementById('leaderboard-panel').innerHTML = tagMap + sortableTable('leader-tags', 'Tag leaderboard', [
+      { key: 'rank', label: '#', type: 'number', className: 'num', render: function (r, i) { return String(i + 1); } },
+      { key: 'nick', label: 'Player', render: function (r) { return playerCell(r.nick, r.avatar, r.user_id); } },
+      { key: 'tag_label', label: 'Tag', render: tagCell },
+      { key: 'score', label: 'Score', type: 'number', className: 'num' },
+      { key: 'tag_games', label: 'Tag games', type: 'number', className: 'num' },
+      { key: 'tag_rate', label: 'Tag rate', type: 'number', className: 'num', render: function (r) { return fmtPct(r.tag_rate); } },
+      { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+      { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+      { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } },
+      { key: 'avg_impact', label: 'Avg impact', type: 'number', className: 'num', render: function (r) { return fmtImpactAvg(r.avg_impact); } },
+      { key: 'last_tagged_at', label: 'Last tagged', type: 'number', render: function (r) { return fmtAgo(r.last_tagged_at); } }
+    ], rows, 'No tag data yet.', function (r) {
+      return 'class="leader-row" onclick="openPlayerProfile(\'' + esc(r.user_id) + '\')"';
+    });
     return;
   }
   document.getElementById('leaderboard-panel').innerHTML = sortableTable('leader-players', 'Player leaderboard', [
@@ -2250,6 +2508,7 @@ async function loadPlayerDetail(userId, period, opts) {
     renderPlayerDetail(d);
   } catch (e) {
     document.getElementById('player-detail-summary').innerHTML = '<div class="error">Failed to load: ' + esc(e.message) + '</div>';
+    document.getElementById('player-tags-panel').innerHTML = '';
     document.getElementById('player-elo-trend').innerHTML = '';
   }
 }
@@ -2277,6 +2536,7 @@ function renderPlayerDetail(d) {
     card('Top tags', profileTagLabels(p, s.strategy_tags), 'aggregated match tags'),
     card('Profiles', (s.profile_ids || []).length, (s.profile_ids || []).join(', ') || 'no AoE2 map')
   ].join('');
+  renderPlayerTagDetails(d);
 
   renderEloTrend(d.rating_history || [], 'player-elo-trend');
 
@@ -2322,6 +2582,53 @@ function renderPlayerDetail(d) {
   renderPlayerMatchesView(d);
 }
 
+function tagTypeLabel(type) {
+  type = String(type || 'tag').replace(/_/g, ' ');
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function renderPlayerTagDetails(d) {
+  var s = d.summary || {};
+  var totalGames = Number(s.games || 0);
+  var tags = (s.strategy_tags || []).map(function (t) {
+    var games = Number(t.games || 0);
+    var wins = Number(t.wins || 0);
+    var losses = Number(t.losses || 0);
+    var rate = totalGames ? Math.round(games * 1000 / totalGames) / 10 : null;
+    return {
+      key: t.key,
+      label: t.label || t.key || '-',
+      type: t.type || t.category || 'tag',
+      games: games,
+      wins: wins,
+      losses: losses,
+      winrate: t.winrate,
+      tag_rate: rate,
+      avg_impact: t.avg_impact
+    };
+  });
+  var tagMap = renderTagBubbleChart('Tag map', tags, {
+    xKey: 'games',
+    xLabel: 'Tag games',
+    yKey: 'winrate',
+    sizeKey: 'avg_impact',
+    fallbackSizeKey: 'tag_rate',
+    labelKey: 'label',
+    typeKey: 'type',
+    listTitle: 'Top tags'
+  });
+  document.getElementById('player-tags-panel').innerHTML = tagMap + sortableTable('player-tags-table', 'Tag details', [
+    { key: 'label', label: 'Tag', render: function (r) { return '<span class="roster-tag ' + rosterTagClass(r.label) + '">' + esc(r.label) + '</span>'; } },
+    { key: 'type', label: 'Type', render: function (r) { return esc(tagTypeLabel(r.type)); } },
+    { key: 'games', label: 'Tag games', type: 'number', className: 'num' },
+    { key: 'tag_rate', label: 'Tag rate', type: 'number', className: 'num', render: function (r) { return fmtPct(r.tag_rate); } },
+    { key: 'wins', label: 'Won', type: 'number', className: 'num' },
+    { key: 'losses', label: 'Lost', type: 'number', className: 'num' },
+    { key: 'winrate', label: 'Win %', type: 'number', className: function (r) { return 'num ' + wrPctClass(r.winrate); }, render: function (r) { return fmtPct(r.winrate); } },
+    { key: 'avg_impact', label: 'Avg impact', type: 'number', className: 'num', render: function (r) { return fmtImpactAvg(r.avg_impact); } }
+  ], tags, 'No tag data for this period.');
+}
+
 function renderPlayerMatchesView(d) {
   var panel = document.getElementById('player-profile-matches');
   if (!panel) return;
@@ -2365,7 +2672,7 @@ function styleRead(style) {
 
 function impactStyleLabel(style, leader) {
   if (style === 'Pressure player') return 'Flank pressure engine';
-  if (style === 'Boom carry') return 'Pocket boom carry';
+  if (style === 'Boom carry') return 'Greedy boom carry';
   if (style === 'Economy carry') return 'Eco-to-Imperial carry';
   if (style === 'Timing specialist') return 'Castle-age timing hitter';
   if (style === 'Recovery anchor') return 'Reboom anchor';
@@ -2459,6 +2766,19 @@ function strategyTagEvidence(tags) {
   return strategyTagLabels(tags).slice(0, 3).join(', ');
 }
 
+function strategyKeyStat(tags, keys) {
+  var set = {};
+  keys.forEach(function (k) { set[k] = true; });
+  return (tags || []).reduce(function (acc, t) {
+    if (t && set[t.key]) {
+      acc.count += Number(t.games || 0);
+      acc.wins += Number(t.wins || 0);
+      acc.losses += Number(t.losses || 0);
+    }
+    return acc;
+  }, { count: 0, wins: 0, losses: 0 });
+}
+
 function strategyTopCategory(strategy) {
   var mix = strategy && strategy.army_mix ? strategy.army_mix : [];
   return mix.length ? String(mix[0].category || '') : '';
@@ -2539,12 +2859,32 @@ function scoredPlaystyle(d) {
   var archerStrategy = hasStrategyKey(strategyTags, ['archer_rush', 'crossbow_rush', 'late_crossbow', 'cav_archer_rush', 'late_cav_archer']);
   var castleSiegeStrategy = hasStrategyKey(strategyTags, ['forward_castle', 'safe_castle', 'ram_push', 'late_ram']);
   var maaStrategy = hasStrategyKey(strategyTags, ['maa_rush']);
+  var roleFastCastle = strategyKeyStat(strategyTags, ['role_fast_castle_pocket', 'Naked FC', 'Fast Castle pocket', 'safe_castle']);
+  var roleGreedyBoom = strategyKeyStat(strategyTags, ['role_greedy_boom', 'boom_to_imp', 'Greedy boom', 'Tech greedy', 'Boom carry', 'Eco carry']);
+  var rolePressure = strategyKeyStat(strategyTags, ['role_opening_pressure', 'archer_rush', 'scout_rush', 'maa_rush', 'Feudal all-in', 'All-in pressure', 'Map pressure']);
+  var roleKnight = strategyKeyStat(strategyTags, ['role_knight_pocket', 'knight_rush', 'late_knight', 'Knight-heavy comp']);
+  var roleArcher = strategyKeyStat(strategyTags, ['role_archer_tempo', 'archer_rush', 'crossbow_rush', 'late_crossbow']);
+  var roleCamel = strategyKeyStat(strategyTags, ['role_camel_guard', 'camel_rush', 'late_camel']);
+  var roleCA = strategyKeyStat(strategyTags, ['role_ca_switch', 'cav_archer_rush', 'late_cav_archer']);
+  var roleSiege = strategyKeyStat(strategyTags, ['role_siege_closer', 'ram_push', 'late_ram', 'forward_castle']);
+  var roleTrash = strategyKeyStat(strategyTags, ['role_trash_stabilizer', 'Trash switch']);
 
-  addStyleCandidate(candidates, 'Pocket boom carry',
-    eco + quietBoomRate * 0.45 + boomTagRate * 0.45 + (boomStrategy ? 14 : 0) + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.7,
-    'Pocket-boom read: wants space, adds TCs/eco techs, then converts villager lead into late Castle or Imperial army mass.',
+  addStyleCandidate(candidates, 'Fast Castle pocket',
+    eco * 0.45 + timing * 0.35 + Math.min(26, roleFastCastle.count * 0.18) + (castleMin && castleMin <= 18.5 ? 8 : 0) + (preCastleMil <= 5 ? 4 : 0),
+    'Pocket-FC read: keeps Dark/Feudal clean, clicks Castle fast, then joins with knights, monks, siege, or defensive boom.',
     [
-      quietBoomRate ? quietBoomRate + '% quiet-boom openings' : '',
+      roleFastCastle.count ? roleFastCastle.count + ' fast-castle pocket games' : '',
+      castleMin ? 'Castle at ' + minutesText(castleMin) : '',
+      preCastleMil || preCastleMil === 0 ? preCastleMil + ' pre-Castle military' : '',
+      timing ? 'timing score ' + fmtImpactAvg(timing) : ''
+    ]);
+
+  addStyleCandidate(candidates, 'Greedy boom carry',
+    eco * 0.75 + Math.min(28, roleGreedyBoom.count * 0.22) + boomTagRate * 0.25 + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.45,
+    'Greedy-boom read: wants space, adds TCs/eco techs, then converts villager lead into late Castle or Imperial army mass.',
+    [
+      roleGreedyBoom.count ? roleGreedyBoom.count + ' greedy-boom games' : '',
+      quietBoomRate ? quietBoomRate + '% quiet starts' : '',
       eco ? 'eco score ' + fmtImpactAvg(eco) : '',
       strategy.avg_imperial_min ? 'Imp around ' + minutesText(strategy.avg_imperial_min) : '',
       isolatedBest ? 'best on isolated/free-boom starts' : '',
@@ -2552,10 +2892,11 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Flank pressure engine',
-    army + armyPressureRate * 0.4 + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.25,
+    army + armyPressureRate * 0.35 + Math.min(24, rolePressure.count * 0.15) + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.2,
     'Pressure-flank read: makes army before comfort boom, contests map, raids, and buys team economy time.',
     [
-      armyPressureTags ? armyPressureTags + ' pressure tags (' + Math.round(armyPressureRate) + '% rate)' : '',
+      rolePressure.count ? rolePressure.count + ' opening-pressure games' : '',
+      armyPressureTags ? armyPressureTags + ' impact pressure tags (' + Math.round(armyPressureRate) + '% rate)' : '',
       preCastleMil ? preCastleMil + ' military before Castle' : '',
       nearEnemyBest ? 'wins near-enemy spawns' : '',
       army ? 'army score ' + fmtImpactAvg(army) : '',
@@ -2581,9 +2922,10 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Cavalry map-control pocket',
-    (cavalryLean ? 22 : 0) + (scoutKnightStrategy ? 14 : 0) + army * 0.5 + timing * 0.35 + (boomTagCount ? 4 : 0),
+    (cavalryLean ? 18 : 0) + (scoutKnightStrategy ? 12 : 0) + Math.min(26, (roleKnight.count + roleCamel.count + roleCA.count) * 0.18) + army * 0.5 + timing * 0.35 + (boomTagCount ? 3 : 0),
     'Cavalry-pocket read: uses mobility for raids, cleanup, relic/map control, and fast swing fights after eco setup.',
     [
+      (roleKnight.count + roleCamel.count + roleCA.count) ? (roleKnight.count + roleCamel.count + roleCA.count) + ' cavalry-role games' : '',
       cavalryLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       army ? 'army score ' + fmtImpactAvg(army) : '',
       timing ? 'timing score ' + fmtImpactAvg(timing) : '',
@@ -2591,9 +2933,10 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Archer pressure flank',
-    (archerLean ? 22 : 0) + (archerStrategy ? 14 : 0) + army * 0.55 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
+    (archerLean ? 18 : 0) + (archerStrategy ? 12 : 0) + Math.min(26, roleArcher.count * 0.22) + army * 0.55 + (timingTagCount ? 5 : 0) + (preCastleMil >= 8 ? 4 : 0),
     'Archer-flank read: wants early ranges, ranged mass, upgrade windows, and pressure that forces defensive skirms/towers.',
     [
+      roleArcher.count ? roleArcher.count + ' archer-tempo games' : '',
       archerLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       preCastleMil ? preCastleMil + ' pre-Castle military' : '',
       timingTagCount ? timingTagCount + ' age-up tempo tags' : '',
@@ -2601,9 +2944,10 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Trash-war stabilizer',
-    (infantryLean ? 10 : 0) + recovery * 0.6 + (longGameEdge ? 8 : 0) + (hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 8 : 0),
+    (infantryLean ? 8 : 0) + Math.min(22, roleTrash.count * 0.2) + recovery * 0.6 + (longGameEdge ? 8 : 0) + (hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 8 : 0),
     'Trash-war read: survives gold-light games with spear/skirm style utility, rebooms, and keeps fights playable late.',
     [
+      roleTrash.count ? roleTrash.count + ' trash-stabilizer games' : '',
       infantryLean ? 'trash/infantry mix appears' : '',
       recovery ? 'recovery score ' + fmtImpactAvg(recovery) : '',
       hasStrategyTech(strategy, 'Pikeman|Halberdier|Skirmisher|Elite Skirmisher') ? 'trash tech sample present' : '',
@@ -2611,9 +2955,10 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Siege-support closer',
-    (siegeLean ? 24 : 0) + (castleSiegeStrategy ? 14 : 0) + timing * 0.5 + avgImpact * 0.35,
+    (siegeLean ? 20 : 0) + (castleSiegeStrategy ? 12 : 0) + Math.min(26, roleSiege.count * 0.2) + timing * 0.5 + avgImpact * 0.35,
     'Siege-support read: converts map control into push power, treb/ram/mango pressure, and late-game closing fights.',
     [
+      roleSiege.count ? roleSiege.count + ' siege-closer games' : '',
       siegeLean ? 'top army leans ' + strategyTopUnit(strategy) : '',
       timing ? 'timing score ' + fmtImpactAvg(timing) : '',
       avgImpact ? 'impact score ' + fmtImpactAvg(avgImpact) : '',
@@ -3042,7 +3387,7 @@ function renderGuildMenu() {
 function renderBreadcrumb() {
   var bc = document.getElementById('dash-breadcrumb');
   if (!dashGuildId) { bc.innerHTML = ''; return; }
-  var parts = ['<a onclick="resetDashboard();return false" href="#">Dashboard</a>'];
+  var parts = ['<a onclick="resetDashboard();return false" href="#">PUBobot2 Config</a>'];
   if (dashGuildId && !dashChannelId) {
     parts.push('<span class="current">'+esc(dashGuildName)+'</span>');
   } else if (dashChannelId && !dashQueueName) {

@@ -5,6 +5,7 @@ import csv
 import os
 import time
 
+from core.console import log
 from core.database import db
 
 from . import shape
@@ -85,7 +86,7 @@ async def load_profile_user_map():
     return {r["profile_id"]: r["user_id"] for r in rows}
 
 
-async def write_match(extracted, bot_match_id, parsed_at, parser_version):
+async def write_match(extracted, bot_match_id, parsed_at, parser_version, played_at_epoch=None):
     """Idempotent: replace this match's rows. Returns count of player rows written."""
     aoe2_id = extracted["match"]["aoe2_match_id"]
     profmap = await load_profile_user_map()
@@ -117,6 +118,16 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version):
     profs = shape.profile_upserts(extracted["players"], profmap, parsed_at)
     if profs:
         await db.insert_many("rs_profiles", profs, on_dublicate="replace")
+    try:
+        from . import classifications
+        await classifications.write_extracted_match(extracted, played_at_epoch)
+    except Exception as e:
+        log.error(f"Replay-stats classification write failed for aoe2 match {aoe2_id}: {e}")
+    try:
+        from . import player_tags
+        await player_tags.write_match_tags(aoe2_id)
+    except Exception as e:
+        log.error(f"Replay-stats player tag write failed for aoe2 match {aoe2_id}: {e}")
     return len(pg)
 
 

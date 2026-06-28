@@ -18,6 +18,7 @@ from core.cfg_factory import (
 from core.client import dc
 from core.database import db
 import bot
+from bot.tag_leaderboard import tag_leaderboard_score
 
 # --- Paths ---
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
@@ -36,7 +37,7 @@ STRATEGY_TAG_LABELS = {
 	"archer_rush": "Feudal archer poke",
 	"scout_rush": "Scout-map opener",
 	"maa_rush": "MAA opening",
-	"knight_rush": "Knight flood",
+	"knight_rush": "Knight rush opener",
 	"crossbow_rush": "Xbow timing",
 	"cav_archer_rush": "CA switch",
 	"camel_rush": "Camel counter-punch",
@@ -50,6 +51,31 @@ STRATEGY_TAG_LABELS = {
 	"late_unique": "UU spam",
 	"late_ram": "Late siege push",
 	"boom_to_imp": "Greedy boom to Imp",
+}
+IMPACT_TAG_LABELS = {
+	"Low-eco pressure": "All-in pressure",
+	"Army pressure": "Map pressure",
+	"Boom carry": "Boom carry",
+	"Eco carry": "Eco carry",
+	"Timing edge": "Age-up tempo",
+	"Recovery": "Reboom",
+	"High impact": "High impact",
+	"All-in pressure": "All-in pressure",
+	"Map pressure": "Map pressure",
+	"Age-up tempo": "Age-up tempo",
+	"Reboom": "Reboom",
+	"Naked FC": "Naked FC",
+	"Greedy boom": "Greedy boom",
+	"Feudal all-in": "Feudal all-in",
+	"Fast Imp": "Fast Imp",
+	"Army spammer": "Army spammer",
+	"Tech greedy": "Tech greedy",
+	"Upgrade timer": "Upgrade timer",
+	"Knight-heavy comp": "Knight-heavy comp",
+	"Monk support": "Monk support",
+	"Trash switch": "Trash switch",
+	"One-trick comp": "One-trick comp",
+	"Mixed comp": "Mixed comp",
 }
 
 # --- Session store (Layer 5: migrated from in-memory dicts to MySQL) ---
@@ -808,6 +834,180 @@ def _impact_payload(row, group):
 		}
 
 
+def _tag_meta(key, tag_type):
+	if tag_type == "strategy":
+		return {"key": key, "label": STRATEGY_TAG_LABELS.get(key, str(key or "").replace("_", " ").title()),
+				"type": "strategy"}
+	return {"key": key, "label": IMPACT_TAG_LABELS.get(key, key), "type": tag_type or "impact"}
+
+
+async def _parsed_games_by_user(period, profile_to_user):
+	at_clause, params = _period_filter(period)
+	rows = await db.fetchall(
+		"SELECT g.user_id, g.profile_id, COUNT(DISTINCT g.aoe2_match_id) AS games "
+		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"JOIN qc_matches m ON m.match_id=rm.bot_match_id "
+		"WHERE 1=1" + at_clause +
+		" GROUP BY g.user_id, g.profile_id",
+		params)
+	out = {}
+	for r in rows or []:
+		uid = r.get("user_id") or profile_to_user.get(int(r["profile_id"])) if r.get("profile_id") else r.get("user_id")
+		if uid is None:
+			continue
+		out[int(uid)] = out.get(int(uid), 0) + int(r.get("games") or 0)
+	return out
+
+
+def _empty_tag_row(uid, nick, avatar, tag_key, tag_type):
+	meta = _tag_meta(tag_key, tag_type)
+	return {
+		"user_id": str(uid),
+		"nick": nick or str(uid),
+		"avatar": avatar,
+		"tag_key": meta["key"],
+		"tag_label": meta["label"],
+		"tag_type": meta["type"],
+		"games": 0,
+		"tag_games": 0,
+		"parsed_games": 0,
+		"wins": 0,
+		"losses": 0,
+		"winrate": None,
+		"tag_rate": 0,
+		"avg_impact": None,
+		"score": 0,
+		"last_tagged_at": None,
+	}
+
+
+def _finish_tag_rows(rows_by_key, parsed_games):
+	rows = []
+	for row in rows_by_key.values():
+		tag_games = int(row["tag_games"] or 0)
+		decided = int(row["wins"] or 0) + int(row["losses"] or 0)
+		row["games"] = tag_games
+		row["parsed_games"] = int(parsed_games.get(int(row["user_id"]), row.get("parsed_games") or tag_games) or 0)
+		row["winrate"] = _winrate(row["wins"], row["losses"]) if decided else None
+		row["tag_rate"] = round(tag_games * 100 / row["parsed_games"], 1) if row["parsed_games"] else 0
+		if row.pop("_impact_count", 0):
+			row["avg_impact"] = round(row.pop("_impact_sum", 0) / tag_games, 1)
+		else:
+			row.pop("_impact_sum", None)
+		row["score"] = tag_leaderboard_score(
+			tag_games, row["wins"], row["losses"], row["tag_rate"], row.get("avg_impact"))
+		rows.append(row)
+	return sorted(rows, key=lambda r: (-r["score"], -r["tag_games"], -(r["winrate"] or 0), r["nick"].lower()))
+
+
+async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
+	start = _period_start(period)
+	keys = list(STRATEGY_TAG_LABELS)
+	args = [*keys]
+	time_clause = ""
+	if start is not None:
+		time_clause = " AND r.played_at >= %s"
+		args.append(start)
+	rows = await db.fetchall(
+		"SELECT r.profile_id, r.identity, r.`key`, MAX(c.title) AS title, COUNT(*) AS games, "
+		"SUM(r.winner=1) AS wins, SUM(r.winner=0) AS losses, MAX(r.played_at) AS last_tagged_at "
+		"FROM cls_results r LEFT JOIN cls_classifications c ON c.`key`=r.`key` "
+		"WHERE r.`key` IN (" + ",".join(["%s"] * len(keys)) + ")" + time_clause +
+		" GROUP BY r.profile_id, r.identity, r.`key`",
+		args)
+	out = {}
+	available = {}
+	for r in rows or []:
+		key = r.get("key")
+		profile_id = r.get("profile_id")
+		uid = profile_to_user.get(int(profile_id)) if profile_id is not None else None
+		if uid is None or uid in hidden_users:
+			continue
+		available.setdefault(key, {**_tag_meta(key, "strategy"), "games": 0})["games"] += int(r.get("games") or 0)
+		if tag_key != "all" and key != tag_key:
+			continue
+		row_key = (uid, key, "strategy")
+		cur = out.setdefault(row_key, _empty_tag_row(
+			uid, mapped.get(uid, {}).get("nick") or r.get("identity"), _avatar_for_user_id(uid), key, "strategy"))
+		cur["tag_games"] += int(r.get("games") or 0)
+		cur["wins"] += int(r.get("wins") or 0)
+		cur["losses"] += int(r.get("losses") or 0)
+		cur["last_tagged_at"] = max(cur["last_tagged_at"] or 0, int(r.get("last_tagged_at") or 0)) or None
+	return list(available.values()), out
+
+
+async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
+	start = _period_start(period)
+	params = []
+	time_clause = ""
+	if start is not None:
+		time_clause = " AND t.played_at >= %s"
+		params.append(start)
+	rows = await db.fetchall(
+		"SELECT t.user_id, t.profile_id, t.identity, t.tag, MAX(t.tag_label) AS tag_label, "
+		"MAX(t.category) AS category, COUNT(*) AS games, SUM(t.winner=1) AS wins, "
+		"SUM(t.winner=0) AS losses, AVG(t.score) AS avg_score, MAX(t.played_at) AS last_tagged_at "
+		"FROM rs_player_game_tags t WHERE 1=1" + time_clause +
+		" GROUP BY t.user_id, t.profile_id, t.identity, t.tag",
+		params)
+	out = {}
+	available = {}
+	for r in rows or []:
+		uid = r.get("user_id") or profile_to_user.get(int(r["profile_id"])) if r.get("profile_id") else r.get("user_id")
+		if uid is None or int(uid) in hidden_users:
+			continue
+		key = r.get("tag")
+		tag_type = r.get("category") or "impact"
+		meta = _tag_meta(key, tag_type)
+		meta["label"] = r.get("tag_label") or meta["label"]
+		available.setdefault(key, {**meta, "games": 0})["games"] += int(r.get("games") or 0)
+		if tag_key != "all" and key != tag_key:
+			continue
+		row_key = (int(uid), key, tag_type)
+		cur = out.setdefault(row_key, _empty_tag_row(
+			int(uid), mapped.get(int(uid), {}).get("nick") or r.get("identity"),
+			_avatar_for_user_id(uid), key, tag_type))
+		cur["tag_label"] = meta["label"]
+		cur["tag_games"] += int(r.get("games") or 0)
+		cur["wins"] += int(r.get("wins") or 0)
+		cur["losses"] += int(r.get("losses") or 0)
+		cur["last_tagged_at"] = max(cur["last_tagged_at"] or 0, int(r.get("last_tagged_at") or 0)) or None
+		if r.get("avg_score") is not None:
+			cur["_impact_sum"] = cur.get("_impact_sum", 0) + (float(r["avg_score"]) * int(r.get("games") or 0))
+			cur["_impact_count"] = cur.get("_impact_count", 0) + int(r.get("games") or 0)
+	return list(available.values()), out
+
+
+async def _tag_leaderboard(period, tag_key="all"):
+	mapped = await _mapped_profiles_by_user()
+	profile_to_user = {}
+	for uid, data in mapped.items():
+		for pid in data.get("profile_ids") or []:
+			profile_to_user[int(pid)] = int(uid)
+	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM qc_players WHERE is_hidden=1")
+	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
+	parsed_games = await _parsed_games_by_user(period, profile_to_user)
+	strategy_tags, rows_by_key = await _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users)
+	stored_tags, stored_rows = await _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users)
+	for k, r in stored_rows.items():
+		rows_by_key[k] = r
+	tags = {}
+	for tag in strategy_tags + stored_tags:
+		tags[(tag["type"], tag["key"])] = tag
+	tag_options = sorted(tags.values(), key=lambda t: (t["type"], t["label"]))
+	selected_tag = tag_key
+	if selected_tag in (None, "", "all"):
+		selected_tag = tag_options[0]["key"] if tag_options else ""
+	if selected_tag:
+		rows_by_key = {k: v for k, v in rows_by_key.items() if k[1] == selected_tag}
+	rows = _finish_tag_rows(rows_by_key, parsed_games)
+	return {
+		"tag": selected_tag,
+		"tags": tag_options,
+		"rows": rows,
+	}
+
+
 def _avg_impact(impacts, key):
 	vals = [float(i[key]) for i in impacts if i.get(key) is not None]
 	return round(sum(vals) / len(vals), 1) if vals else None
@@ -972,14 +1172,17 @@ def _strategy_tag_payload(row):
 	return {
 		"key": key,
 		"label": STRATEGY_TAG_LABELS.get(key, row.get("title") or str(key or "").replace("_", " ").title()),
+		"category": "strategy",
+		"type": "strategy",
 		"games": games,
 		"wins": wins,
 		"losses": losses,
 		"winrate": _winrate(wins, losses),
+		"avg_impact": None,
 	}
 
 
-async def _player_strategy_tags(profile_ids, period, limit=8):
+async def _player_strategy_tags(profile_ids, period, limit=24):
 	profile_ids = [str(p) for p in profile_ids or []]
 	if not profile_ids:
 		return []
@@ -1000,6 +1203,53 @@ async def _player_strategy_tags(profile_ids, period, limit=8):
 	return [_strategy_tag_payload(r) for r in rows or []]
 
 
+async def _player_stored_tags(profile_ids, period, limit=12):
+	profile_ids = [str(p) for p in profile_ids or []]
+	if not profile_ids:
+		return []
+	start = _period_start(period)
+	args = [*profile_ids]
+	time_clause = ""
+	if start is not None:
+		time_clause = " AND played_at >= %s"
+		args.append(start)
+	rows = await db.fetchall(
+		"SELECT tag AS `key`, MAX(tag_label) AS label, MAX(category) AS category, "
+		"COUNT(*) AS games, SUM(winner=1) AS wins, SUM(winner=0) AS losses, AVG(score) AS avg_impact "
+		"FROM rs_player_game_tags WHERE profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ")" +
+		time_clause + " GROUP BY tag ORDER BY games DESC, wins DESC, tag LIMIT %s",
+		[*args, limit])
+	return [
+		{
+			"key": r.get("key"),
+			"label": r.get("label") or r.get("key"),
+			"category": r.get("category"),
+			"type": r.get("category") or "impact",
+			"games": int(r.get("games") or 0),
+			"wins": int(r.get("wins") or 0),
+			"losses": int(r.get("losses") or 0),
+			"winrate": _winrate(r.get("wins"), r.get("losses")),
+			"avg_impact": _num(r.get("avg_impact")),
+		}
+		for r in rows or []
+	]
+
+
+async def _player_profile_tags(profile_ids, period):
+	stored = await _player_stored_tags(profile_ids, period)
+	strategy = await _player_strategy_tags(profile_ids, period)
+	out = []
+	seen = set()
+	for tag in stored + strategy:
+		key = tag.get("key")
+		tag_type = tag.get("type") or tag.get("category") or "tag"
+		if not key or (tag_type, key) in seen:
+			continue
+		seen.add((tag_type, key))
+		out.append(tag)
+	return sorted(out, key=lambda t: (-int(t.get("games") or 0), -(t.get("winrate") or 0), str(t.get("label") or "")))[:24]
+
+
 async def _classification_tags_for_bot_matches(match_ids):
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
@@ -1015,6 +1265,17 @@ async def _classification_tags_for_bot_matches(match_ids):
 	by_name = {}
 	for row in rows or []:
 		tag = {"key": row.get("key"), "label": STRATEGY_TAG_LABELS.get(row.get("key"), row.get("title") or row.get("key"))}
+		if row.get("profile_id") is not None:
+			by_profile.setdefault((row["bot_match_id"], str(row["profile_id"])), []).append(tag)
+		if row.get("identity"):
+			by_name.setdefault((row["bot_match_id"], str(row["identity"]).lower()), []).append(tag)
+	stored_rows = await db.fetchall(
+		"SELECT rm.bot_match_id, t.profile_id, t.identity, t.tag, t.tag_label "
+		"FROM rs_matches rm JOIN rs_player_game_tags t ON t.aoe2_match_id=rm.aoe2_match_id "
+		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
+		match_ids)
+	for row in stored_rows or []:
+		tag = {"key": row.get("tag"), "label": row.get("tag_label") or row.get("tag")}
 		if row.get("profile_id") is not None:
 			by_profile.setdefault((row["bot_match_id"], str(row["profile_id"])), []).append(tag)
 		if row.get("identity"):
@@ -1444,7 +1705,7 @@ async def _match_stats_player(user_id, period):
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
 	rating_history = await _rating_history(period, user_id)
-	strategy_tags = await _player_strategy_tags(profile_ids, period)
+	strategy_tags = await _player_profile_tags(profile_ids, period)
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -1637,6 +1898,15 @@ async def handle_leaderboard(request):
 				for r in rows or []
 			],
 		})
+	if mode == "tags":
+		tag_key = request.query.get("tag") or "all"
+		payload = await _tag_leaderboard(period, tag_key)
+		return web.json_response({
+			"period": period,
+			"mode": "tags",
+			"tag": tag_key,
+			**payload,
+		})
 	rows = await db.fetchall(
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -1689,7 +1959,7 @@ async def handle_player_stats(request):
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
 	rating_history = await _rating_history(period, user_id)
-	strategy_tags = await _player_strategy_tags(profile_ids, period)
+	strategy_tags = await _player_profile_tags(profile_ids, period)
 	base_args = [user_id, *params]
 	summary = await db.fetchone(
 		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "

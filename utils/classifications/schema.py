@@ -53,4 +53,11 @@ CLS_TABLES = [
         losses BIGINT,
         PRIMARY KEY (identity)
     )""",
+    """CREATE TABLE IF NOT EXISTS cls_match_ingest (
+        aoe2_match_id BIGINT NOT NULL,
+        classified_at BIGINT,
+        result_rows BIGINT,
+        status VARCHAR(191),
+        PRIMARY KEY (aoe2_match_id)
+    )""",
 ]

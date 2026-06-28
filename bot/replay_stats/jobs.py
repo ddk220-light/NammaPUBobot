@@ -101,7 +101,8 @@ class ReplayStatsJobs:
                                                  save_version=sv, attempts=attempts + 1,
                                                  next_attempt_at=now + 3600, error_reason="parse error")
 
-            await store.write_match(result, bot_match_id, now, PARSER_VERSION)
+            await store.write_match(result, bot_match_id, now, PARSER_VERSION,
+                                    played_at_epoch=played_at_epoch)
             try:
                 from .classification_sync import sync_match
                 cls_rows, cls_metrics = await sync_match(result, played_at_epoch or now)
