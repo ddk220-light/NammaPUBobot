@@ -532,12 +532,16 @@ async def _sub_me(
 
 @dc.slash_command(
 	name='subauto',
-	description='Replace yourself with the next player in queue and rebalance teams by ELO',
+	description='Replace a player with the next in queue (yourself if no player given)',
 	**guild_kwargs
 )
 async def _sub_auto(
-		interaction: Interaction
-): await run_slash(bot.commands.sub_auto, interaction=interaction)
+		interaction: Interaction,
+		player: Member = SlashOption(
+			name="player", description="Player to replace (defaults to you).",
+			required=False, default=None, verify=False
+		)
+): await run_slash(bot.commands.sub_auto, interaction=interaction, player=player)
 
 
 @dc.slash_command(
