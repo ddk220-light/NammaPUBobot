@@ -42,6 +42,5 @@ def test_derives_composition_and_upgrade_tags():
 	]
 	tags = {t["tag"] for t in derive_tags(row, group, units, techs)}
 	assert "Feudal all-in" in tags
-	assert "Knight flood" in tags
-	assert "Siege pusher" in tags
+	assert "Knight-heavy comp" in tags
 	assert "Upgrade timer" in tags

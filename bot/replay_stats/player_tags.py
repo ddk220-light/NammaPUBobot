@@ -27,13 +27,9 @@ TAG_META = {
 	"Army spammer": ("style", "Army spammer"),
 	"Tech greedy": ("tech", "Tech greedy"),
 	"Upgrade timer": ("tech", "Upgrade timer"),
-	"Knight flood": ("composition", "Knight flood"),
-	"Xbow mass": ("composition", "Xbow mass"),
-	"CA switch": ("composition", "CA switch"),
-	"Siege pusher": ("composition", "Siege pusher"),
+	"Knight-heavy comp": ("composition", "Knight-heavy comp"),
 	"Monk support": ("composition", "Monk support"),
 	"Trash switch": ("composition", "Trash switch"),
-	"UU spam": ("composition", "UU spam"),
 	"One-trick comp": ("composition", "One-trick comp"),
 	"Mixed comp": ("composition", "Mixed comp"),
 }
@@ -168,20 +164,12 @@ def derive_tags(row, group, units=None, techs=None):
 		share = top_total / total_military
 		comp_evidence = {"top_category": top_cat, "top_total": top_total, "military_total": total_military}
 		if top_cat == "knight_line" and top_total >= 45:
-			tags.append(_tag("Knight flood", min(95, 45 + top_total / 2), comp_evidence))
-		if top_cat == "archer_line" and top_total >= 45:
-			tags.append(_tag("Xbow mass", min(95, 45 + top_total / 2), comp_evidence))
-		if top_cat == "cav_archer" and top_total >= 25:
-			tags.append(_tag("CA switch", min(95, 50 + top_total), comp_evidence))
-		if by_cat.get("siege", 0) >= 8:
-			tags.append(_tag("Siege pusher", min(92, 52 + by_cat["siege"] * 2), {"siege": by_cat["siege"]}))
+			tags.append(_tag("Knight-heavy comp", min(95, 45 + top_total / 2), comp_evidence))
 		if by_cat.get("monk", 0) >= 3:
 			tags.append(_tag("Monk support", min(88, 55 + by_cat["monk"] * 4), {"monks": by_cat["monk"]}))
 		trash = by_cat.get("spearman_line", 0) + by_cat.get("skirmisher", 0) + by_cat.get("scout", 0)
 		if trash >= 60 and trash / total_military >= 0.45:
 			tags.append(_tag("Trash switch", min(92, 45 + trash / 2), {"trash_units": trash, "military_total": total_military}))
-		if by_cat.get("unique_other", 0) >= 45:
-			tags.append(_tag("UU spam", min(95, 45 + by_cat["unique_other"] / 2), {"unique_units": by_cat["unique_other"]}))
 		if share >= 0.62 and top_total >= 60:
 			tags.append(_tag("One-trick comp", min(92, 45 + share * 60), comp_evidence))
 		elif len([v for v in by_cat.values() if v >= 20]) >= 3:
