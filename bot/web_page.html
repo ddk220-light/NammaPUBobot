@@ -733,6 +733,7 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 .mini-table th.sortable:hover { color: #dcddde; }
 .sort-mark { color: #5b8cee; margin-left: 4px; }
 .mini-table td { padding: 0.58rem 0.7rem; border-top: 1px solid rgba(72,76,84,0.5); }
+.mini-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .mini-table td.num { color: #b9bbbe; text-align: right; font-variant-numeric: tabular-nums; }
 .mini-table td.gain-pos { color: #57d98b; font-weight: 700; }
 .mini-table td.gain-neg { color: #e06060; font-weight: 700; }
@@ -2024,7 +2025,10 @@ function sortableTable(tableId, title, columns, rows, empty, rowAttrs, detailRen
   return '<h2>' + esc(title) + '</h2><table class="mini-table"><thead><tr>'
     + columns.map(function (col) {
       var active = state && state.key === col.key;
-      return '<th class="sortable" onclick="setMiniSort(\'' + esc(tableId) + '\',\'' + esc(col.key) + '\',\'' + esc(col.type || 'string') + '\')">'
+      var hcls = ['sortable'];
+      if (col.type === 'number' || col.headerClassName === 'num') hcls.push('num');
+      if (col.headerClassName && col.headerClassName !== 'num') hcls.push(col.headerClassName);
+      return '<th class="' + esc(hcls.join(' ')) + '" onclick="setMiniSort(\'' + esc(tableId) + '\',\'' + esc(col.key) + '\',\'' + esc(col.type || 'string') + '\')">'
         + esc(col.label) + (active ? '<span class="sort-mark">' + (state.asc ? '\u25B2' : '\u25BC') + '</span>' : '') + '</th>';
     }).join('')
     + '</tr></thead><tbody>' + sorted.map(function (row, idx) {
