@@ -259,6 +259,101 @@ def _team_impact_rows(player_rows):
 	return by_team
 
 
+def _analysis_key(row, nick_key="nick"):
+	user_id = row.get("user_id")
+	if user_id is not None:
+		return ("user", str(user_id))
+	name = (row.get(nick_key) or row.get("identity") or "").strip().lower()
+	return ("name", name) if name else None
+
+
+def _infer_replay_team_map(roster_rows, replay_rows):
+	roster_by_key = {_analysis_key(r): r for r in roster_rows if _analysis_key(r)}
+	votes = {}
+	for g in replay_rows:
+		key = _analysis_key(g, "identity")
+		roster = roster_by_key.get(key)
+		if not roster:
+			continue
+		try:
+			bot_team = int(roster.get("bot_team"))
+		except (TypeError, ValueError):
+			continue
+		replay_team = g.get("replay_team")
+		if replay_team is None:
+			continue
+		votes.setdefault(str(replay_team), {})
+		votes[str(replay_team)][bot_team] = votes[str(replay_team)].get(bot_team, 0) + 1
+	return {
+		replay_team: sorted(team_votes.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+		for replay_team, team_votes in votes.items()
+	}
+
+
+def _merge_analysis_rows(mc_rows, replay_rows, pm_rows=None):
+	"""Full post-game roster: bot roster first, civ rows + replay rows fill details."""
+	pm_rows = pm_rows or []
+	mc_by_key = {_analysis_key(r): r for r in mc_rows if _analysis_key(r)}
+	replay_by_key = {_analysis_key(r, "identity"): r for r in replay_rows if _analysis_key(r, "identity")}
+	team_map = _infer_replay_team_map(pm_rows or mc_rows, replay_rows)
+	merged = []
+	seen = set()
+	roster_rows = pm_rows or mc_rows
+	for base in roster_rows:
+		key = _analysis_key(base)
+		mc = mc_by_key.get(key) or {}
+		g = replay_by_key.get(key)
+		seen.add(key)
+		merged.append({
+			**(g or {}),
+			"user_id": base.get("user_id") if base.get("user_id") is not None else (g or {}).get("user_id"),
+			"identity": (g or {}).get("identity"),
+			"nick": base.get("nick") or mc.get("nick") or (g or {}).get("identity"),
+			"civ": mc.get("civ") or (g or {}).get("civ"),
+			"bot_team": base.get("bot_team"),
+			"result": mc.get("result") or base.get("result"),
+			"winner": (g or {}).get("winner"),
+		})
+
+	# Best-effort display merge for replay rows without a known profile/user mapping.
+	# If one bot roster player and one replay player are unmatched on the same team,
+	# assume they are the same participant for this card only. This avoids dropping
+	# players like a private/new profile whose profile->Discord mapping is missing.
+	unmatched_by_team = {}
+	for row in merged:
+		if row.get("identity"):
+			continue
+		try:
+			team = int(row.get("bot_team"))
+		except (TypeError, ValueError):
+			continue
+		unmatched_by_team.setdefault(team, []).append(row)
+	for g in replay_rows:
+		key = _analysis_key(g, "identity")
+		if key in seen:
+			continue
+		bot_team = team_map.get(str(g.get("replay_team")))
+		if bot_team not in (0, 1):
+			continue
+		candidates = unmatched_by_team.get(bot_team) or []
+		if len(candidates) == 1:
+			target = candidates.pop()
+			target.update(g)
+			target["identity"] = g.get("identity")
+			target["civ"] = target.get("civ") or g.get("civ")
+			target["winner"] = g.get("winner")
+			seen.add(key)
+			continue
+		merged.append({
+			**g,
+			"nick": g.get("identity"),
+			"civ": g.get("civ"),
+			"bot_team": bot_team,
+			"result": "W" if g.get("winner") else "L" if g.get("winner") is not None else None,
+		})
+	return merged
+
+
 def _team_tag_summary(team_rows):
 	counts = {}
 	for p in team_rows:
@@ -463,20 +558,32 @@ async def build_post_game_embed(channel_id, bot_match_id, player_civ_rows, winne
 
 async def _analysis_rows(bot_match_id):
 	from core.database import db
-	return await db.fetchall(
-		"SELECT g.user_id, g.identity, COALESCE(mc.nick, pm.nick, g.identity) AS nick, "
-		"COALESCE(mc.civ, g.civ) AS civ, mc.team AS bot_team, mc.result, g.winner, "
+	pm_rows = await db.fetchall(
+		"SELECT pm.user_id, MAX(pm.nick) AS nick, pm.team AS bot_team, "
+		"CASE WHEN m.winner=pm.team THEN 'W' "
+		"WHEN m.winner IS NOT NULL AND m.winner<>pm.team THEN 'L' ELSE NULL END AS result "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"WHERE pm.match_id=%s AND pm.team IN (0, 1) "
+		"GROUP BY pm.user_id, pm.team, m.winner "
+		"ORDER BY pm.team, nick",
+		[bot_match_id])
+	mc_rows = await db.fetchall(
+		"SELECT user_id, nick, team AS bot_team, civ, result "
+		"FROM qc_match_civs "
+		"WHERE bot_match_id=%s AND team IN (0, 1) AND result IN ('W', 'L') "
+		"ORDER BY team, nick",
+		[bot_match_id])
+	replay_rows = await db.fetchall(
+		"SELECT g.user_id, g.identity, g.civ, g.team AS replay_team, g.winner, "
 		"g.villagers, g.vil_pre_castle, g.military, g.mil_pre_castle, "
 		"g.feudal_s, g.castle_s, g.imperial_s "
 		"FROM rs_matches rm "
 		"JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
-		"LEFT JOIN qc_match_civs mc ON mc.bot_match_id=rm.bot_match_id "
-		"AND ((g.user_id IS NOT NULL AND mc.user_id=g.user_id) "
-		"OR (g.user_id IS NULL AND LOWER(mc.nick)=LOWER(g.identity))) "
-		"LEFT JOIN qc_player_matches pm ON pm.match_id=rm.bot_match_id AND pm.user_id=g.user_id "
-		"WHERE rm.bot_match_id=%s AND mc.team IN (0, 1) AND mc.result IN ('W', 'L') "
-		"ORDER BY mc.team, nick",
+		"WHERE rm.bot_match_id=%s "
+		"ORDER BY g.team, g.identity",
 		[bot_match_id])
+	return _merge_analysis_rows(mc_rows, replay_rows, pm_rows)
 
 
 async def build_match_analysis_embed(channel_id, bot_match_id):
