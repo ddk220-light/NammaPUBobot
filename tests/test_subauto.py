@@ -1,21 +1,17 @@
-"""Unit tests for pure check-in/subauto helpers.
+"""Unit tests for /subauto's candidate-selection helper.
 
 ``pick_available(candidates, busy_ids)`` decides which queued player
 ``/subauto`` pulls in: the first member of the queue who isn't already
-committed to another active match. ``check_in_timeout_action`` keeps the
-timeout policy independent from Discord state.
+committed to another active match. The team rebalance itself reuses the
+proven ``Match.init_teams("matchmaking")`` path, so the only genuinely new
+pure logic introduced by /subauto is this pick — and that's what we lock
+down here.
 """
 from __future__ import annotations
 
 from types import SimpleNamespace
 
-from bot.match.subbing import (
-	CHECK_IN_TIMEOUT_FINISH,
-	CHECK_IN_TIMEOUT_REVERT,
-	check_in_timeout_action,
-	pick_available,
-	should_warn,
-)
+from bot.match.subbing import pick_available, should_warn
 
 
 def _member(id_):
@@ -60,14 +56,3 @@ class TestShouldWarn:
 
 	def test_silent_after_deadline_timeout_takes_over(self):
 		assert should_warn(1001, 1000, False, 2) is False
-
-
-class TestCheckInTimeoutAction:
-	def test_no_action_before_deadline(self):
-		assert check_in_timeout_action(frame_time=1000, end_time=1000, num_not_ready=1) is None
-
-	def test_finishes_after_deadline_when_everyone_ready(self):
-		assert check_in_timeout_action(frame_time=1001, end_time=1000, num_not_ready=0) == CHECK_IN_TIMEOUT_FINISH
-
-	def test_reverts_after_deadline_when_anyone_not_ready(self):
-		assert check_in_timeout_action(frame_time=1001, end_time=1000, num_not_ready=1) == CHECK_IN_TIMEOUT_REVERT

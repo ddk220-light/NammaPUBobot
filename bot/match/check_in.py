@@ -6,7 +6,7 @@ from nextcord.errors import DiscordException
 
 from core.utils import join_and
 from core.console import log  # noqa: F401
-from bot.match.subbing import CHECK_IN_TIMEOUT_REVERT, check_in_timeout_action, pick_available, should_warn
+from bot.match.subbing import pick_available, should_warn
 
 
 class CheckIn:
@@ -50,10 +50,9 @@ class CheckIn:
 				"and replaced by the next queued player, or the queue reverts to gathering."
 			).format(members=join_and([m.mention for m in not_ready])))
 
-		timeout_action = check_in_timeout_action(frame_time, self.end_time, len(not_ready))
-		if timeout_action:
+		if frame_time > self.end_time:
 			ctx = bot.SystemContext(self.m.qc)
-			if timeout_action == CHECK_IN_TIMEOUT_REVERT:
+			if self.allow_discard:
 				await self.abort_timeout(ctx)
 			else:
 				await self.finish(ctx)
