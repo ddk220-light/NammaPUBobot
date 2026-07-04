@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Pure helpers for the /subauto command.
+"""Pure helpers for check-in/subauto flows.
 
 Kept free of nextcord / core imports on purpose: the selection rule is the
 only genuinely new logic /subauto introduces (the rebalance reuses the
 existing Match.init_teams("matchmaking") path), and isolating it here lets
 it be unit-tested without a live queue or Discord client.
 """
+
+CHECK_IN_TIMEOUT_FINISH = "finish"
+CHECK_IN_TIMEOUT_REVERT = "revert"
 
 
 def pick_available(candidates, busy_ids):
@@ -31,3 +34,12 @@ def should_warn(frame_time, end_time, already_warned, num_not_ready):
 	if already_warned or num_not_ready <= 0:
 		return False
 	return end_time - 60 <= frame_time <= end_time
+
+
+def check_in_timeout_action(frame_time, end_time, num_not_ready):
+	"""Return the action to take once check-in reaches its deadline."""
+	if frame_time <= end_time:
+		return None
+	if num_not_ready > 0:
+		return CHECK_IN_TIMEOUT_REVERT
+	return CHECK_IN_TIMEOUT_FINISH
