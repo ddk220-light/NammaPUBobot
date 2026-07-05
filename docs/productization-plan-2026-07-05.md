@@ -100,11 +100,13 @@ flags: Workstream C.)
 
 The repo ships one community's derived data and several features depend on it:
 
-- **Civ win-rates** (`data/civ_elo_stats.csv`): keep as a clearly-labeled
-  **global default dataset** ("community averages") that any tenant can use,
-  while `civ_elo_from_db` becomes per-channel and takes over once the channel
-  has ≥N recorded civ games (the fallback logic already exists,
-  `civ_stats.py:42-57` — it just needs the channel filter and labeling).
+- **Civ win-rates** (`data/civ_elo_stats.csv`): per the seed-data decision
+  below, the bundled CSV is **not** offered to new tenants. Civ suggestions
+  stay off for a channel until its own `qc_match_civs` sample reaches the
+  threshold; `civ_elo_from_db` becomes per-channel (the fallback logic at
+  `civ_stats.py:42-57` inverts: DB-only, no CSV fallback for new tenants).
+  The CSV remains as legacy seed data for the original community's channel
+  only.
 - **Quiz banks**: the *game* bank (`data/quiz_bank.json` — unit/tech facts)
   is tenant-agnostic — every tenant can use it from day one. The *player*
   bank (`quiz_bank_player.json` — "which player…") is inherently per-tenant
@@ -214,7 +216,9 @@ appear in the dashboard automatically. Suggested variables:
 
 **Pre-match**
 - `prematch_insights` (bool) — `team_insights` embed
-- `civ_suggestions` (off / own-data / own-data+default-fallback)
+- `civ_suggestions` (off / own-data; default own-data, which self-suppresses
+  below the sample threshold — no bundled-dataset fallback per the seed-data
+  decision)
 - `civ_min_games` (int, default 50)
 
 **Quiz**
@@ -352,17 +356,98 @@ exist) and scheduled regeneration; per-tenant civ stats replacing the CSV
 default as data accrues; classifications/commentary pipelines as tenant
 jobs; job fairness + quotas; retention/purge; moderation views.
 
-## Decisions needed from you
+## Decisions (resolved with the owner, 2026-07-05)
 
-1. **Tenant boundary**: guild-as-account with channel data scoping (as
-   recommended), or strictly channel-only?
-2. **Default stats visibility**: public, or guild-members-only? (Affects
-   D2 and how much the current public API surface must be locked down.)
-3. **The bundled dataset**: is this community's civ/quiz data OK to ship as
-   the labeled global default for other tenants, or should new tenants start
-   with the game-bank quiz + no civ suggestions until they have data?
-4. **Import ambition for v1**: ratings-CSV only (cheap, covers "seed
-   players") or the full table-export zip with history (real work, mostly in
-   identity mapping + id remapping)?
-5. **Match-id cosmetics**: keep global match numbering (cheapest) or
-   introduce per-channel display numbering?
+1. **Tenant boundary — guild = account, channel = data scope.** A `tenants`
+   table keyed by `guild_id` owns admins/entitlements/timezone defaults;
+   all data stays keyed by `channel_id`; `rating_channel` sharing keeps
+   working.
+2. **Stats visibility — guild-members-only by default.** Viewing a
+   channel's dashboard requires Discord login + membership in that guild;
+   channels may opt up to public via `stats_visibility`. Consequence: all
+   five stats APIs move behind the session + membership check in Phase 1
+   (today they are anonymous), which is a deliberate breaking change for
+   current public links.
+3. **Seed data — game-bank quiz only.** New tenants get the tenant-agnostic
+   unit/tech quiz bank from day one. **No civ suggestions and no player-quiz
+   content** until the tenant's own data crosses the sample thresholds; the
+   bundled CSVs stay private to the original community's channel. Empty
+   states must explain the unlock condition ("civ suggestions unlock at 50
+   recorded civ games — you have 12").
+4. **Import v1 — ratings CSV only.** `nick,rating,wins,losses[,deviation]`
+   upload with dry-run, nick→member mapping review, and revert. The full
+   table-export zip (history import) is deferred to a later release.
+5. **Unofficial-API features — best-effort, "community-powered."** Lobby
+   tracking and replay analysis ship per-channel opt-in and are labeled as
+   depending on community services (aoe2companion, aoe.ms) with no
+   reliability promise; the dashboard shows an upstream-health indicator.
+6. **Sequencing — onboard early, data products later.** Phases 1–2 ship and
+   tenants onboard with queues/ratings/game-quiz working; per-tenant
+   analytics (Phase 3) unlock as data accrues, with expectations set in the
+   UI rather than held back for pipeline automation.
+7. **Match IDs — keep the global sequence.** No per-channel display
+   numbering; a new tenant's first match may be #4382 and that's accepted.
+
+---
+
+## Risk register & mitigations
+
+**R1 — Cross-tenant data leakage (severity: critical; the top risk).**
+Isolation is a property every query must uphold, in a codebase whose
+error-handling style swallows failures; two already-shipped queries missed
+their channel filter (`web.py:1919`, `civ_stats.py:46`). Mitigations, all
+Phase 1 exit criteria:
+- A small **tenant-scoped query layer**: helpers that take a required
+  channel context for every tenant-scoped table, so an unscoped read can't
+  be written by accident. New dashboard/feature code goes through it; the
+  five stats endpoints are converted first.
+- A **two-tenant isolation test**: seed two fake channels with
+  distinguishable data; assert every API endpoint and every embed-building
+  pure function returns zero rows from the other tenant. Runs in CI
+  alongside the existing pytest suite.
+- A grep-able convention (e.g. raw `db.fetchall` on `qc_*`/`rs_*`/`cls_*`
+  outside the query layer fails a lint check) to keep future queries honest.
+- Membership gating (decision 2) at the session layer, so even a missed
+  filter is only reachable by members of *some* tenant, not the open web.
+
+**R2 — Phase 3 (per-tenant data products) is underestimated.** The
+differentiating analytics run today as hand-operated offline pipelines with
+a pinned mgz fork. Decision 6 accepts onboarding before automation;
+mitigations: UI copy that frames analytics as *unlocking with data* (not
+missing); a timeboxed spike to estimate automating the quiz-player-bank and
+classification runners before promising them to any tenant; treat the mgz
+parser pin (`MAX_SUPPORTED_SAVE`, `bot/replay_stats/policy.py:12`) as a
+watched dependency with a known owner.
+
+**R3 — Unofficial upstream APIs vanish or throttle.** Decision 5 labels the
+features honestly; additionally: a per-feature **operator kill switch**
+(instance-level flag that overrides all channel opt-ins when an upstream
+breaks), per-tenant quotas on replay fetches and socket subscriptions
+(today: one firehose per active ranked match, `watcher.py:77` — cap and
+share), and the REST-fallback path from the original plan doc
+(`docs/aoe2-lobby-replication-plan.md`, findAdvertisements/poll fallback)
+kept on the backlog rather than assumed.
+
+**R4 — Importer corrupts identities/ratings.** Contained by decision 4
+(CSV-only v1): dry-run preview, explicit nick→member mapping review with
+unmatched rows imported as *unclaimed* rather than guessed, an `imports`
+audit table, and one-click revert by import id. No silent auto-merge ever.
+
+**R5 — Dashboard rework on a 4,000-line inline SPA.** Adding the tenant
+dimension is the forcing function; mitigate by converting **one tab
+end-to-end first** (leaderboard: scoped API + channel picker + empty state)
+to validate the pattern before touching the rest, rather than a big-bang
+rewrite.
+
+**R6 — Silent-failure culture hides tenant-facing breakage.** All fork
+features log-and-swallow; at product scale that means broken tenants who
+never complain. Mitigations: include `channel_id` in every log line from
+feature code, a per-channel health panel in the dashboard (last quiz post,
+last replay ingest, lobby-feed status), and a weekly operator digest of
+per-tenant error counts.
+
+**R7 — Permission checks depend on the bot's member cache.** The unified
+resolver (D2) reads member roles from the bot's guild cache; large guilds
+with lazy chunking can miss members. Mitigate with an on-miss
+`fetch_member` + short-TTL memo (bounded, timed out — see robustness review
+4.5) and requiring the members intent in the invite documentation.
