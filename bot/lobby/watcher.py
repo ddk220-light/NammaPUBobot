@@ -2,7 +2,7 @@
 """LobbyWatcher — per-(ranked)-match live lobby detection + link.
 
 Created when a ranked match enters WAITING_REPORT (bot/match/match.py). It
-subscribes to the unfiltered lobby socket, keeps only lobbies named ``test123``,
+subscribes to the unfiltered lobby socket, keeps only lobbies named ``NammaNomad``,
 shows a live-fill embed, and — when a full lobby with the right player count
 appears — confirms the LINK: captures the gameId + slot profileIds, persists a
 ``qc_lobbies`` row tied to the match, and self-heals ``qc_profile_map`` by
@@ -24,7 +24,7 @@ from core.database import db
 
 from . import buttons, embeds, reducer, socket, view, profile_map
 
-TARGET_NAME = "test123"     # the announce join key (v1: fixed, single active match)
+TARGET_NAME = "NammaNomad"  # the announce join key (v1: fixed, single active match)
 HARD_TTL = 90 * 60          # absolute cap on a watcher's life (seconds)
 EDIT_DEBOUNCE = 3.0         # min seconds between live-fill embed edits
 
@@ -98,8 +98,8 @@ class LobbyWatcher:
 			if mid is None:
 				continue
 			if etype in ("lobbyAdded", "lobbyUpdated"):
-				name = (data.get("name") or "").strip().lower()
-				if name == TARGET_NAME:
+				name = (data.get("name") or "").strip().casefold()
+				if name == TARGET_NAME.casefold():
 					reducer.apply_event(self.state, ev)
 				else:
 					self.state.pop(mid, None)   # not (or no longer) one of ours
