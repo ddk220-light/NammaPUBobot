@@ -6,7 +6,7 @@ ranked pickup match, can drive a captain-confirmed result. It does NOT change
 the existing flow: creating your own lobby and running ``/report`` as usual
 keeps working byte-for-byte, and the bot's own civ / rating / reconcile
 pipelines are untouched. This only adds a smoother path when a lobby is created
-named ``test123`` (auto-detected) or tracked via ``/lobby2`` / ``/lobby``. Every
+named ``NammaNomad`` (auto-detected) or tracked via ``/lobby2`` / ``/lobby``. Every
 entry point degrades silently if the (unofficial) lobby socket or API misbehaves.
 
 Durable store is ``qc_lobbies`` (NOT saved_state.json) — lobbies survive a

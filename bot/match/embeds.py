@@ -197,13 +197,13 @@ class Embeds:
 					f"{p.mention}: {p.activity.url}" for p in streamers
 				]) + "\n\u200b")
 
-		# Ranked: nudge players to name their AoE2 lobby `test123` so the opt-in
+		# Ranked: nudge players to name their AoE2 lobby `NammaNomad` so the opt-in
 		# live-lobby watcher can detect + link it. Purely informational \u2014 ignoring
 		# it changes nothing; the old create-your-own-lobby + /report path is intact.
 		if self.m.ranked:
 			embed.add_field(
 				name=self.m.qc.gt("AoE2 Lobby"),
-				value=self.m.qc.gt("Create your ranked lobby named `test123` \u2014 results then sync automatically."),
+				value=self.m.qc.gt("Create your ranked lobby named `NammaNomad` \u2014 results then sync automatically."),
 				inline=False
 			)
 

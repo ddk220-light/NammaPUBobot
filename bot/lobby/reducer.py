@@ -133,7 +133,7 @@ def is_full(entry):
 def find_by_name(state, name):
 	"""matchIds of lobbies whose name == ``name`` (case-insensitive, trimmed).
 
-	Drives the auto-search adapter: pick the ``test123`` lobby out of the
+	Drives the auto-search adapter: pick the configured lobby out of the
 	unfiltered feed without knowing its id in advance.
 	"""
 	target = (name or "").strip().lower()

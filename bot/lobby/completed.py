@@ -387,7 +387,7 @@ async def _match_players_profiles(match):
 async def link_manual(channel_id, match_id, game_id, requested_by):
 	"""/lobby2 — manually link an aoe2 game id to a ranked match. Persists an
 	in_progress qc_lobbies row (backdated past the 15-min floor so LobbyJobs polls
-	it right away) and supersedes the auto test123 watcher + any other non-terminal
+	it right away) and supersedes the auto NammaNomad watcher + any other non-terminal
 	lobby row for the match. Returns 'linked' or 'exists'. Best-effort; raises only
 	on a hard DB failure (the caller surfaces it)."""
 	existing = await db.select_one(
@@ -395,7 +395,7 @@ async def link_manual(channel_id, match_id, game_id, requested_by):
 	)
 	if existing and existing["status"] not in ("completed", "expired"):
 		return "exists"
-	# Stop the auto (test123) watcher and expire any other live lobby row for this
+	# Stop the auto (NammaNomad) watcher and expire any other live lobby row for this
 	# match, so only this manual link drives the result.
 	try:
 		from bot.lobby import watcher
