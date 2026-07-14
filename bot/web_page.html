@@ -954,8 +954,52 @@ table.stats-table td.phase-cell { color: #9aa0a6; font-weight: 400; }
 table.stats-table td.strat-cond { color: #8a8d93; font-size: 12px; font-weight: 400; max-width: 420px; white-space: normal; }
 table.stats-table td.strat-sub { color: #c7c9cd; font-weight: 400; font-size: 12.5px; white-space: normal; max-width: 220px; }
 table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-child { color: #9aa0a6; font-style: italic; }
+.strat-search { min-width: 240px; }
+.strat-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 0.85rem; }
+.strat-card { background: #2f3136; border: 1px solid #484c54; border-radius: 8px; padding: 0.95rem 1rem; display: flex; flex-direction: column; gap: 0.6rem; min-width: 0; }
+.strat-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; }
+.strat-card-title { font-family: 'Oswald', sans-serif; color: white; font-size: 1.12rem; letter-spacing: 0.4px; }
+.strat-card-sub { color: #a9adb5; font-size: 0.8rem; margin-top: 0.15rem; }
+.phase-chip { border-radius: 999px; padding: 0.14rem 0.55rem; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap; border: 1px solid rgba(255,255,255,0.14); color: #d8dade; background: rgba(255,255,255,0.05); }
+.phase-chip.feudal { color: #ffd9a8; background: rgba(217,144,38,0.14); border-color: rgba(217,144,38,0.3); }
+.phase-chip.castle { color: #cfe0ff; background: rgba(91,140,238,0.14); border-color: rgba(143,180,255,0.3); }
+.phase-chip.early-castle { color: #d9ccff; background: rgba(139,109,231,0.14); border-color: rgba(164,140,240,0.3); }
+.phase-chip.imperial { color: #bdf2d1; background: rgba(76,158,103,0.14); border-color: rgba(99,217,139,0.3); }
+.winbar { position: relative; height: 10px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.winbar-mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; background: rgba(255,255,255,0.28); z-index: 2; }
+.winbar-fill { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+.winbar-fill.pos { background: linear-gradient(90deg, rgba(87,217,139,0.45), #57d98b); }
+.winbar-fill.neg { background: linear-gradient(270deg, rgba(255,109,115,0.45), #ff6d73); }
+.winbar-row { display: flex; align-items: center; gap: 0.6rem; }
+.winbar-row .winbar { flex: 1 1 auto; }
+.winbar-num { font-weight: 800; font-variant-numeric: tabular-nums; font-size: 0.95rem; min-width: 44px; text-align: right; }
+.strat-civ-row { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; color: #c7c9cd; font-size: 0.8rem; }
+.strat-civ-row .civ-icon { width: 20px; height: 20px; }
+.strat-player-row { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.strat-player-chip { border: 1px solid rgba(143,180,255,0.25); background: rgba(91,140,238,0.10); color: #cfe0ff; border-radius: 999px; padding: 0.14rem 0.55rem; font-size: 0.74rem; cursor: pointer; font: inherit; font-size: 0.74rem; line-height: 1.3; }
+.strat-player-chip:hover { background: rgba(91,140,238,0.22); }
+.strat-player-chip .chip-wr { color: #9fb9e8; font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
+.strat-detect { margin-top: auto; }
+.strat-detect summary { cursor: pointer; color: #8fb4ff; font-size: 0.78rem; font-weight: 700; list-style: none; }
+.strat-detect summary::before { content: '\25B6 '; font-size: 0.66rem; }
+.strat-detect[open] summary::before { content: '\25BC '; }
+.strat-detect p { color: #9aa0a6; font-size: 0.8rem; margin: 0.4rem 0 0; line-height: 1.45; }
+.strat-meta-row { display: flex; gap: 0.9rem; color: #a9adb5; font-size: 0.78rem; }
+.strat-meta-row b { color: #e8e9eb; font-variant-numeric: tabular-nums; }
+.match-story { display: flex; align-items: flex-start; gap: 0.55rem; background: rgba(91,140,238,0.07); border: 1px solid rgba(143,180,255,0.16); border-radius: 6px; color: #dbe4f5; font-size: 0.9rem; line-height: 1.5; padding: 0.55rem 0.75rem; margin-bottom: 0.8rem; }
+.match-story .story-icon { flex: 0 0 auto; font-size: 1rem; line-height: 1.4; }
+.match-roster-inline .match-story { margin-bottom: 0.65rem; }
+.team-avg-chip { color: #a9adb5; font-size: 0.7rem; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.delta-bar-cell { min-width: 130px; }
+.delta-bar { position: relative; height: 9px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
+.delta-bar .winbar-mid { top: -2px; bottom: -2px; }
+table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
+.luck-factor-name { font-weight: 700; }
+.luck-factor-cond { color: #8a8d93; font-size: 11.5px; font-weight: 400; margin-top: 2px; line-height: 1.4; }
 @media (max-width: 640px) {
   .commentary-grid { grid-template-columns: 1fr; }
+  .strat-card-grid { grid-template-columns: 1fr; }
+  .strat-search { min-width: 0; width: 100%; }
 }
 </style>
 </head>
@@ -1026,8 +1070,19 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
           <button id="strat-tab-player" class="strat-tab" onclick="setStratView('player')">By player</button>
         </div>
         <select id="strat-player-select" style="display:none" onchange="onStratPlayer(this.value)"></select>
+        <input id="strat-search" class="filter-control filter-input strat-search" type="text" placeholder="Filter by strategy, civ, or player&hellip;"
+          oninput="onStratSearch(this.value)">
+        <label class="filter-label" id="strat-sort-label">Sort
+          <select id="strat-sort-select" class="filter-control" onchange="onStratSort(this.value)">
+            <option value="games" selected>Most played</option>
+            <option value="winrate">Win %</option>
+            <option value="players">Most players</option>
+            <option value="title">Name</option>
+          </select>
+        </label>
       </div>
-      <div class="table-wrap">
+      <div id="strat-cards" class="strat-card-grid" style="display:none"></div>
+      <div class="table-wrap" id="strat-table-wrap">
         <table class="stats-table" id="strat-table">
           <thead><tr id="strat-header"></tr></thead>
           <tbody id="strat-body"><tr><td class="loading">Loading strategies&hellip;</td></tr></tbody>
@@ -1083,6 +1138,10 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
           <label class="filter-label">Min matches
             <input id="leaderboard-min-matches" class="filter-control filter-input" type="number" min="0" step="1" value="0"
               oninput="setLeaderboardMinMatches(this.value)">
+          </label>
+          <label class="filter-label">Search
+            <input id="leaderboard-search" class="filter-control filter-input" type="text" placeholder="Player or civ&hellip;"
+              oninput="setLeaderboardSearch(this.value)">
           </label>
           <div class="period-tabs">
             <button class="period-tab selected" data-lb-mode="players" onclick="setLeaderboardMode('players')">By player</button>
@@ -1280,6 +1339,7 @@ var matchView = 'overview';
 var expandedMatches = {};
 var leaderboardData = null, leaderboardPeriod = 'all', leaderboardMode = 'players', leaderboardPlayer = null;
 var leaderboardMinMatches = 0;
+var leaderboardSearch = '';
 var leaderboardTag = '';
 var playerProfileUserId = null, playerProfilePeriod = 'all';
 var playerProfileView = 'overview';
@@ -1894,7 +1954,7 @@ function matchCardBody(r) {
   var left = teams[0] ? matchTeamCard(teams[0], grouped[teams[0]]) : '<div class="empty-panel">No roster data.</div>';
   var right = teams[1] ? matchTeamCard(teams[1], grouped[teams[1]]) : (teams.length > 1 ? '' : '<div class="empty-panel">No opponent roster.</div>');
   var details = [r.queue || null, fmtDuration(r.duration_s), fmtAgo(r.at), r.match_id ? '#' + r.match_id : null].filter(function (x) { return x && x !== '-'; }).join(' · ');
-  return '<div class="match-card-body"><div class="match-map-box"><div class="match-map-name">' + esc(r.map || '-') + '</div>'
+  return matchStory(r) + '<div class="match-card-body"><div class="match-map-box"><div class="match-map-name">' + esc(r.map || '-') + '</div>'
     + '<div class="match-detail-meta">' + esc(details || 'Match details') + '</div></div>'
     + left + '<div class="match-vs">VS</div>' + right + '</div>';
 }
@@ -1943,11 +2003,81 @@ function rosterTagPills(tags) {
     return '<span class="roster-tag ' + rosterTagClass(tag) + '">' + esc(tag) + '</span>';
   }).join('');
 }
+function teamAvgImpact(players) {
+  var scores = (players || []).map(playerImpactValue).filter(function (v) { return v >= 0; });
+  if (!scores.length) return null;
+  return Math.round(scores.reduce(function (a, b) { return a + b; }, 0) / scores.length);
+}
+
+function storyTagPhrase(tags) {
+  var t = String((tags || [])[0] || '').toLowerCase();
+  if (!t) return '';
+  if (t.indexOf('boom carry') >= 0) return 'on the back of a greedy boom';
+  if (t.indexOf('eco carry') >= 0) return 'with an economy the market envied';
+  if (t.indexOf('all-in') >= 0 || t.indexOf('low-eco') >= 0) return 'by going all-in and never looking back';
+  if (t.indexOf('pressure') >= 0 || t.indexOf('army') >= 0) return 'through relentless map pressure';
+  if (t.indexOf('tempo') >= 0 || t.indexOf('timing') >= 0) return 'by hitting every age-up window first';
+  if (t.indexOf('reboom') >= 0 || t.indexOf('recovery') >= 0) return 'after rebuilding from a rough start';
+  if (t.indexOf('high impact') >= 0) return 'with an everywhere-at-once game';
+  return 'with ' + t;
+}
+
+function matchStory(r) {
+  var players = (r && r.players) || [];
+  var byTeam = {};
+  players.forEach(function (p) {
+    if (p.team === null || p.team === undefined || p.team === '') return;
+    (byTeam[p.team] = byTeam[p.team] || []).push(p);
+  });
+  var teams = Object.keys(byTeam).sort();
+  if (teams.length !== 2) return '';
+  var winTeam = teams.find(function (t) { return (byTeam[t][0] || {}).result === 'W' || byTeam[t].some(function (p) { return p.result === 'W'; }); });
+  var loseTeam = teams.find(function (t) { return t !== winTeam; });
+  if (winTeam === undefined || loseTeam === undefined) return '';
+  var winAvg = teamAvgImpact(byTeam[winTeam]);
+  var loseAvg = teamAvgImpact(byTeam[loseTeam]);
+  if (winAvg === null || loseAvg === null) return '';
+
+  var gap = winAvg - loseAvg;
+  var closeness = gap <= -3 ? 'defied the replay sheet to win an upset'
+    : gap <= 1 ? 'stole a razor-thin'
+    : gap <= 4 ? 'edged out a hard-fought'
+    : gap <= 8 ? 'took a clear'
+    : 'ran away with a one-sided';
+  var mins = r.duration_s ? Math.round(r.duration_s / 60) : null;
+  var flavor = mins === null ? 'game'
+    : mins < 15 ? mins + '-minute blitz'
+    : mins < 30 ? mins + '-minute skirmish'
+    : mins < 45 ? mins + '-minute grind'
+    : mins + '-minute imperial marathon';
+
+  var hero = topImpactPlayer(byTeam[winTeam]);
+  var rival = topImpactPlayer(byTeam[loseTeam]);
+  var bits = ['<b>Team ' + esc(winTeam) + '</b> ' + closeness + ' ' + flavor
+    + (r.map ? ' on <b>' + esc(r.map) + '</b>' : '') + '.'];
+  if (hero) {
+    var heroTags = impactTagLabels(hero.impact || {});
+    var heroLabel = gap <= -3 ? 'Led the winners' : impactBadgeLabel(heroTags);
+    bits.push(esc(heroLabel) + ': <b>' + esc(hero.nick || '?') + '</b>'
+      + (hero.civ ? ' (' + esc(hero.civ) + ')' : '')
+      + ' at <b>' + playerImpactValue(hero) + '</b>'
+      + (storyTagPhrase(heroTags) ? ' ' + esc(storyTagPhrase(heroTags)) : '') + '.');
+  }
+  if (rival && playerImpactValue(rival) >= 0) {
+    bits.push(gap <= -3 && (!hero || playerImpactValue(rival) > playerImpactValue(hero))
+      ? '<b>' + esc(rival.nick || '?') + '</b> posted the game\'s top impact (<b>' + playerImpactValue(rival) + '</b>) in a losing effort.'
+      : 'Best resistance: <b>' + esc(rival.nick || '?') + '</b> at <b>' + playerImpactValue(rival) + '</b>.');
+  }
+  var icon = gap <= -3 ? '🐉' : gap <= 1 ? '⚔️' : gap > 8 ? '🏇' : '📜';
+  return '<div class="match-story"><span class="story-icon">' + icon + '</span><span>' + bits.join(' ') + '</span></div>';
+}
+
 function matchTeamCard(teamName, players) {
   players = players || [];
   var topPlayer = topImpactPlayer(players);
   var teamResult = (players.find(function (p) { return p.result; }) || {}).result || '';
   var resultClass = teamResult === 'W' ? ' winning-team' : teamResult === 'L' ? ' losing-team' : '';
+  var avg = teamAvgImpact(players);
   var rows = players.map(function (p) {
     var impact = p.impact || {};
     var tagList = impactTagLabels(impact);
@@ -1964,7 +2094,8 @@ function matchTeamCard(teamName, players) {
       + '<span class="roster-impact">' + esc(score) + '</span>'
       + '</div>';
   }).join('');
-  return '<div class="match-team' + resultClass + '"><div class="match-team-title"><span>' + esc(teamName) + '</span>'
+  return '<div class="match-team' + resultClass + '"><div class="match-team-title"><span>' + esc(teamName)
+    + (avg !== null ? ' <span class="team-avg-chip" title="Average replay impact across the team">avg ' + avg + '</span>' : '') + '</span>'
     + (teamResult ? '<span class="team-result-pill ' + esc(teamResult) + '">' + esc(teamResult) + '</span>' : '')
     + '</div>' + rows + '</div>';
 }
@@ -2384,6 +2515,16 @@ function setLeaderboardMinMatches(v) {
   renderLeaderboard();
 }
 
+function setLeaderboardSearch(q) {
+  leaderboardSearch = String(q || '').trim().toLowerCase();
+  renderLeaderboard();
+}
+
+function leaderboardSearchMatch(r) {
+  if (!leaderboardSearch) return true;
+  return [r.nick, r.civ].filter(Boolean).join(' ').toLowerCase().indexOf(leaderboardSearch) >= 0;
+}
+
 function setLeaderboardMode(m) {
   leaderboardMode = m;
   document.querySelectorAll('[data-lb-mode]').forEach(function (b) {
@@ -2450,7 +2591,7 @@ function tagCell(r) {
 function renderLeaderboard() {
   renderLeaderboardTagPicker();
   var rows = (leaderboardData.rows || []).filter(function (r) {
-    return Number(r.games || 0) >= leaderboardMinMatches;
+    return Number(r.games || 0) >= leaderboardMinMatches && leaderboardSearchMatch(r);
   }).map(function (r, i) {
     r.rank = i + 1;
     return r;
@@ -3086,7 +3227,13 @@ function profileWatchout(p, s) {
   return 'Lowest impact lane is ' + vals[0][0] + ' (' + fmtImpactAvg(vals[0][1]) + '), so pair/strategy should cover that lane.';
 }
 
+function emptySignalText(text) {
+  // "No X sample yet." style placeholders add noise, not signal — drop the card.
+  return /^(no |needs |more )[^.;]*\b(yet|needed|data|sample)\.?$/i.test(String(text || '').trim());
+}
+
 function commentaryCard(title, text) {
+  if (!text || emptySignalText(text)) return '';
   return '<div class="commentary-card"><div class="commentary-title">' + esc(title) + '</div><div class="commentary-text">' + esc(text) + '</div></div>';
 }
 
@@ -3208,8 +3355,10 @@ function storedPlayerCommentary(d) {
     var key = title.toLowerCase();
     if (/^Available data is indirect here[.;]?$/i.test(text)) return;
     if (!title || !text || cardTitles[key]) return;
+    var html = commentaryCard(title, text);
+    if (!html) return;
     cardTitles[key] = true;
-    cards.push(commentaryCard(title, text));
+    cards.push(html);
   }
   var s = d.summary || {};
   var luck = luckProfileForPlayer(s.nick);
@@ -3366,15 +3515,16 @@ function playerProfileDescription(d) {
     commentaryCard('Best setup', setup.join(' + ')),
     commentaryCard('Enemy prep', s.worst_enemy ? 'Plan specifically for ' + (s.worst_enemy.nick || '-') + '; this is lowest head-to-head win rate.' : 'No tough-opponent sample yet.'),
     commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.')
-  ].join('');
+  ].filter(Boolean).join('');
   return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p><p>' + esc(luckText) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
-    + '<div class="commentary-grid">' + cards + '</div>';
+    + (cards ? '<div class="commentary-grid">' + cards + '</div>' : '');
 }
 
 /* ─── Strategy Insights ─── */
 var stratData = [], stratView = 'total', stratPlayer = '';
 var stratTotals = {}, stratCategorized = {};
 var stratSort = { col: 'games', asc: false };
+var stratSearch = '';
 
 function wrPctClass(v) { return v == null ? '' : (v >= 55 ? 'wr wr-high' : v >= 45 ? 'wr wr-mid' : 'wr wr-low'); }
 function wrPctCell(v) { return '<td class="' + wrPctClass(v) + '">' + (v == null ? '-' : v + '%') + '</td>'; }
@@ -3396,6 +3546,7 @@ async function initStrategies() {
     renderStrategies();
   } catch (e) {
     document.getElementById('strat-body').innerHTML = '<tr><td colspan="6" class="error">Failed to load: ' + esc(e.message) + '</td></tr>';
+    document.getElementById('strat-cards').innerHTML = '<div class="empty-panel">Failed to load: ' + esc(e.message) + '</div>';
   }
 }
 
@@ -3428,31 +3579,93 @@ function stratSortBy(col) {
   renderStrategies();
 }
 
+function onStratSearch(q) {
+  stratSearch = String(q || '').trim().toLowerCase();
+  renderStrategies();
+}
+
+function onStratSort(col) {
+  stratSort = { col: col, asc: col === 'title' };
+  renderStrategies();
+}
+
+function jumpToStratPlayer(p) {
+  stratPlayer = p;
+  buildStratPlayerSelect();
+  var sel = document.getElementById('strat-player-select');
+  if (sel) sel.value = p;
+  setStratView('player');
+}
+
 function renderStrategies() {
   document.getElementById('strat-tab-total').classList.toggle('selected', stratView === 'total');
   document.getElementById('strat-tab-player').classList.toggle('selected', stratView === 'player');
   document.getElementById('strat-player-select').style.display = stratView === 'player' ? '' : 'none';
+  document.getElementById('strat-search').style.display = stratView === 'total' ? '' : 'none';
+  document.getElementById('strat-sort-label').style.display = stratView === 'total' ? '' : 'none';
+  document.getElementById('strat-cards').style.display = stratView === 'total' ? '' : 'none';
+  document.getElementById('strat-table-wrap').style.display = stratView === 'total' ? 'none' : '';
   if (stratView === 'total') renderStratTotal(); else renderStratPlayer();
 }
 
+function phaseChip(phase) {
+  if (!phase) return '';
+  var cls = String(phase).toLowerCase().replace(/[^a-z]+/g, '-');
+  return '<span class="phase-chip ' + esc(cls) + '">' + esc(phase) + '</span>';
+}
+
+function winBar(winrate, scale) {
+  // Diverging bar around the 50% baseline: right = above, left = below.
+  // `scale` stretches small deltas so a +/-5 swing is still readable.
+  var half = 0;
+  if (winrate != null) half = Math.max(-50, Math.min(50, (winrate - 50) * (scale || 1)));
+  var side = half >= 0
+    ? 'left:50%;width:' + half + '%'
+    : 'left:' + (50 + half) + '%;width:' + (-half) + '%';
+  return '<div class="winbar"><div class="winbar-mid"></div>'
+    + (winrate == null ? '' : '<div class="winbar-fill ' + (half >= 0 ? 'pos' : 'neg') + '" style="' + side + '"></div>')
+    + '</div>';
+}
+
+function stratMatchesSearch(s) {
+  if (!stratSearch) return true;
+  var hay = [s.title, s.phase, (s.top_civs || []).join(' ')];
+  (s.roster || []).forEach(function (p) { hay.push(p.player); });
+  return hay.join(' ').toLowerCase().indexOf(stratSearch) >= 0;
+}
+
+function stratCard(s, maxGames) {
+  var civs = (s.top_civs || []).slice(0, 3).map(function (c) { return civIcon(c); }).join('');
+  var tops = (s.top_players || []).slice(0, 3).map(function (p) {
+    return '<button type="button" class="strat-player-chip" onclick="jumpToStratPlayer(' + JSON.stringify(p.player).replace(/"/g, '&quot;') + ')">'
+      + esc(p.player) + '<span class="chip-wr">' + p.winrate + '%</span></button>';
+  }).join('');
+  var share = maxGames ? Math.max(3, Math.round(100 * s.games / maxGames)) : 0;
+  return '<article class="strat-card">'
+    + '<div class="strat-card-top"><div><div class="strat-card-title">' + esc(s.title) + '</div>'
+    + '<div class="strat-card-sub"><b>' + s.games + '</b> games &middot; ' + s.players + ' players</div></div>'
+    + phaseChip(s.phase) + '</div>'
+    + '<div class="winbar-row">' + winBar(s.winrate)
+    + '<span class="winbar-num ' + wrPctClass(s.winrate) + '">' + (s.winrate == null ? '-' : s.winrate + '%') + '</span></div>'
+    + '<div class="winbar-row"><div class="winbar"><div class="winbar-fill pos" style="left:0;width:' + share + '%;background:#5b8cee"></div></div>'
+    + '<span class="winbar-num" style="color:#a9adb5;font-size:0.74rem">popularity</span></div>'
+    + (civs ? '<div class="strat-civ-row">Best with ' + civs + '</div>' : '')
+    + (tops ? '<div class="strat-player-row">' + tops + '</div>' : '')
+    + '<details class="strat-detect"><summary>How it\'s detected</summary><p>' + esc(s.condition || 'No condition documented.') + '</p></details>'
+    + '</article>';
+}
+
 function renderStratTotal() {
-  var cols = [['title', 'Strategy'], ['phase', 'Phase'], ['games', 'Games'], ['players', 'Players'], ['winrate', 'Win %']];
-  document.getElementById('strat-header').innerHTML = cols.map(function (c) { return '<th onclick="stratSortBy(\'' + c[0] + '\')">' + c[1] + '</th>'; }).join('') + '<th>Top civs</th><th>Top players (win%)</th><th>Condition</th>';
-  var rows = stratData.filter(function (s) { return s.category !== 'luck'; }).sort(function (a, b) {
+  var rows = stratData.filter(function (s) { return s.category !== 'luck' && stratMatchesSearch(s); }).sort(function (a, b) {
     var va = a[stratSort.col], vb = b[stratSort.col];
     if (typeof va === 'string') return stratSort.asc ? (va || '').localeCompare(vb || '') : (vb || '').localeCompare(va || '');
     va = va == null ? -1 : va; vb = vb == null ? -1 : vb;
     return stratSort.asc ? va - vb : vb - va;
   });
-  document.getElementById('strat-body').innerHTML = rows.map(function (s) {
-    var civs = (s.top_civs || []).join(', ');
-    var tops = (s.top_players || []).map(function (p) { return esc(p.player) + ' ' + p.winrate + '%'; }).join(', ');
-    return '<tr><td>' + esc(s.title) + '</td><td class="phase-cell">' + esc(s.phase || '') + '</td>'
-      + '<td class="games">' + s.games + '</td><td class="games">' + s.players + '</td>'
-      + wrPctCell(s.winrate)
-      + '<td class="strat-sub">' + esc(civs) + '</td><td class="strat-sub">' + tops + '</td>'
-      + '<td class="strat-cond">' + esc(s.condition || '') + '</td></tr>';
-  }).join('');
+  var maxGames = rows.reduce(function (m, s) { return Math.max(m, s.games || 0); }, 0);
+  document.getElementById('strat-cards').innerHTML = rows.length
+    ? rows.map(function (s) { return stratCard(s, maxGames); }).join('')
+    : '<div class="empty-panel">No strategies match "' + esc(stratSearch) + '".</div>';
 }
 
 function renderStratPlayer() {
@@ -3524,6 +3737,22 @@ function deltaCell(wr) {
   return '<td class="' + cls + '">' + (d > 0 ? '+' : '') + d + '</td>';
 }
 
+function deltaBarCell(wr, maxAbs) {
+  var scale = maxAbs ? Math.min(10, 45 / maxAbs) : 1;
+  return '<td class="delta-bar-cell">' + winBar(wr, scale) + '</td>';
+}
+
+function maxDelta(rows) {
+  return rows.reduce(function (m, r) {
+    return r.winrate == null ? m : Math.max(m, Math.abs(r.winrate - 50));
+  }, 0);
+}
+
+function luckFactorCell(title, condition) {
+  return '<td class="luck-factor-cell"><div class="luck-factor-name">' + esc(title) + '</div>'
+    + (condition ? '<div class="luck-factor-cond">' + esc(condition) + '</div>' : '') + '</td>';
+}
+
 function renderLuck() {
   document.getElementById('luck-tab-total').classList.toggle('selected', luckView === 'total');
   document.getElementById('luck-tab-player').classList.toggle('selected', luckView === 'player');
@@ -3533,22 +3762,22 @@ function renderLuck() {
 
 function renderLuckTotal() {
   document.getElementById('luck-header').innerHTML =
-    '<th>Factor</th><th>Games</th><th>% of games</th><th>Win %</th><th>&Delta; vs 50</th><th>Condition</th>';
+    '<th>Factor</th><th>Games</th><th>% of games</th><th>Win %</th><th>&Delta; vs 50</th><th>Luck swing</th>';
   var base = luckBaseline(), N = base ? base.games : 0;
   var rows = luckRows().slice().sort(function (a, b) {
     return Math.abs((b.winrate == null ? 50 : b.winrate) - 50) - Math.abs((a.winrate == null ? 50 : a.winrate) - 50);
   });
+  var maxAbs = maxDelta(rows);
   document.getElementById('luck-body').innerHTML = rows.map(function (s) {
     var pct = N ? Math.round(100 * s.games / N) + '%' : '-';
-    return '<tr><td>' + esc(s.title) + '</td><td class="games">' + s.games + '</td><td class="games">' + pct + '</td>'
-      + wrPctCell(s.winrate) + deltaCell(s.winrate)
-      + '<td class="strat-cond">' + esc(s.condition || '') + '</td></tr>';
+    return '<tr>' + luckFactorCell(s.title, s.condition) + '<td class="games">' + s.games + '</td><td class="games">' + pct + '</td>'
+      + wrPctCell(s.winrate) + deltaCell(s.winrate) + deltaBarCell(s.winrate, maxAbs) + '</tr>';
   }).join('') || '<tr><td colspan="6" class="loading">No luck data yet.</td></tr>';
 }
 
 function renderLuckPlayer() {
   document.getElementById('luck-header').innerHTML =
-    '<th>Factor</th><th>Games</th><th>% of luck games</th><th>Win %</th><th>&Delta; vs 50</th>';
+    '<th>Factor</th><th>Games</th><th>% of luck games</th><th>Win %</th><th>&Delta; vs 50</th><th>Luck swing</th>';
   var base = luckBaseline();
   var pb = base ? (base.roster || []).find(function (x) { return x.player === luckPlayer; }) : null;
   var N = pb ? pb.games : 0;
@@ -3556,11 +3785,12 @@ function renderLuckPlayer() {
     var p = (s.roster || []).find(function (x) { return x.player === luckPlayer; });
     return { title: s.title, games: p ? p.games : 0, winrate: p ? p.winrate : null };
   }).sort(function (a, b) { return b.games - a.games; });
+  var maxAbs = maxDelta(rows);
   document.getElementById('luck-body').innerHTML = rows.map(function (r) {
     var pct = N ? Math.round(100 * r.games / N) + '%' : '-';
     return '<tr><td>' + esc(r.title) + '</td><td class="games">' + r.games + '</td><td class="games">' + pct + '</td>'
-      + wrPctCell(r.winrate) + deltaCell(r.winrate) + '</tr>';
-  }).join('') || '<tr><td colspan="5" class="loading">No data for this player.</td></tr>';
+      + wrPctCell(r.winrate) + deltaCell(r.winrate) + deltaBarCell(r.winrate, maxAbs) + '</tr>';
+  }).join('') || '<tr><td colspan="6" class="loading">No data for this player.</td></tr>';
 }
 
 /* ─── Dashboard ─── */
