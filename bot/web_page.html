@@ -3636,8 +3636,12 @@ function stratMatchesSearch(s) {
 
 function stratCard(s, maxGames) {
   var civs = (s.top_civs || []).slice(0, 3).map(function (c) { return civIcon(c); }).join('');
-  var tops = (s.top_players || []).slice(0, 3).map(function (p) {
-    return '<button type="button" class="strat-player-chip" onclick="jumpToStratPlayer(' + JSON.stringify(p.player).replace(/"/g, '&quot;') + ')">'
+  // data-player + a delegated click handler (registered below) instead of an
+  // inline onclick: player nicks are user-controlled, so interpolating them
+  // into a handler string is an XSS vector. esc() escapes &, <, > and ' —
+  // hence the single-quoted attribute.
+  var tops = (s.top_players || []).filter(function (p) { return p && p.player; }).slice(0, 3).map(function (p) {
+    return "<button type=\"button\" class=\"strat-player-chip\" data-player='" + esc(p.player) + "'>"
       + esc(p.player) + '<span class="chip-wr">' + p.winrate + '%</span></button>';
   }).join('');
   var share = maxGames ? Math.max(3, Math.round(100 * s.games / maxGames)) : 0;
@@ -4240,6 +4244,14 @@ selectQueue = async function(name) { closeMobileMenu(); return _origSelectQueue(
 document.addEventListener('click', function (e) {
   var picker = document.getElementById('match-player-picker');
   if (picker && !picker.contains(e.target)) closeMatchPlayerPicker();
+});
+
+// Delegated handler for strategy-card player chips (see stratCard): the chip
+// carries the nick in data-player so no user-controlled text ends up inside
+// an inline handler string.
+document.addEventListener('click', function (e) {
+  var chip = e.target && e.target.closest ? e.target.closest('.strat-player-chip') : null;
+  if (chip && chip.dataset && chip.dataset.player) jumpToStratPlayer(chip.dataset.player);
 });
 
 window.addEventListener('popstate', applyRouteFromLocation);
