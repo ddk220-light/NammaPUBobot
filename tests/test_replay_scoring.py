@@ -124,6 +124,30 @@ def test_carry_sort_is_deterministic_and_tie_broken_by_army():
 	assert sorted([b, a], key=carry_sort_key)[0] is a
 
 
+def test_early_aggressor_outranks_late_spam_turtle():
+	"""Regression for bot match 1390398 (aoe2 491780322, 70-min Land Nomad):
+	the fast-Imp aggressor who applied force all mid-game must not lose the
+	top-impact spot to a home-castle turtle whose only edge was more villagers
+	and army created in the last stretch of a marathon."""
+	def p(n, fs, cs, ims, v, vpc, vpi, m, mpc, mpi):
+		return {"player_number": n, "feudal_s": fs, "castle_s": cs, "imperial_s": ims,
+		        "villagers": v, "vil_pre_castle": vpc, "vil_pre_imperial": vpi,
+		        "military": m, "mil_pre_castle": mpc, "mil_pre_imperial": mpi}
+	aggressor = p(1, 605, 1081, 2384, 192, 39, 119, 463, 0, 119)   # Dark De Bruyne
+	turtle = p(2, 664, 983, 3093, 245, 38, 198, 451, 0, 104)       # Shadeslayer
+	group = [
+		aggressor,
+		turtle,
+		p(3, 812, 2204, 3212, 254, 67, 199, 278, 0, 9),
+		p(4, 781, 992, 2372, 221, 29, 104, 308, 0, 74),
+		p(5, 712, 926, 3088, 300, 49, 241, 572, 0, 40),
+		p(6, 667, 1033, 2155, 147, 38, 81, 291, 0, 17),
+		p(7, 705, 1456, 2392, 168, 55, 77, 97, 0, 37),
+		p(8, 708, 1111, 2621, 250, 48, 152, 406, 0, 97),
+	]
+	assert impact_scores(aggressor, group)["impact"] > impact_scores(turtle, group)["impact"]
+
+
 def test_strength_glyphs_have_no_numbers():
 	text = strength_glyphs({"army": 70, "eco": 30, "timing": 50})
 	assert text == "⚔▲ 🌾▼ ⏱·"

@@ -25,11 +25,17 @@ require an early-eco floor.
 
 # Component mixes (weights over per-match z-scores).
 ECO_MIX = (("villagers", 0.55), ("vil_pre_castle", 0.45))
-ARMY_MIX = (("military", 0.65), ("mil_pre_castle", 0.35))
-TIMING_MIX = (("feudal_s", 0.35), ("castle_s", 0.45), ("imperial_s", 0.20))  # inverted: earlier = better
+# The parser records units *created*, never kills or losses — so total military
+# over a long game rewards re-massing as much as fighting well. Weighting
+# pre-Imperial production and age-up timing pulls impact toward the player who
+# applied force early instead of the one who spammed longest (calibrated July
+# 2026: same win-agreement as the previous mix, but decisive-aggression games
+# like bot match 1390398 rank the aggressor above the late-game turtle).
+ARMY_MIX = (("military", 0.55), ("mil_pre_imperial", 0.25), ("mil_pre_castle", 0.20))
+TIMING_MIX = (("feudal_s", 0.30), ("castle_s", 0.40), ("imperial_s", 0.30))  # inverted: earlier = better
 
 # Impact = weighted mix of the three component scores. Reboom intentionally absent.
-IMPACT_WEIGHTS = (("army", 0.45), ("eco", 0.35), ("timing", 0.20))
+IMPACT_WEIGHTS = (("army", 0.45), ("eco", 0.32), ("timing", 0.23))
 
 # Tag thresholds (0-100 component scale). Percentile anchors from calibration:
 # army/eco p90=61 p95=66; timing p90=62 p95=64; impact p90=57 p95=60;
