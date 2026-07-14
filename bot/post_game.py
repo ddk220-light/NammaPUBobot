@@ -22,6 +22,8 @@ pure helpers import cleanly under CI.
 import math  # noqa: F401  (kept for parity / future scoring tweaks)
 import random
 
+from bot.replay_stats import scoring
+
 # ── Tunables ─────────────────────────────────────────────────────────────
 # Civs need a decent sample before "win-rate" means anything; that gate lives
 # in civ_stats (MIN_CIV_GAMES). Tiering on top of that only makes sense once
@@ -154,79 +156,20 @@ def _select(obs, limit=MAX_BULLETS):
 	return chosen
 
 
-def _score_component(value):
-	return max(0, min(100, round(50 + value * 15)))
-
-
-def _avg(rows, key):
-	vals = [float(r[key]) for r in rows if r.get(key) is not None]
-	return sum(vals) / len(vals) if vals else None
-
-
-def _std(rows, key):
-	vals = [float(r[key]) for r in rows if r.get(key) is not None]
-	if len(vals) < 2:
-		return 1.0
-	mean = sum(vals) / len(vals)
-	variance = sum((v - mean) ** 2 for v in vals) / len(vals)
-	return max(variance ** 0.5, 1.0)
-
-
-def _z(row, rows, key, invert=False):
-	if row.get(key) is None:
-		return 0.0
-	mean = _avg(rows, key)
-	if mean is None:
-		return 0.0
-	val = float(row[key])
-	score = (mean - val if invert else val - mean) / _std(rows, key)
-	return max(-2.0, min(2.0, score))
-
-
 def _impact_payload(row, group):
-	eco_z = (_z(row, group, "villagers") * 0.65) + (_z(row, group, "vil_pre_castle") * 0.35)
-	army_z = (_z(row, group, "military") * 0.65) + (_z(row, group, "mil_pre_castle") * 0.35)
-	timing_z = (
-		(_z(row, group, "feudal_s", invert=True) * 0.35)
-		+ (_z(row, group, "castle_s", invert=True) * 0.45)
-		+ (_z(row, group, "imperial_s", invert=True) * 0.20)
-	)
-	early_eco_z = _z(row, group, "vil_pre_castle")
-	early_army_z = _z(row, group, "mil_pre_castle")
-	recovery_z = _z(row, group, "villagers") - early_eco_z
-	eco = _score_component(eco_z)
-	army = _score_component(army_z)
-	timing = _score_component(timing_z)
-	early_eco = _score_component(early_eco_z)
-	early_army = _score_component(early_army_z)
-	recovery = _score_component(recovery_z)
-	impact = round((army * 0.34) + (eco * 0.30) + (timing * 0.18) + (recovery * 0.18))
-	tags = []
-	if army >= 68 and eco < 52:
-		tags.append("Low-eco pressure")
-	elif army >= 66:
-		tags.append("Army pressure")
-	if eco >= 64 and early_eco >= 56 and early_army <= 55 and impact >= 58:
-		tags.append("Boom carry")
-	elif eco >= 66:
-		tags.append("Eco carry")
-	if timing >= 66:
-		tags.append("Timing edge")
-	if recovery >= 66:
-		tags.append("Recovery")
-	if impact >= 72 and not tags:
-		tags.append("High impact")
+	scores = scoring.impact_scores(row, group)
 	return {
 		"nick": row.get("nick") or row.get("identity") or str(row.get("user_id") or ""),
 		"civ": row.get("civ"),
 		"team": int(row["bot_team"]) if row.get("bot_team") in (0, 1, "0", "1") else None,
 		"result": row.get("result") or ("W" if row.get("winner") else "L" if row.get("winner") is not None else None),
-		"impact_score": impact,
-		"army_score": army,
-		"eco_score": eco,
-		"timing_score": timing,
-		"recovery_score": recovery,
-		"impact_tags": tags[:3],
+		"impact_score": scores["impact"],
+		"army_score": scores["army"],
+		"eco_score": scores["eco"],
+		"timing_score": scores["timing"],
+		"recovery_score": scores["reboom"],
+		"impact_tags": scoring.impact_tag_names(scores)[:3],
+		"strength_glyphs": scoring.strength_glyphs(scores),
 	}
 
 
@@ -372,9 +315,11 @@ def _player_card_line(player, carry=False):
 	carry_badge = " 👑 **CARRY**" if carry else ""
 	score = player.get("impact_score")
 	score_text = f"`{score}`" if score is not None else "`?`"
+	glyphs = player.get("strength_glyphs")
+	glyph_text = f" · {glyphs}" if glyphs else ""
 	return (
 		f"{'⭐ ' if carry else '• '}**{_clip(player.get('nick'), 24)}**{carry_badge} — "
-		f"**{_clip(player.get('civ'), 18)}** · {score_text}\n"
+		f"**{_clip(player.get('civ'), 18)}** · {score_text}{glyph_text}\n"
 		f"  {chips}"
 	)
 
@@ -384,11 +329,10 @@ def _team_card_fields(player_rows, team_names=None):
 	teams = _team_impact_rows(player_rows)
 	fields = []
 	for team in sorted(teams):
-		rows = sorted(teams[team], key=lambda p: (p.get("impact_score") or 0), reverse=True)
+		rows = sorted(teams[team], key=scoring.carry_sort_key)
 		result = next((p.get("result") for p in rows if p.get("result")), None)
 		icon = "🟩" if result == "W" else "🟥" if result == "L" else "⬜"
-		carry_nick = rows[0].get("nick") if rows else None
-		lines = [_player_card_line(p, carry=(p.get("nick") == carry_nick)) for p in rows]
+		lines = [_player_card_line(p, carry=(p is rows[0])) for p in rows]
 		fields.append({
 			"name": f"{icon} {team_names.get(team, f'Team {team}')} · {result or '?'}",
 			"value": "\n".join(lines)[:1024] or "No players",
@@ -404,7 +348,7 @@ def _match_analysis_lines(player_rows, team_names=None):
 		return []
 	lines = []
 	for team in sorted(teams):
-		rows = sorted(teams[team], key=lambda p: (p.get("impact_score") or 0), reverse=True)
+		rows = sorted(teams[team], key=scoring.carry_sort_key)
 		result = next((p.get("result") for p in rows if p.get("result")), None)
 		icon = "🟩" if result == "W" else "🟥" if result == "L" else "⬜"
 		tags = _team_tag_summary(rows)
@@ -417,7 +361,7 @@ def _match_analysis_lines(player_rows, team_names=None):
 			f"({carry['impact_score']}, {_tag_word(carry.get('impact_tags') or [])})."
 		)
 	if 0 in teams and 1 in teams:
-		all_rows = sorted(player_rows, key=lambda p: (p.get("impact_score") or 0), reverse=True)
+		all_rows = sorted(player_rows, key=scoring.carry_sort_key)
 		carries = all_rows[:2]
 		if len(carries) >= 2:
 			lines.append(
@@ -628,7 +572,10 @@ async def build_match_cards_embed(channel_id, bot_match_id):
 	embed = Embed(
 		title="🧾 Match Cards",
 		colour=Colour(0x2ecc71),
-		description="Impact score is relative inside this match. Tags come from replay timing, eco, and army signals.",
+		description=(
+			"Impact score is relative inside this match. Tags come from replay timing, eco, and army signals.\n"
+			"⚔ army · 🌾 eco · ⏱ age-up — ▲ above match average, ▼ below, · around average."
+		),
 	)
 	for f in fields[:2]:
 		embed.add_field(name=f["name"], value=f["value"], inline=f["inline"])

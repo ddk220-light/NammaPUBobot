@@ -18,6 +18,7 @@ from core.cfg_factory import (
 from core.client import dc
 from core.database import db
 import bot
+from bot.replay_stats import scoring as rs_scoring
 from bot.tag_leaderboard import tag_leaderboard_score
 
 # --- Paths ---
@@ -759,79 +760,23 @@ async def _rating_history(period, user_id):
 	return out
 
 
-def _avg(rows, key):
-	vals = [float(r[key]) for r in rows if r.get(key) is not None]
-	return sum(vals) / len(vals) if vals else None
-
-
-def _std(rows, key):
-	vals = [float(r[key]) for r in rows if r.get(key) is not None]
-	if len(vals) < 2:
-		return 1.0
-	mean = sum(vals) / len(vals)
-	variance = sum((v - mean) ** 2 for v in vals) / len(vals)
-	return max(variance ** 0.5, 1.0)
-
-
-def _z(row, rows, key, invert=False):
-	if row.get(key) is None:
-		return 0.0
-	mean = _avg(rows, key)
-	if mean is None:
-		return 0.0
-	val = float(row[key])
-	score = (mean - val if invert else val - mean) / _std(rows, key)
-	return max(-2.0, min(2.0, score))
-
-
-def _score_component(value):
-	return max(0, min(100, round(50 + value * 15)))
-
-
 def _impact_payload(row, group):
-	eco_z = (_z(row, group, "villagers") * 0.65) + (_z(row, group, "vil_pre_castle") * 0.35)
-	army_z = (_z(row, group, "military") * 0.65) + (_z(row, group, "mil_pre_castle") * 0.35)
-	timing_z = (_z(row, group, "feudal_s", invert=True) * 0.35) + (_z(row, group, "castle_s", invert=True) * 0.45) + (_z(row, group, "imperial_s", invert=True) * 0.20)
-	early_eco_z = _z(row, group, "vil_pre_castle")
-	early_army_z = _z(row, group, "mil_pre_castle")
-	recovery_z = _z(row, group, "villagers") - early_eco_z
-	eco = _score_component(eco_z)
-	army = _score_component(army_z)
-	timing = _score_component(timing_z)
-	early_eco = _score_component(early_eco_z)
-	early_army = _score_component(early_army_z)
-	recovery = _score_component(recovery_z)
-	impact = round((army * 0.34) + (eco * 0.30) + (timing * 0.18) + (recovery * 0.18))
-	tags = []
-	if army >= 68 and eco < 52:
-		tags.append("Low-eco pressure")
-	elif army >= 66:
-		tags.append("Army pressure")
-	if eco >= 64 and early_eco >= 56 and early_army <= 55 and impact >= 58:
-		tags.append("Boom carry")
-	elif eco >= 66:
-		tags.append("Eco carry")
-	if timing >= 66:
-		tags.append("Timing edge")
-	if recovery >= 66:
-		tags.append("Recovery")
-	if impact >= 72 and not tags:
-		tags.append("High impact")
+	scores = rs_scoring.impact_scores(row, group)
 	return {
 		"user_id": str(row["user_id"]) if row.get("user_id") is not None else None,
 		"profile_id": str(row["profile_id"]) if row.get("profile_id") is not None else None,
 		"nick": row.get("identity") or str(row.get("user_id") or ""),
 		"civ": row.get("civ"),
 		"team": row.get("team"),
-		"impact_score": impact,
-		"army_score": army,
-			"eco_score": eco,
-			"timing_score": timing,
-			"early_eco_score": early_eco,
-			"early_army_score": early_army,
-			"recovery_score": recovery,
-			"impact_tags": tags[:3],
-		}
+		"impact_score": scores["impact"],
+		"army_score": scores["army"],
+		"eco_score": scores["eco"],
+		"timing_score": scores["timing"],
+		"early_eco_score": scores["early_eco"],
+		"early_army_score": scores["early_army"],
+		"recovery_score": scores["reboom"],
+		"impact_tags": rs_scoring.impact_tag_names(scores)[:3],
+	}
 
 
 def _tag_meta(key, tag_type):

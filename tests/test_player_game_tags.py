@@ -26,7 +26,9 @@ def test_derives_naked_fc_and_greedy_boom():
 	tags = {t["tag"] for t in derive_tags(row, group)}
 	assert "Naked FC" in tags
 	assert "Greedy boom" in tags
-	assert "Eco carry" in tags
+	# Boom-first eco lead with lean early army is the Boom carry profile
+	# (pre-recalibration this fixture landed on the generic "Eco carry").
+	assert "Boom carry" in tags
 
 
 def test_derives_composition_and_upgrade_tags():
