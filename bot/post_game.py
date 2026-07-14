@@ -520,7 +520,7 @@ async def _analysis_rows(bot_match_id):
 		[bot_match_id])
 	replay_rows = await db.fetchall(
 		"SELECT g.user_id, g.identity, g.civ, g.team AS replay_team, g.winner, "
-		"g.villagers, g.vil_pre_castle, g.military, g.mil_pre_castle, "
+		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, g.military, g.mil_pre_castle, g.mil_pre_imperial, "
 		"g.feudal_s, g.castle_s, g.imperial_s "
 		"FROM rs_matches rm "
 		"JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "

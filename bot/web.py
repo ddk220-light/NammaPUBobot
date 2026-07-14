@@ -1392,8 +1392,8 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
 	rows = await db.fetchall(
 		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.civ, g.team, "
-		"g.villagers, g.vil_pre_castle, "
-		"g.military, g.mil_pre_castle, g.feudal_s, g.castle_s, g.imperial_s "
+		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, "
+		"g.military, g.mil_pre_castle, g.mil_pre_imperial, g.feudal_s, g.castle_s, g.imperial_s "
 		"FROM rs_matches rm JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
@@ -1434,7 +1434,7 @@ async def _match_player_impacts(match_ids):
 	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
 	rows = await db.fetchall(
 		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.civ, g.team, "
-		"g.villagers, g.vil_pre_castle, g.military, g.mil_pre_castle, "
+		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, g.military, g.mil_pre_castle, g.mil_pre_imperial, "
 		"g.feudal_s, g.castle_s, g.imperial_s "
 		"FROM rs_matches rm JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",

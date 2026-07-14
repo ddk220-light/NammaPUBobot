@@ -37,6 +37,13 @@ TIMING_MIX = (("feudal_s", 0.30), ("castle_s", 0.40), ("imperial_s", 0.30))  # i
 # Impact = weighted mix of the three component scores. Reboom intentionally absent.
 IMPACT_WEIGHTS = (("army", 0.45), ("eco", 0.32), ("timing", 0.23))
 
+# Every rs_player_games column the mixes read. Callers that SELECT explicit
+# column lists (bot/web.py, bot/post_game.py) must include all of these —
+# _z() silently scores a missing column as match-average, which flattens the
+# component for every player (tests/test_replay_scoring.py enforces this).
+REQUIRED_COLUMNS = tuple(dict.fromkeys(
+	[k for k, _ in ECO_MIX] + [k for k, _ in ARMY_MIX] + [k for k, _ in TIMING_MIX]))
+
 # Tag thresholds (0-100 component scale). Percentile anchors from calibration:
 # army/eco p90=61 p95=66; timing p90=62 p95=64; impact p90=57 p95=60;
 # early_eco p85=62; reboom p85=66 p90=72.
