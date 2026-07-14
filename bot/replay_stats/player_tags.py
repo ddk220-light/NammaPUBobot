@@ -11,6 +11,20 @@ from collections import defaultdict
 
 from core.database import db
 
+try:
+	from . import scoring
+except ImportError:
+	# utils/backfill_player_game_tags.py loads this file standalone via
+	# spec_from_file_location (no parent package), so the relative import has
+	# nothing to resolve against. Load scoring.py from the same directory.
+	import importlib.util as _importlib_util
+	import os as _os
+	_spec = _importlib_util.spec_from_file_location(
+		"rs_scoring_standalone",
+		_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "scoring.py"))
+	scoring = _importlib_util.module_from_spec(_spec)
+	_spec.loader.exec_module(scoring)
+
 
 TAG_META = {
 	"All-in pressure": ("impact", "All-in pressure"),
@@ -39,73 +53,16 @@ CAV_UPGRADES = {"Bloodlines", "Husbandry", "Scale Barding Armor", "Chain Barding
 ECO_UPGRADES = {"Wheelbarrow", "Hand Cart", "Double-Bit Axe", "Bow Saw", "Two-Man Saw", "Horse Collar", "Heavy Plow"}
 
 
-def _avg(rows, key):
-	vals = [float(r[key]) for r in rows if r.get(key) is not None]
-	return sum(vals) / len(vals) if vals else None
-
-
-def _std(rows, key):
-	vals = [float(r[key]) for r in rows if r.get(key) is not None]
-	if len(vals) < 2:
-		return 1.0
-	mean = sum(vals) / len(vals)
-	return max((sum((v - mean) ** 2 for v in vals) / len(vals)) ** 0.5, 1.0)
-
-
-def _z(row, rows, key, invert=False):
-	if row.get(key) is None:
-		return 0.0
-	mean = _avg(rows, key)
-	if mean is None:
-		return 0.0
-	val = float(row[key])
-	score = (mean - val if invert else val - mean) / _std(rows, key)
-	return max(-2.0, min(2.0, score))
-
-
-def _score_component(value):
-	return max(0, min(100, round(50 + value * 15)))
-
-
 def _tag(tag, score, evidence):
 	category, label = TAG_META[tag]
 	return {"tag": tag, "label": label, "category": category, "score": int(max(0, min(100, round(score)))),
 	        "evidence": evidence}
 
 
-def _impact_scores(row, group):
-	eco_z = (_z(row, group, "villagers") * 0.65) + (_z(row, group, "vil_pre_castle") * 0.35)
-	army_z = (_z(row, group, "military") * 0.65) + (_z(row, group, "mil_pre_castle") * 0.35)
-	timing_z = (
-		(_z(row, group, "feudal_s", invert=True) * 0.35)
-		+ (_z(row, group, "castle_s", invert=True) * 0.45)
-		+ (_z(row, group, "imperial_s", invert=True) * 0.20)
-	)
-	early_eco_z = _z(row, group, "vil_pre_castle")
-	early_army_z = _z(row, group, "mil_pre_castle")
-	recovery_z = _z(row, group, "villagers") - early_eco_z
-	eco = _score_component(eco_z)
-	army = _score_component(army_z)
-	timing = _score_component(timing_z)
-	early_eco = _score_component(early_eco_z)
-	early_army = _score_component(early_army_z)
-	reboom = _score_component(recovery_z)
-	impact = round((army * 0.34) + (eco * 0.30) + (timing * 0.18) + (reboom * 0.18))
-	return {
-		"impact": impact,
-		"army": army,
-		"eco": eco,
-		"timing": timing,
-		"early_eco": early_eco,
-		"early_army": early_army,
-		"reboom": reboom,
-	}
-
-
 def derive_tags(row, group, units=None, techs=None):
 	units = units or []
 	techs = techs or []
-	scores = _impact_scores(row, group)
+	scores = scoring.impact_scores(row, group)
 	tags = []
 	base_evidence = {
 		"impact": scores["impact"],
@@ -117,20 +74,8 @@ def derive_tags(row, group, units=None, techs=None):
 		"pre_castle_villagers": row.get("vil_pre_castle"),
 		"pre_castle_military": row.get("mil_pre_castle"),
 	}
-	if scores["army"] >= 68 and scores["eco"] < 52:
-		tags.append(_tag("All-in pressure", scores["army"], base_evidence))
-	elif scores["army"] >= 66:
-		tags.append(_tag("Map pressure", scores["army"], base_evidence))
-	if scores["eco"] >= 64 and scores["early_eco"] >= 56 and scores["early_army"] <= 55 and scores["impact"] >= 58:
-		tags.append(_tag("Boom carry", scores["eco"], base_evidence))
-	elif scores["eco"] >= 66:
-		tags.append(_tag("Eco carry", scores["eco"], base_evidence))
-	if scores["timing"] >= 66:
-		tags.append(_tag("Age-up tempo", scores["timing"], base_evidence))
-	if scores["reboom"] >= 66:
-		tags.append(_tag("Reboom", scores["reboom"], base_evidence))
-	if scores["impact"] >= 72:
-		tags.append(_tag("High impact", scores["impact"], base_evidence))
+	for impact_tag in scoring.derive_impact_tags(scores):
+		tags.append(_tag(scoring.TAG_NAMES[impact_tag["key"]]["stored"], impact_tag["score"], base_evidence))
 
 	castle_m = (row.get("castle_s") or 0) / 60 if row.get("castle_s") else None
 	imp_m = (row.get("imperial_s") or 0) / 60 if row.get("imperial_s") else None
