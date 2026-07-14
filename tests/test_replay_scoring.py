@@ -148,6 +148,28 @@ def test_early_aggressor_outranks_late_spam_turtle():
 	assert impact_scores(aggressor, group)["impact"] > impact_scores(turtle, group)["impact"]
 
 
+def test_impact_queries_select_every_scoring_column():
+	"""bot/web.py and bot/post_game.py feed _impact_payload from hand-written
+	SELECT column lists. A missing column silently zeroes that component for
+	every player (this shipped once: mil_pre_imperial was absent, flattening
+	the new army mix on the live site while the backfill — which uses
+	SELECT * — wrote correct stored tags)."""
+	from pathlib import Path
+	from bot.replay_stats.scoring import REQUIRED_COLUMNS
+
+	root = Path(__file__).resolve().parent.parent
+	for rel in ("bot/web.py", "bot/post_game.py"):
+		src = (root / rel).read_text()
+		queries = [chunk for chunk in src.split('await db.fetchall(')
+		           if 'rs_player_games' in chunk.split('FROM')[0] + chunk[:600]
+		           and 'g.villagers' in chunk[:600]]
+		assert queries, f"no rs_player_games impact query found in {rel}"
+		for q in queries:
+			head = q[:600]
+			for col in REQUIRED_COLUMNS:
+				assert f"g.{col}" in head, f"{rel}: impact query missing g.{col}"
+
+
 def test_strength_glyphs_have_no_numbers():
 	text = strength_glyphs({"army": 70, "eco": 30, "timing": 50})
 	assert text == "⚔▲ 🌾▼ ⏱·"
