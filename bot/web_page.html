@@ -1013,10 +1013,10 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
 .detail-grid > .match-panel table.stats-table thead,
 .match-grid > .match-panel .mini-table thead,
 .match-grid > .match-panel table.stats-table thead { position: static; }
-#stats-table td:first-child, #header-row th:first-child {
+#stats-table td:first-child, #header-row th:first-child, #group-row th:first-child {
   position: sticky; left: 0; z-index: 5; background: #2f3136;
 }
-#header-row th:first-child { z-index: 11; background: #202225; }
+#header-row th:first-child, #group-row th:first-child { z-index: 11; background: #202225; }
 #stats-table tr:hover td:first-child { background: #36393f; }
 .civ-filter-row { margin-bottom: 12px; }
 .wr-cell-bar { min-width: 64px; }
@@ -1306,7 +1306,10 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
         <table class="stats-table" id="stats-table">
           <thead>
             <tr class="col-group-row" id="group-row">
-              <th class="col-group-label" colspan="3">Overall</th>
+              <!-- First cell pins with the civ column; "Overall" spans only the
+                   scrolling games/win columns so group labels stay aligned. -->
+              <th class="col-group-label"></th>
+              <th class="col-group-label" colspan="2">Overall</th>
               <th class="col-group-label" colspan="2">Player Elo &#8805; 1000</th>
               <th class="col-group-label" colspan="2">Player Elo &lt; 1000</th>
               <th class="col-group-label" colspan="2">Team Avg &#8805; 1100</th>
@@ -1675,10 +1678,11 @@ async function initCivStats() {
     if (!resp.ok) throw new Error('HTTP '+resp.status);
     var res = await resp.json(); civData = res.civs;
     var gr = document.getElementById('group-row'); var ths = gr.querySelectorAll('th');
-    ths[1].textContent='Player Elo \u2265 '+res.player_threshold;
-    ths[2].textContent='Player Elo < '+res.player_threshold;
-    ths[3].textContent='Team Avg \u2265 '+res.team_threshold;
-    ths[4].textContent='Team Avg < '+res.team_threshold;
+    // ths[0] pins with the civ column, ths[1] is "Overall" \u2014 thresholds start at [2].
+    ths[2].textContent='Player Elo \u2265 '+res.player_threshold;
+    ths[3].textContent='Player Elo < '+res.player_threshold;
+    ths[4].textContent='Team Avg \u2265 '+res.team_threshold;
+    ths[5].textContent='Team Avg < '+res.team_threshold;
     buildHeaders(); renderCivTable(); renderAnomalies();
   } catch(e) {
     document.getElementById('table-body').innerHTML='<tr><td colspan="11" class="error">Failed to load: '+esc(e.message)+'</td></tr>';
