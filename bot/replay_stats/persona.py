@@ -95,11 +95,17 @@ def _tag_rate(tag_rates, group):
 	           if str(label).strip().lower() in labels)
 
 
+def _comp(stats, key):
+	# Explicit None check: a legitimate 0 score must stay 0, not turn neutral.
+	v = _num(stats.get(key))
+	return 50.0 if v is None else v
+
+
 def _style_scores(stats, tag_rates):
-	army = _num(stats.get("avg_army")) or 50.0
-	eco = _num(stats.get("avg_eco")) or 50.0
-	timing = _num(stats.get("avg_timing")) or 50.0
-	reboom = _num(stats.get("avg_recovery")) or 50.0
+	army = _comp(stats, "avg_army")
+	eco = _comp(stats, "avg_eco")
+	timing = _comp(stats, "avg_timing")
+	reboom = _comp(stats, "avg_recovery")
 	# Scale factors equalize each component's spread across the player pool
 	# (army varies least per player, reboom the most).
 	return {

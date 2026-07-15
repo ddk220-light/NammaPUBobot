@@ -56,10 +56,13 @@ def main():
                 teams[str(row["team"])].append((row, s))
         tops = {id(max(m, key=lambda x: (x[1]["impact"], x[1]["army"], x[1]["eco"]))[0]) for m in teams.values()}
         for row, s in scored:
+            # Key on user/profile id, not display name — two accounts sharing
+            # an in-game identity must not merge into one persona bucket.
+            key = row.get("user_id") or row.get("profile_id")
             name = row.get("identity")
-            if not name:
+            if key is None or not name:
                 continue
-            a = agg[name]
+            a = agg[(key, name)]
             a["n"] += 1
             a["army"] += s["army"]
             a["eco"] += s["eco"]
@@ -73,7 +76,7 @@ def main():
 
     combos = Counter()
     print(f"{'player':<20} {'g':>4}  persona")
-    for name, a in sorted(agg.items(), key=lambda kv: -kv[1]["n"]):
+    for (_key, name), a in sorted(agg.items(), key=lambda kv: -kv[1]["n"]):
         n = a["n"]
         if n < args.min_games:
             continue

@@ -1438,7 +1438,9 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 			if payload.get("team") is not None:
 				by_team.setdefault(payload["team"], []).append(payload)
 		for members in by_team.values():
-			top = max(members, key=lambda p: (p.get("impact_score") or 0, p.get("army_score") or 0, p.get("eco_score") or 0))
+			# carry_sort_key adds a nick tiebreak so exact ties don't flip
+			# with DB row order between requests.
+			top = min(members, key=rs_scoring.carry_sort_key)
 			top["team_top"] = True
 		payloads = []
 		for row, payload in scored:
