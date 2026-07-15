@@ -1038,6 +1038,7 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
 .persona-tagline { color: #c9d4ea; font-size: 0.92rem; flex: 1 1 260px; line-height: 1.5; }
 .persona-evidence { display: flex; flex-wrap: wrap; gap: 0.3rem; flex-basis: 100%; }
 .persona-evidence .roster-tag { font-size: 0.7rem; }
+.relation-sub { color: #85868a; font-size: 0.78rem; font-family: 'Outfit', sans-serif; letter-spacing: 0; text-transform: none; font-weight: 400; margin-left: 0.5rem; }
 </style>
 </head>
 <body>
@@ -1230,12 +1231,20 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
           <section class="match-panel detail-section" id="player-tags-panel"></section>
           <div class="trend-panel" id="player-elo-trend"></div>
           <section class="detail-section">
-            <h2>Best allies</h2>
+            <h2>Dream duos <span class="relation-sub">highest win rate together</span></h2>
             <div class="opponent-strip" id="player-allies"></div>
           </section>
           <section class="detail-section">
-            <h2>Tough opponents</h2>
+            <h2>Cursed duos <span class="relation-sub">great people, terrible win rate together</span></h2>
+            <div class="opponent-strip" id="player-bad-allies"></div>
+          </section>
+          <section class="detail-section">
+            <h2>Nemeses <span class="relation-sub">they keep beating you</span></h2>
             <div class="opponent-strip" id="player-opponents"></div>
+          </section>
+          <section class="detail-section">
+            <h2>Free Elo <span class="relation-sub">you keep beating them</span></h2>
+            <div class="opponent-strip" id="player-easy-opponents"></div>
           </section>
           <section class="detail-section">
             <h2>Win rates by match duration</h2>
@@ -2803,6 +2812,26 @@ function personaLabel(p) {
   return p.epithet ? p.name + ' · ' + p.epithet : p.name;
 }
 
+function relationQuadrant(rows, direction, excludeRows) {
+  // direction 'high' = win rate leans in the player's favor (>=55%),
+  // 'low' = leans against (<=45%). The dead zone keeps a 52% teammate out
+  // of both "dream" and "cursed" so small pools don't show the same person
+  // on both sides.
+  var excluded = {};
+  (excludeRows || []).forEach(function (r) { excluded[String(r.user_id)] = true; });
+  var qualified = (rows || []).filter(function (r) {
+    if (!r || r.winrate === null || r.winrate === undefined) return false;
+    if (Number(r.games || 0) < 10 || excluded[String(r.user_id)]) return false;
+    return direction === 'high' ? r.winrate >= 55 : r.winrate <= 45;
+  });
+  qualified.sort(function (a, b) {
+    return direction === 'high'
+      ? (b.winrate - a.winrate) || (b.games - a.games)
+      : (a.winrate - b.winrate) || (b.games - a.games);
+  });
+  return qualified.slice(0, 3);
+}
+
 function fillPanel(id, html, hasData) {
   var el = document.getElementById(id);
   if (!el) return;
@@ -2831,8 +2860,10 @@ function renderPlayerDetail(d) {
     card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
     card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
     card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
-    playerInfoCard('Best ally', s.best_ally, 'No ally sample', 'ranked teammate sample'),
-    playerInfoCard('Worst enemy', s.worst_enemy, 'No enemy sample', 'ranked opponent sample'),
+    playerInfoCard('Dream duo', s.best_ally, 'No ally sample', 'best win rate together'),
+    playerInfoCard('Cursed duo', s.worst_ally, 'No ally sample', 'worst win rate together'),
+    playerInfoCard('Nemesis', s.worst_enemy, 'No enemy sample', 'beats you the most'),
+    playerInfoCard('Free Elo', s.easiest_enemy, 'No enemy sample', 'you beat them the most'),
     card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
     htmlCard('Style traits', traitChips(p, s.strategy_tags), 'impact + strategy tags'),
     card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
@@ -2846,11 +2877,18 @@ function renderPlayerDetail(d) {
 
   // Empty relation/duration samples hide their whole section instead of
   // rendering a placeholder box — same noise-reduction as the commentary tab.
+  // Four relation quadrants, 3 cards each. A quadrant only shows people it
+  // can back up: 10+ shared games and a win rate that actually leans that way.
   var allies = d.allies || [];
-  fillPanel('player-allies', allies.map(relationStripCard).join(''), allies.length > 0);
-
   var opp = d.opponents || [];
-  fillPanel('player-opponents', opp.map(relationStripCard).join(''), opp.length > 0);
+  var dream = relationQuadrant(allies, 'high');
+  var cursed = relationQuadrant(allies, 'low', dream);
+  var nemeses = relationQuadrant(opp, 'low');
+  var freeElo = relationQuadrant(opp, 'high', nemeses);
+  fillPanel('player-allies', dream.map(relationStripCard).join(''), dream.length > 0);
+  fillPanel('player-bad-allies', cursed.map(relationStripCard).join(''), cursed.length > 0);
+  fillPanel('player-opponents', nemeses.map(relationStripCard).join(''), nemeses.length > 0);
+  fillPanel('player-easy-opponents', freeElo.map(relationStripCard).join(''), freeElo.length > 0);
 
   var dur = d.durations || [];
   fillPanel('player-durations', dur.map(function (r) {
