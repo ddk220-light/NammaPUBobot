@@ -132,6 +132,29 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
+    tname="rs_player_personas",
+    # Materialized persona per (player, period window) — recomputed for a
+    # match's players right after ingest (see store.write_match), read by the
+    # web API instead of re-deriving from full history on every request.
+    columns=[
+        dict(cname="user_id", ctype=db.types.int),
+        dict(cname="period", ctype=db.types.str),
+        dict(cname="persona_key", ctype=db.types.str, notnull=False),
+        dict(cname="style", ctype=db.types.str, notnull=False),
+        dict(cname="role", ctype=db.types.str, notnull=False),
+        dict(cname="name", ctype=db.types.str, notnull=False),
+        dict(cname="epithet", ctype=db.types.str, notnull=False),
+        dict(cname="tagline", ctype=db.types.str, notnull=False),
+        dict(cname="evidence_json", ctype=db.types.dict, notnull=False),
+        dict(cname="carry_rate", ctype=db.types.float, notnull=False),
+        dict(cname="impact_sd", ctype=db.types.float, notnull=False),
+        dict(cname="matches", ctype=db.types.int, notnull=False),
+        dict(cname="computed_at", ctype=db.types.int, notnull=False),
+    ],
+    primary_keys=["user_id", "period"],
+))
+
+db.ensure_table(dict(
     tname="rs_ingest",
     columns=[
         dict(cname="aoe2_match_id", ctype=db.types.int),

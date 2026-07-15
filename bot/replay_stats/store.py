@@ -128,6 +128,11 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
         await player_tags.write_match_tags(aoe2_id)
     except Exception as e:
         log.error(f"Replay-stats player tag write failed for aoe2 match {aoe2_id}: {e}")
+    try:
+        from . import persona_store
+        await persona_store.refresh_match_users(aoe2_id)
+    except Exception as e:
+        log.error(f"Replay-stats persona refresh failed for aoe2 match {aoe2_id}: {e}")
     return len(pg)
 
 

@@ -16,9 +16,11 @@ from core.cfg_factory import (
 	BoolVar, IntVar, SliderVar, OptionVar, DurationVar, TextVar
 )
 from core.client import dc
+from core.console import log
 from core.database import db
 import bot
 from bot.replay_stats import persona as rs_persona
+from bot.replay_stats import persona_store as rs_persona_store
 from bot.replay_stats import scoring as rs_scoring
 from bot.tag_leaderboard import tag_leaderboard_score
 
@@ -1386,6 +1388,21 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 	}
 
 
+async def _overlay_stored_persona(impact_profile, user_id, period):
+	"""Prefer the materialized persona (refreshed after every ingested match)
+	over the live-derived one; keep the live value when no row exists yet."""
+	try:
+		stored = await rs_persona_store.get_persona(user_id, period)
+	except Exception as e:
+		# Fall back to the live-derived persona, but never silently: a broken
+		# query here would otherwise be indistinguishable from "no row yet".
+		log.error(f"Stored persona lookup failed for user {user_id} period {period}: {e}")
+		return impact_profile
+	if stored and stored.get("key"):
+		impact_profile["persona"] = stored
+	return impact_profile
+
+
 def _relationship_payload(row):
 	if not row:
 		return None
@@ -1780,6 +1797,7 @@ async def _match_stats_player(user_id, period):
 	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
 	if period_impacts:
 		impact_profile = _player_impact_profile(period_impacts.values(), civs)
+	await _overlay_stored_persona(impact_profile, user_id, period)
 	if recent:
 		match_ids = [r["match_id"] for r in recent]
 		match_rosters = await _match_rosters(match_ids)
@@ -2060,6 +2078,7 @@ async def handle_player_stats(request):
 		base_args)
 	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
 	impact_profile = _player_impact_profile(period_impacts.values(), civs, durations)
+	await _overlay_stored_persona(impact_profile, user_id, period)
 	strategy_profile = await _player_strategy_profile(user_id, profile_ids, period)
 	match_civs = {}
 	opp_match_civs = {}
