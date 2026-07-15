@@ -1405,12 +1405,18 @@ def _best_relationship(rows, kind):
 	if kind == "ally":
 		return sorted(qualified, key=lambda p: (-(p["winrate"] or 0), -p["wins"], -p["games"], p["nick"]))[0]
 	if kind == "worst_ally":
-		return sorted(
-			qualified,
-			key=lambda p: (p["winrate"] if p["winrate"] is not None else 101, -p["losses"], -p["games"], p["nick"])
-		)[0]
+		# The new quadrants use hard gates (10+ games, winrate actually leaning
+		# that way) so the summary card never names someone the list below
+		# rejects — return None instead of falling back to a 50-50 pairing.
+		gated = [p for p in payloads if p["games"] >= 10 and p["winrate"] is not None and p["winrate"] <= 45]
+		if not gated:
+			return None
+		return sorted(gated, key=lambda p: (p["winrate"], -p["losses"], -p["games"], p["nick"]))[0]
 	if kind == "easy_enemy":
-		return sorted(qualified, key=lambda p: (-(p["winrate"] or 0), -p["wins"], -p["games"], p["nick"]))[0]
+		gated = [p for p in payloads if p["games"] >= 10 and p["winrate"] is not None and p["winrate"] >= 55]
+		if not gated:
+			return None
+		return sorted(gated, key=lambda p: (-p["winrate"], -p["wins"], -p["games"], p["nick"]))[0]
 	# 'enemy': relative to the focus player, low winrate = they beat you.
 	return sorted(
 		qualified,
@@ -1979,9 +1985,10 @@ async def handle_player_stats(request):
 		"AND ally.team=pm.team AND ally.user_id<>pm.user_id" + _visible_user_clause("ally") +
 		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
 		" GROUP BY ally.user_id HAVING games >= 1 AND wins + losses > 0 "
-		# LIMIT high enough to keep BOTH tails (dream duos AND cursed duos) —
-		# a 12-row winrate-sorted cut used to drop the losing pairings.
-		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) DESC, games DESC, wins DESC LIMIT 60",
+		# No LIMIT: any winrate-sorted cut silently drops one of the two tails
+		# (dream duos vs cursed duos). The roster is small, so the full list is
+		# at most a few dozen rows.
+		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) DESC, games DESC, wins DESC",
 		base_args)
 	opponents = await db.fetchall(
 		"SELECT opp.user_id, MAX(opp.nick) AS nick, COUNT(*) AS games, "
@@ -1992,7 +1999,7 @@ async def handle_player_stats(request):
 		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
 		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
 		" GROUP BY opp.user_id HAVING games >= 1 AND wins + losses > 0 "
-		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC LIMIT 60",
+		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC",
 		base_args)
 	durations = await db.fetchall(
 		"SELECT CASE "
