@@ -46,6 +46,12 @@ TAG_META = {
 	"Trash switch": ("composition", "Trash switch"),
 	"One-trick comp": ("composition", "One-trick comp"),
 	"Mixed comp": ("composition", "Mixed comp"),
+	"Army-leaning": ("role", "Army-leaning"),
+	"Eco-leaning": ("role", "Eco-leaning"),
+	"Tempo-leaning": ("role", "Tempo-leaning"),
+	"All-rounder": ("role", "All-rounder"),
+	"Uphill battle": ("role", "Uphill battle"),
+	"Partial replay": ("data", "Partial replay"),
 }
 
 ARCHER_UPGRADES = {"Fletching", "Bodkin Arrow", "Bracer", "Thumb Ring", "Ballistics"}
@@ -125,6 +131,14 @@ def derive_tags(row, group, units=None, techs=None):
 	for tag in tags:
 		if tag["tag"] not in seen or tag["score"] > seen[tag["tag"]]["score"]:
 			seen[tag["tag"]] = tag
+	if not seen:
+		# Every player gets at least one honest tag — a component lean, an
+		# All-rounder read, or "Partial replay" when the parse carried no
+		# production data at all (previously ~3.5% of player-games stored
+		# nothing and rendered as blanks).
+		fb = scoring.fallback_tag(scores, row)
+		tag = _tag(scoring.TAG_NAMES[fb["key"]]["stored"], fb["score"], base_evidence)
+		seen[tag["tag"]] = tag
 	return sorted(seen.values(), key=lambda t: (-t["score"], t["tag"]))
 
 

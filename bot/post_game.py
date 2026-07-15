@@ -168,7 +168,7 @@ def _impact_payload(row, group):
 		"eco_score": scores["eco"],
 		"timing_score": scores["timing"],
 		"recovery_score": scores["reboom"],
-		"impact_tags": scoring.impact_tag_names(scores)[:3],
+		"impact_tags": scoring.impact_tag_names_with_fallback(scores, row)[:3],
 		"strength_glyphs": scoring.strength_glyphs(scores),
 	}
 
