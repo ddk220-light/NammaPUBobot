@@ -763,7 +763,8 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   border-bottom: 1px solid rgba(72,76,84,0.55);
 }
 .mini-table { width: 100%; border-collapse: collapse; table-layout: auto; }
-.mini-table thead { position: sticky; top: var(--sticky-table-top); z-index: 11; }
+/* Titles scroll away, so the header pins directly under the page-context bar. */
+.mini-table thead { position: sticky; top: var(--sticky-panel-top); z-index: 11; }
 .mini-table th {
   color: #969aa2; background: #202225; text-transform: uppercase;
   font-size: 0.68rem; letter-spacing: 0.06em; padding: 0.55rem 0.7rem; text-align: left;
@@ -1003,16 +1004,14 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
 }
 /* ─── Page polish: panel overflow, civ-stats sticky column + filter, leaderboard medals/bars ─── */
 .match-panel { min-width: 0; }
-/* Only the two-column overview grids need their own scroll context: their
-   tables can be wider than half the page and used to overflow into the
-   neighbouring panel. Sticky theads must go static inside a scroll container,
-   or the header pins itself to the panel top and paints over the title while
-   rows slide under. */
-.detail-grid > .match-panel, .match-grid > .match-panel { overflow-x: auto; }
-.detail-grid > .match-panel .mini-table thead,
-.detail-grid > .match-panel table.stats-table thead,
-.match-grid > .match-panel .mini-table thead,
-.match-grid > .match-panel table.stats-table thead { position: static; }
+/* Panel titles scroll away with the page; the column headers below them are
+   what stays pinned (see .match-panel h2 / .mini-table thead). Keeping the
+   title sticky too made it pin mid-panel while rows scrolled past it.
+   A wide table that would bleed into a neighbouring panel scrolls inside its
+   own wrapper (.table-scroll) instead of the panel establishing a scroll
+   context that would trap the sticky thead. */
+.match-panel h2 { position: static; }
+.table-scroll { overflow-x: auto; }
 #stats-table td:first-child, #header-row th:first-child, #group-row th:first-child {
   position: sticky; left: 0; z-index: 5; background: #2f3136;
 }
@@ -1576,7 +1575,30 @@ function showPage(page, opts) {
   document.getElementById('guild_nav').style.display = isDash ? 'flex' : 'none';
   document.getElementById('guild_menu').style.display = isDash ? 'flex' : 'none';
   document.getElementById('mobile-menu-btn').style.display = isDash ? '' : 'none';
+  syncStickyOffsets();
 }
+
+// The page-context bar's height varies with content wrapping (period tabs,
+// player picker) and viewport width, so the sticky column-header offset can't
+// be a hardcoded constant — measure the bar and publish it as the CSS var the
+// theads pin against. Runs after every page render and on resize.
+var _stickyObserver = null;
+function syncStickyOffsets() {
+  if (!_stickyObserver && typeof ResizeObserver !== 'undefined') {
+    // Re-measure whenever a bar's height changes (data load, viewport resize,
+    // period-tab wrap) — the offset can't be a hardcoded constant.
+    _stickyObserver = new ResizeObserver(function () { syncStickyOffsets(); });
+  }
+  document.querySelectorAll('.match-stats-container').forEach(function (container) {
+    var ctx = container.querySelector('.sticky-page-context');
+    if (!ctx) return;
+    if (_stickyObserver) _stickyObserver.observe(ctx);
+    var top = Math.round(ctx.getBoundingClientRect().height);
+    container.style.setProperty('--sticky-panel-top', top + 'px');
+    container.style.setProperty('--sticky-table-top', top + 'px');
+  });
+}
+window.addEventListener('resize', syncStickyOffsets);
 
 /* ─── Auth ─── */
 async function checkAuth() {
