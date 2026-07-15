@@ -18,6 +18,7 @@ from core.cfg_factory import (
 from core.client import dc
 from core.database import db
 import bot
+from bot.replay_stats import persona as rs_persona
 from bot.replay_stats import scoring as rs_scoring
 from bot.tag_leaderboard import tag_leaderboard_score
 
@@ -1275,6 +1276,9 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 			"avg_eco": None,
 			"avg_timing": None,
 			"avg_recovery": None,
+			"impact_sd": None,
+			"carry_rate": None,
+			"persona": rs_persona.derive_persona({"matches": 0}),
 			"top_tags": [],
 			"best_civs": [],
 			"duration_edges": [],
@@ -1338,6 +1342,22 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 	if top_tags:
 		summary_bits.append(", ".join(t["tag"] for t in top_tags[:2]))
 	summary_bits.append(f"{top_component.lower()} led")
+	impact_scores = [i["impact_score"] for i in impacts if i.get("impact_score") is not None]
+	impact_sd = None
+	if len(impact_scores) >= 2:
+		mean = sum(impact_scores) / len(impact_scores)
+		impact_sd = round((sum((x - mean) ** 2 for x in impact_scores) / len(impact_scores)) ** 0.5, 1)
+	carry_rate = round(100 * sum(1 for i in impacts if i.get("team_top")) / len(impacts))
+	persona = rs_persona.derive_persona({
+		"matches": len(impacts),
+		"avg_army": avg_army,
+		"avg_eco": avg_eco,
+		"avg_timing": avg_timing,
+		"avg_recovery": avg_recovery,
+		"impact_sd": impact_sd,
+		"carry_rate": carry_rate,
+		"tag_rates": {tag: count * 100 / len(impacts) for tag, count in tag_counts.items()},
+	})
 	return {
 		"style": style,
 		"summary": "; ".join(summary_bits),
@@ -1347,6 +1367,9 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 		"avg_eco": avg_eco,
 		"avg_timing": avg_timing,
 		"avg_recovery": avg_recovery,
+		"impact_sd": impact_sd,
+		"carry_rate": carry_rate,
+		"persona": persona,
 		"top_tags": top_tags,
 		"best_civs": best_civs,
 		"duration_edges": duration_edges,
@@ -1404,8 +1427,21 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 	focus_profiles = {int(p) for p in focus_profile_ids or []}
 	out = {}
 	for match_id, group in groups.items():
-		payloads = []
+		# Score everyone first (hidden players included) so the team-top flag
+		# reflects who actually led the team, then filter what we return.
+		scored = []
 		for row in group:
+			payload = _impact_payload(row, group)
+			scored.append((row, payload))
+		by_team = {}
+		for _row, payload in scored:
+			if payload.get("team") is not None:
+				by_team.setdefault(payload["team"], []).append(payload)
+		for members in by_team.values():
+			top = max(members, key=lambda p: (p.get("impact_score") or 0, p.get("army_score") or 0, p.get("eco_score") or 0))
+			top["team_top"] = True
+		payloads = []
+		for row, payload in scored:
 			row_user_id = row.get("user_id")
 			if row_user_id is not None and int(row_user_id) in hidden_users:
 				continue
@@ -1414,7 +1450,6 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 					continue
 			elif row_user_id is None:
 				continue
-			payload = _impact_payload(row, group)
 			payload["strategy_tags"] = (
 				strategy_by_profile.get((match_id, str(row.get("profile_id"))))
 				or strategy_by_name.get((match_id, str(row.get("identity") or "").lower()))
