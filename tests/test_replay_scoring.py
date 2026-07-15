@@ -170,6 +170,39 @@ def test_impact_queries_select_every_scoring_column():
 				assert f"g.{col}" in head, f"{rel}: impact query missing g.{col}"
 
 
+def test_fallback_tag_partial_replay_when_no_production_data():
+	from bot.replay_stats.scoring import fallback_tag
+	row = {"player_number": 1, "villagers": 0, "military": None}
+	scores = impact_scores(row, [row, {"player_number": 2}])
+	assert fallback_tag(scores, row)["key"] == "partial_replay"
+
+
+def test_fallback_tag_picks_strongest_lean():
+	from bot.replay_stats.scoring import fallback_tag
+	row = _player(villagers=100, vil_pre_castle=26, military=85)
+	group = [row, _player(player_number=2), _player(player_number=3, villagers=85)]
+	scores = impact_scores(row, group)
+	fb = fallback_tag(scores, row)
+	assert fb["key"] in ("lean_army", "lean_eco", "lean_tempo")
+
+
+def test_fallback_tag_all_rounder_when_flat():
+	from bot.replay_stats.scoring import fallback_tag
+	row = _player()
+	scores = {"army": 50, "eco": 51, "timing": 49, "impact": 50,
+	          "early_eco": 50, "early_army": 50, "reboom": 50}
+	assert fallback_tag(scores, row)["key"] == "all_rounder"
+
+
+def test_payload_names_always_return_at_least_one_tag():
+	from bot.replay_stats.scoring import impact_tag_names_with_fallback
+	row = _player()
+	group = [row, _player(player_number=2), _player(player_number=3)]
+	scores = impact_scores(row, group)
+	names = impact_tag_names_with_fallback(scores, row)
+	assert len(names) >= 1
+
+
 def test_strength_glyphs_have_no_numbers():
 	text = strength_glyphs({"army": 70, "eco": 30, "timing": 50})
 	assert text == "⚔▲ 🌾▼ ⏱·"

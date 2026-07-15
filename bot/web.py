@@ -776,7 +776,7 @@ def _impact_payload(row, group):
 		"early_eco_score": scores["early_eco"],
 		"early_army_score": scores["early_army"],
 		"recovery_score": scores["reboom"],
-		"impact_tags": rs_scoring.impact_tag_names(scores)[:3],
+		"impact_tags": rs_scoring.impact_tag_names_with_fallback(scores, row)[:3],
 	}
 
 

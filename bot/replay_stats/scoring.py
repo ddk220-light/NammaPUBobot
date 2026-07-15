@@ -74,7 +74,18 @@ TAG_NAMES = {
 	"age_up_tempo": {"stored": "Age-up tempo", "payload": "Timing edge"},
 	"reboom": {"stored": "Reboom", "payload": "Recovery"},
 	"high_impact": {"stored": "High impact", "payload": "High impact"},
+	# Coverage fallbacks — exactly one of these is attached when a player earns
+	# no impact tag at all, so no one on a match card reads as a blank.
+	"lean_army": {"stored": "Army-leaning", "payload": "Army-leaning"},
+	"lean_eco": {"stored": "Eco-leaning", "payload": "Eco-leaning"},
+	"lean_tempo": {"stored": "Tempo-leaning", "payload": "Tempo-leaning"},
+	"all_rounder": {"stored": "All-rounder", "payload": "All-rounder"},
+	"partial_replay": {"stored": "Partial replay", "payload": "Partial replay"},
 }
+
+# Minimum component deviation from the 50-baseline before a "leaning" fallback
+# is claimed; anything flatter is honestly an All-rounder game.
+LEAN_MIN_DEV = 2
 
 
 def _avg(rows, key):
@@ -159,6 +170,36 @@ def derive_impact_tags(scores):
 def impact_tag_names(scores, style="payload"):
 	"""Display names for the derived tags, in derivation order."""
 	return [TAG_NAMES[t["key"]][style] for t in derive_impact_tags(scores)]
+
+
+def fallback_tag(scores, row):
+	"""One honest descriptor for a player whose game earned no impact tag.
+
+	* No production data parsed at all -> "partial_replay" (explains the blank
+	  instead of inventing a read from nothing).
+	* Otherwise the strongest above-average component lean, or "all_rounder"
+	  when the profile is genuinely flat.
+	"""
+	produced = (row.get("villagers") or 0) + (row.get("military") or 0)
+	if not produced:
+		return {"key": "partial_replay", "score": 50}
+	devs = {
+		"lean_army": ("army", scores["army"] - 50),
+		"lean_eco": ("eco", scores["eco"] - 50),
+		"lean_tempo": ("timing", scores["timing"] - 50),
+	}
+	key = max(devs, key=lambda k: devs[k][1])
+	if devs[key][1] >= LEAN_MIN_DEV:
+		return {"key": key, "score": scores[devs[key][0]]}
+	return {"key": "all_rounder", "score": scores["impact"]}
+
+
+def impact_tag_names_with_fallback(scores, row, style="payload"):
+	"""Like impact_tag_names, but guarantees at least one tag per player."""
+	names = impact_tag_names(scores, style)
+	if names:
+		return names
+	return [TAG_NAMES[fallback_tag(scores, row)["key"]][style]]
 
 
 def carry_sort_key(payload):

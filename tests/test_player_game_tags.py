@@ -31,6 +31,22 @@ def test_derives_naked_fc_and_greedy_boom():
 	assert "Boom carry" in tags
 
 
+def test_every_player_gets_at_least_one_tag():
+	# Empty parse (all production zero/NULL) must store an explicit
+	# "Partial replay" instead of nothing.
+	empty = {"player_number": 1, "villagers": 0, "military": 0}
+	group = [empty, {"player_number": 2, "villagers": 0, "military": 0}]
+	tags = derive_tags(empty, group)
+	assert [t["tag"] for t in tags] == ["Partial replay"]
+	assert tags[0]["category"] == "data"
+
+	# A flat mid player with real data gets exactly one coverage tag.
+	mid = _player()
+	group = [mid, _player(player_number=2), _player(player_number=3)]
+	tags = derive_tags(mid, group)
+	assert len(tags) >= 1
+
+
 def test_derives_composition_and_upgrade_tags():
 	row = _player(villagers=95, vil_pre_castle=24, military=160, mil_pre_castle=16, castle_s=1350)
 	group = [row, _player(player_number=2), _player(player_number=3)]
