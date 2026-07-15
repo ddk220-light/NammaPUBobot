@@ -80,12 +80,25 @@ TAG_NAMES = {
 	"lean_eco": {"stored": "Eco-leaning", "payload": "Eco-leaning"},
 	"lean_tempo": {"stored": "Tempo-leaning", "payload": "Tempo-leaning"},
 	"all_rounder": {"stored": "All-rounder", "payload": "All-rounder"},
+	"uphill_battle": {"stored": "Uphill battle", "payload": "Uphill battle"},
 	"partial_replay": {"stored": "Partial replay", "payload": "Partial replay"},
 }
 
-# Minimum component deviation from the 50-baseline before a "leaning" fallback
-# is claimed; anything flatter is honestly an All-rounder game.
-LEAN_MIN_DEV = 2
+# Fallback thresholds, calibrated on the fallback-eligible population of the
+# live history (58 tagless-with-data player-games): max component deviation
+# p50 was -2, so over half of these games are uniformly below match average —
+# they get "Uphill battle", not the same "All-rounder" as a balanced-strong
+# game. Lean share is stable at 33% for any threshold in 2..4; 3 sits
+# comfortably past rounding noise.
+LEAN_MIN_DEV = 3
+UPHILL_MAX_DEV = -2
+
+# Payload names of every fallback tag — aggregators that rank "top tags"
+# should skip these, or the (by construction frequent) fallbacks drown out the
+# rare, high-signal impact tags.
+FALLBACK_TAG_NAMES = frozenset(
+	TAG_NAMES[k]["payload"] for k in
+	("lean_army", "lean_eco", "lean_tempo", "all_rounder", "uphill_battle", "partial_replay"))
 
 
 def _avg(rows, key):
@@ -191,6 +204,10 @@ def fallback_tag(scores, row):
 	key = max(devs, key=lambda k: devs[k][1])
 	if devs[key][1] >= LEAN_MIN_DEV:
 		return {"key": key, "score": scores[devs[key][0]]}
+	if devs[key][1] <= UPHILL_MAX_DEV:
+		# Below match average on every component — a rough one, and honestly
+		# different from a balanced-strong "All-rounder" game.
+		return {"key": "uphill_battle", "score": scores["impact"]}
 	return {"key": "all_rounder", "score": scores["impact"]}
 
 

@@ -940,7 +940,11 @@ async def _tag_leaderboard(period, tag_key="all"):
 	tags = {}
 	for tag in strategy_tags + stored_tags:
 		tags[(tag["type"], tag["key"])] = tag
-	tag_options = sorted(tags.values(), key=lambda t: (t["type"], t["label"]))
+	# Coverage fallbacks ('role'/'data' categories) fire on almost every game,
+	# so they sort last and never win the default pick — the default leaderboard
+	# should show a rare, high-signal tag, not "Partial replay".
+	fallback_types = ("role", "data")
+	tag_options = sorted(tags.values(), key=lambda t: (t["type"] in fallback_types, t["type"], t["label"]))
 	selected_tag = tag_key
 	if selected_tag in (None, "", "all"):
 		selected_tag = tag_options[0]["key"] if tag_options else ""
@@ -1288,6 +1292,11 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 	tag_counts = {}
 	for impact in impacts:
 		for tag in impact.get("impact_tags") or []:
+			# Coverage fallbacks fire on nearly every untagged game by design;
+			# counting them here would bury the rare, distinguishing tags that
+			# top_tags (and the style shortcut below) exist to surface.
+			if tag in rs_scoring.FALLBACK_TAG_NAMES:
+				continue
 			tag_counts[tag] = tag_counts.get(tag, 0) + 1
 	top_tags = [
 		{"tag": tag, "count": count, "rate": round(count * 100 / len(impacts), 1)}

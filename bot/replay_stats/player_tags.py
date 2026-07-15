@@ -50,6 +50,7 @@ TAG_META = {
 	"Eco-leaning": ("role", "Eco-leaning"),
 	"Tempo-leaning": ("role", "Tempo-leaning"),
 	"All-rounder": ("role", "All-rounder"),
+	"Uphill battle": ("role", "Uphill battle"),
 	"Partial replay": ("data", "Partial replay"),
 }
 

@@ -194,6 +194,16 @@ def test_fallback_tag_all_rounder_when_flat():
 	assert fallback_tag(scores, row)["key"] == "all_rounder"
 
 
+def test_fallback_tag_uphill_when_below_average_everywhere():
+	# Uniformly weak game must not read as the same "All-rounder" a
+	# balanced-strong game gets.
+	from bot.replay_stats.scoring import fallback_tag
+	row = _player()
+	scores = {"army": 44, "eco": 46, "timing": 43, "impact": 44,
+	          "early_eco": 45, "early_army": 50, "reboom": 45}
+	assert fallback_tag(scores, row)["key"] == "uphill_battle"
+
+
 def test_payload_names_always_return_at_least_one_tag():
 	from bot.replay_stats.scoring import impact_tag_names_with_fallback
 	row = _player()

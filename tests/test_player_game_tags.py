@@ -40,11 +40,13 @@ def test_every_player_gets_at_least_one_tag():
 	assert [t["tag"] for t in tags] == ["Partial replay"]
 	assert tags[0]["category"] == "data"
 
-	# A flat mid player with real data gets exactly one coverage tag.
+	# A mid player with real data but no earned tags gets exactly one
+	# coverage tag, in the 'role' category.
 	mid = _player()
 	group = [mid, _player(player_number=2), _player(player_number=3)]
 	tags = derive_tags(mid, group)
-	assert len(tags) >= 1
+	assert len(tags) == 1
+	assert tags[0]["category"] == "role"
 
 
 def test_derives_composition_and_upgrade_tags():
