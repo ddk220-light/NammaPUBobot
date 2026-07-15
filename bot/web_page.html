@@ -1027,6 +1027,17 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
 .wr-cell-bar .wr-mid { color: #b9bbbe; }
 .wr-cell-bar .wr-low { color: #ff6d73; }
 .rank-medal { font-size: 0.95rem; }
+.persona-banner {
+  display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap;
+  border: 1px solid rgba(143,180,255,0.28); border-radius: 8px;
+  background: linear-gradient(120deg, rgba(91,140,238,0.16), rgba(217,144,38,0.10));
+  padding: 1rem 1.2rem; margin-bottom: 0.9rem;
+}
+.persona-title { font-family: 'Oswald', sans-serif; color: white; font-size: 1.5rem; letter-spacing: 0.5px; line-height: 1.2; }
+.persona-epithet { color: #ffd9a8; font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 0.15rem; }
+.persona-tagline { color: #c9d4ea; font-size: 0.92rem; flex: 1 1 260px; line-height: 1.5; }
+.persona-evidence { display: flex; flex-wrap: wrap; gap: 0.3rem; flex-basis: 100%; }
+.persona-evidence .roster-tag { font-size: 0.7rem; }
 </style>
 </head>
 <body>
@@ -1214,6 +1225,7 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
       </div>
       <div id="player-detail">
         <div id="player-profile-overview">
+          <div id="player-persona-banner" style="display:none"></div>
           <div class="metric-grid" id="player-detail-summary"></div>
           <section class="match-panel detail-section" id="player-tags-panel"></section>
           <div class="trend-panel" id="player-elo-trend"></div>
@@ -2173,7 +2185,8 @@ function renderMatchSummary() {
       card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
-      card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
+      card('Persona', (p.persona && p.persona.key !== 'unscouted' && personaLabel(p.persona)) || style.label,
+        (p.persona && p.persona.key !== 'unscouted' && p.persona.tagline) || style.read || p.summary || 'No parsed replay impact data'),
       htmlCard('Style traits', traitChips(p, s.strategy_tags), 'impact + strategy tags'),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
@@ -2771,6 +2784,25 @@ async function loadPlayerDetail(userId, period, opts) {
   }
 }
 
+function personaBanner(p, nick) {
+  if (!p || !p.name) return '';
+  var chips = (p.evidence || []).map(function (e) {
+    return '<span class="roster-tag">' + esc(e) + '</span>';
+  }).join('');
+  return '<div class="persona-banner">'
+    + '<div><div class="persona-title">' + esc(p.name) + '</div>'
+    + (p.epithet ? '<div class="persona-epithet">' + esc(p.epithet) + '</div>' : '')
+    + '</div>'
+    + '<div class="persona-tagline">' + esc(p.tagline || '') + '</div>'
+    + (chips ? '<div class="persona-evidence">' + chips + '</div>' : '')
+    + '</div>';
+}
+
+function personaLabel(p) {
+  if (!p || !p.name) return '';
+  return p.epithet ? p.name + ' · ' + p.epithet : p.name;
+}
+
 function fillPanel(id, html, hasData) {
   var el = document.getElementById(id);
   if (!el) return;
@@ -2783,8 +2815,15 @@ function renderPlayerDetail(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
   var style = scoredPlaystyle(d);
+  var persona = p.persona || null;
   var subtitle = document.getElementById('player-profile-subtitle');
-  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + style.label;
+  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + (personaLabel(persona) || style.label);
+  var banner = document.getElementById('player-persona-banner');
+  if (banner) {
+    var bannerHtml = persona && persona.key !== 'unscouted' ? personaBanner(persona, s.nick) : '';
+    banner.innerHTML = bannerHtml;
+    banner.style.display = bannerHtml ? '' : 'none';
+  }
   setPlayerProfileView(playerProfileView);
   document.getElementById('player-profile-commentary').innerHTML = playerProfileCommentary(d);
   document.getElementById('player-detail-summary').innerHTML = [
@@ -3543,8 +3582,11 @@ function playerProfileDescription(d) {
   var luck = luckProfileForPlayer(name);
   var style = scoredPlaystyle(d);
   var headline = style.label;
-  var first = name + ' reads as a ' + headline + ' in ' + periodLabel(playerProfilePeriod)
-    + '.';
+  var persona = p.persona || null;
+  var first = persona && persona.key !== 'unscouted'
+    ? name + ' is ' + personaLabel(persona) + '. ' + (persona.tagline || '')
+      + ' (' + periodLabel(playerProfilePeriod) + ' read.)'
+    : name + ' reads as a ' + headline + ' in ' + periodLabel(playerProfilePeriod) + '.';
   var second = style.read || report.description || p.summary || 'No parsed replay sample is available yet.';
   if (style.reasons && style.reasons.length) second += ' Evidence: ' + style.reasons.slice(0, 3).join('; ') + '.';
   if (tags.length) second += ' Recurring game tags: ' + tags.map(tagLabel).join(', ') + '.';
