@@ -23,7 +23,21 @@ def _match(at, focus_kw=None):
 
 
 def test_periods_match_web_windows():
-	assert PERIODS == {"all": None, "year": 365, "month6": 183, "month3": 92, "month": 30, "week": 7}
+	# Compare against the literal in bot/web.py itself (parsed via ast, since
+	# importing bot.web pulls aiohttp) so drift between the two dicts fails CI.
+	import ast
+	from pathlib import Path
+
+	src = (Path(__file__).resolve().parent.parent / "bot" / "web.py").read_text()
+	tree = ast.parse(src)
+	web_periods = None
+	for node in ast.walk(tree):
+		if isinstance(node, ast.Assign) and any(
+			isinstance(t, ast.Name) and t.id == "MATCH_STAT_PERIODS" for t in node.targets
+		):
+			web_periods = ast.literal_eval(node.value)
+	assert web_periods is not None, "MATCH_STAT_PERIODS not found in bot/web.py"
+	assert web_periods == PERIODS
 
 
 def test_aggregates_only_matches_in_window():
@@ -40,6 +54,14 @@ def test_none_when_player_absent_or_out_of_window():
 	assert aggregate_player_stats(groups, 1, 2000) is None
 
 
+def test_unknown_played_at_counts_in_every_window():
+	# A match whose bot-match join is missing (played_at None) must still
+	# count toward sliced windows instead of vanishing from week/month.
+	groups = [_match(at=None)]
+	stats = aggregate_player_stats(groups, 1, 999999)
+	assert stats is not None and stats["matches"] == 1
+
+
 def test_carry_rate_counts_team_top():
 	# Focus player dominates every component -> team-top in their team.
 	groups = [_match(at=1000, focus_kw={"villagers": 130, "military": 120, "castle_s": 1000})]
@@ -47,10 +69,22 @@ def test_carry_rate_counts_team_top():
 	assert stats["carry_rate"] == 100
 
 
-def test_tag_rates_present_thanks_to_fallback():
-	# Even a flat profile gets a fallback tag, so tag_rates is never empty.
-	stats = aggregate_player_stats([_match(at=1000)], 1, None)
-	assert stats["tag_rates"]
+def test_tag_rates_are_per_match_percentages():
+	# Two matches, focus player flat in both -> the same fallback tag both
+	# times, so its rate must be exactly 100 (per-match percentage, not count).
+	flat = [(1000, [_row(1, 1, "1"), _row(2, 2, "1"), _row(3, 3, "2"), _row(4, 4, "2")]) for _ in range(2)]
+	stats = aggregate_player_stats(flat, 1, None)
+	assert stats["matches"] == 2
+	assert list(stats["tag_rates"].values()) == [100.0]
+
+
+def test_multi_profile_user_counts_match_once():
+	# A user whose two linked profiles both appear in one match must
+	# contribute a single game, not two.
+	at, rows = _match(at=1000)
+	rows.append(_row(1, 5, "2", identity="smurf", villagers=10, military=5))
+	stats = aggregate_player_stats([(at, rows)], 1, None)
+	assert stats["matches"] == 1
 
 
 def test_feeds_derive_persona():

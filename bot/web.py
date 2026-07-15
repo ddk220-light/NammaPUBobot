@@ -16,6 +16,7 @@ from core.cfg_factory import (
 	BoolVar, IntVar, SliderVar, OptionVar, DurationVar, TextVar
 )
 from core.client import dc
+from core.console import log
 from core.database import db
 import bot
 from bot.replay_stats import persona as rs_persona
@@ -1392,7 +1393,10 @@ async def _overlay_stored_persona(impact_profile, user_id, period):
 	over the live-derived one; keep the live value when no row exists yet."""
 	try:
 		stored = await rs_persona_store.get_persona(user_id, period)
-	except Exception:
+	except Exception as e:
+		# Fall back to the live-derived persona, but never silently: a broken
+		# query here would otherwise be indistinguishable from "no row yet".
+		log.error(f"Stored persona lookup failed for user {user_id} period {period}: {e}")
 		return impact_profile
 	if stored and stored.get("key"):
 		impact_profile["persona"] = stored

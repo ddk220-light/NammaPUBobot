@@ -61,7 +61,9 @@ def aggregate_player_stats(match_groups, user_id, period_start):
 	carry = 0
 	tag_counts = defaultdict(int)
 	for played_at, group in match_groups:
-		if period_start is not None and (played_at or 0) < period_start:
+		# Unknown played_at (bot-match join missing) counts toward every
+		# window rather than silently dropping out of week/month personas.
+		if period_start is not None and played_at is not None and played_at < period_start:
 			continue
 		mine = [r for r in group if str(r.get("user_id") or "") == uid]
 		if not mine:
@@ -78,17 +80,19 @@ def aggregate_player_stats(match_groups, user_id, period_start):
 				"eco_score": m[1]["eco"], "nick": m[0].get("identity") or "",
 			}))
 			tops.add(id(top[0]))
-		for r, s in scored:
-			if str(r.get("user_id") or "") != uid:
-				continue
-			n += 1
-			for k in sums:
-				sums[k] += s[k]
-			impacts.append(s["impact"])
-			if id(r) in tops:
-				carry += 1
-			for name in scoring.impact_tag_names_with_fallback(s, r):
-				tag_counts[name] += 1
+		# One contribution per MATCH: a user with several linked profiles in
+		# the same game must not count it twice (that would inflate `matches`
+		# past reality and skew every average). Use their most active row.
+		row = max(mine, key=lambda r: (r.get("villagers") or 0) + (r.get("military") or 0))
+		s = next(sc for r, sc in scored if r is row)
+		n += 1
+		for k in sums:
+			sums[k] += s[k]
+		impacts.append(s["impact"])
+		if id(row) in tops:
+			carry += 1
+		for name in scoring.impact_tag_names_with_fallback(s, row):
+			tag_counts[name] += 1
 	if not n:
 		return None
 	mean = sum(impacts) / n
