@@ -6,7 +6,7 @@ mapping) that decide what the embed shows.
 """
 from __future__ import annotations
 
-from bot.player_profile import civ_breakdown, form_from_results
+from bot.player_profile import civ_breakdown, form_from_results, web_profile_url
 
 
 def _civ(name, wins, games):
@@ -45,3 +45,11 @@ class TestFormFromResults:
 
 	def test_null_team_counts_as_loss_not_crash(self):
 		assert form_from_results([{"winner": 0, "team": None}]) == ["L"]
+
+
+class TestWebProfileUrl:
+	def test_builds_player_route_and_normalizes_root(self):
+		assert web_profile_url(" https://nammapub.example/ ", 123) == "https://nammapub.example/player/123"
+
+	def test_missing_root_omits_link(self):
+		assert web_profile_url("", 123) is None

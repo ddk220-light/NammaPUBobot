@@ -21,6 +21,12 @@ _MUTED = "#949ba4"
 _GRID = "#3f4248"
 
 
+def web_profile_url(root_url, user_id):
+	"""Return the public dashboard URL for a Discord user, if configured."""
+	root_url = (root_url or "").strip().rstrip("/")
+	return f"{root_url}/player/{user_id}" if root_url else None
+
+
 def render_elo_chart(points, nick):
 	"""points: list of (unix_ts, rating) ascending. Returns PNG bytes.
 
