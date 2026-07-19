@@ -9,6 +9,7 @@ from nextcord import Member, Embed, Colour, File
 from core.utils import get, find, seconds_to_str, get_nick, discord_table  # noqa: F401
 from core.database import db
 from core.console import log
+from core.config import cfg
 
 import bot
 from bot import alt_ratings
@@ -137,7 +138,11 @@ async def rank(ctx, player: Member = None):
 	if not p:
 		raise bot.Exc.ValueError(ctx.qc.gt("No rating data found."))
 
+	from bot import player_profile
+	profile_url = player_profile.web_profile_url(getattr(cfg, "WS_ROOT_URL", ""), target.id)
 	embed = Embed(title=f"__{get_nick(target)}__", colour=Colour(0x7289DA))
+	if profile_url:
+		embed.description = f"[View full web profile]({profile_url})"
 	embed.add_field(name="№", value=f"**{place}**", inline=True)
 	embed.add_field(name=ctx.qc.gt("Matches"), value=f"**{(p['wins'] + p['losses'] + p['draws'])}**", inline=True)
 	if p['rating']:
@@ -154,7 +159,6 @@ async def rank(ctx, player: Member = None):
 		embed.set_thumbnail(url=target.display_avatar.url)
 
 	# Rich profile bits (best-effort — any piece with no data is simply omitted).
-	from bot import player_profile
 	prof = {}
 	try:
 		prof = await player_profile.gather_profile(ctx.qc.rating.channel_id, target.id)
@@ -242,11 +246,14 @@ async def leaderboard(ctx, page: int = 1):
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
 
 	if ctx.qc.cfg.emoji_ranks:  # display as embed message
+		from bot import player_profile
+		root_url = getattr(cfg, "WS_ROOT_URL", "")
 		embed = Embed(title=f"Leaderboard - page {page+1} of {pages}", colour=Colour(0x7289DA))
 		embed.add_field(
 			name="Nickname",
 			value="\n".join((
-				f'**{(page*10)+n+1}** ' + data[n]['nick'].strip()[:14]
+				f'**{(page*10)+n+1}** ' +
+				player_profile.web_profile_link(root_url, data[n]['user_id'], data[n]['nick'].strip()[:14])
 				for n in range(len(data))
 			)),
 			inline=True
