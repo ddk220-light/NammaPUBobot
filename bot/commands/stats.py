@@ -140,23 +140,6 @@ async def rank(ctx, player: Member = None):
 
 	from bot import player_profile
 	profile_url = player_profile.web_profile_url(getattr(cfg, "WS_ROOT_URL", ""), target.id)
-	embed = Embed(title=f"__{get_nick(target)}__", colour=Colour(0x7289DA))
-	if profile_url:
-		embed.description = f"[View full web profile]({profile_url})"
-	embed.add_field(name="№", value=f"**{place}**", inline=True)
-	embed.add_field(name=ctx.qc.gt("Matches"), value=f"**{(p['wins'] + p['losses'] + p['draws'])}**", inline=True)
-	if p['rating']:
-		embed.add_field(name=ctx.qc.gt("Rank"), value=f"**{ctx.qc.rating_rank(p['rating'])['rank']}**", inline=True)
-		embed.add_field(name=ctx.qc.gt("Rating"), value=f"**{p['rating']}**±{p['deviation']}")
-	else:
-		embed.add_field(name=ctx.qc.gt("Rank"), value="**〈?〉**", inline=True)
-		embed.add_field(name=ctx.qc.gt("Rating"), value="**?**")
-	embed.add_field(name="W/L/D/S", value="**{wins}**/**{losses}**/**{draws}**/**{streak}**".format(**p), inline=True)
-	embed.add_field(name=ctx.qc.gt("Winrate"), value="**{}%**".format(
-		int(p['wins'] * 100 / (p['wins'] + p['losses'] or 1))
-	), inline=True)
-	if target.display_avatar:
-		embed.set_thumbnail(url=target.display_avatar.url)
 
 	# Rich profile bits (best-effort — any piece with no data is simply omitted).
 	prof = {}
@@ -165,6 +148,43 @@ async def rank(ctx, player: Member = None):
 	except Exception as e:
 		log.error(f"gather_profile failed for {target.id}: {e}")
 
+	# Mini version of the web profile: summary strip up top, then grouped
+	# sections mirroring the dashboard's layout.
+	matches = p['wins'] + p['losses'] + p['draws']
+	winrate = int(p['wins'] * 100 / (p['wins'] + p['losses'] or 1))
+	rank_str = ctx.qc.rating_rank(p['rating'])['rank'] if p['rating'] else "〈?〉"
+	rating_str = f"**{p['rating']}** ±{p['deviation']}" if p['rating'] else "**?**"
+
+	headline = [
+		f"{rank_str} {rating_str} · **#{place}** " + ctx.qc.gt("on the leaderboard"),
+		f"**{matches}** " + ctx.qc.gt("matches") + f" · **{winrate}%** " + ctx.qc.gt("winrate"),
+	]
+	if profile_url:
+		headline.append(f"🔗 [{ctx.qc.gt('View full web profile')}]({profile_url})")
+
+	embed = Embed(title=f"__{get_nick(target)}__", colour=Colour(0x7289DA), description="\n".join(headline))
+	if target.display_avatar:
+		embed.set_thumbnail(url=target.display_avatar.url)
+
+	streak = p['streak'] or 0
+	streak_badge = f"🔥 {streak}" if streak >= 3 else (f"🧊 {abs(streak)}" if streak <= -3 else str(streak))
+	embed.add_field(
+		name="⚔️ " + ctx.qc.gt("Record"),
+		value=f"**{p['wins']}**W / **{p['losses']}**L / **{p['draws']}**D\n" +
+			ctx.qc.gt("Streak") + f": {streak_badge}",
+		inline=True
+	)
+	if prof.get("peak_rating"):
+		embed.add_field(
+			name="📈 " + ctx.qc.gt("Peak"),
+			value=f"**{prof['peak_rating']}**\n{seconds_to_str(int(time() - prof['peak_at']))} ago",
+			inline=True
+		)
+	civs = prof.get("civs") or {}
+	if civs.get("most_played"):
+		mp = civs["most_played"]
+		embed.add_field(name="🏰 " + ctx.qc.gt("Most played"), value=f"`{mp['civ']}`\n{mp['games']} games", inline=True)
+
 	if prof.get("recent_form"):
 		sq = {"W": "🟩", "L": "🟥", "D": "⬛"}
 		embed.add_field(
@@ -172,34 +192,29 @@ async def rank(ctx, player: Member = None):
 			value="".join(sq[r] for r in prof["recent_form"]) + f"  `last {len(prof['recent_form'])}`",
 			inline=False
 		)
-	if prof.get("peak_rating"):
-		embed.add_field(
-			name=ctx.qc.gt("Peak"),
-			value=f"**{prof['peak_rating']}** · {seconds_to_str(int(time() - prof['peak_at']))} ago",
-			inline=True
-		)
-	civs = prof.get("civs") or {}
-	if civs.get("most_played"):
-		mp = civs["most_played"]
-		embed.add_field(name=ctx.qc.gt("Most played"), value=f"`{mp['civ']}` · {mp['games']} games", inline=True)
-	if prof.get("nemesis"):
-		nemnick, losses = prof["nemesis"]
-		embed.add_field(name=ctx.qc.gt("Nemesis"), value=f"`{nemnick}` · {losses} losses", inline=True)
-	if prof.get("best_mate"):
-		matenick, wins, games = prof["best_mate"]
-		embed.add_field(name=ctx.qc.gt("Best teammate"), value=f"`{matenick}` · {int(wins * 100 / games)}% of {games}", inline=True)
+
 	if civs.get("best"):
 		embed.add_field(
-			name=ctx.qc.gt("Best civs"),
+			name="🟢 " + ctx.qc.gt("Best civs"),
 			value="\n".join(f"`{c['civ']}` {int(c['wr'] * 100)}% ({c['games']})" for c in civs["best"]),
 			inline=True
 		)
 	if civs.get("worst"):
 		embed.add_field(
-			name=ctx.qc.gt("Worst civs"),
+			name="🔴 " + ctx.qc.gt("Worst civs"),
 			value="\n".join(f"`{c['civ']}` {int(c['wr'] * 100)}% ({c['games']})" for c in civs["worst"]),
 			inline=True
 		)
+
+	mates = []
+	if prof.get("best_mate"):
+		matenick, wins, games = prof["best_mate"]
+		mates.append(ctx.qc.gt("Best teammate") + f": `{matenick}` · {int(wins * 100 / games)}% of {games}")
+	if prof.get("nemesis"):
+		nemnick, losses = prof["nemesis"]
+		mates.append(ctx.qc.gt("Nemesis") + f": `{nemnick}` · {losses} losses")
+	if mates:
+		embed.add_field(name="🤝 " + ctx.qc.gt("Allies & rivals"), value="\n".join(mates), inline=False)
 
 	changes = await db.select(
 		('at', 'rating_change', 'match_id', 'reason'),
@@ -208,13 +223,14 @@ async def rank(ctx, player: Member = None):
 	)
 	if len(changes):
 		embed.add_field(
-			name=ctx.qc.gt("Last changes:"),
+			name="🕑 " + ctx.qc.gt("Last changes:"),
 			value="\n".join(("**{change}** · {ago} ago · {reason}{match_id}".format(
 				ago=seconds_to_str(int(time() - c['at'])),
 				reason=c['reason'],
 				match_id=f" (__{c['match_id']}__)" if c['match_id'] else "",
 				change=("+" if c['rating_change'] >= 0 else "") + str(c['rating_change'])
-			) for c in changes))
+			) for c in changes)),
+			inline=False
 		)
 
 	# ELO-over-time chart, rendered off the event loop and attached to the embed.
@@ -239,66 +255,40 @@ async def rank(ctx, player: Member = None):
 async def leaderboard(ctx, page: int = 1):
 	page = (page or 1) - 1
 
-	data = await ctx.qc.get_lb()
-	pages = ceil(len(await ctx.qc.get_lb())/10)
-	data = data[page * 10:(page + 1) * 10]
+	full = await ctx.qc.get_lb()
+	pages = ceil(len(full) / 10) or 1
+	data = full[page * 10:(page + 1) * 10]
 	if not len(data):
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
 
+	# Always an embed: profile links and rank emojis only render there (the old
+	# md-table mode lived inside a code block where neither can work).
 	from bot import player_profile
 	root_url = getattr(cfg, "WS_ROOT_URL", "")
-	# Embed mode is required for clickable profile links, so prefer it whenever
-	# the web dashboard is configured (the md-table mode below renders inside a
-	# code block where markdown links cannot work).
-	if ctx.qc.cfg.emoji_ranks or root_url:  # display as embed message
-		embed = Embed(title=f"Leaderboard - page {page+1} of {pages}", colour=Colour(0x7289DA))
-		embed.add_field(
-			name="Nickname",
-			value="\n".join((
-				f'**{(page*10)+n+1}** ' +
-				player_profile.web_profile_link(root_url, data[n]['user_id'], data[n]['nick'].strip()[:14])
-				for n in range(len(data))
-			)),
-			inline=True
-		)
-		embed.add_field(
-			name="W / L / D",
-			value="\n".join((
-				f"**{row['wins']}** / **{row['losses']}** / **{row['draws']}** (" +
-				str(int(row['wins'] * 100 / ((row['wins'] + row['losses']) or 1))) + "%)"
-				for row in data
-			)),
-			inline=True
-		)
-		embed.add_field(
-			name="Rating",
-			value="\n".join((
-				ctx.qc.rating_rank(row['rating'])['rank'] + f" **{row['rating']}**"
-				for row in data
-			)),
-			inline=True
-		)
-		await ctx.reply(embed=embed)
-		return
 
-	# display as md table
-	await ctx.reply(
-		discord_table(
-			["№", "Rating〈Ξ〉", "Nickname", "Matches", "W/L/D"],
-			[[
-				(page * 10) + (n + 1),
-				str(data[n]['rating']) + ctx.qc.rating_rank(data[n]['rating'])['rank'],
-				data[n]['nick'].strip(),
-				int(data[n]['wins'] + data[n]['losses'] + data[n]['draws']),
-				"{0}/{1}/{2} ({3}%)".format(  # noqa: UP030
-					data[n]['wins'],
-					data[n]['losses'],
-					data[n]['draws'],
-					int(data[n]['wins'] * 100 / ((data[n]['wins'] + data[n]['losses']) or 1))
-				)
-			] for n in range(len(data))]
-		)
-	)
+	medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+	names, ratings, records = [], [], []
+	for n, row in enumerate(data):
+		place = (page * 10) + n + 1
+		marker = medals.get(place, f"**{place}.**")
+		nick = player_profile.web_profile_link(root_url, row['user_id'], row['nick'].strip()[:14])
+		names.append(f"{marker} {nick}")
+
+		streak = row['streak'] or 0
+		badge = f" 🔥{streak}" if streak >= 3 else (f" 🧊{abs(streak)}" if streak <= -3 else "")
+		ratings.append(ctx.qc.rating_rank(row['rating'])['rank'] + f" **{row['rating']}**{badge}")
+
+		winrate = int(row['wins'] * 100 / ((row['wins'] + row['losses']) or 1))
+		records.append(f"{row['wins']} / {row['losses']} / {row['draws']} · **{winrate}%**")
+
+	embed = Embed(title="🏆 " + ctx.qc.gt("Leaderboard"), colour=Colour(0xf1c40f))
+	embed.add_field(name=ctx.qc.gt("Player"), value="\n".join(names), inline=True)
+	embed.add_field(name=ctx.qc.gt("Rating"), value="\n".join(ratings), inline=True)
+	embed.add_field(name="W / L / D", value="\n".join(records), inline=True)
+	embed.set_footer(text="Page {page} of {pages} · {count} ranked players".format(
+		page=page + 1, pages=pages, count=len(full)
+	))
+	await ctx.reply(embed=embed)
 
 
 async def leaderboard_alternate(ctx, page: int = 1):
