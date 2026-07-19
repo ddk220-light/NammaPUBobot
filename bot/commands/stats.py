@@ -1,6 +1,7 @@
 __all__ = ['last_game', 'stats', 'top', 'rank', 'leaderboard', 'leaderboard_alternate', 'mapstats', 'activity']
 
 import io
+import re
 import asyncio
 from time import time
 from math import ceil
@@ -208,9 +209,20 @@ async def rank(ctx, player: Member = None):
 			inline=False
 		)
 
-	# Player description: prefer the stored bot commentary, fall back to the
-	# persona + generated scout report (same sources as the overview page).
+	# Player description: the persona line always leads (same as the overview
+	# page banner), then the stored bot commentary prose. The generated scout
+	# read is only a fallback, with its tag enumeration stripped — commentary
+	# text is what we want here, not tag counts.
 	desc_lines = []
+	persona = snapshot.get("persona") or {}
+	scout = snapshot.get("scout_report") or {}
+	if persona.get("name") and persona.get("key") != "unscouted":
+		label = persona["name"]
+		if persona.get("epithet"):
+			label += f" · {persona['epithet']}"
+		desc_lines.append(f"**{label}**")
+		if persona.get("tagline"):
+			desc_lines.append(persona["tagline"])
 	c = (commentary or {}).get("commentary") or {}
 	body = c.get("summary") or c.get("read") or c.get("description")
 	if isinstance(body, (list, tuple)):
@@ -219,18 +231,8 @@ async def rank(ctx, player: Member = None):
 		if c.get("headline"):
 			desc_lines.append(f"**{c['headline']}**")
 		desc_lines.append(str(body))
-	elif snapshot.get("parsed_matches"):
-		persona = snapshot.get("persona") or {}
-		scout = snapshot.get("scout_report") or {}
-		label = persona.get("name") or scout.get("headline")
-		if label and persona.get("epithet"):
-			label = f"{label} · {persona['epithet']}"
-		if label:
-			desc_lines.append(f"**{label}**")
-		if persona.get("tagline"):
-			desc_lines.append(persona["tagline"])
-		if scout.get("description"):
-			desc_lines.append(scout["description"])
+	elif snapshot.get("parsed_matches") and scout.get("description"):
+		desc_lines.append(re.sub(r"\s*Recurring tags:[^.]*\.", "", scout["description"]).strip())
 	if desc_lines:
 		text = "\n".join(desc_lines)
 		if len(text) > 1000:
