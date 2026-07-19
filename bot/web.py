@@ -1450,6 +1450,81 @@ def _best_relationship(rows, kind):
 	)[0]
 
 
+async def player_overview_snapshot(user_id):
+	"""All-time mini version of the dashboard overview strip, for the /rank card.
+
+	Mirrors the pieces of handle_player_stats that feed the overview page:
+	the persona/scout description and the four duo/rival quadrant cards.
+	"""
+	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
+
+	impact_match_rows = await db.fetchall(
+		"SELECT DISTINCT m.match_id FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"WHERE pm.user_id=%s",
+		[user_id])
+	impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+
+	civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
+	civs = await db.fetchall(
+		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
+		"FROM qc_match_civs WHERE " + _linked_civ_clause() + " AND " + civ_clause +
+		" AND civ IS NOT NULL AND civ<>'' GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 30",
+		civ_args)
+	durations = await db.fetchall(
+		"SELECT CASE "
+		"WHEN rm.duration_s < 300 THEN 'Less than 5 min' "
+		"WHEN rm.duration_s < 900 THEN '5 - <15 min' "
+		"WHEN rm.duration_s < 1500 THEN '15 - <25 min' "
+		"WHEN rm.duration_s < 2400 THEN '25 - <40 min' "
+		"ELSE 'More than 40 min' END AS bucket, "
+		"COUNT(*) AS games, SUM(m.winner=pm.team) AS wins, "
+		"SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"WHERE pm.user_id=%s AND m.ranked=1 AND rm.duration_s IS NOT NULL "
+		"GROUP BY bucket",
+		[user_id])
+	impact_profile = _player_impact_profile(impacts.values(), civs, durations)
+	await _overlay_stored_persona(impact_profile, user_id, "all")
+
+	allies = await db.fetchall(
+		"SELECT ally.user_id, MAX(ally.nick) AS nick, COUNT(*) AS games, "
+		"SUM(m.winner=pm.team) AS wins, SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN qc_player_matches ally ON ally.match_id=pm.match_id AND ally.channel_id=pm.channel_id "
+		"AND ally.team=pm.team AND ally.user_id<>pm.user_id" + _visible_user_clause("ally") +
+		" WHERE pm.user_id=%s AND m.ranked=1 "
+		"GROUP BY ally.user_id HAVING games >= 1 AND wins + losses > 0 "
+		# No LIMIT: the quadrants need both winrate tails (dream and cursed duos).
+		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) DESC, games DESC, wins DESC",
+		[user_id])
+	opponents = await db.fetchall(
+		"SELECT opp.user_id, MAX(opp.nick) AS nick, COUNT(*) AS games, "
+		"SUM(m.winner=pm.team) AS wins, SUM(m.winner IS NOT NULL AND m.winner=opp.team) AS losses "
+		"FROM qc_player_matches pm JOIN qc_matches m "
+		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+		"JOIN qc_player_matches opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
+		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
+		" WHERE pm.user_id=%s AND m.ranked=1 "
+		"GROUP BY opp.user_id HAVING games >= 1 AND wins + losses > 0 "
+		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC",
+		[user_id])
+
+	return {
+		"persona": impact_profile.get("persona"),
+		"scout_report": impact_profile.get("scout_report"),
+		"parsed_matches": impact_profile.get("matches") or 0,
+		"best_ally": _best_relationship(allies, "ally"),
+		"worst_ally": _best_relationship(allies, "worst_ally"),
+		"worst_enemy": _best_relationship(opponents, "enemy"),
+		"easiest_enemy": _best_relationship(opponents, "easy_enemy"),
+	}
+
+
 async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
