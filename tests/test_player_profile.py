@@ -6,7 +6,7 @@ mapping) that decide what the embed shows.
 """
 from __future__ import annotations
 
-from bot.player_profile import civ_breakdown, form_from_results, web_profile_url
+from bot.player_profile import civ_breakdown, form_from_results, web_profile_link, web_profile_url
 
 
 def _civ(name, wins, games):
@@ -53,3 +53,16 @@ class TestWebProfileUrl:
 
 	def test_missing_root_omits_link(self):
 		assert web_profile_url("", 123) is None
+
+
+class TestWebProfileLink:
+	def test_links_nick_when_configured(self):
+		assert web_profile_link("https://nammapub.example", 123, "Player") == \
+			"[Player](https://nammapub.example/player/123)"
+
+	def test_plain_nick_when_not_configured(self):
+		assert web_profile_link("", 123, "Player") == "Player"
+
+	def test_brackets_in_nick_are_neutralized(self):
+		assert web_profile_link("https://nammapub.example", 123, "[TAG] Bob") == \
+			"[(TAG) Bob](https://nammapub.example/player/123)"

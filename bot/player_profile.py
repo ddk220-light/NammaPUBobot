@@ -27,6 +27,15 @@ def web_profile_url(root_url, user_id):
 	return f"{root_url}/player/{user_id}" if root_url else None
 
 
+def web_profile_link(root_url, user_id, nick):
+	"""Return nick as a markdown link to the player's web profile, or plain nick if not configured."""
+	url = web_profile_url(root_url, user_id)
+	if not url:
+		return nick
+	safe_nick = nick.replace("[", "(").replace("]", ")")
+	return f"[{safe_nick}]({url})"
+
+
 def render_elo_chart(points, nick):
 	"""points: list of (unix_ts, rating) ascending. Returns PNG bytes.
 

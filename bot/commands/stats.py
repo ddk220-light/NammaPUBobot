@@ -246,11 +246,14 @@ async def leaderboard(ctx, page: int = 1):
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
 
 	if ctx.qc.cfg.emoji_ranks:  # display as embed message
+		from bot import player_profile
+		root_url = getattr(cfg, "WS_ROOT_URL", "")
 		embed = Embed(title=f"Leaderboard - page {page+1} of {pages}", colour=Colour(0x7289DA))
 		embed.add_field(
 			name="Nickname",
 			value="\n".join((
-				f'**{(page*10)+n+1}** ' + data[n]['nick'].strip()[:14]
+				f'**{(page*10)+n+1}** ' +
+				player_profile.web_profile_link(root_url, data[n]['user_id'], data[n]['nick'].strip()[:14])
 				for n in range(len(data))
 			)),
 			inline=True
