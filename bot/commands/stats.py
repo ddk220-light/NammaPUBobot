@@ -245,9 +245,12 @@ async def leaderboard(ctx, page: int = 1):
 	if not len(data):
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
 
-	if ctx.qc.cfg.emoji_ranks:  # display as embed message
-		from bot import player_profile
-		root_url = getattr(cfg, "WS_ROOT_URL", "")
+	from bot import player_profile
+	root_url = getattr(cfg, "WS_ROOT_URL", "")
+	# Embed mode is required for clickable profile links, so prefer it whenever
+	# the web dashboard is configured (the md-table mode below renders inside a
+	# code block where markdown links cannot work).
+	if ctx.qc.cfg.emoji_ranks or root_url:  # display as embed message
 		embed = Embed(title=f"Leaderboard - page {page+1} of {pages}", colour=Colour(0x7289DA))
 		embed.add_field(
 			name="Nickname",
