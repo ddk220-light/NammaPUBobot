@@ -148,6 +148,21 @@ async def rank(ctx, player: Member = None):
 	except Exception as e:
 		log.error(f"gather_profile failed for {target.id}: {e}")
 
+	# Dashboard-overview pieces (persona/scout description + duo quadrants),
+	# same server-side data the web profile page shows. Best-effort too.
+	snapshot = {}
+	commentary = None
+	try:
+		from bot import web as web_dashboard
+		snapshot = await web_dashboard.player_overview_snapshot(target.id)
+	except Exception as e:
+		log.error(f"player_overview_snapshot failed for {target.id}: {e}")
+	try:
+		from bot.commentary import query as commentary_query
+		commentary = await commentary_query.player_commentary(target.id, "all")
+	except Exception as e:
+		log.error(f"player_commentary failed for {target.id}: {e}")
+
 	# Mini version of the web profile: summary strip up top, then grouped
 	# sections mirroring the dashboard's layout.
 	matches = p['wins'] + p['losses'] + p['draws']
@@ -193,6 +208,35 @@ async def rank(ctx, player: Member = None):
 			inline=False
 		)
 
+	# Player description: prefer the stored bot commentary, fall back to the
+	# persona + generated scout report (same sources as the overview page).
+	desc_lines = []
+	c = (commentary or {}).get("commentary") or {}
+	body = c.get("summary") or c.get("read") or c.get("description")
+	if isinstance(body, (list, tuple)):
+		body = " ".join(str(b) for b in body if b)
+	if body:
+		if c.get("headline"):
+			desc_lines.append(f"**{c['headline']}**")
+		desc_lines.append(str(body))
+	elif snapshot.get("parsed_matches"):
+		persona = snapshot.get("persona") or {}
+		scout = snapshot.get("scout_report") or {}
+		label = persona.get("name") or scout.get("headline")
+		if label and persona.get("epithet"):
+			label = f"{label} · {persona['epithet']}"
+		if label:
+			desc_lines.append(f"**{label}**")
+		if persona.get("tagline"):
+			desc_lines.append(persona["tagline"])
+		if scout.get("description"):
+			desc_lines.append(scout["description"])
+	if desc_lines:
+		text = "\n".join(desc_lines)
+		if len(text) > 1000:
+			text = text[:997] + "…"
+		embed.add_field(name="📜 " + ctx.qc.gt("Scouting report"), value=text, inline=False)
+
 	if civs.get("best"):
 		embed.add_field(
 			name="🟢 " + ctx.qc.gt("Best civs"),
@@ -206,15 +250,29 @@ async def rank(ctx, player: Member = None):
 			inline=True
 		)
 
+	# Duo/rival quadrants, same cards as the overview page. Falls back to the
+	# lighter teammate/nemesis aggregation when the snapshot is unavailable.
+	def _rel_line(label, rel, suffix):
+		return f"{label}: `{rel['nick']}` · {rel['winrate']}% {suffix} ({rel['games']} games)"
+
 	mates = []
-	if prof.get("best_mate"):
-		matenick, wins, games = prof["best_mate"]
-		mates.append(ctx.qc.gt("Best teammate") + f": `{matenick}` · {int(wins * 100 / games)}% of {games}")
-	if prof.get("nemesis"):
-		nemnick, losses = prof["nemesis"]
-		mates.append(ctx.qc.gt("Nemesis") + f": `{nemnick}` · {losses} losses")
+	if snapshot.get("best_ally"):
+		mates.append(_rel_line("💞 " + ctx.qc.gt("Dream duo"), snapshot["best_ally"], ctx.qc.gt("together")))
+	if snapshot.get("worst_ally"):
+		mates.append(_rel_line("💔 " + ctx.qc.gt("Cursed duo"), snapshot["worst_ally"], ctx.qc.gt("together")))
+	if snapshot.get("worst_enemy"):
+		mates.append(_rel_line("😤 " + ctx.qc.gt("Nemesis"), snapshot["worst_enemy"], ctx.qc.gt("vs them")))
+	if snapshot.get("easiest_enemy"):
+		mates.append(_rel_line("💰 " + ctx.qc.gt("Free Elo"), snapshot["easiest_enemy"], ctx.qc.gt("vs them")))
+	if not mates:
+		if prof.get("best_mate"):
+			matenick, wins, games = prof["best_mate"]
+			mates.append(ctx.qc.gt("Best teammate") + f": `{matenick}` · {int(wins * 100 / games)}% of {games}")
+		if prof.get("nemesis"):
+			nemnick, losses = prof["nemesis"]
+			mates.append(ctx.qc.gt("Nemesis") + f": `{nemnick}` · {losses} losses")
 	if mates:
-		embed.add_field(name="🤝 " + ctx.qc.gt("Allies & rivals"), value="\n".join(mates), inline=False)
+		embed.add_field(name="🤝 " + ctx.qc.gt("Duos & rivals"), value="\n".join(mates), inline=False)
 
 	changes = await db.select(
 		('at', 'rating_change', 'match_id', 'reason'),
