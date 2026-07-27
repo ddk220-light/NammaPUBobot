@@ -106,6 +106,98 @@ def test_select_respects_limit():
 	assert len(pg._select(obs, limit=3)) == 3
 
 
+def test_select_caps_personal_lines_so_meta_keeps_room():
+	obs = [{"type": "personal_streak", "nick": f"P{i}", "score": 10 - i} for i in range(4)]
+	obs.append({"type": "winner_top", "nick": "Meta", "score": 1})
+	chosen = pg._select(obs, limit=4, max_personal=2)
+	assert sum(1 for c in chosen if c["type"].startswith("personal_")) == 2
+	assert any(c["type"] == "winner_top" for c in chosen)
+
+
+def test_select_personal_slot_not_spent_on_a_dropped_duplicate():
+	# Same player twice: the second line is dropped, so it must not eat a slot.
+	obs = [
+		{"type": "personal_streak", "nick": "A", "score": 9},
+		{"type": "personal_record", "nick": "A", "score": 8},
+		{"type": "personal_streak", "nick": "B", "score": 7},
+		{"type": "personal_record", "nick": "C", "score": 6},
+	]
+	chosen = pg._select(obs, limit=4, max_personal=2)
+	assert [c["nick"] for c in chosen] == ["A", "B"]
+
+
+# ── Personal civ records ─────────────────────────────────────────────────
+def test_personal_record_counts_current_match_and_streak():
+	rec = pg._personal_civ_record(["W", "W", "L"], "W")
+	assert (rec["wins"], rec["losses"], rec["games"]) == (3, 1, 4)
+	assert rec["streak"] == 3          # this win plus the two before it
+	assert rec["prior_streak"] == 2
+	assert rec["result"] == "W"
+
+
+def test_personal_record_signs_losing_streak_negative():
+	rec = pg._personal_civ_record(["L", "L"], "L")
+	assert rec["streak"] == -3
+	assert rec["winrate"] == 0.0
+
+
+def test_personal_record_no_history_is_a_single_game():
+	rec = pg._personal_civ_record([], "L")
+	assert (rec["games"], rec["streak"], rec["prior_streak"]) == (1, -1, 0)
+
+
+def test_personal_record_needs_a_decided_result():
+	assert pg._personal_civ_record(["W"], None) is None
+
+
+def _players(**kw):
+	base = {"nick": "A", "civ": "Franks", "team": 0, "user_id": 1}
+	base.update(kw)
+	return [base]
+
+
+def test_personal_streak_observation_when_run_continues():
+	obs = pg._collect_personal_observations(
+		_players(), winner=0, histories={(1, "franks"): ["W", "W", "W"]})
+	assert [o["type"] for o in obs] == ["personal_streak"]
+	assert obs[0]["record"]["streak"] == 4
+
+
+def test_personal_streak_broken_outscores_a_continuing_streak():
+	broken = pg._collect_personal_observations(
+		_players(), winner=1, histories={(1, "franks"): ["W", "W", "W"]})[0]
+	assert broken["type"] == "personal_streak_broken"
+	cont = pg._collect_personal_observations(
+		_players(), winner=0, histories={(1, "franks"): ["W", "W", "W"]})[0]
+	assert broken["score"] > cont["score"]
+
+
+def test_personal_record_line_for_lopsided_history_without_a_streak():
+	# 4-1 overall, but the run ends at this single win -> record line, not streak.
+	obs = pg._collect_personal_observations(
+		_players(), winner=0, histories={(1, "franks"): ["L", "W", "W", "W"]})
+	assert [o["type"] for o in obs] == ["personal_record"]
+	assert obs[0]["record"]["winrate"] == 0.8
+
+
+def test_no_personal_line_on_a_thin_even_history():
+	obs = pg._collect_personal_observations(
+		_players(), winner=0, histories={(1, "franks"): ["L"]})
+	assert obs == []
+
+
+def test_personal_observations_skip_players_without_user_id():
+	obs = pg._collect_personal_observations(
+		_players(user_id=None), winner=0, histories={(None, "franks"): ["W", "W", "W"]})
+	assert obs == []
+
+
+def test_personal_phrases_render_for_every_type():
+	for winner, hist in ((0, ["W", "W", "W"]), (1, ["W", "W", "W"]), (0, ["L", "W", "W", "W"])):
+		for o in pg._collect_personal_observations(_players(), winner=winner, histories={(1, "franks"): hist}):
+			assert "Franks" in pg._phrase(o)
+
+
 # ── Replay analysis commentary ───────────────────────────────────────────
 def test_impact_payload_tags_boom_carry():
 	rows = [
