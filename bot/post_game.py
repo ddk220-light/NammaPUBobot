@@ -10,6 +10,9 @@ meta and calls out the interesting bits:
   * "No wonder X won — they had <civ>, a top-3 win-rate civ."
   * "X won with <civ> (one of the weakest picks) — pure skill."  (an upset)
   * "X had <civ> (top tier) and *still* lost."                    (a choke)
+  * "X is 4 straight wins on <civ>" / "X's <civ> curse continues" — the
+    player's *own* record on the civ they just played, and whether this result
+    extended or ended a run.
   * Team civ-pool comparison: did the meta favour the winners, or was it an
     underdog win with the weaker pool?
 
@@ -33,9 +36,17 @@ TOP_RANKS = 3       # "top-3 win-rate civ"
 TOP_PCT = 0.15      # ...or inside the top 15% by rank
 BOT_PCT = 0.15      # bottom 15% counts as a weak pick
 TEAM_GAP_MIN = 0.03  # min avg-winrate gap between team civ pools to comment on
-MAX_BULLETS = 4
+MAX_BULLETS = 5
 MAX_ANALYSIS_LINES = 6
 MAX_CARD_TAGS = 3
+
+# A player's own record on the civ they just played. Separate from the global
+# civ meta above: the same civ can be a bottom-tier pick globally and still be
+# someone's personal comfort pick.
+MIN_PERSONAL_CIV_GAMES = 4   # games (incl. this one) before a record is worth a line
+PERSONAL_STREAK_MIN = 3      # consecutive same-result games that make it a streak
+PERSONAL_WR_EDGE = 0.20      # how far from 50% a record has to sit to be notable
+MAX_PERSONAL_LINES = 2       # keep room for the civ-meta observations
 
 
 def _clip(text, limit=28):
@@ -136,14 +147,93 @@ def _collect_observations(players, winner, civ_index, team_names=None):
 	return obs
 
 
-def _select(obs, limit=MAX_BULLETS):
-	"""Highest score first; at most one line per player and one team-pool line."""
+def _personal_civ_record(prior_results, current_result):
+	"""One player's record on one civ, including the match just played.
+
+	``prior_results`` is that player's earlier results on the civ ('W'/'L'),
+	most recent first; ``current_result`` is this match's. Returns wins /
+	losses / games / winrate over the whole set, plus ``streak`` (signed run
+	length ending with this match) and ``prior_streak`` (the run this match
+	either extended or ended). Pure.
+	"""
+	prior = [r for r in prior_results if r in ("W", "L")]
+	if current_result not in ("W", "L"):
+		return None
+	series = [current_result, *prior]
+	wins = series.count("W")
+	losses = series.count("L")
+
+	def _run(seq):
+		if not seq:
+			return 0
+		head = seq[0]
+		n = 0
+		for r in seq:
+			if r != head:
+				break
+			n += 1
+		return n if head == "W" else -n
+
+	return {
+		"wins": wins,
+		"losses": losses,
+		"games": len(series),
+		"winrate": wins / len(series),
+		"streak": _run(series),
+		"prior_streak": _run(prior),
+		"prior_games": len(prior),
+		"result": current_result,
+	}
+
+
+def _collect_personal_observations(players, winner, histories):
+	"""Scored observations about how each player does on the civ they played.
+
+	``players`` carries ``user_id``/``nick``/``civ``/``team``; ``histories``
+	maps ``(user_id, civ.lower())`` to that player's earlier results on the
+	civ, most recent first. Pure.
+	"""
+	obs = []
+	if winner not in (0, 1):
+		return obs
+	for p in players:
+		civ = (p.get("civ") or "").strip()
+		if p.get("team") not in (0, 1) or not civ or p.get("user_id") is None:
+			continue
+		prior = histories.get((p["user_id"], civ.lower())) or []
+		rec = _personal_civ_record(prior, "W" if p["team"] == winner else "L")
+		if not rec:
+			continue
+		common = {"nick": p["nick"], "civ": civ, "record": rec}
+		broke = (
+			abs(rec["prior_streak"]) >= PERSONAL_STREAK_MIN
+			and (rec["prior_streak"] > 0) != (rec["streak"] > 0)
+		)
+		if broke:
+			obs.append({"type": "personal_streak_broken",
+			            "score": 1.6 + 0.2 * min(abs(rec["prior_streak"]), 6), **common})
+		elif abs(rec["streak"]) >= PERSONAL_STREAK_MIN:
+			obs.append({"type": "personal_streak",
+			            "score": 1.1 + 0.25 * min(abs(rec["streak"]), 6), **common})
+		elif rec["games"] >= MIN_PERSONAL_CIV_GAMES and abs(rec["winrate"] - 0.5) >= PERSONAL_WR_EDGE:
+			obs.append({"type": "personal_record",
+			            "score": 0.8 + 1.5 * abs(rec["winrate"] - 0.5), **common})
+	return obs
+
+
+def _select(obs, limit=MAX_BULLETS, max_personal=MAX_PERSONAL_LINES):
+	"""Highest score first; at most one line per player, one team-pool line,
+	and ``max_personal`` personal-record lines so the civ meta keeps room."""
 	chosen = []
 	used_players = set()
 	used_team = False
+	personal = 0
 	for c in sorted(obs, key=lambda c: c["score"], reverse=True):
 		if len(chosen) >= limit:
 			break
+		is_personal = c["type"].startswith("personal_")
+		if is_personal and personal >= max_personal:
+			continue
 		if c["type"].startswith("team_"):
 			if used_team:
 				continue
@@ -152,6 +242,8 @@ def _select(obs, limit=MAX_BULLETS):
 			if c["nick"] in used_players:
 				continue
 			used_players.add(c["nick"])
+		if is_personal:
+			personal += 1
 		chosen.append(c)
 	return chosen
 
@@ -389,7 +481,62 @@ def _tier_desc(info):
 	return f"one of the weakest civs (#{rank} of {total}, **{wr}%**)"
 
 
+def _personal_phrase(c):
+	rec = c["record"]
+	nick = f"**{c['nick']}**"
+	civ = f"**{c['civ']}**"
+	tally = f"{rec['wins']}-{rec['losses']}"
+	wr = round(rec["winrate"] * 100)
+	run = abs(rec["streak"])
+	prior_run = abs(rec["prior_streak"])
+
+	if c["type"] == "personal_streak_broken":
+		if rec["result"] == "W":
+			return random.choice([
+				f"🪄 {nick} finally broke a {prior_run}-game {civ} losing run — {tally} with them now.",
+				f"🧹 Curse lifted: {nick} wins on {civ} after {prior_run} straight losses ({tally}).",
+			])
+		return random.choice([
+			f"💔 {nick}'s {prior_run}-game {civ} win streak dies here ({tally} all-time).",
+			f"🛑 {civ} stops working for {nick} — {prior_run}-game run ends, now {tally}.",
+		])
+
+	if c["type"] == "personal_streak":
+		if rec["result"] == "W":
+			return random.choice([
+				f"🔥 {nick} is {run} straight wins on {civ} — {tally} ({wr}%) with the pick.",
+				f"🎯 {civ} keeps paying {nick}: {run} in a row, {tally} lifetime.",
+			])
+		return random.choice([
+			f"🧊 {run} losses in a row for {nick} on {civ} — {tally} all-time. Maybe try another.",
+			f"🥶 {nick} and {civ} still not talking: {run} straight losses ({tally}).",
+		])
+
+	# personal_record
+	if rec["result"] == "W":
+		if rec["winrate"] >= 0.5:
+			return random.choice([
+				f"📚 {nick} knows {civ} — {tally} ({wr}%) with them, and it showed.",
+				f"🧠 Comfort pick delivered: {nick} is {tally} ({wr}%) on {civ}.",
+			])
+		return random.choice([
+			f"🙃 {nick} is only {tally} ({wr}%) on {civ} — banked a rare one today.",
+			f"🎲 {civ} usually fails {nick} ({tally}, {wr}%), but not this time.",
+		])
+	if rec["winrate"] >= 0.5:
+		return random.choice([
+			f"😬 {nick} is {tally} ({wr}%) on {civ} — this one got away.",
+			f"📉 Off-day on a good pick: {nick} sits {tally} ({wr}%) with {civ}.",
+		])
+	return random.choice([
+		f"🪫 {civ} keeps failing {nick} — down to {tally} ({wr}%) with it.",
+		f"🚩 {nick} is {tally} ({wr}%) on {civ}. The pattern holds.",
+	])
+
+
 def _phrase(c):
+	if c["type"].startswith("personal_"):
+		return _personal_phrase(c)
 	if c["type"] in ("winner_top", "loser_top", "winner_bottom", "loser_bottom"):
 		info = c["info"]
 		civ = info["civ"]
@@ -455,6 +602,38 @@ async def _match_channel_id(bot_match_id):
 	return row.get("channel_id") if row else None
 
 
+async def _personal_civ_histories(channel_id, bot_match_id, players):
+	"""Earlier results for each ``(user_id, civ)`` pair in this match.
+
+	Only rows from matches before this one count, so the line reads as a
+	record the current result just moved. Values are 'W'/'L' lists, most
+	recent first.
+	"""
+	from core.database import db
+
+	pairs = {(p["user_id"], (p.get("civ") or "").strip().lower())
+	         for p in players if p.get("user_id") is not None and (p.get("civ") or "").strip()}
+	if not pairs:
+		return {}
+	user_ids = sorted({uid for uid, _ in pairs})
+	civs = sorted({civ for _, civ in pairs})
+	rows = await db.fetchall(
+		"SELECT c.user_id, c.civ, c.result FROM qc_match_civs c "
+		"JOIN qc_matches cur ON cur.match_id=%s AND cur.channel_id=c.channel_id "
+		"WHERE c.channel_id=%s AND c.result IN ('W','L') AND c.bot_match_id<>%s "
+		"AND c.user_id IN (" + ",".join(["%s"] * len(user_ids)) + ") "
+		"AND LOWER(c.civ) IN (" + ",".join(["%s"] * len(civs)) + ") "
+		"AND c.at <= cur.at "
+		"ORDER BY c.at DESC, c.bot_match_id DESC",
+		[bot_match_id, channel_id, bot_match_id, *user_ids, *civs])
+	history = {}
+	for r in rows or []:
+		key = (r["user_id"], (r["civ"] or "").lower())
+		if key in pairs:
+			history.setdefault(key, []).append(r["result"])
+	return history
+
+
 async def build_post_game_embed(channel_id, bot_match_id, player_civ_rows, winner):
 	"""Civ-vs-result wrap-up for a finished match.
 
@@ -471,18 +650,28 @@ async def build_post_game_embed(channel_id, bot_match_id, player_civ_rows, winne
 		team = r.get("team")
 		civ = (r.get("civ") or "").strip()
 		if team in (0, 1) and civ:
-			players.append({"nick": r.get("nick") or "someone", "civ": civ, "team": int(team)})
+			players.append({"nick": r.get("nick") or "someone", "civ": civ, "team": int(team),
+			                "user_id": r.get("user_id")})
 	if len(players) < 2:
 		return None
 
 	from bot.civ_stats import civ_elo_from_db, get_all_civs
+	from core.console import log
 	civ_data = await civ_elo_from_db() or get_all_civs()
 	if not civ_data:
 		return None
 	civ_index = _civ_index(civ_data)
 
 	team_names = await _team_names(channel_id, bot_match_id)
-	chosen = _select(_collect_observations(players, winner, civ_index, team_names))
+	obs = _collect_observations(players, winner, civ_index, team_names)
+	# Personal civ records are a bonus layer: a failed lookup must not cost the
+	# civ-meta tale that already works without it.
+	try:
+		histories = await _personal_civ_histories(channel_id, bot_match_id, players)
+		obs += _collect_personal_observations(players, winner, histories)
+	except Exception as e:
+		log.error(f"Personal civ history lookup failed (bot match {bot_match_id}): {e}")
+	chosen = _select(obs)
 	if not chosen:
 		return None
 
@@ -496,7 +685,7 @@ async def build_post_game_embed(channel_id, bot_match_id, player_civ_rows, winne
 		"🧐 Result vs Meta",
 	])
 	embed = Embed(title=title, colour=Colour(0x9b59b6), description="\n\n".join(lines))
-	embed.set_footer(text="Civ win-rates from community match history · just for fun")
+	embed.set_footer(text="Civ win-rates + personal civ records from match history · just for fun")
 	return embed
 
 
