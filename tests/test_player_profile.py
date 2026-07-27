@@ -15,12 +15,12 @@ def _civ(name, wins, games):
 
 class TestCivBreakdown:
 	def test_best_sorted_by_winrate(self):
-		out = civ_breakdown([_civ("Franks", 9, 10), _civ("Goths", 1, 10), _civ("Mayans", 5, 10)])
+		out = civ_breakdown([_civ("Franks", 18, 20), _civ("Goths", 2, 20), _civ("Mayans", 10, 20)])
 		assert [c["civ"] for c in out["best"]] == ["Franks", "Mayans", "Goths"]
 		assert out["best"][0]["wr"] == 0.9
 
 	def test_min_games_threshold_excludes_low_sample(self):
-		out = civ_breakdown([_civ("Franks", 2, 2), _civ("Goths", 3, 6)])  # MIN_CIV_GAMES = 3
+		out = civ_breakdown([_civ("Franks", 12, 14), _civ("Goths", 8, 15)])  # MIN_CIV_GAMES = 15
 		assert [c["civ"] for c in out["best"]] == ["Goths"]
 		assert out["total"] == 1
 
@@ -29,9 +29,9 @@ class TestCivBreakdown:
 		assert out["most_played"]["civ"] == "Goths"
 
 	def test_no_worst_until_more_than_six_civs(self):
-		rows = [_civ(f"C{i}", i, 6) for i in range(6)]  # 6 qualified civs
+		rows = [_civ(f"C{i}", i, 16) for i in range(6)]  # 6 qualified civs
 		assert civ_breakdown(rows)["worst"] == []
-		rows.append(_civ("C6", 3, 6))  # 7th -> worst now disjoint from best
+		rows.append(_civ("C6", 3, 16))  # 7th -> worst now disjoint from best
 		assert civ_breakdown(rows)["worst"]
 
 	def test_empty(self):
