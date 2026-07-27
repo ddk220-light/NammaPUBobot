@@ -9,7 +9,7 @@ uses the OO Figure API (no pyplot global state) so it's safe to run in a thread.
 from core.database import db
 
 # Minimum games on a civ before it qualifies for the best/worst lists.
-MIN_CIV_GAMES = 3
+MIN_CIV_GAMES = 15
 
 # Discord dark-theme palette so the PNG sits cleanly inside an embed.
 _BG = "#2b2d31"
