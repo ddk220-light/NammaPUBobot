@@ -309,11 +309,11 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 				inline=False
 			)
 
-	# Daily Elo candles for the last 60 days, rendered off the event loop and
-	# attached to the embed. Needs two active days to be worth a picture.
+	# Elo candles for the last 60 days (Mon-Thu / Fri / Sat / Sun slots),
+	# rendered off the event loop. Needs two played slots to be worth a picture.
 	file = None
 	candles = prof.get("elo_candles") or []
-	if len(candles) >= 2:
+	if sum(1 for c in candles if c["games"]) >= 2:
 		try:
 			png = await asyncio.get_running_loop().run_in_executor(
 				None, player_profile.render_elo_candles, candles, get_nick(target)
