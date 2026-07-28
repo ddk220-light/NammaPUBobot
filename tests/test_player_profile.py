@@ -6,7 +6,16 @@ mapping) that decide what the embed shows.
 """
 from __future__ import annotations
 
-from bot.player_profile import civ_breakdown, form_from_results, web_profile_link, web_profile_url
+from datetime import date, datetime, time as dtime, timedelta
+
+from bot.player_profile import (
+	IST, civ_breakdown, daily_candles, form_from_results, web_profile_link, web_profile_url,
+)
+
+
+def _ts(day: date, hour: int = 12) -> int:
+	"""Unix ts for a given IST calendar day/hour."""
+	return int(datetime.combine(day, dtime(hour), tzinfo=IST).timestamp())
 
 
 def _civ(name, wins, games):
@@ -36,6 +45,71 @@ class TestCivBreakdown:
 
 	def test_empty(self):
 		assert civ_breakdown([]) == {"best": [], "worst": [], "most_played": None, "total": 0}
+
+
+class TestDailyCandles:
+	TODAY = date(2026, 7, 28)
+	NOW = _ts(TODAY, 20)
+
+	def _candles(self, history, **kw):
+		return daily_candles(history, now=self.NOW, **kw)
+
+	def test_one_candle_per_day_with_ohlc_and_net_change(self):
+		d = self.TODAY - timedelta(days=1)
+		# Won to 1020, lost back to 990, won to 1035. Open is the pre-first-game rating.
+		out = self._candles([
+			(_ts(d, 10), 1000, 1020),
+			(_ts(d, 11), 1020, 990),
+			(_ts(d, 12), 990, 1035),
+		])
+		assert len(out) == 1
+		c = out[0]
+		assert (c["open"], c["close"], c["high"], c["low"]) == (1000, 1035, 1035, 990)
+		assert c["change"] == 35
+		assert c["games"] == 3
+
+	def test_open_is_carried_in_rating_not_previous_close(self):
+		# A decay tick between days moves rating without a candle of its own;
+		# the next day's open must be what the player actually started with.
+		d1, d2 = self.TODAY - timedelta(days=3), self.TODAY - timedelta(days=1)
+		out = self._candles([(_ts(d1), 1000, 1050), (_ts(d2), 1040, 1060)])
+		assert [c["open"] for c in out] == [1000, 1040]
+		assert [c["change"] for c in out] == [50, 20]
+
+	def test_days_outside_window_are_dropped(self):
+		old = self.TODAY - timedelta(days=90)
+		edge = self.TODAY - timedelta(days=59)  # oldest day still inside a 60-day window
+		out = self._candles([(_ts(old), 900, 910), (_ts(edge), 910, 930)])
+		assert [c["date"] for c in out] == [edge]
+
+	def test_window_length_is_configurable(self):
+		d = self.TODAY - timedelta(days=10)
+		assert self._candles([(_ts(d), 1000, 1010)], days=7) == []
+		assert len(self._candles([(_ts(d), 1000, 1010)], days=30)) == 1
+
+	def test_candles_are_date_ascending_regardless_of_gaps(self):
+		days = [self.TODAY - timedelta(days=n) for n in (20, 5, 1)]
+		out = self._candles([(_ts(d), 1000, 1005) for d in days])
+		assert [c["date"] for c in out] == sorted(days)
+
+	def test_flat_day_has_zero_change(self):
+		d = self.TODAY - timedelta(days=2)
+		out = self._candles([(_ts(d, 10), 1000, 1020), (_ts(d, 11), 1020, 1000)])
+		assert out[0]["change"] == 0
+		assert (out[0]["high"], out[0]["low"]) == (1020, 1000)
+
+	def test_ist_day_boundary(self):
+		# 00:30 IST on the 28th is still the 27th in UTC — must bucket as the 28th.
+		out = self._candles([(_ts(self.TODAY, 0) + 1800, 1000, 1010)])
+		assert [c["date"] for c in out] == [self.TODAY]
+
+	def test_null_rows_are_skipped_not_fatal(self):
+		d = self.TODAY - timedelta(days=1)
+		out = self._candles([(_ts(d), None, 1010), (_ts(d), 1000, 1010)])
+		assert len(out) == 1 and out[0]["games"] == 1
+
+	def test_empty_history(self):
+		assert self._candles([]) == []
 
 
 class TestFormFromResults:

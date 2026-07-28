@@ -309,13 +309,14 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 				inline=False
 			)
 
-	# ELO-over-time chart, rendered off the event loop and attached to the embed.
+	# Daily Elo candles for the last 60 days, rendered off the event loop and
+	# attached to the embed. Needs two active days to be worth a picture.
 	file = None
-	pts = prof.get("elo_points") or []
-	if len(pts) >= 2:
+	candles = prof.get("elo_candles") or []
+	if len(candles) >= 2:
 		try:
 			png = await asyncio.get_running_loop().run_in_executor(
-				None, player_profile.render_elo_chart, pts, get_nick(target)
+				None, player_profile.render_elo_candles, candles, get_nick(target)
 			)
 			file = File(io.BytesIO(png), filename="elo.png")
 			embed.set_image(url="attachment://elo.png")

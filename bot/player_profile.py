@@ -6,19 +6,27 @@ plus a matplotlib renderer for the rating-over-time graph. The chart is rendered
 off the event loop (run_in_executor) so it never blocks the 1s think() tick, and
 uses the OO Figure API (no pyplot global state) so it's safe to run in a thread.
 """
+from datetime import datetime, timedelta, timezone
+from time import time
+
 from core.database import db
 
 # Minimum games on a civ before it qualifies for the best/worst lists.
 MIN_CIV_GAMES = 15
 
+# Elo chart window, and the timezone its days are bucketed in. IST matches the
+# rest of the bot's day bucketing (see /activity and bot/civ_stats.py).
+CANDLE_DAYS = 60
+IST = timezone(timedelta(hours=5, minutes=30))
+
 # Discord dark-theme palette so the PNG sits cleanly inside an embed.
 _BG = "#2b2d31"
-_LINE = "#5865f2"
-_FILL = "#5865f2"
-_PEAK = "#57f287"
 _TEXT = "#dbdee1"
 _MUTED = "#949ba4"
 _GRID = "#3f4248"
+_UP = "#3ba55d"
+_DOWN = "#ed4245"
+_FLAT = "#949ba4"
 
 
 def web_profile_url(root_url, user_id):
@@ -36,48 +44,126 @@ def web_profile_link(root_url, user_id, nick):
 	return f"[{safe_nick}]({url})"
 
 
-def render_elo_chart(points, nick):
-	"""points: list of (unix_ts, rating) ascending. Returns PNG bytes.
+def daily_candles(history, days=CANDLE_DAYS, now=None):
+	"""Bucket rating history into one OHLC candle per day, stock-chart style.
+
+	history: (unix_ts, rating_before, rating_after) ascending, as stored per
+	rating change. Returns a list of dicts ascending by date:
+	{date, open, high, low, close, change, games}.
+
+	`open` is the rating the player carried into that day's first game, so
+	`change` is the day's net swing — the aggregate of every game played that
+	day. Days with no rating movement produce no candle (the date axis keeps
+	the gap). Pure: `now` is injectable so tests don't depend on the clock.
+	"""
+	now = int(now if now is not None else time())
+	today = datetime.fromtimestamp(now, IST).date()
+	first_day = today - timedelta(days=days - 1)
+
+	by_day = {}
+	for ts, before, after in history:
+		if ts is None or before is None or after is None:
+			continue
+		day = datetime.fromtimestamp(int(ts), IST).date()
+		if not (first_day <= day <= today):
+			continue
+		before, after = int(before), int(after)
+		if (c := by_day.get(day)) is None:
+			by_day[day] = dict(
+				date=day, open=before, close=after,
+				high=max(before, after), low=min(before, after), games=1
+			)
+		else:
+			c["close"] = after
+			c["high"] = max(c["high"], after)
+			c["low"] = min(c["low"], after)
+			c["games"] += 1
+
+	candles = [by_day[d] for d in sorted(by_day)]
+	for c in candles:
+		c["change"] = c["close"] - c["open"]
+	return candles
+
+
+def render_elo_candles(candles, nick, days=CANDLE_DAYS, now=None):
+	"""Render daily Elo candles (from daily_candles) as PNG bytes.
+
+	Reads like a stock chart: one candle per day played, body spanning the day's
+	open -> close, wick spanning its intra-day high/low, green up / red down,
+	with the day's net change labelled. The x axis always covers the full
+	window, so inactive stretches show as gaps rather than being compressed.
 
 	Lazy matplotlib import + OO Figure API: keeps module import light and is
 	thread-safe (no shared pyplot state), so it can run in an executor.
 	"""
 	import io
-	from datetime import datetime, timezone
 
 	import matplotlib
 	matplotlib.use("Agg")  # headless backend — no display needed on a server
 	from matplotlib.figure import Figure
 	from matplotlib import dates as mdates
 
-	xs = [datetime.fromtimestamp(t, timezone.utc) for t, _ in points]
-	ys = [r for _, r in points]
-	lo = min(ys)
+	xs = [mdates.date2num(c["date"]) for c in candles]
+	colours = [_UP if c["change"] > 0 else (_DOWN if c["change"] < 0 else _FLAT) for c in candles]
 
-	fig = Figure(figsize=(8, 3.4), dpi=110)
+	lo = min(c["low"] for c in candles)
+	hi = max(c["high"] for c in candles)
+	pad = max(10.0, (hi - lo) * 0.18)  # headroom for the rotated change labels
+
+	fig = Figure(figsize=(8, 3.6), dpi=110)
 	fig.patch.set_facecolor(_BG)
 	ax = fig.subplots()
 	ax.set_facecolor(_BG)
 
-	ax.plot(xs, ys, color=_LINE, linewidth=2.0, solid_capstyle="round")
-	ax.fill_between(xs, ys, lo, color=_FILL, alpha=0.12)
-
-	# Peak marker + label.
-	peak_i = max(range(len(ys)), key=lambda i: ys[i])
-	ax.scatter([xs[peak_i]], [ys[peak_i]], color=_PEAK, s=30, zorder=5)
-	ax.annotate(
-		f"peak {ys[peak_i]}", (xs[peak_i], ys[peak_i]),
-		textcoords="offset points", xytext=(0, 8), ha="center", color=_PEAK, fontsize=9
+	# Wicks first, then bodies on top. A flat day (open == close) still gets a
+	# visible sliver of body so it doesn't disappear into the wick.
+	body_min = max(0.6, (hi - lo) * 0.006)
+	ax.vlines(xs, [c["low"] for c in candles], [c["high"] for c in candles], colors=colours, linewidth=1.0)
+	ax.bar(
+		xs,
+		[max(abs(c["change"]), body_min) for c in candles],
+		bottom=[min(c["open"], c["close"]) for c in candles],
+		width=0.62, color=colours, linewidth=0, zorder=3
 	)
-	# Current rating dot.
-	ax.scatter([xs[-1]], [ys[-1]], color=_TEXT, s=22, zorder=5)
 
-	ax.set_title(f"{nick} — rating over time", color=_TEXT, fontsize=12, pad=10)
-	ax.grid(True, color=_GRID, linewidth=0.6, alpha=0.7)
+	# The day's aggregate change, above an up candle / below a down one.
+	label_fs = 7 if len(candles) <= 20 else (6 if len(candles) <= 35 else 5)
+	for c, x, colour in zip(candles, xs, colours):
+		up = c["change"] >= 0
+		ax.annotate(
+			("+" if c["change"] > 0 else "") + str(c["change"]),
+			(x, c["high"] if up else c["low"]),
+			textcoords="offset points", xytext=(0, 4 if up else -4),
+			ha="center", va="bottom" if up else "top",
+			rotation=90, fontsize=label_fs, color=colour
+		)
+
+	# Where the window started, for reading the net move at a glance.
+	ax.axhline(candles[0]["open"], color=_MUTED, linestyle="--", linewidth=0.8, alpha=0.5, zorder=1)
+
+	now = int(now if now is not None else time())
+	today = datetime.fromtimestamp(now, IST).date()
+	ax.set_xlim(mdates.date2num(today - timedelta(days=days - 1)) - 0.8, mdates.date2num(today) + 0.8)
+	ax.set_ylim(lo - pad, hi + pad)
+
+	net = candles[-1]["close"] - candles[0]["open"]
+	ax.set_title(f"{nick} — Elo · last {days} days", color=_TEXT, fontsize=12, pad=20)
+	ax.text(
+		0.5, 1.015,
+		"{close} now · {sign}{net} over the window · {n} active days".format(
+			close=candles[-1]["close"], sign="+" if net > 0 else "", net=net, n=len(candles)
+		),
+		transform=ax.transAxes, ha="center", va="bottom",
+		color=_UP if net > 0 else (_DOWN if net < 0 else _MUTED), fontsize=9
+	)
+
+	ax.grid(True, axis="y", color=_GRID, linewidth=0.6, alpha=0.7)
+	ax.set_axisbelow(True)
 	for spine in ax.spines.values():
 		spine.set_visible(False)
 	ax.tick_params(colors=_MUTED, labelsize=8)
-	ax.xaxis.set_major_formatter(mdates.DateFormatter("%b '%y"))
+	ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=5, maxticks=10))
+	ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
 
 	buf = io.BytesIO()
 	fig.savefig(buf, format="png", facecolor=_BG, bbox_inches="tight")
@@ -125,14 +211,16 @@ async def gather_profile(channel_id, user_id):
 	out = {}
 
 	hist = await db.fetchall(
-		"SELECT `at`, rating_before + rating_change AS rating FROM qc_rating_history "
+		"SELECT `at`, rating_before, rating_before + rating_change AS rating FROM qc_rating_history "
 		"WHERE user_id=%s AND channel_id=%s ORDER BY `at` ASC",
 		[user_id, channel_id]
 	)
+	# Peak stays all-time; the chart windows itself down to CANDLE_DAYS.
 	out["elo_points"] = [(h["at"], h["rating"]) for h in hist]
 	if out["elo_points"]:
 		peak = max(out["elo_points"], key=lambda p: p[1])
 		out["peak_rating"], out["peak_at"] = peak[1], peak[0]
+	out["elo_candles"] = daily_candles([(h["at"], h["rating_before"], h["rating"]) for h in hist])
 
 	recent = await db.fetchall(
 		"SELECT m.winner, pm.team FROM qc_player_matches pm "
