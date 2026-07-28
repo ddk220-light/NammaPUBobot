@@ -745,12 +745,6 @@ async def _allow_offline(
 ): await run_slash(bot.commands.allow_offline, interaction=interaction)
 
 
-@dc.slash_command(name='switch_dms', description='Toggles DMs on queue start.', **guild_kwargs)
-async def _switch_dms(
-		interaction: Interaction,
-): await run_slash(bot.commands.switch_dms, interaction=interaction)
-
-
 @dc.slash_command(name='cointoss', description='Toss a coin.', **guild_kwargs)
 async def _cointoss(
 		interaction: Interaction,

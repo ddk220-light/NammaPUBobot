@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import mmap  # noqa: F401
 import random
+from time import time
+
 import bot
 from nextcord.errors import DiscordException
 
@@ -22,6 +24,10 @@ class CheckIn:
 		self.ready_players = set()
 		self.warned = False
 		self.message = None
+		# Anchor for the check-in window. Starts at the match start but is its
+		# own field so a mid-check-in substitution can restart the countdown
+		# without touching the match lifetime, which keys off m.start_time.
+		self.start_time = self.m.start_time
 
 		for p in (p for p in self.m.players if p.id in bot.auto_ready.keys()):
 			self.ready_players.add(p)
@@ -38,7 +44,7 @@ class CheckIn:
 
 	@property
 	def end_time(self):
-		return int(self.m.start_time + self.timeout)
+		return int(self.start_time + self.timeout)
 
 	async def think(self, frame_time):
 		not_ready = [m for m in self.m.players if m not in self.ready_players]
@@ -153,6 +159,31 @@ class CheckIn:
 
 		await self.m.qc.remove_members(candidate, ctx=ctx)
 		await bot.remove_players(candidate, reason="pickup started")
+
+		# Teams and captains are built once in Match.new and never rebuilt on a
+		# state change, so swapping only m.players leaves every embed rendering
+		# the player who just left while the roster (and the report written to
+		# the DB) holds the replacement. Rebuild them here.
+		#
+		# Ratings first: init_teams indexes self.ratings by member id, and the
+		# incoming player has no entry yet. Captains are only re-picked when the
+		# outgoing player held the role — otherwise a random pick_captains mode
+		# would reshuffle captains on an unrelated substitution. Nothing has
+		# been drafted during check-in, so a rebuild here is equivalent to the
+		# new roster having been present from the start.
+		self.m.ratings = {
+			p['user_id']: p['rating'] for p in await self.m.qc.rating.get_players((p.id for p in self.m.players))
+		}
+		if out_member in self.m.captains:
+			self.m.init_captains(self.m.cfg['pick_captains'], self.m.cfg['captains_role_id'])
+		self.m.init_teams(self.m.cfg['pick_teams'])
+
+		# Restart the check-in window so the incoming player gets the full
+		# timeout rather than whatever the player they replaced left on the
+		# clock, and re-arm the one-minute warning so it fires for them too.
+		self.start_time = int(time())
+		self.warned = False
+
 		return candidate
 
 	async def back_out(self, ctx, member):

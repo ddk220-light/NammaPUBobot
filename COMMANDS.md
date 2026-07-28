@@ -29,7 +29,6 @@
 #### Personal settings
 | command               | description                                             |
 |-----------------------|---------------------------------------------------------|
-| /switch_dms           | Toggle DM notifications                                 |
 | /expire_default       | Configure your default auto-remove behaviour            |
 | /subscribe            | Subscribe to queue or channel promotion roles           |
 | /unsubscribe          | Unsubscribe from queue or channel promotion roles       |

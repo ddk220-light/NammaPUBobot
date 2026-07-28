@@ -1,4 +1,4 @@
-__all__ = ['auto_ready', 'expire', 'default_expire', 'allow_offline', 'switch_dms', 'cointoss', 'show_help', 'set_nick']
+__all__ = ['auto_ready', 'expire', 'default_expire', 'allow_offline', 'cointoss', 'show_help', 'set_nick']
 
 from time import time
 from datetime import timedelta
@@ -96,21 +96,6 @@ async def allow_offline(ctx):
 	else:
 		bot.allow_offline.append(ctx.author.id)
 		await ctx.success(ctx.qc.gt("Your offline immunity is **on** until the next match."))
-
-
-async def switch_dms(ctx):
-	data = await db.select_one(('allow_dm',), 'players', where={'user_id': ctx.author.id})
-	if data:
-		allow_dm = 1 if data['allow_dm'] == 0 else 0
-		await db.update('players', {'allow_dm': allow_dm}, keys={'user_id': ctx.author.id})
-	else:
-		allow_dm = 0
-		await db.insert('players', {'allow_dm': allow_dm, 'user_id': ctx.author.id})
-
-	if allow_dm:
-		await ctx.success(ctx.qc.gt("Your DM notifications is now turned on."))
-	else:
-		await ctx.success(ctx.qc.gt("Your DM notifications is now turned off."))
 
 
 async def cointoss(ctx, side: str = None):
