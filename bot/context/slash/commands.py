@@ -629,6 +629,13 @@ async def _rank(
 ): await run_slash(bot.commands.rank, interaction=interaction, player=player)
 
 
+@dc.slash_command(name='rank_detailed', description='Show the full rating profile.', **guild_kwargs)
+async def _rank_detailed(
+		interaction: Interaction,
+		player: Member = SlashOption(required=False, verify=False),
+): await run_slash(bot.commands.rank_detailed, interaction=interaction, player=player)
+
+
 @dc.slash_command(name='leaderboard', description='Show rating leaderboard.', **guild_kwargs)
 async def _leaderboard(
 		interaction: Interaction,

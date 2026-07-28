@@ -1,4 +1,7 @@
-__all__ = ['last_game', 'stats', 'top', 'rank', 'leaderboard', 'leaderboard_alternate', 'mapstats', 'activity']
+__all__ = [
+	'last_game', 'stats', 'top', 'rank', 'rank_detailed', 'leaderboard', 'leaderboard_alternate',
+	'mapstats', 'activity'
+]
 
 import io
 import re
@@ -114,6 +117,16 @@ async def top(ctx, period=None):
 
 
 async def rank(ctx, player: Member = None):
+	""" Slim rating profile: headline, record, recent form, scouting report and the ELO chart. """
+	await _rank_profile(ctx, player, detailed=False)
+
+
+async def rank_detailed(ctx, player: Member = None):
+	""" Everything /rank shows, plus streak, peak, civs, duos & rivals and recent rating changes. """
+	await _rank_profile(ctx, player, detailed=True)
+
+
+async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	# Defer — gathering the profile + rendering the ELO chart can exceed the
 	# 3-second interaction window.
 	interaction = getattr(ctx, 'interaction', None)
@@ -182,24 +195,26 @@ async def rank(ctx, player: Member = None):
 	if target.display_avatar:
 		embed.set_thumbnail(url=target.display_avatar.url)
 
-	streak = p['streak'] or 0
-	streak_badge = f"🔥 {streak}" if streak >= 3 else (f"🧊 {abs(streak)}" if streak <= -3 else str(streak))
-	embed.add_field(
-		name="⚔️ " + ctx.qc.gt("Record"),
-		value=f"**{p['wins']}**W / **{p['losses']}**L / **{p['draws']}**D\n" +
-			ctx.qc.gt("Streak") + f": {streak_badge}",
-		inline=True
-	)
-	if prof.get("peak_rating"):
-		embed.add_field(
-			name="📈 " + ctx.qc.gt("Peak"),
-			value=f"**{prof['peak_rating']}**\n{seconds_to_str(int(time() - prof['peak_at']))} ago",
-			inline=True
-		)
+	record = f"**{p['wins']}**W / **{p['losses']}**L / **{p['draws']}**D"
+	if detailed:
+		streak = p['streak'] or 0
+		streak_badge = f"🔥 {streak}" if streak >= 3 else (f"🧊 {abs(streak)}" if streak <= -3 else str(streak))
+		record += "\n" + ctx.qc.gt("Streak") + f": {streak_badge}"
+	embed.add_field(name="⚔️ " + ctx.qc.gt("Record"), value=record, inline=True)
+
 	civs = prof.get("civs") or {}
-	if civs.get("most_played"):
-		mp = civs["most_played"]
-		embed.add_field(name="🏰 " + ctx.qc.gt("Most played"), value=f"`{mp['civ']}`\n{mp['games']} games", inline=True)
+	if detailed:
+		if prof.get("peak_rating"):
+			embed.add_field(
+				name="📈 " + ctx.qc.gt("Peak"),
+				value=f"**{prof['peak_rating']}**\n{seconds_to_str(int(time() - prof['peak_at']))} ago",
+				inline=True
+			)
+		if civs.get("most_played"):
+			mp = civs["most_played"]
+			embed.add_field(
+				name="🏰 " + ctx.qc.gt("Most played"), value=f"`{mp['civ']}`\n{mp['games']} games", inline=True
+			)
 
 	if prof.get("recent_form"):
 		sq = {"W": "🟩", "L": "🟥", "D": "⬛"}
@@ -239,59 +254,60 @@ async def rank(ctx, player: Member = None):
 			text = text[:997] + "…"
 		embed.add_field(name="📜 " + ctx.qc.gt("Scouting report"), value=text, inline=False)
 
-	if civs.get("best"):
-		embed.add_field(
-			name="🟢 " + ctx.qc.gt("Best civs"),
-			value="\n".join(f"`{c['civ']}` {int(c['wr'] * 100)}% ({c['games']})" for c in civs["best"]),
-			inline=True
-		)
-	if civs.get("worst"):
-		embed.add_field(
-			name="🔴 " + ctx.qc.gt("Worst civs"),
-			value="\n".join(f"`{c['civ']}` {int(c['wr'] * 100)}% ({c['games']})" for c in civs["worst"]),
-			inline=True
-		)
+	if detailed:
+		if civs.get("best"):
+			embed.add_field(
+				name="🟢 " + ctx.qc.gt("Best civs"),
+				value="\n".join(f"`{c['civ']}` {int(c['wr'] * 100)}% ({c['games']})" for c in civs["best"]),
+				inline=True
+			)
+		if civs.get("worst"):
+			embed.add_field(
+				name="🔴 " + ctx.qc.gt("Worst civs"),
+				value="\n".join(f"`{c['civ']}` {int(c['wr'] * 100)}% ({c['games']})" for c in civs["worst"]),
+				inline=True
+			)
 
-	# Duo/rival quadrants, same cards as the overview page. Falls back to the
-	# lighter teammate/nemesis aggregation when the snapshot is unavailable.
-	def _rel_line(label, rel, suffix):
-		return f"{label}: `{rel['nick']}` · {rel['winrate']}% {suffix} ({rel['games']} games)"
+		# Duo/rival quadrants, same cards as the overview page. Falls back to the
+		# lighter teammate/nemesis aggregation when the snapshot is unavailable.
+		def _rel_line(label, rel, suffix):
+			return f"{label}: `{rel['nick']}` · {rel['winrate']}% {suffix} ({rel['games']} games)"
 
-	mates = []
-	if snapshot.get("best_ally"):
-		mates.append(_rel_line("💞 " + ctx.qc.gt("Dream duo"), snapshot["best_ally"], ctx.qc.gt("together")))
-	if snapshot.get("worst_ally"):
-		mates.append(_rel_line("💔 " + ctx.qc.gt("Cursed duo"), snapshot["worst_ally"], ctx.qc.gt("together")))
-	if snapshot.get("worst_enemy"):
-		mates.append(_rel_line("😤 " + ctx.qc.gt("Nemesis"), snapshot["worst_enemy"], ctx.qc.gt("vs them")))
-	if snapshot.get("easiest_enemy"):
-		mates.append(_rel_line("💰 " + ctx.qc.gt("Free Elo"), snapshot["easiest_enemy"], ctx.qc.gt("vs them")))
-	if not mates:
-		if prof.get("best_mate"):
-			matenick, wins, games = prof["best_mate"]
-			mates.append(ctx.qc.gt("Best teammate") + f": `{matenick}` · {int(wins * 100 / games)}% of {games}")
-		if prof.get("nemesis"):
-			nemnick, losses = prof["nemesis"]
-			mates.append(ctx.qc.gt("Nemesis") + f": `{nemnick}` · {losses} losses")
-	if mates:
-		embed.add_field(name="🤝 " + ctx.qc.gt("Duos & rivals"), value="\n".join(mates), inline=False)
+		mates = []
+		if snapshot.get("best_ally"):
+			mates.append(_rel_line("💞 " + ctx.qc.gt("Dream duo"), snapshot["best_ally"], ctx.qc.gt("together")))
+		if snapshot.get("worst_ally"):
+			mates.append(_rel_line("💔 " + ctx.qc.gt("Cursed duo"), snapshot["worst_ally"], ctx.qc.gt("together")))
+		if snapshot.get("worst_enemy"):
+			mates.append(_rel_line("😤 " + ctx.qc.gt("Nemesis"), snapshot["worst_enemy"], ctx.qc.gt("vs them")))
+		if snapshot.get("easiest_enemy"):
+			mates.append(_rel_line("💰 " + ctx.qc.gt("Free Elo"), snapshot["easiest_enemy"], ctx.qc.gt("vs them")))
+		if not mates:
+			if prof.get("best_mate"):
+				matenick, wins, games = prof["best_mate"]
+				mates.append(ctx.qc.gt("Best teammate") + f": `{matenick}` · {int(wins * 100 / games)}% of {games}")
+			if prof.get("nemesis"):
+				nemnick, losses = prof["nemesis"]
+				mates.append(ctx.qc.gt("Nemesis") + f": `{nemnick}` · {losses} losses")
+		if mates:
+			embed.add_field(name="🤝 " + ctx.qc.gt("Duos & rivals"), value="\n".join(mates), inline=False)
 
-	changes = await db.select(
-		('at', 'rating_change', 'match_id', 'reason'),
-		'qc_rating_history', where=dict(user_id=target.id, channel_id=ctx.qc.rating.channel_id),
-		order_by='id', limit=5
-	)
-	if len(changes):
-		embed.add_field(
-			name="🕑 " + ctx.qc.gt("Last changes:"),
-			value="\n".join(("**{change}** · {ago} ago · {reason}{match_id}".format(
-				ago=seconds_to_str(int(time() - c['at'])),
-				reason=c['reason'],
-				match_id=f" (__{c['match_id']}__)" if c['match_id'] else "",
-				change=("+" if c['rating_change'] >= 0 else "") + str(c['rating_change'])
-			) for c in changes)),
-			inline=False
+		changes = await db.select(
+			('at', 'rating_change', 'match_id', 'reason'),
+			'qc_rating_history', where=dict(user_id=target.id, channel_id=ctx.qc.rating.channel_id),
+			order_by='id', limit=5
 		)
+		if len(changes):
+			embed.add_field(
+				name="🕑 " + ctx.qc.gt("Last changes:"),
+				value="\n".join(("**{change}** · {ago} ago · {reason}{match_id}".format(
+					ago=seconds_to_str(int(time() - c['at'])),
+					reason=c['reason'],
+					match_id=f" (__{c['match_id']}__)" if c['match_id'] else "",
+					change=("+" if c['rating_change'] >= 0 else "") + str(c['rating_change'])
+				) for c in changes)),
+				inline=False
+			)
 
 	# ELO-over-time chart, rendered off the event loop and attached to the embed.
 	file = None
