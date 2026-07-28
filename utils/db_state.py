@@ -3,6 +3,10 @@
 
 Runs ONLY SELECT / SHOW queries. Reads DB_URI from config.cfg (gitignored).
 Never prints credentials. Usage:  python utils/db_state.py
+
+Run this from a machine with direct network access to the database. Sandboxes
+that only expose an HTTP proxy (Claude Code on the web) cannot reach MySQL at
+all — raw-TCP database protocols are not proxyable.
 """
 import os
 import sys
@@ -68,6 +72,27 @@ def main():
 		print(f"\nqc_matches: match_id {r['mn']}..{r['mx']} | latest at={r['amax']} ({epoch(r['amax'])} UTC) | channels={r['ch']}")
 		if 'ranked' in mcols:
 			print(f"qc_matches: ranked={scalar('SELECT COUNT(*) FROM qc_matches WHERE ranked=1')} / total={scalar('SELECT COUNT(*) FROM qc_matches')}")
+
+		# Recent activity. `at` is an INT epoch (see bot/stats/stats.py), so the
+		# window boundaries are computed here rather than with MySQL's NOW() —
+		# that keeps the numbers independent of the server's session timezone.
+		now = int(datetime.now(timezone.utc).timestamp())
+		week = 7 * 86400
+		since_3w = now - 3 * week
+		recent = scalar("SELECT COUNT(*) FROM qc_matches WHERE `at` >= %s", [since_3w])
+		line = f"\nqc_matches last 3 weeks: {recent} matches"
+		if 'ranked' in mcols:
+			line += f" ({scalar('SELECT COUNT(*) FROM qc_matches WHERE `at` >= %s AND ranked=1', [since_3w])} ranked)"
+		print(line)
+		print("  weekly breakdown (most recent week first):")
+		for w in range(6):
+			hi, lo = now - w * week, now - (w + 1) * week
+			count = scalar("SELECT COUNT(*) FROM qc_matches WHERE `at` >= %s AND `at` < %s", [lo, hi])
+			print(f"    week -{w + 1} (from {datetime.fromtimestamp(lo, timezone.utc):%Y-%m-%d}): {count}")
+		try:
+			print(f"  newest match is {(now - int(r['amax'])) / 86400:.1f} days old")
+		except (TypeError, ValueError):
+			pass
 
 	if 'qc_match_civs' in tables:
 		cols = [c['Field'] for c in q("SHOW COLUMNS FROM qc_match_civs")]
