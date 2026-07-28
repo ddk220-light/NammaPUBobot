@@ -19,13 +19,26 @@ def test_unscouted_below_min_games():
 	assert "5 parsed replays" in p["evidence"][0]
 
 
-def test_aggressive_carry_is_villager_menace():
+def test_aggressive_carry_is_army_printer():
 	# centurion12-shaped: pool-high army, half the games as team-top impact.
 	p = derive_persona(_stats(avg_army=54.2, avg_recovery=59.7, carry_rate=51,
 	                          tag_rates={"Map pressure": 15, "High impact": 26}))
-	assert p["name"] == "Villager Menace"
+	assert p["name"] == "Army Printer"
 	assert p["role"] == "carry"
-	assert p["epithet"] == "Designated Carry"
+	assert p["epithet"] == "Board Topper"
+
+
+def test_no_name_or_tagline_claims_kills_or_wins():
+	"""The parser records units created, never kills; impact carries no win
+	term. Nothing player-facing may imply either."""
+	from bot.replay_stats.persona import ROLES, STYLES
+	banned = ("villager menace", "kill", "raid", "carries", "hard-carry",
+	          "hard-carries", "donates", "elo", "wins", "won", "victory")
+	blobs = [f"{v['name']} {v['tagline']}" for v in STYLES.values()]
+	blobs += [f"{v['name']} {v['read']}" for v in ROLES.values()]
+	for blob in blobs:
+		low = blob.lower()
+		assert not any(b in low for b in banned), f"outcome/kill claim in: {blob}"
 
 
 def test_eco_heavy_is_farm_enjoyer():
@@ -40,20 +53,20 @@ def test_fast_ager_low_variance_is_speedrunner_engine():
 	# M1k3-shaped: timing 57, 27% tempo tags, steady output.
 	p = derive_persona(_stats(avg_timing=57.2, avg_recovery=59.7, carry_rate=30,
 	                          impact_sd=4.3, tag_rates={"Age-up tempo": 27}))
-	assert p["name"] == "Imp Speedrunner"
+	assert p["name"] == "Age-Up Speedrunner"
 	assert p["role"] == "engine"
 
 
 def test_payload_tag_labels_also_count():
 	# Web payloads say "Timing edge"/"Recovery" instead of the stored names.
 	p = derive_persona(_stats(avg_timing=54, tag_rates={"Timing edge": 20}))
-	assert p["name"] == "Imp Speedrunner"
+	assert p["name"] == "Age-Up Speedrunner"
 
 
-def test_reboom_profile_is_comeback_merchant():
+def test_reboom_profile_is_late_bloomer():
 	p = derive_persona(_stats(avg_recovery=57.2, avg_timing=43.3, carry_rate=9,
 	                          tag_rates={"Reboom": 10}))
-	assert p["name"] == "Comeback Merchant"
+	assert p["name"] == "Late Bloomer"
 	assert p["role"] == "support"
 
 
@@ -83,3 +96,43 @@ def test_missing_fields_do_not_crash():
 	assert p["role"] == "anchor"
 	p2 = derive_persona(None)
 	assert p2["key"] == "unscouted"
+
+
+class TestStyleMargin:
+	"""A style must win decisively — a near-tie is not a personality."""
+
+	def test_near_tie_between_two_styles_falls_back_to_flex(self):
+		# Mr_PrIMeZ-shaped: phoenix 8.0 vs aggressor 7.9 under the old bare max().
+		p = derive_persona(_stats(avg_army=53.6, avg_recovery=60.7))
+		assert p["style"] == "flex"
+		assert p["name"] == "Certified Flex"
+
+	def test_clear_winner_still_names_the_style(self):
+		p = derive_persona(_stats(avg_eco=59.4, tag_rates={"Boom carry": 16}))
+		assert p["style"] == "boomer"
+
+	def test_near_tie_with_slow_ages_prefers_slow_cooker_over_flex(self):
+		p = derive_persona(_stats(avg_army=53.6, avg_recovery=60.7, avg_timing=44))
+		assert p["style"] == "slowcooker"
+
+	def test_margin_is_measured_against_the_runner_up_not_the_baseline(self):
+		# Both axes far above baseline, but only 1.0 apart -> still no winner.
+		strong_tie = derive_persona(_stats(avg_army=56.0, avg_eco=59.6))
+		assert strong_tie["style"] == "flex"
+
+
+class TestRoleVolatilityThresholds:
+	"""Recalibrated to the replay pool: sd p25=5.6, p50=6.0, p75=6.3."""
+
+	def test_pool_median_volatility_is_not_a_wildcard(self):
+		# sd 6.0 was above the old 5.9 cut, so a median player read as a coinflip.
+		p = derive_persona(_stats(impact_sd=6.0, carry_rate=20))
+		assert p["role"] != "wildcard"
+
+	def test_genuinely_swingy_is_still_a_wildcard(self):
+		assert derive_persona(_stats(impact_sd=6.8, carry_rate=20))["role"] == "wildcard"
+
+	def test_steady_but_rarely_top_is_support_not_engine(self):
+		# The pool's steadiest players sit at 0-10% carry; they are Squad Glue.
+		p = derive_persona(_stats(impact_sd=4.3, carry_rate=9))
+		assert p["role"] == "support"
