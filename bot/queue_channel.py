@@ -512,24 +512,13 @@ class QueueChannel:
 
 			await asyncio.sleep(1)
 
-	async def queue_started(self, ctx, members, message=None):
+	async def queue_started(self, ctx, members):
 		await self.remove_members(*members, ctx=ctx)
 
 		for m in filter(lambda m: m.id in bot.allow_offline, members):
 			bot.allow_offline.remove(m.id)
-		if message:
-			asyncio.create_task(self._dm_members(members, message))
 
 		await bot.remove_players(*members, reason="pickup started")
-
-	async def _dm_members(self, members, *args, **kwargs):
-		for m in members:
-			if not m.bot and not await db.select_one(("user_id", ), "players", where={'user_id': m.id, 'allow_dm': 0}):
-				try:
-					await m.send(*args, **kwargs)
-				except Forbidden:
-					pass
-				await asyncio.sleep(1)
 
 	async def check_allowed_to_add(self, ctx, member, queue=None):
 		""" raises exception if not allowed, returns phrase string or None if allowed """

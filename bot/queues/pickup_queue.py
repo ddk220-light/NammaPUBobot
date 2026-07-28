@@ -152,18 +152,6 @@ class PickupQueue:
 				verify_message="Start message is too long."
 			),
 			Variables.TextVar(
-				"start_direct_msg",
-				display="Start direct message",
-				section="Appearance",
-				verify=lambda s: len(s) < 1001,
-				description="\n".join([
-					"Set the content of a direct message sent to players when the queue starts.",
-					"You can use this aliases in text: {queue}, {channel}, {server}.",
-					"If not set, default translated message is used."
-				]),
-				verify_message="Start direct message is too long."
-			),
-			Variables.TextVar(
 				"server",
 				display="Server",
 				section="Appearance",
@@ -411,16 +399,7 @@ class PickupQueue:
 			raise bot.Exc.PubobotException(self.qc.gt("Not enough players to start the queue."))
 
 		players = list(self.queue)
-		dm_text = self.cfg.start_direct_msg or self.qc.gt("**{queue}** pickup has started @ {channel}!")
-		await self.qc.queue_started(
-			ctx,
-			members=players,
-			message=dm_text.format_map(SafeTemplateDict(
-				queue=self.name,
-				channel=ctx.channel.mention,
-				server=self.cfg.server
-			))
-		)
+		await self.qc.queue_started(ctx, members=players)
 		if self.cfg.team_size:
 			team_size = min(int(self.cfg.size / 2), int(self.cfg.team_size))
 		else:
@@ -440,16 +419,7 @@ class PickupQueue:
 
 		groups = [self.queue[i-group_size:i] for i in range(group_size, len(self.queue)+1, group_size)]
 		for group in groups:
-			dm_text = self.cfg.start_direct_msg or self.qc.gt("**{queue}** pickup has started @ {channel}!")
-			await self.qc.queue_started(
-				ctx,
-				members=group,
-				message=dm_text.format_map(SafeTemplateDict(
-					queue=self.name,
-					channel=ctx.channel.mention,
-					server=self.cfg.server
-				))
-			)
+			await self.qc.queue_started(ctx, members=group)
 
 			await bot.Match.new(ctx, self, group, team_size=group_size//2, **self._match_cfg())
 
