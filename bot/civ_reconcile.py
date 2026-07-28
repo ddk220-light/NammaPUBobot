@@ -119,7 +119,7 @@ class CivReconcile:
 			try:
 				players = await self._players(match_id)
 				done = await _find_and_record(
-					r["channel_id"], match_id, players, r["winner"], r["at"], post_replay=False
+					r["channel_id"], match_id, players, r["winner"], r["at"], post_updates=False
 				)
 				if not done:
 					try:

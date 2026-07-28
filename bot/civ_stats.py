@@ -3,8 +3,6 @@ import random
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-from nextcord import Embed, Colour
-
 from core.database import db
 
 # A civ needs this many games overall before it's used for balanced pools.
@@ -12,9 +10,9 @@ MIN_CIV_GAMES = 50
 
 _ELO_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "civ_elo_stats.csv"
 
-# Overall civ win-rates {civ: {"civ", "games", "winrate"}}. Used by the auto-post
-# civ-pool suggestion. Seeded from the CSV at import as a fallback, but
-# build_suggestion_embed pulls a LIVE copy from qc_match_civs each time.
+# Overall civ win-rates {civ: {"civ", "games", "winrate"}}. Seeded from the CSV
+# at import as a fallback; civ_elo_from_db() pulls a LIVE copy from
+# qc_match_civs for callers that need current numbers.
 _civ_elo_data = {}
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -138,36 +136,6 @@ async def get_today_civs(channel):
     return {r["civ"] for r in rows if r["civ"]}
 
 
-async def build_suggestion_embed(channel, title="Suggested Civ Pools"):
-    """Balanced random civ pools (5 per team), excluding civs played today.
-
-    Auto-posted when a match's teams are formed. Civ win-rates come LIVE from
-    qc_match_civs (kept current by the reconcile job), falling back to the seed.
-    Returns an Embed, or None if no civ data is available.
-    """
-    played = await get_today_civs(channel)
-    civ_data = await civ_elo_from_db()
-    result = pick_balanced_teams(excluded_civs=played, civ_data=civ_data or None)
-    if result is None:
-        return None
-    team_a, team_b = result
-
-    def _fmt(civs):
-        return "\n".join(f"{c['civ']} ({c['winrate'] * 100:.0f}%)" for c in civs)
-
-    avg_a = sum(c["winrate"] for c in team_a) / len(team_a) * 100
-    avg_b = sum(c["winrate"] for c in team_b) / len(team_b) * 100
-
-    embed = Embed(title=title, colour=Colour(0x50e3c2))
-    embed.add_field(name=f"Team A  —  avg {avg_a:.1f}%", value=_fmt(team_a), inline=True)
-    embed.add_field(name=f"Team B  —  avg {avg_b:.1f}%", value=_fmt(team_b), inline=True)
-    embed.set_footer(
-        text=(f"Excluded {len(played)} civ(s) played today" if played
-              else "No civs played today — all available")
-    )
-    return embed
-
-
-# Seed the in-memory fallback from CSV at import; build_suggestion_embed
-# refreshes from the live DB on each call.
+# Seed the in-memory fallback from CSV at import; callers that need live
+# numbers refresh from the DB via civ_elo_from_db().
 load_civ_elo_stats()

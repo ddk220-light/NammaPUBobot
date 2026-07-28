@@ -545,7 +545,7 @@ async def _sub_auto(
 
 
 @dc.slash_command(
-	name='lobby2',
+	name='lobby',
 	description='Link your live AoE2 game id to this ranked match so the result posts automatically',
 	**guild_kwargs
 )

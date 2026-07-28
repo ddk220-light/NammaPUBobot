@@ -8,7 +8,7 @@ _Generated 2026-06-13 by a 10-agent research workflow (7 research + 2 adversaria
 
 Decisions locked 2026-06-13 (supersede the standalone /lobby plan below, which remains the verified technical reference):
 
-- **Command:** `/lobby2` for the manual path (rename to `/lobby` after the old bot is removed). The PRIMARY path is automatic, coupled to pickup matches.
+- **Command:** `/lobby` for the manual path (the slash command was renamed from `/lobby2`; the internal handler is still `bot.commands.lobby2`). The PRIMARY path is automatic, coupled to pickup matches.
 - **Lobby name (join key):** fixed `test123` for now. Assumes <=1 ranked match is awaiting a lobby at a time; switch to auto-unique `namma-<matchid>` before running concurrent ranked matches.
 - **Scope:** ranked matches only (they already have captains, a WAITING_REPORT stage, and ratings). Unranked optionally gets an informational completed embed only.
 - **Result confirmation:** a single `:white_check_mark:` by the LOSING captain -> auto `report_loss`. No dispute button. An ignored proposal does nothing. Drops are handled by re-creating the lobby (re-detected) or `/report abort`.
