@@ -186,6 +186,12 @@ class Draft:
 			old=out_member.mention, new=candidate.mention
 		))
 
+		# Both teams just changed, so the sides the audience voted on no longer
+		# exist — discard those ballots and re-open voting on the new teams.
+		if self.m.ranked:
+			from bot.predictions import jobs as prediction_jobs
+			await prediction_jobs.restart_for_match(self.m)
+
 		if self.m.state == self.m.WAITING_REPORT:
 			await ctx.notice(embed=self.m.embeds.final_message())
 		else:

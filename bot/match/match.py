@@ -353,6 +353,12 @@ class Match:
 			except Exception as e:
 				log.error(f"Lobby watcher start failed for match {self.id}: {e}")
 
+		# Teams are final and the match is live — open audience voting (ranked
+		# only; unranked matches never report a winner to score against).
+		if self.ranked:
+			from bot.predictions import jobs as prediction_jobs
+			await prediction_jobs.open_for_match(self)
+
 	async def report_loss(self, ctx, member, draw_flag):
 		if self.state != self.WAITING_REPORT:
 			raise bot.Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
@@ -470,6 +476,12 @@ class Match:
 		else:
 			await bot.stats.register_match_unranked(ctx, self)
 
+		# Pay out audience predictions now the winner is known. A match that ends
+		# without a clean win/loss (draw) is voided inside resolve_for_match.
+		if self.ranked:
+			from bot.predictions import jobs as prediction_jobs
+			await prediction_jobs.resolve_for_match(self)
+
 	def print(self):
 		return f"> *({self.id})* **{self.queue.name}** | `{join_and([get_nick(p) for p in self.players])}`"
 
@@ -484,6 +496,10 @@ class Match:
 			pass
 		bot.active_matches.remove(self)
 		await self._stop_lobby_watcher()
+
+		# Aborted match — nothing to score, so any live vote is discarded.
+		from bot.predictions import jobs as prediction_jobs
+		await prediction_jobs.void_for_match(self.id)
 
 	async def _stop_lobby_watcher(self):
 		# Best-effort teardown of the opt-in lobby watcher; never raises into the

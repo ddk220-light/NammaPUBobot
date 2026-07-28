@@ -51,6 +51,11 @@ async def admin_quiz(interaction: Interaction):
 	pass
 
 
+@dc.slash_command(name='predictions', **guild_kwargs)
+async def predictions(interaction: Interaction):
+	pass
+
+
 @dc.slash_command(name='replaystats', **guild_kwargs)
 async def admin_replaystats(interaction: Interaction):
 	pass

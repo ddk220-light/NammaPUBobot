@@ -202,6 +202,18 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 		record += "\n" + ctx.qc.gt("Streak") + f": {streak_badge}"
 	embed.add_field(name="⚔️ " + ctx.qc.gt("Record"), value=record, inline=True)
 
+	# Audience-prediction record. Omitted for anyone who has never voted, so the
+	# profile doesn't grow a "0/0" field for most players. Best-effort: a
+	# predictions hiccup must not cost the whole profile.
+	try:
+		from bot.predictions import store as predictions_store
+		from bot.predictions.view import rank_field
+		correct, total = await predictions_store.user_stats(target.id, ctx.qc.id)
+		if (summary := rank_field(correct, total)) is not None:
+			embed.add_field(name="🔮 " + ctx.qc.gt("Predictions"), value=summary, inline=True)
+	except Exception:
+		pass
+
 	civs = prof.get("civs") or {}
 	if detailed:
 		if prof.get("peak_rating"):

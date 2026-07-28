@@ -745,6 +745,20 @@ async def _allow_offline(
 ): await run_slash(bot.commands.allow_offline, interaction=interaction)
 
 
+@groups.predictions.subcommand(name='leaderboard', description='Audience prediction standings.')
+async def _predictions_leaderboard(
+		interaction: Interaction,
+		page: int = SlashOption(required=False, description="Page number.")
+): await run_slash(bot.commands.predictions_leaderboard, interaction=interaction, page=page or 1)
+
+
+@groups.predictions.subcommand(name='me', description='Your audience prediction record.')
+async def _predictions_me(
+		interaction: Interaction,
+		player: Member = SlashOption(required=False, description="Whose record to show.")
+): await run_slash(bot.commands.predictions_me, interaction=interaction, player=player)
+
+
 @dc.slash_command(name='cointoss', description='Toss a coin.', **guild_kwargs)
 async def _cointoss(
 		interaction: Interaction,

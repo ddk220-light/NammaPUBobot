@@ -8,3 +8,4 @@ from .quiz import *
 from .replay_stats import *
 from .player_details import *
 from .insights import *
+from .predictions import *

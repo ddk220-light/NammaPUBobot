@@ -104,6 +104,7 @@ async def on_think(frame_time):
 	await bot.lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
 	await bot.quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
 	await bot.replay_stats.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
+	await bot.predictions.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
 	await bot.expire_auto_ready(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict
