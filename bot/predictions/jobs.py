@@ -59,7 +59,7 @@ async def open_for_match(match):
 	"""Post the voting card for a freshly-formed ranked match. Best-effort: a
 	failure here must never affect the match flow."""
 	try:
-		if not match.ranked:
+		if not match.ranked or not match.cfg.get("predictions_enabled", True):
 			return
 		now = int(time.time())
 		post_id = await store.create_post(

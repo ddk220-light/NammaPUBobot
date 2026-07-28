@@ -1,0 +1,130 @@
+{
+ "generated_at": 1785271844,
+ "entries": [
+  {
+   "sha": "3010d89",
+   "subject": "Rebuild teams and restart the clock on a check-in substitution",
+   "date": "2026-07-28"
+  },
+  {
+   "sha": "3eae169",
+   "subject": "Stop DMing players when a pickup queue starts",
+   "date": "2026-07-28"
+  },
+  {
+   "sha": "efaacf6",
+   "subject": "Make the Diesel Engine role reachable",
+   "date": "2026-07-28"
+  },
+  {
+   "sha": "031514d",
+   "subject": "Bucket the Elo chart into Mon-Thu / Fri / Sat / Sun slots",
+   "date": "2026-07-28"
+  },
+  {
+   "sha": "04ef944",
+   "subject": "Ground persona copy and conditions in what replays actually measure",
+   "date": "2026-07-28"
+  },
+  {
+   "sha": "0f06b50",
+   "subject": "Make the /rank Elo chart a 60-day daily candlestick",
+   "date": "2026-07-28"
+  },
+  {
+   "sha": "32b40ec",
+   "subject": "Slim down /rank, add /rank_detailed with the full profile",
+   "date": "2026-07-28"
+  },
+  {
+   "sha": "434afce",
+   "subject": "Add rolling match-count reporting to db_state diagnostic",
+   "date": "2026-07-28"
+  },
+  {
+   "sha": "57ce17f",
+   "subject": "Add personal civ records to the post-game civ tale",
+   "date": "2026-07-27"
+  },
+  {
+   "sha": "471572e",
+   "subject": "Require 15 games for /rank best and worst civs",
+   "date": "2026-07-27"
+  },
+  {
+   "sha": "8de6ffd",
+   "subject": "Lead /rank scouting report with persona, keep commentary prose",
+   "date": "2026-07-19"
+  },
+  {
+   "sha": "0f83745",
+   "subject": "Add scouting report and duo quadrants to /rank",
+   "date": "2026-07-19"
+  },
+  {
+   "sha": "8efe941",
+   "subject": "Polish /leaderboard and /rank presentation",
+   "date": "2026-07-19"
+  },
+  {
+   "sha": "1232925",
+   "subject": "Use embed leaderboard whenever web dashboard is configured",
+   "date": "2026-07-19"
+  },
+  {
+   "sha": "2ae546e",
+   "subject": "Link leaderboard nicknames to web profiles",
+   "date": "2026-07-19"
+  },
+  {
+   "sha": "f9a1e8a",
+   "subject": "feat: link rank details to web profiles",
+   "date": "2026-07-19"
+  },
+  {
+   "sha": "9fed34c",
+   "subject": "Fix mid-table titles and make column headers sticky on scroll",
+   "date": "2026-07-15"
+  },
+  {
+   "sha": "528b07b",
+   "subject": "Address persona-store review findings",
+   "date": "2026-07-15"
+  },
+  {
+   "sha": "624bb45",
+   "subject": "Materialize player personas per match instead of per request",
+   "date": "2026-07-15"
+  },
+  {
+   "sha": "b0b37b1",
+   "subject": "Address coverage-tag review findings",
+   "date": "2026-07-15"
+  },
+  {
+   "sha": "20ff791",
+   "subject": "Guarantee every player at least one tag per game",
+   "date": "2026-07-15"
+  },
+  {
+   "sha": "70ff0dc",
+   "subject": "Address relation review findings",
+   "date": "2026-07-15"
+  },
+  {
+   "sha": "b37ee4d",
+   "subject": "Add relation quadrants: duos, nemeses, free Elo",
+   "date": "2026-07-15"
+  },
+  {
+   "sha": "327c434",
+   "subject": "Address persona review findings",
+   "date": "2026-07-15"
+  },
+  {
+   "sha": "8b2da84",
+   "subject": "Add player personas to profiles and commentary",
+   "date": "2026-07-15"
+  }
+ ]
+}

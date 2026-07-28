@@ -759,6 +759,13 @@ async def _predictions_me(
 ): await run_slash(bot.commands.predictions_me, interaction=interaction, player=player)
 
 
+@dc.slash_command(name='changelog', description="What's new — the latest changes shipped to the bot.", **guild_kwargs)
+async def _changelog(
+		interaction: Interaction,
+		count: int = SlashOption(required=False, description="How many entries to show (default 5).")
+): await run_slash(bot.commands.changelog, interaction=interaction, count=count or 5)
+
+
 @dc.slash_command(name='cointoss', description='Toss a coin.', **guild_kwargs)
 async def _cointoss(
 		interaction: Interaction,

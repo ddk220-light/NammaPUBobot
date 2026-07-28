@@ -17,6 +17,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Snapshot git history into data/changelog.json for /changelog. git is installed
+# and removed inside one layer so it never reaches the runtime image, and the
+# script exits 0 when history is unavailable (leaving the committed fallback in
+# place) so a build can't fail over a changelog.
+# The whole chain is non-fatal: /changelog is cosmetic, and a transient apt
+# failure must not take down a bot deploy. On any error the committed
+# data/changelog.json ships as-is.
+RUN (apt-get update \
+      && apt-get install -y --no-install-recommends git \
+      && git config --global --add safe.directory /app \
+      && python3 scripts/gen_changelog.py \
+      && apt-get purge -y git && apt-get autoremove -y) \
+    || echo "changelog: build-time snapshot skipped; shipping committed fallback" \
+    ; rm -rf /var/lib/apt/lists/*
+
 # gettext / locales/ removed in Layer 5 — see core/locales.py.
 # The translator is now a passthrough stub, so no build-time
 # compilation step is needed.

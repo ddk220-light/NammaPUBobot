@@ -79,6 +79,16 @@ class PickupQueue:
 					"and abort the match if not everyone is ready in time.")),
 				notnull=True
 			),
+			Variables.BoolVar(
+				"predictions_enabled",
+				display="Audience predictions",
+				section="General",
+				default=1,
+				description="".join((
+					"Post a spectator prediction card when teams are formed. ",
+					"Ranked queues only — an unranked match never reports a winner to score against.")),
+				notnull=True
+			),
 			Variables.IntVar(
 				"team_size",
 				display="Force team size",
@@ -324,6 +334,7 @@ class PickupQueue:
 			map_count=self.cfg.map_count, check_in_timeout=self.cfg.check_in_timeout,
 			check_in_discard=self.cfg.check_in_discard,
 			match_lifetime=self.cfg.match_lifetime,
+			predictions_enabled=self.cfg.predictions_enabled,
 			start_msg=self.cfg.start_msg, server=self.cfg.server
 		)
 

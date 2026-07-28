@@ -31,7 +31,7 @@ class Match:
 		team_size=1, pick_captains="no captains", captains_role_id=None, pick_teams="draft",
 		pick_order=None, maps=[], vote_maps=0, map_count=0, check_in_timeout=0,
 		check_in_discard=True, match_lifetime=3*60*60, start_msg=None, server=None,
-		show_streamers=True
+		show_streamers=True, predictions_enabled=True
 	)
 
 	class Team(list):
@@ -355,7 +355,7 @@ class Match:
 
 		# Teams are final and the match is live — open audience voting (ranked
 		# only; unranked matches never report a winner to score against).
-		if self.ranked:
+		if self.ranked and self.cfg['predictions_enabled']:
 			from bot.predictions import jobs as prediction_jobs
 			await prediction_jobs.open_for_match(self)
 
