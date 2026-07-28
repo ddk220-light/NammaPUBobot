@@ -136,3 +136,15 @@ class TestRoleVolatilityThresholds:
 		# The pool's steadiest players sit at 0-10% carry; they are Squad Glue.
 		p = derive_persona(_stats(impact_sd=4.3, carry_rate=9))
 		assert p["role"] == "support"
+
+	def test_engine_is_reachable_at_the_carry_rate_steady_players_actually_have(self):
+		# TiShi-shaped: 16% carry, sd 5.49. The old 22% floor sat above every
+		# steady player in the pool, so this branch could never be taken.
+		p = derive_persona(_stats(impact_sd=5.49, carry_rate=16))
+		assert p["role"] == "engine"
+		assert p["epithet"] == "Diesel Engine"
+
+	def test_engine_floor_does_not_poach_from_support(self):
+		# Just under the floor with the same steadiness -> still Squad Glue.
+		p = derive_persona(_stats(impact_sd=5.49, carry_rate=12))
+		assert p["role"] == "support"

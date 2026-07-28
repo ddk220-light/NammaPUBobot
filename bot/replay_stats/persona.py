@@ -34,9 +34,11 @@ Two conditions guard against confident-sounding noise, both calibrated on the
     coin flips, and they now resolve to slowcooker/flex instead.
   * engine_sd / wildcard_sd — impact_sd is far more compressed than the
     original thresholds assumed (pool p25=5.6, p50=6.0, p75=6.3). At the old
-    5.0/5.9 cut points "Diesel Engine" was unreachable (0 of 32 players) while
-    "Coinflip Enjoyer" swallowed a third of the pool. They now sit on the
-    pool's own quartiles.
+    5.0/5.9 cut points "Coinflip Enjoyer" swallowed a third of the pool. They
+    now sit on the pool's own quartiles.
+  * engine_carry — carry_rate and impact_sd are inversely related here, so the
+    old 22% floor sat above every steady player and "Diesel Engine" could not
+    be reached at all. It now sits just above support_carry.
 """
 
 MIN_GAMES = 10
@@ -100,7 +102,10 @@ _TAG_GROUPS = {
 # impact_sd p25=5.6 p50=6.0 p75=6.3.
 TH = {
 	"carry_rate": 38,
-	"engine_carry": 22,
+	# Just above support_carry: steadiness and board-topping are inversely
+	# related in this pool, so every steady player sits low on carry_rate. At
+	# the old floor of 22 the engine branch was unreachable — see _pick_role.
+	"engine_carry": 13,
 	"engine_sd": 5.6,       # pool p25 — below this is genuinely steady output
 	"wildcard_sd": 6.3,     # pool p75 — above this is genuinely swingy
 	"support_carry": 12,
@@ -165,13 +170,13 @@ def _pick_style(stats, tag_rates):
 
 
 def _pick_role(carry_rate, impact_sd):
-	# Note on "engine" (moderate carry rate + steady output): it is reachable by
-	# construction but fired for 0 of 33 players in the 350-match sample —
-	# steadiness and board-topping are anti-correlated there. The pool's
-	# steadiest players (sd 4.2-5.5) all sit at 0-10% carry, so they land in
-	# "support"; everyone inside the engine carry band bottoms out at sd 5.61.
-	# Left as-is deliberately: moving the threshold to catch that one player
-	# would be fitting to a single data point.
+	# "engine" (steady output, more board presence than a pure support) is the
+	# rare one, and it used to be impossible. carry_rate and impact_sd are
+	# inversely related in the sample: the steadiest players (sd 4.2-5.5) all
+	# sit at 0-16% carry, while everyone above the old engine floor of 22%
+	# bottoms out at sd 5.61. The floor now sits just above support_carry,
+	# which is where steady players actually live — it selects 1 of 33, and
+	# leaves the sub-13% steady players in "support" where they belong.
 	if carry_rate is None:
 		return "anchor"
 	if carry_rate >= TH["carry_rate"]:
