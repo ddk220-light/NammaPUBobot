@@ -7,7 +7,7 @@ from bot.replay_stats.render import MIN_MINUTES, render_apm, should_render
 
 def _series(n_minutes, n_players=2):
     return [{"player_number": p, "name": f"P{p}", "minutes": list(range(n_minutes)),
-             "values": [10] * n_minutes, "peak": 10, "mean": 10.0}
+             "values": [10] * n_minutes, "peak": 10, "mean_active": 10.0}
             for p in range(1, n_players + 1)]
 
 

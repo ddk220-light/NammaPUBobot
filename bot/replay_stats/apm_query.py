@@ -7,22 +7,21 @@ Kept separate from query.py so the pure helpers import cleanly under the CI shim
 from core.database import db
 
 
-def rolling_mean(values, window):
-    """Trailing mean over `window` samples; the first samples average over what exists.
-    Used to smooth a 1-minute-resolution series into a readable line. Pure."""
-    out = []
-    for i in range(len(values)):
-        chunk = values[max(0, i - window + 1):i + 1]
-        out.append(sum(chunk) / len(chunk))
-    return out
-
-
 def apm_series(rows, names):
     """rs_player_apm rows -> one zero-filled series per player.
 
     Every player is padded to the match's last minute so the lines share an x-axis
     and a player who was eliminated reads as falling to zero, which is the honest
     picture (see the spec's note on mgz's whole-game denominator). Pure.
+
+    `mean_active` is deliberately NOT the eAPM stored on rs_player_games: it divides
+    by the match's last *active* minute (the last minute in which anyone acted), while
+    mgz — and therefore rs_player_games.eapm, the number every other surface shows —
+    divides by whole game minutes. The two disagree on any match whose final action
+    isn't in the final minute. The name says `active` so a future consumer reaches for
+    rs_player_games.eapm when it wants the canonical figure; do not rename it back to
+    a bare `mean`, and do not display it beside the stored eAPM without saying which
+    is which.
     """
     if not rows:
         return []
@@ -43,7 +42,7 @@ def apm_series(rows, names):
             minutes=list(range(last + 1)),
             values=values,
             peak=max(values),
-            mean=sum(values) / len(values),
+            mean_active=sum(values) / len(values),
         ))
     return out
 

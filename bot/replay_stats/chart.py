@@ -329,6 +329,22 @@ _APM_TEAM_COLOURS = {
 }
 
 
+def rolling_mean(values, window):
+    """Trailing mean over `window` samples; the first samples average over what exists.
+    Used to smooth a 1-minute-resolution series into a readable line. Pure.
+
+    Lives here rather than in apm_query so the renderer has no path to the DB layer:
+    apm_query does `from core.database import db` at module scope, and importing it from
+    the chart worker only ever worked because fork inherits the parent's sys.modules.
+    """
+    window = max(1, int(window))       # a non-positive window would divide by zero
+    out = []
+    for i in range(len(values)):
+        chunk = values[max(0, i - window + 1):i + 1]
+        out.append(sum(chunk) / len(chunk))
+    return out
+
+
 def render_apm_curve(series, teams, smooth=3):
     """Per-minute eAPM over the course of a match, one line per player.
 
@@ -342,8 +358,6 @@ def render_apm_curve(series, teams, smooth=3):
     import matplotlib
     matplotlib.use("Agg")
     from matplotlib.figure import Figure
-
-    from .apm_query import rolling_mean
 
     fig = Figure(figsize=(14, 7))
     ax = fig.subplots()
