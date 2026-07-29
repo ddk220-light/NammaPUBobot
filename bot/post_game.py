@@ -795,8 +795,16 @@ async def _apm_chart_file(bot_match_id):
 		sides = sorted({m.get("team") for m in meta or [] if m.get("team") is not None})
 		teams = {m["player_number"]: sides.index(m["team"])
 		         for m in meta or [] if m.get("team") in sides}
-		buf = await render.render_apm(apm_series(rows, names), teams)
+		series = apm_series(rows, names)
+		buf = await render.render_apm(series, teams)
 		if buf is None:
+			# render_apm returns None both for "too short to chart" (normal, silent) and for a
+			# genuine failure. should_render is the pure gate it uses, so re-asking it separates
+			# the two — otherwise a permanently broken renderer looks exactly like an old match.
+			if render.should_render(series):
+				from core.console import log
+				log.error(f"APM chart render produced nothing for {len(series)} series "
+				          f"(bot match {bot_match_id})")
 			return None
 		from nextcord import File
 		return File(fp=buf, filename="apm.png")
