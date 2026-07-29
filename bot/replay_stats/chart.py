@@ -319,3 +319,55 @@ def render_growth_curve(name, curve, days, curve2=None, name2=None):
     fig.savefig(buf, format="png", dpi=140)
     buf.seek(0)
     return buf
+
+
+# Two hue families so team shape reads at a glance; four distinguishable steps each,
+# which covers 4v4 (the largest size the luck gate admits).
+_APM_TEAM_COLOURS = {
+    0: ["#1f77b4", "#4a9fd8", "#7fc4f0", "#0d4f7a"],
+    1: ["#d62728", "#f0663f", "#f89b6c", "#8c1a1a"],
+}
+
+
+def render_apm_curve(series, teams, smooth=3):
+    """Per-minute eAPM over the course of a match, one line per player.
+
+    `series` is bot.replay_stats.apm_query.apm_series output; `teams` maps
+    player_number -> 0/1. Lines are smoothed with a trailing rolling mean because a
+    1-minute-resolution 8-player chart is unreadable raw -- peaks are reported as
+    numbers on the card instead. Returns a BytesIO PNG.
+    """
+    import io
+
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.figure import Figure
+
+    from .apm_query import rolling_mean
+
+    fig = Figure(figsize=(14, 7))
+    ax = fig.subplots()
+
+    used = {0: 0, 1: 0}
+    for s in series:
+        team = teams.get(s["player_number"])
+        palette = _APM_TEAM_COLOURS.get(team, ["#777777"])
+        colour = palette[used.get(team, 0) % len(palette)]
+        if team in used:
+            used[team] += 1
+        ax.plot(s["minutes"], rolling_mean(s["values"], smooth),
+                label=f"{_short(s['name'])} (peak {s['peak']})",
+                color=colour, linewidth=2.0)
+
+    ax.set_xlabel("Minute")
+    ax.set_ylabel("Actions per minute (eAPM)")
+    ax.set_title(f"Activity over the match · {smooth}-minute rolling average")
+    ax.grid(True, alpha=0.2)
+    ax.set_ylim(bottom=0)
+    ax.legend(loc="upper left", fontsize=9, ncol=2)
+    fig.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=110)
+    buf.seek(0)
+    return buf
