@@ -828,7 +828,15 @@ async def post_match_analysis(bot_match_id):
 			target.set_image(url="attachment://apm.png")
 		embeds = [e for e in (cards, embed) if e is not None]
 		if chart_file is not None:
-			await channel.send(embeds=embeds, file=chart_file)
+			try:
+				await channel.send(embeds=embeds, file=chart_file)
+			except Exception as e:
+				# A failed attachment (most likely: no ATTACH_FILES in this channel) must never
+				# cost the whole post — retry without the file. The embed's set_image then points
+				# at an absent attachment, which Discord renders as simply no image.
+				log.error(f"APM chart attach failed (bot match {bot_match_id}): {e} — "
+				          f"posting the cards without it")
+				await channel.send(embeds=embeds)
 		else:
 			await channel.send(embeds=embeds)
 		return True

@@ -335,3 +335,88 @@ def test_merge_analysis_rows_pairs_single_unmapped_replay_player_to_bot_roster()
 	assert discord_only["identity"] == "PrivateProfile"
 	assert discord_only["civ"] == "Mayans"
 	assert discord_only["villagers"] == 90
+
+
+# ── post_match_analysis: the chart must never cost the post ──────────────
+# The APM chart is a nice-to-have attachment on an otherwise text-only post. A send
+# that fails *because of the file* (realistically: no ATTACH_FILES permission in the
+# results channel) must degrade to a fileless send, not drop the whole analysis.
+
+
+class _FakeEmbed:
+	def __init__(self):
+		self.image_url = None
+
+	def set_image(self, url=None):
+		self.image_url = url
+
+
+class _FakeChannel:
+	"""Rejects any send that carries a file; records every send it is given."""
+
+	def __init__(self, fail_with_file=True):
+		self.fail_with_file = fail_with_file
+		self.sends = []
+
+	async def send(self, **kwargs):
+		self.sends.append(kwargs)
+		if self.fail_with_file and "file" in kwargs:
+			raise RuntimeError("403 Forbidden (error code: 50013): Missing Permissions")
+		return object()
+
+
+def _wire_post_match_analysis(monkeypatch, channel, chart_file):
+	"""Stub out everything post_match_analysis reaches for, leaving only its own
+	send/fallback logic under test."""
+	import sys
+	import types
+
+	cards = _FakeEmbed()
+	fake_client = types.ModuleType("core.client")
+	fake_client.dc = types.SimpleNamespace(get_channel=lambda _cid: channel)
+	monkeypatch.setitem(sys.modules, "core.client", fake_client)
+
+	async def _channel_id(_bot_match_id):
+		return 123
+
+	async def _cards(_channel_id, _bot_match_id):
+		return cards
+
+	async def _analysis(_channel_id, _bot_match_id):
+		return None
+
+	async def _chart(_bot_match_id):
+		return chart_file
+
+	monkeypatch.setattr(pg, "_match_channel_id", _channel_id)
+	monkeypatch.setattr(pg, "build_match_cards_embed", _cards)
+	monkeypatch.setattr(pg, "build_match_analysis_embed", _analysis)
+	monkeypatch.setattr(pg, "_apm_chart_file", _chart)
+	return cards
+
+
+def test_post_match_analysis_retries_without_the_file_when_the_attach_fails(monkeypatch):
+	import asyncio
+
+	channel = _FakeChannel(fail_with_file=True)
+	cards = _wire_post_match_analysis(monkeypatch, channel, chart_file=object())
+
+	assert asyncio.run(pg.post_match_analysis(7)) is True
+	# First attempt carried the file and was rejected; the retry dropped it and went out.
+	assert len(channel.sends) == 2
+	assert "file" in channel.sends[0]
+	assert "file" not in channel.sends[1]
+	assert channel.sends[1]["embeds"] == [cards]
+
+
+def test_post_match_analysis_sends_the_file_when_it_is_accepted(monkeypatch):
+	import asyncio
+
+	channel = _FakeChannel(fail_with_file=False)
+	chart = object()
+	cards = _wire_post_match_analysis(monkeypatch, channel, chart_file=chart)
+
+	assert asyncio.run(pg.post_match_analysis(7)) is True
+	assert len(channel.sends) == 1
+	assert channel.sends[0]["file"] is chart
+	assert cards.image_url == "attachment://apm.png"
