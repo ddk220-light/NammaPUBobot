@@ -311,6 +311,10 @@ only reopens save-version-shelved rows and never re-parses completed matches."
 
 A separate module rather than an addition to `query.py`: `query.py` is 230 lines of profile/timing queries with a different lifecycle, and the pure series shaping needs to stay importable without matplotlib.
 
+> **As built — two corrections to the interface above.** The plan is left as written; these are the deviations the final review landed.
+> - The per-player average is `mean_active`, not `mean`. It divides by the match's last *active* minute, whereas `rs_player_games.eapm` (what every other surface shows) divides by whole game minutes — the two disagree on any match whose final action isn't in the final minute. Reach for `rs_player_games.eapm` when you want the canonical figure.
+> - `rolling_mean` lives in `chart.py`, not `apm_query.py`. `apm_query` does `from core.database import db` at module scope, so importing it kept a module-scope path from the renderer into the DB layer that only worked because `fork` inherits `sys.modules`.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `tests/test_replay_apm_series.py`:
