@@ -28,7 +28,8 @@ SIEGE = ("ram", "mangonel", "onager", "scorpion", "bombard cannon", "siege tower
 WARSHIP = ("galley", "galleon", "fire ship", "fire galley", "demolition", "longboat",
            "turtle ship", "caravel", "dromon", "cannon galleon")
 
-EXTRACT_VERSION = "v4"   # parse-cache version; bump when extract_match output changes.
+EXTRACT_VERSION = "v5"   # parse-cache version; bump when extract_match output changes.
+                         # v5: per-minute eAPM buckets (apm)
                          # v4: per-player settle_tc_xy + nearest gold/stone/food distances + vil_perim
 
 RES_GOLD = {"Gold Mine"}
@@ -41,6 +42,25 @@ def _nearest(pos, pts):
     if pos is None or not pts:
         return None
     return min(((pos[0] - x) ** 2 + (pos[1] - y) ** 2) ** 0.5 for x, y in pts)
+
+
+def apm_buckets(actions, bucket_s=60):
+    """(player_number, t_s) pairs -> per-bucket action counts.
+
+    Replicates mgz's effective-APM filter: the caller passes only actions that
+    have a player and are not AI_ORDER (mgz/model/__init__.py:281-288), so the
+    bucket sum over game minutes reproduces the stored eapm exactly. Actions with
+    no timestamp are dropped -- the same rule the queue timeline already uses.
+    Pure: no mgz, no DB.
+    """
+    counts = {}
+    for pnum, t_s in actions:
+        if t_s is None:
+            continue
+        key = (pnum, int(t_s) // bucket_s)
+        counts[key] = counts.get(key, 0) + 1
+    return [dict(player_number=pn, minute=mi, actions=n)
+            for (pn, mi), n in sorted(counts.items())]
 
 
 def _perimeter(pts):
@@ -128,6 +148,7 @@ def extract_match(path, resolved, date_map=None):
     tc_instances = {n: set() for n in players}
     events = []                         # production timeline: one row per timestamped DE_QUEUE click
                                         # (null-timestamp queues are dropped — nowhere to plot them)
+    apm_actions = []                    # (pnum, t_s) for every non-AI_ORDER action with a player
 
     for p in m.players:
         for o in (p.objects or []):
@@ -183,6 +204,8 @@ def extract_match(path, resolved, date_map=None):
         ts = _secs(a.timestamp)
         pl = a.payload or {}
         t = a.type.name
+        if t != "AI_ORDER":
+            apm_actions.append((pnum, ts))
         if t == "DE_QUEUE":
             unit = pl.get("unit")
             amt = pl.get("amount", 1) or 1
@@ -310,7 +333,7 @@ def extract_match(path, resolved, date_map=None):
                  save_version=m.save_version, duration_s=round(_secs(m.duration)) if _secs(m.duration) else None,
                  date=date_map.get(aoe2_id, ""), winner_team=None)
     return dict(match=match, players=out_players, units=out_units, techs=out_techs,
-                buildings=out_buildings, events=events)
+                buildings=out_buildings, events=events, apm=apm_buckets(apm_actions))
 
 
 def load_resolved():
