@@ -772,6 +772,40 @@ async def build_match_cards_embed(channel_id, bot_match_id):
 	return embed
 
 
+async def _apm_chart_file(bot_match_id):
+	"""Rendered APM chart for a match, or None. Best-effort: every failure path
+	returns None so the cards still post without an image."""
+	try:
+		from core.database import db
+		from bot.replay_stats import render
+		from bot.replay_stats.apm_query import apm_series, fetch_match_apm
+
+		row = await db.fetchone(
+			"SELECT aoe2_match_id FROM rs_matches WHERE bot_match_id=%s", [bot_match_id])
+		if not row:
+			return None
+		aoe2_id = row["aoe2_match_id"]
+		rows = await fetch_match_apm(aoe2_id)
+		if not rows:
+			return None
+		meta = await db.fetchall(
+			"SELECT player_number, identity, team FROM rs_player_games WHERE aoe2_match_id=%s",
+			[aoe2_id])
+		names = {m["player_number"]: m.get("identity") for m in meta or []}
+		sides = sorted({m.get("team") for m in meta or [] if m.get("team") is not None})
+		teams = {m["player_number"]: sides.index(m["team"])
+		         for m in meta or [] if m.get("team") in sides}
+		buf = await render.render_apm(apm_series(rows, names), teams)
+		if buf is None:
+			return None
+		from nextcord import File
+		return File(fp=buf, filename="apm.png")
+	except Exception as e:
+		from core.console import log
+		log.error(f"APM chart build failed (bot match {bot_match_id}): {e}")
+		return None
+
+
 async def post_match_analysis(bot_match_id):
 	"""Best-effort Discord post once replay analysis is stored."""
 	try:
@@ -788,10 +822,15 @@ async def post_match_analysis(bot_match_id):
 		embed = await build_match_analysis_embed(channel_id, bot_match_id)
 		if cards is None and embed is None:
 			return False
-		if cards is not None and embed is not None:
-			await channel.send(embeds=[cards, embed])
+		chart_file = await _apm_chart_file(bot_match_id)
+		target = cards if cards is not None else embed
+		if chart_file is not None:
+			target.set_image(url="attachment://apm.png")
+		embeds = [e for e in (cards, embed) if e is not None]
+		if chart_file is not None:
+			await channel.send(embeds=embeds, file=chart_file)
 		else:
-			await channel.send(embed=cards or embed)
+			await channel.send(embeds=embeds)
 		return True
 	except Exception as e:
 		log.error(f"Replay post-game analysis send failed (bot match {bot_match_id}): {e}")
