@@ -9,7 +9,8 @@ from core.database import db
 # Bumped whenever the mgz pin or SUPPORTED_SAVE_VERSIONS policy changes (see policy.py),
 # or when the extractor's output shape changes. Stored on every parsed match; a bump
 # auto-reopens pending_parser_update rows (NOT 'done' rows — those are re-done by an explicit backfill).
-PARSER_VERSION = "mgz-a1683d8+3"   # +3: emit per-queue production events -> rs_player_events (growth-curve timeline)
+PARSER_VERSION = "mgz-a1683d8+4"   # +4: per-minute eAPM buckets -> rs_player_apm
+                                   # +3: emit per-queue production events -> rs_player_events
 
 db.ensure_table(dict(
     tname="rs_config",
@@ -129,6 +130,21 @@ db.ensure_table(dict(
         dict(cname="amount", ctype=db.types.int, notnull=False),
     ],
     primary_keys=["aoe2_match_id", "player_number", "seq"],
+))
+
+db.ensure_table(dict(
+    tname="rs_player_apm",
+    # Per-minute effective-APM buckets. Bucketed at extract time on purpose: the raw
+    # action stream is ~32k rows for a 40-minute 8-player game, against ~320 bucketed.
+    # PK (aoe2_match_id, player_number, minute) makes re-ingest idempotent.
+    columns=[
+        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="player_number", ctype=db.types.int),
+        dict(cname="minute", ctype=db.types.int),        # 0-based, from game start
+        dict(cname="profile_id", ctype=db.types.int, notnull=False),
+        dict(cname="actions", ctype=db.types.int, notnull=False),
+    ],
+    primary_keys=["aoe2_match_id", "player_number", "minute"],
 ))
 
 db.ensure_table(dict(

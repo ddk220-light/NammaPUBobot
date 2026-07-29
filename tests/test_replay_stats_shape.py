@@ -25,6 +25,8 @@ EXTRACTED = {
                "click_s": 120, "phase": "dark"}],
     "buildings": [{"player_number": 1, "identity": "Alice", "civ": "Mayans",
                    "building": "House", "count": 5}],
+    "apm": [{"player_number": 1, "minute": 0, "actions": 42},
+            {"player_number": 2, "minute": 0, "actions": 31}],
 }
 PROFMAP = {111: 5001}   # profile 111 -> discord user; 222 unmapped
 
@@ -65,3 +67,15 @@ def test_profile_upserts():
     by_pid = {r["profile_id"]: r for r in rows}
     assert by_pid[111]["user_id"] == 5001 and by_pid[111]["name"] == "Alice"
     assert by_pid[222]["user_id"] is None and by_pid[222]["last_seen_at"] == 555
+
+
+def test_apm_rows_denormalize_profile_id():
+    rows = shape.apm_rows(999, EXTRACTED["apm"], shape.pnum_to_profile(EXTRACTED["players"]))
+    assert len(rows) == 2
+    assert rows[0] == {"aoe2_match_id": 999, "player_number": 1, "minute": 0,
+                       "profile_id": 111, "actions": 42}
+    assert rows[1]["profile_id"] == 222
+
+
+def test_apm_rows_empty():
+    assert shape.apm_rows(999, [], {}) == []
