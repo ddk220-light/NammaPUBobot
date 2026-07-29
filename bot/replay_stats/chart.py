@@ -327,6 +327,51 @@ _APM_TEAM_COLOURS = {
     0: ["#1f77b4", "#4a9fd8", "#7fc4f0", "#0d4f7a"],
     1: ["#d62728", "#f0663f", "#f89b6c", "#8c1a1a"],
 }
+_APM_NO_TEAM = ["#808080", "#a8a8a8", "#5c5c5c", "#c4c4c4"]
+
+# Hue alone was not enough. Validating against 9 real 8-player matches, team grouping read
+# well but same-team lines blurred into each other through crossing-heavy stretches — worst
+# on a 51.6-minute game, clean on a 17-minute one. Cycling the dash pattern alongside the hue
+# separates them the instant they cross, and unlike team-averaging or a top-4-by-peak cut it
+# hides no data.
+_APM_LINESTYLES = ["-", "--", "-.", ":"]
+
+# Codepoint ranges matplotlib's bundled DejaVu Sans has no glyphs for, and which the
+# production image (python:3.11-slim) ships no system font to cover either — they render as
+# empty "tofu" boxes. A CJK player name like 一般般 reproduces this 100% of the time. Latin,
+# Greek and Cyrillic are all in DejaVu and are left verbatim.
+_NO_GLYPH_RANGES = (
+    (0x2E80, 0x9FFF),      # CJK radicals/Kangxi/symbols, Kana, Bopomofo, CJK Unified + Ext A
+    (0xA960, 0xA97F),      # Hangul Jamo Extended-A
+    (0xAC00, 0xD7FF),      # Hangul syllables
+    (0xF900, 0xFAFF),      # CJK compatibility ideographs
+    (0xFE30, 0xFE4F),      # CJK compatibility forms
+    (0xFF01, 0xFF60),      # halfwidth/fullwidth forms
+    (0x10000, 0x10FFFF),   # astral plane: emoji, CJK Ext B+
+)
+
+
+def _has_glyph(ch):
+    cp = ord(ch)
+    return not any(lo <= cp <= hi for lo, hi in _NO_GLYPH_RANGES)
+
+
+def _apm_label(name, player_number, nmax=16):
+    """Legend name for the APM chart only. Drops characters the render font cannot draw, so
+    they show as nothing rather than as tofu boxes; falls back to the player slot when that
+    leaves nothing at all. Deliberately NOT folded into _short(), which the timeline and
+    growth-curve renderers use — those label a single named player the caller chose, and must
+    keep rendering that name verbatim. Pure."""
+    kept = "".join(c for c in (name or "") if _has_glyph(c)).strip()
+    return _short(kept, nmax) if kept else f"Player {player_number}"
+
+
+def _apm_line_style(team, seen):
+    """(colour, linestyle) for one player's line. `seen` is how many of that team's players
+    have already been drawn: team picks the hue family, position within the team picks both a
+    hue step and a dash pattern. Pure."""
+    palette = _APM_TEAM_COLOURS.get(team, _APM_NO_TEAM)
+    return palette[seen % len(palette)], _APM_LINESTYLES[seen % len(_APM_LINESTYLES)]
 
 
 def rolling_mean(values, window):
@@ -351,7 +396,9 @@ def render_apm_curve(series, teams, smooth=3):
     `series` is bot.replay_stats.apm_query.apm_series output; `teams` maps
     player_number -> 0/1. Lines are smoothed with a trailing rolling mean because a
     1-minute-resolution 8-player chart is unreadable raw -- peaks are reported as
-    numbers on the card instead. Returns a BytesIO PNG.
+    numbers on the card instead. Each player gets a team hue and, within the team, its
+    own hue step *and* dash pattern, so crossing same-team lines stay separable.
+    Returns a BytesIO PNG.
     """
     import io
 
@@ -362,16 +409,15 @@ def render_apm_curve(series, teams, smooth=3):
     fig = Figure(figsize=(14, 7))
     ax = fig.subplots()
 
-    used = {0: 0, 1: 0}
+    used = {}
     for s in series:
         team = teams.get(s["player_number"])
-        palette = _APM_TEAM_COLOURS.get(team, ["#777777"])
-        colour = palette[used.get(team, 0) % len(palette)]
-        if team in used:
-            used[team] += 1
+        seen = used.get(team, 0)
+        used[team] = seen + 1
+        colour, linestyle = _apm_line_style(team, seen)
         ax.plot(s["minutes"], rolling_mean(s["values"], smooth),
-                label=f"{_short(s['name'])} (peak {s['peak']})",
-                color=colour, linewidth=2.0)
+                label=f"{_apm_label(s['name'], s['player_number'])} (peak {s['peak']})",
+                color=colour, linestyle=linestyle, linewidth=2.0)
 
     ax.set_xlabel("Minute")
     ax.set_ylabel("Actions per minute (eAPM)")
