@@ -51,8 +51,47 @@ counts, and spawn positions.
 - Measuring combat effectiveness. The parser records production queue-clicks only
   — never kills, losses, resources gathered, or damage. Every signal here is
   volume, timing, or investment. No naming or framing should imply otherwise.
-- Changing the `Final Tale of the Tape` embed, the `What the Civs Say` embed, or
-  the web dashboard's use of `scoring.py`.
+- Changing the `Final Tale of the Tape` embed or the `What the Civs Say` embed.
+- **Touching `bot/replay_stats/scoring.py` or anything downstream of it.** See below.
+
+## Isolation from the existing scoring pipeline
+
+`scoring.py` is not private to the Match Cards. It has three consumers:
+
+| Consumer | Uses it for |
+|---|---|
+| `bot/post_game.py:28` | Match Cards **and** Tale of the Tape |
+| `bot/web.py:24` | Player profile + match stats API |
+| `bot/replay_stats/player_tags.py:15` | Writes the **persisted** `rs_player_game_tags` table |
+
+That third one is the trap. Tags are not computed on read — they are written per
+player per match at ingest and read back by three web endpoints
+(`bot/web.py:898`, `:1171`, `:1226`) plus the tag leaderboard. Changing the tag
+vocabulary in place would leave every historical row carrying names the code no
+longer emits, and `tag_leaderboard_score` (`bot/tag_leaderboard.py:15`) has a
+volume term `min(tag_games / 20.0, 1.0) * 100.0`, so a newly introduced tag reads
+as meaningless for everyone until twenty games accumulate, while a dropped tag's
+leaderboard silently freezes.
+
+**Decision: fork, do not migrate.** This revamp adds a new module — working name
+`bot/replay_stats/card_scoring.py` — that implements everything in this spec and is
+consumed *only* by `build_match_cards_embed`.
+
+- `scoring.py` is left byte-identical.
+- `player_tags.py`, `rs_player_game_tags`, the web API, the tag leaderboard and the
+  Tale of the Tape narrative all keep using it and are unaffected.
+- No migration, no tag backfill, no recalibration of the existing thresholds.
+- `_tag_word()` (`bot/post_game.py:268`) hardcodes the old payload tag names for the
+  Tale of the Tape; because that embed stays on `scoring.py`, it needs no change.
+
+`card_scoring.py` follows the same discipline as `scoring.py`: pure functions, no
+DB access, no `core` imports, so it stays unit-testable under the CI import shim.
+
+**Accepted consequence:** the three correctness issues below are fixed in
+`card_scoring.py` only. They remain live in `scoring.py`, and therefore in the web
+profile, the stored tags and the Tale of the Tape. This is a deliberate deferral to
+avoid destabilising a surface owned by another contributor — not a judgement that
+they don't matter. They should be revisited as their own piece of work.
 
 ## Removed
 
@@ -95,14 +134,21 @@ and tag thresholds, and are never displayed.
 `TIMING_MIX` is deleted. `feudal_s`, `castle_s` and `imperial_s` no longer feed any
 score.
 
+These constants live in `card_scoring.py` as its own `ECO_MIX` / `ARMY_MIX` /
+`IMPACT_WEIGHTS`. The identically-named constants in `scoring.py` are untouched.
+
 ### Calibration is required, not optional
 
-The current `TH` values are percentile anchors derived from the existing component
-distributions. Folding techs into army and eco changes those distributions, and
-dropping timing changes the impact mix. **Every threshold must be re-derived**
-against the live history (1,061 matches / 8,371 player-games) using
-`utils/tag_calibration.py` before ship. Shipping the old thresholds against new
-distributions would silently change how often every tag fires.
+`card_scoring.py` needs **its own** threshold set, derived from its own component
+distributions — it cannot inherit `scoring.py`'s `TH` values, which are percentile
+anchors for a three-component mix without tech terms.
+
+Thresholds must be derived against the live history (1,061 matches / 8,371
+player-games) before ship. `utils/tag_calibration.py` currently imports
+`bot/replay_stats/scoring.py` **by path** (`utils/tag_calibration.py:34`), so it
+needs a parameter or variant to point at `card_scoring.py` instead. Because the
+existing module is untouched, this calibration is additive — it cannot change how
+often any existing tag fires on the surfaces this revamp doesn't own.
 
 ## Medals
 
@@ -242,6 +288,11 @@ All reads. No new parsing, no schema change, no backfill.
 | Spawn distances | `cls_result_metrics` | Nomad, 6/8 players, balanced result only |
 
 ## Correctness fixes in scope
+
+All four apply to `card_scoring.py` and the Match Cards path **only**. `scoring.py`
+keeps its current behaviour, so the web profile, the stored tags and the Tale of the
+Tape are bit-for-bit unchanged. Fixes 1–3 therefore remain live on those surfaces;
+see "Accepted consequence" above.
 
 1. **Honour `age_reliable`.** The card path does not currently SELECT it, so age
    splits flagged unreliable by the parser still score. The web profile correctly

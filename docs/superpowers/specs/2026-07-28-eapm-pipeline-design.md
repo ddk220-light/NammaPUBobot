@@ -32,6 +32,14 @@ window, or what each player's peak looked like.
   first deploy; historical matches simply have no chart.
 - **Combat outcome data.** APM measures activity, not effectiveness. A player
   frantically losing a fight has high APM. Nothing here should be framed as skill.
+- **Correcting mgz's denominator.** mgz divides every player's action count by the
+  **full game duration** (`timestamp` at `mgz/model/__init__.py:310` is the game's
+  last op, identical for all players), so a player eliminated at minute 15 of a
+  40-minute game has their rate computed over 40 minutes. Reviewed and accepted:
+  players are not expected to leave early, and someone who dies simply shows
+  falling APM, which is the honest reading. We keep mgz's figure so the parity
+  invariant below stays exact. The chart is unaffected either way — per-minute
+  buckets show the true rate, and a line falling to zero is informative.
 - **Card layout changes.** Placing average and peak eAPM on the card belongs to the
   parked revamp spec.
 
@@ -144,9 +152,16 @@ Discord permits one image per embed, so the chart attaches to the cards embed.
 
 ### Rendering must not block the event loop
 
-The chart renders **during ingest, on the `think()` tick path**, so it must be
-offloaded with `asyncio.to_thread`, matching `bot/commands/stats.py:496` and the
-pattern documented in `bot/player_profile.py`.
+The chart renders **during ingest, on the `think()` tick path**, and matplotlib is
+largely pure Python — so a thread still holds the GIL through most of a render.
+`asyncio.to_thread` (the pattern at `bot/commands/stats.py:496`) is adequate for
+user-triggered commands but not for tick-path work.
+
+**Use a `ProcessPoolExecutor`**, following this codebase's own precedent for
+CPU-bound work on the tick: `bot/replay_stats/parse.py:23` already runs replay
+extraction in a single-worker process pool for exactly this reason, including the
+teardown-on-timeout recovery at `parse.py:27`. The chart render should reuse that
+approach rather than invent a third pattern.
 
 While in this code, fix a pre-existing inconsistency:
 `bot/commands/player_details.py:52` calls `chart.render_growth_curve` **synchronously
@@ -200,5 +215,10 @@ Checks:
   buckets under-count and the parity invariant will fail — which is exactly why the
   invariant is a test rather than an assumption.
 - **Per-ingest image upload.** Every ingested match now uploads a PNG to Discord.
-  Small, but it is new I/O on the tick path and the render is CPU-bound; the
-  `to_thread` offload is what keeps it off the event loop.
+  Small, and bounded by the sweep cadence (at most one match per 150s), but it is
+  new I/O on the tick path on top of a CPU-bound render — the process-pool offload
+  is what keeps both off the event loop.
+- **APM invites skill comparisons it cannot support.** A boom and a rush have
+  different natural action rates, so a higher number does not mean a better player.
+  Same caveat as production volume, but on a new and more inviting surface. Framing
+  on the card should say activity, never skill.
