@@ -48,10 +48,10 @@ async def render_apm(series, teams, timeout=30):
     """Render the APM chart off the event loop. Returns a BytesIO, or None when
     there is too little data, the render times out, or it raises -- the caller posts
     without an image rather than losing the whole card."""
-    if not should_render(series):
-        return None
-    loop = asyncio.get_running_loop()
     try:
+        if not should_render(series):
+            return None
+        loop = asyncio.get_running_loop()
         return await asyncio.wait_for(
             loop.run_in_executor(_get_pool(), _render, series, teams), timeout)
     except TimeoutError:
