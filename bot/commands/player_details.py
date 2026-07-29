@@ -6,6 +6,8 @@ from the per-event rs_player_events series, so it covers each linked player's st
 whose replays have been parsed for per-event data."""
 __all__ = ["player_details"]
 
+import asyncio
+
 from nextcord import Member, File
 
 from core.utils import get_nick
@@ -49,5 +51,8 @@ async def player_details(ctx, player: Member = None, player2: Member = None, day
         if not curve2:
             return await _no_stats(other)
         name2 = get_nick(other)
-    png = chart.render_growth_curve(get_nick(target), curve, days, curve2=curve2, name2=name2)
+    # matplotlib is CPU-bound and blocks the 1s think() tick if run inline --
+    # same offload as bot/commands/stats.py:496.
+    png = await asyncio.to_thread(
+        chart.render_growth_curve, get_nick(target), curve, days, curve2=curve2, name2=name2)
     await ctx.reply(file=File(fp=png, filename="production_timeline.png"))
