@@ -204,7 +204,43 @@ then nick ascending — so re-renders of the same match never reorder.
 
 ## Tags
 
-Tags now describe **shape**, which medals cannot express. Three survive:
+Two kinds, distinguished on purpose.
+
+### Descriptive tags — facts, awarded to everyone who qualifies
+
+Added 2026-07-29 after the first preview showed a third of players with no
+strategy label and nothing else to say about them. These come from
+`rs_player_events` and are plain statements about what the replay contains:
+
+| Tag | Condition |
+|---|---|
+| `massed <Unit>` | One unit category is ≥50% of an army of ≥30 units |
+| `Imperial Age army` | ≥90% of an army of ≥30 units was produced after the Imperial click |
+| `No army` | The player produced villagers but zero military |
+
+The dominant-line label comes from the unit **category**, not the unit name — a
+queue click reads `Knight` before upgrading and `Cavalier` after, while the
+category is stable. The exception is `unique_other`, which is heterogeneous
+(Huskarl, Konnik, Jaguar Warrior, Hand Cannoneer…) and whose category label says
+nothing, so the specific unit name is used there. Names are left unpluralised
+because the real strings don't pluralise uniformly (Samurai, Throwing Axeman,
+Janissary).
+
+`Imperial Age army` exists because **no classification looks past the Imperial
+click.** Measured on a 5-match sample, 5 of 40 players had armies of 100–459
+units and no strategy label at all, because every classification window closes
+at Imperial. Its bar is 0.90 rather than something lower because the median
+player already makes 65% of their army after Imperial — a lower bar just
+restates "this was a long game".
+
+`No army` deliberately does **not** say "defeated early" or "eliminated". The
+parser records production only, never kills, losses or eliminations, so the card
+states the fact and lets the `L` in the field header speak for the outcome.
+
+### Award tags — shape, one per team at most
+
+These describe **shape** relative to the player's own team, which medals cannot
+express. Three survive:
 
 | Tag | Condition (thresholds pending calibration) |
 |---|---|
@@ -459,9 +495,11 @@ eAPM at all.
 
 ## Risks
 
-- **The production-coverage bar is a guess.** 75% was chosen, not calibrated, so
-  `Constant production` may fire far more or less often than intended. It is one
-  constant to change once real cards have been seen.
+- **The production-coverage bar was set from the distribution, not calibrated
+  against an outcome.** 0.98, chosen after measuring 2,722 player-games: the
+  median is 0.87 and 55% of players clear 0.85, so anything lower fired for
+  essentially every team. At 0.98 roughly 8% of players qualify and about a third
+  of teams show the tag.
 - **Strategy label coverage — measured and acceptable.** 62.3% of player-games,
   median 6 of 8 players per match. Risk retired.
 - **`Constant production` is quiet on older matches.** `rs_player_events` covers
