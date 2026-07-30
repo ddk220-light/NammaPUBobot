@@ -33,14 +33,21 @@ _SEED_CSV_KINDS = ("profile_map", "resolved")
 
 def parse_seed_csv(text: str, kind: str) -> list:
 	""" Parse one of the two legacy seed CSVs into a list of
-	{profile_id, user_id, aoe2_name} dicts. Pure: no file I/O, no DB, so it
-	is unit-testable on inline CSV text.
+	{profile_id, user_id, aoe2_name, source} dicts. Pure: no file I/O, no DB,
+	so it is unit-testable on inline CSV text.
 
 	Rows with no profile_id (missing, or not an int) are unusable and
 	skipped. A missing/empty user_id is a legitimate identity — a known AoE2
 	profile whose Discord owner isn't known — kept with user_id=None; a
 	user_id that IS present but not an int is malformed data and the whole
-	row is skipped rather than guessed at. """
+	row is skipped rather than guessed at.
+
+	`source` is the row's own `source` column, trimmed, or None if the row's
+	value was missing/empty — including every `profile_map` row, since that
+	CSV shape has no `source` column at all. This module deliberately does
+	not interpret the value (e.g. map it to a confidence tier) — it is raw
+	pass-through data; core/migrations.py's 003_seed_identities is what
+	decides what a given `source` value means for seeding precedence. """
 	if kind not in _SEED_CSV_KINDS:
 		raise ValueError(f"parse_seed_csv: unknown kind {kind!r}, expected one of {_SEED_CSV_KINDS}")
 
@@ -59,7 +66,8 @@ def parse_seed_csv(text: str, kind: str) -> list:
 				continue  # present but malformed -> the whole row is unusable
 
 		aoe2_name = (r.get("aoe2_name") or "").strip() or None
-		rows.append(dict(profile_id=profile_id, user_id=user_id, aoe2_name=aoe2_name))
+		source = (r.get("source") or "").strip() or None
+		rows.append(dict(profile_id=profile_id, user_id=user_id, aoe2_name=aoe2_name, source=source))
 	return rows
 
 

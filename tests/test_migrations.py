@@ -82,6 +82,18 @@ class FakeDb:
 			seen.add(key)
 			dest.append(row)
 
+	async def update(self, table, d, keys=None):
+		""" Models a plain `UPDATE ... WHERE` (core/DBAdapters/mysql.py's
+		update): every row matching `keys` is mutated in place with `d`'s
+		fields, unconditionally — no primary-key or INSERT-IGNORE semantics
+		here, since a real UPDATE always overwrites. A `keys` match with no
+		rows present is a harmless no-op, same as a real UPDATE affecting
+		zero rows. """
+		keys = keys or {}
+		for row in self.rows.get(table, []):
+			if all(row.get(k) == v for k, v in keys.items()):
+				row.update(d)
+
 
 def test_run_all_applies_once_and_records(monkeypatch):
 	calls = []
@@ -303,6 +315,96 @@ def test_m003_profile_resolved_csv_wins_over_player_profile_map_csv(tmp_path, mo
 	assert row["user_id"] == 111
 	assert row["aoe2_name"] == "ResolvedName"
 	assert row["confidence"] == "seed"
+
+
+def test_m003_manual_csv_row_wins_over_conflicting_player_profile_map_row(tmp_path, monkeypatch):
+	"""data/profile_resolved.csv's own `source` column can tag a row
+	'manual' — a deliberate human correction. It must win over a conflicting
+	player_profile_map.csv row for the same profile_id even though both CSVs
+	seed at nominally the same tier and profile_resolved.csv only happens to
+	be read first in the loop; the point of tagging is that it wins by
+	design, not by accident of read order."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"5771336,527532506153615360,aquasama7056,KIT WALKER,manual,\n")
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"850996190282776577,bearknightman,KIT WALKER,5771336,\n")
+	db = FakeDb(tables=set())  # rs_profiles does not exist
+
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	row = identities[0]
+	assert row["profile_id"] == 5771336
+	assert row["user_id"] == 527532506153615360
+	assert row["confidence"] == "manual"
+
+
+def test_m003_manual_csv_row_wins_over_rs_profiles_despite_rs_profiles_seeded_first(tmp_path, monkeypatch):
+	"""rs_profiles is seeded before either CSV, and INSERT IGNORE means the
+	first writer of a profile_id normally sticks — so without an explicit
+	reassertion pass, a 'learned' rs_profiles row would permanently block a
+	'manual' CSV correction for the same profile_id. A human correction must
+	outrank even a mapping learned from real match data."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"800,111,nickA,ManualName,manual,1\n")
+	db = FakeDb(
+		tables={"rs_profiles"},
+		rows={"rs_profiles": [{"profile_id": 800, "user_id": 999, "name": "RSName", "last_seen_at": 123}]},
+	)
+
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	row = identities[0]
+	assert row["profile_id"] == 800
+	assert row["user_id"] == 111
+	assert row["aoe2_name"] == "ManualName"
+	assert row["confidence"] == "manual"
+
+
+def test_m003_non_manual_source_value_still_lands_as_seed(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"900,111,nickA,SomeName, Manually-Reviewed ,1\n")
+	db = FakeDb(tables=set())
+
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	assert identities[0]["confidence"] == "seed"
+
+
+def test_m003_is_idempotent_on_a_manual_vs_rs_profiles_conflict(tmp_path, monkeypatch):
+	"""Re-running the whole migration body from the top (as a retried boot
+	would) must reach the same final state, not accumulate duplicate rows or
+	flip the winner on a second pass."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"800,111,nickA,ManualName,manual,1\n")
+	db = FakeDb(
+		tables={"rs_profiles"},
+		rows={"rs_profiles": [{"profile_id": 800, "user_id": 999, "name": "RSName", "last_seen_at": 123}]},
+	)
+
+	asyncio.run(mig._m003(db))
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1, "a re-run must not append a duplicate row"
+	row = identities[0]
+	assert row["user_id"] == 111
+	assert row["aoe2_name"] == "ManualName"
+	assert row["confidence"] == "manual"
 
 
 def test_m003_missing_csv_logs_and_continues_seeding_from_the_other_source(tmp_path, monkeypatch):

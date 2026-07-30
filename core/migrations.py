@@ -196,7 +196,27 @@ async def _ensure_identities_table(db):
 # Confidence tiers this migration writes, taken from core.identity_seed's
 # CONFIDENCE_ORDER (rather than the literal strings) so a rename there can't
 # silently desync from here.
-_SEED_CONFIDENCE, _LEARNED_CONFIDENCE = CONFIDENCE_ORDER[0], CONFIDENCE_ORDER[1]
+_SEED_CONFIDENCE, _LEARNED_CONFIDENCE, _MANUAL_CONFIDENCE = CONFIDENCE_ORDER
+
+
+def _confidence_for_seed_row(source):
+	""" The confidence a CSV-seeded row should get, given that row's own
+	`source` value (as returned by parse_seed_csv — already trimmed, or
+	None).
+
+	data/profile_resolved.csv carries its own `source` column, and at least
+	one row is tagged 'manual' — a deliberate human correction that must
+	seed at manual confidence, the same tier bot/identity.py's learn() uses
+	for an admin command, so a later automated learn() call can never
+	silently overwrite it. Every other value (including the ordinary 'seed'
+	rows and every player_profile_map.csv row, which has no `source` column
+	at all and so always parses to source=None) lands at seed confidence,
+	same as before this row-level distinction existed. Comparison is
+	case-insensitive and trims whitespace, since this value comes from a
+	hand-edited CSV. """
+	if source is not None and source.strip().lower() == _MANUAL_CONFIDENCE:
+		return _MANUAL_CONFIDENCE
+	return _SEED_CONFIDENCE
 
 
 @migration("003_seed_identities")
@@ -205,7 +225,10 @@ async def _m003(db):
 	person" today, in precedence order, highest first:
 
 	  1. rs_profiles          (learned from real match ingests) -> 'learned'
-	  2. data/profile_resolved.csv                               -> 'seed'
+	  2. data/profile_resolved.csv                               -> 'seed',
+	                             except a row whose own `source` column says
+	                             'manual' (case-insensitive, trimmed), which
+	                             seeds at -> 'manual' instead
 	  3. data/player_profile_map.csv                              -> 'seed'
 
 	Each source's rows are written with INSERT IGNORE, so the first writer of
@@ -221,6 +244,18 @@ async def _m003(db):
 	this module's docstring), and either CSV may be absent from a given
 	deploy image. A missing/failed source is logged and skipped so the
 	others still get a chance to seed.
+
+	A `manual` row is a deliberate human correction and must win regardless
+	of *write order*, not just regardless of confidence — but rs_profiles is
+	written before either CSV, and INSERT IGNORE only lets the first writer
+	of a profile_id stick. So after all three passes above, every `manual`
+	row from data/profile_resolved.csv is re-applied with an explicit UPDATE
+	(see the loop below), overwriting whatever `learned`/`seed` row an
+	earlier pass left behind for that profile_id. This is intentional: a
+	human correction outranks even a `learned` mapping derived from real
+	match data. The UPDATE is naturally idempotent (same profile_id, same
+	values every re-run), so this migration stays safe to re-run from the
+	top.
 	"""
 	await _ensure_identities_table(db)
 	now = int(time.time())
@@ -247,6 +282,14 @@ async def _m003(db):
 	except Exception as e:
 		log.error(f"migrations: 003_seed_identities: rs_profiles seed step failed, continuing: {e}")
 
+	# Rows from data/profile_resolved.csv whose own `source` column says
+	# 'manual', captured here so the re-assertion pass below doesn't have to
+	# re-open and re-parse the file a second time. Populated inside the loop,
+	# only for the "resolved" kind — player_profile_map.csv rows never carry
+	# a `source` value (parse_seed_csv always returns source=None for that
+	# shape), so they can never be manual.
+	manual_rows = []
+
 	for relpath, kind in (
 		("data/profile_resolved.csv", "resolved"),
 		("data/player_profile_map.csv", "profile_map"),
@@ -259,12 +302,14 @@ async def _m003(db):
 			with open(path, encoding="utf-8") as f:
 				text = f.read()
 			parsed = parse_seed_csv(text, kind)
+			if kind == "resolved":
+				manual_rows = [r for r in parsed if _confidence_for_seed_row(r["source"]) == _MANUAL_CONFIDENCE]
 			seed = [
 				dict(
 					profile_id=r["profile_id"],
 					user_id=r["user_id"],
 					aoe2_name=r["aoe2_name"],
-					confidence=_SEED_CONFIDENCE,
+					confidence=_confidence_for_seed_row(r["source"]),
 					first_seen_at=now,
 					last_seen_at=now,
 				)
@@ -275,3 +320,27 @@ async def _m003(db):
 			log.info(f"migrations: 003_seed_identities: seeded {len(seed)} row(s) from {relpath}")
 		except Exception as e:
 			log.error(f"migrations: 003_seed_identities: {relpath} seed step failed, continuing: {e}")
+
+	# Manual rows must win regardless of the write order above: rs_profiles
+	# is seeded first (as 'learned'), and INSERT IGNORE means whoever writes
+	# a profile_id first sticks — so a manual correction that lost that race
+	# would otherwise stay stuck behind a lower-precedence row forever. An
+	# explicit UPDATE, run unconditionally for every manual row, fixes that:
+	# it always lands 'manual' regardless of what an earlier pass wrote.
+	# Idempotent by construction (same profile_id, same values on every
+	# re-run), and harmless even if the row somehow doesn't exist yet — an
+	# UPDATE with no matching row just affects zero rows rather than erroring.
+	try:
+		for r in manual_rows:
+			await db.update(
+				"identities",
+				dict(user_id=r["user_id"], aoe2_name=r["aoe2_name"], confidence=_MANUAL_CONFIDENCE, last_seen_at=now),
+				keys=dict(profile_id=r["profile_id"]),
+			)
+		if manual_rows:
+			log.info(
+				f"migrations: 003_seed_identities: reasserted {len(manual_rows)} "
+				"manual row(s) from data/profile_resolved.csv"
+			)
+	except Exception as e:
+		log.error(f"migrations: 003_seed_identities: manual reassertion step failed, continuing: {e}")

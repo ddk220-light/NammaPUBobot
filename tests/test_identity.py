@@ -74,7 +74,7 @@ def test_parse_seed_csv_profile_map_shape():
 		"238042803093897216,fenrir05,Fenrir,209754,us\n"
 	)
 	rows = identity.parse_seed_csv(text, "profile_map")
-	assert rows == [dict(profile_id=209754, user_id=238042803093897216, aoe2_name="Fenrir")]
+	assert rows == [dict(profile_id=209754, user_id=238042803093897216, aoe2_name="Fenrir", source=None)]
 
 
 def test_parse_seed_csv_resolved_shape():
@@ -83,7 +83,7 @@ def test_parse_seed_csv_resolved_shape():
 		"12297184,786488329864478751,guruGreatest,GuruGreatest,seed,31\n"
 	)
 	rows = identity.parse_seed_csv(text, "resolved")
-	assert rows == [dict(profile_id=12297184, user_id=786488329864478751, aoe2_name="GuruGreatest")]
+	assert rows == [dict(profile_id=12297184, user_id=786488329864478751, aoe2_name="GuruGreatest", source="seed")]
 
 
 def test_parse_seed_csv_keeps_row_with_empty_user_id():
@@ -92,7 +92,28 @@ def test_parse_seed_csv_keeps_row_with_empty_user_id():
 		"24413606,,,SomeName,unmapped,1\n"
 	)
 	rows = identity.parse_seed_csv(text, "resolved")
-	assert rows == [dict(profile_id=24413606, user_id=None, aoe2_name="SomeName")]
+	assert rows == [dict(profile_id=24413606, user_id=None, aoe2_name="SomeName", source="unmapped")]
+
+
+def test_parse_seed_csv_reports_manual_source_trimmed():
+	text = (
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"5771336,527532506153615360,aquasama7056,KIT WALKER, manual ,\n"
+	)
+	rows = identity.parse_seed_csv(text, "resolved")
+	assert rows[0]["source"] == "manual"
+
+
+def test_parse_seed_csv_profile_map_rows_have_no_source():
+	"""player_profile_map.csv has no `source` column at all — DictReader
+	simply never populates the key, so parse_seed_csv must fall back to
+	None rather than raising or fabricating a value."""
+	text = (
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"238042803093897216,fenrir05,Fenrir,209754,us\n"
+	)
+	rows = identity.parse_seed_csv(text, "profile_map")
+	assert rows[0]["source"] is None
 
 
 def test_parse_seed_csv_skips_row_with_non_numeric_profile_id():
