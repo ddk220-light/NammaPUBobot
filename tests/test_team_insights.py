@@ -432,10 +432,11 @@ _META = [{"name": "Alpha", "emoji": "🟦"}, {"name": "Beta", "emoji": "🟥"}]
 _ROSTERS = {0: [1, 2, 3, 4], 1: [5, 6, 7, 8]}
 
 
-def _frame_for(typ, players, data, teams=(0,)):
+def _frame_for(typ, players, data, teams=(0,), rosters=None, rng=None):
 	c = {"type": typ, "score": 1, "players": frozenset(players),
 	     "teams": frozenset(teams), "data": data}
-	return ti._frame(c, _NICK, _META, _ROSTERS, rng=random.Random(0))
+	return ti._frame(c, _NICK, _META, rosters if rosters is not None else _ROSTERS,
+	                 rng=rng if rng is not None else random.Random(0))
 
 
 def test_a_pair_line_names_the_other_two():
@@ -524,3 +525,110 @@ def test_phrase_raises_for_an_unknown_candidate_type():
 	     "teams": frozenset((0,)), "data": {}}
 	with pytest.raises(ValueError):
 		ti._phrase(c, _NICK, _META, _ROSTERS, rng=random.Random(0))
+
+
+# ── sentence case (defect 1: lowercase sentence starts) ─────────────────
+class _FirstChoice:
+	"""Deterministic stand-in for ``random`` that always takes the first pooled
+	variant, so a test can pin down which template renders without brute-forcing
+	a real seed."""
+
+	def choice(self, seq):
+		return seq[0]
+
+
+class _CountingChoice:
+	"""Wraps ``_FirstChoice`` while counting ``.choice`` calls, so a test can
+	assert a frame function burns exactly one RNG draw per invocation."""
+
+	def __init__(self):
+		self.calls = 0
+
+	def choice(self, seq):
+		self.calls += 1
+		return seq[0]
+
+
+def test_sentence_case_leaves_a_bold_name_fragment_unchanged():
+	assert ti._sentence_case("**Ann** & **Bo**") == "**Ann** & **Bo**"
+
+
+def test_sentence_case_capitalises_a_lowercase_phrase():
+	assert ti._sentence_case("the rest of Alpha") == "The rest of Alpha"
+
+
+def test_sentence_case_handles_empty_string():
+	assert ti._sentence_case("") == ""
+
+
+def test_a_large_complement_frame_does_not_lowercase_after_the_period():
+	"""complement_of falls back to 'the rest of {name}' once a side's uninvolved
+	players exceed two. Several _frame templates put `who` at the start of a
+	sentence -- the rendered line must never read '. the rest of'."""
+	out = _frame_for("form", (1,), {"p": 1, "k": 5, "won": False}, rng=_FirstChoice())
+	assert ". the rest of" not in out
+	assert out.startswith("The rest of Alpha")
+
+
+# ── rival backers (defect 2: generic rivalry filler) ─────────────────────
+_SMALL_ROSTERS = {0: [1, 2, 3], 1: [5, 6, 7]}
+
+
+def test_rival_backers_returns_each_players_own_side():
+	c = {"type": "h2h", "players": frozenset((1, 5)), "teams": frozenset((0, 1)),
+	     "data": {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False}}
+	out = ti.rival_backers(c, _NICK, _META, _SMALL_ROSTERS)
+	assert out is not None and len(out) == 2
+	(n1, w1), (n2, w2) = out
+	assert n1 == "**Ann**" and w1 == "**Bo** & **Cy**"
+	assert n2 == "**Eve**" and w2 == "**Fay** & **Gil**"
+
+
+def test_rival_backers_collapses_to_the_team_name_past_two():
+	c = {"type": "h2h", "players": frozenset((1, 5)), "teams": frozenset((0, 1)),
+	     "data": {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False}}
+	(n1, w1), (n2, w2) = ti.rival_backers(c, _NICK, _META, _ROSTERS)
+	assert w1 == "the rest of Alpha" and w2 == "the rest of Beta"
+
+
+def test_rival_backers_is_none_when_a_player_is_missing_from_every_roster():
+	c = {"type": "h2h", "players": frozenset((1, 99)), "teams": frozenset((0, 1)),
+	     "data": {"winner": 1, "loser": 99, "k": 4, "series": 6, "sweep": False}}
+	assert ti.rival_backers(c, _NICK, _META, _ROSTERS) is None
+
+
+def test_an_h2h_frame_names_backers_instead_of_generic_filler():
+	data = {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False}
+	out = _frame_for("h2h", (1, 5), data, teams=(0, 1), rosters=_SMALL_ROSTERS,
+	                 rng=_FirstChoice())
+	assert out not in ("Do their teammates get a say?", "Six other players would like a word.")
+	assert "Bo" in out and "Cy" in out and "Fay" in out and "Gil" in out
+
+
+def test_h2h_frame_falls_back_to_generic_when_rival_backers_is_none():
+	data = {"winner": 1, "loser": 99, "k": 4, "series": 6, "sweep": False}
+	out = _frame_for("h2h", (1, 99), data, teams=(0, 1), rosters=_ROSTERS,
+	                 rng=_FirstChoice())
+	assert out in ("Do their teammates get a say?", "Six other players would like a word.")
+
+
+def test_frame_consumes_exactly_one_rng_choice_call_per_branch():
+	"""_select and _phrase depend on _frame burning exactly one rng.choice draw
+	regardless of branch, or the payoff's replay of _phrase drifts out of sync
+	with the pre-game picks (see bot/storyline_payoff.py)."""
+	cases = [
+		("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False},
+		 (0, 1), _SMALL_ROSTERS),
+		("h2h", (1, 99), {"winner": 1, "loser": 99, "k": 4, "series": 6, "sweep": False},
+		 (0, 1), _ROSTERS),
+		("lineup", (1, 2, 3, 4), {"ids": [1, 2, 3, 4], "won": True, "team_idx": 0},
+		 (0,), _ROSTERS),
+		("form", (1,), {"p": 1, "k": 5, "won": True}, (0,), _ROSTERS),
+		("form", (1,), {"p": 1, "k": 5, "won": False}, (0,), _ROSTERS),
+	]
+	for typ, players, data, teams, rosters in cases:
+		c = {"type": typ, "score": 1, "players": frozenset(players),
+		     "teams": frozenset(teams), "data": data}
+		counter = _CountingChoice()
+		ti._frame(c, _NICK, _META, rosters, rng=counter)
+		assert counter.calls == 1, (typ, data)

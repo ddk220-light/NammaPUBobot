@@ -543,6 +543,16 @@ def _join_names(names):
 	return ", ".join(names[:-1]) + f" & {names[-1]}"
 
 
+def _sentence_case(text):
+	"""Capitalise a fragment that lands at the start of a sentence.
+
+	A complement is either bold names ("**Ann** & **Bo**", already fine because
+	it starts with '*') or a phrase like "the rest of Alpha". Uppercasing the
+	first character handles both without touching the markdown.
+	"""
+	return text[:1].upper() + text[1:] if text else text
+
+
 def _positive(c):
 	"""Is this storyline good news for its subject side?"""
 	t, d = c["type"], c["data"]
@@ -594,10 +604,38 @@ def complement_of(c, nick, teams_meta, rosters):
 	return who, name, True
 
 
+def rival_backers(c, nick, teams_meta, rosters):
+	"""For an opposing-pair line: [(rival_name, their_backers), ...] for both sides.
+
+	Returns None when the roster lookup fails, so callers can fall back. Public
+	because bot/storyline_payoff.py builds a past-tense version from the same data.
+	"""
+	out = []
+	for uid in sorted(c["players"]):
+		team_idx = next((i for i, ids in (rosters or {}).items() if uid in (ids or [])), None)
+		if team_idx is None:
+			return None
+		rest = [u for u in rosters[team_idx] if u not in c["players"]]
+		name = (teams_meta[team_idx]["name"] if team_idx < len(teams_meta)
+		        else f"Team {team_idx}")
+		who = (f"the rest of {name}" if len(rest) > 2
+		       else _join_names([f"**{nick.get(u, 'someone')}**" for u in rest]))
+		out.append((f"**{nick.get(uid, 'someone')}**", who))
+	return out if len(out) == 2 else None
+
+
 def _frame(c, nick, teams_meta, rosters, *, rng=random):
 	"""A closing clause pulling the rest of the side into the story."""
 	who, name, sole = complement_of(c, nick, teams_meta, rosters)
 	if not sole:
+		backers = rival_backers(c, nick, teams_meta, rosters)
+		if backers and all(w for _n, w in backers):
+			(na, wa), (nb, wb) = backers
+			return rng.choice([
+				f"{_sentence_case(wa)} line up behind {na}; {wb} behind {nb}.",
+				f"Does {wa} tip it for {na}, or {wb} for {nb}?",
+				f"{_sentence_case(wa)} carry {na}'s hopes, {wb} carry {nb}'s.",
+			])
 		return rng.choice([
 			"Do their teammates get a say?",
 			"Six other players would like a word.",
@@ -609,12 +647,12 @@ def _frame(c, nick, teams_meta, rosters, *, rng=random):
 		])
 	if _positive(c):
 		return rng.choice([
-			f"{who} along for the ride.",
+			f"{_sentence_case(who)} along for the ride.",
 			f"Good day to be {who}.",
 		])
 	return rng.choice([
+		f"{_sentence_case(who)} inherit the problem.",
 		f"Good luck to {who}.",
-		f"{who} inherit the problem.",
 	])
 
 

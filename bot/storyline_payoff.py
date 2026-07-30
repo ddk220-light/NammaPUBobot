@@ -49,6 +49,18 @@ def _payoff_frame(c, came_true, nick, teams_meta, rosters, *, rng=random):
 	"""
 	who, name, sole = ti.complement_of(c, nick, teams_meta, rosters)
 	if not sole:
+		backers = ti.rival_backers(c, nick, teams_meta, rosters)
+		if backers and all(w for _n, w in backers):
+			ids = sorted(c["players"])
+			_kind, subj = ti.subject_of(c)
+			win_idx = ids.index(subj) if came_true else 1 - ids.index(subj)
+			wname, wback = backers[win_idx]
+			lname, lback = backers[1 - win_idx]
+			return rng.choice([
+				f"{ti._sentence_case(wback)} got their wish; {lback} did not.",
+				f"{wname} delivered for {wback} tonight.",
+				f"{ti._sentence_case(lback)} came up short backing {lname}.",
+			])
 		return rng.choice([
 			"Their teammates had their own night.",
 			"The other six were along for the ride.",
@@ -60,11 +72,11 @@ def _payoff_frame(c, came_true, nick, teams_meta, rosters, *, rng=random):
 		])
 	if came_true:
 		return rng.choice([
-			f"{who} got to enjoy it.",
+			f"{ti._sentence_case(who)} got to enjoy it.",
 			f"A good night to be {who}.",
 		])
 	return rng.choice([
-		f"{who} went down with them.",
+		f"{ti._sentence_case(who)} went down with them.",
 		f"A rough one for {who} too.",
 	])
 

@@ -117,6 +117,92 @@ def test_payoff_phrase_raises_for_an_unknown_candidate_type():
 		sp.payoff_phrase(c, True, _NICK, _META, _ROSTERS, rng=random.Random(0))
 
 
+# ── sentence case (defect 1, mirrored past-tense frame) ──────────────────
+class _FirstChoice:
+	"""Deterministic stand-in for ``random`` that always takes the first pooled
+	variant, so a test can pin down which template renders without brute-forcing
+	a real seed."""
+
+	def choice(self, seq):
+		return seq[0]
+
+
+class _CountingChoice:
+	"""Wraps ``_FirstChoice`` while counting ``.choice`` calls, so a test can
+	assert _payoff_frame burns exactly one RNG draw per invocation."""
+
+	def __init__(self):
+		self.calls = 0
+
+	def choice(self, seq):
+		self.calls += 1
+		return seq[0]
+
+
+_SMALL_ROSTERS = {0: [1, 2, 3], 1: [5, 6, 7]}
+
+
+def test_a_large_complement_payoff_frame_does_not_lowercase_after_the_period():
+	"""Same defect as bot/team_insights.py's _frame: complement_of collapses to
+	'the rest of {name}' past two uninvolved players, and _payoff_frame has its
+	own sentence-initial templates that must not leak the lowercase phrase."""
+	c = _c("form", (1,), {"p": 1, "k": 5, "won": True})
+	out = sp._payoff_frame(c, False, _NICK, _META, _ROSTERS, rng=_FirstChoice())
+	assert ". the rest of" not in out
+	assert out.startswith("The rest of Alpha")
+
+
+# ── rival backers (defect 2, mirrored past-tense frame) ──────────────────
+def test_an_h2h_payoff_frame_names_the_winning_sides_backers():
+	c = _c("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6,
+	                       "sweep": False}, teams=(0, 1))
+	out = sp._payoff_frame(c, True, _NICK, _META, _SMALL_ROSTERS, rng=_FirstChoice())
+	assert out not in ("Their teammates had their own night.",
+	                    "The other six were along for the ride.")
+	assert "Bo" in out and "Cy" in out and "Fay" in out and "Gil" in out
+
+
+def test_an_h2h_payoff_frame_flips_the_winning_side_when_the_underdog_wins():
+	"""subject_of(h2h) picks the pre-game favourite (d['winner']); when the
+	streak breaks (came_true=False) the *other* rival's backers are the ones
+	who actually got their way tonight."""
+	c = _c("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6,
+	                       "sweep": False}, teams=(0, 1))
+	won_true = sp._payoff_frame(c, True, _NICK, _META, _SMALL_ROSTERS, rng=_FirstChoice())
+	won_false = sp._payoff_frame(c, False, _NICK, _META, _SMALL_ROSTERS, rng=_FirstChoice())
+	assert won_true != won_false
+	assert "Fay" in won_false and "Gil" in won_false
+
+
+def test_h2h_payoff_frame_falls_back_to_generic_when_rival_backers_is_none():
+	c = _c("h2h", (1, 99), {"winner": 1, "loser": 99, "k": 4, "series": 6,
+	                        "sweep": False}, teams=(0, 1))
+	out = sp._payoff_frame(c, True, _NICK, _META, _ROSTERS, rng=_FirstChoice())
+	assert out in ("Their teammates had their own night.", "The other six were along for the ride.")
+
+
+def test_payoff_frame_consumes_exactly_one_rng_choice_call_per_branch():
+	"""build_payoff_embed re-runs ti._phrase to burn the pre-game RNG draws so
+	its variant picks stay aligned -- every _payoff_frame branch must consume
+	exactly one rng.choice call or that alignment breaks."""
+	cases = [
+		("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False},
+		 (0, 1), _SMALL_ROSTERS, True),
+		("h2h", (1, 99), {"winner": 1, "loser": 99, "k": 4, "series": 6, "sweep": False},
+		 (0, 1), _ROSTERS, True),
+		("lineup", (1, 2, 3, 4), {"ids": [1, 2, 3, 4], "wins": 2, "games": 2,
+		                          "one_way": True, "won": True, "team_idx": 0},
+		 (0,), _ROSTERS, True),
+		("form", (1,), {"p": 1, "k": 5, "won": True}, (0,), _ROSTERS, True),
+		("form", (1,), {"p": 1, "k": 5, "won": True}, (0,), _ROSTERS, False),
+	]
+	for typ, players, data, teams, rosters, came_true in cases:
+		c = _c(typ, players, data, teams)
+		counter = _CountingChoice()
+		sp._payoff_frame(c, came_true, _NICK, _META, rosters, rng=counter)
+		assert counter.calls == 1, (typ, data, came_true)
+
+
 # ── embed assembly ───────────────────────────────────────────────────────
 class _P:
 	def __init__(self, uid):
