@@ -54,15 +54,22 @@ FORM_MIN_STREAK = 5        # T6: trailing personal win/loss run
 TRIO_MIN_GAMES = 5         # T7: min decisive games this exact trio shared a side
 TRIO_MIN_SHARE = 0.75      # T7: fraction of them going one direction
 
+LINEUP_MIN_GAMES = 2       # T8: min prior decisive games as this exact side
+LINEUP_MIN_SIDE = 3        # T8: below this the lineup is just the pair line
+
 # Selection caps
 PER_PLAYER_CAP = 2
 PER_TYPE_CAP = 2
 DEADLOCK_TYPE_CAP = 1
 TRIO_TYPE_CAP = 1
+LINEUP_TYPE_CAP = 1
 
 # Drama weights — a single comparable axis across types.
 W_PERFECT = 6.0
 W_TRIO = 7.0
+# The (10 + games) term is what keeps the jackpot on top: a plain multiple of
+# sample size would let a long perfect-pair run (W_PERFECT * n) outrank it.
+W_LINEUP = 9.0
 W_MATE_WR = 4.0
 W_H2H = 3.0
 W_MATE = 2.6
@@ -355,6 +362,35 @@ def _trio_candidates(prior, matches, t0_ids, t1_ids):
 	return cands
 
 
+def _lineup_candidates(prior, matches, t0_ids, t1_ids):
+	"""T8 — this exact side has shared a team before, inside the window.
+
+	The rarest thing the module can say: only about one team-side in ten has
+	*ever* played together before within 90 days, so the line leans on the
+	reunion itself rather than on the record.
+	"""
+	cands = []
+	for team_idx, ids in ((0, t0_ids), (1, t1_ids)):
+		if len(ids) < LINEUP_MIN_SIDE:
+			continue
+		group = frozenset(ids)
+		s = _group_series(prior, matches, group)
+		if len(s) < LINEUP_MIN_GAMES:
+			continue
+		wins = sum(s)
+		one_way = wins == 0 or wins == len(s)
+		cands.append({
+			"type": "lineup",
+			"score": W_LINEUP * (10 + len(s)) * (PERFECT_COND if one_way else 1.0),
+			"players": group,
+			"teams": frozenset((team_idx,)),
+			"data": {"ids": sorted(ids), "wins": wins, "games": len(s),
+			         "one_way": one_way, "won": wins * 2 > len(s),
+			         "team_idx": team_idx},
+		})
+	return cands
+
+
 def _deadlock_candidates(prior, matches, t0_ids, t1_ids):
 	"""T5 — opposing pair tied over their recent meetings (the decider)."""
 	cands = []
@@ -606,10 +642,11 @@ async def _fetch_history(channel_id, user_ids, since_ts):
 
 
 def _candidates(prior, matches, t0_ids, t1_ids):
-	"""All scored candidates across the six insight types (pure)."""
+	"""All scored candidates across the eight insight types (pure)."""
 	team_of = {**{u: 0 for u in t0_ids}, **{u: 1 for u in t1_ids}}
 	return (
-		_perfect_candidates(prior, matches, t0_ids, t1_ids)
+		_lineup_candidates(prior, matches, t0_ids, t1_ids)
+		+ _perfect_candidates(prior, matches, t0_ids, t1_ids)
 		+ _mate_wr_candidates(prior, matches, t0_ids, t1_ids)
 		+ _h2h_candidates(prior, matches, t0_ids, t1_ids)
 		+ _mate_candidates(prior, matches, t0_ids, t1_ids)

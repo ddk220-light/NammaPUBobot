@@ -306,3 +306,60 @@ def test_a_losing_trio_fires_and_is_marked_lost():
 def test_trio_enumeration_is_sorted_and_complete():
 	assert list(ti._trios([30, 10, 20, 40])) == [
 		(10, 20, 30), (10, 20, 40), (10, 30, 40), (20, 30, 40)]
+
+
+# ── exact lineup ─────────────────────────────────────────────────────────
+def test_lineup_fires_when_this_exact_side_played_together_before():
+	h = _hist(
+		(1, 0, {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}),
+		(2, 1, {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}),
+	)
+	cands = ti._lineup_candidates(h.order, h.matches, [1, 2, 3], [4, 5, 6])
+	assert len(cands) == 2                       # one per side
+	side0 = next(c for c in cands if c["data"]["team_idx"] == 0)
+	assert side0["data"] == {"ids": [1, 2, 3], "wins": 1, "games": 2,
+	                         "one_way": False, "won": False, "team_idx": 0}
+
+
+def test_lineup_needs_two_prior_games():
+	h = _hist((1, 0, {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}))
+	assert ti._lineup_candidates(h.order, h.matches, [1, 2, 3], [4, 5, 6]) == []
+
+
+def test_a_superset_side_does_not_count_as_the_same_lineup():
+	"""A prior 4-man side is a different lineup from tonight's 3-man side."""
+	h = _hist(
+		(1, 0, {1: 0, 2: 0, 3: 0, 9: 0, 4: 1, 5: 1, 6: 1, 8: 1}),
+		(2, 0, {1: 0, 2: 0, 3: 0, 9: 0, 4: 1, 5: 1, 6: 1, 8: 1}),
+	)
+	# players 1,2,3 were united both times, so the *trio* has history, but the
+	# lineup line is about tonight's exact roster and must still fire on it.
+	cands = ti._lineup_candidates(h.order, h.matches, [1, 2, 3], [4, 5, 6])
+	side0 = next(c for c in cands if c["data"]["team_idx"] == 0)
+	assert side0["data"]["games"] == 2
+
+
+def test_a_one_way_lineup_scores_above_a_mixed_one():
+	mixed = _hist(
+		(1, 0, {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}),
+		(2, 1, {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}),
+	)
+	clean = _hist(
+		(1, 0, {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}),
+		(2, 0, {1: 0, 2: 0, 3: 0, 4: 1, 5: 1, 6: 1}),
+	)
+	m = next(c for c in ti._lineup_candidates(mixed.order, mixed.matches, [1, 2, 3], [4, 5, 6])
+	         if c["data"]["team_idx"] == 0)
+	c = next(c for c in ti._lineup_candidates(clean.order, clean.matches, [1, 2, 3], [4, 5, 6])
+	         if c["data"]["team_idx"] == 0)
+	assert c["data"]["one_way"] is True
+	assert c["score"] > m["score"]
+
+
+def test_lineup_is_skipped_for_tiny_sides():
+	"""On a 2v2 the lineup IS the pair, so it would just duplicate that line."""
+	h = _hist(
+		(1, 0, {1: 0, 2: 0, 4: 1, 5: 1}),
+		(2, 0, {1: 0, 2: 0, 4: 1, 5: 1}),
+	)
+	assert ti._lineup_candidates(h.order, h.matches, [1, 2], [4, 5]) == []
