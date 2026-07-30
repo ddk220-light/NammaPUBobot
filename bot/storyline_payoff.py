@@ -55,7 +55,11 @@ def _payoff_frame(c, came_true, nick, teams_meta, rosters, *, rng=random):
 	if not sole:
 		backers = ti.rival_backers(c, nick, teams_meta, rosters)
 		if backers and all(w for _n, w, _t in backers):
-			ids = sorted(c["players"])
+			# Must match rival_backers' own order (ti._ordered_pair) exactly, or
+			# subj_idx below indexes into the wrong entry: h2h orders leader-then-
+			# trailing (not sorted-by-id), so sorted(c["players"]) would silently
+			# grab the wrong rival's backers whenever the loser's user id is lower.
+			ids = ti._ordered_pair(c)
 			_kind, subj = ti.subject_of(c)
 			# subj is a player id for every type that reaches this branch today
 			# (h2h, deadlock). A future candidate type could carry a team subject

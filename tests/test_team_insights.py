@@ -561,6 +561,15 @@ class _CountingChoice:
 		return seq[0]
 
 
+class _LastChoice:
+	"""Deterministic stand-in for ``random`` that always takes the final pooled
+	variant, so a test can pin down the directional "does X have an answer for
+	Y" template without brute-forcing a real seed."""
+
+	def choice(self, seq):
+		return seq[-1]
+
+
 def test_sentence_case_leaves_a_bold_name_fragment_unchanged():
 	assert ti._sentence_case("**Ann** & **Bo**") == "**Ann** & **Bo**"
 
@@ -587,6 +596,10 @@ _SMALL_ROSTERS = {0: [1, 2, 3], 1: [5, 6, 7]}
 
 
 def test_rival_backers_returns_each_players_own_side():
+	"""Per the ordering contract, an h2h pair comes back leader (data['winner'])
+	first, trailing rival (data['loser']) second -- winner=1 here also happens
+	to have the lower user id, so this alone doesn't pin the direction; see
+	test_rival_backers_orders_the_leader_first_regardless_of_user_id for that."""
 	c = {"type": "h2h", "players": frozenset((1, 5)), "teams": frozenset((0, 1)),
 	     "data": {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False}}
 	out = ti.rival_backers(c, _NICK, _META, _SMALL_ROSTERS)
@@ -594,6 +607,30 @@ def test_rival_backers_returns_each_players_own_side():
 	(n1, w1, t1), (n2, w2, t2) = out
 	assert n1 == "**Ann**" and w1 == "**Bo** & **Cy**" and t1 == "Alpha"
 	assert n2 == "**Eve**" and w2 == "**Fay** & **Gil**" and t2 == "Beta"
+
+
+def test_rival_backers_orders_the_leader_first_regardless_of_user_id():
+	"""The ordering contract is winner-then-loser, not sorted-by-id. Here the
+	winner (Eve) has the *larger* user id than the loser (Ann) -- sorting by id
+	would put the loser first and silently reverse the direction, which is
+	exactly the bug this fix targets."""
+	c = {"type": "h2h", "players": frozenset((1, 5)), "teams": frozenset((0, 1)),
+	     "data": {"winner": 5, "loser": 1, "k": 5, "series": 16, "sweep": False}}
+	out = ti.rival_backers(c, _NICK, _META, _SMALL_ROSTERS)
+	(n1, _w1, t1), (n2, _w2, t2) = out
+	assert n1 == "**Eve**" and t1 == "Beta"     # leader (winner) first
+	assert n2 == "**Ann**" and t2 == "Alpha"    # trailing rival (loser) second
+
+
+def test_rival_backers_keeps_sorted_order_for_a_leaderless_deadlock():
+	"""deadlock has no winner/loser -- a tie has no leader to assert, so
+	rival_backers keeps the plain sorted-by-user-id order for it."""
+	c = {"type": "deadlock", "players": frozenset((5, 1)), "teams": frozenset((0, 1)),
+	     "data": {"ids": [1, 5], "each": 3, "n": 6}}
+	out = ti.rival_backers(c, _NICK, _META, _SMALL_ROSTERS)
+	(n1, _w1, t1), (n2, _w2, t2) = out
+	assert n1 == "**Ann**" and t1 == "Alpha"
+	assert n2 == "**Eve**" and t2 == "Beta"
 
 
 def test_rival_backers_collapses_to_the_team_name_past_two():
@@ -631,6 +668,20 @@ def test_an_h2h_frame_uses_the_team_name_once_backers_collapse():
 	out = _frame_for("h2h", (1, 5), data, teams=(0, 1), rosters=_ROSTERS, rng=_FirstChoice())
 	assert "the rest of" not in out
 	assert "Alpha" in out and "Beta" in out
+
+
+def test_h2h_frame_asks_the_trailing_side_for_an_answer_about_the_leader():
+	"""Real-bug regression, mirroring the live-harness example: **I'm Dead
+	Guyzzz...** (winner, smaller user id, on Alpha) is 5-0 over **ddk**
+	(loser). The old frame sorted its two rival_backers entries by user id, so
+	the winner landed first and "Does {sa} have an answer for {nb}?" asked the
+	winner's *own* side (Alpha) whether they had an answer for the player they
+	were already beating -- backwards. The frame must ask the trailing side
+	(backing the loser) whether they have an answer for the leader, never the
+	reverse."""
+	data = {"winner": 1, "loser": 5, "k": 5, "series": 16, "sweep": False}
+	out = _frame_for("h2h", (1, 5), data, teams=(0, 1), rosters=_ROSTERS, rng=_LastChoice())
+	assert out == "Does Beta have an answer for **Ann**?"
 
 
 def test_h2h_frame_falls_back_to_generic_when_rival_backers_is_none():

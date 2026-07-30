@@ -605,15 +605,37 @@ def complement_of(c, nick, teams_meta, rosters):
 	return who, name, True
 
 
+def _ordered_pair(c):
+	"""The two players of an opposing-pair candidate (h2h, deadlock), ordered.
+
+	Ordering contract: when the candidate type carries a direction, the leader
+	comes first and the trailing rival second, so directional phrasing (e.g.
+	"does the trailing side have an answer for the leader") never has to
+	re-derive who's who. h2h is the only directional type today, ordered by
+	``data["winner"]`` then ``data["loser"]``. A deadlock has no leader by
+	construction (a tie over the recent window) -- asserting one would be a
+	fabricated claim, so it keeps the plain sorted-by-user-id order instead.
+
+	Shared by ``rival_backers`` (below) and bot/storyline_payoff.py's
+	``_payoff_frame``, which indexes into ``rival_backers``' output via this
+	same order to find the subject's entry -- the two must never diverge.
+	"""
+	if c["type"] == "h2h":
+		return [c["data"]["winner"], c["data"]["loser"]]
+	return sorted(c["players"])
+
+
 def rival_backers(c, nick, teams_meta, rosters):
 	"""For an opposing-pair line: [(rival_name, their_backers, team_name), ...] for
-	both sides.
+	both sides, ordered per ``_ordered_pair`` -- the leader first and the
+	trailing rival second for a directional type (h2h), sorted-by-user-id
+	otherwise (deadlock, which has no leader to put first).
 
 	Returns None when the roster lookup fails, so callers can fall back. Public
 	because bot/storyline_payoff.py builds a past-tense version from the same data.
 	"""
 	out = []
-	for uid in sorted(c["players"]):
+	for uid in _ordered_pair(c):
 		team_idx = next((i for i, ids in (rosters or {}).items() if uid in (ids or [])), None)
 		if team_idx is None:
 			return None
@@ -642,10 +664,15 @@ def _frame(c, nick, teams_meta, rosters, *, rng=random):
 		if backers and all(w for _n, w, _t in backers):
 			(na, wa, ta), (nb, wb, tb) = backers
 			sa, sb = _short_backers(wa, ta), _short_backers(wb, tb)
-			return rng.choice([
-				f"{sa} behind {na}, {sb} behind {nb}.",
-				f"Does {sa} have an answer for {nb}?",
-			])
+			opts = [f"{sa} behind {na}, {sb} behind {nb}."]
+			if c["type"] == "h2h":
+				# rival_backers orders h2h leader-first: na is the streak holder
+				# (data["winner"]), nb the trailing rival (data["loser"]). Ask the
+				# trailing side's backers (sb) whether they have an answer for the
+				# leader (na) -- never the reverse. deadlock has no leader, so it
+				# never reaches this branch.
+				opts.append(f"Does {sb} have an answer for {na}?")
+			return rng.choice(opts)
 		return rng.choice([
 			"Do their teammates get a say?",
 			"Six other players would like a word.",
