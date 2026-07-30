@@ -2,12 +2,12 @@
 """Import a Pubobot CSV export into NammaPUBobot's MySQL database.
 
 Bridges the schema gap between the original Pubobot CSV dump and NammaPUBobot's
-extended tables. Handles qc_matches, qc_players, qc_player_matches, and
-qc_rating_history. Idempotent — safe to re-run; dedupes by primary key or by
+extended tables. Handles matches, player_ratings, match_players, and
+rating_history. Idempotent — safe to re-run; dedupes by primary key or by
 content tuple.
 
 Usage:
-    # List channels in qc_configs (read-only)
+    # List channels in channel_settings (read-only)
     python3 utils/import_pubobot_export.py --list-channels
 
     # Dry-run (read-only) — see counts + sample rows
@@ -16,7 +16,7 @@ Usage:
     # Apply the import
     python3 utils/import_pubobot_export.py --export-dir export-apr10 --apply
 
-Target channel is auto-detected if exactly one channel exists in qc_configs.
+Target channel is auto-detected if exactly one channel exists in channel_settings.
 """
 
 import argparse
@@ -66,15 +66,15 @@ async def list_channels(pool):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT channel_id, cfg_data FROM qc_configs ORDER BY channel_id"
+                "SELECT channel_id, cfg_data FROM channel_settings ORDER BY channel_id"
             )
             rows = await cur.fetchall()
 
     if not rows:
-        print("No channels found in qc_configs.")
+        print("No channels found in channel_settings.")
         return
 
-    print(f"{len(rows)} channel(s) in qc_configs:")
+    print(f"{len(rows)} channel(s) in channel_settings:")
     for row in rows:
         cfg = row.get("cfg_data") or "{}"
         if isinstance(cfg, (bytes, bytearray)):
@@ -92,11 +92,11 @@ async def list_channels(pool):
 async def auto_channel_id(pool):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT channel_id FROM qc_configs")
+            await cur.execute("SELECT channel_id FROM channel_settings")
             rows = await cur.fetchall()
 
     if not rows:
-        raise RuntimeError("No channels exist in qc_configs — nothing to import into.")
+        raise RuntimeError("No channels exist in channel_settings — nothing to import into.")
     if len(rows) == 1:
         return rows[0]["channel_id"]
     ids = ", ".join(str(r["channel_id"]) for r in rows)
@@ -121,7 +121,7 @@ def transform_match(row, channel_id, tz):
         channel_id=channel_id,
         queue_id=None,
         queue_name=row["queue"],
-        at=parse_dt(row["at"], tz),
+        reported_at=parse_dt(row["at"], tz),
         alpha_name=DEFAULT_ALPHA,
         beta_name=DEFAULT_BETA,
         ranked=1,
@@ -186,7 +186,7 @@ async def _fetch(pool, sql, params):
 async def fetch_existing_match_ids(pool, channel_id):
     rows = await _fetch(
         pool,
-        "SELECT match_id FROM qc_matches WHERE channel_id = %s",
+        "SELECT match_id FROM matches WHERE channel_id = %s",
         (channel_id,),
     )
     return {r["match_id"] for r in rows}
@@ -195,7 +195,7 @@ async def fetch_existing_match_ids(pool, channel_id):
 async def fetch_existing_player_matches(pool, channel_id):
     rows = await _fetch(
         pool,
-        "SELECT match_id, user_id FROM qc_player_matches WHERE channel_id = %s",
+        "SELECT match_id, user_id FROM match_players WHERE channel_id = %s",
         (channel_id,),
     )
     return {(r["match_id"], r["user_id"]) for r in rows}
@@ -204,7 +204,7 @@ async def fetch_existing_player_matches(pool, channel_id):
 async def fetch_existing_player_ids(pool, channel_id):
     rows = await _fetch(
         pool,
-        "SELECT user_id FROM qc_players WHERE channel_id = %s",
+        "SELECT user_id FROM player_ratings WHERE channel_id = %s",
         (channel_id,),
     )
     return {r["user_id"] for r in rows}
@@ -218,7 +218,7 @@ async def fetch_existing_rh_match_pairs(pool, channel_id):
     """
     rows = await _fetch(
         pool,
-        "SELECT user_id, match_id FROM qc_rating_history "
+        "SELECT user_id, match_id FROM rating_history "
         "WHERE channel_id = %s AND match_id IS NOT NULL",
         (channel_id,),
     )
@@ -229,7 +229,7 @@ async def fetch_existing_rh_null_tuples(pool, channel_id):
     """Return set of tuples for NULL-match-id rating_history rows (decay/seeding/penalty)."""
     rows = await _fetch(
         pool,
-        "SELECT user_id, at, rating_change, reason FROM qc_rating_history "
+        "SELECT user_id, at, rating_change, reason FROM rating_history "
         "WHERE channel_id = %s AND match_id IS NULL",
         (channel_id,),
     )
@@ -239,7 +239,7 @@ async def fetch_existing_rh_null_tuples(pool, channel_id):
 
 
 async def get_counter(pool):
-    rows = await _fetch(pool, "SELECT next_id FROM qc_match_id_counter", ())
+    rows = await _fetch(pool, "SELECT next_id FROM match_counter", ())
     return rows[0]["next_id"] if rows else None
 
 
@@ -275,15 +275,15 @@ async def replace_into(pool, table, rows, columns):
 async def set_counter(pool, value):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT next_id FROM qc_match_id_counter")
+            await cur.execute("SELECT next_id FROM match_counter")
             existing = await cur.fetchone()
             if existing is None:
                 await cur.execute(
-                    "INSERT INTO qc_match_id_counter (next_id) VALUES (%s)", (value,)
+                    "INSERT INTO match_counter (next_id) VALUES (%s)", (value,)
                 )
             else:
                 await cur.execute(
-                    "UPDATE qc_match_id_counter SET next_id = %s", (value,)
+                    "UPDATE match_counter SET next_id = %s", (value,)
                 )
 
 
@@ -301,6 +301,10 @@ def print_samples(label, rows, limit=3):
 
 async def run_import(pool, export_dir, channel_id, tz, apply):
     # --- Read all CSVs ---
+    # qc_*.csv are on-disk filenames from the upstream Pubobot export, not the
+    # renamed tables we write to below — this tool reads someone else's
+    # export format, which we don't control, so match --help (below), not
+    # our own table names.
     matches_path = os.path.join(export_dir, "qc_matches.csv")
     players_path = os.path.join(export_dir, "qc_players.csv")
     player_matches_path = os.path.join(export_dir, "qc_player_matches.csv")
@@ -319,7 +323,7 @@ async def run_import(pool, export_dir, channel_id, tz, apply):
     nick_map = {int(r["user_id"]): r["nick"] for r in players_csv}
 
     # For each user, compute max match `at` across their player_matches →
-    # populates qc_players.last_ranked_match_at.
+    # populates player_ratings.last_ranked_match_at.
     match_at_by_id = {
         int(r["match_id"]): parse_dt(r["at"], tz) for r in matches_csv
     }
@@ -381,23 +385,23 @@ async def run_import(pool, export_dir, channel_id, tz, apply):
     # --- Summary ---
     print(f"\n=== Import summary (channel_id={channel_id}, tz={tz}) ===")
     print(
-        f"qc_matches:         {len(matches_csv):>6} in CSV, "
+        f"matches:         {len(matches_csv):>6} in CSV, "
         f"{len(existing_match_ids):>6} in DB, "
         f"{len(new_matches):>6} new"
     )
     print(
-        f"qc_players:         {len(players_csv):>6} in CSV, "
+        f"player_ratings:         {len(players_csv):>6} in CSV, "
         f"{len(existing_player_ids):>6} in DB, "
         f"{len(new_players):>6} new, "
         f"{len(updated_players):>6} to update"
     )
     print(
-        f"qc_player_matches:  {len(player_matches_csv):>6} in CSV, "
+        f"match_players:  {len(player_matches_csv):>6} in CSV, "
         f"{len(existing_pm):>6} in DB, "
         f"{len(new_pm):>6} new"
     )
     print(
-        f"qc_rating_history:  {len(rating_history_csv):>6} in CSV, "
+        f"rating_history:  {len(rating_history_csv):>6} in CSV, "
         f"{total_existing_rh:>6} in DB, "
         f"{len(new_rh):>6} new  "
         f"(linked={len(new_rh_linked)}, null={len(new_rh_null)})"
@@ -411,18 +415,18 @@ async def run_import(pool, export_dir, channel_id, tz, apply):
         print(f"\nTZ check: CSV at={csv_at!r} --({tz})--> unix {unix_at}  ({echoed})")
 
     # --- Samples ---
-    print_samples("new qc_matches", new_matches)
-    print_samples("new qc_rating_history", new_rh)
-    print_samples("new qc_player_matches", new_pm)
-    print_samples("new qc_players", new_players)
-    print_samples("updated qc_players", updated_players)
+    print_samples("new matches", new_matches)
+    print_samples("new rating_history", new_rh)
+    print_samples("new match_players", new_pm)
+    print_samples("new player_ratings", new_players)
+    print_samples("updated player_ratings", updated_players)
 
     # --- Counter bump preview ---
     max_match_id = max((m["match_id"] for m in matches), default=0)
     current_counter = await get_counter(pool)
     new_counter = max(max_match_id + 1, current_counter or 0)
     print(
-        f"\nqc_match_id_counter: current={current_counter}, "
+        f"\nmatch_counter: current={current_counter}, "
         f"after_import={new_counter}"
     )
 
@@ -433,40 +437,40 @@ async def run_import(pool, export_dir, channel_id, tz, apply):
     # --- Apply ---
     print("\nApplying...")
 
-    # qc_matches — INSERT IGNORE on PK(match_id)
+    # matches — INSERT IGNORE on PK(match_id)
     match_cols = [
-        "match_id", "channel_id", "queue_id", "queue_name", "at",
+        "match_id", "channel_id", "queue_id", "queue_name", "reported_at",
         "alpha_name", "beta_name", "ranked", "winner",
         "alpha_score", "beta_score", "maps",
     ]
-    n = await insert_ignore(pool, "qc_matches", new_matches, match_cols)
-    print(f"  qc_matches:        inserted ~{n}")
+    n = await insert_ignore(pool, "matches", new_matches, match_cols)
+    print(f"  matches:        inserted ~{n}")
 
-    # qc_players — REPLACE on PK(user_id, channel_id) so updates flow through
+    # player_ratings — REPLACE on PK(user_id, channel_id) so updates flow through
     player_cols = [
         "channel_id", "user_id", "nick", "is_hidden", "rating", "deviation",
         "wins", "losses", "draws", "streak", "last_ranked_match_at",
     ]
-    n = await replace_into(pool, "qc_players", players, player_cols)
-    print(f"  qc_players:        wrote ~{n} (replace-on-conflict)")
+    n = await replace_into(pool, "player_ratings", players, player_cols)
+    print(f"  player_ratings:        wrote ~{n} (replace-on-conflict)")
 
-    # qc_player_matches — INSERT IGNORE on PK(match_id, user_id)
+    # match_players — INSERT IGNORE on PK(match_id, user_id)
     pm_cols = ["match_id", "channel_id", "user_id", "nick", "team"]
-    n = await insert_ignore(pool, "qc_player_matches", new_pm, pm_cols)
-    print(f"  qc_player_matches: inserted ~{n}")
+    n = await insert_ignore(pool, "match_players", new_pm, pm_cols)
+    print(f"  match_players: inserted ~{n}")
 
-    # qc_rating_history — pre-filtered, plain INSERT (auto-inc PK)
+    # rating_history — pre-filtered, plain INSERT (auto-inc PK)
     rh_cols = [
         "channel_id", "user_id", "at", "rating_before", "rating_change",
         "deviation_before", "deviation_change", "match_id", "reason",
     ]
-    n = await insert_plain(pool, "qc_rating_history", new_rh, rh_cols)
-    print(f"  qc_rating_history: inserted ~{n}")
+    n = await insert_plain(pool, "rating_history", new_rh, rh_cols)
+    print(f"  rating_history: inserted ~{n}")
 
     # Counter bump
     if new_counter != (current_counter or 0):
         await set_counter(pool, new_counter)
-        print(f"  qc_match_id_counter: set to {new_counter}")
+        print(f"  match_counter: set to {new_counter}")
 
     print("\nDone.")
 
@@ -493,7 +497,7 @@ async def main():
     )
     ap.add_argument(
         "--list-channels", action="store_true",
-        help="List channels in qc_configs and exit",
+        help="List channels in channel_settings and exit",
     )
     args = ap.parse_args()
 

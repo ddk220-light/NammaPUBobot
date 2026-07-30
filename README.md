@@ -37,7 +37,7 @@ Hosting the service for everyone is not free, not mentioning the actual time and
 
 ## Credits
 Developer: **Leshaka**. Contact: leshkajm@ya.ru.  
-Used libraries: [discord.py](https://github.com/Rapptz/discord.py), [aiomysql](https://github.com/aio-libs/aiomysql), [emoji](https://github.com/carpedm20/emoji/), [glicko2](https://github.com/deepy/glicko2), [TrueSkill](https://trueskill.org/), [prettytable](https://github.com/jazzband/prettytable).
+Used libraries: [discord.py](https://github.com/Rapptz/discord.py), [aiomysql](https://github.com/aio-libs/aiomysql), [emoji](https://github.com/carpedm20/emoji/), [glicko2](https://github.com/deepy/glicko2), [TrueSkill](https://trueskill.org/).
 
 ## License
 Copyright (C) 2020 **Leshaka**.

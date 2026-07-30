@@ -20,25 +20,25 @@ async def is_enabled():
 
 
 async def set_enabled(on):
-    await db.insert("rs_config", dict(id=1, enabled=1 if on else 0), on_dublicate="replace")
+    await db.insert("rs_config", dict(id=1, enabled=1 if on else 0), on_duplicate="replace")
 
 
 # ── find work ────────────────────────────────────────────────────────────
 async def find_new_match(max_age_days=None):
-    """Newest aoe2_match_id (deduped) present in qc_match_civs but absent from rs_ingest.
-    qc_match_civs has ~8 rows per match, so GROUP BY; join qc_matches for the timestamp.
+    """Newest aoe2_match_id (deduped) present in civ_picks but absent from rs_ingest.
+    civ_picks has ~8 rows per match, so GROUP BY; join matches for the timestamp.
     Returns dict(aoe2_match_id, bot_match_id, at) or None."""
     age_clause = ""
     args = []
     if max_age_days is not None:
-        age_clause = "AND m.at >= %s "
+        age_clause = "AND m.reported_at >= %s "
         args.append(int(time.time()) - max_age_days * 86400)
     rows = await db.fetchall(
         "SELECT mc.aoe2_match_id AS aoe2_match_id, MAX(mc.bot_match_id) AS bot_match_id, "
-        "MAX(m.at) AS at FROM qc_match_civs mc JOIN qc_matches m ON m.match_id = mc.bot_match_id "
+        "MAX(m.reported_at) AS at FROM civ_picks mc JOIN matches m ON m.match_id = mc.bot_match_id "
         "WHERE mc.aoe2_match_id IS NOT NULL " + age_clause +
         "AND mc.aoe2_match_id NOT IN (SELECT aoe2_match_id FROM rs_ingest) "
-        "GROUP BY mc.aoe2_match_id ORDER BY at DESC LIMIT 1", args)
+        "GROUP BY mc.aoe2_match_id ORDER BY MAX(m.reported_at) DESC LIMIT 1", args)
     return rows[0] if rows else None
 
 
@@ -77,7 +77,7 @@ async def upsert_ingest(aoe2_match_id, **fields):
     cur = await get_ingest(aoe2_match_id) or dict(aoe2_match_id=aoe2_match_id, attempts=0,
                                                   first_seen_at=int(time.time()))
     cur.update(fields)
-    await db.insert("rs_ingest", cur, on_dublicate="replace")
+    await db.insert("rs_ingest", cur, on_duplicate="replace")
 
 
 # ── per-match write (idempotent) ─────────────────────────────────────────
@@ -99,28 +99,42 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
 
     await db.insert("rs_matches",
                     shape.match_row(extracted["match"], bot_match_id, parsed_at, parser_version),
-                    on_dublicate="replace")
+                    on_duplicate="replace")
+    # Dual-write the community-owned link table alongside rs_matches.bot_match_id
+    # (stage 1.6). rs_matches.bot_match_id keeps being written above exactly as
+    # before — this is a deliberate parallel write, not a replacement, until
+    # match_replays becomes authoritative in stage 5. A link failure must never
+    # break replay ingestion: replays 404 upstream once they expire, so the raw
+    # facts just written above are irreplaceable and far more valuable than the
+    # link.
+    if bot_match_id is not None:
+        try:
+            from bot.community import link_match_replay
+            await link_match_replay(bot_match_id, aoe2_id)
+        except Exception as e:
+            log.error(f"Replay-stats match_replays link failed for bot_match_id={bot_match_id} "
+                      f"(aoe2 match {aoe2_id}): {e}")
     pg = shape.player_game_rows(aoe2_id, extracted["players"], profmap)
     if pg:
-        await db.insert_many("rs_player_games", pg, on_dublicate="replace")
+        await db.insert_many("rs_player_games", pg, on_duplicate="replace")
     units = shape.unit_rows(aoe2_id, extracted["units"], p2p)
     if units:
-        await db.insert_many("rs_player_units", units, on_dublicate="replace")
+        await db.insert_many("rs_player_units", units, on_duplicate="replace")
     techs = shape.tech_rows(aoe2_id, extracted["techs"], p2p)
     if techs:
-        await db.insert_many("rs_player_techs", techs, on_dublicate="replace")
+        await db.insert_many("rs_player_techs", techs, on_duplicate="replace")
     builds = shape.building_rows(aoe2_id, extracted["buildings"], p2p)
     if builds:
-        await db.insert_many("rs_player_buildings", builds, on_dublicate="replace")
+        await db.insert_many("rs_player_buildings", builds, on_duplicate="replace")
     events = shape.event_rows(aoe2_id, extracted.get("events", []), p2p)
     if events:
-        await db.insert_many("rs_player_events", events, on_dublicate="replace")
+        await db.insert_many("rs_player_events", events, on_duplicate="replace")
     apm = shape.apm_rows(aoe2_id, extracted.get("apm", []), p2p)
     if apm:
-        await db.insert_many("rs_player_apm", apm, on_dublicate="replace")
+        await db.insert_many("rs_player_apm", apm, on_duplicate="replace")
     profs = shape.profile_upserts(extracted["players"], profmap, parsed_at)
     if profs:
-        await db.insert_many("rs_profiles", profs, on_dublicate="replace")
+        await db.insert_many("rs_profiles", profs, on_duplicate="replace")
     try:
         from . import classifications
         await classifications.write_extracted_match(extracted, played_at_epoch)
@@ -160,5 +174,5 @@ async def seed_profiles_from_csv():
             rows.append(dict(profile_id=pid, user_id=int(uid) if uid else None,
                              name=r.get("nick") or r.get("aoe2_name") or "", last_seen_at=now))
     if rows:
-        await db.insert_many("rs_profiles", rows, on_dublicate="ignore")
+        await db.insert_many("rs_profiles", rows, on_duplicate="ignore")
     return len(rows)

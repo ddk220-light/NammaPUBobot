@@ -149,7 +149,7 @@ async def fetch_db_matches(count=10):
         async with conn.cursor() as cur:
             # Get last N matches
             await cur.execute(
-                "SELECT * FROM qc_matches ORDER BY match_id DESC LIMIT %s", (count,)
+                "SELECT * FROM matches ORDER BY match_id DESC LIMIT %s", (count,)
             )
             matches = await cur.fetchall()
 
@@ -164,7 +164,7 @@ async def fetch_db_matches(count=10):
             # Get players for those matches
             format_ids = ','.join(['%s'] * len(match_ids))
             await cur.execute(
-                f"SELECT * FROM qc_player_matches WHERE match_id IN ({format_ids}) "
+                f"SELECT * FROM match_players WHERE match_id IN ({format_ids}) "
                 f"ORDER BY match_id DESC, team ASC",
                 match_ids
             )
@@ -172,7 +172,7 @@ async def fetch_db_matches(count=10):
 
             # Get rating history for those matches
             await cur.execute(
-                f"SELECT * FROM qc_rating_history WHERE match_id IN ({format_ids}) "
+                f"SELECT * FROM rating_history WHERE match_id IN ({format_ids}) "
                 f"ORDER BY match_id DESC",
                 match_ids
             )
@@ -198,7 +198,7 @@ def print_db_match(match, players, ratings, index):
     """Pretty-print a single database match."""
     match_id = match['match_id']
     queue_name = match.get('queue_name', 'Unknown')
-    at = match.get('at')
+    at = match.get('reported_at')
     ranked = match.get('ranked', False)
     winner = match.get('winner')
     alpha_name = match.get('alpha_name', 'Alpha')
@@ -399,7 +399,7 @@ def main():
         print(f"  MATCH IDs (last {len(matches)})")
         print(f"{'='*60}")
         for i, m in enumerate(matches):
-            at = m.get('at')
+            at = m.get('reported_at')
             time_str = datetime.fromtimestamp(at).strftime("%Y-%m-%d %H:%M") if at else "N/A"
             print(f"  {i+1}. {m['match_id']}  ({time_str})")
 

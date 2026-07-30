@@ -12,7 +12,7 @@ _ELO_DATA_PATH = Path(__file__).resolve().parent.parent / "data" / "civ_elo_stat
 
 # Overall civ win-rates {civ: {"civ", "games", "winrate"}}. Seeded from the CSV
 # at import as a fallback; civ_elo_from_db() pulls a LIVE copy from
-# qc_match_civs for callers that need current numbers.
+# civ_picks for callers that need current numbers.
 _civ_elo_data = {}
 
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -38,11 +38,11 @@ def load_civ_elo_stats():
 
 
 async def civ_elo_from_db():
-    """Overall civ win-rates aggregated LIVE from qc_match_civs (the table the
+    """Overall civ win-rates aggregated LIVE from civ_picks (the table the
     reconcile job keeps current). Returns {civ: {"civ","games","winrate"}}; an
     empty dict if there's not enough data yet (caller falls back to the seed)."""
     rows = await db.fetchall(
-        "SELECT civ, SUM(result='W') wins, COUNT(*) games FROM qc_match_civs "
+        "SELECT civ, SUM(result='W') wins, COUNT(*) games FROM civ_picks "
         "WHERE civ IS NOT NULL GROUP BY civ HAVING games >= %s",
         [MIN_CIV_GAMES]
     )
@@ -124,13 +124,13 @@ def pick_balanced_teams(excluded_civs=None, civ_data=None):
 async def get_today_civs(channel):
     """Civs already played in this channel today (IST).
 
-    Reads the durable qc_match_civs record. Returns a set of civ name strings.
+    Reads the durable civ_picks record. Returns a set of civ name strings.
     """
     today_start = int(
         datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
     )
     rows = await db.fetchall(
-        "SELECT DISTINCT civ FROM qc_match_civs WHERE channel_id=%s AND at >= %s",
+        "SELECT DISTINCT civ FROM civ_picks WHERE channel_id=%s AND at >= %s",
         [channel.id, today_start]
     )
     return {r["civ"] for r in rows if r["civ"]}

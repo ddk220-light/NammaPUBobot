@@ -5,7 +5,7 @@ identity (Discord user_id / nick).
 Accuracy strategy (no fuzzy name matching):
   1. SEED: data/player_profile_map.csv gives profile_id -> (user_id, nick) for known players.
   2. ELIMINATION: for every match where we have BOTH the replay roster (8 profile_ids,
-     parsed) AND the bot's Discord roster (8 user_ids, from qc_player_matches via
+     parsed) AND the bot's Discord roster (8 user_ids, from match_players via
      match_id_map), the two sets are the SAME 8 humans. Subtract already-known
      profile->user links; if exactly one unknown profile_id and one unknown user_id
      remain, they are forced to map to each other. Iterate to a fixpoint.
@@ -70,7 +70,7 @@ def main():
                 seed[int(pid)] = (r["user_id"], r["nick"])
             except ValueError:
                 pass
-    lb = {r["user_id"]: r["nick"] for r in load_csv("qc_players.csv")}  # leaderboard
+    lb = {r["user_id"]: r["nick"] for r in load_csv("qc_players.csv")}  # leaderboard, on-disk filename
     aoe2_to_bot = {}
     for r in load_csv("match_id_map.csv"):
         try:

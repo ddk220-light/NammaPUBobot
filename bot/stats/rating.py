@@ -12,7 +12,7 @@ from bot.stats.decay import compute_decay
 
 class BaseRating:
 
-	table = "qc_players"
+	table = "player_ratings"
 
 	def __init__(
 			self, channel_id, init_rp=1500, init_deviation=300, min_deviation=None, scale=100,
@@ -111,7 +111,7 @@ class BaseRating:
 				)
 
 		await db.insert(
-			"qc_rating_history",
+			"rating_history",
 			dict(
 				channel_id=self.channel_id, user_id=member.id, at=int(time.time()), rating_before=old['rating'],
 				deviation_before=old['deviation'], rating_change=rating-old['rating'],
@@ -143,8 +143,8 @@ class BaseRating:
 				reason="ratings snap"
 			))
 			p['rating'] = new_rating
-		await db.insert_many(self.table, data, on_dublicate='replace')
-		await db.insert_many('qc_rating_history', history)
+		await db.insert_many(self.table, data, on_duplicate='replace')
+		await db.insert_many('rating_history', history)
 
 	async def apply_decay(self, rating, deviation, ranks_table):
 		""" Apply rating and deviation decay to players inactive past the grace window.
@@ -186,8 +186,8 @@ class BaseRating:
 				to_update.append(p)
 
 		if len(history):
-			await db.insert_many('qc_rating_history', history)
-			await db.insert_many(self.table, to_update, on_dublicate='replace')
+			await db.insert_many('rating_history', history)
+			await db.insert_many(self.table, to_update, on_duplicate='replace')
 
 	async def reset(self):
 		data = await db.select(('user_id', 'rating', 'deviation'), self.table, where=dict(channel_id=self.channel_id))
@@ -212,7 +212,7 @@ class BaseRating:
 			self.table, dict(rating=None, deviation=None), keys=dict(channel_id=self.channel_id)
 		)
 		if len(history):
-			await db.insert_many('qc_rating_history', history)
+			await db.insert_many('rating_history', history)
 
 
 class FlatRating(BaseRating):

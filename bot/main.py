@@ -10,6 +10,7 @@ from core.config import cfg
 from core.utils import error_embed, ok_embed, get  # noqa: F401
 
 import bot
+from bot.community import enroll_channel
 
 # Durable snapshot of in-flight state (queues + active matches + expire timers)
 # in MySQL. The bot service disk is ephemeral (only MySQL has a volume), so
@@ -17,7 +18,7 @@ import bot
 # in-flight matches (captain then can't /report, players re-queue; the 1390237
 # incident). MySQL is durable, so the periodic DB snapshot survives restarts.
 db.ensure_table(dict(
-	tname="qc_saved_state",
+	tname="bot_state",
 	columns=[
 		dict(cname="id", ctype=db.types.int),
 		dict(cname="data", ctype=db.types.dict),   # MEDIUMTEXT — JSON blob
@@ -35,6 +36,11 @@ async def enable_channel(message):
 		return
 	if message.channel.id not in bot.queue_channels.keys():
 		bot.queue_channels[message.channel.id] = await bot.QueueChannel.create(message.channel)
+		# Enroll into a community right away — on_ready's enrollment loop only
+		# runs once at boot, so without this a channel enabled at runtime has
+		# no community_id (community_for_channel() returns None) until the
+		# next full restart. See bot/community.py.
+		await enroll_channel(message.channel)
 		await message.channel.send(embed=ok_embed("The bot has been enabled."))
 	else:
 		await message.channel.send(
@@ -93,9 +99,9 @@ async def save_state_db():
 	"""Durable state snapshot to MySQL — survives Railway redeploys/crashes."""
 	try:
 		await db.insert(
-			"qc_saved_state",
+			"bot_state",
 			dict(id=1, data=json.dumps(_serialize_state()), updated_at=int(time.time())),
-			on_dublicate="replace",
+			on_duplicate="replace",
 		)
 	except Exception as e:
 		log.error(f"save_state_db failed: {e}")
@@ -106,7 +112,7 @@ async def load_state():
 	# same-container restart). Either way, restore via the existing from_json.
 	data = None
 	try:
-		row = await db.select_one(["data"], "qc_saved_state", where=dict(id=1))
+		row = await db.select_one(["data"], "bot_state", where=dict(id=1))
 		if row and row.get("data"):
 			data = json.loads(row["data"])
 	except Exception as e:

@@ -1,5 +1,5 @@
 __all__ = [
-	'last_game', 'stats', 'top', 'rank', 'rank_detailed', 'leaderboard', 'leaderboard_alternate',
+	'last_game', 'stats', 'top', 'rank', 'rank_detailed', 'leaderboard',
 	'mapstats', 'activity'
 ]
 
@@ -10,13 +10,12 @@ from time import time
 from math import ceil
 from nextcord import Member, Embed, Colour, File
 
-from core.utils import get, find, seconds_to_str, get_nick, discord_table  # noqa: F401
+from core.utils import get, find, seconds_to_str, get_nick  # noqa: F401
 from core.database import db
 from core.console import log
 from core.config import cfg
 
 import bot
-from bot import alt_ratings
 
 
 async def last_game(ctx, queue: str = None, player: Member = None, match_id: int = None):
@@ -24,38 +23,38 @@ async def last_game(ctx, queue: str = None, player: Member = None, match_id: int
 
 	if match_id:
 		lg = await db.select_one(
-			['*'], "qc_matches", where=dict(channel_id=ctx.qc.id, match_id=match_id), order_by="match_id", limit=1
+			['*'], "matches", where=dict(channel_id=ctx.qc.id, match_id=match_id), order_by="match_id", limit=1
 		)
 
 	elif queue:
 		if queue := find(lambda q: q.name.lower() == queue.lower(), ctx.qc.queues):
 			lg = await db.select_one(
-				['*'], "qc_matches", where=dict(channel_id=ctx.qc.id, queue_id=queue.id), order_by="match_id", limit=1
+				['*'], "matches", where=dict(channel_id=ctx.qc.id, queue_id=queue.id), order_by="match_id", limit=1
 			)
 
 	elif player and (member := await ctx.get_member(player)) is not None:
 		if match := await db.select_one(
-			['match_id'], "qc_player_matches", where=dict(channel_id=ctx.qc.id, user_id=member.id),
+			['match_id'], "match_players", where=dict(channel_id=ctx.qc.id, user_id=member.id),
 			order_by="match_id", limit=1
 		):
 			lg = await db.select_one(
-				['*'], "qc_matches", where=dict(channel_id=ctx.qc.id, match_id=match['match_id'])
+				['*'], "matches", where=dict(channel_id=ctx.qc.id, match_id=match['match_id'])
 			)
 
 	else:
 		lg = await db.select_one(
-			['*'], "qc_matches", where=dict(channel_id=ctx.qc.id), order_by="match_id", limit=1
+			['*'], "matches", where=dict(channel_id=ctx.qc.id), order_by="match_id", limit=1
 		)
 
 	if not lg:
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Nothing found"))
 
 	players = await db.select(
-		['user_id', 'nick', 'team'], "qc_player_matches",
+		['user_id', 'nick', 'team'], "match_players",
 		where=dict(match_id=lg['match_id'])
 	)
 	embed = Embed(colour=Colour(0x50e3c2))
-	embed.add_field(name=lg['queue_name'], value=seconds_to_str(int(time()) - lg['at']) + " ago")
+	embed.add_field(name=lg['queue_name'], value=seconds_to_str(int(time()) - lg['reported_at']) + " ago")
 	if len(team := [p['nick'] for p in players if p['team'] == 0]):
 		embed.add_field(name=lg['alpha_name'], value="`" + ", ".join(team) + "`")
 	if len(team := [p['nick'] for p in players if p['team'] == 1]):
@@ -143,7 +142,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	else:
 		data = await db.select(
 			['user_id', 'rating', 'deviation', 'channel_id', 'wins', 'losses', 'draws', 'is_hidden', 'streak'],
-			"qc_players",
+			"player_ratings",
 			where={'channel_id': ctx.qc.rating.channel_id}
 		)
 		p = find(lambda i: i['user_id'] == target.id, data)
@@ -165,17 +164,11 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	# Dashboard-overview pieces (persona/scout description + duo quadrants),
 	# same server-side data the web profile page shows. Best-effort too.
 	snapshot = {}
-	commentary = None
 	try:
 		from bot import web as web_dashboard
 		snapshot = await web_dashboard.player_overview_snapshot(target.id)
 	except Exception as e:
 		log.error(f"player_overview_snapshot failed for {target.id}: {e}")
-	try:
-		from bot.commentary import query as commentary_query
-		commentary = await commentary_query.player_commentary(target.id, "all")
-	except Exception as e:
-		log.error(f"player_commentary failed for {target.id}: {e}")
 
 	# Mini version of the web profile: summary strip up top, then grouped
 	# sections mirroring the dashboard's layout.
@@ -237,9 +230,8 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 		)
 
 	# Player description: the persona line always leads (same as the overview
-	# page banner), then the stored bot commentary prose. The generated scout
-	# read is only a fallback, with its tag enumeration stripped — commentary
-	# text is what we want here, not tag counts.
+	# page banner); the generated scout read fills in below it, with its tag
+	# enumeration stripped, when available.
 	desc_lines = []
 	persona = snapshot.get("persona") or {}
 	scout = snapshot.get("scout_report") or {}
@@ -250,15 +242,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 		desc_lines.append(f"**{label}**")
 		if persona.get("tagline"):
 			desc_lines.append(persona["tagline"])
-	c = (commentary or {}).get("commentary") or {}
-	body = c.get("summary") or c.get("read") or c.get("description")
-	if isinstance(body, (list, tuple)):
-		body = " ".join(str(b) for b in body if b)
-	if body:
-		if c.get("headline"):
-			desc_lines.append(f"**{c['headline']}**")
-		desc_lines.append(str(body))
-	elif snapshot.get("parsed_matches") and scout.get("description"):
+	if snapshot.get("parsed_matches") and scout.get("description"):
 		desc_lines.append(re.sub(r"\s*Recurring tags:[^.]*\.", "", scout["description"]).strip())
 	if desc_lines:
 		text = "\n".join(desc_lines)
@@ -306,7 +290,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 
 		changes = await db.select(
 			('at', 'rating_change', 'match_id', 'reason'),
-			'qc_rating_history', where=dict(user_id=target.id, channel_id=ctx.qc.rating.channel_id),
+			'rating_history', where=dict(user_id=target.id, channel_id=ctx.qc.rating.channel_id),
 			order_by='id', limit=5
 		)
 		if len(changes):
@@ -380,59 +364,18 @@ async def leaderboard(ctx, page: int = 1):
 	await ctx.reply(embed=embed)
 
 
-async def leaderboard_alternate(ctx, page: int = 1):
-	""" What-if leaderboard: Elo without the blanket weekly uncertainty (sigma) decay.
-
-	Reads the precomputed snapshot in data/alt_ratings.csv (regenerate with
-	utils/compute_alt_ratings.py) and shows it next to live ratings so players can
-	see how a decay-policy change would feel before anything is actually changed.
-	"""
-	page = (page or 1) - 1
-
-	alt_map = alt_ratings.load_alt_ratings()
-	if not alt_map:
-		raise bot.Exc.NotFoundError(ctx.qc.gt("No alternate-rating snapshot is available yet."))
-
-	rows = alt_ratings.build_alt_leaderboard(await ctx.qc.get_lb(), alt_map)
-	pages = ceil(len(rows) / 10) or 1
-	rows = rows[page * 10:(page + 1) * 10]
-	if not len(rows):
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
-
-	meta = alt_ratings.load_snapshot_meta()
-	note = (
-		"📊 **Alternate Elo — a what-if, not your live rating.**\n"
-		f"This is what the leaderboard would look like if the weekly *uncertainty (σ) decay* — which "
-		f"bumped **every** player's volatility up every week since {meta.get('branch_date', 'late 2025')} "
-		f"and stopped active players ever settling — had instead only applied to inactive players.\n"
-		f"`Δ` = alternate − current. Snapshot as of {meta.get('computed_date', 'now')} · page {page + 1} of {pages}.\n"
-		"Take a look and let us know how it feels before we decide whether to change anything.\n"
-	)
-	table = discord_table(
-		["№", "Nickname", "Elo", "Alt Elo", "Δ"],
-		[[
-			(page * 10) + (n + 1),
-			rows[n]['nick'].strip(),
-			rows[n]['current'],
-			rows[n]['alt'],
-			("+" if rows[n]['delta'] > 0 else "") + str(rows[n]['delta']),
-		] for n in range(len(rows))]
-	)
-	await ctx.reply(note + table)
-
-
 async def mapstats(ctx, period: str = None):
 	""" Channel-wide map popularity as a horizontal bar chart. """
 	_period_days = {'1M': 30, '6M': 180, '1Y': 365}
 	days = _period_days.get(period) if period else None
 	ts_from = int(time()) - days * 86400 if days else None
 
-	at_filter = " AND at >= %s" if ts_from is not None else ""
+	at_filter = " AND reported_at >= %s" if ts_from is not None else ""
 	params = [ctx.qc.id]
 	if ts_from is not None:
 		params.append(ts_from)
 
-	# `maps` is stored on qc_matches as a newline-joined string (see
+	# `maps` is stored on matches as a newline-joined string (see
 	# bot/stats/stats.py register_match_*). Split it back into rows with a
 	# recursive CTE so we can count map frequency in SQL.
 	rows = await db.fetchall(
@@ -442,7 +385,7 @@ async def mapstats(ctx, period: str = None):
 				match_id,
 				TRIM(SUBSTRING_INDEX(maps, '\n', 1)) AS map_name,
 				IF(LOCATE('\n', maps) > 0, SUBSTRING(maps, LOCATE('\n', maps) + 1), NULL) AS remaining
-			FROM qc_matches
+			FROM matches
 			WHERE channel_id = %s AND maps IS NOT NULL AND maps != ''{at_filter}
 			UNION ALL
 			SELECT
@@ -511,18 +454,18 @@ async def activity(ctx, player: Member = None):
 
 	# Day/hour bucketed in IST (UTC+5:30) via CONVERT_TZ on fixed offsets so
 	# it doesn't depend on the MySQL server session timezone. With a player
-	# we join qc_player_matches to scope to their participations; otherwise
+	# we join match_players to scope to their participations; otherwise
 	# we count distinct matches channel-wide.
 	if target:
 		rows = await db.fetchall(
 			"""
 			SELECT
-				DAYOFWEEK(CONVERT_TZ(FROM_UNIXTIME(m.at), '+00:00', '+05:30')) AS dow,
-				HOUR(CONVERT_TZ(FROM_UNIXTIME(m.at), '+00:00', '+05:30')) AS hr,
+				DAYOFWEEK(CONVERT_TZ(FROM_UNIXTIME(m.reported_at), '+00:00', '+05:30')) AS dow,
+				HOUR(CONVERT_TZ(FROM_UNIXTIME(m.reported_at), '+00:00', '+05:30')) AS hr,
 				COUNT(DISTINCT m.match_id) AS count
-			FROM qc_matches m
-			JOIN qc_player_matches pm ON pm.match_id = m.match_id AND pm.channel_id = m.channel_id
-			WHERE m.channel_id = %s AND m.at >= %s AND pm.user_id = %s
+			FROM matches m
+			JOIN match_players pm ON pm.match_id = m.match_id AND pm.channel_id = m.channel_id
+			WHERE m.channel_id = %s AND m.reported_at >= %s AND pm.user_id = %s
 			GROUP BY dow, hr
 			""",
 			[ctx.qc.id, ts_from, target.id]
@@ -531,11 +474,11 @@ async def activity(ctx, player: Member = None):
 		rows = await db.fetchall(
 			"""
 			SELECT
-				DAYOFWEEK(CONVERT_TZ(FROM_UNIXTIME(at), '+00:00', '+05:30')) AS dow,
-				HOUR(CONVERT_TZ(FROM_UNIXTIME(at), '+00:00', '+05:30')) AS hr,
+				DAYOFWEEK(CONVERT_TZ(FROM_UNIXTIME(reported_at), '+00:00', '+05:30')) AS dow,
+				HOUR(CONVERT_TZ(FROM_UNIXTIME(reported_at), '+00:00', '+05:30')) AS hr,
 				COUNT(*) AS count
-			FROM qc_matches
-			WHERE channel_id = %s AND at >= %s
+			FROM matches
+			WHERE channel_id = %s AND reported_at >= %s
 			GROUP BY dow, hr
 			""",
 			[ctx.qc.id, ts_from]

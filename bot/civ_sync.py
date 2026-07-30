@@ -13,7 +13,7 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 # bot/civ_stats.get_today_civs to drive /test_random_civs' "exclude civs played
 # today" filter — replacing the old fragile channel-history scrape.
 db.ensure_table(dict(
-	tname="qc_match_civs",
+	tname="civ_picks",
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="channel_id", ctype=db.types.int),
@@ -39,7 +39,7 @@ FULL_TEAM_OVERLAP = 8
 
 
 async def persist_lobby_civs(channel_id, parsed):
-	"""Store the civs from a parsed AOE2LobbyBOT result into qc_match_civs.
+	"""Store the civs from a parsed AOE2LobbyBOT result into civ_picks.
 
 	Called from on_message when LobbyBOT posts a completed match, using the same
 	proven parse_lobby_embed output. Idempotent: a match already recorded (by
@@ -68,13 +68,13 @@ async def persist_lobby_civs(channel_id, parsed):
 
 	if aoe2_match_id is not None:
 		exists = await db.fetchone(
-			"SELECT 1 AS x FROM qc_match_civs WHERE channel_id=%s AND aoe2_match_id=%s LIMIT 1",
+			"SELECT 1 AS x FROM civ_picks WHERE channel_id=%s AND aoe2_match_id=%s LIMIT 1",
 			[channel_id, aoe2_match_id]
 		)
 		if exists:
 			return
 
-	await db.insert_many('qc_match_civs', rows)
+	await db.insert_many('civ_picks', rows)
 	log.info(f"Civ record: stored {len(rows)} civs for aoe2 match {aoe2_match_id} in channel {channel_id}.")
 
 
@@ -107,9 +107,9 @@ def _bot_player_profiles(players, uid_to_pids, nick_to_pids):
 
 async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at, parsed,
 							 db_adapter=None, uid_to_pids=None, nick_to_pids=None):
-	"""Link one parsed LobbyBOT result to a bot match by profile overlap and write qc_match_civs."""
+	"""Link one parsed LobbyBOT result to a bot match by profile overlap and write civ_picks."""
 	dbw = db_adapter or db
-	if await dbw.fetchone("SELECT 1 AS x FROM qc_match_civs WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
+	if await dbw.fetchone("SELECT 1 AS x FROM civ_picks WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
 		return True
 
 	if uid_to_pids is None or nick_to_pids is None:
@@ -153,7 +153,7 @@ async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at
 	if not rows:
 		return False
 
-	await dbw.insert_many("qc_match_civs", rows)
+	await dbw.insert_many("civ_picks", rows)
 	log.info(
 		f"Civ history: bot match {bot_match_id} -> aoe2 {parsed.get('aoe2_match_id')}, "
 		f"recorded {len(rows)} civs (overlap {overlap}).")
@@ -162,7 +162,7 @@ async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at
 
 async def find_and_record_lobby_from_history(channel, channel_id, bot_match_id, players, winner, match_at,
 											 limit=300):
-	"""Scan LobbyBOT messages around a bot match time and backfill qc_match_civs if profiles overlap."""
+	"""Scan LobbyBOT messages around a bot match time and backfill civ_picks if profiles overlap."""
 	from core.config import cfg
 	lobbybot_id = getattr(cfg, 'LOBBYBOT_USER_ID', None)
 	if not lobbybot_id or channel is None:

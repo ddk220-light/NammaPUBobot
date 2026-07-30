@@ -14,7 +14,7 @@ from core.database import db
 from core.utils import get_nick
 
 db.ensure_table(dict(
-	tname="qc_douche",
+	tname="douche_log",
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="guild_id", ctype=db.types.int),
@@ -33,7 +33,7 @@ class Douche:
 
 	@staticmethod
 	async def add(guild_id, member, target, moderator):
-		await db.insert('qc_douche', dict(
+		await db.insert('douche_log', dict(
 			guild_id=guild_id,
 			user_id=member.id,
 			name=get_nick(member),
@@ -46,15 +46,15 @@ class Douche:
 	@staticmethod
 	async def user_summary(guild_id, member):
 		received = await db.fetchone(
-			"SELECT COUNT(*) AS count FROM qc_douche WHERE guild_id=%s AND target_user_id=%s",
+			"SELECT COUNT(*) AS count FROM douche_log WHERE guild_id=%s AND target_user_id=%s",
 			[guild_id, member.id]
 		)
 		given = await db.fetchone(
-			"SELECT COUNT(*) AS count FROM qc_douche WHERE guild_id=%s AND user_id=%s",
+			"SELECT COUNT(*) AS count FROM douche_log WHERE guild_id=%s AND user_id=%s",
 			[guild_id, member.id]
 		)
 		recent = await db.fetchall(
-			"SELECT target_name, at FROM qc_douche WHERE guild_id=%s AND user_id=%s ORDER BY at DESC LIMIT 5",
+			"SELECT target_name, at FROM douche_log WHERE guild_id=%s AND user_id=%s ORDER BY at DESC LIMIT 5",
 			[guild_id, member.id]
 		)
 		return dict(
@@ -66,7 +66,7 @@ class Douche:
 	@staticmethod
 	async def leaderboard(guild_id, limit=10):
 		return await db.fetchall(
-			"SELECT user_id, name, COUNT(*) AS count FROM qc_douche "
+			"SELECT user_id, name, COUNT(*) AS count FROM douche_log "
 			"WHERE guild_id=%s GROUP BY user_id, name ORDER BY count DESC LIMIT %s",
 			[guild_id, limit]
 		)

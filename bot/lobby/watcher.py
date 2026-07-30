@@ -5,7 +5,7 @@ Created when a ranked match enters WAITING_REPORT (bot/match/match.py). It
 subscribes to the unfiltered lobby socket, keeps only lobbies named ``NammaNomad``,
 shows a live-fill embed, and — when a full lobby with the right player count
 appears — confirms the LINK: captures the gameId + slot profileIds, persists a
-``qc_lobbies`` row tied to the match, and self-heals ``qc_profile_map`` by
+``lobbies`` row tied to the match, and self-heals ``qc_profile_map`` by
 elimination. Once the game launches it leaves a durable ``in_progress`` row and
 stops; the captain-confirmed result loop is Phase 3.
 
@@ -201,17 +201,17 @@ class LobbyWatcher:
 		}
 		try:
 			existing = await db.select_one(
-				["id"], "qc_lobbies",
+				["id"], "lobbies",
 				where={"channel_id": self.match.qc.id, "aoe2_game_id": self.game_id},
 			)
 			if existing:
 				await db.update(
-					"qc_lobbies",
+					"lobbies",
 					{k: v for k, v in row.items() if k not in ("aoe2_game_id", "channel_id", "created_at")},
 					keys={"id": existing["id"]},
 				)
 			else:
-				await db.insert("qc_lobbies", row)
+				await db.insert("lobbies", row)
 		except Exception as e:
 			log.error(f"LobbyWatcher({self.match.id}) persist failed: {e}")
 

@@ -57,7 +57,7 @@ def main():
 
 	tables = [list(r.values())[0] for r in q("SHOW TABLES")]
 	print(f"\n{len(tables)} tables total. Relevant ones:")
-	for t in ['qc_matches', 'qc_player_matches', 'qc_players', 'qc_match_civs', 'qc_rating_history', 'qc_lobbies']:
+	for t in ['matches', 'match_players', 'player_ratings', 'civ_picks', 'rating_history', 'lobbies']:
 		print(f"  {t:22s} rows={scalar(f'SELECT COUNT(*) FROM {t}')}" if t in tables else f"  {t:22s} (absent)")
 
 	def epoch(v):
@@ -66,50 +66,50 @@ def main():
 		except Exception:
 			return str(v)
 
-	if 'qc_matches' in tables:
-		mcols = [c['Field'] for c in q("SHOW COLUMNS FROM qc_matches")]
-		r = q("SELECT MIN(match_id) mn, MAX(match_id) mx, MAX(`at`) amax, COUNT(DISTINCT channel_id) ch FROM qc_matches")[0]
-		print(f"\nqc_matches: match_id {r['mn']}..{r['mx']} | latest at={r['amax']} ({epoch(r['amax'])} UTC) | channels={r['ch']}")
+	if 'matches' in tables:
+		mcols = [c['Field'] for c in q("SHOW COLUMNS FROM matches")]
+		r = q("SELECT MIN(match_id) mn, MAX(match_id) mx, MAX(`reported_at`) amax, COUNT(DISTINCT channel_id) ch FROM matches")[0]
+		print(f"\nmatches: match_id {r['mn']}..{r['mx']} | latest at={r['amax']} ({epoch(r['amax'])} UTC) | channels={r['ch']}")
 		if 'ranked' in mcols:
-			print(f"qc_matches: ranked={scalar('SELECT COUNT(*) FROM qc_matches WHERE ranked=1')} / total={scalar('SELECT COUNT(*) FROM qc_matches')}")
+			print(f"matches: ranked={scalar('SELECT COUNT(*) FROM matches WHERE ranked=1')} / total={scalar('SELECT COUNT(*) FROM matches')}")
 
-		# Recent activity. `at` is an INT epoch (see bot/stats/stats.py), so the
+		# Recent activity. `reported_at` is an INT epoch (see bot/stats/stats.py), so the
 		# window boundaries are computed here rather than with MySQL's NOW() —
 		# that keeps the numbers independent of the server's session timezone.
 		now = int(datetime.now(timezone.utc).timestamp())
 		week = 7 * 86400
 		since_3w = now - 3 * week
-		recent = scalar("SELECT COUNT(*) FROM qc_matches WHERE `at` >= %s", [since_3w])
-		line = f"\nqc_matches last 3 weeks: {recent} matches"
+		recent = scalar("SELECT COUNT(*) FROM matches WHERE `reported_at` >= %s", [since_3w])
+		line = f"\nmatches last 3 weeks: {recent} matches"
 		if 'ranked' in mcols:
-			line += f" ({scalar('SELECT COUNT(*) FROM qc_matches WHERE `at` >= %s AND ranked=1', [since_3w])} ranked)"
+			line += f" ({scalar('SELECT COUNT(*) FROM matches WHERE `reported_at` >= %s AND ranked=1', [since_3w])} ranked)"
 		print(line)
 		print("  weekly breakdown (most recent week first):")
 		for w in range(6):
 			hi, lo = now - w * week, now - (w + 1) * week
-			count = scalar("SELECT COUNT(*) FROM qc_matches WHERE `at` >= %s AND `at` < %s", [lo, hi])
+			count = scalar("SELECT COUNT(*) FROM matches WHERE `reported_at` >= %s AND `reported_at` < %s", [lo, hi])
 			print(f"    week -{w + 1} (from {datetime.fromtimestamp(lo, timezone.utc):%Y-%m-%d}): {count}")
 		try:
 			print(f"  newest match is {(now - int(r['amax'])) / 86400:.1f} days old")
 		except (TypeError, ValueError):
 			pass
 
-	if 'qc_match_civs' in tables:
-		cols = [c['Field'] for c in q("SHOW COLUMNS FROM qc_match_civs")]
-		print(f"\nqc_match_civs columns: {cols}")
-		rows = scalar("SELECT COUNT(*) FROM qc_match_civs")
+	if 'civ_picks' in tables:
+		cols = [c['Field'] for c in q("SHOW COLUMNS FROM civ_picks")]
+		print(f"\nciv_picks columns: {cols}")
+		rows = scalar("SELECT COUNT(*) FROM civ_picks")
 		mcol = 'bot_match_id' if 'bot_match_id' in cols else ('aoe2_match_id' if 'aoe2_match_id' in cols else None)
 		if mcol:
-			print(f"qc_match_civs: {rows} rows | {scalar(f'SELECT COUNT(DISTINCT {mcol}) FROM qc_match_civs')} distinct {mcol} "
-			      f"({scalar(f'SELECT MIN({mcol}) FROM qc_match_civs')}..{scalar(f'SELECT MAX({mcol}) FROM qc_match_civs')})")
+			print(f"civ_picks: {rows} rows | {scalar(f'SELECT COUNT(DISTINCT {mcol}) FROM civ_picks')} distinct {mcol} "
+			      f"({scalar(f'SELECT MIN({mcol}) FROM civ_picks')}..{scalar(f'SELECT MAX({mcol}) FROM civ_picks')})")
 		for dc in ('date', 'created_at', 'at', 'recorded_at'):
 			if dc in cols:
-				print(f"qc_match_civs: {dc} {scalar(f'SELECT MIN(`{dc}`) FROM qc_match_civs')} .. {scalar(f'SELECT MAX(`{dc}`) FROM qc_match_civs')}")
+				print(f"civ_picks: {dc} {scalar(f'SELECT MIN(`{dc}`) FROM civ_picks')} .. {scalar(f'SELECT MAX(`{dc}`) FROM civ_picks')}")
 				break
-		if mcol == 'bot_match_id' and 'qc_matches' in tables:
-			covered = scalar("SELECT COUNT(DISTINCT m.match_id) FROM qc_matches m JOIN qc_match_civs c ON c.bot_match_id=m.match_id")
-			print(f"qc_match_civs covers {covered} / {scalar('SELECT COUNT(*) FROM qc_matches')} qc_matches "
-			      f"| newest match WITHOUT civs: {scalar('SELECT MAX(match_id) FROM qc_matches m WHERE NOT EXISTS (SELECT 1 FROM qc_match_civs c WHERE c.bot_match_id=m.match_id)')}")
+		if mcol == 'bot_match_id' and 'matches' in tables:
+			covered = scalar("SELECT COUNT(DISTINCT m.match_id) FROM matches m JOIN civ_picks c ON c.bot_match_id=m.match_id")
+			print(f"civ_picks covers {covered} / {scalar('SELECT COUNT(*) FROM matches')} matches "
+			      f"| newest match WITHOUT civs: {scalar('SELECT MAX(match_id) FROM matches m WHERE NOT EXISTS (SELECT 1 FROM civ_picks c WHERE c.bot_match_id=m.match_id)')}")
 
 	conn.close()
 	print("\n(read-only; connection closed)")

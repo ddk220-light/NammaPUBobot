@@ -5,7 +5,7 @@ Spectators call a winner by reacting to a card posted when teams are formed.
 Voting freezes on a timer, the tally is revealed, and once the match reports a
 win/loss every correct caller banks a point.
 
-Self-contained in the bot/quiz and bot/lobby mould: dedicated qc_prediction_*
+Self-contained in the bot/quiz and bot/lobby mould: dedicated prediction_*
 tables declared here via ensure_table at import, imported by bot/__init__.py for
 that side effect and the PredictionJobs singleton.
 
@@ -20,7 +20,7 @@ stays safe under the unit-test conftest stubs (ensure_table is a no-op there).
 from core.database import db
 
 db.ensure_table(dict(
-	tname="qc_prediction_posts",
+	tname="prediction_posts",
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="channel_id", ctype=db.types.int),
@@ -42,7 +42,7 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_prediction_votes",
+	tname="prediction_votes",
 	columns=[
 		dict(cname="post_id", ctype=db.types.int),
 		dict(cname="user_id", ctype=db.types.int),

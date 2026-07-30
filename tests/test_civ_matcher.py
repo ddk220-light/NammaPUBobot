@@ -1,7 +1,7 @@
 """Unit tests for the user_id-keyed profile-map loader in bot/civ_matcher.
 
 The civ recorder used to map players to AoE2 profiles by **nick**, so a player
-renaming silently broke recording — which is why qc_match_civs only ever held a
+renaming silently broke recording — which is why civ_picks only ever held a
 fraction of matches. ``_load_profile_uid_map`` keys on the stable Discord
 ``user_id`` instead. These tests lock that behavior down.
 """

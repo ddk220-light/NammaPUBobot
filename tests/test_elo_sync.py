@@ -96,7 +96,7 @@ class TestParseEloMessage4v4:
 		# Pubobot convention: winning team is always index 0. The
 		# elo-sync writer encodes `winner=0` based on this; if the
 		# parser ever starts sorting teams differently, the writer's
-		# qc_matches rows will silently lie about who won.
+		# matches rows will silently lie about who won.
 		parsed = parse_elo_message(ELO_4V4_MESSAGE)
 		team0_gained = parsed['teams'][0]['avg_after'] > parsed['teams'][0]['avg_before']
 		team1_lost = parsed['teams'][1]['avg_after'] < parsed['teams'][1]['avg_before']
@@ -206,7 +206,7 @@ class TestResolveUserIdSyntheticFallback:
 	def test_different_nicks_give_different_ids(self):
 		# This is THE property the whole synthetic-id design is meant
 		# to enforce: two different unresolved players must not collide
-		# on the qc_player_matches (match_id, user_id) primary key.
+		# on the match_players (match_id, user_id) primary key.
 		a = _resolve_user_id(_message_no_guild(), 'playerOne')
 		b = _resolve_user_id(_message_no_guild(), 'playerTwo')
 		assert a != b

@@ -5,7 +5,7 @@ Subscribes to the live lobby socket filtered to ONE game id and live-edits the
 command's own response message into a rich, self-updating lobby card (the
 AOE2LobbyBOT look) until the game launches or the watch expires. Independent of the
 ranked-match flow (no match, no roster-confirm, no profile heal) — it just renders a
-lobby by id. On launch it leaves an `in_progress` qc_lobbies row (match_id NULL) so
+lobby by id. On launch it leaves an `in_progress` lobbies row (match_id NULL) so
 LobbyJobs posts the post-game results card. Strictly best-effort and fully isolated:
 every Discord/socket/DB error is logged, never raised.
 
@@ -124,13 +124,13 @@ class LobbyAnnouncer:
 		ranked /lobby2 link already created its own row and owns the result flow."""
 		try:
 			existing = await db.select_one(
-				["id"], "qc_lobbies",
+				["id"], "lobbies",
 				where={"channel_id": getattr(self.channel, "id", None), "aoe2_game_id": self.game_id})
 			if existing:
 				return
 			lob = entry.get("lobby") or {}
 			now = int(time.time())
-			await db.insert("qc_lobbies", dict(
+			await db.insert("lobbies", dict(
 				aoe2_game_id=self.game_id, channel_id=getattr(self.channel, "id", None),
 				message_id=getattr(self.message, "id", None), completed_message_id=None,
 				match_id=None, status="in_progress", lobby_name=(lob.get("name") or "(lobby)"),

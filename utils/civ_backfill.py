@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Backfill historical civ data from data/match_civ_details.csv into the
-qc_match_civs MySQL table.
+civ_picks MySQL table.
 
 SAFETY:
   - DRY-RUN by default (no writes). Pass --apply to actually insert.
   - Idempotent: skips any (bot_match_id, user_id) already present.
   - Never updates or deletes existing rows.
-  - Maps nick -> user_id authoritatively via qc_player_matches (match_id, nick),
+  - Maps nick -> user_id authoritatively via match_players (match_id, nick),
     so we never guess identities. Rows whose (match, nick) isn't in
-    qc_player_matches are reported and skipped, not invented.
+    match_players are reported and skipped, not invented.
 
 Reads DB_URI from config.cfg (gitignored).
 Usage:
@@ -85,27 +85,27 @@ def main():
 		cur.execute(sql, p or [])
 		return cur.fetchall()
 
-	channels = [r["channel_id"] for r in q("SELECT DISTINCT channel_id FROM qc_matches")]
-	print(f"channels in qc_matches: {channels}")
+	channels = [r["channel_id"] for r in q("SELECT DISTINCT channel_id FROM matches")]
+	print(f"channels in matches: {channels}")
 	channel_id = channels[0] if len(channels) == 1 else None
 
 	# Authoritative (match_id, nick) -> (user_id, channel_id) and match_id -> at
 	pm = {}    # (match_id, nick) -> (user_id, channel_id)
 	pm2 = {}   # (match_id, user_id) -> (nick, channel_id) -- for nick-change recovery
-	for r in q("SELECT match_id, nick, user_id, channel_id FROM qc_player_matches"):
+	for r in q("SELECT match_id, nick, user_id, channel_id FROM match_players"):
 		pm[(str(r["match_id"]), r["nick"])] = (r["user_id"], r["channel_id"])
 		pm2[(str(r["match_id"]), r["user_id"])] = (r["nick"], r["channel_id"])
-	at_by_match = {str(r["match_id"]): r["at"] for r in q("SELECT match_id, `at` FROM qc_matches")}
+	at_by_match = {str(r["match_id"]): r["reported_at"] for r in q("SELECT match_id, `reported_at` FROM matches")}
 	prof = load_profile_nick_to_uid()
-	print(f"loaded qc_player_matches keys={len(pm)} | qc_matches at-map={len(at_by_match)} | profile nick->uid={len(prof)}")
+	print(f"loaded match_players keys={len(pm)} | matches at-map={len(at_by_match)} | profile nick->uid={len(prof)}")
 
 	# Existing civ rows (dedup + format check)
 	existing = {(str(r["bot_match_id"]), r["user_id"]) for r in
-	            q("SELECT bot_match_id, user_id FROM qc_match_civs WHERE bot_match_id IS NOT NULL")}
-	print(f"existing qc_match_civs (bot_match_id,user_id) keys: {len(existing)}")
+	            q("SELECT bot_match_id, user_id FROM civ_picks WHERE bot_match_id IS NOT NULL")}
+	print(f"existing civ_picks (bot_match_id,user_id) keys: {len(existing)}")
 	sample_existing = q("SELECT channel_id, aoe2_match_id, aoe2_name, civ, `at`, bot_match_id, user_id, nick, team, result "
-	                    "FROM qc_match_civs WHERE bot_match_id IS NOT NULL LIMIT 3")
-	print("sample EXISTING qc_match_civs rows:")
+	                    "FROM civ_picks WHERE bot_match_id IS NOT NULL LIMIT 3")
+	print("sample EXISTING civ_picks rows:")
 	for r in sample_existing:
 		print("   ", {k: r[k] for k in ('bot_match_id', 'user_id', 'nick', 'civ', 'team', 'result', 'at')})
 
@@ -137,7 +137,7 @@ def main():
 	print("\n================ DRY-RUN SUMMARY ================")
 	print(f"  mappable & NEW (to insert): {len(to_insert)} rows across {len(add_matches)} matches (incl. {recovered} recovered via nick-change)")
 	print(f"  already present (skipped):  {dup} rows")
-	print(f"  UNMAPPABLE (no qc_player_matches (match,nick); skipped): {len(unmappable)} rows")
+	print(f"  UNMAPPABLE (no match_players (match,nick); skipped): {len(unmappable)} rows")
 	if unmappable:
 		from collections import Counter
 		bad = Counter(r["nick"] for r in unmappable)
@@ -146,7 +146,7 @@ def main():
 	print("  sample rows that WOULD be inserted (channel,aoe2_mid,aoe2_name,civ,at,bot_mid,user_id,nick,team,result):")
 	for t in to_insert[:5]:
 		print("    ", t)
-	print(f"\n  qc_match_civs match coverage: {len({k[0] for k in existing})} -> "
+	print(f"\n  civ_picks match coverage: {len({k[0] for k in existing})} -> "
 	      f"{len({k[0] for k in existing} | {str(m) for m in add_matches})} bot matches (of 3131)")
 
 	if not args.apply:
@@ -156,10 +156,10 @@ def main():
 
 	# APPLY
 	cols = "channel_id, aoe2_match_id, aoe2_name, civ, `at`, bot_match_id, user_id, nick, team, result"
-	cur.executemany(f"INSERT INTO qc_match_civs ({cols}) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", to_insert)
+	cur.executemany(f"INSERT INTO civ_picks ({cols}) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", to_insert)
 	conn.commit()
 	print(f"\nAPPLIED: inserted {cur.rowcount} rows. New total = "
-	      f"{q('SELECT COUNT(*) c FROM qc_match_civs')[0]['c']}")
+	      f"{q('SELECT COUNT(*) c FROM civ_picks')[0]['c']}")
 	conn.close()
 
 

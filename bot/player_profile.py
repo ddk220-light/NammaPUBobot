@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Player-profile data + ELO chart for the /rank command.
 
-Read-only aggregation over qc_rating_history / qc_match_civs / qc_player_matches,
+Read-only aggregation over rating_history / civ_picks / match_players,
 plus a matplotlib renderer for the rating-over-time graph. The chart is rendered
 off the event loop (run_in_executor) so it never blocks the 1s think() tick, and
 uses the OO Figure API (no pyplot global state) so it's safe to run in a thread.
@@ -262,7 +262,7 @@ async def gather_profile(channel_id, user_id):
 	out = {}
 
 	hist = await db.fetchall(
-		"SELECT `at`, rating_before, rating_before + rating_change AS rating FROM qc_rating_history "
+		"SELECT `at`, rating_before, rating_before + rating_change AS rating FROM rating_history "
 		"WHERE user_id=%s AND channel_id=%s ORDER BY `at` ASC",
 		[user_id, channel_id]
 	)
@@ -274,8 +274,8 @@ async def gather_profile(channel_id, user_id):
 	out["elo_candles"] = bucket_candles([(h["at"], h["rating_before"], h["rating"]) for h in hist])
 
 	recent = await db.fetchall(
-		"SELECT m.winner, pm.team FROM qc_player_matches pm "
-		"JOIN qc_matches m ON m.match_id = pm.match_id "
+		"SELECT m.winner, pm.team FROM match_players pm "
+		"JOIN matches m ON m.match_id = pm.match_id "
 		"WHERE pm.user_id=%s AND pm.channel_id=%s AND m.ranked=1 "
 		"ORDER BY m.match_id DESC LIMIT 10",
 		[user_id, channel_id]
@@ -284,16 +284,16 @@ async def gather_profile(channel_id, user_id):
 
 	civs = await db.fetchall(
 		"SELECT civ, SUM(result='W') wins, COUNT(*) games "
-		"FROM qc_match_civs WHERE user_id=%s AND channel_id=%s AND civ IS NOT NULL "
+		"FROM civ_picks WHERE user_id=%s AND channel_id=%s AND civ IS NOT NULL "
 		"GROUP BY civ",
 		[user_id, channel_id]
 	)
 	out["civs"] = civ_breakdown(civs)
 
 	nem = await db.fetchall(
-		"SELECT opp.nick, COUNT(*) losses FROM qc_player_matches me "
-		"JOIN qc_matches m ON m.match_id = me.match_id "
-		"JOIN qc_player_matches opp ON opp.match_id = me.match_id "
+		"SELECT opp.nick, COUNT(*) losses FROM match_players me "
+		"JOIN matches m ON m.match_id = me.match_id "
+		"JOIN match_players opp ON opp.match_id = me.match_id "
 		"  AND opp.team <> me.team AND opp.user_id <> me.user_id "
 		"WHERE me.user_id=%s AND me.channel_id=%s AND m.winner IS NOT NULL AND m.winner <> me.team "
 		"GROUP BY opp.user_id, opp.nick ORDER BY losses DESC LIMIT 1",
@@ -304,9 +304,9 @@ async def gather_profile(channel_id, user_id):
 
 	mate = await db.fetchall(
 		"SELECT mate.nick, SUM(m.winner = me.team) wins, COUNT(*) games "
-		"FROM qc_player_matches me "
-		"JOIN qc_matches m ON m.match_id = me.match_id "
-		"JOIN qc_player_matches mate ON mate.match_id = me.match_id "
+		"FROM match_players me "
+		"JOIN matches m ON m.match_id = me.match_id "
+		"JOIN match_players mate ON mate.match_id = me.match_id "
 		"  AND mate.team = me.team AND mate.user_id <> me.user_id "
 		"WHERE me.user_id=%s AND me.channel_id=%s AND m.winner IS NOT NULL "
 		"GROUP BY mate.user_id, mate.nick HAVING games >= 5 "

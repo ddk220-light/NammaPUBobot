@@ -52,7 +52,7 @@ async def link(user_id, profile_id, name, source="lobby"):
 			"name": name,
 			"linked_at": int(time.time()),
 			"source": source,
-		}, on_dublicate="replace")
+		}, on_duplicate="replace")
 		log.info(f"profile_map: linked user {user_id} <-> profile {profile_id} ({name}).")
 	except Exception as e:
 		log.error(f"profile_map link failed ({user_id}<->{profile_id}): {e}")

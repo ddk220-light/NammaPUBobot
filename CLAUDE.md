@@ -58,7 +58,7 @@ CI runs both on every PR via `.github/workflows/ci.yml`.
 - **`bot/commands/`** — Command implementations (config, queues, matches, stats, admin, misc). Imported via `__init__.py` star imports
 - **`bot/context/`** — Command context abstraction:
   - `slash/` — Slash command definitions in `commands.py`, autocomplete in `autocomplete.py`, command groups in `groups.py`
-  - (The legacy `!command` `bot/context/message/` handler was removed in Layer 5 — every prior `!cmd` has a slash equivalent prefixed `namma_`.)
+  - (The legacy `!command` `bot/context/message/` handler was removed in Layer 5 — every prior `!cmd` has a slash equivalent, registered under its own bare name (no `namma_` or other prefix).)
 - **`bot/stats/`** — Stats tracking, rating systems (Flat, Glicko2, TrueSkill)
 - **`bot/civ_stats.py`** — Loads `data/player_civ_stats.csv` and `data/civ_elo_stats.csv` at import time. Provides `get_player_civs()` lookup, `pick_balanced_teams()` for randomized civ pools, and `get_today_civs()` for channel history scanning
 - **`bot/web.py`** — Web dashboard server (aiohttp). Discord OAuth2 login, session management, REST API for channel/queue config CRUD, civ stats API. Serves `bot/web_page.html`
@@ -85,6 +85,7 @@ Slash commands are defined in `bot/context/slash/commands.py`. Each wraps a hand
 - All DB access is async through `core/database.db` (the adapter instance)
 - `bot.queue_channels` is the central dict mapping `channel_id → QueueChannel`
 - State is persisted to `saved_state.json` on shutdown and restored on startup
+- `core/data_registry.py` is the source of truth for every table's contract: its layer (core/raw/link/derived/ops), tenancy, sole writer(s), and retention class. `tests/test_data_registry.py` enforces two-way agreement between this registry and every `ensure_table`/`FactoryTable` declaration in `bot/` and `core/`
 - Deployment target is Railway (see `railway.toml`, `Dockerfile`, `start.py`)
 - Web dashboard requires `WS_ENABLE=True`, `WS_ROOT_URL`, `DC_CLIENT_SECRET` env vars. OAuth2 redirect URL must be registered in Discord Developer Portal as `{WS_ROOT_URL}/auth/callback`
 - `start.py` generates `config.cfg` from env vars — any new config vars need corresponding entries in its template

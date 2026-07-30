@@ -87,7 +87,10 @@ class FactoryTable:
 			row['factory_version'] != FACTORY_VERSION
 			for row in await db.select(['factory_version'], self.name)
 		)):
-			raise ValueError("Not all the existing table rows have the correct factory_version, please run `update_db.py` script.")
+			raise ValueError(
+				f"Table '{self.name}' has rows with a stale factory_version. Add a migration to "
+				"core/migrations.py that updates them; it runs at startup before the bot loads."
+			)
 
 	async def get_next_p_key(self) -> int:
 		""" Get next primary key value """

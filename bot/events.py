@@ -11,10 +11,17 @@ import bot
 from bot.elo_sync import process_elo_sync
 from bot.civ_sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
 from bot.message_logger import log_channel_message, log_bot_message
+from bot.community import enroll_channel
 
 
 async def seed_ratings_from_csv():
-	"""One-time bulk seed of player ratings from data/qc_players.csv into all queue channels."""
+	"""One-time bulk seed of player ratings from data/qc_players.csv into all queue channels.
+
+	qc_players.csv is an on-disk *filename*, not the `player_ratings` table it
+	seeds — it predates the stage-1 table rename and nothing renames files on
+	disk, so keep this literal as-is even though the table below is now
+	called player_ratings.
+	"""
 	csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'qc_players.csv')
 	if not os.path.exists(csv_path):
 		log.info("No data/qc_players.csv found, skipping rating seed.")
@@ -23,7 +30,7 @@ async def seed_ratings_from_csv():
 	for qc in bot.queue_channels.values():
 		dest_id = qc.rating.channel_id
 		# Check if this channel already has rated players
-		existing = await db.select(['user_id'], 'qc_players', where={'channel_id': dest_id})
+		existing = await db.select(['user_id'], 'player_ratings', where={'channel_id': dest_id})
 		rated_existing = [p for p in existing if p.get('user_id')]
 		if len(rated_existing) > 0:
 			log.info(f"\tChannel {dest_id} already has {len(rated_existing)} players, skipping CSV seed.")
@@ -50,7 +57,7 @@ async def seed_ratings_from_csv():
 				'streak': int(r.get('streak') or 0),
 			})
 
-		await db.insert_many('qc_players', to_insert, on_dublicate='replace')
+		await db.insert_many('player_ratings', to_insert, on_duplicate='replace')
 		log.info(f"\tSeeded {len(to_insert)} player ratings from CSV into channel {dest_id}.")
 
 
@@ -268,6 +275,27 @@ async def on_ready():
 				log.info(f"\tInit channel {channel.guild.name}>#{channel.name} successful.")
 			else:
 				log.info(f"\tCould not reach a text channel with id {channel_id}.")
+
+		# Enroll every successfully-initialised queue channel into a community
+		# (one per Discord guild). Guild objects only exist once Discord is
+		# connected, which is why this is a runtime hook here rather than a
+		# migration — see bot/community.py. Never let a failure here stop
+		# the bot from booting.
+		try:
+			enrolled_communities = set()
+			for channel_id in bot.queue_channels:
+				channel = dc.get_channel(channel_id)
+				if not channel:
+					continue
+				community_id = await enroll_channel(channel)
+				if community_id is not None:
+					enrolled_communities.add(community_id)
+			log.info(
+				f"\tEnrolled {len(bot.queue_channels)} channels into "
+				f"{len(enrolled_communities)} communities."
+			)
+		except Exception:
+			log.error(f"Failed to enroll queue channels into communities:\n{traceback.format_exc()}")
 
 		await seed_ratings_from_csv()
 		await bot.load_state()

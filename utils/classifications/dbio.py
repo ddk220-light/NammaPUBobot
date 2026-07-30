@@ -18,14 +18,14 @@ async def ensure_tables(pool):
 
 async def window_matches(pool, days):
     """aoe2_match_id + played_at (epoch) for completed games in the last `days`, newest-first,
-    deduped (qc_match_civs has ~8 rows per match). Same source as the live ingest find query."""
+    deduped (civ_picks has ~8 rows per match). Same source as the live ingest find query."""
     since = int(time.time()) - days * 86400
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT mc.aoe2_match_id AS aoe2_match_id, MAX(m.at) AS played_at "
-                "FROM qc_match_civs mc JOIN qc_matches m ON m.match_id = mc.bot_match_id "
-                "WHERE mc.aoe2_match_id IS NOT NULL AND m.at >= %s "
+                "SELECT mc.aoe2_match_id AS aoe2_match_id, MAX(m.reported_at) AS played_at "
+                "FROM civ_picks mc JOIN matches m ON m.match_id = mc.bot_match_id "
+                "WHERE mc.aoe2_match_id IS NOT NULL AND m.reported_at >= %s "
                 "GROUP BY mc.aoe2_match_id ORDER BY played_at DESC", [since])
             return await cur.fetchall()   # list of dicts (DictCursor)
 

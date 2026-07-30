@@ -47,6 +47,7 @@ _fake_core_config.cfg = types.SimpleNamespace(
 	LOBBYBOT_USER_ID=0,
 	STATUS='',
 	HELP='',
+	FLAGSHIP_GUILD_IDS=[],
 )
 sys.modules['core.config'] = _fake_core_config
 

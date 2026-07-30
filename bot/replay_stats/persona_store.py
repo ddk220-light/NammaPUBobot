@@ -111,10 +111,10 @@ def aggregate_player_stats(match_groups, user_id, period_start):
 
 async def _match_groups_for_user(user_id):
 	rows = await db.fetchall(
-		"SELECT g.*, m.at AS played_at "
+		"SELECT g.*, m.reported_at AS played_at "
 		"FROM rs_player_games g "
 		"JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
-		"LEFT JOIN qc_matches m ON m.match_id=rm.bot_match_id "
+		"LEFT JOIN matches m ON m.match_id=rm.bot_match_id "
 		"WHERE g.aoe2_match_id IN ("
 		"SELECT aoe2_match_id FROM rs_player_games WHERE user_id=%s)",
 		[user_id])
@@ -147,7 +147,7 @@ async def refresh_user(user_id, now=None):
 			"matches": (stats or {}).get("matches") or 0,
 			"computed_at": now,
 		})
-	await db.insert_many("rs_player_personas", rows, on_dublicate="replace")
+	await db.insert_many("rs_player_personas", rows, on_duplicate="replace")
 	return len(rows)
 
 
