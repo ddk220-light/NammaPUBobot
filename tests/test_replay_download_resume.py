@@ -84,3 +84,32 @@ def test_manifest_round_trips_through_csv(tmp_path):
         r = csv.reader(f)
         assert next(r) == mf.FIELDS
         assert [line[0] for line in r] == ["501", "9"]  # newest id first
+
+
+def test_download_module_is_importable_the_way_the_bot_imports_it(monkeypatch):
+    """bot/replay_stats/fetch.py does `from utils.replay_quiz import download`
+    with only the repo ROOT on sys.path, so download.py must not depend on its
+    own directory being importable.
+
+    Its siblings (extract, quiz, ...) are script-only and use bare sibling
+    imports freely; download.py is the one module the bot also imports, and a
+    bare `from manifest import ...` there breaks the live replay-fetch path.
+    """
+    import sys
+    import types
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for name in ("requests", "mgz", "mgz.fast", "mgz.util"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    sys.modules["mgz"].fast = sys.modules["mgz.fast"]
+    sys.modules["mgz.util"].get_save_version = lambda *_a, **_k: None
+    # Drop any cached copy so the import actually re-executes.
+    for name in list(sys.modules):
+        if name.startswith("utils.replay_quiz"):
+            monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.syspath_prepend(str(root))
+
+    from utils.replay_quiz import download
+
+    assert callable(download.pending_ids)
+    assert callable(download.download_replay)

@@ -31,8 +31,19 @@ import zlib
 
 import requests
 
-from manifest import (CACHE_DIR, ROOT, is_cached, load_manifest, pending_ids, replay_path,
-                      write_manifest)
+try:
+    # Imported as a package module — bot/replay_stats/fetch.py does
+    # `from utils.replay_quiz import download` with only the repo ROOT on
+    # sys.path, so this module's own directory is not importable.
+    from utils.replay_quiz.manifest import (CACHE_DIR, ROOT, is_cached, load_manifest,
+                                            pending_ids, replay_path, write_manifest)
+except ImportError:
+    # Run as a script (`python utils/replay_quiz/download.py`), where sys.path[0]
+    # is this directory. The script-only siblings here (extract, quiz, ...) use
+    # this bare form exclusively; download.py has to support both because it is
+    # the one module the bot also imports.
+    from manifest import (CACHE_DIR, ROOT, is_cached, load_manifest, pending_ids,
+                          replay_path, write_manifest)
 from mgz import fast
 from mgz.util import get_save_version
 
