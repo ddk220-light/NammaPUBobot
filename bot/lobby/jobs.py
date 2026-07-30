@@ -7,7 +7,7 @@ lobby feature is strictly opt-in and must do no harm to the path that already
 works (create-your-own-lobby + manual /report).
 
 Phase 2 responsibilities:
-  - boot rehydration log of non-terminal qc_lobbies rows
+  - boot rehydration log of non-terminal lobbies rows
   - reap stale created/filling rows that never launched (one UPDATE, throttled)
 Phase 3 adds the IN_PROGRESS -> COMPLETED result poll here. All edits land in
 THIS file, never in the hot tick path.
@@ -70,7 +70,7 @@ class LobbyJobs:
 		them; Phase 3 resumes their completion polls. Wrapped so a missing table on
 		first boot can't surface an error."""
 		try:
-			rows = await db.select(["id", "aoe2_game_id", "match_id", "status"], "qc_lobbies")
+			rows = await db.select(["id", "aoe2_game_id", "match_id", "status"], "lobbies")
 			live = [r for r in (rows or []) if r.get("status") not in self.TERMINAL]
 			if live:
 				log.info(f"Lobby rehydrate: {len(live)} non-terminal row(s) (Phase 3 will resume).")
@@ -84,7 +84,7 @@ class LobbyJobs:
 		hygiene."""
 		try:
 			await db.execute(
-				"UPDATE qc_lobbies SET status='expired' "
+				"UPDATE lobbies SET status='expired' "
 				"WHERE status IN ('created','filling') AND created_at < %s",
 				[cutoff],
 			)
@@ -100,7 +100,7 @@ class LobbyJobs:
 			rows = await db.fetchall(
 				"SELECT id, aoe2_game_id, match_id, channel_id, profile_ids, "
 				"created_at, last_edit_at, completed_message_id, status "
-				"FROM qc_lobbies WHERE status IN ('in_progress','awaiting_confirm')"
+				"FROM lobbies WHERE status IN ('in_progress','awaiting_confirm')"
 			)
 		except Exception as e:
 			log.error(f"Lobby poll select skipped: {e}")
@@ -142,7 +142,7 @@ class LobbyJobs:
 
 # Keep create_task'd background jobs from being GC'd mid-run (civ_matcher pattern).
 _pending = set()
-# Row ids currently being resolved — prevents the same qc_lobbies row being
+# Row ids currently being resolved — prevents the same lobbies row being
 # dispatched by two overlapping poll passes (single-process guard).
 _inflight = set()
 

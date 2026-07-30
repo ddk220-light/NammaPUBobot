@@ -282,7 +282,7 @@ def _team_card_fields(player_rows, team_names=None):
 async def _team_names(channel_id, bot_match_id):
 	from core.database import db
 	row = await db.fetchone(
-		"SELECT alpha_name, beta_name FROM qc_matches WHERE match_id=%s AND channel_id=%s",
+		"SELECT alpha_name, beta_name FROM matches WHERE match_id=%s AND channel_id=%s",
 		[bot_match_id, channel_id]
 	)
 	if row:
@@ -292,7 +292,7 @@ async def _team_names(channel_id, bot_match_id):
 
 async def _match_channel_id(bot_match_id):
 	from core.database import db
-	row = await db.fetchone("SELECT channel_id FROM qc_matches WHERE match_id=%s", [bot_match_id])
+	row = await db.fetchone("SELECT channel_id FROM matches WHERE match_id=%s", [bot_match_id])
 	return row.get("channel_id") if row else None
 
 
@@ -302,7 +302,7 @@ async def _analysis_rows(bot_match_id):
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, pm.team AS bot_team, "
 		"CASE WHEN m.winner=pm.team THEN 'W' "
 		"WHEN m.winner IS NOT NULL AND m.winner<>pm.team THEN 'L' ELSE NULL END AS result "
-		"FROM qc_player_matches pm JOIN qc_matches m "
+		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"WHERE pm.match_id=%s AND pm.team IN (0, 1) "
 		"GROUP BY pm.user_id, pm.team, m.winner "
@@ -310,7 +310,7 @@ async def _analysis_rows(bot_match_id):
 		[bot_match_id])
 	mc_rows = await db.fetchall(
 		"SELECT user_id, nick, team AS bot_team, civ, result "
-		"FROM qc_match_civs "
+		"FROM civ_picks "
 		"WHERE bot_match_id=%s AND team IN (0, 1) AND result IN ('W', 'L') "
 		"ORDER BY team, nick",
 		[bot_match_id])

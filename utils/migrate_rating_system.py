@@ -27,11 +27,11 @@ async def main():
 
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT channel_id, cfg_data FROM qc_configs")
+            await cur.execute("SELECT channel_id, cfg_data FROM channel_settings")
             rows = await cur.fetchall()
 
     if not rows:
-        print("No channels found in qc_configs.")
+        print("No channels found in channel_settings.")
         pool.close()
         await pool.wait_closed()
         return
@@ -66,7 +66,7 @@ async def main():
             for channel_id, _, cfg_data in to_update:
                 cfg_data["rating_system"] = TARGET_RATING
                 await cur.execute(
-                    "UPDATE qc_configs SET cfg_data = %s WHERE channel_id = %s",
+                    "UPDATE channel_settings SET cfg_data = %s WHERE channel_id = %s",
                     (json.dumps(cfg_data), channel_id),
                 )
                 print(f"  Updated channel {channel_id}")

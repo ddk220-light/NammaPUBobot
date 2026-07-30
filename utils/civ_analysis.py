@@ -66,8 +66,8 @@ async def load_bot_matches_from_db(cutoff):
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT match_id, `at`, winner FROM qc_matches "
-                    "WHERE `at` >= %s AND winner IS NOT NULL "
+                    "SELECT match_id, `reported_at`, winner FROM matches "
+                    "WHERE `reported_at` >= %s AND winner IS NOT NULL "
                     "ORDER BY match_id ASC",
                     (cutoff_ts,)
                 )
@@ -81,8 +81,8 @@ async def load_bot_matches_from_db(cutoff):
                 await cur.execute(
                     f"SELECT pm.match_id, pm.user_id, pm.team, "
                     f"COALESCE(pm.nick, p.nick, pm.user_id) AS nick "
-                    f"FROM qc_player_matches pm "
-                    f"LEFT JOIN qc_players p ON pm.user_id = p.user_id AND pm.channel_id = p.channel_id "
+                    f"FROM match_players pm "
+                    f"LEFT JOIN player_ratings p ON pm.user_id = p.user_id AND pm.channel_id = p.channel_id "
                     f"WHERE pm.match_id IN ({fmt})",
                     match_ids
                 )
@@ -103,7 +103,7 @@ async def load_bot_matches_from_db(cutoff):
     for r in rows:
         matches.append({
             'match_id': r['match_id'],
-            'at': datetime.fromtimestamp(r['at']),
+            'at': datetime.fromtimestamp(r['reported_at']),
             'winner_team': int(r['winner']),
             'players': player_map.get(r['match_id'], []),
         })
@@ -112,9 +112,9 @@ async def load_bot_matches_from_db(cutoff):
 
 def load_bot_matches_from_csv(cutoff):
     """Load bot matches since cutoff with their players."""
-    matches_path = os.path.join(PROJECT_ROOT, 'data', 'qc_matches.csv')
-    players_path = os.path.join(PROJECT_ROOT, 'data', 'qc_player_matches.csv')
-    players_csv_path = os.path.join(PROJECT_ROOT, 'data', 'qc_players.csv')
+    matches_path = os.path.join(PROJECT_ROOT, 'data', 'matches.csv')
+    players_path = os.path.join(PROJECT_ROOT, 'data', 'match_players.csv')
+    players_csv_path = os.path.join(PROJECT_ROOT, 'data', 'player_ratings.csv')
 
     nick_lookup = {}
     with open(players_csv_path, 'r') as f:

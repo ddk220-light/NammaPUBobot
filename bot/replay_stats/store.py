@@ -25,17 +25,17 @@ async def set_enabled(on):
 
 # ── find work ────────────────────────────────────────────────────────────
 async def find_new_match(max_age_days=None):
-    """Newest aoe2_match_id (deduped) present in qc_match_civs but absent from rs_ingest.
-    qc_match_civs has ~8 rows per match, so GROUP BY; join qc_matches for the timestamp.
+    """Newest aoe2_match_id (deduped) present in civ_picks but absent from rs_ingest.
+    civ_picks has ~8 rows per match, so GROUP BY; join matches for the timestamp.
     Returns dict(aoe2_match_id, bot_match_id, at) or None."""
     age_clause = ""
     args = []
     if max_age_days is not None:
-        age_clause = "AND m.at >= %s "
+        age_clause = "AND m.reported_at >= %s "
         args.append(int(time.time()) - max_age_days * 86400)
     rows = await db.fetchall(
         "SELECT mc.aoe2_match_id AS aoe2_match_id, MAX(mc.bot_match_id) AS bot_match_id, "
-        "MAX(m.at) AS at FROM qc_match_civs mc JOIN qc_matches m ON m.match_id = mc.bot_match_id "
+        "MAX(m.reported_at) AS at FROM civ_picks mc JOIN matches m ON m.match_id = mc.bot_match_id "
         "WHERE mc.aoe2_match_id IS NOT NULL " + age_clause +
         "AND mc.aoe2_match_id NOT IN (SELECT aoe2_match_id FROM rs_ingest) "
         "GROUP BY mc.aoe2_match_id ORDER BY at DESC LIMIT 1", args)

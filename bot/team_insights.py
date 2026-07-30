@@ -847,10 +847,10 @@ async def _fetch_history(channel_id, user_ids, since_ts):
 	placeholders = ", ".join(["%s"] * len(user_ids))
 	rows = await db.fetchall(
 		"SELECT pm.match_id, pm.user_id, pm.nick, pm.team, m.winner "
-		"FROM qc_player_matches pm "
-		"JOIN qc_matches m ON m.match_id = pm.match_id AND m.channel_id = pm.channel_id "
+		"FROM match_players pm "
+		"JOIN matches m ON m.match_id = pm.match_id AND m.channel_id = pm.channel_id "
 		"WHERE pm.channel_id = %s AND m.ranked = 1 AND pm.team IS NOT NULL "
-		"AND m.at >= %s "
+		"AND m.reported_at >= %s "
 		"AND pm.user_id IN (" + placeholders + ") "
 		"ORDER BY pm.match_id ASC",
 		[channel_id, since_ts, *user_ids]

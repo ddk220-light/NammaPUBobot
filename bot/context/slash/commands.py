@@ -811,7 +811,7 @@ async def _redo_teams(
 
 	# Find the last played match from the database
 	lg = await db.select_one(
-		['match_id'], "qc_matches", where=dict(channel_id=qc.id), order_by="match_id", limit=1
+		['match_id'], "matches", where=dict(channel_id=qc.id), order_by="match_id", limit=1
 	)
 	if not lg:
 		await interaction.followup.send(embed=error_embed("No matches found on this channel."))

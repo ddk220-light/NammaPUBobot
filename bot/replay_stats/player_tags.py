@@ -166,9 +166,9 @@ async def _ensure_index(name, columns):
 async def write_match_tags(aoe2_match_id):
 	await ensure_table()
 	players = await db.fetchall(
-		"SELECT g.*, m.at AS played_at "
+		"SELECT g.*, m.reported_at AS played_at "
 		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
-		"LEFT JOIN qc_matches m ON m.match_id=rm.bot_match_id "
+		"LEFT JOIN matches m ON m.match_id=rm.bot_match_id "
 		"WHERE g.aoe2_match_id=%s",
 		[aoe2_match_id])
 	if not players:

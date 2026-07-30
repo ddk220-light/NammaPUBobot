@@ -9,7 +9,7 @@ pipelines are untouched. This only adds a smoother path when a lobby is created
 named ``NammaNomad`` (auto-detected) or tracked via ``/lobby2`` / ``/lobby``. Every
 entry point degrades silently if the (unofficial) lobby socket or API misbehaves.
 
-Durable store is ``qc_lobbies`` (NOT saved_state.json) — lobbies survive a
+Durable store is ``lobbies`` (NOT saved_state.json) — lobbies survive a
 Railway redeploy the same way matches do, through MySQL. ``qc_profile_map`` is
 the DB-backed, self-healing Discord-user <-> AoE2-profile map that replaces the
 stale data/player_profile_map.csv.
@@ -24,7 +24,7 @@ from core.database import db
 # completed | expired. match_id links to the ranked bot match (NULL for a bare
 # informational /lobby <id>). profile_ids is a csv of captured slot profileIds.
 db.ensure_table(dict(
-	tname="qc_lobbies",
+	tname="lobbies",
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="aoe2_game_id", ctype=db.types.int),

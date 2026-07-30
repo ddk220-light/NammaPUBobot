@@ -8,7 +8,7 @@ from core.database import db
 from core.utils import iter_to_dict, find, get_nick  # noqa: F401
 
 db.ensure_table(dict(
-	tname="players",
+	tname="player_prefs",
 	columns=[
 		dict(cname="user_id", ctype=db.types.int),
 		dict(cname="name", ctype=db.types.str),
@@ -19,7 +19,7 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_players",
+	tname="player_ratings",
 	columns=[
 		dict(cname="channel_id", ctype=db.types.int),
 		dict(cname="user_id", ctype=db.types.int),
@@ -37,7 +37,7 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_rating_history",
+	tname="rating_history",
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="channel_id", ctype=db.types.int),
@@ -54,13 +54,13 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_matches",
+	tname="matches",
 	columns=[
 		dict(cname="match_id", ctype=db.types.int),
 		dict(cname="channel_id", ctype=db.types.int),
 		dict(cname="queue_id", ctype=db.types.int),
 		dict(cname="queue_name", ctype=db.types.str),
-		dict(cname="at", ctype=db.types.int),
+		dict(cname="reported_at", ctype=db.types.int),
 		dict(cname="alpha_name", ctype=db.types.str),
 		dict(cname="beta_name", ctype=db.types.str),
 		dict(cname="ranked", ctype=db.types.bool),
@@ -73,14 +73,14 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_match_id_counter",
+	tname="match_counter",
 	columns=[
 		dict(cname="next_id", ctype=db.types.int)
 	]
 ))
 
 db.ensure_table(dict(
-	tname="qc_player_matches",
+	tname="match_players",
 	columns=[
 		dict(cname="match_id", ctype=db.types.int),
 		dict(cname="channel_id", ctype=db.types.int),
@@ -104,19 +104,19 @@ async def check_match_id_counter():
 	"""
 	Set to current max match_id+1 if not persist or less
 	"""
-	m = await db.select_one(('match_id',), 'qc_matches', order_by='match_id', limit=1)
+	m = await db.select_one(('match_id',), 'matches', order_by='match_id', limit=1)
 	next_known_match = m['match_id']+1 if m else 0
-	counter = await db.select_one(('next_id',), 'qc_match_id_counter')
+	counter = await db.select_one(('next_id',), 'match_counter')
 	if counter is None:
-		await db.insert('qc_match_id_counter', dict(next_id=next_known_match))
+		await db.insert('match_counter', dict(next_id=next_known_match))
 	elif next_known_match > counter['next_id']:
-		await db.update('qc_match_id_counter', dict(next_id=next_known_match))
+		await db.update('match_counter', dict(next_id=next_known_match))
 
 
 async def next_match():
 	""" Increase match_id counter, return current match_id """
-	counter = await db.select_one(('next_id',), 'qc_match_id_counter')
-	await db.update('qc_match_id_counter', dict(next_id=counter['next_id']+1))
+	counter = await db.select_one(('next_id',), 'match_counter')
+	await db.update('match_counter', dict(next_id=counter['next_id']+1))
 	log.debug(f"Current match_id is {counter['next_id']}")
 	return counter['next_id']
 
@@ -135,13 +135,13 @@ def _schedule_civ_match(m):
 
 
 async def register_match_unranked(ctx, m):
-	await db.insert('qc_matches', dict(
+	await db.insert('matches', dict(
 		match_id=m.id, channel_id=m.qc.id, queue_id=m.queue.cfg.p_key, queue_name=m.queue.name,
 		alpha_name=m.teams[0].name, beta_name=m.teams[1].name,
-		at=int(time.time()), ranked=0, winner=None, maps="\n".join(m.maps)
+		reported_at=int(time.time()), ranked=0, winner=None, maps="\n".join(m.maps)
 	))
 
-	await db.insert_many('qc_players', (
+	await db.insert_many('player_ratings', (
 		dict(channel_id=m.qc.id, user_id=p.id)
 		for p in m.players
 	), on_duplicate="ignore")
@@ -149,7 +149,7 @@ async def register_match_unranked(ctx, m):
 	for p in m.players:
 		nick = get_nick(p)
 		await db.update(
-			"qc_players",
+			"player_ratings",
 			dict(nick=nick),
 			keys=dict(channel_id=m.qc.id, user_id=p.id)
 		)
@@ -162,7 +162,7 @@ async def register_match_unranked(ctx, m):
 			team = None
 
 		await db.insert(
-			'qc_player_matches',
+			'match_players',
 			dict(match_id=m.id, channel_id=m.qc.id, user_id=p.id, nick=nick, team=team)
 		)
 
@@ -172,15 +172,15 @@ async def register_match_unranked(ctx, m):
 async def register_match_ranked(ctx, m):
 	now = int(time.time())
 
-	await db.insert('qc_matches', dict(
+	await db.insert('matches', dict(
 		match_id=m.id, channel_id=m.qc.id, queue_id=m.queue.cfg.p_key, queue_name=m.queue.name,
 		alpha_name=m.teams[0].name, beta_name=m.teams[1].name,
-		at=now, ranked=1, winner=m.winner,
+		reported_at=now, ranked=1, winner=m.winner,
 		alpha_score=m.scores[0], beta_score=m.scores[1], maps="\n".join(m.maps)
 	))
 
 	for channel_id in {m.qc.id, m.qc.rating.channel_id}:
-		await db.insert_many('qc_players', (
+		await db.insert_many('player_ratings', (
 			dict(channel_id=channel_id, user_id=p.id, nick=get_nick(p))
 			for p in m.players
 		), on_duplicate="ignore")
@@ -212,7 +212,7 @@ async def register_match_ranked(ctx, m):
 		team = 0 if p in m.teams[0] else 1
 
 		await db.update(
-			"qc_players",
+			"player_ratings",
 			dict(
 				nick=nick,
 				rating=after[p.id]['rating'],
@@ -227,10 +227,10 @@ async def register_match_ranked(ctx, m):
 		)
 
 		await db.insert(
-			'qc_player_matches',
+			'match_players',
 			dict(match_id=m.id, channel_id=m.qc.id, user_id=p.id, nick=nick, team=team)
 		)
-		await db.insert('qc_rating_history', dict(
+		await db.insert('rating_history', dict(
 			channel_id=m.qc.rating.channel_id,
 			user_id=p.id,
 			at=now,
@@ -249,15 +249,15 @@ async def register_match_ranked(ctx, m):
 
 
 async def undo_match(ctx, match_id):
-	match = await db.select_one(('ranked', 'winner'), 'qc_matches', where=dict(match_id=match_id, channel_id=ctx.qc.id))
+	match = await db.select_one(('ranked', 'winner'), 'matches', where=dict(match_id=match_id, channel_id=ctx.qc.id))
 	if not match:
 		return False
 
 	if match['ranked']:
-		p_matches = await db.select(('user_id', 'team'), 'qc_player_matches', where=dict(match_id=match_id))
+		p_matches = await db.select(('user_id', 'team'), 'match_players', where=dict(match_id=match_id))
 		p_history = iter_to_dict(
 			await db.select(
-				('user_id', 'rating_change', 'deviation_change'), 'qc_rating_history', where=dict(match_id=match_id)
+				('user_id', 'rating_change', 'deviation_change'), 'rating_history', where=dict(match_id=match_id)
 			), key='user_id'
 		)
 		stats = iter_to_dict(
@@ -279,42 +279,42 @@ async def undo_match(ctx, match_id):
 			new['rating'] = max((new['rating']-changes['rating_change'], 0))
 			new['deviation'] = max((new['deviation']-changes['deviation_change'], 0))
 
-			await db.update("qc_players", new, keys=dict(channel_id=ctx.qc.rating.channel_id, user_id=p['user_id']))
-		await db.delete("qc_rating_history", where=dict(match_id=match_id))
+			await db.update("player_ratings", new, keys=dict(channel_id=ctx.qc.rating.channel_id, user_id=p['user_id']))
+		await db.delete("rating_history", where=dict(match_id=match_id))
 		members = (ctx.channel.guild.get_member(p['user_id']) for p in p_matches)
 		await ctx.qc.update_rating_roles(*(m for m in members if m is not None))
 
-	await db.delete('qc_player_matches', where=dict(match_id=match_id))
-	await db.delete('qc_matches', where=dict(match_id=match_id))
+	await db.delete('match_players', where=dict(match_id=match_id))
+	await db.delete('matches', where=dict(match_id=match_id))
 	return True
 
 
 async def reset_channel(channel_id):
 	where = {'channel_id': channel_id}
-	await db.delete("qc_players", where=where)
-	await db.delete("qc_rating_history", where=where)
-	await db.delete("qc_matches", where=where)
-	await db.delete("qc_player_matches", where=where)
+	await db.delete("player_ratings", where=where)
+	await db.delete("rating_history", where=where)
+	await db.delete("matches", where=where)
+	await db.delete("match_players", where=where)
 
 
 async def reset_player(channel_id, user_id):
 	where = {'channel_id': channel_id, 'user_id': user_id}
-	await db.delete("qc_players", where=where)
-	await db.delete("qc_rating_history", where=where)
-	await db.delete("qc_player_matches", where=where)
+	await db.delete("player_ratings", where=where)
+	await db.delete("rating_history", where=where)
+	await db.delete("match_players", where=where)
 
 
 async def replace_player(channel_id, user_id1, user_id2, new_nick):
-	await db.delete("qc_players", {'channel_id': channel_id, 'user_id': user_id2})
+	await db.delete("player_ratings", {'channel_id': channel_id, 'user_id': user_id2})
 	where = {'channel_id': channel_id, 'user_id': user_id1}
-	await db.update("qc_players", {'user_id': user_id2, 'nick': new_nick}, where)
-	await db.update("qc_rating_history", {'user_id': user_id2}, where)
-	await db.update("qc_player_matches", {'user_id': user_id2}, where)
+	await db.update("player_ratings", {'user_id': user_id2, 'nick': new_nick}, where)
+	await db.update("rating_history", {'user_id': user_id2}, where)
+	await db.update("match_players", {'user_id': user_id2}, where)
 
 
 async def qc_stats(channel_id):
 	data = await db.fetchall(
-		"SELECT `queue_name`, COUNT(*) as count FROM `qc_matches` WHERE `channel_id`=%s " +
+		"SELECT `queue_name`, COUNT(*) as count FROM `matches` WHERE `channel_id`=%s " +
 		"GROUP BY `queue_name` ORDER BY count DESC",
 		(channel_id,)
 	)
@@ -325,8 +325,8 @@ async def qc_stats(channel_id):
 
 async def user_stats(channel_id, user_id):
 	data = await db.fetchall(
-		"SELECT `queue_name`, COUNT(*) as count FROM `qc_player_matches` AS pm " +
-		"JOIN `qc_matches` AS m ON pm.match_id=m.match_id " +
+		"SELECT `queue_name`, COUNT(*) as count FROM `match_players` AS pm " +
+		"JOIN `matches` AS m ON pm.match_id=m.match_id " +
 		"WHERE pm.channel_id=%s AND user_id=%s " +
 		"GROUP BY m.queue_name ORDER BY count DESC",
 		(channel_id, user_id)
@@ -338,16 +338,16 @@ async def user_stats(channel_id, user_id):
 
 async def top(channel_id, time_gap=None):
 	total = await db.fetchone(
-		"SELECT COUNT(*) as count FROM `qc_matches` WHERE channel_id=%s" + (f" AND at>{time_gap} " if time_gap else ""),
+		"SELECT COUNT(*) as count FROM `matches` WHERE channel_id=%s" + (f" AND reported_at>{time_gap} " if time_gap else ""),
 		(channel_id, )
 	)
 
 	data = await db.fetchall(
-		"SELECT p.nick as nick, COUNT(*) as count FROM `qc_player_matches` AS pm " +
-		"JOIN `qc_players` AS p ON pm.user_id=p.user_id AND pm.channel_id=p.channel_id " +
-		"JOIN `qc_matches` AS m ON pm.match_id=m.match_id " +
+		"SELECT p.nick as nick, COUNT(*) as count FROM `match_players` AS pm " +
+		"JOIN `player_ratings` AS p ON pm.user_id=p.user_id AND pm.channel_id=p.channel_id " +
+		"JOIN `matches` AS m ON pm.match_id=m.match_id " +
 		"WHERE pm.channel_id=%s " +
-		(f"AND m.at>{time_gap} " if time_gap else "") +
+		(f"AND m.reported_at>{time_gap} " if time_gap else "") +
 		"GROUP BY p.user_id ORDER BY count DESC LIMIT 10",
 		(channel_id, )
 	)
@@ -360,9 +360,9 @@ async def last_games(channel_id):
 	#  get last played ranked match for all players
 	data = await db.fetchall(
 		"SELECT tmp.at, p.* " +
-		"FROM `qc_players` AS p " +
+		"FROM `player_ratings` AS p " +
 		"LEFT JOIN (" +
-		"  SELECT MAX(h.at) AS at, h.user_id FROM `qc_rating_history` AS h" +
+		"  SELECT MAX(h.at) AS at, h.user_id FROM `rating_history` AS h" +
 		"    WHERE h.channel_id=%s AND h.match_id IS NOT NULL" +
 		"    GROUP BY h.user_id" +
 		") AS tmp ON p.user_id=tmp.user_id " +

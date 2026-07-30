@@ -5,7 +5,7 @@ AOE2LobbyBOT doesn't reliably post result embeds in this server, so the live
 civ_sync path captures nothing. Instead — the same way utils/civ_analysis.py
 built all the historical civ data — we query the aoe2companion API for the
 match participants' recent games, find the one that lines up by time + player
-overlap, and store each player's civ in qc_match_civs (linked to the bot match).
+overlap, and store each player's civ in civ_picks (linked to the bot match).
 
 Triggered from bot/stats/stats.py when a match is reported/completed. Because
 the API lags a few minutes behind a finished game, we retry on a short backoff
@@ -117,7 +117,7 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 		return True  # not enough mapped players to ever match — don't keep retrying
 
 	# Already recorded?
-	if await db.fetchone("SELECT 1 AS x FROM qc_match_civs WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
+	if await db.fetchone("SELECT 1 AS x FROM civ_picks WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
 		return True
 
 	# Build a pool of the participants' recent API games.
@@ -172,7 +172,7 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 	if not rows:
 		return False
 
-	await db.insert_many("qc_match_civs", rows)
+	await db.insert_many("civ_picks", rows)
 	log.info(
 		f"Civ match: bot match {bot_match_id} -> aoe2 {aoe2_match_id}, "
 		f"recorded {len(rows)} civs (overlap {best_overlap})."

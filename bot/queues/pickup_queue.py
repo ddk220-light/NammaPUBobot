@@ -11,7 +11,7 @@ import bot
 class PickupQueue:
 
 	cfg_factory = CfgFactory(
-		table=FactoryTable(name="pq_configs", p_key="pq_id", f_key="channel_id"),
+		table=FactoryTable(name="queue_settings", p_key="pq_id", f_key="channel_id"),
 		name="pq_config",
 		sections=["General", "Teams", "Appearance", "Maps"],
 		icon='pq.png',

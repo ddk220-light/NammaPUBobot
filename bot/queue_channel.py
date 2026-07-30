@@ -33,7 +33,7 @@ class QueueChannel:
 	}
 
 	cfg_factory = CfgFactory(
-		table=FactoryTable(name='qc_configs', p_key="channel_id"),
+		table=FactoryTable(name='channel_settings', p_key="channel_id"),
 		name="qc_config",
 		sections=["General", "Auto-remove", "Rating", "Leaderboard"],
 		variables=[
@@ -465,7 +465,7 @@ class QueueChannel:
 		now = int(time())
 		data = await db.select(
 			['user_id', 'nick', 'rating', 'deviation', 'wins', 'losses', 'draws', 'streak', 'is_hidden', 'last_ranked_match_at'],
-			'qc_players',
+			'player_ratings',
 			where={'channel_id': self.rating.channel_id}, order_by="rating"
 		)
 		return [
@@ -481,7 +481,7 @@ class QueueChannel:
 
 	async def update_expire(self, member):
 		""" update expire timer on !add command """
-		personal_expire = await db.select_one(['expire'], 'players', where={'user_id': member.id})
+		personal_expire = await db.select_one(['expire'], 'player_prefs', where={'user_id': member.id})
 		personal_expire = personal_expire.get('expire') if personal_expire else None
 		if personal_expire not in [0, None]:
 			bot.expire.set(self, member, personal_expire)

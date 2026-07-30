@@ -67,7 +67,7 @@ async def default_expire(ctx, duration: timedelta = None, afk: bool = None, clea
 			return ctx.qc.gt("Your default expire time is {time}.".format(time=seconds_to_str(seconds)))
 
 	if duration is None and afk is None and clear is None:
-		data = await db.select_one(['expire'], 'players', where={'user_id': ctx.author.id})
+		data = await db.select_one(['expire'], 'player_prefs', where={'user_id': ctx.author.id})
 		seconds = None if not data else data['expire']
 		await ctx.reply(_expire_to_reply(seconds))
 		return
@@ -83,9 +83,9 @@ async def default_expire(ctx, duration: timedelta = None, afk: bool = None, clea
 		seconds = 0
 
 	try:
-		await db.insert('players', {'user_id': ctx.author.id, 'expire': seconds})
+		await db.insert('player_prefs', {'user_id': ctx.author.id, 'expire': seconds})
 	except db.errors.IntegrityError:
-		await db.update('players', {'expire': seconds}, keys={'user_id': ctx.author.id})
+		await db.update('player_prefs', {'expire': seconds}, keys={'user_id': ctx.author.id})
 	await ctx.success(_expire_to_reply(seconds))
 
 
@@ -129,7 +129,7 @@ async def show_help(ctx, queue: str = None):
 
 async def set_nick(ctx, nick: str):
 	data = await db.select_one(
-		['rating'], 'qc_players',
+		['rating'], 'player_ratings',
 		where={'channel_id': ctx.author.id, 'user_id': ctx.author.id}
 	)
 	if not data or data['rating'] is None:

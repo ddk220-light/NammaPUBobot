@@ -43,8 +43,8 @@ def load_match_civ_details():
 
 
 def load_nick_to_userid_from_csv():
-    """Build nick -> user_id map from qc_players.csv."""
-    path = os.path.join(DATA_DIR, 'qc_players.csv')
+    """Build nick -> user_id map from player_ratings.csv."""
+    path = os.path.join(DATA_DIR, 'player_ratings.csv')
     mapping = {}
     with open(path, 'r') as f:
         for row in csv.DictReader(f):
@@ -53,8 +53,8 @@ def load_nick_to_userid_from_csv():
 
 
 def load_rating_history_from_csv():
-    """Load qc_rating_history.csv. Returns dict of (match_id, user_id) -> rating_before."""
-    path = os.path.join(DATA_DIR, 'qc_rating_history.csv')
+    """Load rating_history.csv. Returns dict of (match_id, user_id) -> rating_before."""
+    path = os.path.join(DATA_DIR, 'rating_history.csv')
     ratings = {}
     with open(path, 'r') as f:
         for row in csv.DictReader(f):
@@ -67,10 +67,10 @@ def load_rating_history_from_csv():
 
 
 async def load_nick_to_userid_from_db(pool):
-    """Build nick -> user_id map from qc_players DB table."""
+    """Build nick -> user_id map from player_ratings DB table."""
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT user_id, nick FROM qc_players")
+            await cur.execute("SELECT user_id, nick FROM player_ratings")
             rows = await cur.fetchall()
     return {r['nick']: str(r['user_id']) for r in rows}
 
@@ -80,7 +80,7 @@ async def load_rating_history_from_db(pool):
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
-                "SELECT match_id, user_id, rating_before FROM qc_rating_history "
+                "SELECT match_id, user_id, rating_before FROM rating_history "
                 "WHERE match_id IS NOT NULL"
             )
             rows = await cur.fetchall()

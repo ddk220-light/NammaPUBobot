@@ -17,7 +17,7 @@ import bot
 # in-flight matches (captain then can't /report, players re-queue; the 1390237
 # incident). MySQL is durable, so the periodic DB snapshot survives restarts.
 db.ensure_table(dict(
-	tname="qc_saved_state",
+	tname="bot_state",
 	columns=[
 		dict(cname="id", ctype=db.types.int),
 		dict(cname="data", ctype=db.types.dict),   # MEDIUMTEXT — JSON blob
@@ -93,7 +93,7 @@ async def save_state_db():
 	"""Durable state snapshot to MySQL — survives Railway redeploys/crashes."""
 	try:
 		await db.insert(
-			"qc_saved_state",
+			"bot_state",
 			dict(id=1, data=json.dumps(_serialize_state()), updated_at=int(time.time())),
 			on_duplicate="replace",
 		)
@@ -106,7 +106,7 @@ async def load_state():
 	# same-container restart). Either way, restore via the existing from_json.
 	data = None
 	try:
-		row = await db.select_one(["data"], "qc_saved_state", where=dict(id=1))
+		row = await db.select_one(["data"], "bot_state", where=dict(id=1))
 		if row and row.get("data"):
 			data = json.loads(row["data"])
 	except Exception as e:

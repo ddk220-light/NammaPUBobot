@@ -4,13 +4,13 @@
 The live path (bot/stats/stats.py -> civ_matcher.schedule) records civs when a
 match is reported, but misses matches whose result was never reported (e.g. the
 match was lost from active_matches), whose AoE2 API data wasn't ready inside the
-~11-minute retry window, or that errored. Result: qc_match_civs only ever held a
+~11-minute retry window, or that errored. Result: civ_picks only ever held a
 fraction of matches.
 
-This job periodically sweeps qc_matches for rows with NO civs and re-runs the
-linking via the AoE2 API (civ_matcher._find_and_record), writing to qc_match_civs
+This job periodically sweeps matches for rows with NO civs and re-runs the
+linking via the AoE2 API (civ_matcher._find_and_record), writing to civ_picks
 with the bot's own DB creds. It does NOT post replay links (would spam old
-matches). A small qc_civ_reconcile table tracks attempts so permanently
+matches). A small civ_reconcile table tracks attempts so permanently
 un-linkable matches (e.g. too few mapped players, or an old game no longer in the
 API's recent window) aren't re-fetched forever.
 
@@ -29,7 +29,7 @@ from .civ_sync import find_and_record_lobby_from_history
 # Tracks reconcile attempts per bot match so we don't re-hit the API forever for
 # matches that will never link. status: 'pending' (keep trying) | 'done' | 'gaveup'.
 db.ensure_table(dict(
-	tname="qc_civ_reconcile",
+	tname="civ_reconcile",
 	columns=[
 		dict(cname="bot_match_id", ctype=db.types.int),
 		dict(cname="attempts", ctype=db.types.int),
@@ -74,10 +74,10 @@ class CivReconcile:
 		"""Recent-first matches with no civs that are due for a (re)try."""
 		now = int(time.time())
 		return await db.fetchall(
-			"SELECT m.match_id, m.channel_id, m.winner, m.`at` "
-			"FROM qc_matches m "
-			"LEFT JOIN qc_match_civs c ON c.bot_match_id = m.match_id "
-			"LEFT JOIN qc_civ_reconcile r ON r.bot_match_id = m.match_id "
+			"SELECT m.match_id, m.channel_id, m.winner, m.`reported_at` AS `at` "
+			"FROM matches m "
+			"LEFT JOIN civ_picks c ON c.bot_match_id = m.match_id "
+			"LEFT JOIN civ_reconcile r ON r.bot_match_id = m.match_id "
 			"WHERE c.bot_match_id IS NULL "
 			"  AND (r.bot_match_id IS NULL "
 			"       OR (r.status = 'pending' AND r.attempts < %s AND r.last_at < %s)) "
@@ -88,23 +88,23 @@ class CivReconcile:
 	@staticmethod
 	async def _players(match_id):
 		rows = await db.fetchall(
-			"SELECT user_id, nick, team FROM qc_player_matches WHERE match_id=%s", [match_id]
+			"SELECT user_id, nick, team FROM match_players WHERE match_id=%s", [match_id]
 		)
 		return [(r["user_id"], r["nick"], r["team"]) for r in rows]
 
 	@staticmethod
 	async def _mark(match_id, status):
 		now = int(time.time())
-		existing = await db.select_one(["attempts"], "qc_civ_reconcile", where={"bot_match_id": match_id})
+		existing = await db.select_one(["attempts"], "civ_reconcile", where={"bot_match_id": match_id})
 		if existing:
 			await db.update(
-				"qc_civ_reconcile",
+				"civ_reconcile",
 				{"attempts": existing["attempts"] + 1, "last_at": now, "status": status},
 				keys={"bot_match_id": match_id}
 			)
 		else:
 			await db.insert(
-				"qc_civ_reconcile",
+				"civ_reconcile",
 				{"bot_match_id": match_id, "attempts": 1, "last_at": now, "status": status}
 			)
 
@@ -130,7 +130,7 @@ class CivReconcile:
 						)
 					except Exception as e:
 						log.error(f"Civ history reconcile error for match {match_id}: {e}")
-				if await db.fetchone("SELECT 1 AS x FROM qc_match_civs WHERE bot_match_id=%s LIMIT 1", [match_id]):
+				if await db.fetchone("SELECT 1 AS x FROM civ_picks WHERE bot_match_id=%s LIMIT 1", [match_id]):
 					status, linked = "done", linked + 1
 				elif done:
 					status = "gaveup"   # resolved but unmappable (too few mapped players) — stop trying

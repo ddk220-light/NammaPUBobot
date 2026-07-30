@@ -235,14 +235,14 @@ async def main():
 		else:
 			busiest = await _fetchall(
 				pool,
-				"SELECT channel_id, COUNT(*) c FROM qc_matches WHERE ranked=1 "
+				"SELECT channel_id, COUNT(*) c FROM matches WHERE ranked=1 "
 				"GROUP BY channel_id ORDER BY c DESC LIMIT 1",
 			)
 			channel = busiest[0]["channel_id"]
 		rows = await _fetchall(
 			pool,
 			"SELECT pm.match_id, pm.user_id, pm.nick, pm.team, m.winner "
-			"FROM qc_player_matches pm JOIN qc_matches m "
+			"FROM match_players pm JOIN matches m "
 			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 			"WHERE pm.channel_id=%s AND m.ranked=1 AND pm.team IS NOT NULL "
 			"ORDER BY pm.match_id ASC",

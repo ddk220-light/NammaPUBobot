@@ -34,8 +34,8 @@ async def _work_items(all_parsed, limit):
 			") "
 		)
 	sql = (
-		"SELECT rm.aoe2_match_id, MAX(rm.bot_match_id) AS bot_match_id, MAX(qm.at) AS at "
-		"FROM rs_matches rm LEFT JOIN qc_matches qm ON qm.match_id=rm.bot_match_id "
+		"SELECT rm.aoe2_match_id, MAX(rm.bot_match_id) AS bot_match_id, MAX(qm.reported_at) AS at "
+		"FROM rs_matches rm LEFT JOIN matches qm ON qm.match_id=rm.bot_match_id "
 		+ where +
 		"GROUP BY rm.aoe2_match_id ORDER BY at DESC, rm.aoe2_match_id DESC"
 	)

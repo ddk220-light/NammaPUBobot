@@ -3,7 +3,7 @@
 
 Self-contained: the bot reads only data/quiz_schedule.json + these qc_quiz_* tables
 at runtime and NEVER touches the aoe2_matchup SQLite. Disabled by default (no
-qc_quiz_config row with enabled=1 -> the think() job does nothing). Mirrors the
+quiz_settings row with enabled=1 -> the think() job does nothing). Mirrors the
 bot/lobby/ isolation: dedicated tables declared here via ensure_table at import,
 imported by bot/__init__.py for that side effect and the QuizJobs singleton.
 
@@ -12,7 +12,7 @@ below stays safe under the unit-test conftest stubs (ensure_table is a no-op the
 from core.database import db
 
 db.ensure_table(dict(
-	tname="qc_quiz_posts",
+	tname="quiz_posts",
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="channel_id", ctype=db.types.int),
@@ -36,7 +36,7 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_quiz_answers",
+	tname="quiz_answers",
 	columns=[
 		dict(cname="post_id", ctype=db.types.int),
 		dict(cname="user_id", ctype=db.types.int),
@@ -53,7 +53,7 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_quiz_config",
+	tname="quiz_settings",
 	columns=[
 		dict(cname="channel_id", ctype=db.types.int),
 		dict(cname="enabled", ctype=db.types.bool),

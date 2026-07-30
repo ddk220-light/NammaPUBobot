@@ -13,7 +13,7 @@ import bot.team_insights as ti
 
 
 def _rows(*matches):
-	"""Build raw qc_player_matches-style rows. Each arg is
+	"""Build raw match_players-style rows. Each arg is
 	``(match_id, winner, {user_id: team})``; winner is 0/1 or None (draw); a team
 	of None models a never-picked player."""
 	rows = []
@@ -246,7 +246,7 @@ def test_fetch_history_binds_the_cutoff_into_the_query():
 		asyncio.run(ti._fetch_history(7, [1, 2, 3], 1234))
 	finally:
 		ti.db = real_db
-	assert "m.at >= %s" in seen["sql"]
+	assert "m.reported_at >= %s" in seen["sql"]
 	assert seen["params"] == [7, 1234, 1, 2, 3]
 
 

@@ -297,9 +297,9 @@ def main():
                       (met["id"], rank, mid, ident, civ_in.get((mid, ident), ""), val,
                        r.get("map", ""), r.get("date", ""), REPLAY_URL.format(id=mid)))
 
-    # players table: identity -> current Elo (via profile_resolved user_id -> qc_players rating)
+    # players table: identity -> current Elo (via profile_resolved user_id -> player_ratings rating)
     uid_rating = {}
-    for r in csv.DictReader(open(os.path.join(ROOT, "data", "qc_players.csv"), encoding="utf-8")):
+    for r in csv.DictReader(open(os.path.join(ROOT, "data", "player_ratings.csv"), encoding="utf-8")):
         try:
             uid_rating[r["user_id"]] = (int(r["rating"]), int(r["deviation"]))
         except (ValueError, KeyError):

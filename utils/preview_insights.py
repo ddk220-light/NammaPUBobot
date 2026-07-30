@@ -82,7 +82,7 @@ async def preview_one(pool, mrow):
     mid, ch = mrow["match_id"], mrow["channel_id"]
     pms = await _fetchall(
         pool,
-        "SELECT user_id, nick, team FROM qc_player_matches WHERE match_id=%s AND channel_id=%s",
+        "SELECT user_id, nick, team FROM match_players WHERE match_id=%s AND channel_id=%s",
         (mid, ch),
     )
     nick = {p["user_id"]: p["nick"] for p in pms}
@@ -90,7 +90,7 @@ async def preview_one(pool, mrow):
     team1 = [p for p in pms if p["team"] == 1]
 
     print("=" * 74)
-    print(f"#{mid}  {mrow['queue_name']}  ·  {_fmt_when(mrow['at'])} UTC  ·  "
+    print(f"#{mid}  {mrow['queue_name']}  ·  {_fmt_when(mrow['reported_at'])} UTC  ·  "
           f"{'ranked' if mrow['ranked'] else 'unranked'}  ·  channel {ch}")
     a_name = mrow["alpha_name"] or "Alpha"
     b_name = mrow["beta_name"] or "Beta"
@@ -108,12 +108,12 @@ async def preview_one(pool, mrow):
     rows = await _fetchall(
         pool,
         "SELECT pm.match_id, pm.user_id, pm.nick, pm.team, m.winner "
-        "FROM qc_player_matches pm "
-        "JOIN qc_matches m ON m.match_id = pm.match_id AND m.channel_id = pm.channel_id "
+        "FROM match_players pm "
+        "JOIN matches m ON m.match_id = pm.match_id AND m.channel_id = pm.channel_id "
         "WHERE pm.channel_id = %s AND m.ranked = 1 AND pm.team IS NOT NULL "
-        f"AND m.match_id < %s AND m.at >= %s AND pm.user_id IN ({placeholders}) "
+        f"AND m.match_id < %s AND m.reported_at >= %s AND pm.user_id IN ({placeholders}) "
         "ORDER BY pm.match_id ASC",
-        (ch, mid, ti.window_start(mrow["at"]), *user_ids),
+        (ch, mid, ti.window_start(mrow["reported_at"]), *user_ids),
     )
     hist = ti._index_history(rows)
     if not hist.order:
@@ -173,8 +173,8 @@ async def main():
         params = ([args.channel, args.n] if args.channel else [args.n])
         matches = await _fetchall(
             pool,
-            "SELECT match_id, channel_id, queue_name, at, ranked, winner, alpha_name, beta_name "
-            f"FROM qc_matches {where}ORDER BY at DESC, match_id DESC LIMIT %s",
+            "SELECT match_id, channel_id, queue_name, reported_at, ranked, winner, alpha_name, beta_name "
+            f"FROM matches {where}ORDER BY reported_at DESC, match_id DESC LIMIT %s",
             tuple(params),
         )
         if not matches:

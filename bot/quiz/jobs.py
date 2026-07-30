@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Daily-post / close-and-reveal / weekly-leaderboard job on the shared 1-s think()
 tick. Bulletproof and cadence-gated like LobbyJobs — a failure here can never break
-the tick or any existing flow. Does nothing unless a qc_quiz_config row has
+the tick or any existing flow. Does nothing unless a quiz_settings row has
 enabled=1. nextcord / core.client / embeds are imported lazily inside the methods so
 importing bot.quiz (hence this module) stays test-safe under the conftest stubs."""
 import asyncio

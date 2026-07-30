@@ -16,57 +16,57 @@ it."""
 
 REGISTRY = {
 	# core — irreplaceable
-	"qc_matches": dict(
+	"matches": dict(
 		layer="core", tenancy="channel", writers=("bot/elo_sync.py", "bot/stats/stats.py"), retention="forever"
 	),
-	"qc_player_matches": dict(
+	"match_players": dict(
 		layer="core", tenancy="channel", writers=("bot/elo_sync.py", "bot/stats/stats.py"), retention="forever"
 	),
-	"qc_players": dict(
+	"player_ratings": dict(
 		layer="core",
 		tenancy="channel",
 		writers=("bot/elo_sync.py", "bot/events.py", "bot/stats/stats.py"),
 		retention="forever",
 	),
-	"qc_rating_history": dict(
+	"rating_history": dict(
 		layer="core",
 		tenancy="channel",
 		writers=("bot/elo_sync.py", "bot/stats/rating.py", "bot/stats/stats.py"),
 		retention="forever",
 	),
-	"qc_match_id_counter": dict(
+	"match_counter": dict(
 		layer="core", tenancy="global", writers=("bot/stats/stats.py",), retention="forever"
 	),
-	"qc_configs": dict(layer="core", tenancy="channel", writers=("core/cfg_factory.py",), retention="forever"),
-	"pq_configs": dict(layer="core", tenancy="channel", writers=("core/cfg_factory.py",), retention="forever"),
-	"qc_saved_state": dict(layer="core", tenancy="global", writers=("bot/main.py",), retention="forever"),
-	"players": dict(layer="core", tenancy="global", writers=("bot/commands/misc.py",), retention="forever"),
-	"noadds": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
-	"qc_phrases": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
-	"qc_douche": dict(layer="core", tenancy="channel", writers=("bot/douche.py",), retention="forever"),
+	"channel_settings": dict(layer="core", tenancy="channel", writers=("core/cfg_factory.py",), retention="forever"),
+	"queue_settings": dict(layer="core", tenancy="channel", writers=("core/cfg_factory.py",), retention="forever"),
+	"bot_state": dict(layer="core", tenancy="global", writers=("bot/main.py",), retention="forever"),
+	"player_prefs": dict(layer="core", tenancy="global", writers=("bot/commands/misc.py",), retention="forever"),
+	"queue_bans": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
+	"player_phrases": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
+	"douche_log": dict(layer="core", tenancy="channel", writers=("bot/douche.py",), retention="forever"),
 	# Declared but never written or read anywhere — retired in stage 1.7.
 	"disabled_guilds": dict(layer="core", tenancy="global", writers=(), retention="forever"),
 	# feature state (core contract)
-	"qc_quiz_posts": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
-	"qc_quiz_answers": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
-	"qc_quiz_config": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
-	"qc_prediction_posts": dict(
+	"quiz_posts": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
+	"quiz_answers": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
+	"quiz_settings": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
+	"prediction_posts": dict(
 		layer="core", tenancy="channel", writers=("bot/predictions/store.py",), retention="forever"
 	),
-	"qc_prediction_votes": dict(
+	"prediction_votes": dict(
 		layer="core", tenancy="channel", writers=("bot/predictions/store.py",), retention="forever"
 	),
 	# raw — append-only observations
-	"qc_match_civs": dict(
+	"civ_picks": dict(
 		layer="raw",
 		tenancy="community",
 		writers=("bot/civ_matcher.py", "bot/civ_sync.py", "bot/lobby/completed.py"),
 		retention="forever",
 	),
-	"qc_civ_reconcile": dict(
+	"civ_reconcile": dict(
 		layer="ops", tenancy="community", writers=("bot/civ_reconcile.py",), retention="forever"
 	),
-	"qc_lobbies": dict(
+	"lobbies": dict(
 		layer="raw",
 		tenancy="community",
 		writers=("bot/lobby/announce.py", "bot/lobby/completed.py", "bot/lobby/jobs.py", "bot/lobby/watcher.py"),

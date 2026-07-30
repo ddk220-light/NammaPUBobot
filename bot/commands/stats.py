@@ -24,38 +24,38 @@ async def last_game(ctx, queue: str = None, player: Member = None, match_id: int
 
 	if match_id:
 		lg = await db.select_one(
-			['*'], "qc_matches", where=dict(channel_id=ctx.qc.id, match_id=match_id), order_by="match_id", limit=1
+			['*'], "matches", where=dict(channel_id=ctx.qc.id, match_id=match_id), order_by="match_id", limit=1
 		)
 
 	elif queue:
 		if queue := find(lambda q: q.name.lower() == queue.lower(), ctx.qc.queues):
 			lg = await db.select_one(
-				['*'], "qc_matches", where=dict(channel_id=ctx.qc.id, queue_id=queue.id), order_by="match_id", limit=1
+				['*'], "matches", where=dict(channel_id=ctx.qc.id, queue_id=queue.id), order_by="match_id", limit=1
 			)
 
 	elif player and (member := await ctx.get_member(player)) is not None:
 		if match := await db.select_one(
-			['match_id'], "qc_player_matches", where=dict(channel_id=ctx.qc.id, user_id=member.id),
+			['match_id'], "match_players", where=dict(channel_id=ctx.qc.id, user_id=member.id),
 			order_by="match_id", limit=1
 		):
 			lg = await db.select_one(
-				['*'], "qc_matches", where=dict(channel_id=ctx.qc.id, match_id=match['match_id'])
+				['*'], "matches", where=dict(channel_id=ctx.qc.id, match_id=match['match_id'])
 			)
 
 	else:
 		lg = await db.select_one(
-			['*'], "qc_matches", where=dict(channel_id=ctx.qc.id), order_by="match_id", limit=1
+			['*'], "matches", where=dict(channel_id=ctx.qc.id), order_by="match_id", limit=1
 		)
 
 	if not lg:
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Nothing found"))
 
 	players = await db.select(
-		['user_id', 'nick', 'team'], "qc_player_matches",
+		['user_id', 'nick', 'team'], "match_players",
 		where=dict(match_id=lg['match_id'])
 	)
 	embed = Embed(colour=Colour(0x50e3c2))
-	embed.add_field(name=lg['queue_name'], value=seconds_to_str(int(time()) - lg['at']) + " ago")
+	embed.add_field(name=lg['queue_name'], value=seconds_to_str(int(time()) - lg['reported_at']) + " ago")
 	if len(team := [p['nick'] for p in players if p['team'] == 0]):
 		embed.add_field(name=lg['alpha_name'], value="`" + ", ".join(team) + "`")
 	if len(team := [p['nick'] for p in players if p['team'] == 1]):
@@ -143,7 +143,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	else:
 		data = await db.select(
 			['user_id', 'rating', 'deviation', 'channel_id', 'wins', 'losses', 'draws', 'is_hidden', 'streak'],
-			"qc_players",
+			"player_ratings",
 			where={'channel_id': ctx.qc.rating.channel_id}
 		)
 		p = find(lambda i: i['user_id'] == target.id, data)
@@ -306,7 +306,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 
 		changes = await db.select(
 			('at', 'rating_change', 'match_id', 'reason'),
-			'qc_rating_history', where=dict(user_id=target.id, channel_id=ctx.qc.rating.channel_id),
+			'rating_history', where=dict(user_id=target.id, channel_id=ctx.qc.rating.channel_id),
 			order_by='id', limit=5
 		)
 		if len(changes):
@@ -427,12 +427,12 @@ async def mapstats(ctx, period: str = None):
 	days = _period_days.get(period) if period else None
 	ts_from = int(time()) - days * 86400 if days else None
 
-	at_filter = " AND at >= %s" if ts_from is not None else ""
+	at_filter = " AND reported_at >= %s" if ts_from is not None else ""
 	params = [ctx.qc.id]
 	if ts_from is not None:
 		params.append(ts_from)
 
-	# `maps` is stored on qc_matches as a newline-joined string (see
+	# `maps` is stored on matches as a newline-joined string (see
 	# bot/stats/stats.py register_match_*). Split it back into rows with a
 	# recursive CTE so we can count map frequency in SQL.
 	rows = await db.fetchall(
@@ -442,7 +442,7 @@ async def mapstats(ctx, period: str = None):
 				match_id,
 				TRIM(SUBSTRING_INDEX(maps, '\n', 1)) AS map_name,
 				IF(LOCATE('\n', maps) > 0, SUBSTRING(maps, LOCATE('\n', maps) + 1), NULL) AS remaining
-			FROM qc_matches
+			FROM matches
 			WHERE channel_id = %s AND maps IS NOT NULL AND maps != ''{at_filter}
 			UNION ALL
 			SELECT
@@ -511,18 +511,18 @@ async def activity(ctx, player: Member = None):
 
 	# Day/hour bucketed in IST (UTC+5:30) via CONVERT_TZ on fixed offsets so
 	# it doesn't depend on the MySQL server session timezone. With a player
-	# we join qc_player_matches to scope to their participations; otherwise
+	# we join match_players to scope to their participations; otherwise
 	# we count distinct matches channel-wide.
 	if target:
 		rows = await db.fetchall(
 			"""
 			SELECT
-				DAYOFWEEK(CONVERT_TZ(FROM_UNIXTIME(m.at), '+00:00', '+05:30')) AS dow,
-				HOUR(CONVERT_TZ(FROM_UNIXTIME(m.at), '+00:00', '+05:30')) AS hr,
+				DAYOFWEEK(CONVERT_TZ(FROM_UNIXTIME(m.reported_at), '+00:00', '+05:30')) AS dow,
+				HOUR(CONVERT_TZ(FROM_UNIXTIME(m.reported_at), '+00:00', '+05:30')) AS hr,
 				COUNT(DISTINCT m.match_id) AS count
-			FROM qc_matches m
-			JOIN qc_player_matches pm ON pm.match_id = m.match_id AND pm.channel_id = m.channel_id
-			WHERE m.channel_id = %s AND m.at >= %s AND pm.user_id = %s
+			FROM matches m
+			JOIN match_players pm ON pm.match_id = m.match_id AND pm.channel_id = m.channel_id
+			WHERE m.channel_id = %s AND m.reported_at >= %s AND pm.user_id = %s
 			GROUP BY dow, hr
 			""",
 			[ctx.qc.id, ts_from, target.id]
@@ -531,11 +531,11 @@ async def activity(ctx, player: Member = None):
 		rows = await db.fetchall(
 			"""
 			SELECT
-				DAYOFWEEK(CONVERT_TZ(FROM_UNIXTIME(at), '+00:00', '+05:30')) AS dow,
-				HOUR(CONVERT_TZ(FROM_UNIXTIME(at), '+00:00', '+05:30')) AS hr,
+				DAYOFWEEK(CONVERT_TZ(FROM_UNIXTIME(reported_at), '+00:00', '+05:30')) AS dow,
+				HOUR(CONVERT_TZ(FROM_UNIXTIME(reported_at), '+00:00', '+05:30')) AS hr,
 				COUNT(*) AS count
-			FROM qc_matches
-			WHERE channel_id = %s AND at >= %s
+			FROM matches
+			WHERE channel_id = %s AND reported_at >= %s
 			GROUP BY dow, hr
 			""",
 			[ctx.qc.id, ts_from]

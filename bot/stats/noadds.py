@@ -5,7 +5,7 @@ from core.database import db
 from core.utils import get_nick
 
 db.ensure_table(dict(
-	tname="noadds",
+	tname="queue_bans",
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="guild_id", ctype=db.types.int),
@@ -22,7 +22,7 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_phrases",
+	tname="player_phrases",
 	columns=[
 		dict(cname="channel_id", ctype=db.types.int),
 		dict(cname="user_id", ctype=db.types.int),
@@ -41,32 +41,32 @@ class NoAdds:
 		""" returns [ban_left, phrase]"""
 
 		m_noadd = await db.select_one(
-			['duration', 'at'], 'noadds', where=dict(guild_id=ctx.channel.guild.id, user_id=member.id, is_active=1)
+			['duration', 'at'], 'queue_bans', where=dict(guild_id=ctx.channel.guild.id, user_id=member.id, is_active=1)
 		)
 		ban_left = max(0, (m_noadd['duration']+m_noadd['at'])-int(time.time())) if m_noadd else 0
-		phrases = await db.select(['phrase'], 'qc_phrases', where=dict(channel_id=ctx.channel.id, user_id=member.id))
+		phrases = await db.select(['phrase'], 'player_phrases', where=dict(channel_id=ctx.channel.id, user_id=member.id))
 
 		return [ban_left, choice(phrases)['phrase'] if len(phrases) else None]
 
 	@staticmethod
 	async def phrases_add(ctx, member, phrase):
-		await db.insert('qc_phrases', dict(channel_id=ctx.channel.id, user_id=member.id, phrase=phrase))
+		await db.insert('player_phrases', dict(channel_id=ctx.channel.id, user_id=member.id, phrase=phrase))
 
 	@staticmethod
 	async def phrases_clear(ctx, member=None):
 		if member:
-			await db.delete('qc_phrases', where=dict(channel_id=ctx.channel.id, user_id=member.id))
+			await db.delete('player_phrases', where=dict(channel_id=ctx.channel.id, user_id=member.id))
 		else:
-			await db.delete('qc_phrases', where=dict(channel_id=ctx.channel.id))
+			await db.delete('player_phrases', where=dict(channel_id=ctx.channel.id))
 
 	@staticmethod
 	async def noadd(ctx, member, duration, moderator, reason=None):
 		await db.update(
-			'noadds',
+			'queue_bans',
 			dict(is_active=0, released_by="another noadd"),
 			keys=dict(guild_id=ctx.channel.guild.id, user_id=member.id, is_active=1)
 		)
-		await db.insert('noadds', dict(
+		await db.insert('queue_bans', dict(
 			guild_id=ctx.channel.guild.id,
 			user_id=member.id,
 			name=get_nick(member),
@@ -79,12 +79,12 @@ class NoAdds:
 	@staticmethod
 	async def forgive(ctx, member, moderator):
 		noadd_id = await db.select_one(
-			['id'], 'noadds', where=dict(guild_id=ctx.channel.guild.id, user_id=member.id, is_active=1)
+			['id'], 'queue_bans', where=dict(guild_id=ctx.channel.guild.id, user_id=member.id, is_active=1)
 		)
 		if not noadd_id:
 			return False
 		await db.update(
-			'noadds',
+			'queue_bans',
 			dict(is_active=0, released_by=get_nick(moderator)),
 			keys=noadd_id
 		)
@@ -92,11 +92,11 @@ class NoAdds:
 
 	@staticmethod
 	async def get_noadds(ctx):
-		return await db.select(['*'], 'noadds', where=dict(guild_id=ctx.channel.guild.id, is_active=1))
+		return await db.select(['*'], 'queue_bans', where=dict(guild_id=ctx.channel.guild.id, is_active=1))
 
 	async def think(self, frame_time):
 		if frame_time > self.next_tick:
-			await db.execute("UPDATE `noadds` SET is_active=0, released_by='time' WHERE (`at`+`duration`)<%s", (frame_time, ))
+			await db.execute("UPDATE `queue_bans` SET is_active=0, released_by='time' WHERE (`at`+`duration`)<%s", (frame_time, ))
 			self.next_tick = frame_time + 60
 
 

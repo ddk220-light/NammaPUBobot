@@ -100,3 +100,25 @@ async def run_all(db):
 			[name, int(time.time())])
 		n += 1
 	log.info(f"migrations: {n} applied this boot, {len(MIGRATIONS)} known")
+
+
+_STAGE1_RENAMES = [
+	("qc_matches", "matches"), ("qc_player_matches", "match_players"),
+	("qc_players", "player_ratings"), ("qc_rating_history", "rating_history"),
+	("qc_match_id_counter", "match_counter"), ("qc_configs", "channel_settings"),
+	("pq_configs", "queue_settings"), ("qc_saved_state", "bot_state"),
+	("players", "player_prefs"), ("noadds", "queue_bans"),
+	("qc_phrases", "player_phrases"), ("qc_douche", "douche_log"),
+	("qc_match_civs", "civ_picks"), ("qc_civ_reconcile", "civ_reconcile"),
+	("qc_lobbies", "lobbies"), ("qc_quiz_posts", "quiz_posts"),
+	("qc_quiz_answers", "quiz_answers"), ("qc_quiz_config", "quiz_settings"),
+	("qc_prediction_posts", "prediction_posts"),
+	("qc_prediction_votes", "prediction_votes"),
+]
+
+
+@migration("001_core_renames")
+async def _m001(db):
+	for old, new in _STAGE1_RENAMES:
+		await rename_table(db, old, new)
+	await rename_column(db, "matches", "at", "reported_at")

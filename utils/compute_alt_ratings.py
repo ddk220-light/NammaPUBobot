@@ -15,12 +15,12 @@ WHAT IT IS:
   reported shift is the pure policy effect, anchored to each player's REAL rating.
 
 VALIDATION:
-  The OLD replay should reproduce the live qc_players ratings. The script prints
+  The OLD replay should reproduce the live player_ratings ratings. The script prints
   the control error (median should be a few points) so you can trust the output
   before it is shown to players.
 
   Reads DB_URI from config.cfg (gitignored). TrueSkill params and decay settings
-  are read from the live qc_configs row so the replay matches production.
+  are read from the live channel_settings row so the replay matches production.
 
 Usage:
     python utils/compute_alt_ratings.py            # writes data/alt_ratings.csv
@@ -68,9 +68,9 @@ async def main():
 		return 1
 
 	# --- read the live rating config so the replay matches production ---
-	cfgrow = await _fetchall(pool, "SELECT cfg_data FROM qc_configs LIMIT 1")
+	cfgrow = await _fetchall(pool, "SELECT cfg_data FROM channel_settings LIMIT 1")
 	cfg = json.loads(cfgrow[0]["cfg_data"])
-	CH = (await _fetchall(pool, "SELECT channel_id FROM qc_configs LIMIT 1"))[0]["channel_id"]
+	CH = (await _fetchall(pool, "SELECT channel_id FROM channel_settings LIMIT 1"))[0]["channel_id"]
 	INIT = cfg["rating_deviation"]
 	MINDEV = cfg["rating_min_deviation"]
 	RDEC = cfg["rating_decay"]
@@ -86,7 +86,7 @@ async def main():
 	# --- branch point: first weekly decay tick on/after the regime probe ---
 	row = await _fetchall(
 		pool,
-		"SELECT MIN(at) a FROM qc_rating_history WHERE channel_id=%s AND reason='inactivity rating decay' AND at>=%s",
+		"SELECT MIN(at) a FROM rating_history WHERE channel_id=%s AND reason='inactivity rating decay' AND at>=%s",
 		(CH, int(REGIME_PROBE.timestamp())),
 	)
 	T0 = row[0]["a"]
@@ -95,7 +95,7 @@ async def main():
 	pre = await _fetchall(
 		pool,
 		"SELECT user_id,rating_before,rating_change,deviation_before,deviation_change,at,match_id "
-		"FROM qc_rating_history WHERE channel_id=%s AND at<%s ORDER BY at",
+		"FROM rating_history WHERE channel_id=%s AND at<%s ORDER BY at",
 		(CH, T0),
 	)
 	init, lastplay = {}, {}
@@ -110,7 +110,7 @@ async def main():
 	# entrant lazy-init: actual pre-match state at a player's first post-T0 match
 	fi = await _fetchall(
 		pool,
-		"SELECT match_id,user_id,rating_before,deviation_before FROM qc_rating_history "
+		"SELECT match_id,user_id,rating_before,deviation_before FROM rating_history "
 		"WHERE channel_id=%s AND match_id IS NOT NULL AND at>=%s",
 		(CH, T0),
 	)
@@ -119,10 +119,10 @@ async def main():
 	# matches after T0: roster + winner + time
 	mr = await _fetchall(
 		pool,
-		"SELECT pm.match_id,pm.user_id,pm.team,mm.winner,mm.at "
-		"FROM qc_player_matches pm JOIN qc_matches mm "
+		"SELECT pm.match_id,pm.user_id,pm.team,mm.winner,mm.reported_at AS at "
+		"FROM match_players pm JOIN matches mm "
 		"ON mm.match_id=pm.match_id AND mm.channel_id=pm.channel_id "
-		"WHERE pm.channel_id=%s AND mm.at>=%s",
+		"WHERE pm.channel_id=%s AND mm.reported_at>=%s",
 		(CH, T0),
 	)
 	matches = {}
@@ -133,7 +133,7 @@ async def main():
 	# decay ticks -> dedupe to one per ISO week (the bot fires once, next Monday)
 	tk = await _fetchall(
 		pool,
-		"SELECT DISTINCT at FROM qc_rating_history WHERE channel_id=%s AND reason='inactivity rating decay' AND at>=%s ORDER BY at",
+		"SELECT DISTINCT at FROM rating_history WHERE channel_id=%s AND reason='inactivity rating decay' AND at>=%s ORDER BY at",
 		(CH, T0),
 	)
 	byweek = {}
@@ -146,7 +146,7 @@ async def main():
 	admin = await _fetchall(
 		pool,
 		"SELECT user_id,at,rating_before,rating_change,deviation_before,deviation_change "
-		"FROM qc_rating_history WHERE channel_id=%s AND at>=%s AND match_id IS NULL AND reason!='inactivity rating decay'",
+		"FROM rating_history WHERE channel_id=%s AND at>=%s AND match_id IS NULL AND reason!='inactivity rating decay'",
 		(CH, T0),
 	)
 
@@ -154,7 +154,7 @@ async def main():
 		r["user_id"]: r
 		for r in await _fetchall(
 			pool,
-			"SELECT user_id,nick,rating,deviation,wins,losses,draws FROM qc_players "
+			"SELECT user_id,nick,rating,deviation,wins,losses,draws FROM player_ratings "
 			"WHERE channel_id=%s AND rating IS NOT NULL",
 			(CH,),
 		)

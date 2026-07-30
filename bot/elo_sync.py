@@ -102,9 +102,9 @@ async def process_elo_sync(message):
 	"""Process an ELO result message from the original Pubobot.
 
 	1. Parse the message
-	2. Check for duplicates (match_id already in qc_rating_history)
-	3. For each player: look up or create in qc_players, apply rating delta
-	4. Log to qc_rating_history
+	2. Check for duplicates (match_id already in rating_history)
+	3. For each player: look up or create in player_ratings, apply rating delta
+	4. Log to rating_history
 	"""
 	import bot
 
@@ -120,8 +120,8 @@ async def process_elo_sync(message):
 	if qc is None:
 		return
 
-	# qc_players and qc_rating_history are keyed on the shared rating
-	# channel; qc_matches and qc_player_matches are keyed on the pickup
+	# player_ratings and rating_history are keyed on the shared rating
+	# channel; matches and match_players are keyed on the pickup
 	# channel (matches register_match_ranked's convention — and the
 	# stats.py queries join on the pickup channel id). Keep these two
 	# variables distinct — conflating them poisons the stats joins.
@@ -130,7 +130,7 @@ async def process_elo_sync(message):
 
 	# Dedup: check if this match_id already exists in rating history
 	existing = await db.select_one(
-		('id',), 'qc_rating_history',
+		('id',), 'rating_history',
 		where={'match_id': match_id, 'channel_id': channel_id}
 	)
 	if existing:
@@ -141,21 +141,21 @@ async def process_elo_sync(message):
 	winner_index = 0  # Team at index 0 is the winner in Pubobot format
 
 	# Write the match row itself. Until this landed (2026-04-11) the live
-	# ELO sync only wrote qc_players and qc_rating_history — every
-	# Pubobot-sourced match silently skipped qc_matches and
-	# qc_player_matches, so any stats query that JOINed those tables
+	# ELO sync only wrote player_ratings and rating_history — every
+	# Pubobot-sourced match silently skipped matches and
+	# match_players, so any stats query that JOINed those tables
 	# drifted from reality on every new match. Pubobot's ELO message
 	# doesn't include map info, so maps='' and the "set score" is just
 	# the single win (1-0). ranked=1, winner=0 is the Pubobot convention
 	# (winning team is always at index 0).
 	alpha_name = parsed['teams'][0]['name'] if len(parsed['teams']) > 0 else 'A'
 	beta_name = parsed['teams'][1]['name'] if len(parsed['teams']) > 1 else 'B'
-	await db.insert('qc_matches', {
+	await db.insert('matches', {
 		'match_id': match_id,
 		'channel_id': qc_channel_id,
 		'queue_id': None,
 		'queue_name': queue_name,
-		'at': now,
+		'reported_at': now,
 		'alpha_name': alpha_name,
 		'beta_name': beta_name,
 		'ranked': 1,
@@ -167,7 +167,7 @@ async def process_elo_sync(message):
 
 	for team in parsed['teams']:
 		is_winner = (team['index'] == winner_index)
-		team_bit = team['index']  # 0 or 1, used for qc_player_matches.team
+		team_bit = team['index']  # 0 or 1, used for match_players.team
 
 		for player in team['players']:
 			nick = player['nick']
@@ -177,34 +177,34 @@ async def process_elo_sync(message):
 
 			# Resolve the Discord user_id up front. Used for the lookup
 			# preference below, for the insert user_id, and for the
-			# qc_player_matches row. Falls back to a deterministic
+			# match_players row. Falls back to a deterministic
 			# synthetic negative id (see _resolve_user_id) so unresolved
-			# players never collide on the qc_player_matches PK.
+			# players never collide on the match_players PK.
 			resolved_user_id = _resolve_user_id(message, nick)
 
 			# Prefer user_id lookup when we have a real Discord id —
 			# that's the only way to survive a nick change without
-			# creating a duplicate qc_players row. Fall back to nick
+			# creating a duplicate player_ratings row. Fall back to nick
 			# lookup for legacy rows (imported before user_id was known)
 			# and for synthetic ids (where nick IS the stable key).
 			p = None
 			if resolved_user_id > 0:
 				p = await db.select_one(
 					('user_id', 'rating', 'deviation', 'wins', 'losses', 'draws', 'streak', 'nick'),
-					'qc_players',
+					'player_ratings',
 					where={'user_id': resolved_user_id, 'channel_id': channel_id}
 				)
 			if p is None:
 				p = await db.select_one(
 					('user_id', 'rating', 'deviation', 'wins', 'losses', 'draws', 'streak', 'nick'),
-					'qc_players',
+					'player_ratings',
 					where={'nick': nick, 'channel_id': channel_id}
 				)
 
 			if p is None:
 				# Auto-create player with the after rating
 				user_id = resolved_user_id
-				await db.insert('qc_players', {
+				await db.insert('player_ratings', {
 					'channel_id': channel_id,
 					'user_id': user_id,
 					'nick': nick,
@@ -217,7 +217,7 @@ async def process_elo_sync(message):
 				}, on_duplicate='ignore')
 				log.info(f"ELO sync: created new player '{nick}' (user_id={user_id}) with rating {rating_after}")
 
-				await db.insert('qc_rating_history', {
+				await db.insert('rating_history', {
 					'channel_id': channel_id,
 					'user_id': user_id,
 					'at': now,
@@ -229,7 +229,7 @@ async def process_elo_sync(message):
 					'reason': queue_name,
 				})
 
-				await db.insert('qc_player_matches', {
+				await db.insert('match_players', {
 					'match_id': match_id,
 					'channel_id': qc_channel_id,
 					'user_id': user_id,
@@ -256,11 +256,11 @@ async def process_elo_sync(message):
 				update_data['streak'] = min(p['streak'], 0) - 1
 
 			await db.update(
-				'qc_players', update_data,
+				'player_ratings', update_data,
 				keys={'channel_id': channel_id, 'user_id': user_id}
 			)
 
-			await db.insert('qc_rating_history', {
+			await db.insert('rating_history', {
 				'channel_id': channel_id,
 				'user_id': user_id,
 				'at': now,
@@ -272,7 +272,7 @@ async def process_elo_sync(message):
 				'reason': queue_name,
 			})
 
-			await db.insert('qc_player_matches', {
+			await db.insert('match_players', {
 				'match_id': match_id,
 				'channel_id': qc_channel_id,
 				'user_id': user_id,
@@ -314,8 +314,8 @@ def _resolve_user_id(message, nick):
 	NEGATIVE id derived from the nick when no member matches.
 
 	Why the synthetic fallback: unresolved players used to all collapse
-	to user_id=0, stomping each other on the qc_players (channel_id,
-	user_id) primary key and — once we started writing qc_player_matches
+	to user_id=0, stomping each other on the player_ratings (channel_id,
+	user_id) primary key and — once we started writing match_players
 	from the live sync — the (match_id, user_id) primary key too. A
 	stable per-nick id avoids that collision while still never colliding
 	with a real Discord id (snowflakes are always positive). We use

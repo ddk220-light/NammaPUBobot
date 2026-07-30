@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """Phase 3 — linked-lobby result sync (Flows 2 & 3).
 
-Driven entirely from LobbyJobs (off the 1s tick) for in_progress qc_lobbies rows
+Driven entirely from LobbyJobs (off the 1s tick) for in_progress lobbies rows
 left by the watcher at game launch. For each finished game >= 15 min:
-  - Flow 3: record the full game's civs in qc_match_civs (keyed on bot_match_id,
+  - Flow 3: record the full game's civs in civ_picks (keyed on bot_match_id,
     idempotent against civ_matcher / civ_reconcile — whoever lands first wins).
   - Flow 2: post a single message and gate a ✅ to the LOSING captain; on ✅ ->
     match.report_loss(ctx, captain, draw_flag=False) -> the existing finish path.
@@ -109,7 +109,7 @@ def resolve_result(match_api, profile_to_user, bot_teams):
 
 async def resolve_row(row):
 	"""Per-row worker dispatched by LobbyJobs (the caller also guards). Resolves
-	one in_progress/awaiting_confirm qc_lobbies row to a posted result or a no-op,
+	one in_progress/awaiting_confirm lobbies row to a posted result or a no-op,
 	transitioning its status. Self-contained + guarded; never raises upward."""
 	import bot
 
@@ -207,7 +207,7 @@ async def _resolve_informational(row, now):
 		return
 	try:
 		await db.update(
-			"qc_lobbies",
+			"lobbies",
 			{"status": "completed", "completed_message_id": message.id, "last_edit_at": now},
 			keys={"id": row_id})
 	except Exception as e:
@@ -257,7 +257,7 @@ async def _post_result_and_gate(match, row, winner_idx, losing_captain):
 	# write fails, delete the orphan message and leave the row to retry cleanly.
 	try:
 		await db.update(
-			"qc_lobbies",
+			"lobbies",
 			{"status": "awaiting_confirm", "completed_message_id": message.id,
 			 "last_edit_at": next_poll_at(now)},
 			keys={"id": row_id},
@@ -318,11 +318,11 @@ class LossConfirm:
 
 
 async def record_civs_by_id(channel_id, bot_match_id, match_api, players, winner, match_at):
-	"""Flow 3 — write qc_match_civs from a KNOWN gameId's match object. Mirrors the
+	"""Flow 3 — write civ_picks from a KNOWN gameId's match object. Mirrors the
 	back half of civ_matcher._find_and_record (idempotency guard + row dict +
 	insert_many) but skips the API search (we already have the exact game). The
 	guard makes it compose with the existing writers (first one wins)."""
-	if await db.fetchone("SELECT 1 AS x FROM qc_match_civs WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
+	if await db.fetchone("SELECT 1 AS x FROM civ_picks WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
 		return True
 	pid_civ = api.pid_civ_map(match_api)
 	if not pid_civ:
@@ -342,7 +342,7 @@ async def record_civs_by_id(channel_id, bot_match_id, match_api, players, winner
 		))
 	if not rows:
 		return False
-	await db.insert_many("qc_match_civs", rows)
+	await db.insert_many("civ_picks", rows)
 	log.info(f"Flow3: recorded {len(rows)} civs for bot match {bot_match_id} (aoe2 {aoe2_match_id}).")
 	return True
 
@@ -386,12 +386,12 @@ async def _match_players_profiles(match):
 
 async def link_manual(channel_id, match_id, game_id, requested_by):
 	"""/lobby2 — manually link an aoe2 game id to a ranked match. Persists an
-	in_progress qc_lobbies row (backdated past the 15-min floor so LobbyJobs polls
+	in_progress lobbies row (backdated past the 15-min floor so LobbyJobs polls
 	it right away) and supersedes the auto NammaNomad watcher + any other non-terminal
 	lobby row for the match. Returns 'linked' or 'exists'. Best-effort; raises only
 	on a hard DB failure (the caller surfaces it)."""
 	existing = await db.select_one(
-		["id", "status"], "qc_lobbies", where={"channel_id": channel_id, "aoe2_game_id": game_id}
+		["id", "status"], "lobbies", where={"channel_id": channel_id, "aoe2_game_id": game_id}
 	)
 	if existing and existing["status"] not in ("completed", "expired"):
 		return "exists"
@@ -404,7 +404,7 @@ async def link_manual(channel_id, match_id, game_id, requested_by):
 		log.error(f"stop auto-watcher for manual link failed (match {match_id}): {e}")
 	try:
 		await db.execute(
-			"UPDATE qc_lobbies SET status='expired' WHERE match_id=%s "
+			"UPDATE lobbies SET status='expired' WHERE match_id=%s "
 			"AND status IN ('created','filling','in_progress','awaiting_confirm') AND aoe2_game_id<>%s",
 			[match_id, game_id],
 		)
@@ -418,12 +418,12 @@ async def link_manual(channel_id, match_id, game_id, requested_by):
 	)
 	if existing:   # a terminal row for this exact game — revive it
 		await db.update(
-			"qc_lobbies",
+			"lobbies",
 			{k: v for k, v in row.items() if k not in ("aoe2_game_id", "channel_id")},
 			keys={"id": existing["id"]},
 		)
 	else:
-		await db.insert("qc_lobbies", row)
+		await db.insert("lobbies", row)
 	return "linked"
 
 
@@ -445,13 +445,13 @@ async def _profiles_for(user_id):
 
 async def _set_status(row_id, status):
 	try:
-		await db.update("qc_lobbies", {"status": status, "last_edit_at": int(time.time())}, keys={"id": row_id})
+		await db.update("lobbies", {"status": status, "last_edit_at": int(time.time())}, keys={"id": row_id})
 	except Exception as e:
-		log.error(f"qc_lobbies status->{status} failed (row {row_id}): {e}")
+		log.error(f"lobbies status->{status} failed (row {row_id}): {e}")
 
 
 async def _reschedule(row_id, now):
 	try:
-		await db.update("qc_lobbies", {"last_edit_at": next_poll_at(now)}, keys={"id": row_id})
+		await db.update("lobbies", {"last_edit_at": next_poll_at(now)}, keys={"id": row_id})
 	except Exception as e:
-		log.error(f"qc_lobbies reschedule failed (row {row_id}): {e}")
+		log.error(f"lobbies reschedule failed (row {row_id}): {e}")

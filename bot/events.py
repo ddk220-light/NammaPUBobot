@@ -14,16 +14,16 @@ from bot.message_logger import log_channel_message, log_bot_message
 
 
 async def seed_ratings_from_csv():
-	"""One-time bulk seed of player ratings from data/qc_players.csv into all queue channels."""
-	csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'qc_players.csv')
+	"""One-time bulk seed of player ratings from data/player_ratings.csv into all queue channels."""
+	csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'player_ratings.csv')
 	if not os.path.exists(csv_path):
-		log.info("No data/qc_players.csv found, skipping rating seed.")
+		log.info("No data/player_ratings.csv found, skipping rating seed.")
 		return
 
 	for qc in bot.queue_channels.values():
 		dest_id = qc.rating.channel_id
 		# Check if this channel already has rated players
-		existing = await db.select(['user_id'], 'qc_players', where={'channel_id': dest_id})
+		existing = await db.select(['user_id'], 'player_ratings', where={'channel_id': dest_id})
 		rated_existing = [p for p in existing if p.get('user_id')]
 		if len(rated_existing) > 0:
 			log.info(f"\tChannel {dest_id} already has {len(rated_existing)} players, skipping CSV seed.")
@@ -50,7 +50,7 @@ async def seed_ratings_from_csv():
 				'streak': int(r.get('streak') or 0),
 			})
 
-		await db.insert_many('qc_players', to_insert, on_duplicate='replace')
+		await db.insert_many('player_ratings', to_insert, on_duplicate='replace')
 		log.info(f"\tSeeded {len(to_insert)} player ratings from CSV into channel {dest_id}.")
 
 

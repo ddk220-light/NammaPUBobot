@@ -20,7 +20,7 @@ stays safe under the unit-test conftest stubs (ensure_table is a no-op there).
 from core.database import db
 
 db.ensure_table(dict(
-	tname="qc_prediction_posts",
+	tname="prediction_posts",
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="channel_id", ctype=db.types.int),
@@ -42,7 +42,7 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-	tname="qc_prediction_votes",
+	tname="prediction_votes",
 	columns=[
 		dict(cname="post_id", ctype=db.types.int),
 		dict(cname="user_id", ctype=db.types.int),

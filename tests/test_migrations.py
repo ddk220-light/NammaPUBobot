@@ -67,21 +67,21 @@ def _make(calls):
 
 
 def test_rename_table_renames_when_only_old_exists():
-	db = FakeDb(tables={"qc_matches"})
-	asyncio.run(mig.rename_table(db, "qc_matches", "matches"))
-	assert "matches" in db.tables and "qc_matches" not in db.tables
+	db = FakeDb(tables={"old_t"})
+	asyncio.run(mig.rename_table(db, "old_t", "matches"))
+	assert "matches" in db.tables and "old_t" not in db.tables
 
 
 def test_rename_table_skips_when_only_new_exists():
 	db = FakeDb(tables={"matches"})
-	asyncio.run(mig.rename_table(db, "qc_matches", "matches"))
+	asyncio.run(mig.rename_table(db, "old_t", "matches"))
 	assert not any(s.startswith("RENAME") for s in db.executed)
 
 
 def test_rename_table_raises_when_both_exist():
-	db = FakeDb(tables={"qc_matches", "matches"})
+	db = FakeDb(tables={"old_t", "matches"})
 	try:
-		asyncio.run(mig.rename_table(db, "qc_matches", "matches"))
+		asyncio.run(mig.rename_table(db, "old_t", "matches"))
 	except RuntimeError as e:
 		assert "both exist" in str(e)
 	else:
@@ -104,7 +104,7 @@ def test_migration_decorator_appends_in_order(monkeypatch):
 
 def test_rename_table_noop_when_neither_exists():
 	db = FakeDb(tables=set())
-	asyncio.run(mig.rename_table(db, "qc_matches", "matches"))
+	asyncio.run(mig.rename_table(db, "old_t", "matches"))
 	assert not any(s.startswith("RENAME") for s in db.executed)
 	assert db.tables == set()
 
