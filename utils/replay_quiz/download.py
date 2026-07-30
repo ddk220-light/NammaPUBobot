@@ -10,9 +10,12 @@ Per match:
      PATIENT exponential backoff on HTTP 429 (aoe.ms rate-limits hard),
   3. record save_version (header) + whether the body action-stream parses.
 
-Resumable: skips files already cached AND rows already in the manifest. Writes
-data/replay_manifest.csv incrementally so a crash/stop loses nothing. aoe.ms
-availability is per-match (~65-80%); genuine 404s are recorded as unavailable.
+Resumable: skips a match only when the manifest records a successful parse AND
+the replay is still in the local (gitignored) cache — the manifest alone is
+committed, so on a fresh checkout every match is re-downloaded. See
+manifest.pending_ids. Writes data/replay_manifest.csv incrementally so a
+crash/stop loses nothing. aoe.ms availability is per-match (~65-80%); genuine
+404s are recorded as unavailable.
 
 Usage:
     python utils/replay_quiz/download.py [--since-id N] [--limit N] [--space SECS]
@@ -28,21 +31,18 @@ import zlib
 
 import requests
 
+from manifest import (CACHE_DIR, ROOT, is_cached, load_manifest, pending_ids, replay_path,
+                      write_manifest)
 from mgz import fast
 from mgz.util import get_save_version
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MATCH_MAP = os.path.join(ROOT, "data", "match_id_map.csv")
-CACHE_DIR = os.path.join(ROOT, "data", "replays")
-MANIFEST = os.path.join(ROOT, "data", "replay_manifest.csv")
 
 AOE2COMPANION_MATCH = "https://data.aoe2companion.com/api/matches/{gid}"
 AOE_MS = "https://aoe.ms/replay/?gameId={gid}&profileId={pid}"
 UA_API = {"User-Agent": "NammaPUBobot/1.0"}
 UA_DL = {"User-Agent": "Mozilla/5.0"}
 BACKOFF = [15, 30, 60, 120]   # seconds, per-file 429 escalation
-FIELDS = ["aoe2_match_id", "profile_id", "bytes", "save_version", "body_ops",
-          "minutes", "body_parse_ok", "error"]
 
 
 def window_ids(since_id, limit):
@@ -57,23 +57,6 @@ def window_ids(since_id, limit):
                 ids.add(a)
     out = sorted(ids, reverse=True)
     return out[:limit] if limit else out
-
-
-def load_manifest():
-    rows = {}
-    if os.path.exists(MANIFEST):
-        with open(MANIFEST, newline="") as f:
-            for r in csv.DictReader(f):
-                rows[r["aoe2_match_id"]] = r
-    return rows
-
-
-def write_manifest(rows):
-    with open(MANIFEST, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=FIELDS)
-        w.writeheader()
-        for k in sorted(rows, key=lambda x: -int(x)):
-            w.writerow({c: rows[k].get(c, "") for c in FIELDS})
 
 
 def resolve_profile_ids(gid):
@@ -100,8 +83,8 @@ def resolve_profile_ids(gid):
 def download_replay(gid, pid):
     """Returns (path|None, status). Patient 429 backoff."""
     os.makedirs(CACHE_DIR, exist_ok=True)
-    path = os.path.join(CACHE_DIR, f"{gid}.aoe2record")
-    if os.path.exists(path) and os.path.getsize(path) > 0:
+    path = replay_path(gid)
+    if is_cached(gid):
         return path, "cached"
     for attempt in range(len(BACKOFF) + 1):
         try:
@@ -181,11 +164,7 @@ def main():
 
     gids = window_ids(args.since_id, args.limit)
     manifest = load_manifest()
-    todo = [g for g in gids if str(g) not in manifest
-            or manifest[str(g)].get("error") not in ("", "ok")
-            and not os.path.exists(os.path.join(CACHE_DIR, f"{g}.aoe2record"))]
-    # simpler: attempt everything not already successfully done
-    todo = [g for g in gids if not (str(g) in manifest and manifest[str(g)].get("body_parse_ok") == "True")]
+    todo = pending_ids(gids, manifest)
     print(f"Window: {len(gids)} matches (>= id {args.since_id}); to attempt: {len(todo)}; "
           f"already done: {len(gids)-len(todo)}", flush=True)
 

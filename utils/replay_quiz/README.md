@@ -102,6 +102,11 @@ aoe2.net is dead (sunset Oct 2025). A participant `profileId` is resolved from t
 aoe2companion match API. aoe.ms **rate-limits hard (429)** so the downloader uses
 patient exponential backoff + spacing + an incremental, resumable manifest.
 Availability is **per-match (~65–80%)** — some matches 404 (replay not hosted).
+Resume logic lives in `manifest.py` (`pending_ids`): a match is skipped only when
+the manifest records a successful parse **and** the replay is still in the
+gitignored `data/replays/` cache. The manifest is committed and the cache is not,
+so a fresh checkout correctly re-downloads everything rather than concluding it
+has nothing to do.
 
 **Attribution** (`attribution.py`) — each in-replay player carries a stable aoe2
 `profile_id`. Mapping to a Discord/leaderboard identity uses:
