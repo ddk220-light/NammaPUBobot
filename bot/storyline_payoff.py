@@ -109,12 +109,12 @@ def payoff_phrase(c, came_true, nick, teams_meta, rosters, *, rng=random):
 		nw, ng = w + (1 if came_true else 0), g + 1
 		if came_true:
 			return rng.choice([
-				f"🃏 The reunion delivered — this exact side is now **{nw}-{ng - nw}**.",
+				f"🃏 The reunion delivered — this group is now **{nw}-{ng - nw}**.",
 				f"🎰 Same side, same result. **{nw}-{ng - nw}** all told. {frame}",
 			])
 		return rng.choice([
-			f"🃏 The reunion fell flat. This exact side drops to **{nw}-{ng - nw}**.",
-			f"🎰 Not this time — **{nw}-{ng - nw}** for this exact side. {frame}",
+			f"🃏 The reunion fell flat. This group drops to **{nw}-{ng - nw}**.",
+			f"🎰 Not this time — **{nw}-{ng - nw}** for this group. {frame}",
 		])
 
 	if t == "trio":
@@ -138,11 +138,11 @@ def payoff_phrase(c, came_true, nick, teams_meta, rosters, *, rng=random):
 				f"💯 Still flawless. {a} & {b} are **{n + 1}-0** together.",
 				f"🏆 The perfect record survives — **{n + 1}-0**. {frame}",
 			]) if came_true else rng.choice([
-				f"💔 It ends here. {a} & {b} lose as a pair for the first time — **{n}-1**.",
+				f"💔 It ends here. {a} & {b} finally drop one as a pair — **{n}-1**.",
 				f"🧨 The flawless run is over at {n}. {frame}",
 			]))
 		return (rng.choice([
-			f"🎉 THE CURSE IS DEAD. {a} & {b} finally win together — **1-{n}**.",
+			f"🎉 THE {ti.WINDOW_DAYS}-DAY CURSE BREAKS. {a} & {b} finally win together — **1-{n}**.",
 			f"🔓 {n} tries, and it lands. {a} & {b} are on the board. {frame}",
 		]) if came_true else rng.choice([
 			f"🪦 The curse holds. {a} & {b} fall to **0-{n + 1}**.",

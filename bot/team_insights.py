@@ -6,7 +6,7 @@ everyone hundreds of times, so "A vs B, 279-262" is noise). The point is *live
 narrative tension* — active streaks and "will it flip TONIGHT?" hooks drawn from
 recent ranked history:
 
-  * Perfect / cursed pair   — teammates who have NEVER lost (or never won) together
+  * Perfect / cursed pair   — teammates unbeaten (or winless) together inside the window
   * Best / worst teammate   — a player teamed today with the mate who most lifts /
                               tanks their win-rate ("flip your win-rate")
   * H2H streak              — opponents where one has won the last K meetings
@@ -14,7 +14,7 @@ recent ranked history:
   * Deadlock decider        — opponents dead-even over their recent meetings
   * Form streak             — a player on a personal K-game heater / skid
   * Trio record             — a three-player subset of one side with a lopsided shared record
-  * Exact lineup            — this exact side has shared a team before, inside the window
+  * Exact lineup            — this group has shared a side before, inside the window
 
 All history is read once, ordered by match_id, and every bit of analysis is pure
 Python (unit-testable without a DB). ``build_insights_embed`` returns an ``Embed``
@@ -56,7 +56,7 @@ FORM_MIN_STREAK = 5        # T6: trailing personal win/loss run
 TRIO_MIN_GAMES = 5         # T7: min decisive games this exact trio shared a side
 TRIO_MIN_SHARE = 0.75      # T7: fraction of them going one direction
 
-LINEUP_MIN_GAMES = 2       # T8: min prior decisive games as this exact side
+LINEUP_MIN_GAMES = 2       # T8: min prior decisive games as this group
 LINEUP_MIN_SIDE = 3        # T8: below this the lineup is just the pair line
 
 # Selection caps
@@ -330,7 +330,7 @@ def _h2h_candidates(prior, matches, t0_ids, t1_ids):
 
 
 def _mate_candidates(prior, matches, t0_ids, t1_ids):
-	"""T4 — same-team pair on a K>=4 win/loss run; lifetime total is the flavour."""
+	"""T4 — same-team pair on a K>=4 win/loss run; the in-window total is the flavour."""
 	cands = []
 	for team_idx, ids in ((0, t0_ids), (1, t1_ids)):
 		for a, b in _pairs(ids):
@@ -376,10 +376,10 @@ def _trio_candidates(prior, matches, t0_ids, t1_ids):
 
 
 def _lineup_candidates(prior, matches, t0_ids, t1_ids):
-	"""T8 — this exact side has shared a team before, inside the window.
+	"""T8 — this group has shared a side before, inside the window.
 
 	The rarest thing the module can say: only about one team-side in ten has
-	*ever* played together before within 90 days, so the line leans on the
+	shared a side before within the 90-day window, so the line leans on the
 	reunion itself rather than on the record.
 	"""
 	cands = []
@@ -645,7 +645,6 @@ def _frame(c, nick, teams_meta, rosters, *, rng=random):
 			return rng.choice([
 				f"{sa} behind {na}, {sb} behind {nb}.",
 				f"Does {sa} have an answer for {nb}?",
-				f"{sa} and {sb} get a say too.",
 			])
 		return rng.choice([
 			"Do their teammates get a say?",
@@ -681,17 +680,17 @@ def _phrase(c, nick, teams_meta, rosters, *, rng=random):
 		w, g = d["wins"], d["games"]
 		if d["one_way"] and w == g:
 			opts = [
-				f"🃏 Jackpot: this exact side has shared a team {g} times and never lost — **{w}-0**. {frame}",
+				f"🃏 Jackpot: this group has shared a side {g} times and won every one — **{w}-0**. {frame}",
 				f"🎰 {who} — the same {len(d['ids'])} that are **{w}-0** together. Lightning, twice. {frame}",
 			]
 		elif d["one_way"]:
 			opts = [
-				f"🃏 This exact side has been assembled {g} times and won none of them (**0-{g}**). {frame}",
-				f"🎰 {who}, back for another go at a **0-{g}** record. {frame}",
+				f"🃏 This group has shared a side {g} times and lost every one (**0-{g}**). {frame}",
+				f"🎰 {who}, back for another go at a **0-{g}** record together. {frame}",
 			]
 		else:
 			opts = [
-				f"🃏 Rare reunion: this exact side has only played together {g} times before — **{w}-{g - w}**. {frame}",
+				f"🃏 Rare reunion: this group has only shared a side {g} times before — **{w}-{g - w}**. {frame}",
 				f"🎰 {who} ride again. Their shared record: **{w}-{g - w}**. {frame}",
 			]
 		return rng.choice(opts)
@@ -716,12 +715,12 @@ def _phrase(c, nick, teams_meta, rosters, *, rng=random):
 		n = d["n"]
 		if d["won"]:
 			opts = [
-				f"💯 {a} & {b} have **never lost** as a pair — a flawless **{n}-0**. {frame}",
+				f"💯 {a} & {b} are unbeaten together these {WINDOW_DAYS} days — a flawless **{n}-0**. {frame}",
 				f"🏆 Perfect record on the line: {a} & {b} are **{n}-0** together. {frame}",
 			]
 		else:
 			opts = [
-				f"🪦 The cursed duo returns: {a} & {b} have **never won** together (0-{n}). {frame}",
+				f"🪦 The cursed duo returns: {a} & {b} are still winless together these {WINDOW_DAYS} days (0-{n}). {frame}",
 				f"💀 {a} & {b} are **0-{n}** as teammates — paired up again. {frame}",
 			]
 		return rng.choice(opts)
@@ -731,7 +730,7 @@ def _phrase(c, nick, teams_meta, rosters, *, rng=random):
 		wr, base, g = round(d["wr"] * 100), round(d["base"] * 100), d["games"]
 		if d["kind"] == "worst":
 			if d["wr"] == 0.0:
-				opts = [f"🪦 {p} has **never** won a game with {q} (0-fer over {g}). {frame}"]
+				opts = [f"🪦 {p} hasn't won a single game with {q} in the window (0-fer over {g}). {frame}"]
 			else:
 				opts = [
 					f"🧨 {p} sinks to **{wr}%** beside {q} (vs **{base}%** overall, {g}g) — paired again. {frame}",
@@ -739,7 +738,7 @@ def _phrase(c, nick, teams_meta, rosters, *, rng=random):
 				]
 		else:
 			if d["wr"] == 1.0:
-				opts = [f"🏆 {p} & {q} have **never lost** as a duo — {p}'s {base}% leaps to a perfect 100%. {frame}"]
+				opts = [f"🏆 {p} & {q} haven't lost as a duo in the window — {p}'s {base}% leaps to a perfect 100%. {frame}"]
 			else:
 				opts = [
 					f"🚀 {p} is a different player next to {q} — **{wr}%** together vs **{base}%** otherwise ({g}g). {frame}",
@@ -751,7 +750,7 @@ def _phrase(c, nick, teams_meta, rosters, *, rng=random):
 		winner, loser, k, series = name(d["winner"]), name(d["loser"]), d["k"], d["series"]
 		if d["sweep"]:
 			opts = [
-				f"⚔️ {winner} has beaten {loser} **{k} straight** — {loser} has *never* won this one. {frame}",
+				f"⚔️ {winner} has beaten {loser} **{k} straight** — {loser} hasn't won this one in the window. {frame}",
 				f"😤 {loser} is 0-for-the-last-{k} against {winner}. {frame}",
 			]
 		else:
@@ -766,7 +765,7 @@ def _phrase(c, nick, teams_meta, rosters, *, rng=random):
 		if d["won"]:
 			opts = [
 				f"🔥 {a} & {b} are on fire — **{k} straight wins** together (of {series}). {frame}",
-				f"📈 {a} & {b} just keep winning side-by-side ({k} in a row, {series} all-time). {frame}",
+				f"📈 {a} & {b} just keep winning side-by-side ({k} in a row, {series} in the window). {frame}",
 			]
 		else:
 			opts = [
