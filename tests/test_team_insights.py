@@ -404,3 +404,16 @@ def test_the_cap_holds_through_the_fill_pass():
 	]
 	chosen = ti._select(cands, rng=random.Random(0))
 	assert sum(1 for c in chosen if c["type"] == "trio") == 1
+
+
+def test_the_fill_pass_relaxes_the_generic_cap_all_the_way_to_the_limit():
+	"""PASS 3's whole job is filling a thin match. A generic type must not hit a
+	second, hidden ceiling on the way — four disjoint form lines should all land."""
+	cands = [
+		_cand("form", 40, (1,), teams=(0,)),
+		_cand("form", 39, (2,), teams=(0,)),
+		_cand("form", 38, (3,), teams=(1,)),
+		_cand("form", 37, (4,), teams=(1,)),
+	]
+	chosen = ti._select(cands, rng=random.Random(0))
+	assert len(chosen) == 4

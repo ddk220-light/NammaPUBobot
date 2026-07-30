@@ -518,7 +518,7 @@ def _select(candidates, *, limit=MAX_BULLETS, rng=random):
 				break
 			if any(c is x for x in chosen):
 				continue
-			if per_type[c["type"]] >= _TYPE_CAPS.get(c["type"], PER_TYPE_CAP + 1):
+			if c["type"] in _TYPE_CAPS and per_type[c["type"]] >= _TYPE_CAPS[c["type"]]:
 				continue
 			if any(per_player[u] >= PER_PLAYER_CAP for u in c["players"]):
 				continue
