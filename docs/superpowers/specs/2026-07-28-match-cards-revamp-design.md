@@ -109,22 +109,25 @@ marker (see Error handling).
 
 ## Scoring model
 
-Two components, unchanged in structure, with upgrades folded in:
+Two components. **Revised 2026-07-29: no tech terms.**
 
 ```
-ECO_MIX   = villagers 0.55, vil_pre_castle 0.45, + economic-tech term
-ARMY_MIX  = military 0.55, mil_pre_imperial 0.25, mil_pre_castle 0.20, + military-tech term
-IMPACT    = army ~0.58, eco ~0.42        (renormalised from 0.45 / 0.32)
+ECO_MIX   = villagers 0.55, vil_pre_castle 0.45
+ARMY_MIX  = military 0.55, mil_pre_imperial 0.25, mil_pre_castle 0.20
+IMPACT    = army 0.58, eco 0.42           (renormalised from 0.45 / 0.32)
 ```
 
-- **Economic techs**: Wheelbarrow, Hand Cart, Horse Collar, Heavy Plow, Crop
-  Rotation, Double-Bit Axe, Bow Saw, Two-Man Saw, Gold Mining, Gold Shaft Mining,
-  Stone Mining, Stone Shaft Mining.
-- **Military techs**: Forging / Iron Casting / Blast Furnace, the armour lines,
-  Fletching / Bodkin Arrow / Bracer, and unit line upgrades.
+Upgrade research was going to enter each component as a z-scored count of
+relevant techs. It is dropped: `rs_player_techs` is not read at all. A count of
+techs is civ-biased (civ-specific eco techs and 57 distinct `Elite <unit>` names
+mean some civs simply have more countable upgrades) and patch-biased (a tech
+missing from the installed aocref produces no row and no error), and it bought
+less than it cost.
 
-Read from `rs_player_techs`. The count of relevant techs researched is z-scored
-like any other column and enters its component's mix.
+**The consequence matters:** without the tech terms these two mixes are
+identical to `scoring.py`'s, so their distributions are the ones already
+calibrated in July 2026 and the thresholds are inherited rather than re-derived.
+See Calibration below.
 
 The z-score machinery is unchanged: clamp to ±2, map `50 + 15z`. Component and
 impact scores remain **internal only** — they drive sort order, the carry crown,
@@ -136,41 +139,43 @@ score.
 These constants live in `card_scoring.py` as its own `ECO_MIX` / `ARMY_MIX` /
 `IMPACT_WEIGHTS`. The identically-named constants in `scoring.py` are untouched.
 
-### Calibration is required, not optional
+### Calibration: inherited, not re-derived
 
-`card_scoring.py` needs **its own** threshold set, derived from its own component
-distributions — it cannot inherit `scoring.py`'s `TH` values, which are percentile
-anchors for a three-component mix without tech terms.
+**Revised 2026-07-29.** Dropping the tech terms leaves `ECO_MIX` and `ARMY_MIX`
+identical to `scoring.py`'s, so their component distributions are unchanged and
+the July-2026 percentile anchors still describe them. `card_scoring.py` therefore
+**inherits `scoring.py`'s thresholds verbatim** for the two tags carried over
+(`Low-eco pressure`, `Recovery`). Nothing needs re-deriving and there is no
+calibration phase.
 
-Thresholds must be derived against the live history (1,061 matches / 8,371
-player-games) before ship. `utils/tag_calibration.py` currently imports
-`bot/replay_stats/scoring.py` **by path** (`utils/tag_calibration.py:34`), so it
-needs a parameter or variant to point at `card_scoring.py` instead. Because the
-existing module is untouched, this calibration is additive — it cannot change how
-often any existing tag fires on the surfaces this revamp doesn't own.
+Two notes on why this is safe. The impact score does change (timing is gone), but
+no tag thresholds on it — the one that did, `High impact`, is removed, and impact
+is otherwise internal-only, driving sort order and the carry crown. And because
+`scoring.py` is untouched, none of this can shift how often any tag fires on the
+surfaces this revamp doesn't own.
 
-## Pre-work: coverage, calibration, preview
+`Constant production` is the one genuinely new tag, so its bar is the one number
+without precedent: **75% of two-minute buckets**, chosen directly rather than
+calibrated.
 
-Three steps run against the **live Railway MySQL** before the implementation plan
-is finalized. Access is **read-only and SELECT-only** — results are exported to
-files committed to the repo; nothing ever writes to the live DB. This constraint
-is part of the design, not an operational detail.
+The earlier plan to retarget `utils/tag_calibration.py` is dropped. That script
+turned out to neither read the DB nor derive thresholds — it compares two frozen
+formulas and prints fire rates from a snapshot file that is not in the repo — so
+pointing it at `card_scoring.py` would not have produced thresholds anyway.
 
-1. **Strategy coverage measurement.** One query answering: what share of
-   player-games match at least one of the 17 classifications in `cls_results`?
-   This is the checkpoint that can invalidate the headline design. If coverage is
-   low, the preview step decides whether the headline slot needs rethinking —
-   either way the card never renders a placeholder.
-2. **Calibration.** `utils/tag_calibration.py` gains a parameter to target
-   `card_scoring.py`. Thresholds are derived from the live history; the
-   calibration **input snapshot** (per-player-game component inputs) is committed
-   to the repo so the derived thresholds are reproducible offline. The resulting
-   `TH` constants land in `card_scoring.py` with their provenance (snapshot file,
-   date, sample size) noted alongside.
-3. **Preview.** A small script renders the exact card text for ~5 recent
-   post-eAPM-deploy matches from live data — real strategy, spawn and eAPM, no
-   stubs. The preview is reviewed by a human before build; this spec is amended
-   if the design does not survive contact with real matches.
+## Pre-work: coverage measurement and preview
+
+Read-only, SELECT-only access to the live Railway MySQL, results exported to
+files; nothing ever writes to the live DB.
+
+1. **Strategy coverage — measured 2026-07-29, and it passes.** 5,539 of 8,885
+   player-games (62.3%) carry at least one of the 17 strategy classifications.
+   The median match has 6 of 8 players labelled and only 34 of 1,126 matches have
+   none, so the headline slot is populated far more often than not. 932
+   player-games carry two or three labels — all are shown (see Strategy label).
+2. **Preview.** `utils/card_preview.py` renders the exact card text for recent
+   matches straight from the DB, so the design is checked against reality before
+   it posts to Discord.
 
 There is no replay archive and no backfill. The forward ingest pipeline already
 writes every table this card reads; nothing here adds parsing, storage, or
@@ -248,8 +253,21 @@ Each player's headline label comes from `cls_results`, written on every ingest b
 `late_knight`, `late_crossbow`, `late_cav_archer`, `late_camel`, `late_unique`,
 `late_ram`, `boom_to_imp`, plus the luck family.
 
-If multiple classifications fire for one player, show exactly one: the
-earliest-phase match (rush before castle before late). No label when none fire.
+**Revised 2026-07-29: show every classification that fired for that player**,
+comma-separated (`Knight Rush, Safe Castle`). No label when none fire.
+
+The original rule was "show exactly one — the earliest-phase match". That was
+dropped because phase is not recorded anywhere the card can read: it is not a
+column on `cls_results`, not a field on the `Classification` dataclass, and exists
+only as a hardcoded dict in the web dashboard (`bot/web.py:435`) with five values
+whose order isn't even total — `Castle` (castle placement) and `Early Castle`
+(unit volume) describe the same period on different axes. Showing all of them
+needs no ordering, and 932 player-games have more than one, so there is real
+information in the pair.
+
+Labels come from `cls_classifications.title` — the same source `/insights`
+already uses. The card adds no hardcoded label map; four competing ones already
+exist and disagree.
 
 ## Stats line
 
@@ -284,16 +302,26 @@ Raw counts, given real space since they are more concrete than any derived score
 
 ## Spawn context
 
-From `cls_result_metrics`, which `utils/classifications/defs/luck.py` already
-populates with `ally_dist`, `enemy_dist` and `nearest_player_dist` via
-`gamedata.spawn_proximity`. Rendered as a short phrase — "spawned alone",
-"spawned next to enemy", "spawned with team" — against calibrated distance bands.
+**Revised 2026-07-29: read the existing spawn classifications, not raw
+distances.** Three `cls_results` keys already encode exactly the bands this card
+wanted, with published thresholds, and already appear on the web dashboard:
+
+| Key | Phrase | Threshold |
+|---|---|---|
+| `spawn_near_enemy` | spawned next to enemy | within 36 tiles of nearest enemy TC |
+| `spawn_isolated` | spawned alone | more than 63 tiles from every other player |
+| `spawn_near_ally` | spawned with team | within 46 tiles of nearest ally TC |
+
+Priority is that order — a nearby enemy is the most consequential spawn fact —
+because 263 player-games fire two of these (`near_ally` and `near_enemy` are not
+mutually exclusive). Reading the keys instead of calibrating fresh bands off
+`ally_dist` / `enemy_dist` / `nearest_player_dist` removes a calibration task and
+guarantees the card and the dashboard never disagree about the same match.
 
 **Availability is gated.** `is_valid_luck_game` requires a Nomad map, exactly 6 or 8
-players, and a balanced recorded result. The community plays NammaNomad so this
-usually passes, but 2v2s, odd player counts, non-Nomad maps and unresolved results
-produce no spawn metrics. The card shows the phrase when present and omits it
-silently when absent — it must never render a placeholder or a guess.
+players, and a balanced recorded result. Measured coverage is 4,743 of 8,885
+player-games (53%). The card shows the phrase when present and omits it silently
+when absent — it must never render a placeholder or a guess.
 
 ## Card layout
 
@@ -327,16 +355,23 @@ remains `carry_sort_key` on the internal impact score.
 
 All reads. No new parsing, no schema change, no backfill.
 
-| Signal | Table | Availability |
+Measured against the live DB on 2026-07-29 (8,885 player-games / 1,126 matches):
+
+| Signal | Table | Measured availability |
 |---|---|---|
-| Villagers, military, age splits | `rs_player_games` | Every ingested match |
-| Strategy | `cls_results` | Every ingested match |
-| Upgrade research | `rs_player_techs` | Every ingested match |
-| Production timeline | `rs_player_events` | Every ingested match |
-| Farms, TCs | `rs_player_buildings` | Every ingested match |
-| Spawn distances | `cls_result_metrics` | Nomad, 6/8 players, balanced result only |
-| Average eAPM | `rs_player_games.eapm` | Every ingested match |
-| Peak eAPM | `rs_player_apm` | Matches ingested after the eAPM deploy only |
+| Villagers, military, age splits | `rs_player_games` | 6,120 (69%) — 352 matches parsed with no production at all, always whole-match |
+| Strategy | `cls_results` (17 keys) | 5,539 (62%) |
+| Production timeline | `rs_player_events` | 2,722 (31%) — starts at parser `+3`; ~99% on recent matches |
+| Farms, TCs | `rs_player_buildings` | 8,873 (99.9%) |
+| Spawn | `cls_results` (3 keys) | 4,743 (53%) |
+| Average eAPM | `rs_player_games.eapm` | 8,885 (100%) |
+| Peak eAPM | `rs_player_apm` | **0** — the table exists but is empty until this branch deploys |
+
+Upgrade research is no longer read; `rs_player_techs` is out of scope.
+
+Every one of these degrades to omission, never a placeholder. Peak eAPM in
+particular renders nowhere at all until the eAPM pipeline deploys, so the card
+must look correct without it.
 
 ## Correctness fixes in scope
 
@@ -344,6 +379,12 @@ All four apply to `card_scoring.py` and the Match Cards path **only**. `scoring.
 keeps its current behaviour, so the web profile, the stored tags and the Tale of the
 Tape are bit-for-bit unchanged. Fixes 1–3 therefore remain live on those surfaces;
 see "Accepted consequence" above.
+
+A fifth, found during implementation planning: **`_analysis_rows` selects neither
+`aoe2_match_id` nor `player_number`**, yet every new signal is keyed by that pair.
+Both must be added alongside `age_reliable` and `eapm`, and all joins must use
+`player_number` — `profile_id` on the long-form tables is a nullable
+denormalisation and NULL never matches in a join.
 
 1. **Honour `age_reliable`.** The card path does not currently SELECT it, so age
    splits flagged unreliable by the parser still score. The web profile correctly
@@ -418,12 +459,13 @@ eAPM at all.
 
 ## Risks
 
-- **Calibration drift.** New component distributions mean every threshold moves. If
-  calibration is skipped or rushed, tags will fire at unintended rates and the
-  flatness could return in a new form.
-- **Strategy label coverage is unknown.** No measurement yet of what share of
-  players match at least one classification per match. If coverage is low, most
-  cards will show no headline label and the card gets sparse. Now scheduled as
-  pre-work step 1, before the implementation plan is finalized.
+- **The production-coverage bar is a guess.** 75% was chosen, not calibrated, so
+  `Constant production` may fire far more or less often than intended. It is one
+  constant to change once real cards have been seen.
+- **Strategy label coverage — measured and acceptable.** 62.3% of player-games,
+  median 6 of 8 players per match. Risk retired.
+- **`Constant production` is quiet on older matches.** `rs_player_events` covers
+  only 31% of history, so the tag mostly fires on recent matches. Forward-looking
+  coverage is ~99%, so this resolves itself.
 - **Medal scope is match-wide while tags are team-scoped.** Deliberate, but it is a
   mixed frame that may confuse readers. Worth revisiting after a few live matches.
