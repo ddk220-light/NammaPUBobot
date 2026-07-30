@@ -605,7 +605,8 @@ def complement_of(c, nick, teams_meta, rosters):
 
 
 def rival_backers(c, nick, teams_meta, rosters):
-	"""For an opposing-pair line: [(rival_name, their_backers), ...] for both sides.
+	"""For an opposing-pair line: [(rival_name, their_backers, team_name), ...] for
+	both sides.
 
 	Returns None when the roster lookup fails, so callers can fall back. Public
 	because bot/storyline_payoff.py builds a past-tense version from the same data.
@@ -620,8 +621,16 @@ def rival_backers(c, nick, teams_meta, rosters):
 		        else f"Team {team_idx}")
 		who = (f"the rest of {name}" if len(rest) > 2
 		       else _join_names([f"**{nick.get(u, 'someone')}**" for u in rest]))
-		out.append((f"**{nick.get(uid, 'someone')}**", who))
+		out.append((f"**{nick.get(uid, 'someone')}**", who, name))
 	return out if len(out) == 2 else None
+
+
+def _short_backers(backers, team_name):
+	"""In a 4v4 an opposing-pair line's complement is always three, so
+	``rival_backers`` always collapses to "the rest of {team}" -- naming no one
+	and running long. Once it has collapsed, just say the team name; a small
+	side's real names pass through unchanged."""
+	return team_name if backers == f"the rest of {team_name}" else backers
 
 
 def _frame(c, nick, teams_meta, rosters, *, rng=random):
@@ -629,12 +638,13 @@ def _frame(c, nick, teams_meta, rosters, *, rng=random):
 	who, name, sole = complement_of(c, nick, teams_meta, rosters)
 	if not sole:
 		backers = rival_backers(c, nick, teams_meta, rosters)
-		if backers and all(w for _n, w in backers):
-			(na, wa), (nb, wb) = backers
+		if backers and all(w for _n, w, _t in backers):
+			(na, wa, ta), (nb, wb, tb) = backers
+			sa, sb = _short_backers(wa, ta), _short_backers(wb, tb)
 			return rng.choice([
-				f"{_sentence_case(wa)} line up behind {na}; {wb} behind {nb}.",
-				f"Does {wa} tip it for {na}, or {wb} for {nb}?",
-				f"{_sentence_case(wa)} carry {na}'s hopes, {wb} carry {nb}'s.",
+				f"{sa} behind {na}, {sb} behind {nb}.",
+				f"Does {sa} have an answer for {nb}?",
+				f"{sa} and {sb} get a say too.",
 			])
 		return rng.choice([
 			"Do their teammates get a say?",

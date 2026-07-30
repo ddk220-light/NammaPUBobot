@@ -50,16 +50,21 @@ def _payoff_frame(c, came_true, nick, teams_meta, rosters, *, rng=random):
 	who, name, sole = ti.complement_of(c, nick, teams_meta, rosters)
 	if not sole:
 		backers = ti.rival_backers(c, nick, teams_meta, rosters)
-		if backers and all(w for _n, w in backers):
+		if backers and all(w for _n, w, _t in backers):
 			ids = sorted(c["players"])
 			_kind, subj = ti.subject_of(c)
-			win_idx = ids.index(subj) if came_true else 1 - ids.index(subj)
-			wname, wback = backers[win_idx]
-			lname, lback = backers[1 - win_idx]
+			subj_idx = ids.index(subj)
+			_sname, sback, steam = backers[subj_idx]
+			_rname, rback, rteam = backers[1 - subj_idx]
+			sa, sb = ti._short_backers(sback, steam), ti._short_backers(rback, rteam)
+			if came_true:
+				return rng.choice([
+					f"{sa} got their answer.",
+					f"{sa} called it.",
+				])
 			return rng.choice([
-				f"{ti._sentence_case(wback)} got their wish; {lback} did not.",
-				f"{wname} delivered for {wback} tonight.",
-				f"{ti._sentence_case(lback)} came up short backing {lname}.",
+				f"{sb} had the last word.",
+				f"{sb} settled it.",
 			])
 		return rng.choice([
 			"Their teammates had their own night.",

@@ -579,16 +579,22 @@ def test_rival_backers_returns_each_players_own_side():
 	     "data": {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False}}
 	out = ti.rival_backers(c, _NICK, _META, _SMALL_ROSTERS)
 	assert out is not None and len(out) == 2
-	(n1, w1), (n2, w2) = out
-	assert n1 == "**Ann**" and w1 == "**Bo** & **Cy**"
-	assert n2 == "**Eve**" and w2 == "**Fay** & **Gil**"
+	(n1, w1, t1), (n2, w2, t2) = out
+	assert n1 == "**Ann**" and w1 == "**Bo** & **Cy**" and t1 == "Alpha"
+	assert n2 == "**Eve**" and w2 == "**Fay** & **Gil**" and t2 == "Beta"
 
 
 def test_rival_backers_collapses_to_the_team_name_past_two():
 	c = {"type": "h2h", "players": frozenset((1, 5)), "teams": frozenset((0, 1)),
 	     "data": {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False}}
-	(n1, w1), (n2, w2) = ti.rival_backers(c, _NICK, _META, _ROSTERS)
+	(n1, w1, t1), (n2, w2, t2) = ti.rival_backers(c, _NICK, _META, _ROSTERS)
 	assert w1 == "the rest of Alpha" and w2 == "the rest of Beta"
+	assert t1 == "Alpha" and t2 == "Beta"
+
+
+def test_short_backers_prefers_the_team_name_once_collapsed():
+	assert ti._short_backers("the rest of Alpha", "Alpha") == "Alpha"
+	assert ti._short_backers("**Bo** & **Cy**", "Alpha") == "**Bo** & **Cy**"
 
 
 def test_rival_backers_is_none_when_a_player_is_missing_from_every_roster():
@@ -603,6 +609,16 @@ def test_an_h2h_frame_names_backers_instead_of_generic_filler():
 	                 rng=_FirstChoice())
 	assert out not in ("Do their teammates get a say?", "Six other players would like a word.")
 	assert "Bo" in out and "Cy" in out and "Fay" in out and "Gil" in out
+
+
+def test_an_h2h_frame_uses_the_team_name_once_backers_collapse():
+	"""The bug this module fixes: in a 4v4 the complement of an opposing pair is
+	always three, so rival_backers always collapses to "the rest of {team}" --
+	naming no one. The frame must say just the team name instead."""
+	data = {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False}
+	out = _frame_for("h2h", (1, 5), data, teams=(0, 1), rosters=_ROSTERS, rng=_FirstChoice())
+	assert "the rest of" not in out
+	assert "Alpha" in out and "Beta" in out
 
 
 def test_h2h_frame_falls_back_to_generic_when_rival_backers_is_none():

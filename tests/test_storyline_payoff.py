@@ -153,13 +153,16 @@ def test_a_large_complement_payoff_frame_does_not_lowercase_after_the_period():
 
 
 # ── rival backers (defect 2, mirrored past-tense frame) ──────────────────
-def test_an_h2h_payoff_frame_names_the_winning_sides_backers():
+def test_an_h2h_payoff_frame_names_the_subjects_own_backers_when_it_came_true():
+	"""subject_of(h2h) picks the pre-game favourite (d['winner']); when their
+	streak holds (came_true=True) the frame is short -- just their own side's
+	backers, not a roll call of both sides."""
 	c = _c("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6,
 	                       "sweep": False}, teams=(0, 1))
 	out = sp._payoff_frame(c, True, _NICK, _META, _SMALL_ROSTERS, rng=_FirstChoice())
 	assert out not in ("Their teammates had their own night.",
 	                    "The other six were along for the ride.")
-	assert "Bo" in out and "Cy" in out and "Fay" in out and "Gil" in out
+	assert "Bo" in out and "Cy" in out
 
 
 def test_an_h2h_payoff_frame_flips_the_winning_side_when_the_underdog_wins():
@@ -172,6 +175,16 @@ def test_an_h2h_payoff_frame_flips_the_winning_side_when_the_underdog_wins():
 	won_false = sp._payoff_frame(c, False, _NICK, _META, _SMALL_ROSTERS, rng=_FirstChoice())
 	assert won_true != won_false
 	assert "Fay" in won_false and "Gil" in won_false
+
+
+def test_an_h2h_payoff_frame_uses_the_team_name_once_backers_collapse():
+	"""Same bug as the pre-game frame: in a 4v4 the complement always collapses
+	to "the rest of {team}". The payoff frame must say just the team name."""
+	c = _c("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6,
+	                       "sweep": False}, teams=(0, 1))
+	out = sp._payoff_frame(c, True, _NICK, _META, _ROSTERS, rng=_FirstChoice())
+	assert "the rest of" not in out
+	assert "Alpha" in out
 
 
 def test_h2h_payoff_frame_falls_back_to_generic_when_rival_backers_is_none():
