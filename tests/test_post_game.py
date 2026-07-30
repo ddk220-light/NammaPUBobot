@@ -244,18 +244,129 @@ def test_match_analysis_lines_include_win_loss_and_carry():
 	assert "Carry check" in body
 
 
-def test_team_card_fields_render_two_teams_with_carry_and_tags():
+def _cp(nick, team, **kw):
+	"""A card payload as _card_payload would produce it."""
+	base = dict(nick=nick, civ="Franks", team=team, result="W" if team == 0 else "L",
+	            strategies=[], spawn=None, villagers=100, military=50,
+	            farms=10, tcs=2, eapm=45, peak_eapm=None, has_production=True,
+	            production_coverage=None, impact_score=50, army_score=50,
+	            eco_score=50, early_eco_score=50, reboom_score=50)
+	base.update(kw)
+	return base
+
+
+def test_team_card_fields_render_two_teams_with_the_crown_on_the_top_player():
 	player_rows = [
-		{"nick": "Boomer", "civ": "Bengalis", "team": 0, "result": "W", "impact_score": 70, "impact_tags": ["Boom carry", "Recovery"]},
-		{"nick": "Wall", "civ": "Teutons", "team": 0, "result": "W", "impact_score": 55, "impact_tags": ["Recovery"]},
-		{"nick": "Raider", "civ": "Huns", "team": 1, "result": "L", "impact_score": 68, "impact_tags": ["Army pressure"]},
-		{"nick": "Pocket", "civ": "Franks", "team": 1, "result": "L", "impact_score": 48, "impact_tags": []},
+		_cp("Boomer", 0, impact_score=70),
+		_cp("Wall", 0, impact_score=55),
+		_cp("Raider", 1, impact_score=68),
+		_cp("Pocket", 1, impact_score=48),
 	]
 	fields = pg._team_card_fields(player_rows, {0: "Alpha", 1: "Beta"})
 	assert [f["name"] for f in fields] == ["🟩 Alpha · W", "🟥 Beta · L"]
-	assert "**Boomer** 👑 **CARRY**" in fields[0]["value"]
-	assert "`Boom carry`" in fields[0]["value"]
-	assert "`No tags`" in fields[1]["value"]
+	assert "👑 **Boomer**" in fields[0]["value"]
+	assert "• **Wall**" in fields[0]["value"]
+	assert "👑 **Raider**" in fields[1]["value"]
+
+
+def test_the_old_score_glyphs_and_carry_badge_are_gone():
+	fields = pg._team_card_fields([_cp("a", 0), _cp("b", 1)], {0: "A", 1: "B"})
+	body = fields[0]["value"] + fields[1]["value"]
+	for gone in ("▲", "▼", "⏱", "CARRY", "No tags", "`50`"):
+		assert gone not in body
+
+
+def test_no_player_ever_shows_a_participation_fallback_tag():
+	fields = pg._team_card_fields([_cp("a", 0), _cp("b", 0)], {0: "A", 1: "B"})
+	for banned in ("All-rounder", "Army-leaning", "Eco-leaning",
+	               "Tempo-leaning", "Uphill battle", "High impact"):
+		assert banned not in fields[0]["value"]
+
+
+def test_medals_appear_on_the_top_three_of_the_match():
+	rows = [_cp("first", 0, military=90), _cp("second", 0, military=80),
+	        _cp("third", 1, military=70), _cp("fourth", 1, military=60)]
+	fields = pg._team_card_fields(rows, {0: "A", 1: "B"})
+	assert "⚔⚔⚔" in fields[0]["value"]
+	assert "⚔⚔" in fields[0]["value"]
+	assert "⚔" in fields[1]["value"]
+	assert "**fourth**" in fields[1]["value"]
+
+
+def test_card_line_shows_every_strategy_label_for_the_player():
+	line = pg._player_card_line(_cp("a", 0, strategies=["Knight Rush", "Safe Castle"]))
+	assert "Knight Rush, Safe Castle" in line
+
+
+def test_card_line_omits_the_strategy_segment_when_none_fired():
+	line = pg._player_card_line(_cp("a", 0, strategies=[]))
+	assert line.split("\n")[0].endswith("**Franks**")
+
+
+def test_stats_line_shows_counts_and_eapm_with_peak():
+	line = pg._player_card_line(_cp("a", 0, villagers=84, military=46, farms=14,
+	                                tcs=3, eapm=62, peak_eapm=89))
+	assert "84 vils" in line
+	assert "46 military" in line
+	assert "14 farms" in line
+	assert "3 TC" in line
+	assert "62 eAPM (pk 89)" in line
+
+
+def test_peak_is_omitted_when_the_apm_table_has_no_rows():
+	line = pg._player_card_line(_cp("a", 0, eapm=55, peak_eapm=None))
+	assert "55 eAPM" in line
+	assert "pk" not in line
+
+
+def test_eapm_is_omitted_entirely_when_it_was_never_stored():
+	line = pg._player_card_line(_cp("a", 0, eapm=None))
+	assert "eAPM" not in line
+
+
+def test_spawn_phrase_is_appended_when_present():
+	line = pg._player_card_line(_cp("a", 0, spawn="spawned alone"))
+	assert "spawned alone" in line
+
+
+def test_no_production_renders_the_warning_instead_of_stats():
+	line = pg._player_card_line(_cp("a", 0, has_production=False,
+	                                villagers=0, military=0))
+	assert "partial replay data" in line
+	assert "vils" not in line
+
+
+def test_team_field_stays_within_the_discord_character_cap():
+	rows = [_cp("x" * 40, 0, civ="Y" * 30, villagers=999, military=999,
+	            farms=999, tcs=99, eapm=99, peak_eapm=999,
+	            spawn="spawned next to enemy",
+	            strategies=["Late Cav Archers", "Safe Castle", "Ram Push"])
+	        for _ in range(4)]
+	fields = pg._team_card_fields(rows, {0: "A", 1: "B"})
+	assert len(fields[0]["value"]) <= 1024
+	# All four players must survive; the stats line is dropped first.
+	assert fields[0]["value"].count("—") == 4
+
+
+def test_analysis_rows_selects_every_column_the_card_needs():
+	"""The card joins on (aoe2_match_id, player_number) and reads age_reliable
+	and eapm, none of which the original SELECT carried."""
+	import inspect
+
+	src = inspect.getsource(pg._analysis_rows)
+	for column in ("aoe2_match_id", "player_number", "age_reliable", "eapm",
+	               "duration_s"):
+		assert column in src, f"{column} missing from the _analysis_rows SELECT"
+
+
+def test_required_card_columns_are_all_selected():
+	import inspect
+
+	from bot.replay_stats import card_scoring
+
+	src = inspect.getsource(pg._analysis_rows)
+	for column in card_scoring.REQUIRED_COLUMNS:
+		assert column in src, f"{column} is in REQUIRED_COLUMNS but not SELECTed"
 
 
 def test_merge_analysis_rows_keeps_replay_players_missing_from_bot_civ_rows():
@@ -379,16 +490,26 @@ def _wire_post_match_analysis(monkeypatch, channel, chart_file):
 	async def _channel_id(_bot_match_id):
 		return 123
 
-	async def _cards(_channel_id, _bot_match_id):
+	# post_match_analysis fetches the roster once and passes it to both builders,
+	# so both the fetches and the builders need stubbing.
+	async def _rows(_bot_match_id):
+		return [{"user_id": 1, "nick": "a", "bot_team": 0, "result": "W"}]
+
+	async def _names(_channel_id, _bot_match_id):
+		return {0: "Alpha", 1: "Beta"}
+
+	async def _cards(_channel_id, _bot_match_id, _rows=None, _names=None):
 		return cards
 
-	async def _analysis(_channel_id, _bot_match_id):
+	async def _analysis(_channel_id, _bot_match_id, _rows=None, _names=None):
 		return None
 
 	async def _chart(_bot_match_id):
 		return chart_file
 
 	monkeypatch.setattr(pg, "_match_channel_id", _channel_id)
+	monkeypatch.setattr(pg, "_analysis_rows", _rows)
+	monkeypatch.setattr(pg, "_team_names", _names)
 	monkeypatch.setattr(pg, "build_match_cards_embed", _cards)
 	monkeypatch.setattr(pg, "build_match_analysis_embed", _analysis)
 	monkeypatch.setattr(pg, "_apm_chart_file", _chart)
@@ -407,6 +528,27 @@ def test_post_match_analysis_retries_without_the_file_when_the_attach_fails(monk
 	assert "file" in channel.sends[0]
 	assert "file" not in channel.sends[1]
 	assert channel.sends[1]["embeds"] == [cards]
+
+
+def test_post_match_analysis_fetches_the_roster_once(monkeypatch):
+	"""Both embeds always post together, so the shared reads must happen once —
+	otherwise the card's extra signal queries double too."""
+	import asyncio
+
+	channel = _FakeChannel(fail_with_file=False)
+	_wire_post_match_analysis(monkeypatch, channel, chart_file=None)
+
+	calls = []
+	original = pg._analysis_rows
+
+	async def _counting(bot_match_id):
+		calls.append(bot_match_id)
+		return await original(bot_match_id)
+
+	monkeypatch.setattr(pg, "_analysis_rows", _counting)
+
+	assert asyncio.run(pg.post_match_analysis(7)) is True
+	assert calls == [7], f"expected one roster fetch, got {len(calls)}"
 
 
 def test_post_match_analysis_sends_the_file_when_it_is_accepted(monkeypatch):

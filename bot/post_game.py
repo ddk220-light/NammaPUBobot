@@ -265,6 +265,55 @@ def _impact_payload(row, group):
 	}
 
 
+def _card_payload(row, group, signals):
+	"""Render payload for one player on the Match Cards.
+
+	Deliberately separate from _impact_payload: that one feeds the Tale of the
+	Tape through the untouched scoring.py, this one feeds the cards through
+	card_scoring.py. Component scores here are internal — they drive sort order,
+	the carry crown and tag thresholds, and are never displayed.
+	"""
+	from bot.replay_stats import card_scoring
+
+	pnum = row.get("player_number")
+	scores = card_scoring.component_scores(row, group)
+	buildings = (signals.get("buildings") or {}).get(pnum) or {}
+	produced = (row.get("villagers") or 0) + (row.get("military") or 0)
+	return {
+		"nick": row.get("nick") or row.get("identity") or str(row.get("user_id") or ""),
+		"civ": row.get("civ"),
+		"team": int(row["bot_team"]) if row.get("bot_team") in (0, 1, "0", "1") else None,
+		"result": row.get("result") or ("W" if row.get("winner") else "L" if row.get("winner") is not None else None),
+		"strategies": (signals.get("strategies") or {}).get(pnum) or [],
+		"spawn": (signals.get("spawn") or {}).get(pnum),
+		"villagers": row.get("villagers"),
+		"military": row.get("military"),
+		"farms": buildings.get("farms"),
+		"tcs": buildings.get("tcs"),
+		"eapm": row.get("eapm"),
+		"peak_eapm": (signals.get("peak_eapm") or {}).get(pnum),
+		"has_production": bool(produced),
+		"production_coverage": card_scoring.production_coverage(
+			(signals.get("clicks") or {}).get(pnum), row.get("duration_s")),
+		"impact_score": scores["impact"],
+		"army_score": scores["army"],
+		"eco_score": scores["eco"],
+		"early_eco_score": scores["early_eco"],
+		"reboom_score": scores["reboom"],
+	}
+
+
+async def _card_signals_for(rows):
+	"""Card-only signals for the match these rows belong to, or empty dicts."""
+	from bot.replay_stats.card_query import fetch_card_signals
+
+	aoe2_id = next((r.get("aoe2_match_id") for r in rows if r.get("aoe2_match_id")), None)
+	if aoe2_id is None:
+		return {}
+	duration = next((r.get("duration_s") for r in rows if r.get("duration_s")), None)
+	return await fetch_card_signals(aoe2_id, duration)
+
+
 def _tag_word(tags):
 	if not tags:
 		return "solid fundamentals"
@@ -401,33 +450,95 @@ def _tag_chip(tag):
 	return f"`{tag}`"
 
 
-def _player_card_line(player, carry=False):
-	tags = [_tag_chip(t) for t in (player.get("impact_tags") or [])[:MAX_CARD_TAGS]]
-	chips = " ".join(tags) if tags else "`No tags`"
-	carry_badge = " 👑 **CARRY**" if carry else ""
-	score = player.get("impact_score")
-	score_text = f"`{score}`" if score is not None else "`?`"
-	glyphs = player.get("strength_glyphs")
-	glyph_text = f" · {glyphs}" if glyphs else ""
-	return (
-		f"{'⭐ ' if carry else '• '}**{_clip(player.get('nick'), 24)}**{carry_badge} — "
-		f"**{_clip(player.get('civ'), 18)}** · {score_text}{glyph_text}\n"
-		f"  {chips}"
-	)
+MEDAL_GLYPHS = (("military_medal", "⚔"), ("villager_medal", "🌾"))
+
+
+def _medal_text(medals):
+	"""Top-three medals as repeated glyphs: 1st gets three, 3rd gets one."""
+	parts = []
+	for field, glyph in MEDAL_GLYPHS:
+		place = (medals or {}).get(field)
+		if place:
+			parts.append(glyph * (4 - place))
+	return " ".join(parts)
+
+
+def _stats_text(player):
+	"""Raw counts plus activity. Every element omits silently when absent —
+	never a placeholder, never a zero standing in for missing data."""
+	bits = []
+	if player.get("villagers") is not None:
+		bits.append(f"{player['villagers']} vils")
+	if player.get("military") is not None:
+		bits.append(f"{player['military']} military")
+	if player.get("farms") is not None:
+		bits.append(f"{player['farms']} farms")
+	if player.get("tcs") is not None:
+		bits.append(f"{player['tcs']} TC")
+	# Average is the stored rs_player_games.eapm, never derived from the APM
+	# buckets (those are sparse, so any mean over them divides by active
+	# minutes). Peak is forward-only, so it is simply absent on older matches.
+	if player.get("eapm") is not None:
+		peak = player.get("peak_eapm")
+		bits.append(f"{player['eapm']} eAPM" + (f" (pk {peak})" if peak else ""))
+	if player.get("spawn"):
+		bits.append(player["spawn"])
+	return " · ".join(bits)
+
+
+def _player_card_line(player, carry=False, medals=None, tags=None, with_stats=True):
+	head = "👑 " if carry else "• "
+	name = f"{head}**{_clip(player.get('nick'), 24)}** — **{_clip(player.get('civ'), 18)}**"
+	strategies = ", ".join(player.get("strategies") or [])
+	if strategies:
+		name += f" · {strategies}"
+	if not player.get("has_production"):
+		# Ranking them last and showing them bare would read as "played badly"
+		# when the truth is "not measured".
+		return f"{name} · ⚠ partial replay data"
+	lines = [name]
+	badge = " · ".join(x for x in (_medal_text(medals),
+	                               " ".join(_tag_chip(t) for t in (tags or [])))
+	                   if x)
+	if badge:
+		lines.append(f"  {badge}")
+	if with_stats:
+		stats = _stats_text(player)
+		if stats:
+			lines.append(f"  {stats}")
+	return "\n".join(lines)
 
 
 def _team_card_fields(player_rows, team_names=None):
+	"""One embed field per team. Medals rank match-wide, tags are team-scoped."""
+	from bot.replay_stats import card_scoring
+
 	team_names = team_names or {0: "Alpha", 1: "Beta"}
+	medals = card_scoring.assign_medals(player_rows)
+	tags = card_scoring.assign_team_tags(player_rows)
+	extras = {id(p): (medals[i], tags[i]) for i, p in enumerate(player_rows)}
 	teams = _team_impact_rows(player_rows)
 	fields = []
 	for team in sorted(teams):
-		rows = sorted(teams[team], key=scoring.carry_sort_key)
+		rows = sorted(teams[team], key=card_scoring.carry_sort_key)
 		result = next((p.get("result") for p in rows if p.get("result")), None)
 		icon = "🟩" if result == "W" else "🟥" if result == "L" else "⬜"
-		lines = [_player_card_line(p, carry=(p is rows[0])) for p in rows]
+
+		def render(with_stats, rows=rows):
+			return "\n\n".join(
+				_player_card_line(
+					p, carry=(p is rows[0]),
+					medals=extras[id(p)][0], tags=extras[id(p)][1],
+					with_stats=with_stats)
+				for p in rows)
+
+		value = render(True)
+		if len(value) > 1024:
+			# Drop the stats line before dropping a player.
+			value = render(False)
 		fields.append({
 			"name": f"{icon} {team_names.get(team, f'Team {team}')} · {result or '?'}",
-			"value": "\n".join(lines)[:1024] or "No players",
+			"value": value[:1024] or "No players",
 			"inline": True,
 		})
 	return fields
@@ -707,10 +818,17 @@ async def _analysis_rows(bot_match_id):
 		"WHERE bot_match_id=%s AND team IN (0, 1) AND result IN ('W', 'L') "
 		"ORDER BY team, nick",
 		[bot_match_id])
+	# aoe2_match_id + player_number are the join key for every card-only signal
+	# (buildings, events, cls_results, rs_player_apm) — profile_id is a nullable
+	# denormalisation on those tables and would silently drop players.
+	# age_reliable and eapm are read by card_scoring / the stats line.
+	# feudal_s and castle_s stay because the Tale of the Tape still scores
+	# timing through the untouched scoring.py.
 	replay_rows = await db.fetchall(
 		"SELECT g.user_id, g.identity, g.civ, g.team AS replay_team, g.winner, "
+		"g.aoe2_match_id, g.player_number, g.age_reliable, g.eapm, "
 		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, g.military, g.mil_pre_castle, g.mil_pre_imperial, "
-		"g.feudal_s, g.castle_s, g.imperial_s "
+		"g.feudal_s, g.castle_s, g.imperial_s, rm.duration_s "
 		"FROM rs_matches rm "
 		"JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
 		"WHERE rm.bot_match_id=%s "
@@ -719,15 +837,22 @@ async def _analysis_rows(bot_match_id):
 	return _merge_analysis_rows(mc_rows, replay_rows, pm_rows)
 
 
-async def build_match_analysis_embed(channel_id, bot_match_id):
-	"""Replay-derived post-game team read. Built only after rs_* rows exist."""
-	rows = await _analysis_rows(bot_match_id)
+async def build_match_analysis_embed(channel_id, bot_match_id, rows=None, team_names=None):
+	"""Replay-derived post-game team read. Built only after rs_* rows exist.
+
+	``rows``/``team_names`` let post_match_analysis fetch once and share with the
+	Match Cards builder, which always posts alongside this one.
+	"""
+	if rows is None:
+		rows = await _analysis_rows(bot_match_id)
 	if not rows:
 		return None
 	player_rows = [_impact_payload(row, rows) for row in rows]
 	if not any(p.get("result") in ("W", "L") for p in player_rows):
 		return None
-	lines = _match_analysis_lines(player_rows, await _team_names(channel_id, bot_match_id))
+	if team_names is None:
+		team_names = await _team_names(channel_id, bot_match_id)
+	lines = _match_analysis_lines(player_rows, team_names)
 	if not lines:
 		return None
 
@@ -746,13 +871,17 @@ async def build_match_analysis_embed(channel_id, bot_match_id):
 	return embed
 
 
-async def build_match_cards_embed(channel_id, bot_match_id):
+async def build_match_cards_embed(channel_id, bot_match_id, rows=None, team_names=None):
 	"""Card-like team summary for Discord. Uses embed fields to mimic side-by-side cards."""
-	rows = await _analysis_rows(bot_match_id)
+	if rows is None:
+		rows = await _analysis_rows(bot_match_id)
 	if not rows:
 		return None
-	player_rows = [_impact_payload(row, rows) for row in rows]
-	fields = _team_card_fields(player_rows, await _team_names(channel_id, bot_match_id))
+	signals = await _card_signals_for(rows)
+	player_rows = [_card_payload(row, rows, signals) for row in rows]
+	if team_names is None:
+		team_names = await _team_names(channel_id, bot_match_id)
+	fields = _team_card_fields(player_rows, team_names)
 	if not fields:
 		return None
 
@@ -762,13 +891,13 @@ async def build_match_cards_embed(channel_id, bot_match_id):
 		title="🧾 Match Cards",
 		colour=Colour(0x2ecc71),
 		description=(
-			"Impact score is relative inside this match. Tags come from replay timing, eco, and army signals.\n"
-			"⚔ army · 🌾 eco · ⏱ age-up — ▲ above match average, ▼ below, · around average."
+			"Medals rank the whole match on raw counts — ⚔ military, 🌾 villagers.\n"
+			"Tags describe the shape of a player's game against their own team."
 		),
 	)
 	for f in fields[:2]:
 		embed.add_field(name=f["name"], value=f["value"], inline=f["inline"])
-	embed.set_footer(text="Score = replay impact; carry = highest impact on that team")
+	embed.set_footer(text="Replay-derived · production and activity, never combat outcomes")
 	return embed
 
 
@@ -826,8 +955,12 @@ async def post_match_analysis(bot_match_id):
 		channel = dc.get_channel(channel_id)
 		if channel is None:
 			return False
-		cards = await build_match_cards_embed(channel_id, bot_match_id)
-		embed = await build_match_analysis_embed(channel_id, bot_match_id)
+		# Both embeds always post together and read the same roster, so fetch
+		# once here rather than letting each builder repeat the three queries.
+		rows = await _analysis_rows(bot_match_id)
+		team_names = await _team_names(channel_id, bot_match_id)
+		cards = await build_match_cards_embed(channel_id, bot_match_id, rows, team_names)
+		embed = await build_match_analysis_embed(channel_id, bot_match_id, rows, team_names)
 		if cards is None and embed is None:
 			return False
 		chart_file = await _apm_chart_file(bot_match_id)
