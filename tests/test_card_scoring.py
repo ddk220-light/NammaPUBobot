@@ -207,26 +207,27 @@ def test_tags_are_scoped_per_team_so_both_teams_can_award_one():
 
 def test_one_player_can_sweep_several_tags():
     ps = [_p("a", army_score=70, eco_score=60, reboom_score=75,
-             early_eco_score=40, production_coverage=0.9),
+             early_eco_score=40, production_coverage=1.0),
           _p("b")]
     # army 70 with eco 60 fails all_in (needs eco <= 48), so reboom + production.
     assert set(cs.assign_team_tags(ps)[0]) == {"Recovery", "Constant production"}
 
 
-def test_a_dominant_player_can_hold_all_three_tags():
+def test_a_dominant_player_can_hold_two_award_tags_at_once():
     ps = [_p("a", army_score=70, eco_score=48, reboom_score=75,
-             early_eco_score=40, production_coverage=0.9)]
-    # eco exactly at the all_in ceiling, and reboom_eco_min is 55 — so this
-    # player cannot hold both; assert the pair that is actually reachable.
+             early_eco_score=40, production_coverage=1.0)]
+    # eco sits exactly on the all_in ceiling while reboom_eco_min is 55, so
+    # Recovery is unreachable here; assert the pair that actually is.
     tags = cs.assign_team_tags(ps)
     assert "Low-eco pressure" in tags[0]
     assert "Constant production" in tags[0]
 
 
 def test_constant_production_needs_coverage_above_the_bar():
-    assert cs.assign_team_tags([_p("a", production_coverage=0.5)]) == [[]]
+    bar = cs.TH["production_coverage"]
+    assert cs.assign_team_tags([_p("a", production_coverage=bar - 0.01)]) == [[]]
     assert "Constant production" in cs.assign_team_tags(
-        [_p("a", production_coverage=0.95)])[0]
+        [_p("a", production_coverage=bar)])[0]
 
 
 def test_a_player_without_production_earns_no_tags():
@@ -239,6 +240,118 @@ def test_tag_ties_break_by_nick_so_re_renders_are_stable():
     tags = cs.assign_team_tags(ps)
     assert tags[1] == ["Low-eco pressure"]
     assert tags[0] == []
+
+
+# ── Descriptive tags ─────────────────────────────────────────────────────
+
+def _d(**kw):
+    base = dict(has_production=True, military=100, composition={},
+                unit_names={}, military_post_imperial=0)
+    base.update(kw)
+    return base
+
+
+def test_the_dominant_unit_line_is_named():
+    p = _d(composition={"knight_line": 80, "spearman_line": 20})
+    assert "massed Knights" in cs.descriptive_tags(p)
+
+
+def test_a_mixed_army_names_no_dominant_line():
+    p = _d(composition={"knight_line": 34, "archer_line": 33, "siege": 33})
+    assert not any(t.startswith("massed") for t in cs.descriptive_tags(p))
+
+
+def test_a_tiny_army_names_no_dominant_line():
+    p = _d(military=10, composition={"knight_line": 10})
+    assert cs.descriptive_tags(p) == []
+
+
+def test_unit_labels_use_the_category_not_the_upgrade_name():
+    """A queue click's name changes with upgrades (Knight -> Cavalier) but the
+    category does not, so labels must come from the category."""
+    assert cs.UNIT_LABELS["knight_line"] == "Knights"
+    assert cs.UNIT_LABELS["unique_other"] == "Unique units"
+
+
+def test_dominant_line_returns_the_share_too():
+    label, share = cs.dominant_line({"scout": 90, "siege": 10})
+    assert label == "Scouts"
+    assert abs(share - 0.9) < 1e-9
+
+
+def test_dominant_line_ties_break_on_category_name():
+    a = cs.dominant_line({"archer_line": 50, "knight_line": 50})
+    b = cs.dominant_line({"knight_line": 50, "archer_line": 50})
+    assert a == b
+
+
+def test_an_army_raised_in_imperial_age_is_called_out():
+    """Nothing in the classification set covers post-Imperial play, so this is
+    the only signal such a player gets."""
+    p = _d(composition={"scout": 261, "archer_line": 162},
+           military_post_imperial=423)
+    assert "Imperial Age army" in cs.descriptive_tags(p)
+
+
+def test_an_army_raised_before_imperial_is_not_called_out():
+    p = _d(composition={"knight_line": 100}, military_post_imperial=10)
+    assert "Imperial Age army" not in cs.descriptive_tags(p)
+
+
+def test_a_merely_typical_imperial_share_is_not_called_out():
+    """The median player already makes ~65% of their army after Imperial, so
+    that must not earn a callout — only 'almost all of it' does."""
+    p = _d(composition={"knight_line": 100}, military_post_imperial=65)
+    assert "Imperial Age army" not in cs.descriptive_tags(p)
+
+
+def test_the_specific_unique_unit_is_named_instead_of_the_bland_label():
+    p = _d(composition={"unique_other": 100},
+           unit_names={"unique_other": "Jaguar Warrior"})
+    assert "massed Jaguar Warrior" in cs.descriptive_tags(p)
+
+
+def test_unique_units_falls_back_to_the_category_label_without_a_name():
+    p = _d(composition={"unique_other": 100})
+    assert "massed Unique units" in cs.descriptive_tags(p)
+
+
+def test_named_categories_do_not_leak_into_ordinary_lines():
+    """A knight_line click is 'Knight' then 'Cavalier' after upgrading, so this
+    category must keep its stable label."""
+    p = _d(composition={"knight_line": 100},
+           unit_names={"knight_line": "Cavalier"})
+    assert "massed Knights" in cs.descriptive_tags(p)
+
+
+def test_imperial_callout_needs_a_real_army():
+    p = _d(composition={"scout": 12}, military_post_imperial=12)
+    assert "Imperial Age army" not in cs.descriptive_tags(p)
+
+
+def test_a_player_who_never_made_an_army_says_so():
+    p = _d(military=0, composition={})
+    assert cs.descriptive_tags(p) == ["No army"]
+
+
+def test_no_army_does_not_claim_they_were_defeated_or_eliminated():
+    """The parser records production only — never kills, losses or eliminations
+    — so the tag must not imply a combat outcome."""
+    tags = cs.descriptive_tags(_d(military=0, composition={}))
+    for implied in ("Defeated", "Eliminated", "Overrun", "Crushed"):
+        assert not any(implied.lower() in t.lower() for t in tags)
+
+
+def test_a_player_with_no_parsed_production_gets_no_descriptive_tags():
+    assert cs.descriptive_tags(_d(has_production=False, military=0)) == []
+
+
+def test_a_player_can_be_both_dominant_and_imperial():
+    p = _d(composition={"spearman_line": 200, "siege": 20},
+           military_post_imperial=200)
+    tags = cs.descriptive_tags(p)
+    assert "massed Spearmen" in tags
+    assert "Imperial Age army" in tags
 
 
 def test_no_fallback_tag_vocabulary_survives_the_fork():

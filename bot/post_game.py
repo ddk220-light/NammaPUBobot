@@ -278,6 +278,7 @@ def _card_payload(row, group, signals):
 	pnum = row.get("player_number")
 	scores = card_scoring.component_scores(row, group)
 	buildings = (signals.get("buildings") or {}).get(pnum) or {}
+	comp = (signals.get("composition") or {}).get(pnum) or {}
 	produced = (row.get("villagers") or 0) + (row.get("military") or 0)
 	return {
 		"nick": row.get("nick") or row.get("identity") or str(row.get("user_id") or ""),
@@ -293,6 +294,9 @@ def _card_payload(row, group, signals):
 		"eapm": row.get("eapm"),
 		"peak_eapm": (signals.get("peak_eapm") or {}).get(pnum),
 		"has_production": bool(produced),
+		"composition": comp.get("composition") or {},
+		"unit_names": comp.get("unit_names") or {},
+		"military_post_imperial": comp.get("post_imperial"),
 		"production_coverage": card_scoring.production_coverage(
 			(signals.get("clicks") or {}).get(pnum), row.get("duration_s")),
 		"impact_score": scores["impact"],
@@ -515,7 +519,10 @@ def _team_card_fields(player_rows, team_names=None):
 
 	team_names = team_names or {0: "Alpha", 1: "Beta"}
 	medals = card_scoring.assign_medals(player_rows)
-	tags = card_scoring.assign_team_tags(player_rows)
+	awards = card_scoring.assign_team_tags(player_rows)
+	# Descriptive tags are facts and come first; the team-scoped awards follow.
+	tags = [card_scoring.descriptive_tags(p) + awards[i]
+	        for i, p in enumerate(player_rows)]
 	extras = {id(p): (medals[i], tags[i]) for i, p in enumerate(player_rows)}
 	teams = _team_impact_rows(player_rows)
 	fields = []

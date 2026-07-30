@@ -45,9 +45,13 @@ TH = {
 	"reboom_score": 70,
 	"reboom_early_eco_max": 46,
 	"reboom_eco_min": 55,
-	# New, and the only threshold here that was chosen rather than calibrated:
-	# share of two-minute buckets containing at least one production click.
-	"production_coverage": 0.75,
+	# New, and the only threshold here that was chosen rather than calibrated.
+	# Share of two-minute buckets containing at least one production click.
+	# Set from the measured distribution over 2,722 player-games: the median is
+	# 0.87 and 55% of players clear 0.85, so anything lower fires for virtually
+	# every team once the per-team best is picked. At 0.98 roughly 8% of players
+	# qualify, so about a third of teams show it.
+	"production_coverage": 0.98,
 }
 
 # Terms that only carry information when the parser's age clicks are trustworthy.
@@ -228,6 +232,92 @@ def _tag_candidates(p):
 	if cov is not None and cov >= TH["production_coverage"]:
 		found.append(("constant_production", cov))
 	return found
+
+
+# ── Descriptive tags ─────────────────────────────────────────────────────
+# These are plain facts about one player, not team-scoped awards: every player
+# who qualifies gets them. Labels are per unit *category* rather than per unit
+# name, because a queue click's name changes with upgrades (Knight -> Cavalier)
+# while the category does not.
+UNIT_LABELS = {
+	"knight_line": "Knights",
+	"archer_line": "Archers",
+	"scout": "Scouts",
+	"spearman_line": "Spearmen",
+	"skirmisher": "Skirmishers",
+	"militia_line": "Infantry",
+	"cav_archer": "Cav Archers",
+	"camel_line": "Camels",
+	"elephant": "Elephants",
+	"siege": "Siege",
+	"monk": "Monks",
+	"unique_other": "Unique units",
+	"warship": "Warships",
+}
+
+# A dominant line has to be both a real army and genuinely lopsided.
+DOMINANT_MIN_UNITS = 30
+DOMINANT_MIN_SHARE = 0.5
+
+# unique_other is heterogeneous (Huskarl, Konnik, Jaguar Warrior, Hand
+# Cannoneer...), so "Unique units" says almost nothing. For that one category
+# the specific unit name is used instead. Names are left unpluralised because
+# the real strings do not pluralise uniformly (Samurai, Throwing Axeman,
+# Janissary), and "massed Jaguar Warrior" reads as a unit type.
+NAMED_BY_UNIT = frozenset(("unique_other",))
+
+# The classification set stops at the Imperial click — nothing downstream of it
+# is classified — so an army raised in Imperial Age otherwise shows no strategy
+# at all. The bar is deliberately high: measured over 2,350 player-games the
+# median player already makes 65% of their army after Imperial, so anything near
+# that just restates "this was a long game". At 0.90 about 20% of players
+# qualify — one or two a match — and it genuinely means "almost all of it".
+IMPERIAL_MIN_UNITS = 30
+IMPERIAL_MIN_SHARE = 0.9
+
+NO_ARMY_TAG = "No army"
+IMPERIAL_TAG = "Imperial Age army"
+
+
+def dominant_line(composition, unit_names=None):
+	"""(label, share) of the unit category that made up most of the army, or None.
+
+	``unit_names`` maps category -> the most-produced unit name in it, used for
+	the categories in NAMED_BY_UNIT where the category label is uninformative.
+	Ties break on the category name so re-renders never disagree.
+	"""
+	comp = {k: v for k, v in (composition or {}).items() if v}
+	total = sum(comp.values())
+	if total < DOMINANT_MIN_UNITS:
+		return None
+	cat, n = max(comp.items(), key=lambda kv: (kv[1], kv[0]))
+	share = n / total
+	if share < DOMINANT_MIN_SHARE or cat not in UNIT_LABELS:
+		return None
+	label = UNIT_LABELS[cat]
+	if cat in NAMED_BY_UNIT:
+		label = (unit_names or {}).get(cat) or label
+	return label, share
+
+
+def descriptive_tags(player):
+	"""Factual per-player tags. Unlike assign_team_tags these are not awards —
+	they state what the replay shows and apply to everyone who qualifies."""
+	if not player.get("has_production"):
+		return []
+	# An economy but no army at all. Stated as the fact it is: the card cannot
+	# see combat, so it must not claim they were eliminated or overrun.
+	if not (player.get("military") or 0):
+		return [NO_ARMY_TAG]
+	out = []
+	dominant = dominant_line(player.get("composition"), player.get("unit_names"))
+	if dominant:
+		out.append(f"massed {dominant[0]}")
+	total = sum((player.get("composition") or {}).values())
+	post = player.get("military_post_imperial")
+	if post and total >= IMPERIAL_MIN_UNITS and post / total >= IMPERIAL_MIN_SHARE:
+		out.append(IMPERIAL_TAG)
+	return out
 
 
 def assign_team_tags(payloads):

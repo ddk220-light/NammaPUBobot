@@ -71,6 +71,44 @@ async def _clicks(aoe2_match_id):
 	return out
 
 
+async def _composition(aoe2_match_id):
+	"""Military production per unit category, and how much of it came after the
+	Imperial click.
+
+	The Imperial split matters because no classification covers post-Imperial
+	play, so a player whose whole army arrived in Imperial Age otherwise shows no
+	strategy at all. imperial_s is per player, hence the join.
+	"""
+	rows = await db.fetchall(
+		"SELECT e.player_number, e.category, e.name, SUM(e.amount) AS total, "
+		"SUM(CASE WHEN g.imperial_s IS NOT NULL AND e.t_s >= g.imperial_s "
+		"         THEN e.amount ELSE 0 END) AS post_imp "
+		"FROM rs_player_events e "
+		"JOIN rs_player_games g ON g.aoe2_match_id=e.aoe2_match_id "
+		"                      AND g.player_number=e.player_number "
+		"WHERE e.aoe2_match_id=%s AND e.is_military=1 "
+		"GROUP BY e.player_number, e.category, e.name",
+		[aoe2_match_id])
+	out = {}
+	for r in rows or []:
+		entry = out.setdefault(r["player_number"], {
+			"composition": {}, "unit_names": {}, "post_imperial": 0, "_top": {}})
+		cat = r["category"]
+		total = int(r.get("total") or 0)
+		if total:
+			entry["composition"][cat] = entry["composition"].get(cat, 0) + total
+			# Keep the most-produced unit name per category, for the categories
+			# whose label alone says nothing. Ties break on name for stability.
+			name = r.get("name")
+			best = entry["_top"].get(cat)
+			if best is None or (total, str(name or "")) > (best[0], str(best[1] or "")):
+				entry["_top"][cat] = (total, name)
+		entry["post_imperial"] += int(r.get("post_imp") or 0)
+	for entry in out.values():
+		entry["unit_names"] = {c: n for c, (_t, n) in entry.pop("_top").items() if n}
+	return out
+
+
 async def _strategies(aoe2_match_id):
 	"""Every strategy classification that fired, per player, as display labels.
 
@@ -137,6 +175,7 @@ async def fetch_card_signals(aoe2_match_id, match_end_s=None):
 	return {
 		"buildings": await _safe(_buildings(aoe2_match_id), {}, "buildings"),
 		"clicks": await _safe(_clicks(aoe2_match_id), {}, "events"),
+		"composition": await _safe(_composition(aoe2_match_id), {}, "composition"),
 		"strategies": await _safe(_strategies(aoe2_match_id), {}, "strategies"),
 		"spawn": await _safe(_spawn(aoe2_match_id), {}, "spawn"),
 		"peak_eapm": await _safe(_peak_eapm(aoe2_match_id), {}, "peak eapm"),

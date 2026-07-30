@@ -135,8 +135,30 @@ def test_one_failing_query_does_not_break_the_others(monkeypatch):
 def test_every_signal_failing_still_returns_the_full_shape(monkeypatch):
     db = _FakeDB(fail_on=("SELECT",))
     out = _run(monkeypatch, db)
-    assert set(out) == {"buildings", "clicks", "strategies", "spawn", "peak_eapm"}
+    assert set(out) == {"buildings", "clicks", "composition", "strategies",
+                        "spawn", "peak_eapm"}
     assert all(v == {} for v in out.values())
+
+
+def test_composition_totals_and_post_imperial_split(monkeypatch):
+    db = _FakeDB({"e.category": [
+        {"player_number": 1, "category": "knight_line", "total": 80, "post_imp": 60},
+        {"player_number": 1, "category": "siege", "total": 20, "post_imp": 20},
+        {"player_number": 2, "category": "scout", "total": 30, "post_imp": 0},
+    ]})
+    out = _run(monkeypatch, db)
+    assert out["composition"][1]["composition"] == {"knight_line": 80, "siege": 20}
+    assert out["composition"][1]["post_imperial"] == 80
+    assert out["composition"][2]["post_imperial"] == 0
+
+
+def test_composition_joins_on_player_number_and_filters_to_military(monkeypatch):
+    db = _FakeDB()
+    _run(monkeypatch, db)
+    sql = next(s for s in db.seen if "e.category" in s)
+    assert "g.player_number=e.player_number" in sql
+    assert "is_military=1" in sql
+    assert "profile_id" not in sql
 
 
 def test_clicks_are_grouped_by_player_in_time_order(monkeypatch):
