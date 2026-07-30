@@ -9,6 +9,14 @@ implementation plan gets written. The design decisions themselves are settled an
 the spec — this covers **data availability, environment, calibration, blockers, and the
 decisions still outstanding.**
 
+It has two parts:
+
+- **Part 1 (§1–9)** — the card revamp itself: where each signal lives, what has to be built,
+  what could go wrong.
+- **Part 2 (§10–15)** — the **replay archive**, which turned out to be a prerequisite for
+  calibrating and previewing the card. Neither machine has a local replay cache, and
+  re-downloading from aoe.ms every time is not viable.
+
 ---
 
 ## 1. Where the data actually lives
@@ -177,9 +185,177 @@ All three apply to the card path only; they stay live in `scoring.py` by design.
 ## 9. Suggested order
 
 1. Measure strategy coverage against the live DB — it can invalidate the headline design.
-2. Decide the preview route (question 1), then produce a preview for ~5 recent matches.
-3. React to the preview; amend the spec if the design doesn't survive contact.
-4. Write the implementation plan.
-5. Calibrate, then build.
+2. Build the replay archive (Part 2) — calibration and preview both depend on it.
+3. Produce a preview for ~5 recent matches from the archive.
+4. React to the preview; amend the spec if the design doesn't survive contact.
+5. Write the implementation plan.
+6. Calibrate, then build.
 
-Step 1 before step 4 is the important ordering. Everything else can move.
+Step 1 before step 5 is the important ordering. Everything else can move.
+
+---
+---
+
+# Part 2 — Replay archive
+
+## 10. Why this is needed at all
+
+**The card does not need historical replays to operate.** It renders per-match at ingest, from
+that match's own freshly-parsed data. Nothing about the running feature depends on an archive.
+
+The archive is needed for three other things:
+
+1. **Calibration** — a hard prerequisite (§4). Deriving thresholds needs a large sample.
+2. **Preview** — seeing the design against real matches before committing to build it.
+3. **Optional backfill** — retroactive `rs_player_apm`, `cls_*`, or any future extract field.
+
+There is a second-order benefit worth naming: the eAPM spec chose **forward-only, no backfill**
+specifically because re-downloading ~1,000 matches from aoe.ms was ~44 hours of sweeping with a
+fifth to a third permanently unavailable. **Once an archive exists, that cost disappears** and
+the no-backfill decision becomes cheap to revisit — retroactive charts on the web profile and
+`/player_details` would become a re-parse rather than a re-download.
+
+## 11. Scope — which matches, and how we identify "ranked"
+
+The set is *ranked NammaNomad pickup matches only*. Casual games shared in the lobby with people
+outside the group — no captains, no ranking — are excluded.
+
+**The authoritative filter is `qc_matches.ranked`.** That boolean column exists in the live
+schema ([bot/stats/stats.py:66](../bot/stats/stats.py:66)) but is **not** in the committed
+export: `data/qc_matches.csv` carries only `match_id, at, queue, winner_team, maps`.
+
+**Action required:** one-time query, or re-export `qc_matches.csv` including `ranked` and
+`channel_id`. Everything else in Part 2 depends on having that list.
+
+What the committed data already tells us:
+
+| Fact | Value |
+|---|---|
+| `qc_matches` rows | 2,920 — **all** with `queue = "4v4"` |
+| …with a reported `winner_team` | 2,912 (8 without) |
+| `match_id_map.csv` bot↔aoe2 pairs | 2,648 |
+| In `match_id_map` but not `qc_matches` | 20 — worth a look; possibly `/lobby2` manual links or another channel |
+| In `qc_matches` but not `match_id_map` | 292 — never resolved to an aoe2 game, so no replay exists to fetch |
+
+So the download set is `qc_matches WHERE ranked=1` ∩ `match_id_map`, **bounded above by 2,648**.
+
+## 12. Size and time
+
+Measured from the 10 replays currently cached locally:
+
+| Metric | Value |
+|---|---|
+| Average replay | **3.15 MB** (range 1.99 – 4.14 MB) |
+| 2,648 matches, gross | **~8.3 GB** |
+| Realistic, after aoe.ms's 65–80% availability | **~5.5–6.6 GB**, roughly 1,700–2,100 files |
+
+**Time is the real cost, not bytes.** aoe.ms rate-limits per IP, `download.py` paces at
+`--space 5` between successes and backs off `[15, 30, 60, 120]s` on HTTP 429. Best case for
+2,648 attempts is ~4 hours; realistically **8–15 hours** with rate limiting. The job must be
+resumable and safe to stop and restart — it will not finish in one sitting.
+
+## 13. Storage — Railway Storage Buckets
+
+Railway now offers exactly what you were reaching for: **private, S3-compatible Storage
+Buckets**, separate from persistent Volumes.
+
+| | Railway Buckets | Railway Volumes | Cloudflare R2 | Backblaze B2 |
+|---|---|---|---|---|
+| Storage | **$0.015 / GB-month** | ~$0.15 / GB-month | $0.015 / GB-month | $0.006 / GB-month |
+| Egress | **free, unlimited** | n/a | free | free up to 3× stored |
+| API operations | **free, unlimited** | n/a | billed | billed |
+| Our ~6.6 GB | **~$0.10 / month** | ~$1.00 / month | ~$0.10 / month | ~$0.04 / month |
+
+**Recommendation: Railway Buckets.** B2 is nominally cheaper but the difference is six cents a
+month, and Railway wins on everything that actually matters here — the bot already runs there,
+so credentials inject as service variables (`ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`, `BUCKET`,
+`ENDPOINT`, `REGION`) with no new vendor, no new billing relationship, and no cross-provider
+networking. **Volumes are the wrong tool** — 10× the price, and block storage rather than object
+storage.
+
+**Free unlimited egress is the property that matters most.** Every calibration run, every
+preview, every re-parse can pull the whole archive down at no cost. That is what makes the
+archive genuinely reusable rather than something we hoard and avoid touching.
+
+Caveats from the docs, both worth planning around:
+
+- **Region is fixed at bucket creation** — cannot be changed later.
+- **No versioning, object lock, or lifecycle rules yet.** An accidental delete is
+  unrecoverable, so the archive should not be single-homed. Keep the local copy, or sync to a
+  second destination.
+- Buckets are fully S3-compatible (put/get/delete, list, copy, presigned URLs, tagging,
+  multipart), so `boto3` works directly — no bespoke client.
+
+## 14. Proposed layout and tooling
+
+### Bucket layout
+
+```
+replays/{aoe2_match_id}.aoe2record     raw replay, the irreplaceable artifact
+extract/{aoe2_match_id}.json           cached extract_match() output
+manifest.jsonl                          one record per match (see below)
+```
+
+**Archiving the extract output as well as the raw replay is worth doing.** It is far smaller,
+and it means calibration and preview need neither mgz nor a parse step — just a download. The
+raw replay stays the source of truth for when `EXTRACT_VERSION` bumps and everything must be
+re-derived.
+
+Manifest record per match: `aoe2_match_id`, `bot_match_id`, `bytes`, `sha256`, `save_version`,
+`parse_ok`, `extract_version`, `fetched_at`, and `unavailable_reason` for the ones aoe.ms will
+never serve — so we stop retrying known-dead matches forever.
+
+### Tooling to build
+
+| Piece | Purpose |
+|---|---|
+| **Fix `download.py`'s resume filter** | **Blocker.** See §15 |
+| Bulk-download driver | Reads the ranked set, paces politely, fully resumable, records unavailable matches so they aren't retried indefinitely |
+| Bucket sync (`boto3`) | Idempotent upload, skip-if-present by size + hash |
+| Bucket fetch | So calibration/preview pull from the bucket, never from aoe.ms |
+| Extract cache writer | Optional but recommended — see layout above |
+
+## 15. Blocker: `download.py` does nothing on a fresh checkout
+
+[`utils/replay_quiz/download.py:188`](../utils/replay_quiz/download.py:188) builds its todo list
+from the **git-tracked manifest** without checking whether the file still exists in the
+**untracked** `data/replays/` cache. On any machine that has the manifest but no cache — which
+is now both of ours — it concludes there is nothing to do and downloads zero files.
+
+There is also dead code immediately above it: the `todo` assignment at lines 185–187 is
+unconditionally overwritten by line 188.
+
+**This must be fixed before any bulk download is attempted.** It is the first thing anyone
+following the existing instructions hits.
+
+## 16. Open decisions
+
+1. **Where does the bulk download run?** A local machine over several days, or a one-off Railway
+   service? Railway would hit aoe.ms from a datacenter IP, which is more likely to be
+   rate-limited hard or blocked outright. Local is slower but probably safer — worth a small
+   test from Railway before committing either way.
+2. **Do we archive extract JSON as well as raw replays?** Recommended above; costs a little
+   space, removes mgz from the calibration path entirely.
+3. **Do we revisit the eAPM forward-only decision** once the archive exists? Retroactive charts
+   become a re-parse instead of a re-download.
+4. **Is the whole 2,648 the right set**, or do we bound it by date? Older matches are likelier
+   to be permanently gone from aoe.ms.
+5. **Re-hosting question.** These are replays of your own community's games, pulled from a public
+   endpoint, archived privately for your own analysis — a reasonable use. But it is still
+   third-party-served content being re-hosted, so keep the bucket **private** rather than
+   public, and it is worth a moment's thought about aoe.ms / aoe2companion terms before
+   publishing anything derived from it more broadly.
+
+## 17. Risks
+
+- **Rate limiting or an IP block mid-pull.** A multi-thousand-file sweep is a different animal
+  from the current one-match-per-150s trickle. Politeness and resumability are not optional.
+- **The archive will never be complete.** 20–35% of matches are permanently unavailable.
+  Calibration has to be robust to that.
+- **Possible sample bias.** If availability correlates with match age, the recoverable subset
+  skews recent — and thresholds calibrated on it may not describe older play. Worth measuring
+  availability *by date* during the pull rather than assuming it's uniform.
+- **No versioning on Railway Buckets.** An accidental `delete` is unrecoverable. Do not
+  single-home the archive.
+- **8–15 hours of wall clock**, spread over days, before calibration can even start. This is the
+  long pole in the card revamp — worth starting early even while other decisions are open.
