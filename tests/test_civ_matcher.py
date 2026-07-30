@@ -87,3 +87,52 @@ def test_csv_loaders_and_path_are_gone():
 	assert not hasattr(cm, "_load_profile_map")
 	assert not hasattr(cm, "_load_profile_uid_map")
 	assert not hasattr(cm, "_PROFILE_MAP_PATH")
+
+
+# ─── _find_and_record: too-few-mapped-players is now audible ────────────
+# An empty/degraded identities table used to make this path a black hole:
+# _find_and_record would return True (meaning "don't retry") with no
+# exception and no log line, so civ stats would silently stop accruing.
+
+class _FakeLog:
+	def __init__(self):
+		self.info_calls = []
+
+	def info(self, msg):
+		self.info_calls.append(msg)
+
+
+def test_find_and_record_logs_when_fewer_than_two_players_resolve(monkeypatch):
+	fake_identity = _FakeIdentity({111: [612690]})  # only one of two players resolves
+	fake_log = _FakeLog()
+	monkeypatch.setattr(cm, "identity", fake_identity)
+	monkeypatch.setattr(cm, "log", fake_log)
+
+	result = asyncio.run(cm._find_and_record(
+		channel_id=1, bot_match_id=42,
+		players=[(111, "ddk", 0), (222, "nobody", 1)],
+		winner=0, match_at=1000,
+	))
+
+	assert result is True
+	assert len(fake_log.info_calls) == 1
+	msg = fake_log.info_calls[0]
+	assert "42" in msg  # bot_match_id, for finding the match in logs
+	assert "1/2" in msg  # 1 of 2 players resolved
+
+
+def test_find_and_record_logs_when_zero_players_resolve(monkeypatch):
+	fake_identity = _FakeIdentity({})
+	fake_log = _FakeLog()
+	monkeypatch.setattr(cm, "identity", fake_identity)
+	monkeypatch.setattr(cm, "log", fake_log)
+
+	result = asyncio.run(cm._find_and_record(
+		channel_id=1, bot_match_id=43,
+		players=[(111, "ddk", 0), (222, "nobody", 1)],
+		winner=0, match_at=1000,
+	))
+
+	assert result is True
+	assert len(fake_log.info_calls) == 1
+	assert "0/2" in fake_log.info_calls[0]

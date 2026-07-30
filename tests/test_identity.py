@@ -167,14 +167,39 @@ def test_rank_rejects_an_unknown_confidence():
 		raise AssertionError("_rank() with an unknown confidence must raise ValueError, not tuple.index's opaque one")
 
 
-def test_learn_rejects_an_unknown_confidence_source(monkeypatch):
+def test_learn_rejects_an_unknown_confidence_source_on_the_insert_path(monkeypatch):
 	""" A bad `source` must raise a clear error naming the value and the
 	allowed set — the same shape of validation parse_seed_csv already does
-	for its `kind` argument — not an opaque tuple.index ValueError.
+	for its `kind` argument — not an opaque tuple.index ValueError. And it
+	must do so even for a brand-new profile_id with no existing row: learn()
+	calls _rank(source) as its very first statement, before any DB read/
+	write, so an invalid source can never reach storage via the insert path.
 
-	_rank() is only reached on the "existing row" path (a brand-new
-	profile_id skips straight to insert with no rank comparison), so an
-	existing row is seeded first to force learn() through _rank(). """
+	This used to be a documented gap instead: the insert path skipped
+	straight to storing `confidence=source` with no rank comparison, so an
+	out-of-lattice value landed in the row and _rank() only ever raised on
+	the *next* learn() for that profile_id (the "existing row" comparison
+	path) — by which point the bad value was already permanently stuck,
+	since every subsequent learn() call for that profile_id would raise
+	before it could ever correct it. """
+	fake = _setup(monkeypatch)
+
+	try:
+		asyncio.run(identity.learn(111, 222, "trusted"))
+	except ValueError as e:
+		assert "trusted" in str(e)
+		for tier in identity.CONFIDENCE_ORDER:
+			assert tier in str(e)
+	else:
+		raise AssertionError("learn() with an unknown confidence source must raise ValueError")
+
+	assert fake.identities == [], "an invalid source must never reach storage"
+
+
+def test_learn_rejects_an_unknown_confidence_source_on_the_update_path(monkeypatch):
+	""" Same validation, reached via the pre-existing "existing row" _rank()
+	comparison rather than the insert path above — kept as a regression test
+	for that path now that the insert path fails fast too. """
 	_setup(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "seed"))
 
@@ -357,6 +382,62 @@ def test_invalidate_cache_forces_a_requery(monkeypatch):
 	asyncio.run(identity.profiles_for_users([555]))
 
 	assert fake.select_calls > calls_after_first
+
+
+def test_invalidate_cache_bumps_the_generation_counter(monkeypatch):
+	_setup(monkeypatch)
+	before = identity._cache_generation
+
+	identity.invalidate_cache()
+
+	assert identity._cache_generation == before + 1
+
+
+class _GatedFakeDb(FakeDb):
+	""" Like FakeDb, but an `identities` SELECT snapshots its rows immediately
+	(as a real query would, at the moment it executes) and then suspends on
+	`gate` before returning to its caller — letting a test interleave a
+	concurrent write + invalidate_cache() between the snapshot and the
+	return. That is exactly the race profiles_for_users' generation counter
+	must survive: see the test below. """
+
+	def __init__(self):
+		super().__init__()
+		self.gate = asyncio.Event()
+
+	async def select(self, columns, table, where=None, **kwargs):
+		rows = await super().select(columns, table, where, **kwargs)
+		await self.gate.wait()
+		return rows
+
+
+def test_profiles_for_users_survives_invalidate_during_in_flight_load(monkeypatch):
+	""" Reproduces the race described in profiles_for_users' docstring: a
+	reload already in flight when a concurrent learn() calls
+	invalidate_cache() must not get cached back in once it resolves —
+	otherwise the mapping that concurrent learn() just wrote would stay
+	invisible to every future caller until some unrelated write happened to
+	invalidate the cache again, possibly forever (no TTL). """
+	fake = _GatedFakeDb()
+	monkeypatch.setattr(identity, "db", fake)
+	identity.invalidate_cache()
+	asyncio.run(identity.learn(1, 555, "seed"))
+
+	async def scenario():
+		load_task = asyncio.create_task(identity.profiles_for_users([555, 666]))
+		await asyncio.sleep(0)  # let load_task run up to its gate.wait() suspension
+		await identity.learn(2, 666, "seed")  # concurrent write; invalidates mid-load
+		fake.gate.set()  # release the in-flight load with its now-stale snapshot
+		return await load_task
+
+	first_result = asyncio.run(scenario())
+	assert 666 not in first_result, "the in-flight load's snapshot predates the concurrent learn()"
+
+	second_result = asyncio.run(identity.profiles_for_users([555, 666]))
+	assert second_result[666] == [2], (
+		"a stale in-flight load must not poison the cache — the next call must "
+		"reload and see the mapping the concurrent learn() wrote"
+	)
 
 
 # ─── set_nick / nick_for ────────────────────────────────────────────────

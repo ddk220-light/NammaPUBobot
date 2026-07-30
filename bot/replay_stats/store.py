@@ -92,6 +92,40 @@ async def load_profile_user_map(profile_ids):
     return out
 
 
+async def _learn_from_ingest(players, profmap):
+    """Feed every profile_id this ingest resolved to a Discord user back into
+    the identity resolver (bot/identity.py) -- the "ingest learning" writer
+    that module's docstring describes but that never actually existed here.
+
+    profmap already comes from load_profile_user_map, i.e. from
+    identity.user_for_profile, so this can never discover a brand-new
+    mapping -- it reconfirms one the resolver already knows, at the same
+    'learned' tier, refreshing aoe2_name/last_seen_at with what THIS parse
+    just observed. That reconfirmation is not idle busywork: profile_upserts
+    below builds rs_profiles.user_id FROM profmap and writes it with
+    on_duplicate='replace', so if `identities` were ever missing a mapping
+    rs_profiles previously held, that write would silently wipe it rather
+    than merely fail to add one. Routing every resolved profile back through
+    learn() keeps the resolver current so that gap cannot open in the first
+    place.
+
+    Best-effort per player: an identity write failing must never break
+    ingest -- the raw parse output write_match already wrote is irreplaceable
+    (replays 404 upstream once they expire), so each failure is caught and
+    logged rather than allowed to propagate.
+    """
+    for p in players:
+        profile_id = p.get("profile_id")
+        user_id = profmap.get(profile_id)
+        if user_id is None:
+            continue
+        try:
+            await identity.learn(profile_id, user_id, "learned", aoe2_name=p.get("identity") or None)
+        except Exception as e:
+            log.error(f"Replay-stats identity learn failed for profile_id={profile_id} "
+                      f"user_id={user_id}: {e}")
+
+
 async def write_match(extracted, bot_match_id, parsed_at, parser_version, played_at_epoch=None):
     """Idempotent: replace this match's rows. Returns count of player rows written."""
     aoe2_id = extracted["match"]["aoe2_match_id"]
@@ -141,6 +175,7 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     profs = shape.profile_upserts(extracted["players"], profmap, parsed_at)
     if profs:
         await db.insert_many("rs_profiles", profs, on_duplicate="replace")
+    await _learn_from_ingest(extracted["players"], profmap)
     try:
         from . import classifications
         await classifications.write_extracted_match(extracted, played_at_epoch)

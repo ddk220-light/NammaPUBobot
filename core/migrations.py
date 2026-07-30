@@ -104,6 +104,7 @@ async def run_all(db):
 		n += 1
 	log.info(f"migrations: {n} applied this boot, {len(MIGRATIONS)} known")
 	await _assert_stage1_renames_landed(db)
+	await _assert_identities_seeded(db)
 
 
 async def _assert_stage1_renames_landed(db):
@@ -138,6 +139,69 @@ async def _assert_stage1_renames_landed(db):
 			"keeps schema_migrations but not the renamed tables) or a code-only rollback "
 			"happened. Fix: drop the `schema_migrations` table and reboot."
 		)
+
+
+async def _assert_identities_seeded(db):
+	"""Post-condition, checked on every boot after the migration loop: if
+	rs_profiles holds rows (real match history has already been ingested)
+	while `identities` is empty (or missing outright), 003_seed_identities'
+	ledger entry does not reflect reality.
+
+	003_seed_identities now re-raises when every one of its three seed
+	sources genuinely fails (see _m003), so a failed *first* seed no longer
+	gets recorded as done. But the same empty-forever end state is also
+	reachable via the rollback runbook: restoring a database backup taken
+	after 003_seed_identities was recorded in schema_migrations but before
+	(or without) `identities` itself restores the ledger row without
+	restoring the table's data — and unlike _assert_stage1_renames_landed's
+	renames, no old-named table is left behind for that check to catch,
+	because `identities` was never renamed from anything. The loop above
+	sees 003_seed_identities already applied and skips it; `import bot`'s
+	ensure_table() then either finds the empty restored table or CREATEs it
+	fresh, either way empty. From there the failure is silent: every civ
+	stat lookup routes through profiles_for_users(), which just returns {}
+	for an empty table, and bot/civ_matcher.py's _find_and_record() treats
+	too few mapped players as "nothing to record here", not an error — no
+	exception, no retry, no log line, and /health stays 200.
+
+	Crashing here is the intended behaviour, for the same reason as
+	_assert_stage1_renames_landed: a loud crash beats a silently empty bot.
+
+	Safe on a genuinely fresh install, including one that has since booted
+	at least once but ingested nothing: rs_profiles is declared by
+	bot/replay_stats, only imported (and hence only CREATEd) after `import
+	bot` — well after run_all() returns — so on a brand-new install this
+	function's first table_exists() check is False and it is a no-op. Once
+	rs_profiles does exist, it legitimately has zero rows until the first
+	replay is ingested; identities being empty alongside an equally-empty
+	rs_profiles is exactly as unremarkable, so both must be checked, not
+	just one.
+	"""
+	if not await table_exists(db, "rs_profiles"):
+		return
+	rs_row = await db.fetchone("SELECT 1 AS x FROM rs_profiles LIMIT 1")
+	if rs_row is None:
+		return
+	if not await table_exists(db, "identities"):
+		raise RuntimeError(
+			"migrations: identities table is missing while rs_profiles holds rows — "
+			"003_seed_identities is recorded as applied in schema_migrations but "
+			"`identities` itself does not exist. This almost always means a database "
+			"backup was restored that kept schema_migrations but predates the "
+			"identities table. Fix: drop the `schema_migrations` table and reboot so "
+			"003_seed_identities re-runs from scratch."
+		)
+	id_row = await db.fetchone("SELECT 1 AS x FROM identities LIMIT 1")
+	if id_row is not None:
+		return
+	raise RuntimeError(
+		"migrations: identities table is empty while rs_profiles holds rows — "
+		"003_seed_identities is recorded as applied in schema_migrations but never "
+		"actually seeded anything, most likely because a database backup was "
+		"restored that kept schema_migrations but not identities' data. Fix: drop "
+		"the `schema_migrations` table and reboot so 003_seed_identities re-runs "
+		"from scratch."
+	)
 
 
 _STAGE1_RENAMES = [
@@ -239,11 +303,25 @@ async def _m003(db):
 	crash mid-body forces a retry on the next boot.
 
 	Every source is independently guarded and never allowed to crash the
-	boot: rs_profiles may not exist yet on a genuinely fresh install (it is
-	declared by bot/replay_stats, only imported AFTER migrations run — see
-	this module's docstring), and either CSV may be absent from a given
-	deploy image. A missing/failed source is logged and skipped so the
-	others still get a chance to seed.
+	boot on its own: rs_profiles may not exist yet on a genuinely fresh
+	install (it is declared by bot/replay_stats, only imported AFTER
+	migrations run — see this module's docstring), and either CSV may be
+	absent from a given deploy image. A missing source (file/table not
+	found) is logged and skipped so the others still get a chance to seed —
+	that is the ordinary, expected case and never counts as a failure.
+
+	A source that raises partway through (a corrupt CSV, a DB error reading
+	rs_profiles) is different: that is genuinely lost data, not an absence.
+	One or two such failures still leave the migration free to seed from
+	whatever did work, same as a missing source. But if all three raise,
+	nothing gets seeded at all — and without checking for that, this
+	function would still return normally, run_all() would record
+	003_seed_identities as done, and the migration would never be retried:
+	`identities` stays empty forever with no further signal (see
+	_assert_identities_seeded for the boot-time backstop covering the
+	related backup-restore case). So this function tracks per-source
+	failures and re-raises if every one of the three failed, leaving the
+	migration unrecorded so the next boot retries it from scratch.
 
 	A `manual` row is a deliberate human correction and must win regardless
 	of *write order*, not just regardless of confidence — but rs_profiles is
@@ -259,6 +337,11 @@ async def _m003(db):
 	"""
 	await _ensure_identities_table(db)
 	now = int(time.time())
+
+	# Names of seed sources whose attempt raised (not merely "missing" —
+	# see the docstring above). If this ends up covering all three, _m003
+	# re-raises at the bottom so run_all() does not record a no-op seed.
+	failed_sources = []
 
 	try:
 		if await table_exists(db, "rs_profiles"):
@@ -281,6 +364,7 @@ async def _m003(db):
 			log.info("migrations: 003_seed_identities: rs_profiles does not exist yet, skipping")
 	except Exception as e:
 		log.error(f"migrations: 003_seed_identities: rs_profiles seed step failed, continuing: {e}")
+		failed_sources.append("rs_profiles")
 
 	# Rows from data/profile_resolved.csv whose own `source` column says
 	# 'manual', captured here so the re-assertion pass below doesn't have to
@@ -320,6 +404,7 @@ async def _m003(db):
 			log.info(f"migrations: 003_seed_identities: seeded {len(seed)} row(s) from {relpath}")
 		except Exception as e:
 			log.error(f"migrations: 003_seed_identities: {relpath} seed step failed, continuing: {e}")
+			failed_sources.append(relpath)
 
 	# Manual rows must win regardless of the write order above: rs_profiles
 	# is seeded first (as 'learned'), and INSERT IGNORE means whoever writes
@@ -344,3 +429,11 @@ async def _m003(db):
 			)
 	except Exception as e:
 		log.error(f"migrations: 003_seed_identities: manual reassertion step failed, continuing: {e}")
+
+	if len(failed_sources) == 3:
+		raise RuntimeError(
+			"migrations: 003_seed_identities: all three seed sources failed "
+			f"({', '.join(failed_sources)}); identities was not seeded from any of "
+			"them this boot. Not recording this migration as applied so the next "
+			"boot retries it — see the errors logged above for what actually failed."
+		)

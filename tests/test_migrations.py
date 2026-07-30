@@ -54,6 +54,10 @@ class FakeDb:
 		if "information_schema.COLUMNS" in sql:
 			table, column = args[0], args[1]
 			return {"x": 1} if column in self.columns.get(table, set()) else None
+		if "FROM rs_profiles" in sql:
+			return {"x": 1} if self.rows.get("rs_profiles") else None
+		if "FROM identities" in sql:
+			return {"x": 1} if self.rows.get("identities") else None
 		return None
 
 	async def fetchall(self, sql, args=None):
@@ -466,6 +470,154 @@ def test_m003_missing_rs_profiles_table_does_not_crash_on_fresh_install(tmp_path
 	asyncio.run(mig._m003(db))  # must not raise
 
 	assert db.rows.get("identities", []) == []
+
+
+# ─── 003_seed_identities: all-sources-failed re-raise ───────────────────
+# Without this, a boot where every one of the three sources raises would
+# still return normally, run_all() would record 003_seed_identities as
+# applied, and `identities` would stay empty forever with no retry.
+
+def test_m003_raises_when_all_three_seed_sources_fail(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	(tmp_path / "data").mkdir()
+	(tmp_path / "data" / "profile_resolved.csv").mkdir()    # open() -> IsADirectoryError
+	(tmp_path / "data" / "player_profile_map.csv").mkdir()  # ditto
+	db = FakeDb(tables={"rs_profiles"}, raise_on="FROM rs_profiles")
+
+	try:
+		asyncio.run(mig._m003(db))
+	except RuntimeError as e:
+		assert "rs_profiles" in str(e)
+		assert "profile_resolved.csv" in str(e)
+		assert "player_profile_map.csv" in str(e)
+	else:
+		raise AssertionError("_m003 must raise when every seed source fails")
+
+	assert db.rows.get("identities", []) == []
+
+
+def test_m003_does_not_raise_when_only_two_of_three_sources_fail(tmp_path, monkeypatch):
+	"""A partial success — even down to just one working source — must still
+	succeed, same as today: the whole point is that a real failure (as
+	opposed to a merely-missing source) only aborts the ledger write when it
+	leaves literally nothing seeded."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	(tmp_path / "data").mkdir()
+	(tmp_path / "data" / "profile_resolved.csv").mkdir()  # fails
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"222,nickB,MapName,700,us\n")
+	db = FakeDb(tables={"rs_profiles"}, raise_on="FROM rs_profiles")  # fails
+
+	asyncio.run(mig._m003(db))  # must not raise — player_profile_map.csv worked
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	assert identities[0]["profile_id"] == 700
+
+
+def test_run_all_does_not_record_003_when_every_seed_source_fails(tmp_path, monkeypatch):
+	"""Integration check that _m003's raise actually stops run_all() from
+	recording the migration — the same guarantee test_run_all_does_not_
+	record_a_migration_that_raises proves generically, checked here against
+	003_seed_identities specifically."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	monkeypatch.setattr(mig, "MIGRATIONS", [("003_seed_identities", mig._m003)])
+	(tmp_path / "data").mkdir()
+	(tmp_path / "data" / "profile_resolved.csv").mkdir()
+	(tmp_path / "data" / "player_profile_map.csv").mkdir()
+	db = FakeDb(tables={"rs_profiles"}, raise_on="FROM rs_profiles")
+
+	try:
+		asyncio.run(mig.run_all(db))
+	except RuntimeError:
+		pass
+	else:
+		raise AssertionError("run_all must propagate _m003's raise")
+
+	assert "003_seed_identities" not in db.applied
+
+
+# ─── boot post-condition: _assert_identities_seeded ──────────────────────
+# Catches the other route to the same empty-forever failure: a restored
+# backup that kept schema_migrations (so the loop skips 003_seed_identities
+# entirely) but not identities' data, while rs_profiles (real match
+# history) survived the restore.
+
+def test_assert_identities_seeded_noop_when_rs_profiles_does_not_exist():
+	# Genuinely fresh install: rs_profiles is declared by bot/replay_stats,
+	# only created by `import bot` — well after run_all() returns.
+	db = FakeDb(tables=set())
+	asyncio.run(mig._assert_identities_seeded(db))  # must not raise
+
+
+def test_assert_identities_seeded_noop_when_rs_profiles_is_empty():
+	# rs_profiles exists (a prior boot got as far as `import bot`) but no
+	# replay has been ingested yet -- identities being empty alongside it is
+	# unremarkable, not a symptom of the backup-restore failure mode.
+	db = FakeDb(tables={"rs_profiles", "identities"})
+	asyncio.run(mig._assert_identities_seeded(db))  # must not raise
+
+
+def test_assert_identities_seeded_noop_when_both_have_rows():
+	db = FakeDb(
+		tables={"rs_profiles", "identities"},
+		rows={
+			"rs_profiles": [{"profile_id": 1, "user_id": 2, "name": "x", "last_seen_at": 1}],
+			"identities": [{"profile_id": 1, "user_id": 2, "aoe2_name": "x",
+							"confidence": "learned", "first_seen_at": 1, "last_seen_at": 1}],
+		},
+	)
+	asyncio.run(mig._assert_identities_seeded(db))  # must not raise
+
+
+def test_assert_identities_seeded_raises_when_identities_is_empty_but_rs_profiles_has_rows():
+	db = FakeDb(
+		tables={"rs_profiles", "identities"},
+		rows={"rs_profiles": [{"profile_id": 1, "user_id": 2, "name": "x", "last_seen_at": 1}]},
+	)
+	try:
+		asyncio.run(mig._assert_identities_seeded(db))
+	except RuntimeError as e:
+		assert "identities" in str(e) and "rs_profiles" in str(e)
+	else:
+		raise AssertionError("must raise when rs_profiles has rows but identities is empty")
+
+
+def test_assert_identities_seeded_raises_when_identities_table_is_missing_but_rs_profiles_has_rows():
+	# The pre-`import bot` window: run_all() runs before ensure_table() ever
+	# creates `identities`, so a restored backup that dropped the table
+	# outright (rather than merely leaving it empty) must be caught too.
+	db = FakeDb(
+		tables={"rs_profiles"},  # no "identities" here at all
+		rows={"rs_profiles": [{"profile_id": 1, "user_id": 2, "name": "x", "last_seen_at": 1}]},
+	)
+	try:
+		asyncio.run(mig._assert_identities_seeded(db))
+	except RuntimeError as e:
+		assert "identities" in str(e)
+	else:
+		raise AssertionError("must raise when identities table does not exist but rs_profiles has rows")
+
+
+def test_run_all_raises_when_identities_seed_did_not_survive_a_restored_backup():
+	"""End-to-end reproduction of the scenario _assert_identities_seeded's
+	docstring describes: the ledger says every migration (including
+	003_seed_identities) already ran, but the restored backup did not bring
+	`identities` back with it while rs_profiles (real match history) is
+	intact. No old-named table is involved, so _assert_stage1_renames_landed
+	alone would not catch this."""
+	db = FakeDb(
+		tables={"rs_profiles"} | {new for _old, new in mig._STAGE1_RENAMES},
+		applied=[name for name, _fn in mig.MIGRATIONS],
+		rows={"rs_profiles": [{"profile_id": 1, "user_id": 2, "name": "x", "last_seen_at": 1}]},
+	)
+	try:
+		asyncio.run(mig.run_all(db))
+	except RuntimeError as e:
+		assert "identities" in str(e)
+	else:
+		raise AssertionError("run_all must crash when rs_profiles has rows but identities does not")
 
 
 def test_stage1_renames_targets_are_registered_and_sources_are_not_declared():

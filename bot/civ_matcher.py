@@ -84,6 +84,15 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 	"""Return True if civs were recorded (or already present), False to retry."""
 	player_info, active_pids = await _map_players_to_profiles(players)
 	if len(player_info) < 2:
+		# The observable symptom of a degraded/empty identity resolver (see
+		# bot/identity.py and core/migrations.py's 003_seed_identities): if
+		# `identities` is unexpectedly empty, every match lands here forever
+		# with no exception and no retry, so civ stats silently stop
+		# accruing. Log it so that failure mode is at least visible.
+		log.info(
+			f"Civ match: only {len(player_info)}/{len(players)} players for bot match "
+			f"{bot_match_id} resolved to a known AoE2 profile (need >= 2); skipping."
+		)
 		return True  # not enough mapped players to ever match — don't keep retrying
 
 	# Already recorded?

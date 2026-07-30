@@ -72,6 +72,13 @@ db.ensure_table(dict(
 # must be called after every write to `identities`.
 _profiles_cache = None
 
+# Bumped by invalidate_cache() on every call. profiles_for_users() captures
+# this before awaiting a reload and compares again after — if it moved, a
+# write landed (and invalidated) while the reload was in flight, so the just
+# -loaded snapshot predates that write and must not be cached back in (see
+# profiles_for_users' docstring for the failure this prevents).
+_cache_generation = 0
+
 
 async def _load_profiles_cache():
 	rows = await db.select(["user_id", "profile_id"], "identities")
@@ -87,13 +94,29 @@ async def _load_profiles_cache():
 async def profiles_for_users(user_ids) -> dict:
 	""" {user_id: [profile_id, ...]} for every user_id in `user_ids` that owns
 	at least one known AoE2 profile. Users with no known profile are simply
-	absent from the returned dict — never mapped to []. """
+	absent from the returned dict — never mapped to [].
+
+	Race handled: without the generation check below, a learn() that calls
+	invalidate_cache() while a reload here is mid-await would be clobbered —
+	the stale snapshot this call started loading (before that write) would
+	get assigned to _profiles_cache *after* the invalidation, and with no TTL
+	the just-learned mapping would stay invisible to every caller until some
+	unrelated future write happened to invalidate the cache again, possibly
+	forever. """
 	global _profiles_cache
-	if _profiles_cache is None:
-		_profiles_cache = await _load_profiles_cache()
+	cache = _profiles_cache
+	if cache is None:
+		generation = _cache_generation
+		cache = await _load_profiles_cache()
+		if generation == _cache_generation:
+			_profiles_cache = cache
+		# else: invalidate_cache() fired mid-load — `cache` is stale. Answer
+		# this call with it (still the best data available for it), but leave
+		# _profiles_cache as None so the next call reloads fresh instead of
+		# being stuck behind this stale snapshot.
 
 	wanted = set(user_ids)
-	return {uid: list(profiles) for uid, profiles in _profiles_cache.items() if uid in wanted}
+	return {uid: list(profiles) for uid, profiles in cache.items() if uid in wanted}
 
 
 async def user_for_profile(profile_id: int):
@@ -136,7 +159,16 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 	regardless, since the profile genuinely was observed again just now.
 
 	aoe2_name=None means "not known by this call"; an existing name is kept
-	rather than clobbered with None. Always calls invalidate_cache(). """
+	rather than clobbered with None. Always calls invalidate_cache().
+
+	Raises ValueError immediately if `source` is not in CONFIDENCE_ORDER —
+	checked before any DB read/write so a bad value can never reach storage.
+	Without this, an out-of-lattice source stored on a brand-new profile_id
+	(the insert path below never used to rank-check it) would make every
+	later learn() for that profile_id raise from _rank() on the "existing
+	row" comparison path forever, bricking the profile against every
+	supported correction path. """
+	_rank(source)  # fail fast; see the docstring paragraph above
 	now = int(time.time())
 	existing = await db.select_one(
 		["confidence", "aoe2_name"], "identities", where={"profile_id": profile_id})
@@ -189,6 +221,9 @@ async def nick_for(community_id, user_id):
 
 def invalidate_cache() -> None:
 	""" Clear the cached user_id -> [profile_id, ...] map. Call after every
-	write to `identities`. """
-	global _profiles_cache
+	write to `identities`. Also bumps _cache_generation so a reload already
+	in flight when this fires can detect it went stale — see
+	profiles_for_users' docstring. """
+	global _profiles_cache, _cache_generation
 	_profiles_cache = None
+	_cache_generation += 1
