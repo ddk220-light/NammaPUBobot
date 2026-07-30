@@ -67,7 +67,7 @@ design unchanged (maybe re-keyed), `FOLD` = absorbed into the unified layers,
 | /rank scouting report | snapshot re-derived per request from `rs_*`/`cls_*` + `rs_player_personas` + `bot_player_commentary` | FOLD onto derived |
 | /insights | `cls_*` | FOLD onto derived |
 | /player_details | `rs_player_events` | KEEP (reads raw directly — per-match detail, not aggregate) |
-| personas | `rs_player_personas`, refreshed at ingest | FOLD into community rollup |
+| personas | `rs_player_personas`, refreshed at ingest | **RETIRE** (decided §2.5) |
 | commentary | `bot_player_commentary`, generated on a laptop with an LLM | **RETIRE** (decided) |
 | /leaderboard_alternate | `data/alt_ratings.csv`, baked by laptop script | **RETIRE** (decided) |
 
@@ -96,6 +96,31 @@ and is redesigned community-first afterwards.
 Scouting report, quiz and web consume the same per-(match, player) grain and
 differ only in read pattern — rates vs extremes vs per-match detail. Field
 matrix in appendix A. This is the argument for a single derived fact table.
+
+### 2.5 The new scouting report is the standard — old derivations retire
+
+The redesigned scouting report defines what per-player analysis *is*:
+
+- **medal rates** — how often top-3 in military / villagers, per game played
+- **APM** — median game eAPM, median peak eAPM
+- **strategy / spawn / unit preferences** — what they do most, each with its
+  win-loss split at declared sample floors
+
+The pre-existing derivation stack is **not** carried into the new schema:
+
+| old construct | fate |
+| --- | --- |
+| component scores (army/eco/timing/recovery, impact 0-100) | render-time code for the match cards only — never stored |
+| behavioural tags ("Low-eco pressure", "Tech greedy", "Naked FC", …) as stored rows | not stored; the cards keep computing their descriptive/team tags at render from the match's own rows (verified: they never read the stored table) |
+| personas (style × role, "Boomer · Board Topper") | retired with their store, backfill and calibration utils — their only surviving consumer was the old scouting report line this replaces |
+| carry flag / team_top rate | not stored; the cards' crown stays render-time |
+| stored `rs_player_game_tags` | dropped — its consumers were the web (being rethought) and persona tag rates (retired) |
+
+What IS stored per player-game (`game_stats`) is exactly what the rollup needs
+and what the retention sweep would otherwise destroy: medal places, peak eAPM,
+average eAPM, the game's top units — captured at ingest while the full detail
+still exists. The match cards read the stored medal places too, so medals are
+computed once, in one writer, instead of twice.
 
 ---
 
@@ -142,20 +167,21 @@ replaced by a link table keyed `(community_id, bot_match_id) -> aoe2_match_id`.
 **Derived-global** — computed once per parsed match, community-independent:
 
 ```
-player_game         (aoe2_match_id, player) -> all scalar measures,
-                    component scores, medals (rank vs the 8 in THIS game),
-                    carry flag
-player_game_label   (aoe2_match_id, player, label) -> one vocabulary
-                    replacing cls_results AND rs_player_game_tags
+game_stats          (replay_match_id, player) -> medal places, avg eAPM,
+                    peak eAPM, top units — the per-game facts the rollup
+                    needs, captured before any retention sweep (§2.5)
+game_labels         (replay_match_id, player, label) -> kind = strategy |
+                    spawn; one namespace replacing cls_results. Behavioural
+                    tags are NOT stored (render-time only, §2.5)
 ```
 
 **Derived-community** — aggregates within one community:
 
 ```
-player_rollup       (community_id, user_id) -> games, medal rates,
+player_rollups      (community_id, user_id) -> games, medal rates,
                     APM medians, strategy/spawn/unit frequencies with
-                    win-loss splits, persona
-player_metric_board (community_id, metric) -> leaderboard + top games
+                    win-loss splits
+metric_boards       (community_id, metric) -> leaderboard + top games
                     (feeds quiz player bank and web)
 civ_stats           (community_id, civ) -> games, winrate
 ```
@@ -216,8 +242,7 @@ Each stage deploys alone and nothing depends on a later stage.
    column) written at ingest. Populates forward only. Raw-layer renames ride
    this stage.
 4. **Derived-community + retention.** `player_rollups`, `metric_boards`,
-   `civ_stats`, `personas`, the per-community refresh job, and the retention
-   sweeper (§7).
+   `civ_stats`, the per-community refresh job, and the retention sweeper (§7).
 5. **Consumers cut over**, one per deploy: scouting report → quiz (player bank
    job per community; delete `utils/replay_quiz` parser + SQLite) → match cards
    → web APIs. Old read paths deleted as each lands.
@@ -309,9 +334,11 @@ class. Names say *what it is*; the registry says *how it is treated*.
 | `qc_lobbies` | `lobbies` | |
 | *(new link)* | `match_replays` | replaces `rs_matches.bot_match_id` |
 | `rs_profiles` + `qc_profile_map` + CSVs | `identities`, `identity_aliases` | §3.4 |
-| `cls_results` + `rs_player_game_tags` | `game_labels` | one namespace, `kind` column |
+| `cls_results` | `game_labels` | one namespace, `kind` = strategy \| spawn |
 | `cls_result_metrics` | evidence json on `game_labels` | |
-| *(new derived)* | `game_stats`, `player_rollups`, `metric_boards`, `civ_stats`, `personas` | |
+| `rs_player_game_tags` | **dropped** | behavioural tags become render-time only (§2.5) |
+| `rs_player_personas` | **dropped** | personas retired (§2.5) |
+| *(new derived)* | `game_stats`, `player_rollups`, `metric_boards`, `civ_stats` | |
 | `qc_quiz_posts` / `_answers` / `_config` | `quiz_posts` / `quiz_answers` / `quiz_settings` | |
 | `qc_prediction_posts` / `_votes` | `prediction_posts` / `prediction_votes` | |
 | `web_sessions` / `web_oauth_states` | unchanged | already clean |
