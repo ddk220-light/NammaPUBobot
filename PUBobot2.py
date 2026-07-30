@@ -47,6 +47,12 @@ from core.client import dc
 loop = asyncio.get_event_loop()
 loop.run_until_complete(database.db.connect())
 
+# Schema migrations MUST run before `import bot`: bot packages auto-CREATE
+# their declared tables at import, and the adapter cannot rename — see
+# core/migrations.py for why this ordering is load-bearing.
+from core import migrations
+loop.run_until_complete(migrations.run_all(database.db))
+
 # Load bot
 import bot
 
