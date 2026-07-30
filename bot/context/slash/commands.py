@@ -13,6 +13,7 @@ from core.console import log
 from core.config import cfg
 
 import bot
+from bot.community import enroll_channel
 from bot.redo_teams import parse_embed_match, parse_text_match, captain_matchmaking, Player, embed_contains_match_id, get_all_embed_text
 
 
@@ -188,6 +189,11 @@ async def enable_channel(
 
 	await interaction.response.send_message(embed=ok_embed('The bot has been enabled.'))
 	bot.queue_channels[interaction.channel.id] = await bot.QueueChannel.create(interaction.channel)
+	# Enroll into a community right away — on_ready's enrollment loop only
+	# runs once at boot, so without this a channel enabled at runtime has
+	# no community_id (community_for_channel() returns None) until the
+	# next full restart. See bot/community.py.
+	await enroll_channel(interaction.channel)
 
 
 @groups.admin_channel.subcommand(name='disable', description='Disable the bot on this channel.')

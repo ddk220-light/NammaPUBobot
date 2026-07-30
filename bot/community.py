@@ -14,21 +14,30 @@ tests/test_data_registry.py's scanner needs a declaration here to find them):
   communities         — one row per Discord guild.
   community_channels  — one row per enrolled channel.
 
-`ensure_community`/`attach_channel` are called from bot/events.py's on_ready,
-once real Discord guild objects exist. A migration can't do this enrollment:
-migrations run before `import bot`, with no Discord connection at all — see
-core/migrations.py for that ordering.
+`ensure_community`/`attach_channel` (via `enroll_channel`, below) are called
+once real Discord guild objects exist — from bot/events.py's on_ready at
+boot, and from the two runtime "admin enables the bot on a channel" call
+sites (bot/main.py, bot/context/slash/commands.py). A migration can't do
+this enrollment: migrations run before `import bot`, with no Discord
+connection at all — see core/migrations.py for that ordering.
+
+`enroll_channel` wraps ensure_community()+attach_channel() for a single
+channel so all three call sites share one try/except shape instead of
+duplicating it — a failure here must never block a channel being enabled or
+the bot from booting.
 
 CI installs only pytest (no nextcord/aiomysql/aiohttp), so this module must
-import cleanly with nothing but the stdlib and core.database/core.config —
-both of which conftest.py fakes for the test suite. Do not add a nextcord or
-core.client import at module level; keep any such import lazy inside a
-function if one is ever needed here.
+import cleanly with nothing but the stdlib and core.database/core.config
+(plus core.console, which is equally dependency-free and fully faked by
+conftest.py). Do not add a nextcord or core.client import at module level;
+keep any such import lazy inside a function if one is ever needed here.
 """
 import time
+import traceback
 
 from core.database import db
 from core.config import cfg
+from core.console import log
 
 db.ensure_table(dict(
 	tname="communities",
@@ -107,6 +116,27 @@ async def attach_channel(channel_id: int, community_id: int) -> None:
 		added_at=int(time.time()),
 	))
 	invalidate_cache()
+
+
+async def enroll_channel(channel) -> int | None:
+	""" Enroll `channel` into its guild's community: ensure_community() then
+	attach_channel(), as one unit. Returns the community_id, or None if
+	enrollment failed. `channel` is a Discord channel object (needs `.id`
+	and `.guild`, so any duck-typed stand-in works too).
+
+	Never raises — enrollment is best-effort bookkeeping, not a precondition
+	for the channel working, so a DB hiccup here must never stop a channel
+	from being enabled or the bot from booting. Callers that care whether
+	enrollment actually happened (e.g. on_ready's summary log) can check
+	the return value; callers that don't can fire-and-forget.
+	"""
+	try:
+		community_id = await ensure_community(channel.guild)
+		await attach_channel(channel.id, community_id)
+		return community_id
+	except Exception:
+		log.error(f"Failed to enroll channel {channel.id} into a community:\n{traceback.format_exc()}")
+		return None
 
 
 async def community_for_channel(channel_id: int) -> int | None:

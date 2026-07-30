@@ -11,7 +11,7 @@ import bot
 from bot.elo_sync import process_elo_sync
 from bot.civ_sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
 from bot.message_logger import log_channel_message, log_bot_message
-from bot.community import ensure_community, attach_channel
+from bot.community import enroll_channel
 
 
 async def seed_ratings_from_csv():
@@ -281,9 +281,9 @@ async def on_ready():
 				channel = dc.get_channel(channel_id)
 				if not channel:
 					continue
-				community_id = await ensure_community(channel.guild)
-				await attach_channel(channel.id, community_id)
-				enrolled_communities.add(community_id)
+				community_id = await enroll_channel(channel)
+				if community_id is not None:
+					enrolled_communities.add(community_id)
 			log.info(
 				f"\tEnrolled {len(bot.queue_channels)} channels into "
 				f"{len(enrolled_communities)} communities."

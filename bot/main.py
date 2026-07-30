@@ -10,6 +10,7 @@ from core.config import cfg
 from core.utils import error_embed, ok_embed, get  # noqa: F401
 
 import bot
+from bot.community import enroll_channel
 
 # Durable snapshot of in-flight state (queues + active matches + expire timers)
 # in MySQL. The bot service disk is ephemeral (only MySQL has a volume), so
@@ -35,6 +36,11 @@ async def enable_channel(message):
 		return
 	if message.channel.id not in bot.queue_channels.keys():
 		bot.queue_channels[message.channel.id] = await bot.QueueChannel.create(message.channel)
+		# Enroll into a community right away — on_ready's enrollment loop only
+		# runs once at boot, so without this a channel enabled at runtime has
+		# no community_id (community_for_channel() returns None) until the
+		# next full restart. See bot/community.py.
+		await enroll_channel(message.channel)
 		await message.channel.send(embed=ok_embed("The bot has been enabled."))
 	else:
 		await message.channel.send(

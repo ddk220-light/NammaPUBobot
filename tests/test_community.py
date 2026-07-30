@@ -16,6 +16,7 @@ class FakeDb:
 		self.community_channels = []  # [{channel_id, community_id, added_at}]
 		self._next_id = 1
 		self.select_calls = 0
+		self.update_calls = 0
 
 	def _table(self, table):
 		return self.communities if table == "communities" else self.community_channels
@@ -38,6 +39,7 @@ class FakeDb:
 		return None
 
 	async def update(self, table, d, keys=None):
+		self.update_calls += 1
 		keys = keys or {}
 		for row in self._table(table):
 			if all(row.get(k) == v for k, v in keys.items()):
@@ -115,6 +117,27 @@ def test_ensure_community_never_downgrades_full_to_lean(monkeypatch):
 	asyncio.run(community.ensure_community(guild))
 
 	assert fake.communities[0]["retention"] == "full"
+
+
+def test_ensure_community_flagship_guild_already_full_is_a_noop(monkeypatch):
+	fake = _setup(monkeypatch, flagship_ids=(666,))
+	guild = _Guild(666)
+	asyncio.run(community.ensure_community(guild))
+	assert fake.communities[0]["retention"] == "full"
+
+	# The true no-op branch: the row is already 'full' and the guild is
+	# still flagship, so `row["retention"] != "full"` is False and
+	# ensure_community must not issue a redundant db.update. This matters
+	# because the retention flag gates the stage-4 sweeper — a community
+	# wrongly flipped to 'lean' would have its replay detail deleted, and
+	# those replays 404 upstream and can never be re-fetched.
+	update_calls_before = fake.update_calls
+	community_id = asyncio.run(community.ensure_community(guild))
+
+	assert community_id == fake.communities[0]["community_id"]
+	assert fake.communities[0]["retention"] == "full"
+	assert len(fake.communities) == 1
+	assert fake.update_calls == update_calls_before, "already-full row must not trigger db.update"
 
 
 def test_attach_channel_is_idempotent(monkeypatch):
