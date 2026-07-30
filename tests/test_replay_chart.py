@@ -7,8 +7,8 @@ legend because the production image (python:3.11-slim) ships no CJK fonts and ma
 bundled DejaVu Sans has no glyphs for them.
 """
 from bot.replay_stats.chart import (
-    _APM_LINESTYLES,
-    _APM_TEAM_COLOURS,
+    _APM_PLAYER_COLOURS,
+    _APM_UNKNOWN_COLOUR,
     _apm_label,
     _apm_line_style,
     _short,
@@ -18,43 +18,47 @@ from bot.replay_stats.chart import (
 # ── per-player colour + linestyle ────────────────────────────────────────
 
 
-def test_teams_get_distinct_hue_families():
-    blue, _ = _apm_line_style(0, 0)
-    red, _ = _apm_line_style(1, 0)
-    assert blue in _APM_TEAM_COLOURS[0]
-    assert red in _APM_TEAM_COLOURS[1]
-    assert blue != red
+def test_colour_is_the_players_in_game_slot_colour():
+    # The point of the whole scheme: a player finds their line by the colour they played
+    # as, so slot -> colour must be a fixed mapping, never position-dependent.
+    for slot in range(1, 9):
+        colour, _ = _apm_line_style(slot, 0)
+        assert colour == _APM_PLAYER_COLOURS[slot]
 
 
-def test_every_player_in_a_4v4_team_is_uniquely_styled():
-    # The whole point: with 4 players a side, hue step and dash pattern must BOTH vary,
-    # so two same-team lines never look alike where they cross.
-    for team in (0, 1):
-        styles = [_apm_line_style(team, i) for i in range(4)]
-        assert len({c for c, _ in styles}) == 4, "each player needs their own hue step"
-        assert len({ls for _, ls in styles}) == 4, "each player needs their own dash pattern"
+def test_all_eight_slots_are_distinct_colours():
+    assert len(set(_APM_PLAYER_COLOURS.values())) == 8
 
 
-def test_linestyle_varies_even_when_the_hue_repeats():
-    # Beyond 4 players a side both palettes wrap; they must wrap in step, not independently,
-    # or two players would land on an identical colour+dash pair.
-    a = _apm_line_style(0, 0)
-    b = _apm_line_style(0, len(_APM_TEAM_COLOURS[0]))
-    assert a == b, "wrap should be in lockstep, giving a predictable repeat"
-    assert _apm_line_style(0, 1)[1] == _APM_LINESTYLES[1]
+def test_colour_does_not_depend_on_team():
+    # Slot 3 is green whichever side they are on.
+    assert _apm_line_style(3, 0)[0] == _apm_line_style(3, 1)[0]
 
 
-def test_first_player_of_each_team_stays_solid():
-    # Solid reads strongest; keep it for the first line drawn rather than starting on dots.
-    assert _apm_line_style(0, 0)[1] == "-"
+def test_team_is_carried_by_the_dash_pattern():
+    # Colour now identifies the player, so team has to live somewhere else.
     assert _apm_line_style(1, 0)[1] == "-"
+    assert _apm_line_style(1, 1)[1] == "--"
 
 
-def test_players_without_a_team_still_separate():
-    # teams.get() yields None for anyone the roster didn't map; they used to all collapse
-    # onto one grey solid line.
-    styles = [_apm_line_style(None, i) for i in range(4)]
-    assert len(set(styles)) == 4
+def test_every_player_in_a_4v4_is_uniquely_styled():
+    # Eight slots across two teams must yield eight distinct colour+dash pairs, or two
+    # lines look alike where they cross.
+    styles = [_apm_line_style(slot, 0 if slot <= 4 else 1) for slot in range(1, 9)]
+    assert len(set(styles)) == 8
+
+
+def test_unknown_slot_falls_back_without_stealing_a_real_colour():
+    # A slot outside 1-8 must not collide with a real player's colour.
+    colour, _ = _apm_line_style(99, 0)
+    assert colour == _APM_UNKNOWN_COLOUR
+    assert colour not in _APM_PLAYER_COLOURS.values()
+
+
+def test_unmapped_team_is_visibly_different():
+    # teams.get() yields None for anyone the roster did not map.
+    assert _apm_line_style(1, None)[1] == ":"
+    assert _apm_line_style(1, None)[1] not in ("-", "--")
 
 
 # ── legend labels ────────────────────────────────────────────────────────

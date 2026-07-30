@@ -321,20 +321,29 @@ def render_growth_curve(name, curve, days, curve2=None, name2=None):
     return buf
 
 
-# Two hue families so team shape reads at a glance; four distinguishable steps each,
-# which covers 4v4 (the largest size the luck gate admits).
-_APM_TEAM_COLOURS = {
-    0: ["#1f77b4", "#4a9fd8", "#7fc4f0", "#0d4f7a"],
-    1: ["#d62728", "#f0663f", "#f89b6c", "#8c1a1a"],
+# The in-game AoE2 player-slot colours, keyed by player_number: 1 blue, 2 red, 3 green,
+# 4 yellow, 5 teal, 6 purple, 7 grey, 8 orange. Using the slot colour instead of an
+# invented palette means a player finds their own line by the colour they already played
+# as — and regulars who always take the same slot learn it once. Yellow and grey are
+# darkened from their in-game values, which are near-invisible on a white plot.
+_APM_PLAYER_COLOURS = {
+    1: "#2e5fd9",   # blue
+    2: "#d6342c",   # red
+    3: "#2e9e36",   # green
+    4: "#c9a200",   # yellow
+    5: "#1fa8ad",   # teal
+    6: "#8e44c4",   # purple
+    7: "#6e6e6e",   # grey
+    8: "#e07b18",   # orange
 }
-_APM_NO_TEAM = ["#808080", "#a8a8a8", "#5c5c5c", "#c4c4c4"]
+_APM_UNKNOWN_COLOUR = "#9a9a9a"
 
-# Hue alone was not enough. Validating against 9 real 8-player matches, team grouping read
-# well but same-team lines blurred into each other through crossing-heavy stretches — worst
-# on a 51.6-minute game, clean on a 17-minute one. Cycling the dash pattern alongside the hue
-# separates them the instant they cross, and unlike team-averaging or a top-4-by-peak cut it
-# hides no data.
-_APM_LINESTYLES = ["-", "--", "-.", ":"]
+# Colour now identifies the player, so team moves onto the dash pattern. Validating against
+# 9 real 8-player matches, eight distinct hues separate cleanly on their own — the earlier
+# blur came from two hue families having to carry four players each. Team stays visible
+# without spending hue on it, and no data is hidden (unlike team-averaging or a top-4 cut).
+_APM_TEAM_LINESTYLES = {0: "-", 1: "--"}
+_APM_UNKNOWN_LINESTYLE = ":"
 
 # Codepoint ranges matplotlib's bundled DejaVu Sans has no glyphs for, and which the
 # production image (python:3.11-slim) ships no system font to cover either — they render as
@@ -366,12 +375,12 @@ def _apm_label(name, player_number, nmax=16):
     return _short(kept, nmax) if kept else f"Player {player_number}"
 
 
-def _apm_line_style(team, seen):
-    """(colour, linestyle) for one player's line. `seen` is how many of that team's players
-    have already been drawn: team picks the hue family, position within the team picks both a
-    hue step and a dash pattern. Pure."""
-    palette = _APM_TEAM_COLOURS.get(team, _APM_NO_TEAM)
-    return palette[seen % len(palette)], _APM_LINESTYLES[seen % len(_APM_LINESTYLES)]
+def _apm_line_style(player_number, team):
+    """(colour, linestyle) for one player's line: colour is their in-game slot colour, dash
+    pattern is their team. A slot outside 1-8 (or an unmapped team) falls back to a neutral
+    grey (or dotted) rather than colliding with a real player's colour. Pure."""
+    return (_APM_PLAYER_COLOURS.get(player_number, _APM_UNKNOWN_COLOUR),
+            _APM_TEAM_LINESTYLES.get(team, _APM_UNKNOWN_LINESTYLE))
 
 
 def rolling_mean(values, window):
@@ -396,8 +405,8 @@ def render_apm_curve(series, teams, smooth=3):
     `series` is bot.replay_stats.apm_query.apm_series output; `teams` maps
     player_number -> 0/1. Lines are smoothed with a trailing rolling mean because a
     1-minute-resolution 8-player chart is unreadable raw -- peaks are reported as
-    numbers on the card instead. Each player gets a team hue and, within the team, its
-    own hue step *and* dash pattern, so crossing same-team lines stay separable.
+    numbers on the card instead. Colour is the player's in-game slot colour so they can
+    find themselves by the colour they played as; the dash pattern carries their team.
     Returns a BytesIO PNG.
     """
     import io
@@ -409,12 +418,8 @@ def render_apm_curve(series, teams, smooth=3):
     fig = Figure(figsize=(14, 7))
     ax = fig.subplots()
 
-    used = {}
     for s in series:
-        team = teams.get(s["player_number"])
-        seen = used.get(team, 0)
-        used[team] = seen + 1
-        colour, linestyle = _apm_line_style(team, seen)
+        colour, linestyle = _apm_line_style(s["player_number"], teams.get(s["player_number"]))
         ax.plot(s["minutes"], rolling_mean(s["values"], smooth),
                 label=f"{_apm_label(s['name'], s['player_number'])} (peak {s['peak']})",
                 color=colour, linestyle=linestyle, linewidth=2.0)
