@@ -266,3 +266,43 @@ def test_group_series_respects_the_prior_cutoff():
 		(2, 1, {1: 0, 2: 0, 3: 1}),
 	)
 	assert ti._group_series([1], h.matches, frozenset((1, 2))) == [True]
+
+
+# ── trio ─────────────────────────────────────────────────────────────────
+def _trio_hist(results):
+	"""History where players 1,2,3 share side 0 against 4, one match per result."""
+	return _hist(*[(i + 1, 0 if won else 1, {1: 0, 2: 0, 3: 0, 4: 1})
+	               for i, won in enumerate(results)])
+
+
+def test_trio_fires_at_five_games_and_seventy_five_percent():
+	h = _trio_hist([True, True, True, True, False])   # 4-1 = 80%
+	cands = ti._trio_candidates(h.order, h.matches, [1, 2, 3], [4])
+	assert len(cands) == 1
+	assert cands[0]["type"] == "trio"
+	assert cands[0]["data"]["wins"] == 4
+	assert cands[0]["data"]["games"] == 5
+	assert cands[0]["data"]["won"] is True
+	assert cands[0]["players"] == frozenset((1, 2, 3))
+
+
+def test_trio_is_silent_below_the_share_bar():
+	h = _trio_hist([True, True, True, False, False])   # 3-2 = 60%
+	assert ti._trio_candidates(h.order, h.matches, [1, 2, 3], [4]) == []
+
+
+def test_trio_is_silent_below_five_games():
+	h = _trio_hist([True, True, True, True])           # 4-0 but only 4 games
+	assert ti._trio_candidates(h.order, h.matches, [1, 2, 3], [4]) == []
+
+
+def test_a_losing_trio_fires_and_is_marked_lost():
+	h = _trio_hist([False, False, False, False, True])  # 1-4
+	c = ti._trio_candidates(h.order, h.matches, [1, 2, 3], [4])[0]
+	assert c["data"]["won"] is False
+	assert c["data"]["wins"] == 1
+
+
+def test_trio_enumeration_is_sorted_and_complete():
+	assert list(ti._trios([30, 10, 20, 40])) == [
+		(10, 20, 30), (10, 20, 40), (10, 30, 40), (20, 30, 40)]

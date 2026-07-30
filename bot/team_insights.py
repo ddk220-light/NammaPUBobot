@@ -51,13 +51,18 @@ DEADLOCK_WINDOW = 8        # T5: only the last N meetings count
 
 FORM_MIN_STREAK = 5        # T6: trailing personal win/loss run
 
+TRIO_MIN_GAMES = 5         # T7: min decisive games this exact trio shared a side
+TRIO_MIN_SHARE = 0.75      # T7: fraction of them going one direction
+
 # Selection caps
 PER_PLAYER_CAP = 2
 PER_TYPE_CAP = 2
 DEADLOCK_TYPE_CAP = 1
+TRIO_TYPE_CAP = 1
 
 # Drama weights — a single comparable axis across types.
 W_PERFECT = 6.0
+W_TRIO = 7.0
 W_MATE_WR = 4.0
 W_H2H = 3.0
 W_MATE = 2.6
@@ -208,6 +213,15 @@ def _pairs(ids):
 			yield ids[i], ids[j]
 
 
+def _trios(ids):
+	"""Unordered within-team triples, in a deterministic order (mirrors _pairs)."""
+	ids = sorted(ids)
+	for i in range(len(ids)):
+		for j in range(i + 1, len(ids)):
+			for k in range(j + 1, len(ids)):
+				yield ids[i], ids[j], ids[k]
+
+
 # ── Candidate builders (pure) — each attaches a comparable drama `score` ──
 def _perfect_candidates(prior, matches, t0_ids, t1_ids):
 	"""T1 — same-team pair whose entire decisive shared history is one-way."""
@@ -312,6 +326,31 @@ def _mate_candidates(prior, matches, t0_ids, t1_ids):
 				"players": frozenset((a, b)),
 				"teams": frozenset((team_idx,)),
 				"data": {"ids": [a, b], "k": k, "series": len(s), "won": val, "team_idx": team_idx},
+			})
+	return cands
+
+
+def _trio_candidates(prior, matches, t0_ids, t1_ids):
+	"""T7 — a three-player subset of one side with a lopsided shared record."""
+	cands = []
+	for team_idx, ids in ((0, t0_ids), (1, t1_ids)):
+		for a, b, c in _trios(ids):
+			group = frozenset((a, b, c))
+			s = _group_series(prior, matches, group)
+			if len(s) < TRIO_MIN_GAMES:
+				continue
+			wins = sum(s)
+			share = max(wins, len(s) - wins) / len(s)
+			if share < TRIO_MIN_SHARE:
+				continue
+			won = wins * 2 > len(s)
+			cands.append({
+				"type": "trio",
+				"score": W_TRIO * len(s) * share * (LOSS_BIAS if not won else 1.0),
+				"players": group,
+				"teams": frozenset((team_idx,)),
+				"data": {"ids": [a, b, c], "wins": wins, "games": len(s),
+				         "won": won, "team_idx": team_idx},
 			})
 	return cands
 
@@ -574,6 +613,7 @@ def _candidates(prior, matches, t0_ids, t1_ids):
 		+ _mate_wr_candidates(prior, matches, t0_ids, t1_ids)
 		+ _h2h_candidates(prior, matches, t0_ids, t1_ids)
 		+ _mate_candidates(prior, matches, t0_ids, t1_ids)
+		+ _trio_candidates(prior, matches, t0_ids, t1_ids)
 		+ _deadlock_candidates(prior, matches, t0_ids, t1_ids)
 		+ _form_candidates(prior, matches, t0_ids + t1_ids, team_of)
 	)
