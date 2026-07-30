@@ -15,24 +15,31 @@ OLD_NAMES = [
 	"qc_prediction_posts", "qc_prediction_votes", "on_dublicate",
 	"bot_player_commentary", "disabled_guilds", "leaderboard_alternate", "alt_ratings",
 ]
+# Whole-file exemptions, kept to the two files that must name old tables to do
+# their job. Everything else stays fully guarded.
 _ALLOW = (
 	"core/migrations.py", "tests/test_naming.py",
 	# Exercises the rename guard itself (core/migrations.py's own _STAGE1_RENAMES
 	# and its post-condition check), so it necessarily uses old table names as
 	# literal rename-source strings — same reason core/migrations.py is above.
 	"tests/test_migrations.py",
-	# These read/write on-disk CSV files whose *filenames* were never renamed
-	# alongside the DB tables (see core/migrations.py's _STAGE1_RENAMES) — a
-	# qc_*.csv literal here is a filename, not a table reference. Do not
-	# "fix" these back to the new table names; the files on disk are still
-	# named after the old tables.
-	"bot/events.py",
-	"utils/civ_analysis.py",
-	"utils/civ_elo_stats.py",
-	"utils/import_pubobot_export.py",
-	"utils/replay_quiz/attribution.py",
-	"utils/replay_quiz/build_db.py",
 )
+
+
+def _scrub_csv_filenames(src):
+	"""Drop `<old_name>.csv` literals before scanning.
+
+	Several modules read on-disk CSVs whose *filenames* still carry the old
+	table names, because the files themselves were never renamed — a
+	`qc_players.csv` literal is a filename, not a table reference. Exempting
+	the whole file would blind the guard to a genuine stale table name
+	appearing in it later (bot/events.py alone is 300+ lines), so only the
+	filename occurrences are removed and the rest of the file is still
+	checked.
+	"""
+	for name in OLD_NAMES:
+		src = src.replace(f"{name}.csv", "")
+	return src
 
 
 def test_no_old_table_names_in_live_code():
@@ -50,8 +57,18 @@ def test_no_old_table_names_in_live_code():
 				if rel in _ALLOW:
 					continue
 				with open(path, encoding="utf-8") as fh:
-					src = fh.read()
+					src = _scrub_csv_filenames(fh.read())
 				for name in OLD_NAMES:
 					if name in src:
 						hits.append(f"{rel}: {name}")
 	assert hits == [], "old names in live code:\n" + "\n".join(hits)
+
+
+def test_the_csv_scrub_does_not_blind_the_guard():
+	"""A real table reference in a file that also holds a qc_*.csv filename
+	must still be caught — otherwise the scrub is a whole-file exemption in
+	disguise."""
+	src = 'path = "data/qc_players.csv"\nawait db.select(["x"], "qc_players")\n'
+	scrubbed = _scrub_csv_filenames(src)
+	assert "qc_players.csv" not in scrubbed
+	assert "qc_players" in scrubbed
