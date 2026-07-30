@@ -295,8 +295,23 @@ import bot
 **Interfaces:**
 - Produces: `REGISTRY: dict[str, dict]` with keys `layer`
   (`core|raw|link|derived|ops`), `tenancy` (`global|community|channel`),
-  `writer` (module path string), `retention` (`forever|sweepable`). Constant
-  `ALL_TABLES = frozenset(REGISTRY)`.
+  `writers` (**tuple** of module paths — empty tuple if nothing writes it),
+  `retention` (`forever|sweepable`). Constant `ALL_TABLES = frozenset(REGISTRY)`.
+
+> **CORRECTION (applied during execution).** The Step-3 REGISTRY literal below
+> was hand-audited and got the writer wrong for **9 of 43 tables** — it assumed
+> a single writer where several exist (`qc_matches` is written by
+> `bot/stats/stats.py` AND `bot/elo_sync.py`; `qc_players` by those two plus
+> `bot/events.py`; likewise `qc_player_matches`, `qc_rating_history`,
+> `qc_match_civs`, `qc_lobbies`, `rs_ingest`, `cls_results`,
+> `cls_result_metrics`), and gave `bot_player_commentary` a bogus `"offline"`
+> sentinel. Hence `writers` is a tuple, not a string, and records what writes
+> each table **today** — the one-dedicated-writer rule of design §4 is the
+> target that later stages converge on, not a description of the present.
+> **Do not re-derive this list by hand; grep for `db.insert(`/`insert_many(`/
+> `update(`/`delete(` and raw INSERT/UPDATE/DELETE/REPLACE across `bot/` and
+> `core/` only.** The authoritative version is the committed
+> `core/data_registry.py`.
 - The test is the enforcement: every `tname="..."` / `FactoryTable(name=...)`
   declaration in `bot/` + `core/` must be registered, and vice versa. This test
   is what keeps §3/§7 of the design doc true through every later stage — each

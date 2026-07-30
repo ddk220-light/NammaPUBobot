@@ -44,7 +44,8 @@ REGISTRY = {
 	"noadds": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
 	"qc_phrases": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
 	"qc_douche": dict(layer="core", tenancy="channel", writers=("bot/douche.py",), retention="forever"),
-	"disabled_guilds": dict(layer="core", tenancy="global", writers=("bot/stats/stats.py",), retention="forever"),
+	# Declared but never written or read anywhere — retired in stage 1.7.
+	"disabled_guilds": dict(layer="core", tenancy="global", writers=(), retention="forever"),
 	# feature state (core contract)
 	"qc_quiz_posts": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
 	"qc_quiz_answers": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
