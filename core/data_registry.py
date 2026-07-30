@@ -129,6 +129,13 @@ REGISTRY = {
 		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
 	),
 	"bot_player_commentary": dict(layer="derived", tenancy="global", writers=(), retention="forever"),
+	# core — multi-tenancy root (stage 1.5)
+	"communities": dict(
+		layer="core", tenancy="community", writers=("bot/community.py",), retention="forever"
+	),
+	"community_channels": dict(
+		layer="core", tenancy="channel", writers=("bot/community.py",), retention="forever"
+	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
 	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

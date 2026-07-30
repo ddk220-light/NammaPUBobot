@@ -29,6 +29,7 @@ _SCHEMA = {
 	'DC_INVITE_LINK': (str, ""),
 	'DC_OWNER_ID': (int, 0),
 	'DC_SLASH_SERVERS': (list, []),
+	'FLAGSHIP_GUILD_IDS': (list, []),
 	'PUBOBOT_USER_ID': (int, 0),
 	'LOBBYBOT_USER_ID': (int, 0),
 	'DB_URI': (str, ""),

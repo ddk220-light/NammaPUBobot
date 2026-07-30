@@ -16,6 +16,7 @@ DC_CLIENT_SECRET = "{dc_client_secret}"
 DC_INVITE_LINK = "{dc_invite_link}"
 DC_OWNER_ID = {dc_owner_id}
 DC_SLASH_SERVERS = [{dc_slash_servers}]
+FLAGSHIP_GUILD_IDS = [{flagship_guild_ids}]
 
 PUBOBOT_USER_ID = {pubobot_user_id}
 LOBBYBOT_USER_ID = {lobbybot_user_id}
@@ -91,6 +92,7 @@ def main():
         dc_invite_link=os.environ.get("DC_INVITE_LINK", ""),
         dc_owner_id=owner_id,
         dc_slash_servers=os.environ.get("DC_SLASH_SERVERS", ""),
+        flagship_guild_ids=os.environ.get("FLAGSHIP_GUILD_IDS", ""),
         pubobot_user_id=pubobot_user_id,
         lobbybot_user_id=lobbybot_user_id,
         db_uri=db_uri,

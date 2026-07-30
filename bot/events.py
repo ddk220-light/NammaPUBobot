@@ -11,6 +11,7 @@ import bot
 from bot.elo_sync import process_elo_sync
 from bot.civ_sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
 from bot.message_logger import log_channel_message, log_bot_message
+from bot.community import ensure_community, attach_channel
 
 
 async def seed_ratings_from_csv():
@@ -268,6 +269,27 @@ async def on_ready():
 				log.info(f"\tInit channel {channel.guild.name}>#{channel.name} successful.")
 			else:
 				log.info(f"\tCould not reach a text channel with id {channel_id}.")
+
+		# Enroll every successfully-initialised queue channel into a community
+		# (one per Discord guild). Guild objects only exist once Discord is
+		# connected, which is why this is a runtime hook here rather than a
+		# migration — see bot/community.py. Never let a failure here stop
+		# the bot from booting.
+		try:
+			enrolled_communities = set()
+			for channel_id in bot.queue_channels:
+				channel = dc.get_channel(channel_id)
+				if not channel:
+					continue
+				community_id = await ensure_community(channel.guild)
+				await attach_channel(channel.id, community_id)
+				enrolled_communities.add(community_id)
+			log.info(
+				f"\tEnrolled {len(bot.queue_channels)} channels into "
+				f"{len(enrolled_communities)} communities."
+			)
+		except Exception:
+			log.error(f"Failed to enroll queue channels into communities:\n{traceback.format_exc()}")
 
 		await seed_ratings_from_csv()
 		await bot.load_state()
