@@ -1,7 +1,8 @@
 # Unified data architecture — design
 
 **Date:** 2026-07-30
-**Status:** DRAFT v3 — decisions folded in; naming + retention added.
+**Status:** v4 — APPROVED. Implementation plan:
+`docs/superpowers/plans/2026-07-30-unified-data-architecture.md`
 
 ## Decisions taken so far
 
@@ -43,7 +44,7 @@ design unchanged (maybe re-keyed), `FOLD` = absorbed into the unified layers,
 | --- | --- | --- |
 | queues, add/remove/pick, team draft | `qc_configs`, `pq_configs`, in-memory + `qc_saved_state` | KEEP |
 | ratings, /report, leaderboard, decay | `qc_players`, `qc_matches`, `qc_player_matches`, `qc_rating_history`, `qc_match_id_counter` | KEEP |
-| /expire (personal auto-remove) | legacy `players` table — **live**, written by `bot/commands/misc.py:86` | KEEP (rename `qc_user_prefs` in stage 6) |
+| /expire (personal auto-remove) | legacy `players` table — **live**, written by `bot/commands/misc.py:86` | KEEP (renamed `player_prefs`, stage 1) |
 | /noadds (queue bans) | `noadds` — live moderation, empty only because unused lately | KEEP |
 | custom add-phrases | `qc_phrases` — live admin feature | KEEP |
 | douche leaderboard | `qc_douche` — live admin feature | KEEP |
@@ -138,16 +139,16 @@ them apart:
 
 ```
                     GLOBAL                         PER COMMUNITY
-core      —                                qc_* queues/ratings/config (per channel)
-                                           community, community_channel
-raw       replay facts (rs_*)              qc_match_civs*, qc_lobbies
-          identity truth (profile<->user)
-links     —                                match<->replay link, nick attribution
-derived   player_game (scores, medals,     player_rollup, metric boards,
-          labels — per parsed match)       civ stats, personas, quiz player bank
+core      —                                queues/ratings/settings (per channel)
+                                           communities, community_channels
+raw       replay facts (replay_*)          civ_picks*, lobbies
+          identity truth (identities)
+links     —                                match_replays, identity_aliases
+derived   game_stats (medals, apm,         player_rollups, metric_boards,
+          top units), game_labels          civ_stats, quiz player bank
 ```
 
-*`qc_match_civs` is written per bot-match today and stays community-keyed; it is
+*`civ_picks` is written per bot-match today and stays community-keyed; it is
 raw by recoverability (API history expires).
 
 ### 3.2 The layers by recovery contract
@@ -221,8 +222,9 @@ than inventing a sixth store. Seeded from the CSVs once; CSVs then retired.
 | quiz player bank + schedule | per-community bot job reading `player_metric_board` |
 
 Laptop pipelines eliminated: `replay_quiz` parser + SQLite, quiz bank/schedule
-baking, identity CSV curation, civ stats CSVs, persona calibration (already at
-target), alt-ratings bake (pending §6).
+baking, identity CSV curation, civ stats CSVs, persona calibration (retired
+with personas, §2.5), alt-ratings bake (feature retired), commentary generation
+(feature retired).
 
 ---
 
@@ -260,9 +262,8 @@ backfill of missing raw data, and costs one script run if we ever want history.
 
 ## 6. Open decisions
 
-1. **Naming scheme sign-off** (§8): the mapping is proposed, not yet approved.
-2. **Community defaults**: deferred by decision — everything enabled until the
-   partner-onboarding work begins.
+1. **Community defaults**: deferred by decision — everything enabled until the
+   partner-onboarding work begins. (Naming was approved 2026-07-30.)
 
 ## 7. Retention
 
