@@ -239,3 +239,30 @@ def test_fetch_history_binds_the_cutoff_into_the_query():
 def test_fetch_history_needs_two_players():
 	import asyncio
 	assert asyncio.run(ti._fetch_history(7, [1], 1234)) == []
+
+
+# ── group records (trio / lineup) ────────────────────────────────────────
+def test_group_series_only_counts_matches_where_all_were_on_one_side():
+	h = _hist(
+		(1, 0, {1: 0, 2: 0, 3: 0, 4: 1}),   # all three together, won
+		(2, 1, {1: 0, 2: 0, 3: 1, 4: 1}),   # 3 switched sides -> not counted
+		(3, 1, {1: 0, 2: 0, 3: 0, 4: 1}),   # all three together, lost
+		(4, 0, {1: 0, 2: 0, 4: 1}),         # 3 absent -> not counted
+	)
+	assert ti._group_series([1, 2, 3, 4], h.matches, frozenset((1, 2, 3))) == [True, False]
+
+
+def test_group_series_drops_draws():
+	h = _hist(
+		(1, 0, {1: 0, 2: 0, 3: 1}),
+		(2, None, {1: 0, 2: 0, 3: 1}),   # draw
+	)
+	assert ti._group_series([1, 2], h.matches, frozenset((1, 2))) == [True]
+
+
+def test_group_series_respects_the_prior_cutoff():
+	h = _hist(
+		(1, 0, {1: 0, 2: 0, 3: 1}),
+		(2, 1, {1: 0, 2: 0, 3: 1}),
+	)
+	assert ti._group_series([1], h.matches, frozenset((1, 2))) == [True]

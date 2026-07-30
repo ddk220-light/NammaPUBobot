@@ -119,6 +119,28 @@ def _teammate_series(prior, matches, a, b):
 	return out
 
 
+def _group_series(prior, matches, group):
+	"""Ordered results (True win / False loss) for prior matches where every
+	member of ``group`` shared one side.
+
+	Unlike ``_teammate_series`` this drops draws rather than recording None:
+	trio and lineup lines quote a record, and a draw belongs in neither column.
+	"""
+	out = []
+	for mid in prior:
+		t = matches[mid]["teams"]
+		if not group <= t.keys():
+			continue
+		sides = {t[u] for u in group}
+		if len(sides) != 1:
+			continue
+		w = matches[mid]["winner"]
+		if w is None:
+			continue
+		out.append(int(w) == next(iter(sides)))
+	return out
+
+
 def _form_series(prior, matches, p):
 	"""Ordered results (True/False/None) for every game p played."""
 	out = []
