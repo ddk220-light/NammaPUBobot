@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
-"""DB-backed, self-healing Discord-user <-> AoE2-profile map (qc_profile_map).
+"""Self-healing Discord-user <-> AoE2-profile map, backed by the identity resolver
+(bot/identity.py) rather than the qc_profile_map table this module used to wrap
+directly — qc_profile_map was never populated in production (0 rows) and is
+dropped in a later stage.
 
 Learned from roster-confirmed lobbies: each captured slot's (profileId, name) is
 authoritative for that match's players. The results/ratings loop NEVER reads this
 — it only powers the optional winner-name hint and per-player civ attribution,
 both best-effort. ``eliminate`` is a pure function (unit-tested); the read/write
-helpers wrap qc_profile_map and swallow their own errors.
+helpers wrap bot.identity and swallow their own errors.
 """
-import time
-
+from bot import identity
 from core.console import log
-from core.database import db
 
 
 def eliminate(match_user_ids, slot_profile_ids, known_pid_to_uid):
@@ -34,25 +35,25 @@ async def known_for(profile_ids):
 	out = {}
 	for pid in profile_ids:
 		try:
-			row = await db.select_one(["user_id"], "qc_profile_map", where={"profile_id": pid})
+			uid = await identity.user_for_profile(pid)
 		except Exception as e:
 			log.error(f"profile_map lookup failed for {pid}: {e}")
 			continue
-		if row:
-			out[pid] = row["user_id"]
+		if uid is not None:
+			out[pid] = uid
 	return out
 
 
-async def link(user_id, profile_id, name, source="lobby"):
-	"""Persist a discord<->profile binding (idempotent on the composite PK)."""
+async def link(user_id, profile_id, name, source="learned"):
+	"""Persist a discord<->profile binding via the identity resolver (idempotent).
+
+	This is automated self-healing (see LobbyWatcher._confirm), never a human
+	correction, so `source` must stay within the non-manual tiers identity.learn
+	accepts — 'manual' is reserved for human corrections and would be silently
+	rejected from overwriting one anyway.
+	"""
 	try:
-		await db.insert("qc_profile_map", {
-			"user_id": user_id,
-			"profile_id": profile_id,
-			"name": name,
-			"linked_at": int(time.time()),
-			"source": source,
-		}, on_duplicate="replace")
+		await identity.learn(profile_id, user_id, source, aoe2_name=name or None)
 		log.info(f"profile_map: linked user {user_id} <-> profile {profile_id} ({name}).")
 	except Exception as e:
 		log.error(f"profile_map link failed ({user_id}<->{profile_id}): {e}")

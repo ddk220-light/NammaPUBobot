@@ -20,6 +20,7 @@ impure orchestration only.
 """
 import time
 
+from bot import identity
 from core.console import log
 from core.database import db
 
@@ -362,7 +363,7 @@ async def _safe_record_civs(match, match_api, now, winner_idx=None):
 
 
 async def _profile_to_user(profile_ids):
-	"""{profileId: user_id} for the captured pids, from qc_profile_map."""
+	"""{profileId: user_id} for the captured pids, via the identity resolver."""
 	try:
 		return await profile_map.known_for(profile_ids)
 	except Exception as e:
@@ -371,9 +372,9 @@ async def _profile_to_user(profile_ids):
 
 
 async def _match_players_profiles(match):
-	"""{profileId: user_id} for every match player's known profiles (qc_profile_map
-	+ CSV). Lets the winner hint resolve from the accumulated map even when the
-	per-game captured roster is empty (manual /lobby2 links)."""
+	"""{profileId: user_id} for every match player's known profiles, via the
+	identity resolver. Lets the winner hint resolve from the accumulated map even
+	when the per-game captured roster is empty (manual /lobby2 links)."""
 	out = {}
 	try:
 		for p in match.players:
@@ -428,18 +429,11 @@ async def link_manual(channel_id, match_id, game_id, requested_by):
 
 
 async def _profiles_for(user_id):
-	"""[profileId, ...] for a discord user — qc_profile_map first, CSV fallback."""
+	"""[profileId, ...] for a discord user, via the identity resolver."""
 	try:
-		rows = await db.select(["profile_id"], "qc_profile_map", where={"user_id": user_id}, order_by="linked_at")
-		pids = [r["profile_id"] for r in (rows or [])]
-		if pids:
-			return pids
+		return (await identity.profiles_for_users([user_id])).get(user_id, [])
 	except Exception as e:
-		log.error(f"profiles_for({user_id}) db lookup failed: {e}")
-	try:
-		from bot.civ_matcher import _load_profile_uid_map
-		return _load_profile_uid_map().get(user_id, [])
-	except Exception:
+		log.error(f"profiles_for({user_id}) lookup failed: {e}")
 		return []
 
 

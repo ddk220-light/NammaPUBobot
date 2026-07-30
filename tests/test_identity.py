@@ -273,6 +273,39 @@ def test_user_for_profile_returns_known_user(monkeypatch):
 	assert asyncio.run(identity.user_for_profile(111)) == 222
 
 
+# ─── names_for_profiles ──────────────────────────────────────────────────
+# bot/web.py's profile pages need a Discord user's known AoE2 in-game names
+# (to match civ_picks rows recorded via the un-linked lobby scrape, which
+# carry no user_id — see persist_lobby_civs). identities.aoe2_name is the
+# resolver's own record of that, one per profile_id, so this is a thin
+# batch read alongside profiles_for_users/user_for_profile rather than a
+# reach into the table from outside the module.
+
+def test_names_for_profiles_returns_known_names(monkeypatch):
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "seed", aoe2_name="Fenrir"))
+	asyncio.run(identity.learn(112, 222, "seed", aoe2_name="Fenrir_Alt"))
+
+	result = asyncio.run(identity.names_for_profiles([111, 112]))
+
+	assert result == {111: "Fenrir", 112: "Fenrir_Alt"}
+
+
+def test_names_for_profiles_omits_profiles_with_no_known_name(monkeypatch):
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "seed"))   # no aoe2_name
+
+	result = asyncio.run(identity.names_for_profiles([111, 999999]))
+
+	assert result == {}
+
+
+def test_names_for_profiles_empty_input_returns_empty_dict(monkeypatch):
+	_setup(monkeypatch)
+
+	assert asyncio.run(identity.names_for_profiles([])) == {}
+
+
 # ─── cache invalidation ─────────────────────────────────────────────────
 
 def test_cache_is_invalidated_by_a_write(monkeypatch):

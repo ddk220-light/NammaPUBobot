@@ -5,8 +5,9 @@ Created when a ranked match enters WAITING_REPORT (bot/match/match.py). It
 subscribes to the unfiltered lobby socket, keeps only lobbies named ``NammaNomad``,
 shows a live-fill embed, and — when a full lobby with the right player count
 appears — confirms the LINK: captures the gameId + slot profileIds, persists a
-``lobbies`` row tied to the match, and self-heals ``qc_profile_map`` by
-elimination. Once the game launches it leaves a durable ``in_progress`` row and
+``lobbies`` row tied to the match, and self-heals the identity resolver
+(bot/identity.py) by elimination. Once the game launches it leaves a durable
+``in_progress`` row and
 stops; the captain-confirmed result loop is Phase 3.
 
 Strictly best-effort + isolated: the whole run loop is wrapped, every Discord/DB

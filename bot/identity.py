@@ -103,6 +103,20 @@ async def user_for_profile(profile_id: int):
 	return row["user_id"] if row else None
 
 
+async def names_for_profiles(profile_ids) -> dict:
+	""" {profile_id: aoe2_name} for every profile_id in `profile_ids` with a
+	known name. Profiles with no known name are simply absent — never mapped
+	to None. Used by bot/web.py's profile pages to match civ_picks rows
+	recorded without a user_id (the un-linked lobby scrape, see
+	bot/civ_sync.persist_lobby_civs) back to a Discord user by AoE2 name. """
+	out = {}
+	for pid in profile_ids:
+		row = await db.select_one(["aoe2_name"], "identities", where={"profile_id": pid})
+		if row and row["aoe2_name"]:
+			out[pid] = row["aoe2_name"]
+	return out
+
+
 def _rank(confidence):
 	if confidence not in CONFIDENCE_ORDER:
 		raise ValueError(f"_rank: unknown confidence {confidence!r}, expected one of {CONFIDENCE_ORDER}")
