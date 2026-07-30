@@ -129,6 +129,38 @@ def test_parse_seed_csv_returns_empty_list_for_header_only_text():
 
 # ─── learn: precedence ──────────────────────────────────────────────────
 
+def test_rank_rejects_an_unknown_confidence():
+	try:
+		identity._rank("trusted")
+	except ValueError as e:
+		assert "trusted" in str(e)
+		for tier in identity.CONFIDENCE_ORDER:
+			assert tier in str(e)
+	else:
+		raise AssertionError("_rank() with an unknown confidence must raise ValueError, not tuple.index's opaque one")
+
+
+def test_learn_rejects_an_unknown_confidence_source(monkeypatch):
+	""" A bad `source` must raise a clear error naming the value and the
+	allowed set — the same shape of validation parse_seed_csv already does
+	for its `kind` argument — not an opaque tuple.index ValueError.
+
+	_rank() is only reached on the "existing row" path (a brand-new
+	profile_id skips straight to insert with no rank comparison), so an
+	existing row is seeded first to force learn() through _rank(). """
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "seed"))
+
+	try:
+		asyncio.run(identity.learn(111, 333, "trusted"))
+	except ValueError as e:
+		assert "trusted" in str(e)
+		for tier in identity.CONFIDENCE_ORDER:
+			assert tier in str(e)
+	else:
+		raise AssertionError("learn() with an unknown confidence source must raise ValueError")
+
+
 def test_learn_inserts_new_row(monkeypatch):
 	fake = _setup(monkeypatch)
 

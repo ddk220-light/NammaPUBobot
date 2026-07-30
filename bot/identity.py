@@ -29,13 +29,10 @@ CI installs only pytest (no nextcord/aiomysql/aiohttp), so this module must
 import cleanly with nothing but the stdlib and core.database — same
 constraint as bot/community.py.
 """
-import csv
-import io
 import time
 
 from core.database import db
-
-CONFIDENCE_ORDER = ("seed", "learned", "manual")
+from core.identity_seed import CONFIDENCE_ORDER, parse_seed_csv  # noqa: F401 (re-exported public API)
 
 # core/migrations.py's 003_seed_identities duplicates this exact schema in a
 # self-contained raw CREATE TABLE (_ensure_identities_table) rather than
@@ -107,6 +104,8 @@ async def user_for_profile(profile_id: int):
 
 
 def _rank(confidence):
+	if confidence not in CONFIDENCE_ORDER:
+		raise ValueError(f"_rank: unknown confidence {confidence!r}, expected one of {CONFIDENCE_ORDER}")
 	return CONFIDENCE_ORDER.index(confidence)
 
 
@@ -172,59 +171,6 @@ async def nick_for(community_id, user_id):
 	row = await db.select_one(
 		["nick"], "identity_aliases", where={"community_id": community_id, "user_id": user_id})
 	return row["nick"] if row else None
-
-
-_SEED_CSV_KINDS = ("profile_map", "resolved")
-# Both real header shapes carry the same three columns this module cares
-# about (user_id, aoe2_name, profile_id) by NAME, just in different column
-# order and with different extra columns (country vs source/appearances) —
-# csv.DictReader keys off the header row, so both parse the same way.
-#   profile_map -> user_id,nick,aoe2_name,profile_id,country
-#   resolved    -> profile_id,user_id,nick,aoe2_name,source,appearances
-
-
-def parse_seed_csv(text: str, kind: str) -> list:
-	""" Parse one of the two legacy seed CSVs into a list of
-	{profile_id, user_id, aoe2_name} dicts. Pure: no file I/O, no DB, so it
-	is unit-testable on inline CSV text.
-
-	Rows with no profile_id (missing, or not an int) are unusable and
-	skipped. A missing/empty user_id is a legitimate identity — a known AoE2
-	profile whose Discord owner isn't known — kept with user_id=None; a
-	user_id that IS present but not an int is malformed data and the whole
-	row is skipped rather than guessed at. """
-	if kind not in _SEED_CSV_KINDS:
-		raise ValueError(f"parse_seed_csv: unknown kind {kind!r}, expected one of {_SEED_CSV_KINDS}")
-
-	rows = []
-	for r in csv.DictReader(io.StringIO(text)):
-		profile_id = _to_int(r.get("profile_id"))
-		if profile_id is None:
-			continue
-
-		user_id_raw = (r.get("user_id") or "").strip()
-		if user_id_raw == "":
-			user_id = None
-		else:
-			user_id = _to_int(user_id_raw)
-			if user_id is None:
-				continue  # present but malformed -> the whole row is unusable
-
-		aoe2_name = (r.get("aoe2_name") or "").strip() or None
-		rows.append(dict(profile_id=profile_id, user_id=user_id, aoe2_name=aoe2_name))
-	return rows
-
-
-def _to_int(value):
-	if value is None:
-		return None
-	value = str(value).strip()
-	if not value:
-		return None
-	try:
-		return int(value)
-	except ValueError:
-		return None
 
 
 def invalidate_cache() -> None:

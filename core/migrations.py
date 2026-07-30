@@ -23,12 +23,11 @@ already do) or written as `IF EXISTS`/`INSERT IGNORE` — not just the migration
 as a whole. Do not rely on the ledger to make a half-applied body safe to
 re-run; the ledger only records success after the entire body returns.
 """
-import csv
-import io
 import os
 import time
 
 from core.console import log
+from core.identity_seed import CONFIDENCE_ORDER, parse_seed_csv
 
 LEDGER = "schema_migrations"
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -174,30 +173,17 @@ async def _m002(db):
 async def _ensure_identities_table(db):
 	"""Minimal, idempotent CREATE TABLE for `identities` — bot/identity.py's
 	table, duplicated here rather than created via its db.ensure_table()
-	declaration.
+	declaration, because db.ensure_table() cannot be reached from this
+	module (see this module's docstring for why importing anything under
+	bot.* from a migration crashes the boot).
 
-	Why duplicated instead of imported: `import bot.identity` would run that
-	module's own (synchronous) `db.ensure_table()` calls as an unavoidable
-	side effect of the import statement itself — Python always executes a
-	module's top-level code exactly once, in full, the first time anything
-	imports it, regardless of which names you actually want from it.
-	`ensure_table()`'s sync wrapper internally does
-	`self.loop.run_until_complete(...)` on the SAME loop object this
-	migration is already running under (run_all() is driven by
-	`loop.run_until_complete(migrations.run_all(db))` in PUBobot2.py) —
-	asyncio forbids a loop from entering `run_until_complete` re-entrantly,
-	so that import would raise "This event loop is already running" and
-	crash the boot on the very first deploy after this migration ships.
-	Importing bot.identity from here isn't fixable by only pulling in the
-	pure functions either — the whole module body still runs once, ensure_table
-	calls included.
-
-	Keep this schema in sync with bot/identity.py's `identities` declaration
-	by hand (their divergence would only matter for a boot that hits this
-	table before `import bot`'s own ensure_table() call gets to self-heal
-	it — see the note above the `identities` ensure_table call in
-	bot/identity.py). `identity_aliases` needs no such duplicate: nothing
-	seeds it before `import bot` runs.
+	This CREATE TABLE must stay in sync with bot/identity.py's `identities`
+	declaration by hand — that part cannot be shared. The row-parsing logic
+	that used to be duplicated alongside it now lives in
+	core/identity_seed.py (stdlib-only, safe to import from both here and
+	bot/identity.py) precisely so it does not have to be kept in sync by
+	hand too. `identity_aliases` needs no such duplicate CREATE TABLE:
+	nothing seeds it before `import bot` runs.
 	"""
 	await db.execute(
 		"CREATE TABLE IF NOT EXISTS identities ("
@@ -207,55 +193,10 @@ async def _ensure_identities_table(db):
 	)
 
 
-def _legacy_seed_csv_to_int(value):
-	if value is None:
-		return None
-	value = str(value).strip()
-	if not value:
-		return None
-	try:
-		return int(value)
-	except ValueError:
-		return None
-
-
-def _parse_legacy_seed_csv(text):
-	"""Parses data/profile_resolved.csv and data/player_profile_map.csv into
-	{profile_id, user_id, aoe2_name} dicts. Deliberately mirrors
-	bot.identity.parse_seed_csv's row rules byte-for-byte instead of calling
-	it — see _ensure_identities_table's docstring for why this migration
-	cannot import anything from bot/. tests/test_migrations.py's
-	test_parse_legacy_seed_csv_matches_bot_identity_parse_seed_csv pins the
-	two copies together so a change to one without the other fails CI
-	instead of silently drifting.
-
-	Both real CSVs carry `profile_id`, `user_id`, and `aoe2_name` columns by
-	NAME (just in different order, with different extra columns alongside)
-	— csv.DictReader keys off the header row, so one parse handles both
-	shapes; nothing here needs to know which file it's reading.
-
-	profile_id missing or not an int -> row skipped (unusable). user_id
-	missing/empty -> a legitimate identity with an unknown Discord owner,
-	kept with user_id=None. user_id present but not an int -> malformed,
-	whole row skipped rather than guessed at.
-	"""
-	rows = []
-	for r in csv.DictReader(io.StringIO(text)):
-		profile_id = _legacy_seed_csv_to_int(r.get("profile_id"))
-		if profile_id is None:
-			continue
-
-		user_id_raw = (r.get("user_id") or "").strip()
-		if user_id_raw == "":
-			user_id = None
-		else:
-			user_id = _legacy_seed_csv_to_int(user_id_raw)
-			if user_id is None:
-				continue  # present but malformed -> the whole row is unusable
-
-		aoe2_name = (r.get("aoe2_name") or "").strip() or None
-		rows.append(dict(profile_id=profile_id, user_id=user_id, aoe2_name=aoe2_name))
-	return rows
+# Confidence tiers this migration writes, taken from core.identity_seed's
+# CONFIDENCE_ORDER (rather than the literal strings) so a rename there can't
+# silently desync from here.
+_SEED_CONFIDENCE, _LEARNED_CONFIDENCE = CONFIDENCE_ORDER[0], CONFIDENCE_ORDER[1]
 
 
 @migration("003_seed_identities")
@@ -292,7 +233,7 @@ async def _m003(db):
 					profile_id=r["profile_id"],
 					user_id=r["user_id"],
 					aoe2_name=r["name"] or None,
-					confidence="learned",
+					confidence=_LEARNED_CONFIDENCE,
 					first_seen_at=r["last_seen_at"] or now,
 					last_seen_at=r["last_seen_at"] or now,
 				)
@@ -306,7 +247,10 @@ async def _m003(db):
 	except Exception as e:
 		log.error(f"migrations: 003_seed_identities: rs_profiles seed step failed, continuing: {e}")
 
-	for relpath in ("data/profile_resolved.csv", "data/player_profile_map.csv"):
+	for relpath, kind in (
+		("data/profile_resolved.csv", "resolved"),
+		("data/player_profile_map.csv", "profile_map"),
+	):
 		path = os.path.join(_ROOT, relpath)
 		try:
 			if not os.path.exists(path):
@@ -314,13 +258,13 @@ async def _m003(db):
 				continue
 			with open(path, encoding="utf-8") as f:
 				text = f.read()
-			parsed = _parse_legacy_seed_csv(text)
+			parsed = parse_seed_csv(text, kind)
 			seed = [
 				dict(
 					profile_id=r["profile_id"],
 					user_id=r["user_id"],
 					aoe2_name=r["aoe2_name"],
-					confidence="seed",
+					confidence=_SEED_CONFIDENCE,
 					first_seen_at=now,
 					last_seen_at=now,
 				)

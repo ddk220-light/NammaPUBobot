@@ -8,14 +8,26 @@ import asyncio
 
 import core.migrations as mig
 
+# {table: primary key column} for FakeDb.insert_many's INSERT IGNORE
+# emulation below. Only tables this suite actually writes via insert_many
+# need an entry.
+_PRIMARY_KEYS = {"identities": "profile_id"}
+
 
 class FakeDb:
-	def __init__(self, tables=(), applied=(), columns=None):
+	def __init__(self, tables=(), applied=(), columns=None, rows=None, raise_on=None):
 		self.tables = set(tables)
 		self.applied = list(applied)
 		self.executed = []
 		# {table: {column, ...}}
 		self.columns = {t: set(cols) for t, cols in (columns or {}).items()}
+		# {table: [row dict, ...]} — seed data fetchall's generic SELECT
+		# support reads from, and the destination insert_many writes to.
+		self.rows = {t: list(r) for t, r in (rows or {}).items()}
+		# Substring: if present in a fetchall's SQL, raise instead of
+		# answering — lets a test simulate one seed source failing
+		# independently of the others.
+		self.raise_on = raise_on
 
 	async def execute(self, sql, args=None):
 		self.executed.append(sql)
@@ -45,9 +57,30 @@ class FakeDb:
 		return None
 
 	async def fetchall(self, sql, args=None):
+		if self.raise_on and self.raise_on in sql:
+			raise RuntimeError(f"FakeDb: simulated failure answering {self.raise_on!r}")
 		if "FROM schema_migrations" in sql:
 			return [{"name": n} for n in self.applied]
+		if "FROM rs_profiles" in sql:
+			return list(self.rows.get("rs_profiles", []))
 		return []
+
+	async def insert_many(self, table, rows, on_duplicate=None):
+		""" Models MySQL's INSERT IGNORE (see core/DBAdapters/mysql.py's
+		_mysql_insert: on_duplicate="ignore" renders as literal `INSERT
+		IGNORE`): the first row written for a given primary key sticks, and
+		every later row for that same key — whether from this call or an
+		earlier one — is silently dropped rather than overwriting it. """
+		dest = self.rows.setdefault(table, [])
+		pk = _PRIMARY_KEYS[table]
+		seen = {row[pk] for row in dest}
+		for row in rows:
+			row = dict(row)
+			key = row[pk]
+			if on_duplicate == "ignore" and key in seen:
+				continue
+			seen.add(key)
+			dest.append(row)
 
 
 def test_run_all_applies_once_and_records(monkeypatch):
@@ -199,32 +232,6 @@ def test_run_all_does_not_raise_once_renames_have_actually_happened():
 	assert not (old_names & db.tables), "old-named tables must not survive a normal first deploy"
 
 
-def test_parse_legacy_seed_csv_matches_bot_identity_parse_seed_csv():
-	"""003_seed_identities' CSV parsing deliberately duplicates
-	bot.identity.parse_seed_csv's row rules instead of importing it — see
-	_ensure_identities_table's docstring in core/migrations.py for why
-	(importing bot.identity from inside a migration crashes the boot: its
-	ensure_table() calls run loop.run_until_complete on a loop that
-	migrations.run_all() already has running). This test pins the two
-	copies together so a change to one without the other fails CI instead
-	of silently drifting."""
-	import bot.identity as identity
-
-	samples = [
-		("user_id,nick,aoe2_name,profile_id,country\n"
-		 "238042803093897216,fenrir05,Fenrir,209754,us\n"
-		 "not-a-number,x,Y,111,us\n"
-		 ",y,Z,222,us\n"
-		 "333,z,W,,us\n"
-		 "444,w,V,17841676 / 2885693,in\n"),
-		("profile_id,user_id,nick,aoe2_name,source,appearances\n"
-		 "12297184,786488329864478751,guruGreatest,GuruGreatest,seed,31\n"
-		 "24413606,,,SomeName,unmapped,1\n"),
-	]
-	for text in samples:
-		assert mig._parse_legacy_seed_csv(text) == identity.parse_seed_csv(text, "profile_map")
-
-
 def test_ensure_identities_table_is_idempotent():
 	db = FakeDb()
 	asyncio.run(mig._ensure_identities_table(db))
@@ -235,6 +242,128 @@ def test_ensure_identities_table_is_idempotent():
 		"`confidence` VARCHAR(191) NOT NULL, `first_seen_at` BIGINT NOT NULL, "
 		"`last_seen_at` BIGINT NOT NULL, PRIMARY KEY(`profile_id`))"
 	) == 2
+
+
+# ─── 003_seed_identities ────────────────────────────────────────────────
+# _m003's own precedence and per-source error isolation, not just its
+# helpers. FakeDb.insert_many above must model INSERT IGNORE faithfully
+# (first writer of a profile_id wins) or these precedence assertions would
+# pass against a broken implementation.
+
+def _write_csv(tmp_path, relpath, text):
+	path = tmp_path / relpath
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(text, encoding="utf-8")
+	return path
+
+
+def test_m003_rs_profiles_outranks_both_csvs_for_a_shared_profile_id(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"100,111,nickA,ResolvedName,seed,1\n")
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"222,nickB,MapName,100,us\n")
+	db = FakeDb(
+		tables={"rs_profiles"},
+		rows={"rs_profiles": [{"profile_id": 100, "user_id": 333, "name": "RSName", "last_seen_at": 999}]},
+	)
+
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	row = identities[0]
+	assert row["profile_id"] == 100
+	assert row["user_id"] == 333
+	assert row["aoe2_name"] == "RSName"
+	assert row["confidence"] == "learned"
+
+
+def test_m003_profile_resolved_csv_wins_over_player_profile_map_csv(tmp_path, monkeypatch):
+	"""Both CSVs write at the same 'seed' confidence tier, so precedence
+	between them comes only from insertion order (profile_resolved.csv is
+	read first in _m003's loop), not from confidence comparison."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"200,111,nickA,ResolvedName,seed,1\n")
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"222,nickB,MapName,200,us\n")
+	db = FakeDb(tables=set())  # rs_profiles does not exist
+
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	row = identities[0]
+	assert row["profile_id"] == 200
+	assert row["user_id"] == 111
+	assert row["aoe2_name"] == "ResolvedName"
+	assert row["confidence"] == "seed"
+
+
+def test_m003_missing_csv_logs_and_continues_seeding_from_the_other_source(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	# data/profile_resolved.csv is absent entirely; only the other CSV exists.
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"222,nickB,MapName,300,us\n")
+	db = FakeDb(tables=set())
+
+	asyncio.run(mig._m003(db))  # must not raise despite the missing file
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	assert identities[0]["profile_id"] == 300
+	assert identities[0]["user_id"] == 222
+
+
+def test_m003_rs_profiles_failure_does_not_abort_csv_seeding(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"400,111,nickA,ResolvedName,seed,1\n")
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"222,nickB,MapName,500,us\n")
+	db = FakeDb(tables={"rs_profiles"}, raise_on="FROM rs_profiles")
+
+	asyncio.run(mig._m003(db))  # rs_profiles step raises; must not propagate
+
+	profile_ids = {row["profile_id"] for row in db.rows["identities"]}
+	assert profile_ids == {400, 500}
+
+
+def test_m003_one_csv_source_failure_does_not_abort_the_other(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	# profile_resolved.csv exists as a directory rather than a file:
+	# os.path.exists is True (so _m003 attempts to read it) but open() raises
+	# IsADirectoryError, simulating a present-but-unreadable source.
+	(tmp_path / "data").mkdir()
+	(tmp_path / "data" / "profile_resolved.csv").mkdir()
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"222,nickB,MapName,600,us\n")
+	db = FakeDb(tables=set())
+
+	asyncio.run(mig._m003(db))  # must not raise
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	assert identities[0]["profile_id"] == 600
+
+
+def test_m003_missing_rs_profiles_table_does_not_crash_on_fresh_install(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	# Neither CSV present either — the genuinely-empty fresh-install case.
+	db = FakeDb(tables=set())
+
+	asyncio.run(mig._m003(db))  # must not raise
+
+	assert db.rows.get("identities", []) == []
 
 
 def test_stage1_renames_targets_are_registered_and_sources_are_not_declared():
