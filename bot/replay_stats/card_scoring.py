@@ -166,7 +166,11 @@ MEDAL_AXES = (("military_medal", "military", "villagers"),
 PRODUCTION_BUCKET_S = 120
 
 TAG_NAMES = {
-	"all_in_pressure": "Low-eco pressure",
+	# Named "Army-heavy" rather than scoring.py's "Low-eco pressure": the score
+	# is relative to the match, so it fires on players with plenty of farms in
+	# absolute terms, and "low-eco" next to 137 farms reads as wrong. The legacy
+	# name stays on the surfaces scoring.py feeds.
+	"all_in_pressure": "Army-heavy",
 	"reboom": "Recovery",
 	"constant_production": "Constant production",
 }

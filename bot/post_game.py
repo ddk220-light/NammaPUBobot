@@ -38,7 +38,6 @@ BOT_PCT = 0.15      # bottom 15% counts as a weak pick
 TEAM_GAP_MIN = 0.03  # min avg-winrate gap between team civ pools to comment on
 MAX_BULLETS = 5
 MAX_ANALYSIS_LINES = 6
-MAX_CARD_TAGS = 3
 
 # A player's own record on the civ they just played. Separate from the global
 # civ meta above: the same civ can be a bottom-tier pick globally and still be

@@ -188,7 +188,7 @@ def test_production_coverage_never_exceeds_one():
 def test_a_tag_goes_to_the_highest_scorer_on_the_team_who_clears_the_bar():
     ps = [_p("a", army_score=70, eco_score=40), _p("b", army_score=66, eco_score=40)]
     tags = cs.assign_team_tags(ps)
-    assert "Low-eco pressure" in tags[0]
+    assert "Army-heavy" in tags[0]
     assert tags[1] == []
 
 
@@ -201,8 +201,8 @@ def test_tags_are_scoped_per_team_so_both_teams_can_award_one():
     ps = [_p("a", team=0, army_score=70, eco_score=40),
           _p("b", team=1, army_score=68, eco_score=40)]
     tags = cs.assign_team_tags(ps)
-    assert "Low-eco pressure" in tags[0]
-    assert "Low-eco pressure" in tags[1]
+    assert "Army-heavy" in tags[0]
+    assert "Army-heavy" in tags[1]
 
 
 def test_one_player_can_sweep_several_tags():
@@ -219,7 +219,7 @@ def test_a_dominant_player_can_hold_two_award_tags_at_once():
     # eco sits exactly on the all_in ceiling while reboom_eco_min is 55, so
     # Recovery is unreachable here; assert the pair that actually is.
     tags = cs.assign_team_tags(ps)
-    assert "Low-eco pressure" in tags[0]
+    assert "Army-heavy" in tags[0]
     assert "Constant production" in tags[0]
 
 
@@ -238,7 +238,7 @@ def test_a_player_without_production_earns_no_tags():
 def test_tag_ties_break_by_nick_so_re_renders_are_stable():
     ps = [_p("zed", army_score=70, eco_score=40), _p("amy", army_score=70, eco_score=40)]
     tags = cs.assign_team_tags(ps)
-    assert tags[1] == ["Low-eco pressure"]
+    assert tags[1] == ["Army-heavy"]
     assert tags[0] == []
 
 
