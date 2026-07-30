@@ -8,8 +8,14 @@ touches the real core.database fake conftest.py installs for every other
 test file.
 """
 import asyncio
+import importlib.util
+import sys
+import types
+from enum import IntEnum
+from pathlib import Path
 
 import bot.identity as identity
+import bot.community as community
 
 
 class FakeDb:
@@ -387,3 +393,304 @@ def test_set_nick_overwrites_existing_nick_for_same_community_and_user(monkeypat
 
 	assert len(fake.identity_aliases) == 1
 	assert asyncio.run(identity.nick_for(1, 555)) == "Renamed"
+
+
+# ─── admin identity commands (bot/commands/admin.py) ────────────────────
+# bot/commands/admin.py does `from nextcord import Member, Embed, Colour`,
+# `from core.utils import seconds_to_str, get_nick` and `import bot`. Under
+# CI (pytest only, no nextcord/aiomysql/aiohttp) none of that resolves, and
+# importing it the normal way -- `import bot.commands.admin` -- would first
+# run bot/commands/__init__.py, which star-imports every other command
+# module (quiz, replay_stats, player_details, insights, ...) and pulls in
+# far more than this file needs to fake.
+#
+# Instead: register minimal nextcord/nextcord.utils fakes in sys.modules
+# (tests/test_match_final_message.py's established trick) and load
+# admin.py directly by file path (tests/test_replay_scoring.py's
+# `player_tags_standalone_test` trick), bypassing bot/commands/__init__.py
+# entirely. bot.identity and bot.community are imported for real above
+# (both are pure DB-only modules, already proven importable under CI) and
+# their functions are monkeypatched directly per test -- admin.py reaches
+# them as `bot.identity.X` / `bot.community.X` at call time, so patching
+# the real modules *is* patching admin.py's actual dependency.
+
+class _Perms(IntEnum):
+	USER = 0
+	MEMBER = 1
+	MODERATOR = 2
+	ADMIN = 3
+
+
+class _PermsDenied(Exception):
+	pass
+
+
+class _FakeMember:
+	def __init__(self, user_id, name="Player"):
+		self.id = user_id
+		self.name = name
+		self.nick = None
+
+
+class _FakeCtx:
+	Perms = _Perms
+
+	def __init__(self, access_level=_Perms.ADMIN, channel_id=1):
+		self.access_level = access_level
+		self.qc = types.SimpleNamespace(gt=lambda s: s)
+		self.channel = types.SimpleNamespace(id=channel_id)
+		self.replies = []
+		self.successes = []
+
+	def check_perms(self, req_perms):
+		if self.access_level.value < req_perms.value:
+			raise _PermsDenied("insufficient permissions")
+
+	async def reply(self, content=None, embed=None):
+		self.replies.append(types.SimpleNamespace(content=content, embed=embed))
+
+	async def success(self, content=None, title=None):
+		self.successes.append(content)
+
+
+def _load_admin_module(monkeypatch):
+	fake_nextcord = types.ModuleType("nextcord")
+	fake_nextcord.Member = object
+	fake_nextcord.Colour = lambda value=0: value
+
+	class _FakeEmbed:
+		def __init__(self, title=None, description=None, colour=None, color=None):
+			self.title = title
+			self.description = description
+			self.colour = colour if colour is not None else color
+			self.fields = []
+
+		def add_field(self, name=None, value=None, inline=True):
+			self.fields.append(dict(name=name, value=value, inline=inline))
+
+	fake_nextcord.Embed = _FakeEmbed
+	monkeypatch.setitem(sys.modules, "nextcord", fake_nextcord)
+
+	fake_nextcord_utils = types.ModuleType("nextcord.utils")
+	fake_nextcord_utils.get = lambda *a, **k: None
+	fake_nextcord_utils.find = lambda *a, **k: None
+	fake_nextcord_utils.escape_markdown = lambda s: s
+	monkeypatch.setitem(sys.modules, "nextcord.utils", fake_nextcord_utils)
+
+	import bot.exceptions as exceptions
+	monkeypatch.setattr(sys.modules["bot"], "Exc", exceptions.Exceptions, raising=False)
+
+	path = Path(__file__).resolve().parent.parent / "bot" / "commands" / "admin.py"
+	spec = importlib.util.spec_from_file_location("admin_standalone_test", path)
+	module = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(module)
+	return module
+
+
+# ─── identity link ───────────────────────────────────────────────────────
+
+def test_identity_link_requires_admin_permission(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+	calls = []
+	monkeypatch.setattr(identity, "learn", lambda *a, **k: calls.append((a, k)))
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	try:
+		asyncio.run(admin.identity_link(ctx, _FakeMember(1), 111))
+	except _PermsDenied:
+		pass
+	else:
+		raise AssertionError("identity_link must require ADMIN permission")
+
+	assert calls == []
+
+
+def test_identity_link_records_a_brand_new_mapping(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _user_for_profile(profile_id):
+		return None
+
+	learn_calls = []
+
+	async def _learn(profile_id, user_id, source, aoe2_name=None):
+		learn_calls.append((profile_id, user_id, source))
+
+	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
+	monkeypatch.setattr(identity, "learn", _learn)
+	ctx = _FakeCtx()
+	member = _FakeMember(222, name="Fenrir")
+
+	asyncio.run(admin.identity_link(ctx, member, 111))
+
+	assert learn_calls == [(111, 222, "manual")]
+	assert len(ctx.successes) == 1
+	assert "111" in ctx.successes[0] and "Fenrir" in ctx.successes[0]
+
+
+def test_identity_link_relinking_the_same_owner_needs_no_force(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _user_for_profile(profile_id):
+		return 222  # already owned by the same member we're linking
+
+	learn_calls = []
+
+	async def _learn(profile_id, user_id, source, aoe2_name=None):
+		learn_calls.append((profile_id, user_id, source))
+
+	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
+	monkeypatch.setattr(identity, "learn", _learn)
+	ctx = _FakeCtx()
+	member = _FakeMember(222)
+
+	asyncio.run(admin.identity_link(ctx, member, 111, force=False))
+
+	assert learn_calls == [(111, 222, "manual")]
+
+
+def test_identity_link_refuses_to_steal_a_different_owner_without_force(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _user_for_profile(profile_id):
+		return 999  # owned by someone else
+
+	learn_calls = []
+
+	async def _learn(*a, **k):
+		learn_calls.append((a, k))
+
+	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
+	monkeypatch.setattr(identity, "learn", _learn)
+	ctx = _FakeCtx()
+	member = _FakeMember(222)
+
+	try:
+		asyncio.run(admin.identity_link(ctx, member, 111, force=False))
+	except admin.bot.Exc.ValueError as e:
+		assert "999" in str(e)
+	else:
+		raise AssertionError("identity_link must refuse to reassign a profile without force")
+
+	assert learn_calls == []
+
+
+def test_identity_link_force_reassigns_from_a_different_owner(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _user_for_profile(profile_id):
+		return 999
+
+	learn_calls = []
+
+	async def _learn(profile_id, user_id, source, aoe2_name=None):
+		learn_calls.append((profile_id, user_id, source))
+
+	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
+	monkeypatch.setattr(identity, "learn", _learn)
+	ctx = _FakeCtx()
+	member = _FakeMember(222)
+
+	asyncio.run(admin.identity_link(ctx, member, 111, force=True))
+
+	assert learn_calls == [(111, 222, "manual")]
+	assert len(ctx.successes) == 1
+
+
+# ─── identity show ───────────────────────────────────────────────────────
+
+def test_identity_show_requires_moderator_permission(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+	calls = []
+	monkeypatch.setattr(identity, "profiles_for_users", lambda *a, **k: calls.append(a))
+	ctx = _FakeCtx(access_level=_Perms.MEMBER)
+
+	try:
+		asyncio.run(admin.identity_show(ctx, _FakeMember(1)))
+	except _PermsDenied:
+		pass
+	else:
+		raise AssertionError("identity_show must require MODERATOR permission")
+
+	assert calls == []
+
+
+def test_identity_show_lists_known_profiles_and_nick(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _profiles_for_users(user_ids):
+		return {222: [111, 222]}
+
+	async def _community_for_channel(channel_id):
+		return 5
+
+	async def _nick_for(community_id, user_id):
+		assert community_id == 5
+		assert user_id == 222
+		return "Fenrir05"
+
+	monkeypatch.setattr(identity, "profiles_for_users", _profiles_for_users)
+	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
+	monkeypatch.setattr(identity, "nick_for", _nick_for)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+	member = _FakeMember(222, name="Fenrir")
+
+	asyncio.run(admin.identity_show(ctx, member))
+
+	assert len(ctx.replies) == 1
+	embed = ctx.replies[0].embed
+	values = [f["value"] for f in embed.fields]
+	assert any("111" in v and "222" in v for v in values)
+	assert any("Fenrir05" in v for v in values)
+
+
+def test_identity_show_reports_no_known_profiles(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _profiles_for_users(user_ids):
+		return {}
+
+	async def _community_for_channel(channel_id):
+		return 5
+
+	async def _nick_for(community_id, user_id):
+		return None
+
+	monkeypatch.setattr(identity, "profiles_for_users", _profiles_for_users)
+	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
+	monkeypatch.setattr(identity, "nick_for", _nick_for)
+	ctx = _FakeCtx()
+	member = _FakeMember(222)
+
+	asyncio.run(admin.identity_show(ctx, member))
+
+	embed = ctx.replies[0].embed
+	profiles_field = next(f for f in embed.fields if "111" not in f["value"])
+	assert profiles_field["value"]  # some "none known" placeholder, not blank
+
+
+def test_identity_show_reports_unenrolled_channel_without_erroring(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _profiles_for_users(user_ids):
+		return {222: [111]}
+
+	async def _community_for_channel(channel_id):
+		return None
+
+	nick_for_calls = []
+
+	async def _nick_for(*a, **k):
+		nick_for_calls.append((a, k))
+		return "should not be called"
+
+	monkeypatch.setattr(identity, "profiles_for_users", _profiles_for_users)
+	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
+	monkeypatch.setattr(identity, "nick_for", _nick_for)
+	ctx = _FakeCtx()
+	member = _FakeMember(222)
+
+	asyncio.run(admin.identity_show(ctx, member))  # must not raise
+
+	assert nick_for_calls == []
+	assert len(ctx.replies) == 1
