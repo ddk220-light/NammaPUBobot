@@ -242,18 +242,20 @@ accepted deliberately.
 
 ## Error handling
 
-The pre-game call is already wrapped so an insights failure cannot affect the
-match flow. The payoff gets the same treatment with one difference: it logs
-through `core.console.log.error` rather than swallowing silently, matching how
-`post_game.py` reports its own failures. Neither embed may ever raise into the
-report or rating path.
+The pre-game call and the payoff are both wrapped per-candidate so a render
+failure costs one line, not the whole embed, and both log through
+`core.console.log.error` — matching how `post_game.py` reports its own
+failures — rather than swallowing silently. Neither embed may ever raise into
+the report or rating path.
 
 ## Testing
 
 `tests/test_team_insights.py` gains:
 
 - the window filter — a match outside 90 days contributes to nothing
-- the `lineup` generator at ≥2 prior games, including the exact-set requirement
+- the `lineup` generator at ≥2 prior games, including that `_group_series`
+  matches any prior match where the group shared a side (not just an exact
+  side match) -- a larger side that contained the group still counts
 - the `trio` generator at ≥5 games / ≥75%, including the one-per-embed cap and
   the two-overlapping-trios case
 - determinism — the same seed and history produce the same chosen lines

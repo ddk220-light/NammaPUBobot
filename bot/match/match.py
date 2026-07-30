@@ -463,6 +463,10 @@ class Match:
 			if insights_embed is not None:
 				await ctx.notice(embed=insights_embed)
 		except Exception as e:
+			# The stash means "a tease was computed". If the send failed, nobody
+			# saw it, and a payoff answering an invisible tease is worse than
+			# silence — so drop the context.
+			self.storyline_ctx = None
 			log.error(f"Storyline insights failed for match {self.id}: {e}")
 
 	async def finish_match(self, ctx):

@@ -177,6 +177,24 @@ def test_an_h2h_payoff_frame_flips_the_winning_side_when_the_underdog_wins():
 	assert "Fay" in won_false and "Gil" in won_false
 
 
+def test_an_h2h_payoff_frame_credits_the_leader_when_the_leader_has_the_higher_id():
+	"""D6: every other h2h payoff-frame test in this file uses winner=1,
+	loser=5 -- the winner has the LOWER id, which is exactly the case where
+	``ti._ordered_pair`` and a plain ``sorted(c["players"])`` agree. That
+	leaves the payoff half of the ordering contract unguarded: reverting
+	_payoff_frame's ``ids = ti._ordered_pair(c)`` to ``sorted(c["players"])``
+	still passes every other test here. This case flips it -- the winner (5)
+	has the HIGHER id than the loser (1) -- so sorted() and _ordered_pair
+	disagree, and the came_true branch's first (``_FirstChoice``-selected)
+	variant must still credit the leader's own side (Fay & Gil, Eve's side),
+	not the rival's (Bo & Cy, Ann's side)."""
+	c = _c("h2h", (1, 5), {"winner": 5, "loser": 1, "k": 4, "series": 6,
+	                       "sweep": False}, teams=(0, 1))
+	out = sp._payoff_frame(c, True, _NICK, _META, _SMALL_ROSTERS, rng=_FirstChoice())
+	assert "Fay" in out and "Gil" in out
+	assert "Bo" not in out and "Cy" not in out
+
+
 def test_an_h2h_payoff_frame_uses_the_team_name_once_backers_collapse():
 	"""Same bug as the pre-game frame: in a 4v4 the complement always collapses
 	to "the rest of {team}". The payoff frame must say just the team name."""

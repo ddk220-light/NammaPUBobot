@@ -88,8 +88,9 @@ WORST_BIAS = 1.15
 PERFECT_COND = 1.25
 
 # Every type _candidates can emit. _phrase must handle all of them: an
-# unrenderable candidate raises inside build_insights_embed's list
-# comprehension and silently costs the whole embed.
+# unrenderable candidate is caught per-candidate in build_insights_embed's
+# render loop and logged there -- a missing type costs one missing line plus
+# a log entry, never a silently empty embed.
 CANDIDATE_TYPES = ("lineup", "perfect", "mate_wr", "h2h", "mate", "trio",
                    "deadlock", "form")
 
@@ -672,6 +673,11 @@ def _frame(c, nick, teams_meta, rosters, *, rng=random):
 				# leader (na) -- never the reverse. deadlock has no leader, so it
 				# never reaches this branch.
 				opts.append(f"Does {sb} have an answer for {na}?")
+			elif c["type"] == "deadlock":
+				# A tie by construction has no leader to address directionally --
+				# give both sides an equal, non-directional line instead so a
+				# deadlock tease isn't stuck with a single boilerplate clause.
+				opts.append(f"{sa} and {sb} both fancy their chances tonight.")
 			return rng.choice(opts)
 		return rng.choice([
 			"Do their teammates get a say?",

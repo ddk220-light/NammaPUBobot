@@ -70,10 +70,16 @@ def _payoff_frame(c, came_true, nick, teams_meta, rosters, *, rng=random):
 				_sname, sback, steam = backers[subj_idx]
 				_rname, rback, rteam = backers[1 - subj_idx]
 				sa, sb = ti._short_backers(sback, steam), ti._short_backers(rback, rteam)
+				# ti._frame's directional h2h variant asks the TRAILING side (sb)
+				# whether they have an answer for the leader (sa) -- never the
+				# reverse. The payoff has to answer that same question, not a
+				# different one: came_true means the leader's streak held, i.e.
+				# the trailing side never found their answer; !came_true means the
+				# trailing side broke through and had the last word.
 				if came_true:
 					return rng.choice([
-						f"{sa} got their answer.",
-						f"{sa} called it.",
+						f"{sa} were right to trust it.",
+						f"{sb} never found one.",
 					])
 				return rng.choice([
 					f"{sb} had the last word.",
@@ -277,10 +283,6 @@ async def build_payoff_embed(match):
 		return None
 
 	team_of = {**{p.id: 0 for p in team0}, **{p.id: 1 for p in team1}}
-	verdicts = [(c, resolve(c, winner, team_of)) for c in chosen]
-	verdicts = [(c, v) for c, v in verdicts if v is not None]
-	if not verdicts:
-		return None
 
 	from nextcord import Colour, Embed
 
@@ -293,8 +295,14 @@ async def build_payoff_embed(match):
 		{"name": teams[1].name, "emoji": teams[1].emoji},
 	]
 	lines = []
-	for c, v in verdicts:
+	for c in chosen:
+		# resolve() lives in the same try as the render: a future candidate type
+		# without a subject_of branch (or missing team_idx) raises, and must cost
+		# this one line -- not the whole payoff embed.
 		try:
+			v = resolve(c, winner, team_of)
+			if v is None:
+				continue
 			lines.append(payoff_phrase(c, v, nick, teams_meta, rosters, rng=rng))
 		except Exception as e:
 			log.error(f"Storyline payoff render failed ({c.get('type')}): {e}")
