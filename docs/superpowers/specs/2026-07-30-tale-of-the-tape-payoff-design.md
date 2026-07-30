@@ -166,13 +166,27 @@ match never reaches it, so an abort posts nothing.
 ### Recompute, not stored state
 
 The payoff re-derives the storylines rather than reading back what was posted:
-same `_fetch_history` call, same `random.Random(match_id)` seed, and prior
-restricted to `match_id < this match`. This match is already persisted by the
-time the payoff runs, hence the explicit exclusion.
+same `_fetch_history` call, same seeded RNG, and prior restricted to
+`match_id < this match`. This match is already persisted by the time the payoff
+runs, hence the explicit exclusion.
 
-The window anchors on **this match's own `at`**, not on `now`, so the payoff
-reads the same 90 days the pre-game read rather than a window that has slid
-forward by the length of the game.
+**What the recompute reads from is pinned, not recomputed.** The design
+originally assumed the window anchor, the roster and `match.id` were all stable
+across a match's lifetime. None of the three is:
+
+- the 90-day window slides as the game runs, because `qc_matches.at` is the
+  *report* time — a historical match can fall inside the pre-game read and
+  outside the payoff's
+- `/subfor` and `sub_auto` are legal during `WAITING_REPORT` and mutate
+  `match.teams` in place; `sub_auto` re-splits **both** sides
+- `Match.from_json` assigns a restored match a **new** id, and a restored
+  `WAITING_REPORT` match never re-posts the tease
+
+So `build_insights_embed` stashes the cutoff, roster and seed it used on the
+match object, and the payoff requires them: it reads the stashed cutoff and
+seed, and posts nothing if the stash is missing (a redeploy) or if the roster no
+longer matches (a substitution). The storylines are still recomputed — this only
+pins what they are recomputed *from*.
 
 ### Resolution
 
@@ -263,16 +277,22 @@ end to end before this ships.
 
 ## Known limitations
 
+Two sources of tease/payoff divergence remain accepted. Three others — a
+sliding window, a substituted roster and a reassigned `match.id` — were found
+during implementation and are now pinned by the stash described above.
+
 **Concurrent-match drift.** Matches overlap. A match that formed while yours was
 live can finish and persist before yours reports, landing in the window with a
 lower `match_id`. The report-time recompute therefore sees one or two matches the
 pre-game read did not. Rate-based lines will not move; a streak line occasionally
 will, so the payoff can resolve a line nobody was shown, or miss one that was.
-Accepted: storing the claims was considered and rejected in favour of keeping the
-feature stateless.
+Accepted: storing the claims themselves was considered and rejected in favour of
+keeping the storylines recomputed.
 
-**Code drift.** Changing a threshold between a match forming and reporting also
-changes the recomputed set. In practice that window is minutes to hours.
+**Code drift.** Changing a threshold, a generator or a phrasing pool between a
+match forming and reporting changes the recomputed set. In practice that window
+is minutes to hours, and a deploy inside it also clears the stash, which makes
+the payoff skip rather than answer the wrong tease.
 
 ## Out of scope
 
