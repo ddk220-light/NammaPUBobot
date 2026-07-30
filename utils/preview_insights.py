@@ -18,6 +18,7 @@ import argparse
 import asyncio
 import datetime
 import os
+import random
 import sys
 import types
 
@@ -45,6 +46,21 @@ _spec = importlib.util.spec_from_file_location(
 )
 ti = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ti)
+
+# Load bot/storyline_payoff.py the same way, without dragging in bot/__init__.py
+# (which imports nextcord). storyline_payoff does `from bot import team_insights`,
+# so register a bare `bot` package in sys.modules pointing at the already-loaded
+# `ti` module — that satisfies the import without executing bot/__init__.py.
+sys.modules["bot"] = types.ModuleType("bot")
+sys.modules["bot"].__path__ = [os.path.join(_REPO_ROOT, "bot")]
+sys.modules["bot"].team_insights = ti
+sys.modules["bot.team_insights"] = ti
+
+_sp_spec = importlib.util.spec_from_file_location(
+    "storyline_payoff", os.path.join(_REPO_ROOT, "bot", "storyline_payoff.py")
+)
+sp = importlib.util.module_from_spec(_sp_spec)
+_sp_spec.loader.exec_module(sp)
 
 from db_helpers import create_pool  # noqa: E402
 
@@ -95,25 +111,37 @@ async def preview_one(pool, mrow):
         "FROM qc_player_matches pm "
         "JOIN qc_matches m ON m.match_id = pm.match_id AND m.channel_id = pm.channel_id "
         "WHERE pm.channel_id = %s AND m.ranked = 1 AND pm.team IS NOT NULL "
-        f"AND m.match_id < %s AND pm.user_id IN ({placeholders}) "
+        f"AND m.match_id < %s AND m.at >= %s AND pm.user_id IN ({placeholders}) "
         "ORDER BY pm.match_id ASC",
-        (ch, mid, *user_ids),
+        (ch, mid, ti.window_start(mrow["at"]), *user_ids),
     )
     hist = ti._index_history(rows)
     if not hist.order:
         print("  → no insights (no prior ranked history for these players)")
         return
 
-    chosen = ti._select(ti._candidates(hist.order, hist.matches, t0, t1))
+    meta = [{"name": a_name, "emoji": ""}, {"name": b_name, "emoji": ""}]
+    rosters = {0: t0, 1: t1}
+    rng = random.Random(mid)
+    chosen = ti._select(ti._candidates(hist.order, hist.matches, t0, t1), rng=rng)
     if not chosen:
         print(f"  → nothing surfaced ({len(hist.order)} prior games, nothing met the thresholds)")
         return
-
-    meta = [{"name": a_name, "emoji": ""}, {"name": b_name, "emoji": ""}]
-    rosters = {0: t0, 1: t1}
-    print(f"  Insights (from {len(hist.order)} prior ranked games):")
+    print(f"  ⚔️ Tale of the Tape (from {len(hist.order)} prior ranked games):")
     for c in chosen:
-        print("    " + ti._phrase(c, nick, meta, rosters))
+        print("    " + ti._phrase(c, nick, meta, rosters, rng=rng))
+
+    winner = mrow.get("winner")
+    if winner is None:
+        print("  ⚔️ Final Tale of the Tape: draw — nothing to settle")
+        return
+    team_of = {**{u: 0 for u in t0}, **{u: 1 for u in t1}}
+    print("  ⚔️ Final Tale of the Tape:")
+    for c in chosen:
+        verdict = sp.resolve(c, winner, team_of)
+        if verdict is None:
+            continue
+        print("    " + sp.payoff_phrase(c, verdict, nick, meta, rosters, rng=rng))
 
 
 async def main():
