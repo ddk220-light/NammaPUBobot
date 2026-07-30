@@ -198,52 +198,7 @@ def test_personal_phrases_render_for_every_type():
 			assert "Franks" in pg._phrase(o)
 
 
-# ── Replay analysis commentary ───────────────────────────────────────────
-def test_impact_payload_tags_boom_carry():
-	rows = [
-		{
-			"nick": "Boomer", "civ": "Bengalis", "team": "2", "bot_team": 0, "winner": 1,
-			"villagers": 160, "vil_pre_castle": 40, "military": 75, "mil_pre_castle": 1,
-			"feudal_s": 600, "castle_s": 1000, "imperial_s": 2100,
-		},
-		{
-			"nick": "Raider", "civ": "Huns", "team": "1", "bot_team": 1, "winner": 0,
-			"villagers": 70, "vil_pre_castle": 18, "military": 70, "mil_pre_castle": 15,
-			"feudal_s": 700, "castle_s": 1300, "imperial_s": 3200,
-		},
-	]
-	impact = pg._impact_payload(rows[0], rows)
-	assert impact["result"] == "W"
-	assert impact["team"] == 0
-	assert "Boom carry" in impact["impact_tags"]
-
-
-def test_impact_payload_uses_bot_team_not_replay_team():
-	row = {
-		"nick": "Mapped", "civ": "Franks", "team": "2", "bot_team": 1, "result": "L",
-		"villagers": 80, "vil_pre_castle": 20, "military": 40, "mil_pre_castle": 5,
-		"feudal_s": 800, "castle_s": 1400, "imperial_s": 3000,
-	}
-	impact = pg._impact_payload(row, [row])
-	assert impact["team"] == 1
-	assert impact["result"] == "L"
-
-
-def test_match_analysis_lines_include_win_loss_and_carry():
-	player_rows = [
-		{"nick": "Boomer", "civ": "Bengalis", "team": 0, "result": "W", "impact_score": 70, "impact_tags": ["Boom carry"]},
-		{"nick": "Wall", "civ": "Teutons", "team": 0, "result": "W", "impact_score": 55, "impact_tags": ["Recovery"]},
-		{"nick": "Raider", "civ": "Huns", "team": 1, "result": "L", "impact_score": 68, "impact_tags": ["Army pressure"]},
-		{"nick": "Pocket", "civ": "Franks", "team": 1, "result": "L", "impact_score": 48, "impact_tags": []},
-	]
-	lines = pg._match_analysis_lines(player_rows, {0: "Alpha", 1: "Beta"})
-	body = "\n".join(lines)
-	assert "**Alpha** (W)" in body
-	assert "**Beta** (L)" in body
-	assert "**Boomer**" in body
-	assert "Carry check" in body
-
-
+# ── Match Cards ────────────────────────────────────────────────────────
 def _cp(nick, team, **kw):
 	"""A card payload as _card_payload would produce it."""
 	base = dict(nick=nick, civ="Franks", team=team, result="W" if team == 0 else "L",
@@ -490,8 +445,8 @@ def _wire_post_match_analysis(monkeypatch, channel, chart_file):
 	async def _channel_id(_bot_match_id):
 		return 123
 
-	# post_match_analysis fetches the roster once and passes it to both builders,
-	# so both the fetches and the builders need stubbing.
+	# post_match_analysis fetches the roster once and passes it to the cards
+	# builder, so both the fetch and the builder need stubbing.
 	async def _rows(_bot_match_id):
 		return [{"user_id": 1, "nick": "a", "bot_team": 0, "result": "W"}]
 
@@ -501,9 +456,6 @@ def _wire_post_match_analysis(monkeypatch, channel, chart_file):
 	async def _cards(_channel_id, _bot_match_id, _rows=None, _names=None):
 		return cards
 
-	async def _analysis(_channel_id, _bot_match_id, _rows=None, _names=None):
-		return None
-
 	async def _chart(_bot_match_id):
 		return chart_file
 
@@ -511,7 +463,6 @@ def _wire_post_match_analysis(monkeypatch, channel, chart_file):
 	monkeypatch.setattr(pg, "_analysis_rows", _rows)
 	monkeypatch.setattr(pg, "_team_names", _names)
 	monkeypatch.setattr(pg, "build_match_cards_embed", _cards)
-	monkeypatch.setattr(pg, "build_match_analysis_embed", _analysis)
 	monkeypatch.setattr(pg, "_apm_chart_file", _chart)
 	return cards
 
@@ -531,8 +482,8 @@ def test_post_match_analysis_retries_without_the_file_when_the_attach_fails(monk
 
 
 def test_post_match_analysis_fetches_the_roster_once(monkeypatch):
-	"""Both embeds always post together, so the shared reads must happen once —
-	otherwise the card's extra signal queries double too."""
+	"""The roster is fetched once and passed into the cards builder, not
+	re-fetched inside it — otherwise the card's extra signal queries double too."""
 	import asyncio
 
 	channel = _FakeChannel(fail_with_file=False)

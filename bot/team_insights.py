@@ -6,13 +6,15 @@ everyone hundreds of times, so "A vs B, 279-262" is noise). The point is *live
 narrative tension* — active streaks and "will it flip TONIGHT?" hooks drawn from
 recent ranked history:
 
-  * Perfect / cursed pair   — teammates who have NEVER lost (or never won) together
+  * Perfect / cursed pair   — teammates unbeaten (or winless) together inside the window
   * Best / worst teammate   — a player teamed today with the mate who most lifts /
                               tanks their win-rate ("flip your win-rate")
   * H2H streak              — opponents where one has won the last K meetings
   * Teammate streak         — teammates on a K-game win/loss run together
   * Deadlock decider        — opponents dead-even over their recent meetings
   * Form streak             — a player on a personal K-game heater / skid
+  * Trio record             — a three-player subset of one side with a lopsided shared record
+  * Exact lineup            — this group has shared a side before, inside the window
 
 All history is read once, ordered by match_id, and every bit of analysis is pure
 Python (unit-testable without a DB). ``build_insights_embed`` returns an ``Embed``
@@ -24,12 +26,15 @@ let one player saturate the embed), and favours a diverse, dramatic 3-4.
 """
 import math
 import random
+import time
 from collections import Counter, namedtuple
 
 from core.database import db
 
 # ── Tunables ─────────────────────────────────────────────────────────────
 MAX_BULLETS = 4
+
+WINDOW_DAYS = 90           # hard cutoff: nothing older than this is loaded at all
 
 PERFECT_MIN = 5            # T1: decisive games, 100% one-way
 
@@ -48,13 +53,30 @@ DEADLOCK_WINDOW = 8        # T5: only the last N meetings count
 
 FORM_MIN_STREAK = 5        # T6: trailing personal win/loss run
 
+TRIO_MIN_GAMES = 5         # T7: min decisive games this exact trio shared a side
+TRIO_MIN_SHARE = 0.75      # T7: fraction of them going one direction
+
+LINEUP_MIN_GAMES = 2       # T8: min prior decisive games as this group
+LINEUP_MIN_SIDE = 3        # T8: below this the lineup is just the pair line
+
 # Selection caps
 PER_PLAYER_CAP = 2
 PER_TYPE_CAP = 2
 DEADLOCK_TYPE_CAP = 1
+TRIO_TYPE_CAP = 1
+LINEUP_TYPE_CAP = 1
+
+# Types capped harder than PER_TYPE_CAP. These are the ones whose candidates can
+# overlap without being subsets of each other, which _overlaps cannot dedup.
+_TYPE_CAPS = {"deadlock": DEADLOCK_TYPE_CAP, "trio": TRIO_TYPE_CAP,
+              "lineup": LINEUP_TYPE_CAP}
 
 # Drama weights — a single comparable axis across types.
 W_PERFECT = 6.0
+W_TRIO = 7.0
+# The (10 + games) term is what keeps the jackpot on top: a plain multiple of
+# sample size would let a long perfect-pair run (W_PERFECT * n) outrank it.
+W_LINEUP = 9.0
 W_MATE_WR = 4.0
 W_H2H = 3.0
 W_MATE = 2.6
@@ -65,7 +87,19 @@ LOSS_BIAS = 1.10
 WORST_BIAS = 1.15
 PERFECT_COND = 1.25
 
+# Every type _candidates can emit. _phrase must handle all of them: an
+# unrenderable candidate is caught per-candidate in build_insights_embed's
+# render loop and logged there -- a missing type costs one missing line plus
+# a log entry, never a silently empty embed.
+CANDIDATE_TYPES = ("lineup", "perfect", "mate_wr", "h2h", "mate", "trio",
+                   "deadlock", "form")
+
 OrderedHistory = namedtuple("OrderedHistory", "order matches nicks")
+
+
+def window_start(now_ts, days=WINDOW_DAYS):
+	"""Unix cutoff for the rolling history window."""
+	return int(now_ts) - days * 86400
 
 
 # ── Ordered history (pure) ───────────────────────────────────────────────
@@ -108,6 +142,28 @@ def _teammate_series(prior, matches, a, b):
 		if a in t and b in t and t[a] == t[b]:
 			w = matches[mid]["winner"]
 			out.append(None if w is None else int(w) == t[a])
+	return out
+
+
+def _group_series(prior, matches, group):
+	"""Ordered results (True win / False loss) for prior matches where every
+	member of ``group`` shared one side.
+
+	Unlike ``_teammate_series`` this drops draws rather than recording None:
+	trio and lineup lines quote a record, and a draw belongs in neither column.
+	"""
+	out = []
+	for mid in prior:
+		t = matches[mid]["teams"]
+		if not group <= t.keys():
+			continue
+		sides = {t[u] for u in group}
+		if len(sides) != 1:
+			continue
+		w = matches[mid]["winner"]
+		if w is None:
+			continue
+		out.append(int(w) == next(iter(sides)))
 	return out
 
 
@@ -176,6 +232,15 @@ def _pairs(ids):
 	for i in range(len(ids)):
 		for j in range(i + 1, len(ids)):
 			yield ids[i], ids[j]
+
+
+def _trios(ids):
+	"""Unordered within-team triples, in a deterministic order (mirrors _pairs)."""
+	ids = sorted(ids)
+	for i in range(len(ids)):
+		for j in range(i + 1, len(ids)):
+			for k in range(j + 1, len(ids)):
+				yield ids[i], ids[j], ids[k]
 
 
 # ── Candidate builders (pure) — each attaches a comparable drama `score` ──
@@ -266,7 +331,7 @@ def _h2h_candidates(prior, matches, t0_ids, t1_ids):
 
 
 def _mate_candidates(prior, matches, t0_ids, t1_ids):
-	"""T4 — same-team pair on a K>=4 win/loss run; lifetime total is the flavour."""
+	"""T4 — same-team pair on a K>=4 win/loss run; the in-window total is the flavour."""
 	cands = []
 	for team_idx, ids in ((0, t0_ids), (1, t1_ids)):
 		for a, b in _pairs(ids):
@@ -283,6 +348,60 @@ def _mate_candidates(prior, matches, t0_ids, t1_ids):
 				"teams": frozenset((team_idx,)),
 				"data": {"ids": [a, b], "k": k, "series": len(s), "won": val, "team_idx": team_idx},
 			})
+	return cands
+
+
+def _trio_candidates(prior, matches, t0_ids, t1_ids):
+	"""T7 — a three-player subset of one side with a lopsided shared record."""
+	cands = []
+	for team_idx, ids in ((0, t0_ids), (1, t1_ids)):
+		for a, b, c in _trios(ids):
+			group = frozenset((a, b, c))
+			s = _group_series(prior, matches, group)
+			if len(s) < TRIO_MIN_GAMES:
+				continue
+			wins = sum(s)
+			share = max(wins, len(s) - wins) / len(s)
+			if share < TRIO_MIN_SHARE:
+				continue
+			won = wins * 2 > len(s)
+			cands.append({
+				"type": "trio",
+				"score": W_TRIO * len(s) * share * (LOSS_BIAS if not won else 1.0),
+				"players": group,
+				"teams": frozenset((team_idx,)),
+				"data": {"ids": [a, b, c], "wins": wins, "games": len(s),
+				         "won": won, "team_idx": team_idx},
+			})
+	return cands
+
+
+def _lineup_candidates(prior, matches, t0_ids, t1_ids):
+	"""T8 — this group has shared a side before, inside the window.
+
+	The rarest thing the module can say: only about one team-side in ten has
+	shared a side before within the 90-day window, so the line leans on the
+	reunion itself rather than on the record.
+	"""
+	cands = []
+	for team_idx, ids in ((0, t0_ids), (1, t1_ids)):
+		if len(ids) < LINEUP_MIN_SIDE:
+			continue
+		group = frozenset(ids)
+		s = _group_series(prior, matches, group)
+		if len(s) < LINEUP_MIN_GAMES:
+			continue
+		wins = sum(s)
+		one_way = wins == 0 or wins == len(s)
+		cands.append({
+			"type": "lineup",
+			"score": W_LINEUP * (10 + len(s)) * (PERFECT_COND if one_way else 1.0),
+			"players": group,
+			"teams": frozenset((team_idx,)),
+			"data": {"ids": sorted(ids), "wins": wins, "games": len(s),
+			         "one_way": one_way, "won": wins * 2 > len(s),
+			         "team_idx": team_idx},
+		})
 	return cands
 
 
@@ -345,7 +464,7 @@ def _select(candidates, *, limit=MAX_BULLETS, rng=random):
 	chosen, per_player, per_type, covered = [], Counter(), Counter(), []
 
 	def type_cap(t):
-		return DEADLOCK_TYPE_CAP if t == "deadlock" else PER_TYPE_CAP
+		return _TYPE_CAPS.get(t, PER_TYPE_CAP)
 
 	def eligible(c):
 		if per_type[c["type"]] >= type_cap(c["type"]):
@@ -395,14 +514,14 @@ def _select(candidates, *, limit=MAX_BULLETS, rng=random):
 			break
 
 	# PASS 3 — relax the generic type cap (NOT the player cap, NOT dedup, NOT the
-	# hard deadlock cap) to fill a thin match rather than show fewer lines.
+	# hard per-type caps) to fill a thin match rather than show fewer lines.
 	if len(chosen) < limit:
 		for c in ordered:
 			if len(chosen) >= limit:
 				break
 			if any(c is x for x in chosen):
 				continue
-			if c["type"] == "deadlock" and per_type["deadlock"] >= DEADLOCK_TYPE_CAP:
+			if c["type"] in _TYPE_CAPS and per_type[c["type"]] >= _TYPE_CAPS[c["type"]]:
 				continue
 			if any(per_player[u] >= PER_PLAYER_CAP for u in c["players"]):
 				continue
@@ -415,26 +534,227 @@ def _select(candidates, *, limit=MAX_BULLETS, rng=random):
 
 
 # ── Phrasing (pure) ──────────────────────────────────────────────────────
-def _phrase(c, nick, teams_meta, *, rng=random):
+def _join_names(names):
+	"""Oxford-free join: 'a', 'a & b', 'a, b & c'. Local so the pure layer keeps
+	no core.* dependency (utils/preview_insights.py loads this module by path)."""
+	if not names:
+		return ""
+	if len(names) == 1:
+		return names[0]
+	return ", ".join(names[:-1]) + f" & {names[-1]}"
+
+
+def _sentence_case(text):
+	"""Capitalise a fragment that lands at the start of a sentence.
+
+	A complement is either bold names ("**Ann** & **Bo**", already fine because
+	it starts with '*') or a phrase like "the rest of Alpha". Uppercasing the
+	first character handles both without touching the markdown.
+	"""
+	return text[:1].upper() + text[1:] if text else text
+
+
+def _positive(c):
+	"""Is this storyline good news for its subject side?"""
+	t, d = c["type"], c["data"]
+	if t == "mate_wr":
+		return d["kind"] == "best"
+	if t in ("perfect", "mate", "trio", "lineup", "form"):
+		return bool(d.get("won"))
+	return True   # h2h and deadlock are neutral until the match settles them
+
+
+def subject_of(c):
+	"""Whose win makes this storyline's tease come true.
+
+	Returns ("team", team_idx) or ("player", user_id). The player form exists
+	because h2h/deadlock/form/mate_wr candidates carry no team_idx — the caller
+	resolves the player to a side. bot/storyline_payoff.py depends on this.
+	"""
+	t, d = c["type"], c["data"]
+	if t == "h2h":
+		return ("player", d["winner"])
+	if t == "deadlock":
+		return ("player", d["ids"][0])
+	if t == "form":
+		return ("player", d["p"])
+	if t == "mate_wr":
+		return ("player", d["p"])
+	return ("team", d["team_idx"])
+
+
+def complement_of(c, nick, teams_meta, rosters):
+	"""Who on the subject's own side a line did not already name.
+
+	Returns ``(who, team_name, sole_team)``. ``who`` is "" when the line already
+	names everyone on that side — and also "", along with ``team_name``, when
+	``sole_team`` is False (opposing-pair lines like h2h/deadlock, which have no
+	single subject side). Public because bot/storyline_payoff.py builds a
+	past-tense frame from the same complement.
+	"""
+	teams = sorted(c["teams"])
+	if len(teams) != 1:
+		return "", "", False
+	team_idx = teams[0]
+	name = (teams_meta[team_idx]["name"] if team_idx < len(teams_meta)
+	        else f"Team {team_idx}")
+	rest = [u for u in (rosters.get(team_idx) or []) if u not in c["players"]]
+	if not rest:
+		return "", name, True
+	who = (f"the rest of {name}" if len(rest) > 2
+	       else _join_names([f"**{nick.get(u, 'someone')}**" for u in rest]))
+	return who, name, True
+
+
+def _ordered_pair(c):
+	"""The two players of an opposing-pair candidate (h2h, deadlock), ordered.
+
+	Ordering contract: when the candidate type carries a direction, the leader
+	comes first and the trailing rival second, so directional phrasing (e.g.
+	"does the trailing side have an answer for the leader") never has to
+	re-derive who's who. h2h is the only directional type today, ordered by
+	``data["winner"]`` then ``data["loser"]``. A deadlock has no leader by
+	construction (a tie over the recent window) -- asserting one would be a
+	fabricated claim, so it keeps the plain sorted-by-user-id order instead.
+
+	Shared by ``rival_backers`` (below) and bot/storyline_payoff.py's
+	``_payoff_frame``, which indexes into ``rival_backers``' output via this
+	same order to find the subject's entry -- the two must never diverge.
+	"""
+	if c["type"] == "h2h":
+		return [c["data"]["winner"], c["data"]["loser"]]
+	return sorted(c["players"])
+
+
+def rival_backers(c, nick, teams_meta, rosters):
+	"""For an opposing-pair line: [(rival_name, their_backers, team_name), ...] for
+	both sides, ordered per ``_ordered_pair`` -- the leader first and the
+	trailing rival second for a directional type (h2h), sorted-by-user-id
+	otherwise (deadlock, which has no leader to put first).
+
+	Returns None when the roster lookup fails, so callers can fall back. Public
+	because bot/storyline_payoff.py builds a past-tense version from the same data.
+	"""
+	out = []
+	for uid in _ordered_pair(c):
+		team_idx = next((i for i, ids in (rosters or {}).items() if uid in (ids or [])), None)
+		if team_idx is None:
+			return None
+		rest = [u for u in rosters[team_idx] if u not in c["players"]]
+		name = (teams_meta[team_idx]["name"] if team_idx < len(teams_meta)
+		        else f"Team {team_idx}")
+		who = (f"the rest of {name}" if len(rest) > 2
+		       else _join_names([f"**{nick.get(u, 'someone')}**" for u in rest]))
+		out.append((f"**{nick.get(uid, 'someone')}**", who, name))
+	return out if len(out) == 2 else None
+
+
+def _short_backers(backers, team_name):
+	"""In a 4v4 an opposing-pair line's complement is always three, so
+	``rival_backers`` always collapses to "the rest of {team}" -- naming no one
+	and running long. Once it has collapsed, just say the team name; a small
+	side's real names pass through unchanged."""
+	return team_name if backers == f"the rest of {team_name}" else backers
+
+
+def _frame(c, nick, teams_meta, rosters, *, rng=random):
+	"""A closing clause pulling the rest of the side into the story."""
+	who, name, sole = complement_of(c, nick, teams_meta, rosters)
+	if not sole:
+		backers = rival_backers(c, nick, teams_meta, rosters)
+		if backers and all(w for _n, w, _t in backers):
+			(na, wa, ta), (nb, wb, tb) = backers
+			sa, sb = _short_backers(wa, ta), _short_backers(wb, tb)
+			opts = [f"{sa} behind {na}, {sb} behind {nb}."]
+			if c["type"] == "h2h":
+				# rival_backers orders h2h leader-first: na is the streak holder
+				# (data["winner"]), nb the trailing rival (data["loser"]). Ask the
+				# trailing side's backers (sb) whether they have an answer for the
+				# leader (na) -- never the reverse. deadlock has no leader, so it
+				# never reaches this branch.
+				opts.append(f"Does {sb} have an answer for {na}?")
+			elif c["type"] == "deadlock":
+				# A tie by construction has no leader to address directionally --
+				# give both sides an equal, non-directional line instead so a
+				# deadlock tease isn't stuck with a single boilerplate clause.
+				opts.append(f"{sa} and {sb} both fancy their chances tonight.")
+			return rng.choice(opts)
+		return rng.choice([
+			"Do their teammates get a say?",
+			"Six other players would like a word.",
+		])
+	if not who:
+		return rng.choice([
+			f"That is the whole of {name}.",
+			f"All of {name}, back together.",
+		])
+	if _positive(c):
+		return rng.choice([
+			f"{_sentence_case(who)} along for the ride.",
+			f"Good day to be {who}.",
+		])
+	return rng.choice([
+		f"{_sentence_case(who)} inherit the problem.",
+		f"Good luck to {who}.",
+	])
+
+
+def _phrase(c, nick, teams_meta, rosters, *, rng=random):
 	"""Render one candidate as a fun "will it flip tonight?" one-liner."""
 	def name(uid):
 		return f"**{nick.get(uid, 'someone')}**"
 
 	d = c["data"]
 	t = c["type"]
+	frame = _frame(c, nick, teams_meta, rosters, rng=rng)
+
+	if t == "lineup":
+		who = _join_names([name(u) for u in d["ids"]])
+		w, g = d["wins"], d["games"]
+		if d["one_way"] and w == g:
+			opts = [
+				f"🃏 Jackpot: this group has shared a side {g} times and won every one — **{w}-0**. {frame}",
+				f"🎰 {who} — the same {len(d['ids'])} that are **{w}-0** together. Lightning, twice. {frame}",
+			]
+		elif d["one_way"]:
+			opts = [
+				f"🃏 This group has shared a side {g} times and lost every one (**0-{g}**). {frame}",
+				f"🎰 {who}, back for another go at a **0-{g}** record together. {frame}",
+			]
+		else:
+			opts = [
+				f"🃏 Rare reunion: this group has only shared a side {g} times before — **{w}-{g - w}**. {frame}",
+				f"🎰 {who} ride again. Their shared record: **{w}-{g - w}**. {frame}",
+			]
+		return rng.choice(opts)
+
+	if t == "trio":
+		who = _join_names([name(u) for u in d["ids"]])
+		w, g = d["wins"], d["games"]
+		if d["won"]:
+			opts = [
+				f"🔱 {who} are **{w}-{g - w}** as a three. {frame}",
+				f"⛓️ The trio that keeps delivering: {who}, **{w}-{g - w}** together. {frame}",
+			]
+		else:
+			opts = [
+				f"🕳️ {who} are **{w}-{g - w}** whenever all three line up. {frame}",
+				f"🥀 History is unkind to {who} as a three — **{w}-{g - w}**. {frame}",
+			]
+		return rng.choice(opts)
 
 	if t == "perfect":
 		a, b = name(d["ids"][0]), name(d["ids"][1])
 		n = d["n"]
 		if d["won"]:
 			opts = [
-				f"💯 {a} & {b} have **never lost** as a pair — a flawless **{n}-0**. The streak rides again.",
-				f"🏆 Perfect record on the line: {a} & {b} are **{n}-0** together. Reunited tonight.",
+				f"💯 {a} & {b} are unbeaten together these {WINDOW_DAYS} days — a flawless **{n}-0**. {frame}",
+				f"🏆 Perfect record on the line: {a} & {b} are **{n}-0** together. {frame}",
 			]
 		else:
 			opts = [
-				f"🪦 The cursed duo returns: {a} & {b} have **never won** together (0-{n}). Surely tonight?",
-				f"💀 {a} & {b} are **0-{n}** as teammates — paired up again. Curse-breaker today?",
+				f"🪦 The cursed duo returns: {a} & {b} are still winless together these {WINDOW_DAYS} days (0-{n}). {frame}",
+				f"💀 {a} & {b} are **0-{n}** as teammates — paired up again. {frame}",
 			]
 		return rng.choice(opts)
 
@@ -443,19 +763,19 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 		wr, base, g = round(d["wr"] * 100), round(d["base"] * 100), d["games"]
 		if d["kind"] == "worst":
 			if d["wr"] == 0.0:
-				opts = [f"🪦 {p} has **never** won a game with {q} (0-fer over {g}). Same team again — flip it tonight?"]
+				opts = [f"🪦 {p} hasn't won a single game with {q} in the window (0-fer over {g}). {frame}"]
 			else:
 				opts = [
-					f"🧨 {p} sinks to **{wr}%** beside {q} (vs **{base}%** overall, {g}g) — paired again. Buck it tonight?",
-					f"💀 History says {p} & {q} don't click: **{wr}%** together vs **{base}%** apart. Rewrite it today?",
+					f"🧨 {p} sinks to **{wr}%** beside {q} (vs **{base}%** overall, {g}g) — paired again. {frame}",
+					f"💀 History says {p} & {q} don't click: **{wr}%** together vs **{base}%** apart. {frame}",
 				]
 		else:
 			if d["wr"] == 1.0:
-				opts = [f"🏆 {p} & {q} have **never lost** as a duo — {p}'s {base}% leaps to a perfect 100%. Cooking tonight."]
+				opts = [f"🏆 {p} & {q} haven't lost as a duo in the window — {p}'s {base}% leaps to a perfect 100%. {frame}"]
 			else:
 				opts = [
-					f"🚀 {p} is a different player next to {q} — **{wr}%** together vs **{base}%** otherwise ({g}g). Cheat code on.",
-					f"🍀 {q} is {p}'s lucky charm: **{wr}%** as a duo vs **{base}%** overall ({g}g). And they're teamed up.",
+					f"🚀 {p} is a different player next to {q} — **{wr}%** together vs **{base}%** otherwise ({g}g). {frame}",
+					f"🍀 {q} is {p}'s lucky charm: **{wr}%** as a duo vs **{base}%** overall ({g}g). {frame}",
 				]
 		return rng.choice(opts)
 
@@ -463,13 +783,13 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 		winner, loser, k, series = name(d["winner"]), name(d["loser"]), d["k"], d["series"]
 		if d["sweep"]:
 			opts = [
-				f"⚔️ {winner} has beaten {loser} **{k} straight** — {loser} has *never* won this one. Does it flip tonight?",
-				f"😤 {loser} is 0-for-the-last-{k} against {winner}. Opposite sides again — curse-breaking night?",
+				f"⚔️ {winner} has beaten {loser} **{k} straight** — {loser} hasn't won this one in the window. {frame}",
+				f"😤 {loser} is 0-for-the-last-{k} against {winner}. {frame}",
 			]
 		else:
 			opts = [
-				f"🔁 {winner} owns this lately: **{k} in a row** over {loser} (of {series} meetings). Will {loser} finally answer?",
-				f"🔒 {k} straight to {winner} over {loser}. They're matched up again — flip incoming?",
+				f"🔁 {winner} owns this lately: **{k} in a row** over {loser} (of {series} meetings). {frame}",
+				f"🔒 {k} straight to {winner} over {loser}. {frame}",
 			]
 		return rng.choice(opts)
 
@@ -477,44 +797,51 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 		a, b, k, series = name(d["ids"][0]), name(d["ids"][1]), d["k"], d["series"]
 		if d["won"]:
 			opts = [
-				f"🔥 {a} & {b} are on fire — **{k} straight wins** together (of {series}). Make it {k + 1}?",
-				f"📈 {a} & {b} just keep winning side-by-side ({k} in a row, {series} all-time). Streak survives?",
+				f"🔥 {a} & {b} are on fire — **{k} straight wins** together (of {series}). {frame}",
+				f"📈 {a} & {b} just keep winning side-by-side ({k} in a row, {series} in the window). {frame}",
 			]
 		else:
 			opts = [
-				f"🪦 {a} & {b} have **lost their last {k}** as teammates (of {series}). Reunited tonight — does it change?",
-				f"❄️ {series} games as a duo and {a} & {b} are ice-cold: **{k} straight losses**. Turn it around now?",
+				f"🪦 {a} & {b} have **lost their last {k}** as teammates (of {series}). {frame}",
+				f"❄️ {series} games as a duo and {a} & {b} are ice-cold: **{k} straight losses**. {frame}",
 			]
 		return rng.choice(opts)
 
 	if t == "deadlock":
 		a, b, each, n = name(d["ids"][0]), name(d["ids"][1]), d["each"], d["n"]
 		opts = [
-			f"⚖️ Deadlocked: {a} & {b} have split their last {n} meetings **{each}-{each}**. Tiebreaker tonight.",
-			f"🎯 The decider: {a} vs {b} is knotted **{each}-{each}** over their last {n}. Someone finally pulls ahead.",
-			f"🪢 {n} recent meetings, **{each}-{each}** — {a} & {b} can't be separated. Until now?",
+			f"⚖️ Deadlocked: {a} & {b} have split their last {n} meetings **{each}-{each}**. {frame}",
+			f"🎯 The decider: {a} vs {b} is knotted **{each}-{each}** over their last {n}. {frame}",
+			f"🪢 {n} recent meetings, **{each}-{each}** — {a} & {b} can't be separated. {frame}",
 		]
 		return rng.choice(opts)
 
-	# form
-	p, k = name(d["p"]), d["k"]
-	if d["won"]:
-		opts = [
-			f"🚀 {p} rolls in on a **{k}-game win streak**. Can anyone stop them tonight?",
-			f"👑 **{k} straight wins** for {p}. The hot hand looks to keep rolling.",
-		]
-	else:
-		opts = [
-			f"🩹 {p} is on a **{k}-game skid**. Is tonight where it turns around?",
-			f"📉 Rough patch for {p}: **{k} losses** in a row. Does the slump end today?",
-		]
-	return rng.choice(opts)
+	if t == "form":
+		p, k = name(d["p"]), d["k"]
+		if d["won"]:
+			opts = [
+				f"🚀 {p} rolls in on a **{k}-game win streak**. {frame}",
+				f"👑 **{k} straight wins** for {p}. {frame}",
+			]
+		else:
+			opts = [
+				f"🩹 {p} is on a **{k}-game skid**. {frame}",
+				f"📉 Rough patch for {p}: **{k} losses** in a row. {frame}",
+			]
+		return rng.choice(opts)
+
+	raise ValueError(f"_phrase has no branch for candidate type {t!r}")
 
 
 # ── DB read + embed (deferred heavy imports) ─────────────────────────────
-async def _fetch_history(channel_id, user_ids):
-	"""Every ranked-match row in this channel involving any of ``user_ids``,
-	ordered by match_id so streaks/recency are reconstructable."""
+async def _fetch_history(channel_id, user_ids, since_ts):
+	"""Ranked-match rows in this channel involving any of ``user_ids``, no older
+	than ``since_ts``, ordered by match_id so streaks are reconstructable.
+
+	The window is a hard cutoff applied in SQL. It is not a stylistic choice:
+	over a full history everyone's win-rate with everyone converges to their own
+	baseline, so the best/worst-teammate swing stops clearing and the line dies.
+	"""
 	if len(user_ids) < 2:
 		return []
 	placeholders = ", ".join(["%s"] * len(user_ids))
@@ -523,21 +850,24 @@ async def _fetch_history(channel_id, user_ids):
 		"FROM qc_player_matches pm "
 		"JOIN qc_matches m ON m.match_id = pm.match_id AND m.channel_id = pm.channel_id "
 		"WHERE pm.channel_id = %s AND m.ranked = 1 AND pm.team IS NOT NULL "
+		"AND m.at >= %s "
 		"AND pm.user_id IN (" + placeholders + ") "
 		"ORDER BY pm.match_id ASC",
-		[channel_id, *user_ids]
+		[channel_id, since_ts, *user_ids]
 	)
 	return rows or []
 
 
 def _candidates(prior, matches, t0_ids, t1_ids):
-	"""All scored candidates across the six insight types (pure)."""
+	"""All scored candidates across the eight insight types (pure)."""
 	team_of = {**{u: 0 for u in t0_ids}, **{u: 1 for u in t1_ids}}
 	return (
-		_perfect_candidates(prior, matches, t0_ids, t1_ids)
+		_lineup_candidates(prior, matches, t0_ids, t1_ids)
+		+ _perfect_candidates(prior, matches, t0_ids, t1_ids)
 		+ _mate_wr_candidates(prior, matches, t0_ids, t1_ids)
 		+ _h2h_candidates(prior, matches, t0_ids, t1_ids)
 		+ _mate_candidates(prior, matches, t0_ids, t1_ids)
+		+ _trio_candidates(prior, matches, t0_ids, t1_ids)
 		+ _deadlock_candidates(prior, matches, t0_ids, t1_ids)
 		+ _form_candidates(prior, matches, t0_ids + t1_ids, team_of)
 	)
@@ -556,17 +886,24 @@ async def build_insights_embed(match):
 		return None
 
 	players = team0 + team1
-	rows = await _fetch_history(match.qc.id, [p.id for p in players])
+	since = window_start(time.time())
+	rows = await _fetch_history(match.qc.id, [p.id for p in players], since)
 	hist = _index_history(rows)
 	if not hist.order:
 		return None
 
 	# The freshly-formed match isn't persisted yet, so all of history is "prior".
-	chosen = _select(_candidates(hist.order, hist.matches, [p.id for p in team0], [p.id for p in team1]))
+	# One seeded RNG for the whole embed: bot/storyline_payoff.py recomputes
+	# these same lines at report time and must land on the same choices.
+	rng = random.Random(match.id)
+	chosen = _select(_candidates(hist.order, hist.matches,
+	                             [p.id for p in team0], [p.id for p in team1]), rng=rng)
 	if not chosen:
 		return None
 
-	from nextcord import Embed, Colour
+	from nextcord import Colour, Embed
+
+	from core.console import log
 	from core.utils import get_nick
 
 	nick = {p.id: get_nick(p) for p in players}
@@ -574,13 +911,29 @@ async def build_insights_embed(match):
 		{"name": teams[0].name, "emoji": teams[0].emoji},
 		{"name": teams[1].name, "emoji": teams[1].emoji},
 	]
-	lines = [_phrase(c, nick, teams_meta) for c in chosen]
-	title = random.choice([
-		"🔮 Will It Flip Tonight?",
-		"🧠 Pre-Game Storylines",
-		"📜 History on the Line",
-		"⚔️ Tale of the Tape",
-	])
+	rosters = {0: [p.id for p in team0], 1: [p.id for p in team1]}
+	lines = []
+	for c in chosen:
+		try:
+			lines.append(_phrase(c, nick, teams_meta, rosters, rng=rng))
+		except Exception as e:
+			log.error(f"Storyline render failed ({c.get('type')}): {e}")
+	if not lines:
+		return None
+	title = "⚔️ Tale of the Tape"
 	embed = Embed(title=title, colour=Colour(0xe67e22), description="\n\n".join(lines))
-	embed.set_footer(text=f"Recent form from {len(hist.order)} ranked games · just for fun")
+	embed.set_footer(text=f"Last {WINDOW_DAYS} days · {len(hist.order)} ranked games · just for fun")
+
+	# The payoff recomputes these storylines at report time. It must recompute
+	# against the same window, the same roster and the same seed, none of which
+	# are stable across a match's lifetime: the 90-day window slides as the game
+	# runs, /subfor and sub_auto can re-split the teams during WAITING_REPORT,
+	# and a redeploy hands a restored match a brand-new id. Stashing the three
+	# is not a retreat from recompute-don't-store — the storylines are still
+	# recomputed, this only pins what they are recomputed *from*.
+	match.storyline_ctx = {
+		"since": since,
+		"seed": match.id,
+		"rosters": rosters,
+	}
 	return embed

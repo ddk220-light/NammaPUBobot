@@ -462,8 +462,12 @@ class Match:
 			insights_embed = await build_insights_embed(self)
 			if insights_embed is not None:
 				await ctx.notice(embed=insights_embed)
-		except Exception:
-			pass
+		except Exception as e:
+			# The stash means "a tease was computed". If the send failed, nobody
+			# saw it, and a payoff answering an invisible tease is worse than
+			# silence — so drop the context.
+			self.storyline_ctx = None
+			log.error(f"Storyline insights failed for match {self.id}: {e}")
 
 	async def finish_match(self, ctx):
 		bot.active_matches.remove(self)
@@ -475,6 +479,18 @@ class Match:
 			await bot.stats.register_match_ranked(ctx, self)
 		else:
 			await bot.stats.register_match_unranked(ctx, self)
+
+		# Close the loop on the pre-game storylines. Purely win/loss, so it can
+		# post the instant the match reports — no replay needed. Best-effort:
+		# a payoff failure must never touch the report or rating flow.
+		if self.ranked:
+			try:
+				from bot.storyline_payoff import build_payoff_embed
+				payoff = await build_payoff_embed(self)
+				if payoff is not None:
+					await ctx.notice(embed=payoff)
+			except Exception as e:
+				log.error(f"Storyline payoff failed for match {self.id}: {e}")
 
 		# Pay out audience predictions now the winner is known. A match that ends
 		# without a clean win/loss (draw) is voided inside resolve_for_match.

@@ -22,10 +22,7 @@ Python analysis (unit-testable without a DB), and build_post_game_embed returns
 an Embed or None. Heavy imports (nextcord / civ_stats / db) are deferred so the
 pure helpers import cleanly under CI.
 """
-import math  # noqa: F401  (kept for parity / future scoring tweaks)
 import random
-
-from bot.replay_stats import scoring
 
 # ── Tunables ─────────────────────────────────────────────────────────────
 # Civs need a decent sample before "win-rate" means anything; that gate lives
@@ -37,7 +34,6 @@ TOP_PCT = 0.15      # ...or inside the top 15% by rank
 BOT_PCT = 0.15      # bottom 15% counts as a weak pick
 TEAM_GAP_MIN = 0.03  # min avg-winrate gap between team civ pools to comment on
 MAX_BULLETS = 5
-MAX_ANALYSIS_LINES = 6
 
 # A player's own record on the civ they just played. Separate from the global
 # civ meta above: the same civ can be a bottom-tier pick globally and still be
@@ -247,30 +243,12 @@ def _select(obs, limit=MAX_BULLETS, max_personal=MAX_PERSONAL_LINES):
 	return chosen
 
 
-def _impact_payload(row, group):
-	scores = scoring.impact_scores(row, group)
-	return {
-		"nick": row.get("nick") or row.get("identity") or str(row.get("user_id") or ""),
-		"civ": row.get("civ"),
-		"team": int(row["bot_team"]) if row.get("bot_team") in (0, 1, "0", "1") else None,
-		"result": row.get("result") or ("W" if row.get("winner") else "L" if row.get("winner") is not None else None),
-		"impact_score": scores["impact"],
-		"army_score": scores["army"],
-		"eco_score": scores["eco"],
-		"timing_score": scores["timing"],
-		"recovery_score": scores["reboom"],
-		"impact_tags": scoring.impact_tag_names_with_fallback(scores, row)[:3],
-		"strength_glyphs": scoring.strength_glyphs(scores),
-	}
-
-
 def _card_payload(row, group, signals):
 	"""Render payload for one player on the Match Cards.
 
-	Deliberately separate from _impact_payload: that one feeds the Tale of the
-	Tape through the untouched scoring.py, this one feeds the cards through
-	card_scoring.py. Component scores here are internal — they drive sort order,
-	the carry crown and tag thresholds, and are never displayed.
+	Scores this match's players through card_scoring.py. Component scores here
+	are internal — they drive sort order, the carry crown and tag thresholds,
+	and are never displayed.
 	"""
 	from bot.replay_stats import card_scoring
 
@@ -315,26 +293,6 @@ async def _card_signals_for(rows):
 		return {}
 	duration = next((r.get("duration_s") for r in rows if r.get("duration_s")), None)
 	return await fetch_card_signals(aoe2_id, duration)
-
-
-def _tag_word(tags):
-	if not tags:
-		return "solid fundamentals"
-	if "Boom carry" in tags:
-		return "greedy boom into castle-age invoice"
-	if "Low-eco pressure" in tags:
-		return "all-in pressure, farms optional"
-	if "Army pressure" in tags:
-		return "map control and villager anxiety"
-	if "Eco carry" in tags:
-		return "eco carry with banker energy"
-	if "Timing edge" in tags:
-		return "age-up tempo into power-window play"
-	if "Recovery" in tags:
-		return "hold-and-reboom anchor work"
-	if "High impact" in tags:
-		return "high-impact flex"
-	return ", ".join(tags).lower()
 
 
 def _team_impact_rows(player_rows):
@@ -441,14 +399,6 @@ def _merge_analysis_rows(mc_rows, replay_rows, pm_rows=None):
 	return merged
 
 
-def _team_tag_summary(team_rows):
-	counts = {}
-	for p in team_rows:
-		for tag in p.get("impact_tags") or []:
-			counts[tag] = counts.get(tag, 0) + 1
-	return [tag for tag, _ in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:3]]
-
-
 def _tag_chip(tag):
 	return f"`{tag}`"
 
@@ -548,37 +498,6 @@ def _team_card_fields(player_rows, team_names=None):
 			"inline": True,
 		})
 	return fields
-
-
-def _match_analysis_lines(player_rows, team_names=None):
-	team_names = team_names or {0: "Alpha", 1: "Beta"}
-	teams = _team_impact_rows(player_rows)
-	if not teams:
-		return []
-	lines = []
-	for team in sorted(teams):
-		rows = sorted(teams[team], key=scoring.carry_sort_key)
-		result = next((p.get("result") for p in rows if p.get("result")), None)
-		icon = "🟩" if result == "W" else "🟥" if result == "L" else "⬜"
-		tags = _team_tag_summary(rows)
-		carry = rows[0]
-		team_name = team_names.get(team, f"Team {team}")
-		lines.append(
-			f"{icon} **{team_name}** ({result or '?'}) — "
-			f"team read: {_tag_word(tags)}. "
-			f"Top pop: **{carry['nick']}** on **{carry.get('civ') or '?'}** "
-			f"({carry['impact_score']}, {_tag_word(carry.get('impact_tags') or [])})."
-		)
-	if 0 in teams and 1 in teams:
-		all_rows = sorted(player_rows, key=scoring.carry_sort_key)
-		carries = all_rows[:2]
-		if len(carries) >= 2:
-			lines.append(
-				f"👑 Carry check: **{carries[0]['nick']}** edged **{carries[1]['nick']}** "
-				f"{carries[0]['impact_score']}–{carries[1]['impact_score']}. "
-				"GG, villagers had opinions."
-			)
-	return lines[:MAX_ANALYSIS_LINES]
 
 
 # ── Phrasing (pure, but cosmetic — not unit tested) ──────────────────────
@@ -828,8 +747,11 @@ async def _analysis_rows(bot_match_id):
 	# (buildings, events, cls_results, rs_player_apm) — profile_id is a nullable
 	# denormalisation on those tables and would silently drop players.
 	# age_reliable and eapm are read by card_scoring / the stats line.
-	# feudal_s and castle_s stay because the Tale of the Tape still scores
-	# timing through the untouched scoring.py.
+	# feudal_s and castle_s are NOT read by anything in this file any more — the
+	# embed that scored timing was deleted with the replay-derived Tale of the
+	# Tape. They stay because test_replay_scoring.py::
+	# test_impact_queries_select_every_scoring_column checks every rs_player_games
+	# query here against scoring.REQUIRED_COLUMNS, which folds in TIMING_MIX.
 	replay_rows = await db.fetchall(
 		"SELECT g.user_id, g.identity, g.civ, g.team AS replay_team, g.winner, "
 		"g.aoe2_match_id, g.player_number, g.age_reliable, g.eapm, "
@@ -841,40 +763,6 @@ async def _analysis_rows(bot_match_id):
 		"ORDER BY g.team, g.identity",
 		[bot_match_id])
 	return _merge_analysis_rows(mc_rows, replay_rows, pm_rows)
-
-
-async def build_match_analysis_embed(channel_id, bot_match_id, rows=None, team_names=None):
-	"""Replay-derived post-game team read. Built only after rs_* rows exist.
-
-	``rows``/``team_names`` let post_match_analysis fetch once and share with the
-	Match Cards builder, which always posts alongside this one.
-	"""
-	if rows is None:
-		rows = await _analysis_rows(bot_match_id)
-	if not rows:
-		return None
-	player_rows = [_impact_payload(row, rows) for row in rows]
-	if not any(p.get("result") in ("W", "L") for p in player_rows):
-		return None
-	if team_names is None:
-		team_names = await _team_names(channel_id, bot_match_id)
-	lines = _match_analysis_lines(player_rows, team_names)
-	if not lines:
-		return None
-
-	from nextcord import Colour, Embed
-
-	embed = Embed(
-		title=random.choice([
-			"⚔️ Final Tale of the Tape",
-			"🧾 Post-Imp Damage Report",
-			"🏰 After-Action Scout Report",
-		]),
-		colour=Colour(0xe67e22),
-		description="\n\n".join(lines),
-	)
-	embed.set_footer(text="Replay-derived tags · impact is relative inside this match")
-	return embed
 
 
 async def build_match_cards_embed(channel_id, bot_match_id, rows=None, team_names=None):
@@ -961,19 +849,17 @@ async def post_match_analysis(bot_match_id):
 		channel = dc.get_channel(channel_id)
 		if channel is None:
 			return False
-		# Both embeds always post together and read the same roster, so fetch
-		# once here rather than letting each builder repeat the three queries.
+		# The Tale of the Tape now posts at report time from
+		# bot/storyline_payoff.py, so only the cards are left here.
 		rows = await _analysis_rows(bot_match_id)
 		team_names = await _team_names(channel_id, bot_match_id)
 		cards = await build_match_cards_embed(channel_id, bot_match_id, rows, team_names)
-		embed = await build_match_analysis_embed(channel_id, bot_match_id, rows, team_names)
-		if cards is None and embed is None:
+		if cards is None:
 			return False
 		chart_file = await _apm_chart_file(bot_match_id)
-		target = cards if cards is not None else embed
 		if chart_file is not None:
-			target.set_image(url="attachment://apm.png")
-		embeds = [e for e in (cards, embed) if e is not None]
+			cards.set_image(url="attachment://apm.png")
+		embeds = [cards]
 		if chart_file is not None:
 			try:
 				await channel.send(embeds=embeds, file=chart_file)
