@@ -14,12 +14,19 @@ class FakeDb:
 	def __init__(self):
 		self.communities = []  # [{community_id, guild_id, name, retention, created_at}]
 		self.community_channels = []  # [{channel_id, community_id, added_at}]
+		self.matches = []  # [{match_id, channel_id}] — test fixtures populate this directly
+		self.match_replays = []  # [{community_id, match_id, replay_match_id, linked_at}]
 		self._next_id = 1
 		self.select_calls = 0
 		self.update_calls = 0
 
 	def _table(self, table):
-		return self.communities if table == "communities" else self.community_channels
+		return {
+			"communities": self.communities,
+			"community_channels": self.community_channels,
+			"matches": self.matches,
+			"match_replays": self.match_replays,
+		}[table]
 
 	async def select_one(self, columns, table, where=None):
 		self.select_calls += 1
@@ -35,6 +42,14 @@ class FakeDb:
 			self._next_id += 1
 			self.communities.append({"community_id": community_id, **d})
 			return community_id
+		if table == "match_replays":
+			if on_duplicate == "replace":
+				for i, row in enumerate(self.match_replays):
+					if row["community_id"] == d["community_id"] and row["match_id"] == d["match_id"]:
+						self.match_replays[i] = dict(d)
+						return None
+			self.match_replays.append(dict(d))
+			return None
 		self.community_channels.append(dict(d))
 		return None
 
@@ -188,3 +203,53 @@ def test_invalidate_cache_clears_cached_lookups(monkeypatch):
 	asyncio.run(community.community_for_channel(1))
 
 	assert fake.select_calls == calls_before + 1
+
+
+def test_link_match_replay_writes_with_resolved_community(monkeypatch):
+	fake = _setup(monkeypatch)
+	fake.matches.append({"match_id": 1001, "channel_id": 42})
+	asyncio.run(community.attach_channel(42, 7))
+
+	result = asyncio.run(community.link_match_replay(1001, 555000))
+
+	assert result is True
+	assert len(fake.match_replays) == 1
+	row = fake.match_replays[0]
+	assert row["community_id"] == 7
+	assert row["match_id"] == 1001
+	assert row["replay_match_id"] == 555000
+	assert "linked_at" in row
+
+
+def test_link_match_replay_skips_and_returns_false_when_channel_unenrolled(monkeypatch):
+	fake = _setup(monkeypatch)
+	fake.matches.append({"match_id": 2002, "channel_id": 99})
+	# channel 99 is never attached to any community
+
+	result = asyncio.run(community.link_match_replay(2002, 555001))
+
+	assert result is False
+	assert fake.match_replays == []
+
+
+def test_link_match_replay_skips_and_returns_false_when_match_row_missing(monkeypatch):
+	fake = _setup(monkeypatch)
+	# no row in fake.matches for match_id 9999
+
+	result = asyncio.run(community.link_match_replay(9999, 555002))
+
+	assert result is False
+	assert fake.match_replays == []
+
+
+def test_link_match_replay_reingest_is_idempotent(monkeypatch):
+	fake = _setup(monkeypatch)
+	fake.matches.append({"match_id": 3003, "channel_id": 42})
+	asyncio.run(community.attach_channel(42, 7))
+
+	first = asyncio.run(community.link_match_replay(3003, 555003))
+	second = asyncio.run(community.link_match_replay(3003, 555003))
+
+	assert first is True
+	assert second is True
+	assert len(fake.match_replays) == 1

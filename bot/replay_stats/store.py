@@ -100,6 +100,20 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     await db.insert("rs_matches",
                     shape.match_row(extracted["match"], bot_match_id, parsed_at, parser_version),
                     on_duplicate="replace")
+    # Dual-write the community-owned link table alongside rs_matches.bot_match_id
+    # (stage 1.6). rs_matches.bot_match_id keeps being written above exactly as
+    # before — this is a deliberate parallel write, not a replacement, until
+    # match_replays becomes authoritative in stage 5. A link failure must never
+    # break replay ingestion: replays 404 upstream once they expire, so the raw
+    # facts just written above are irreplaceable and far more valuable than the
+    # link.
+    if bot_match_id is not None:
+        try:
+            from bot.community import link_match_replay
+            await link_match_replay(bot_match_id, aoe2_id)
+        except Exception as e:
+            log.error(f"Replay-stats match_replays link failed for bot_match_id={bot_match_id} "
+                      f"(aoe2 match {aoe2_id}): {e}")
     pg = shape.player_game_rows(aoe2_id, extracted["players"], profmap)
     if pg:
         await db.insert_many("rs_player_games", pg, on_duplicate="replace")

@@ -136,6 +136,10 @@ REGISTRY = {
 	"community_channels": dict(
 		layer="core", tenancy="channel", writers=("bot/community.py",), retention="forever"
 	),
+	# link — cross-tenant joins (stage 1.6)
+	"match_replays": dict(
+		layer="link", tenancy="community", writers=("bot/community.py",), retention="forever"
+	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
 	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

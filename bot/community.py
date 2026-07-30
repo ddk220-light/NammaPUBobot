@@ -61,6 +61,27 @@ db.ensure_table(dict(
 	primary_keys=["channel_id"],
 ))
 
+# match_replays — links a bot match to the replay it was parsed from, keyed
+# by community. An AoE2 replay is a fact about a *game*; "our match #1234 is
+# that replay" is a fact about a *community*. rs_matches.bot_match_id is a
+# single nullable column today, which hardcodes one community owning any
+# given replay. This table replaces that assumption for the multi-tenant
+# bot: dual-written alongside rs_matches.bot_match_id from stage 1.6 on,
+# authoritative from stage 5, and rs_matches.bot_match_id is dropped in
+# stage 6. `replay_match_id` matches the eventual rs_* column name after the
+# stage-3 rename (the rs_* tables still call the same value aoe2_match_id
+# today) — do not rename anything in rs_* here.
+db.ensure_table(dict(
+	tname="match_replays",
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="match_id", ctype=db.types.int),
+		dict(cname="replay_match_id", ctype=db.types.int),
+		dict(cname="linked_at", ctype=db.types.int),
+	],
+	primary_keys=["community_id", "match_id"],
+))
+
 # channel_id -> community_id (or None for a channel resolved-and-unenrolled).
 # community_for_channel() is on the hot path (called on every match report),
 # hence the cache. invalidate_cache() must be called after every write here.
@@ -150,6 +171,44 @@ async def community_for_channel(channel_id: int) -> int | None:
 	community_id = row["community_id"] if row else None
 	_channel_cache[channel_id] = community_id
 	return community_id
+
+
+async def link_match_replay(match_id: int, replay_match_id: int) -> bool:
+	""" Record that `match_id` (a row in `matches`) is `replay_match_id` (an
+	AoE2 replay, aka aoe2_match_id in the still-unrenamed rs_* tables) for
+	whichever community owns that match's channel. Returns whether the link
+	was written.
+
+	Resolution path: matches.match_id -> matches.channel_id ->
+	community_for_channel(channel_id). Both a missing match row and an
+	unenrolled channel are expected, benign states (not every match belongs
+	to a community yet) — logged at info level, not error, and no row is
+	written.
+
+	Idempotent: writes with on_duplicate="replace", so re-linking the same
+	(community_id, match_id) pair on a replay re-ingest replaces the row
+	instead of raising or duplicating it.
+	"""
+	match_row = await db.select_one(["channel_id"], "matches", where={"match_id": match_id})
+	if match_row is None:
+		log.info(f"link_match_replay: no matches row for match_id={match_id}, skipping link")
+		return False
+
+	community_id = await community_for_channel(match_row["channel_id"])
+	if community_id is None:
+		log.info(
+			f"link_match_replay: channel {match_row['channel_id']} (match_id={match_id}) "
+			"is not enrolled in a community, skipping link"
+		)
+		return False
+
+	await db.insert("match_replays", dict(
+		community_id=community_id,
+		match_id=match_id,
+		replay_match_id=replay_match_id,
+		linked_at=int(time.time()),
+	), on_duplicate="replace")
+	return True
 
 
 async def retention_for(community_id: int) -> str:
