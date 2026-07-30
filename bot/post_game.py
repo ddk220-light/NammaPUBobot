@@ -748,6 +748,11 @@ async def _analysis_rows(bot_match_id):
 	# (buildings, events, cls_results, rs_player_apm) — profile_id is a nullable
 	# denormalisation on those tables and would silently drop players.
 	# age_reliable and eapm are read by card_scoring / the stats line.
+	# feudal_s and castle_s are NOT read by anything in this file any more — the
+	# embed that scored timing was deleted with the replay-derived Tale of the
+	# Tape. They stay because test_replay_scoring.py::
+	# test_impact_queries_select_every_scoring_column checks every rs_player_games
+	# query here against scoring.REQUIRED_COLUMNS, which folds in TIMING_MIX.
 	replay_rows = await db.fetchall(
 		"SELECT g.user_id, g.identity, g.civ, g.team AS replay_team, g.winner, "
 		"g.aoe2_match_id, g.player_number, g.age_reliable, g.eapm, "
