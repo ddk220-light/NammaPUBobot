@@ -20,7 +20,7 @@ async def is_enabled():
 
 
 async def set_enabled(on):
-    await db.insert("rs_config", dict(id=1, enabled=1 if on else 0), on_dublicate="replace")
+    await db.insert("rs_config", dict(id=1, enabled=1 if on else 0), on_duplicate="replace")
 
 
 # ── find work ────────────────────────────────────────────────────────────
@@ -77,7 +77,7 @@ async def upsert_ingest(aoe2_match_id, **fields):
     cur = await get_ingest(aoe2_match_id) or dict(aoe2_match_id=aoe2_match_id, attempts=0,
                                                   first_seen_at=int(time.time()))
     cur.update(fields)
-    await db.insert("rs_ingest", cur, on_dublicate="replace")
+    await db.insert("rs_ingest", cur, on_duplicate="replace")
 
 
 # ── per-match write (idempotent) ─────────────────────────────────────────
@@ -99,28 +99,28 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
 
     await db.insert("rs_matches",
                     shape.match_row(extracted["match"], bot_match_id, parsed_at, parser_version),
-                    on_dublicate="replace")
+                    on_duplicate="replace")
     pg = shape.player_game_rows(aoe2_id, extracted["players"], profmap)
     if pg:
-        await db.insert_many("rs_player_games", pg, on_dublicate="replace")
+        await db.insert_many("rs_player_games", pg, on_duplicate="replace")
     units = shape.unit_rows(aoe2_id, extracted["units"], p2p)
     if units:
-        await db.insert_many("rs_player_units", units, on_dublicate="replace")
+        await db.insert_many("rs_player_units", units, on_duplicate="replace")
     techs = shape.tech_rows(aoe2_id, extracted["techs"], p2p)
     if techs:
-        await db.insert_many("rs_player_techs", techs, on_dublicate="replace")
+        await db.insert_many("rs_player_techs", techs, on_duplicate="replace")
     builds = shape.building_rows(aoe2_id, extracted["buildings"], p2p)
     if builds:
-        await db.insert_many("rs_player_buildings", builds, on_dublicate="replace")
+        await db.insert_many("rs_player_buildings", builds, on_duplicate="replace")
     events = shape.event_rows(aoe2_id, extracted.get("events", []), p2p)
     if events:
-        await db.insert_many("rs_player_events", events, on_dublicate="replace")
+        await db.insert_many("rs_player_events", events, on_duplicate="replace")
     apm = shape.apm_rows(aoe2_id, extracted.get("apm", []), p2p)
     if apm:
-        await db.insert_many("rs_player_apm", apm, on_dublicate="replace")
+        await db.insert_many("rs_player_apm", apm, on_duplicate="replace")
     profs = shape.profile_upserts(extracted["players"], profmap, parsed_at)
     if profs:
-        await db.insert_many("rs_profiles", profs, on_dublicate="replace")
+        await db.insert_many("rs_profiles", profs, on_duplicate="replace")
     try:
         from . import classifications
         await classifications.write_extracted_match(extracted, played_at_epoch)
@@ -160,5 +160,5 @@ async def seed_profiles_from_csv():
             rows.append(dict(profile_id=pid, user_id=int(uid) if uid else None,
                              name=r.get("nick") or r.get("aoe2_name") or "", last_seen_at=now))
     if rows:
-        await db.insert_many("rs_profiles", rows, on_dublicate="ignore")
+        await db.insert_many("rs_profiles", rows, on_duplicate="ignore")
     return len(rows)

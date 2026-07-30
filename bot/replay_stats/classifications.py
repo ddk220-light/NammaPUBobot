@@ -20,7 +20,7 @@ async def upsert_registry():
 			"version": c.version,
 			"status": c.status,
 			"updated_at": int(time.time()),
-		}, on_dublicate="replace")
+		}, on_duplicate="replace")
 		await db.execute("DELETE FROM cls_data_requirements WHERE `key`=%s", [c.key])
 		rows = [
 			{
@@ -33,7 +33,7 @@ async def upsert_registry():
 			for r in c.requirements
 		]
 		if rows:
-			await db.insert_many("cls_data_requirements", rows, on_dublicate="replace")
+			await db.insert_many("cls_data_requirements", rows, on_duplicate="replace")
 
 
 async def rebuild_player_totals_from_rs():
@@ -57,15 +57,15 @@ async def write_extracted_match(extracted, played_at_epoch=None, rebuild_totals=
 	await db.execute("DELETE FROM cls_results WHERE aoe2_match_id=%s", [aoe2_match_id])
 	await db.execute("DELETE FROM cls_result_metrics WHERE aoe2_match_id=%s", [aoe2_match_id])
 	if result_rows:
-		await db.insert_many("cls_results", result_rows, on_dublicate="replace")
+		await db.insert_many("cls_results", result_rows, on_duplicate="replace")
 	if metric_rows:
-		await db.insert_many("cls_result_metrics", metric_rows, on_dublicate="replace")
+		await db.insert_many("cls_result_metrics", metric_rows, on_duplicate="replace")
 	await db.insert("cls_match_ingest", {
 		"aoe2_match_id": aoe2_match_id,
 		"classified_at": int(time.time()),
 		"result_rows": len(result_rows),
 		"status": "done",
-	}, on_dublicate="replace")
+	}, on_duplicate="replace")
 	if rebuild_totals:
 		await rebuild_player_totals_from_rs()
 	return len(result_rows)

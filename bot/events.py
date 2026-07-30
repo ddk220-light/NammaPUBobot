@@ -50,7 +50,7 @@ async def seed_ratings_from_csv():
 				'streak': int(r.get('streak') or 0),
 			})
 
-		await db.insert_many('qc_players', to_insert, on_dublicate='replace')
+		await db.insert_many('qc_players', to_insert, on_duplicate='replace')
 		log.info(f"\tSeeded {len(to_insert)} player ratings from CSV into channel {dest_id}.")
 
 

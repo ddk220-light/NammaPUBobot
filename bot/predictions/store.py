@@ -58,7 +58,7 @@ async def save_ballots(post_id, ballots, nicks, voted_at):
 		dict(post_id=post_id, user_id=uid, nick=nicks.get(uid, str(uid)),
 			 team_idx=idx, voted_at=voted_at)
 		for uid, idx in ballots.items()
-	), on_dublicate="ignore")
+	), on_duplicate="ignore")
 
 
 async def ballots_for(post_id):

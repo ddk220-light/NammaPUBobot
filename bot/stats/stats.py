@@ -144,7 +144,7 @@ async def register_match_unranked(ctx, m):
 	await db.insert_many('qc_players', (
 		dict(channel_id=m.qc.id, user_id=p.id)
 		for p in m.players
-	), on_dublicate="ignore")
+	), on_duplicate="ignore")
 
 	for p in m.players:
 		nick = get_nick(p)
@@ -183,7 +183,7 @@ async def register_match_ranked(ctx, m):
 		await db.insert_many('qc_players', (
 			dict(channel_id=channel_id, user_id=p.id, nick=get_nick(p))
 			for p in m.players
-		), on_dublicate="ignore")
+		), on_duplicate="ignore")
 
 	results = [[
 		await m.qc.rating.get_players((p.id for p in m.teams[0])),

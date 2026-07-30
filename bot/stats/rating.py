@@ -143,7 +143,7 @@ class BaseRating:
 				reason="ratings snap"
 			))
 			p['rating'] = new_rating
-		await db.insert_many(self.table, data, on_dublicate='replace')
+		await db.insert_many(self.table, data, on_duplicate='replace')
 		await db.insert_many('qc_rating_history', history)
 
 	async def apply_decay(self, rating, deviation, ranks_table):
@@ -187,7 +187,7 @@ class BaseRating:
 
 		if len(history):
 			await db.insert_many('qc_rating_history', history)
-			await db.insert_many(self.table, to_update, on_dublicate='replace')
+			await db.insert_many(self.table, to_update, on_duplicate='replace')
 
 	async def reset(self):
 		data = await db.select(('user_id', 'rating', 'deviation'), self.table, where=dict(channel_id=self.channel_id))

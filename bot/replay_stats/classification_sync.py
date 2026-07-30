@@ -22,9 +22,9 @@ async def write_classification_rows(aoe2_match_id, result_rows, metric_rows, db_
     await dbw.execute("DELETE FROM cls_result_metrics WHERE aoe2_match_id=%s", [aoe2_match_id])
     await dbw.execute("DELETE FROM cls_results WHERE aoe2_match_id=%s", [aoe2_match_id])
     if result_rows:
-        await dbw.insert_many("cls_results", result_rows, on_dublicate="replace")
+        await dbw.insert_many("cls_results", result_rows, on_duplicate="replace")
     if metric_rows:
-        await dbw.insert_many("cls_result_metrics", metric_rows, on_dublicate="replace")
+        await dbw.insert_many("cls_result_metrics", metric_rows, on_duplicate="replace")
 
 
 async def sync_match(extracted, played_at_epoch, db_adapter=None):

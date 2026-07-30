@@ -66,14 +66,14 @@ async def _upsert_registry():
 			"version": c.version,
 			"status": c.status,
 			"updated_at": int(time.time()),
-		}, on_dublicate="replace")
+		}, on_duplicate="replace")
 		await db.execute("DELETE FROM cls_data_requirements WHERE `key`=%s", [c.key])
 		rows = [
 			{"key": c.key, "field": r["field"], "source": r["source"], "status": r["status"], "note": r["note"]}
 			for r in c.requirements
 		]
 		if rows:
-			await db.insert_many("cls_data_requirements", rows, on_dublicate="replace")
+			await db.insert_many("cls_data_requirements", rows, on_duplicate="replace")
 
 
 async def _write_classifications(extracted, played_at_epoch):
@@ -84,15 +84,15 @@ async def _write_classifications(extracted, played_at_epoch):
 	await db.execute("DELETE FROM cls_results WHERE aoe2_match_id=%s", [aoe2_match_id])
 	await db.execute("DELETE FROM cls_result_metrics WHERE aoe2_match_id=%s", [aoe2_match_id])
 	if result_rows:
-		await db.insert_many("cls_results", result_rows, on_dublicate="replace")
+		await db.insert_many("cls_results", result_rows, on_duplicate="replace")
 	if metric_rows:
-		await db.insert_many("cls_result_metrics", metric_rows, on_dublicate="replace")
+		await db.insert_many("cls_result_metrics", metric_rows, on_duplicate="replace")
 	await db.insert("cls_match_ingest", {
 		"aoe2_match_id": aoe2_match_id,
 		"classified_at": int(time.time()),
 		"result_rows": len(result_rows),
 		"status": "done",
-	}, on_dublicate="replace")
+	}, on_duplicate="replace")
 	return len(result_rows)
 
 
@@ -102,7 +102,7 @@ async def _mark_unavailable(aoe2_match_id, status):
 		"classified_at": int(time.time()),
 		"result_rows": 0,
 		"status": "unavailable:{}".format(str(status or "unknown")[:175]),
-	}, on_dublicate="replace")
+	}, on_duplicate="replace")
 
 
 async def _rebuild_player_totals():

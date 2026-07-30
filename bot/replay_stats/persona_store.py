@@ -147,7 +147,7 @@ async def refresh_user(user_id, now=None):
 			"matches": (stats or {}).get("matches") or 0,
 			"computed_at": now,
 		})
-	await db.insert_many("rs_player_personas", rows, on_dublicate="replace")
+	await db.insert_many("rs_player_personas", rows, on_duplicate="replace")
 	return len(rows)
 
 

@@ -205,5 +205,5 @@ async def write_match_tags(aoe2_match_id):
 			})
 	await db.execute("DELETE FROM rs_player_game_tags WHERE aoe2_match_id=%s", [aoe2_match_id])
 	if rows:
-		await db.insert_many("rs_player_game_tags", rows, on_dublicate="replace")
+		await db.insert_many("rs_player_game_tags", rows, on_duplicate="replace")
 	return len(rows)

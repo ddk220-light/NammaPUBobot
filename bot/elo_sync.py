@@ -163,7 +163,7 @@ async def process_elo_sync(message):
 		'alpha_score': 1,
 		'beta_score': 0,
 		'maps': '',
-	}, on_dublicate='ignore')
+	}, on_duplicate='ignore')
 
 	for team in parsed['teams']:
 		is_winner = (team['index'] == winner_index)
@@ -214,7 +214,7 @@ async def process_elo_sync(message):
 					'losses': 0 if is_winner else 1,
 					'draws': 0,
 					'streak': 1 if is_winner else -1,
-				}, on_dublicate='ignore')
+				}, on_duplicate='ignore')
 				log.info(f"ELO sync: created new player '{nick}' (user_id={user_id}) with rating {rating_after}")
 
 				await db.insert('qc_rating_history', {
@@ -235,7 +235,7 @@ async def process_elo_sync(message):
 					'user_id': user_id,
 					'nick': nick,
 					'team': team_bit,
-				}, on_dublicate='ignore')
+				}, on_duplicate='ignore')
 				continue
 
 			user_id = p['user_id']
@@ -278,7 +278,7 @@ async def process_elo_sync(message):
 				'user_id': user_id,
 				'nick': nick,
 				'team': team_bit,
-			}, on_dublicate='ignore')
+			}, on_duplicate='ignore')
 
 			log.info(f"ELO sync: {nick} {rating_before} -> {rating_after} ({'+' if rating_change >= 0 else ''}{rating_change})")
 

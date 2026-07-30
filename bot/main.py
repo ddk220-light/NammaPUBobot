@@ -95,7 +95,7 @@ async def save_state_db():
 		await db.insert(
 			"qc_saved_state",
 			dict(id=1, data=json.dumps(_serialize_state()), updated_at=int(time.time())),
-			on_dublicate="replace",
+			on_duplicate="replace",
 		)
 	except Exception as e:
 		log.error(f"save_state_db failed: {e}")

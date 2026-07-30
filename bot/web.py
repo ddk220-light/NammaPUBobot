@@ -2253,7 +2253,7 @@ async def handle_auth_login(request):
 	await db.insert('web_oauth_states', {
 		'state': state,
 		'expires_at': int(time.time()) + OAUTH_STATE_LIFETIME,
-	}, on_dublicate='replace')
+	}, on_duplicate='replace')
 	params = {
 		"client_id": str(cfg.DC_CLIENT_ID),
 		"redirect_uri": f"{root_url}/auth/callback",
@@ -2327,7 +2327,7 @@ async def handle_auth_callback(request):
 		# can fetch it from /api/me and cache it for the session.
 		'csrf': secrets.token_urlsafe(32),
 		'expires_at': int(time.time()) + SESSION_LIFETIME,
-	}, on_dublicate='replace')
+	}, on_duplicate='replace')
 
 	resp = web.HTTPFound("/")
 	is_secure = root_url.startswith("https://")

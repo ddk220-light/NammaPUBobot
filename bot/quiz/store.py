@@ -112,7 +112,7 @@ async def record_reveal(post_id, user_id, nick, revealed_at, deadline_at):
 	await db.insert("qc_quiz_answers", dict(
 		post_id=post_id, user_id=user_id, nick=nick, revealed_at=revealed_at,
 		deadline_at=deadline_at, choice_index=None, is_correct=None,
-		answered_at=None, response_ms=None), on_dublicate="ignore")
+		answered_at=None, response_ms=None), on_duplicate="ignore")
 	return await get_answer(post_id, user_id), True
 
 

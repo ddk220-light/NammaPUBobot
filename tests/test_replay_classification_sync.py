@@ -10,8 +10,8 @@ class FakeDB:
     async def execute(self, sql, args):
         self.calls.append(("execute", sql, args))
 
-    async def insert_many(self, table, rows, on_dublicate=None):
-        self.calls.append(("insert_many", table, list(rows), on_dublicate))
+    async def insert_many(self, table, rows, on_duplicate=None):
+        self.calls.append(("insert_many", table, list(rows), on_duplicate))
 
 
 def test_write_classification_rows_replaces_match_rows():

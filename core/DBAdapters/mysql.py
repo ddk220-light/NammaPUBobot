@@ -127,10 +127,10 @@ class Adapter:
 		)
 
 	@staticmethod
-	def _mysql_insert(columns, table, on_dublicate):
+	def _mysql_insert(columns, table, on_duplicate):
 		return "{action}{ignore} INTO {table} ({columns}) VALUES({values})".format(
-			action="REPLACE" if on_dublicate == 'replace' else "INSERT",
-			ignore=" IGNORE" if on_dublicate == 'ignore' else "",
+			action="REPLACE" if on_duplicate == 'replace' else "INSERT",
+			ignore=" IGNORE" if on_duplicate == 'ignore' else "",
 			table=table,
 			columns=", ".join((f"`{i}`" for i in columns)),
 			values=", ".join(('%s' for i in range(len(columns))))
@@ -226,8 +226,8 @@ class Adapter:
 		args = list(where.values()) if where else ()
 		await self.execute("DELETE FROM {}{}".format(table, conditions), args)
 
-	async def insert(self, table, d, on_dublicate=None):
-		request = self._mysql_insert(d.keys(), table, on_dublicate)
+	async def insert(self, table, d, on_duplicate=None):
+		request = self._mysql_insert(d.keys(), table, on_duplicate)
 		return await self.execute(request, list(d.values()))
 
 	async def update(self, table, d, keys=None):
@@ -235,13 +235,13 @@ class Adapter:
 		request = self._mysql_update(table, d.keys(), keys.keys())
 		await self.execute(request, list(d.values()) + list(keys.values()))
 
-	async def insert_many(self, table, it, on_dublicate=None):
+	async def insert_many(self, table, it, on_duplicate=None):
 		try:
 			first, it = peek(iter(it))
 		except StopIteration:
 			return
 
-		request = self._mysql_insert(first.keys(), table, on_dublicate)
+		request = self._mysql_insert(first.keys(), table, on_duplicate)
 		await self.executemany(request, (list(d.values()) for d in it))
 
 	async def close(self):
