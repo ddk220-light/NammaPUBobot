@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 import bot.storyline_payoff as sp
 
 _NICK = {1: "Ann", 2: "Bo", 3: "Cy", 4: "Dee", 5: "Eve", 6: "Fay", 7: "Gil", 8: "Hal"}
@@ -87,3 +89,29 @@ def test_payoff_phrasing_is_deterministic():
 	a = sp.payoff_phrase(c, True, _NICK, _META, _ROSTERS, rng=random.Random(11))
 	b = sp.payoff_phrase(c, True, _NICK, _META, _ROSTERS, rng=random.Random(11))
 	assert a == b
+
+
+# ── frame tone follows tonight's result, not the stored pre-game direction ──
+def test_an_unbeaten_pair_that_loses_tonight_gets_a_negative_frame():
+	"""d["won"]=True is the pre-game direction (unbeaten). came_true=False means
+	tonight broke that streak, which is bad news for the whole side -- the frame
+	must not read as a congratulation."""
+	c = _c("perfect", (1, 2), {"ids": [1, 2], "n": 5, "won": True, "team_idx": 0})
+	frame = sp._payoff_frame(c, False, _NICK, _META, _ROSTERS, rng=random.Random(3))
+	assert ("went down with them" in frame) or ("rough one for" in frame), frame
+
+
+def test_a_cursed_pair_that_finally_wins_tonight_gets_a_positive_frame():
+	"""d["won"]=False is the pre-game direction (cursed). came_true=True means the
+	curse broke tonight, which is good news for the whole side -- the frame must
+	not read as commiseration."""
+	c = _c("perfect", (1, 2), {"ids": [1, 2], "n": 5, "won": False, "team_idx": 0})
+	frame = sp._payoff_frame(c, True, _NICK, _META, _ROSTERS, rng=random.Random(3))
+	assert ("got to enjoy it" in frame) or ("good night to be" in frame), frame
+
+
+# ── payoff_phrase must fail loud on an unrenderable candidate type ──────────
+def test_payoff_phrase_raises_for_an_unknown_candidate_type():
+	c = _c("bogus", (1,), {"p": 1, "k": 5, "won": True})
+	with pytest.raises(ValueError):
+		sp.payoff_phrase(c, True, _NICK, _META, _ROSTERS, rng=random.Random(0))

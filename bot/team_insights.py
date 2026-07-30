@@ -572,25 +572,41 @@ def subject_of(c):
 	return ("team", d["team_idx"])
 
 
-def _frame(c, nick, teams_meta, rosters, *, rng=random):
-	"""A closing clause pulling the rest of the side into the story."""
+def complement_of(c, nick, teams_meta, rosters):
+	"""Who on the subject's own side a line did not already name.
+
+	Returns ``(who, team_name, sole_team)``. ``who`` is "" when the line already
+	names everyone on that side. ``sole_team`` is False for opposing-pair lines
+	(h2h, deadlock), which have no single subject side. Public because
+	bot/storyline_payoff.py builds a past-tense frame from the same complement.
+	"""
 	teams = sorted(c["teams"])
 	if len(teams) != 1:
-		return rng.choice([
-			"Do their teammates get a say?",
-			"Six other players would like a word.",
-		])
+		return "", "", False
 	team_idx = teams[0]
 	name = (teams_meta[team_idx]["name"] if team_idx < len(teams_meta)
 	        else f"Team {team_idx}")
 	rest = [u for u in (rosters.get(team_idx) or []) if u not in c["players"]]
 	if not rest:
+		return "", name, True
+	who = (f"the rest of {name}" if len(rest) > 2
+	       else _join_names([f"**{nick.get(u, 'someone')}**" for u in rest]))
+	return who, name, True
+
+
+def _frame(c, nick, teams_meta, rosters, *, rng=random):
+	"""A closing clause pulling the rest of the side into the story."""
+	who, name, sole = complement_of(c, nick, teams_meta, rosters)
+	if not sole:
+		return rng.choice([
+			"Do their teammates get a say?",
+			"Six other players would like a word.",
+		])
+	if not who:
 		return rng.choice([
 			f"That is the whole of {name}.",
 			f"All of {name}, back together.",
 		])
-	who = (f"the rest of {name}" if len(rest) > 2
-	       else _join_names([f"**{nick.get(u, 'someone')}**" for u in rest]))
 	if _positive(c):
 		return rng.choice([
 			f"{who} along for the ride.",

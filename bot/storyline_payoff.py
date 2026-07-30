@@ -19,6 +19,7 @@ _select and _phrase take an injected rng. Two consequences worth knowing:
 Both are accepted — see the design doc for why storing the claims was rejected.
 """
 import random
+import time
 
 from bot import team_insights as ti
 
@@ -26,8 +27,9 @@ from bot import team_insights as ti
 def resolve(c, winner, team_of):
 	"""Did this storyline's subject side win? None when it cannot be settled.
 
-	Every claim reduces to this one boolean, which is what keeps the payoff to
-	exactly two texts per type instead of a combinatorial mess.
+	Every claim reduces to this one boolean. No type needs a combinatorial
+	verdict matrix -- it settles on this and, where relevant, the stored
+	pre-game direction, never anything finer-grained.
 	"""
 	if winner is None:
 		return None
@@ -38,6 +40,35 @@ def resolve(c, winner, team_of):
 	return int(winner) == int(side)
 
 
+def _payoff_frame(c, came_true, nick, teams_meta, rosters, *, rng=random):
+	"""Past-tense closing clause for a settled storyline.
+
+	Tone follows what happened tonight, not the pre-game direction: the whole
+	side shares the result, so a broken curse is good news for the teammates
+	too, and a dead streak is bad news for them.
+	"""
+	who, name, sole = ti.complement_of(c, nick, teams_meta, rosters)
+	if not sole:
+		return rng.choice([
+			"Their teammates had their own night.",
+			"The other six were along for the ride.",
+		])
+	if not who:
+		return rng.choice([
+			f"All of {name}, in it together.",
+			f"That was the whole of {name}.",
+		])
+	if came_true:
+		return rng.choice([
+			f"{who} got to enjoy it.",
+			f"A good night to be {who}.",
+		])
+	return rng.choice([
+		f"{who} went down with them.",
+		f"A rough one for {who} too.",
+	])
+
+
 def payoff_phrase(c, came_true, nick, teams_meta, rosters, *, rng=random):
 	"""One line reacting to a storyline, keyed on whether its side won."""
 	d, t = c["data"], c["type"]
@@ -45,7 +76,7 @@ def payoff_phrase(c, came_true, nick, teams_meta, rosters, *, rng=random):
 	def name(uid):
 		return f"**{nick.get(uid, 'someone')}**"
 
-	frame = ti._frame(c, nick, teams_meta, rosters, rng=rng)
+	frame = _payoff_frame(c, came_true, nick, teams_meta, rosters, rng=rng)
 
 	if t == "lineup":
 		w, g = d["wins"], d["games"]
@@ -148,23 +179,25 @@ def payoff_phrase(c, came_true, nick, teams_meta, rosters, *, rng=random):
 			f"🎯 Someone had to. {ahead} takes the decider. {frame}",
 		])
 
-	# form
-	p, k = name(d["p"]), d["k"]
-	if d["won"]:
+	if t == "form":
+		p, k = name(d["p"]), d["k"]
+		if d["won"]:
+			return (rng.choice([
+				f"🚀 **{k + 1} straight** for {p}. Nobody has stopped them yet.",
+				f"👑 The heater rolls on — {k + 1} in a row. {frame}",
+			]) if came_true else rng.choice([
+				f"🛑 The run ends at {k}. {p} finally drops one.",
+				f"📉 Streak over for {p}. {frame}",
+			]))
 		return (rng.choice([
-			f"🚀 **{k + 1} straight** for {p}. Nobody has stopped them yet.",
-			f"👑 The heater rolls on — {k + 1} in a row. {frame}",
+			f"🌅 The slump breaks. {p} snaps a {k}-game skid.",
+			f"🎊 {k} losses, then this. {frame}",
 		]) if came_true else rng.choice([
-			f"🛑 The run ends at {k}. {p} finally drops one.",
-			f"📉 Streak over for {p}. {frame}",
+			f"🩹 Make it **{k + 1}**. The skid goes on for {p}.",
+			f"📉 Still searching — {k + 1} straight for {p}. {frame}",
 		]))
-	return (rng.choice([
-		f"🌅 The slump breaks. {p} snaps a {k}-game skid.",
-		f"🎊 {k} losses, then this. {frame}",
-	]) if came_true else rng.choice([
-		f"🩹 Make it **{k + 1}**. The skid goes on for {p}.",
-		f"📉 Still searching — {k + 1} straight for {p}. {frame}",
-	]))
+
+	raise ValueError(f"payoff_phrase has no branch for candidate type {t!r}")
 
 
 async def build_payoff_embed(match):
@@ -182,7 +215,6 @@ async def build_payoff_embed(match):
 		return None
 
 	players = team0 + team1
-	import time
 
 	rows = await ti._fetch_history(match.qc.id, [p.id for p in players],
 	                               ti.window_start(time.time()))
