@@ -22,12 +22,14 @@ class FakeDb:
 	def __init__(self):
 		self.identities = []  # [{profile_id, user_id, aoe2_name, confidence, first_seen_at, last_seen_at}]
 		self.identity_aliases = []  # [{community_id, user_id, nick, updated_at}]
+		self.identity_conflicts = []  # [{profile_id, claimed_user_id, source, noticed_at, status}]
 		self.select_calls = 0
 
 	def _table(self, table):
 		return {
 			"identities": self.identities,
 			"identity_aliases": self.identity_aliases,
+			"identity_conflicts": self.identity_conflicts,
 		}[table]
 
 	async def select_one(self, columns, table, where=None):
@@ -47,13 +49,22 @@ class FakeDb:
 			if all(row.get(k) == v for k, v in where.items())
 		]
 
+	_PRIMARY_KEYS = {
+		"identities": ("profile_id",),
+		"identity_aliases": ("community_id", "user_id"),
+		"identity_conflicts": ("profile_id", "claimed_user_id"),
+	}
+
 	async def insert(self, table, d, on_duplicate=None):
 		rows = self._table(table)
-		if on_duplicate == "replace":
-			pk = {"identities": ("profile_id",), "identity_aliases": ("community_id", "user_id")}[table]
+		pk = self._PRIMARY_KEYS[table]
+		if on_duplicate in ("replace", "ignore"):
 			for i, row in enumerate(rows):
 				if all(row.get(k) == d.get(k) for k in pk):
-					rows[i] = dict(d)
+					if on_duplicate == "replace":
+						rows[i] = dict(d)
+					# on_duplicate == "ignore": row with this primary key already
+					# exists — mirror MySQL's INSERT IGNORE and leave it untouched.
 					return None
 		rows.append(dict(d))
 		return None
@@ -287,6 +298,117 @@ def test_learn_preserves_aoe2_name_when_not_provided(monkeypatch):
 	asyncio.run(identity.learn(111, 222, "learned"))
 
 	assert fake.identities[0]["aoe2_name"] == "Original"
+
+
+# ─── learn: conflict recording ───────────────────────────────────────────
+# A `manual` row is the highest authority and never yields to an automated
+# write, but the write it refuses used to just vanish -- these tests cover
+# task 2.6: that refused claim must now land in identity_conflicts instead.
+
+def test_learn_records_a_claim_blocked_by_a_manual_row(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual", aoe2_name="RealName"))
+
+	asyncio.run(identity.learn(111, 999, "learned", aoe2_name="WrongGuess"))
+
+	assert len(fake.identity_conflicts) == 1
+	row = fake.identity_conflicts[0]
+	assert row["profile_id"] == 111
+	assert row["claimed_user_id"] == 999
+	assert row["source"] == "learned"
+	assert row["status"] == "open"
+	# The manual row itself must still be untouched -- recording the conflict
+	# must not change the winner.
+	assert fake.identities[0]["user_id"] == 222
+	assert fake.identities[0]["confidence"] == "manual"
+
+
+def test_learn_does_not_record_a_claim_that_agrees_with_the_manual_row(monkeypatch):
+	""" Same user_id, just observed again from a lower-precedence source --
+	not a disagreement, so nothing should land in identity_conflicts. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+
+	asyncio.run(identity.learn(111, 222, "learned"))
+
+	assert fake.identity_conflicts == []
+
+
+def test_learn_does_not_record_a_block_by_a_non_manual_row(monkeypatch):
+	""" A `seed` write outranked by an existing `learned` row is the
+	resolver's ordinary precedence order working as intended, not a human
+	correction discarding someone else's claim -- only a block by `manual`
+	is recorded. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+
+	asyncio.run(identity.learn(111, 999, "seed"))
+
+	assert fake.identity_conflicts == []
+
+
+def test_learn_does_not_record_on_a_normal_successful_write(monkeypatch):
+	""" learn() calls that are NOT blocked (brand-new profile_id, or a write
+	that outranks/ties the stored row) must never touch identity_conflicts --
+	only a genuinely discarded disagreement does. """
+	fake = _setup(monkeypatch)
+
+	asyncio.run(identity.learn(111, 222, "seed"))          # brand-new row
+	asyncio.run(identity.learn(111, 333, "learned"))        # outranks -> succeeds
+	asyncio.run(identity.learn(111, 333, "manual"))         # outranks -> succeeds
+
+	assert fake.identity_conflicts == []
+	assert fake.identities[0]["user_id"] == 333
+	assert fake.identities[0]["confidence"] == "manual"
+
+
+def test_learn_blocked_conflict_is_not_duplicated_on_a_repeat_observation(monkeypatch):
+	""" The exact same disagreement observed twice (e.g. a replay ingest that
+	re-learns the same, still-wrong, profile more than once) must not
+	accumulate duplicate identity_conflicts rows -- INSERT IGNORE on the
+	(profile_id, claimed_user_id) primary key keeps it to one. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+
+	asyncio.run(identity.learn(111, 999, "learned"))
+	asyncio.run(identity.learn(111, 999, "learned"))
+
+	assert len(fake.identity_conflicts) == 1
+
+
+# ─── open_conflicts ──────────────────────────────────────────────────────
+
+def test_open_conflicts_returns_empty_list_when_none_open(monkeypatch):
+	_setup(monkeypatch)
+
+	assert asyncio.run(identity.open_conflicts()) == []
+
+
+def test_open_conflicts_pairs_claims_with_the_stored_owner(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+	asyncio.run(identity.learn(111, 999, "learned"))  # blocked -> recorded
+
+	result = asyncio.run(identity.open_conflicts())
+
+	assert len(result) == 1
+	entry = result[0]
+	assert entry["profile_id"] == 111
+	assert entry["current_owner"] == 222
+	assert entry["claims"] == [dict(user_id=999, source="learned", noticed_at=fake.identity_conflicts[0]["noticed_at"])]
+
+
+def test_open_conflicts_groups_multiple_claimants_under_one_profile(monkeypatch):
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+	asyncio.run(identity.learn(111, 999, "learned"))
+	asyncio.run(identity.learn(111, 555, "seed"))
+
+	result = asyncio.run(identity.open_conflicts())
+
+	assert len(result) == 1
+	claimants = sorted(c["user_id"] for c in result[0]["claims"])
+	assert claimants == [555, 999]
 
 
 # ─── profiles_for_users / user_for_profile ──────────────────────────────
@@ -775,3 +897,77 @@ def test_identity_show_reports_unenrolled_channel_without_erroring(monkeypatch):
 
 	assert nick_for_calls == []
 	assert len(ctx.replies) == 1
+
+
+# ─── identity conflicts ───────────────────────────────────────────────────
+
+def test_identity_conflicts_requires_moderator_permission(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+	calls = []
+	monkeypatch.setattr(identity, "open_conflicts", lambda *a, **k: calls.append(a))
+	ctx = _FakeCtx(access_level=_Perms.MEMBER)
+
+	try:
+		asyncio.run(admin.identity_conflicts(ctx))
+	except _PermsDenied:
+		pass
+	else:
+		raise AssertionError("identity_conflicts must require MODERATOR permission")
+
+	assert calls == []
+
+
+def test_identity_conflicts_reports_none_open(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _open_conflicts():
+		return []
+
+	monkeypatch.setattr(identity, "open_conflicts", _open_conflicts)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_conflicts(ctx))
+
+	assert len(ctx.replies) == 1
+	assert ctx.replies[0].content == "no open identity conflicts"
+	assert ctx.replies[0].embed is None
+
+
+def test_identity_conflicts_lists_profile_owner_and_claimants(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _open_conflicts():
+		return [dict(
+			profile_id=5771336,
+			current_owner=527532506153615360,
+			claims=[dict(user_id=850996190282776577, source="seed", noticed_at=1)],
+		)]
+
+	monkeypatch.setattr(identity, "open_conflicts", _open_conflicts)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_conflicts(ctx))
+
+	assert len(ctx.replies) == 1
+	embed = ctx.replies[0].embed
+	assert len(embed.fields) == 1
+	field = embed.fields[0]
+	assert "5771336" in field["name"]
+	assert "527532506153615360" in field["value"]
+	assert "850996190282776577" in field["value"]
+	assert "seed" in field["value"]
+
+
+def test_identity_conflicts_reports_unknown_current_owner_without_erroring(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _open_conflicts():
+		return [dict(profile_id=42, current_owner=None, claims=[dict(user_id=1, source="seed", noticed_at=1)])]
+
+	monkeypatch.setattr(identity, "open_conflicts", _open_conflicts)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_conflicts(ctx))  # must not raise
+
+	embed = ctx.replies[0].embed
+	assert embed.fields[0]["value"]  # some "none known" placeholder, not blank

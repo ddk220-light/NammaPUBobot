@@ -66,6 +66,32 @@ db.ensure_table(dict(
 	primary_keys=["community_id", "user_id"],
 ))
 
+# Every losing profile_id<->user_id claim that would otherwise be silently
+# discarded -- either by 003_seed_identities' INSERT IGNORE (see that
+# migration's docstring) or by learn() below refusing to overwrite a
+# `manual` row. Recording these instead of dropping them is the whole point:
+# there is no resolution UI yet, so a human needs somewhere to go look, and
+# a later management UI needs somewhere to read from. `status` stays 'open'
+# forever as far as this module is concerned -- nothing here ever writes
+# 'dismissed'/'applied'; that is exclusively the future UI's job.
+#
+# Same "why is this raw DDL duplicated in core/migrations.py" answer as
+# `identities` above: 003_seed_identities needs to write this table too, and
+# it cannot import bot.identity (see this module's docstring, and
+# core/migrations.py's _ensure_identity_conflicts_table). Keep the two
+# declarations in sync by hand if this table's columns ever change.
+db.ensure_table(dict(
+	tname="identity_conflicts",
+	columns=[
+		dict(cname="profile_id", ctype=db.types.int),
+		dict(cname="claimed_user_id", ctype=db.types.int),
+		dict(cname="source", ctype=db.types.str, notnull=True),
+		dict(cname="noticed_at", ctype=db.types.int, notnull=True),
+		dict(cname="status", ctype=db.types.str, notnull=True, default="open"),
+	],
+	primary_keys=["profile_id", "claimed_user_id"],
+))
+
 # user_id -> [profile_id, ...] for every identity with a known Discord owner.
 # None means "not loaded yet". profiles_for_users() is on the hot path (the
 # civ matcher calls it on every match), hence the cache; invalidate_cache()
@@ -146,6 +172,24 @@ def _rank(confidence):
 	return CONFIDENCE_ORDER.index(confidence)
 
 
+async def _record_conflict(profile_id, claimed_user_id, source, noticed_at) -> None:
+	""" Record that `source` claimed `profile_id` belongs to `claimed_user_id`
+	but was refused (see learn()'s manual-block branch and
+	core/migrations.py's 003_seed_identities, the two callers). INSERT IGNORE
+	on the (profile_id, claimed_user_id) primary key: the same disagreement
+	observed again later (e.g. a source relearning the same losing claim) is
+	a no-op rather than a duplicate row — `status` only ever moves off 'open'
+	by human action through the future management UI, never by re-observing
+	the same claim. """
+	await db.insert("identity_conflicts", dict(
+		profile_id=profile_id,
+		claimed_user_id=claimed_user_id,
+		source=source,
+		noticed_at=noticed_at,
+		status="open",
+	), on_duplicate="ignore")
+
+
 async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 	""" Record that `profile_id` belongs to `user_id`, as observed by `source`
 	(one of CONFIDENCE_ORDER). Never lowers an existing row's confidence, and
@@ -157,6 +201,19 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 	user_id/aoe2_name/confidence are all updated to the new values. If it is
 	outranked, none of those three change — but last_seen_at is bumped
 	regardless, since the profile genuinely was observed again just now.
+
+	When the outranked write is specifically blocked by a `manual` row (a
+	human correction) that disagrees on user_id, the losing claim is recorded
+	via _record_conflict() rather than silently dropped — see
+	identity_conflicts' declaration up top and open_conflicts() below; there
+	is no resolution UI yet, so the record is the only trace this
+	disagreement leaves anywhere. Nothing else is recorded: an outranked
+	write blocked by a non-manual row (e.g. a `seed` write outranked by an
+	existing `learned` row) is the resolver's ordinary, working precedence
+	order, not the "a human said so, and everyone else's claim was
+	discarded" failure this exists to surface — and an outranked write that
+	simply *agrees* with the stored user_id isn't a disagreement at all, just
+	a repeat observation.
 
 	aoe2_name=None means "not known by this call"; an existing name is kept
 	rather than clobbered with None. Always calls invalidate_cache().
@@ -171,7 +228,7 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 	_rank(source)  # fail fast; see the docstring paragraph above
 	now = int(time.time())
 	existing = await db.select_one(
-		["confidence", "aoe2_name"], "identities", where={"profile_id": profile_id})
+		["user_id", "confidence", "aoe2_name"], "identities", where={"profile_id": profile_id})
 
 	if existing is None:
 		await db.insert("identities", dict(
@@ -188,6 +245,8 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 	if _rank(source) < _rank(existing["confidence"]):
 		# Lower-precedence write: the mapping stays as-is, but this profile_id
 		# was seen again just now.
+		if existing["confidence"] == "manual" and existing["user_id"] != user_id:
+			await _record_conflict(profile_id, user_id, source, now)
 		await db.update("identities", dict(last_seen_at=now), keys=dict(profile_id=profile_id))
 		invalidate_cache()
 		return
@@ -217,6 +276,38 @@ async def nick_for(community_id, user_id):
 	row = await db.select_one(
 		["nick"], "identity_aliases", where={"community_id": community_id, "user_id": user_id})
 	return row["nick"] if row else None
+
+
+async def open_conflicts() -> list[dict]:
+	""" Every open identity_conflicts row, grouped by profile_id and paired
+	with `identities`' current stored owner for that profile_id — so a caller
+	(the future management UI, or the `identity conflicts` admin command)
+	can present the whole disagreement rather than just the losing claim
+	that got recorded. `identities` is re-read live rather than trusted from
+	whatever was true at record time, since the stored owner can move on
+	(another manual correction, a later learn()) after a conflict is logged
+	and before anyone looks at it.
+
+	Returns a list of
+	  {profile_id, current_owner, claims: [{user_id, source, noticed_at}, ...]}
+	one entry per profile_id with at least one open conflict; `current_owner`
+	is None if the profile has since lost its owner entirely (should not
+	normally happen, but open_conflicts must not crash if it does). Empty
+	list means no open conflicts. """
+	rows = await db.select(
+		["profile_id", "claimed_user_id", "source", "noticed_at"],
+		"identity_conflicts", where={"status": "open"})
+
+	grouped = {}
+	for r in rows or []:
+		grouped.setdefault(r["profile_id"], []).append(dict(
+			user_id=r["claimed_user_id"], source=r["source"], noticed_at=r["noticed_at"]
+		))
+
+	return [
+		dict(profile_id=profile_id, current_owner=await user_for_profile(profile_id), claims=claims)
+		for profile_id, claims in grouped.items()
+	]
 
 
 def invalidate_cache() -> None:

@@ -8,10 +8,17 @@ import asyncio
 
 import core.migrations as mig
 
-# {table: primary key column} for FakeDb.insert_many's INSERT IGNORE
+# {table: primary key column(s)} for FakeDb.insert_many's INSERT IGNORE
 # emulation below. Only tables this suite actually writes via insert_many
-# need an entry.
-_PRIMARY_KEYS = {"identities": "profile_id"}
+# need an entry. A tuple means a composite primary key.
+_PRIMARY_KEYS = {"identities": "profile_id", "identity_conflicts": ("profile_id", "claimed_user_id")}
+
+
+def _pk_key(row, pk):
+	""" The dedup key insert_many's INSERT IGNORE emulation compares by --
+	a single value for a single-column primary key, a tuple of values for a
+	composite one. """
+	return tuple(row[c] for c in pk) if isinstance(pk, tuple) else row[pk]
 
 
 class FakeDb:
@@ -77,14 +84,26 @@ class FakeDb:
 		earlier one — is silently dropped rather than overwriting it. """
 		dest = self.rows.setdefault(table, [])
 		pk = _PRIMARY_KEYS[table]
-		seen = {row[pk] for row in dest}
+		seen = {_pk_key(row, pk) for row in dest}
 		for row in rows:
 			row = dict(row)
-			key = row[pk]
+			key = _pk_key(row, pk)
 			if on_duplicate == "ignore" and key in seen:
 				continue
 			seen.add(key)
 			dest.append(row)
+
+	async def select(self, columns, table, where=None, **kwargs):
+		""" Generic exact-match SELECT, same shape as
+		core/DBAdapters/mysql.py's Adapter.select (used by _m003 to read the
+		current `identities` state before comparing incoming seed claims
+		against it — see _record_seed_conflicts). """
+		where = where or {}
+		return [
+			{c: row.get(c) for c in columns}
+			for row in self.rows.get(table, [])
+			if all(row.get(k) == v for k, v in where.items())
+		]
 
 	async def update(self, table, d, keys=None):
 		""" Models a plain `UPDATE ... WHERE` (core/DBAdapters/mysql.py's
@@ -257,6 +276,18 @@ def test_ensure_identities_table_is_idempotent():
 		"`profile_id` BIGINT, `user_id` BIGINT, `aoe2_name` VARCHAR(191), "
 		"`confidence` VARCHAR(191) NOT NULL, `first_seen_at` BIGINT NOT NULL, "
 		"`last_seen_at` BIGINT NOT NULL, PRIMARY KEY(`profile_id`))"
+	) == 2
+
+
+def test_ensure_identity_conflicts_table_is_idempotent():
+	db = FakeDb()
+	asyncio.run(mig._ensure_identity_conflicts_table(db))
+	asyncio.run(mig._ensure_identity_conflicts_table(db))
+	assert db.executed.count(
+		"CREATE TABLE IF NOT EXISTS identity_conflicts ("
+		"`profile_id` BIGINT, `claimed_user_id` BIGINT, `source` VARCHAR(191) NOT NULL, "
+		"`noticed_at` BIGINT NOT NULL, `status` VARCHAR(191) NOT NULL DEFAULT 'open', "
+		"PRIMARY KEY(`profile_id`, `claimed_user_id`))"
 	) == 2
 
 
@@ -470,6 +501,127 @@ def test_m003_missing_rs_profiles_table_does_not_crash_on_fresh_install(tmp_path
 	asyncio.run(mig._m003(db))  # must not raise
 
 	assert db.rows.get("identities", []) == []
+
+
+# ─── 003_seed_identities: identity_conflicts recording ──────────────────
+# Task 2.6: a losing claim used to just vanish once INSERT IGNORE dropped it.
+# These pin the real-world case (profile 5771336, see the module docstring)
+# and its surrounding rules: the winner is untouched, an agreeing claim
+# leaves no trace, and a manual row's own claim is never reported as a loser
+# even if it is temporarily blocked before the reassertion pass fixes it up.
+
+def test_m003_records_the_conflicting_lower_precedence_claim_while_the_winner_is_unchanged(tmp_path, monkeypatch):
+	"""The real profile_id 5771336 case from data/profile_resolved.csv (manual)
+	vs data/player_profile_map.csv (seed): the manual row must keep winning
+	exactly as before, and the discarded player_profile_map.csv claim must now
+	show up in identity_conflicts instead of vanishing."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"5771336,527532506153615360,aquasama7056,KIT WALKER,manual,\n")
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"850996190282776577,bearknightman,KIT WALKER,5771336,\n")
+	db = FakeDb(tables=set())
+
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert len(identities) == 1
+	assert identities[0]["user_id"] == 527532506153615360, "the manual row must still win"
+
+	conflicts = db.rows["identity_conflicts"]
+	assert len(conflicts) == 1
+	row = conflicts[0]
+	assert row["profile_id"] == 5771336
+	assert row["claimed_user_id"] == 850996190282776577
+	assert row["source"] == "seed"
+	assert row["status"] == "open"
+
+
+def test_m003_does_not_record_an_agreeing_claim(tmp_path, monkeypatch):
+	"""Both CSVs naming the SAME user for the SAME profile_id is not a
+	disagreement -- nothing belongs in identity_conflicts."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"300,111,nickA,SameName,seed,1\n")
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"111,nickB,SameName,300,us\n")
+	db = FakeDb(tables=set())
+
+	asyncio.run(mig._m003(db))
+
+	assert db.rows.get("identity_conflicts", []) == []
+
+
+def test_m003_does_not_report_a_manual_rows_own_claim_as_a_loser(tmp_path, monkeypatch):
+	"""profile_id 800: rs_profiles (learned, written first) blocks the manual
+	profile_resolved.csv row via INSERT IGNORE mid-loop, but the reassertion
+	pass unconditionally fixes that up afterwards -- the manual row is never
+	actually discarded, so it must not be reported as though it were."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"800,111,nickA,ManualName,manual,1\n")
+	db = FakeDb(
+		tables={"rs_profiles"},
+		rows={"rs_profiles": [{"profile_id": 800, "user_id": 999, "name": "RSName", "last_seen_at": 123}]},
+	)
+
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert identities[0]["user_id"] == 111, "manual must still win after reassertion"
+	assert db.rows.get("identity_conflicts", []) == []
+
+
+def test_m003_records_conflicting_claims_against_an_already_seeded_learned_row(tmp_path, monkeypatch):
+	"""profile_id 100: rs_profiles claims it first (learned); both CSVs then
+	separately claim a DIFFERENT user for the same profile_id. Neither CSV
+	claim is manual, so both are genuinely, permanently discarded and both
+	must be recorded."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"100,111,nickA,ResolvedName,seed,1\n")
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"222,nickB,MapName,100,us\n")
+	db = FakeDb(
+		tables={"rs_profiles"},
+		rows={"rs_profiles": [{"profile_id": 100, "user_id": 333, "name": "RSName", "last_seen_at": 999}]},
+	)
+
+	asyncio.run(mig._m003(db))
+
+	identities = db.rows["identities"]
+	assert identities[0]["user_id"] == 333, "rs_profiles (learned, written first) still wins"
+
+	conflicts = {(row["claimed_user_id"], row["source"]) for row in db.rows["identity_conflicts"]}
+	assert conflicts == {(111, "seed"), (222, "seed")}
+	assert all(row["profile_id"] == 100 for row in db.rows["identity_conflicts"])
+
+
+def test_m003_rerun_does_not_duplicate_conflict_rows(tmp_path, monkeypatch):
+	"""Re-running the whole migration body from the top (as a retried boot
+	would) must not accumulate a second identity_conflicts row for the same
+	(profile_id, claimed_user_id) pair."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	_write_csv(tmp_path, "data/profile_resolved.csv",
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"5771336,527532506153615360,aquasama7056,KIT WALKER,manual,\n")
+	_write_csv(tmp_path, "data/player_profile_map.csv",
+		"user_id,nick,aoe2_name,profile_id,country\n"
+		"850996190282776577,bearknightman,KIT WALKER,5771336,\n")
+	db = FakeDb(tables=set())
+
+	asyncio.run(mig._m003(db))
+	asyncio.run(mig._m003(db))
+
+	conflicts = db.rows["identity_conflicts"]
+	assert len(conflicts) == 1, "a re-run must not append a duplicate conflict row"
 
 
 # ─── 003_seed_identities: all-sources-failed re-raise ───────────────────

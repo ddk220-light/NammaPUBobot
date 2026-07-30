@@ -374,6 +374,14 @@ async def _identity_show(
 ): await run_slash(bot.commands.identity_show, interaction=interaction, member=member)
 
 
+@groups.admin_identity.subcommand(
+	name='conflicts', description='List open profile_id/Discord-user disagreements awaiting resolution.'
+)
+async def _identity_conflicts(
+		interaction: Interaction,
+): await run_slash(bot.commands.identity_conflicts, interaction=interaction)
+
+
 # rating -> ...
 
 @groups.admin_rating.subcommand(name='seed', description='Set player rating and deviation')

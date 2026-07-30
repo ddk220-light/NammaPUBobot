@@ -75,6 +75,9 @@ REGISTRY = {
 	# instead (task 2.3). Dropped outright in a later stage.
 	"qc_profile_map": dict(layer="raw", tenancy="global", writers=(), retention="forever"),
 	"identities": dict(layer="raw", tenancy="global", writers=("bot/identity.py",), retention="forever"),
+	"identity_conflicts": dict(
+		layer="derived", tenancy="global", writers=("bot/identity.py",), retention="forever"
+	),
 	"rs_config": dict(layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
 	"rs_matches": dict(layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
 	"rs_player_games": dict(

@@ -257,6 +257,59 @@ async def _ensure_identities_table(db):
 	)
 
 
+async def _ensure_identity_conflicts_table(db):
+	"""Minimal, idempotent CREATE TABLE for `identity_conflicts` —
+	bot/identity.py's table of losing profile_id<->user_id claims, duplicated
+	here for the same reason _ensure_identities_table is (see that function's
+	and this module's docstrings for why importing bot.identity from here
+	crashes the boot). 003_seed_identities is the only writer of this table
+	from inside a migration; bot/identity.py's learn() is the other writer,
+	at runtime, well after this table already exists.
+
+	Must stay in sync with bot/identity.py's `identity_conflicts` declaration
+	by hand.
+	"""
+	await db.execute(
+		"CREATE TABLE IF NOT EXISTS identity_conflicts ("
+		"`profile_id` BIGINT, `claimed_user_id` BIGINT, `source` VARCHAR(191) NOT NULL, "
+		"`noticed_at` BIGINT NOT NULL, `status` VARCHAR(191) NOT NULL DEFAULT 'open', "
+		"PRIMARY KEY(`profile_id`, `claimed_user_id`))"
+	)
+
+
+def _record_seed_conflicts(claimed, seed_rows, conflicts, now):
+	""" Update `claimed` ({profile_id: user_id}) to mirror what the INSERT
+	IGNORE that follows will actually persist (first writer of a profile_id
+	sticks — see this migration's docstring), and append a losing claim to
+	`conflicts` for every row whose profile_id is already claimed by a
+	DIFFERENT user_id. That is the exact silent discard the identity_conflicts
+	table exists to stop being silent: without this, a row here would be
+	dropped by INSERT IGNORE with zero trace of the disagreement anywhere.
+
+	Two kinds of row are deliberately NOT reported as conflicts:
+	  - A row whose own confidence is `manual`: manual rows from
+	    data/profile_resolved.csv are unconditionally reasserted after this
+	    loop (see the reassertion pass below) regardless of whether INSERT
+	    IGNORE blocks them here, so a manual row is never actually discarded
+	    — reporting it as a "losing claim" here would be simply wrong, since
+	    by the time anyone reads identity_conflicts it will, in fact, be the
+	    stored owner.
+	  - A row whose user_id agrees with what's already claimed: not a
+	    disagreement, just the same fact observed from a second source.
+	Rows with user_id=None make no claim at all and are skipped outright. """
+	for row in seed_rows:
+		pid, uid, source = row["profile_id"], row["user_id"], row["confidence"]
+		if uid is None:
+			continue
+		if pid in claimed:
+			if claimed[pid] != uid and source != _MANUAL_CONFIDENCE:
+				conflicts.append(dict(
+					profile_id=pid, claimed_user_id=uid, source=source, noticed_at=now, status="open"
+				))
+			continue
+		claimed[pid] = uid
+
+
 # Confidence tiers this migration writes, taken from core.identity_seed's
 # CONFIDENCE_ORDER (rather than the literal strings) so a rename there can't
 # silently desync from here.
@@ -334,9 +387,32 @@ async def _m003(db):
 	match data. The UPDATE is naturally idempotent (same profile_id, same
 	values every re-run), so this migration stays safe to re-run from the
 	top.
+
+	Every row INSERT IGNORE silently drops because its profile_id was already
+	claimed by a *different* user_id is a genuine source disagreement, not
+	just a no-op — and until now it left zero trace anywhere. `claimed` below
+	tracks {profile_id: user_id} exactly as INSERT IGNORE would persist it
+	(first writer wins, never overwritten within this function), so each
+	source's seed rows can be checked against it *before* being written; a
+	disagreeing row is appended to `conflicts` and flushed to
+	identity_conflicts once the loop finishes — see
+	_record_seed_conflicts' docstring for why a `manual` row is exempt from
+	being reported as a loser (it never actually loses; the reassertion pass
+	below guarantees that regardless of what happened here).
 	"""
 	await _ensure_identities_table(db)
+	await _ensure_identity_conflicts_table(db)
 	now = int(time.time())
+
+	# {profile_id: user_id} already committed to `identities` — from a
+	# previous boot's partial seed, an earlier pass in this same call, or (in
+	# principle) some other writer entirely. See the docstring paragraph
+	# above for what this drives.
+	claimed = {
+		r["profile_id"]: r["user_id"]
+		for r in (await db.select(["profile_id", "user_id"], "identities") or [])
+	}
+	conflicts = []
 
 	# Names of seed sources whose attempt raised (not merely "missing" —
 	# see the docstring above). If this ends up covering all three, _m003
@@ -357,6 +433,7 @@ async def _m003(db):
 				)
 				for r in (rows or [])
 			]
+			_record_seed_conflicts(claimed, seed, conflicts, now)
 			if seed:
 				await db.insert_many("identities", seed, on_duplicate="ignore")
 			log.info(f"migrations: 003_seed_identities: seeded {len(seed)} row(s) from rs_profiles")
@@ -399,12 +476,26 @@ async def _m003(db):
 				)
 				for r in parsed
 			]
+			_record_seed_conflicts(claimed, seed, conflicts, now)
 			if seed:
 				await db.insert_many("identities", seed, on_duplicate="ignore")
 			log.info(f"migrations: 003_seed_identities: seeded {len(seed)} row(s) from {relpath}")
 		except Exception as e:
 			log.error(f"migrations: 003_seed_identities: {relpath} seed step failed, continuing: {e}")
 			failed_sources.append(relpath)
+
+	# Flush every losing claim discovered above. Best-effort: a failure here
+	# means a disagreement goes unrecorded, which is unfortunate but must
+	# never block the actual seeding above (already committed by this
+	# point) or the manual reassertion pass below. INSERT IGNORE on
+	# identity_conflicts' (profile_id, claimed_user_id) primary key keeps a
+	# re-run from duplicating a conflict already on record.
+	if conflicts:
+		try:
+			await db.insert_many("identity_conflicts", conflicts, on_duplicate="ignore")
+			log.info(f"migrations: 003_seed_identities: recorded {len(conflicts)} identity conflict(s)")
+		except Exception as e:
+			log.error(f"migrations: 003_seed_identities: recording identity conflicts failed, continuing: {e}")
 
 	# Manual rows must win regardless of the write order above: rs_profiles
 	# is seeded first (as 'learned'), and INSERT IGNORE means whoever writes

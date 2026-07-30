@@ -1,7 +1,7 @@
 __all__ = [
 	'noadds', 'noadd', 'forgive', 'rating_seed', 'rating_penality', 'rating_hide',
 	'rating_reset', 'rating_snap', 'stats_reset', 'stats_reset_player', 'stats_replace_player',
-	'phrases_add', 'phrases_clear', 'undo_match', 'identity_link', 'identity_show',
+	'phrases_add', 'phrases_clear', 'undo_match', 'identity_link', 'identity_show', 'identity_conflicts',
 	'douche_add', 'douche_summary', 'douche_leaderboard'
 ]
 
@@ -192,6 +192,32 @@ async def identity_show(ctx, member: Member):
 		inline=False
 	)
 	embed.add_field(name=ctx.qc.gt("Nick"), value=nick_line, inline=False)
+	await ctx.reply(embed=embed)
+
+
+async def identity_conflicts(ctx):
+	""" Read-only lookup: every open profile_id<->user_id disagreement that
+	learn() or migration 003_seed_identities recorded instead of silently
+	discarding a losing claim (see bot/identity.py's identity_conflicts
+	declaration and open_conflicts()). There is no resolution UI yet -- this
+	just surfaces what open_conflicts() already tracks so a moderator isn't
+	blind to it in the meantime; nothing here changes `status`. """
+	ctx.check_perms(ctx.Perms.MODERATOR)
+
+	conflicts = await bot.identity.open_conflicts()
+	if not conflicts:
+		await ctx.reply(ctx.qc.gt("no open identity conflicts"))
+		return
+
+	embed = Embed(title=ctx.qc.gt("Open identity conflicts"), colour=Colour(0x5865F2))
+	for c in conflicts:
+		owner = f"<@{c['current_owner']}>" if c["current_owner"] is not None else ctx.qc.gt("(none known)")
+		claimants = "\n".join(f"<@{claim['user_id']}> ({claim['source']})" for claim in c["claims"])
+		embed.add_field(
+			name=ctx.qc.gt("Profile `{profile_id}`").format(profile_id=c["profile_id"]),
+			value=f"{ctx.qc.gt('Current owner')}: {owner}\n{ctx.qc.gt('Competing claim(s)')}:\n{claimants}",
+			inline=False,
+		)
 	await ctx.reply(embed=embed)
 
 
