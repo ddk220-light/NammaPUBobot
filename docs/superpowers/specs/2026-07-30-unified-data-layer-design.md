@@ -1,7 +1,7 @@
 # Unified data architecture — design
 
 **Date:** 2026-07-30
-**Status:** DRAFT v2 — feature-complete audit + community model. Discussion open.
+**Status:** DRAFT v3 — decisions folded in; naming + retention added.
 
 ## Decisions taken so far
 
@@ -15,6 +15,19 @@
   rethought from a community point of view afterwards. Core must not break.
 - Goal restated: **only the data spaces we need, each with one dedicated writer,
   everything else removed.**
+- **Labels: one namespace** with a `kind` column (strategy / spawn / behaviour).
+- **Commentary: retired.** `bot_player_commentary` and its read path go; the
+  scouting report keeps the persona line + generated read only.
+- **Alt ratings: retired.** `/leaderboard_alternate`, `bot/alt_ratings.py`,
+  `utils/compute_alt_ratings.py`, `data/alt_ratings.csv`. (The `namma_`-prefixed
+  test commands are already gone from the code; the CLAUDE.md line claiming they
+  exist is stale and gets fixed in the rename stage.)
+- **Retention: aggressive, per-community** (§7). This community is the flagship
+  and retains everything; partner communities keep only the durable spine +
+  derived.
+- **Community defaults: deferred.** Assume every feature enabled for now.
+- **Everything gets renamed** (§8): the `qc_`/`rs_`/`cls_` patchwork is replaced
+  by one plain-English naming scheme owned by this product.
 
 ---
 
@@ -55,8 +68,8 @@ design unchanged (maybe re-keyed), `FOLD` = absorbed into the unified layers,
 | /insights | `cls_*` | FOLD onto derived |
 | /player_details | `rs_player_events` | KEEP (reads raw directly — per-match detail, not aggregate) |
 | personas | `rs_player_personas`, refreshed at ingest | FOLD into community rollup |
-| commentary | `bot_player_commentary`, generated on a laptop with an LLM | DECIDE (§6) |
-| /leaderboard_alternate | `data/alt_ratings.csv`, baked by laptop script | DECIDE (§6) |
+| commentary | `bot_player_commentary`, generated on a laptop with an LLM | **RETIRE** (decided) |
+| /leaderboard_alternate | `data/alt_ratings.csv`, baked by laptop script | **RETIRE** (decided) |
 
 ### 1.4 Content features
 
@@ -191,21 +204,26 @@ target), alt-ratings bake (pending §6).
 
 Each stage deploys alone and nothing depends on a later stage.
 
-1. **Community entity + links.** `community`, `community_channel`, the
-   match↔replay link table. Seed community #1. `rs_matches.bot_match_id`
-   kept in place until stage 5, then dropped.
-2. **Identity.** `identity` + `identity_alias`, seeded from CSVs +
+1. **Community entity + core renames + easy retirements.** `communities`,
+   `community_channels`, the `match_replays` link table, the §8.1 core renames,
+   and the already-decided removals that touch nothing structural: commentary,
+   alt ratings, `disabled_guilds`, the stale CLAUDE.md line. Seed this server as
+   community #1 with `retention='full'`. `rs_matches.bot_match_id` kept in
+   place until stage 5, then dropped.
+2. **Identity.** `identities` + `identity_aliases`, seeded from CSVs +
    `rs_profiles`; all readers cut over; CSVs retired.
-3. **Derived-global.** `player_game` + `player_game_label` written at ingest.
-   One label vocabulary decision executed here (§6). Populates forward only.
-4. **Derived-community.** `player_rollup`, `player_metric_board`, `civ_stats` +
-   the per-community refresh job.
+3. **Derived-global.** `game_stats` + `game_labels` (one namespace, `kind`
+   column) written at ingest. Populates forward only. Raw-layer renames ride
+   this stage.
+4. **Derived-community + retention.** `player_rollups`, `metric_boards`,
+   `civ_stats`, `personas`, the per-community refresh job, and the retention
+   sweeper (§7).
 5. **Consumers cut over**, one per deploy: scouting report → quiz (player bank
    job per community; delete `utils/replay_quiz` parser + SQLite) → match cards
    → web APIs. Old read paths deleted as each lands.
-6. **Retirements.** `disabled_guilds`, `cls_*` data tables, `rs_player_game_tags`,
+6. **Final retirements.** `cls_*` tables, `rs_player_game_tags`,
    `rs_player_personas`, `rs_profiles`, `qc_profile_map` (absorbed), CSV seeds,
-   `players` → `qc_user_prefs` rename.
+   remaining old names.
 
 Stage 3 forward-only means the scouting report and quiz start thin and grow.
 That is accepted (decided above: no backfill) — but note the option exists to
@@ -217,17 +235,106 @@ backfill of missing raw data, and costs one script run if we ever want history.
 
 ## 6. Open decisions
 
-1. **Label vocabulary** (stage 3): one namespace with `kind`
-   (strategy/spawn/behaviour) or separate vocabularies in one table.
-2. **Commentary**: per-community LLM generation can't self-serve inside the
-   bot. Keep as optional operator-run batch, or retire the feature?
-3. **Alt ratings**: retire `/leaderboard_alternate` + its CSV, or fold the
-   what-if computation into the derived refresh job?
-4. **Retention for `rs_player_events`/`rs_player_techs`** (55% of DB size,
-   ~90 KB/match): keep forever vs roll up past a window. At 50 communities ≈
-   5,500 matches/month ≈ 550 MB/month if kept verbatim.
-5. **Community defaults**: what a fresh server gets on install (quiz off by
-   default? which features are opt-in?).
+1. **Naming scheme sign-off** (§8): the mapping is proposed, not yet approved.
+2. **Community defaults**: deferred by decision — everything enabled until the
+   partner-onboarding work begins.
+
+## 7. Retention
+
+**Policy is per-community**: `communities.retention` = `full` | `lean`.
+This community is `full` (the flagship and test bed — keeps everything).
+Partner communities default to `lean`.
+
+**Kept forever, every community** — the durable spine:
+
+- CORE, LINKS, identity — always.
+- `replay_matches` + the scalar `replay_players` row (~5 KB/match): the
+  measures every aggregate is built from.
+- The label rows and both derived tiers.
+
+**Swept for `lean` communities** — the bulky per-match children, after a
+retention window (default 30 days):
+
+- `replay_events` (~55 KB/match), `replay_techs` (~30 KB/match),
+  `replay_buildings`, `replay_units`, `replay_apm`.
+
+The sweeper only ever deletes rows whose match has already been consumed by
+derived-global **and** the community rollup, and never touches a `full`
+community. At 50 lean communities this is ~27 MB/month kept instead of
+~550 MB/month.
+
+**The honest consequence.** Derived is "freely dropped and rebuilt" only while
+the raw beneath it exists. For a lean community, once the sweep passes, the
+rollup's unit/timing aggregates are *incrementally maintained, not rebuildable*
+— the derived row becomes the only copy. Two feature limits follow, both
+accepted: `/player_details` and the APM chart work only within the window for
+lean communities (both post right after ingest, so in practice this costs
+nothing), and a future "recompute all rollups" applies to lean communities only
+from their window forward.
+
+## 8. Renaming — making the schema this product's own
+
+`qc_` is PUBobot2's prefix for QueueChannel; `rs_` was bolted on for replay
+stats, `cls_` for the classifier, `pq_` for pickup queues. Four generations of
+patchwork. The scheme below replaces all of it with **plain-English domain
+names** — no cryptic prefixes to decode. The layer contract (core / raw /
+derived) is not encoded in table names; it is declared in one place, a
+`data_registry` module listing every table's layer, sole writer, and retention
+class. Names say *what it is*; the registry says *how it is treated*.
+
+### 8.1 Table mapping
+
+| today | becomes | note |
+| --- | --- | --- |
+| `qc_matches` | `matches` | col `at` → `reported_at` |
+| `qc_player_matches` | `match_players` | fixes the swapped words |
+| `qc_players` | `player_ratings` | it is the per-channel rating row |
+| `qc_rating_history` | `rating_history` | |
+| `qc_match_id_counter` | `match_counter` | |
+| `qc_configs` | `channel_settings` | |
+| `pq_configs` | `queue_settings` | |
+| `qc_saved_state` | `bot_state` | |
+| `players` | `player_prefs` | the /expire store, finally named honestly |
+| `noadds` | `queue_bans` | |
+| `qc_phrases` | `player_phrases` | |
+| `qc_douche` | `douche_log` | the name IS the brand — keep it |
+| *(new)* | `communities`, `community_channels` | |
+| `rs_matches` | `replay_matches` | |
+| `rs_player_games` | `replay_players` | |
+| `rs_player_units` / `_techs` / `_buildings` / `_events` / `_apm` | `replay_units` / `replay_techs` / `replay_buildings` / `replay_events` / `replay_apm` | |
+| `rs_ingest` | `replay_ingest` | |
+| `rs_config` | folded into `communities` / registry | |
+| `qc_match_civs` | `civ_picks` | |
+| `qc_civ_reconcile` | `civ_reconcile` | |
+| `qc_lobbies` | `lobbies` | |
+| *(new link)* | `match_replays` | replaces `rs_matches.bot_match_id` |
+| `rs_profiles` + `qc_profile_map` + CSVs | `identities`, `identity_aliases` | §3.4 |
+| `cls_results` + `rs_player_game_tags` | `game_labels` | one namespace, `kind` column |
+| `cls_result_metrics` | evidence json on `game_labels` | |
+| *(new derived)* | `game_stats`, `player_rollups`, `metric_boards`, `civ_stats`, `personas` | |
+| `qc_quiz_posts` / `_answers` / `_config` | `quiz_posts` / `quiz_answers` / `quiz_settings` | |
+| `qc_prediction_posts` / `_votes` | `prediction_posts` / `prediction_votes` | |
+| `web_sessions` / `web_oauth_states` | unchanged | already clean |
+| `disabled_guilds`, `cls_classifications`\*, `cls_data_requirements`\*, `cls_player_totals`, `cls_match_ingest`, `bot_player_commentary` | **dropped** | \*definitions move into the classifier code, which is where they are edited anyway |
+
+### 8.2 Column conventions
+
+- keys: `community_id`, `channel_id`, `match_id` (bot match),
+  `replay_match_id` (today's `aoe2_match_id`), `user_id` (Discord),
+  `profile_id` (AoE2), `player_number` (seat in the replay)
+- `bot_match_id` disappears — with the link table there is no ambiguity left
+  for it to resolve
+- timestamps are `*_at` epoch ints, always named for the event
+  (`reported_at`, `parsed_at`, `computed_at`)
+- the `on_dublicate` typo in the DB adapter is fixed in passing
+
+### 8.3 Mechanics
+
+`RENAME TABLE` in MySQL is atomic and instant. Each stage renames the tables it
+touches **in the same deploy** that moves their `ensure_table` declarations and
+readers — never a separate big-bang rename, which would leave a window where
+ensure_table recreates the old names. Core renames land in stage 1 (they gate
+everything else); the rest ride their stage.
 
 ---
 
