@@ -205,3 +205,37 @@ def test_phrase_all_types_render_without_keyerror():
 	for c in samples:
 		line = ti._phrase(c, nick, meta, rng=rng)
 		assert isinstance(line, str) and "Alice" in line
+
+
+# ── history window ───────────────────────────────────────────────────────
+def test_window_start_is_ninety_days_back():
+	assert ti.WINDOW_DAYS == 90
+	assert ti.window_start(1_000_000_000) == 1_000_000_000 - 90 * 86400
+	assert ti.window_start(1_000_000_000, days=7) == 1_000_000_000 - 7 * 86400
+
+
+def test_fetch_history_binds_the_cutoff_into_the_query():
+	"""The window is applied in SQL so the read stays cheap as history grows."""
+	import asyncio
+
+	seen = {}
+
+	class _DB:
+		async def fetchall(self, sql, params=None):
+			seen["sql"] = sql
+			seen["params"] = params
+			return []
+
+	real_db = ti.db
+	ti.db = _DB()
+	try:
+		asyncio.run(ti._fetch_history(7, [1, 2, 3], 1234))
+	finally:
+		ti.db = real_db
+	assert "m.at >= %s" in seen["sql"]
+	assert seen["params"] == [7, 1234, 1, 2, 3]
+
+
+def test_fetch_history_needs_two_players():
+	import asyncio
+	assert asyncio.run(ti._fetch_history(7, [1], 1234)) == []

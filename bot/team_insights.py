@@ -24,12 +24,15 @@ let one player saturate the embed), and favours a diverse, dramatic 3-4.
 """
 import math
 import random
+import time
 from collections import Counter, namedtuple
 
 from core.database import db
 
 # ── Tunables ─────────────────────────────────────────────────────────────
 MAX_BULLETS = 4
+
+WINDOW_DAYS = 90           # hard cutoff: nothing older than this is loaded at all
 
 PERFECT_MIN = 5            # T1: decisive games, 100% one-way
 
@@ -66,6 +69,11 @@ WORST_BIAS = 1.15
 PERFECT_COND = 1.25
 
 OrderedHistory = namedtuple("OrderedHistory", "order matches nicks")
+
+
+def window_start(now_ts, days=WINDOW_DAYS):
+	"""Unix cutoff for the rolling history window."""
+	return int(now_ts) - days * 86400
 
 
 # ── Ordered history (pure) ───────────────────────────────────────────────
@@ -512,9 +520,14 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 
 
 # ── DB read + embed (deferred heavy imports) ─────────────────────────────
-async def _fetch_history(channel_id, user_ids):
-	"""Every ranked-match row in this channel involving any of ``user_ids``,
-	ordered by match_id so streaks/recency are reconstructable."""
+async def _fetch_history(channel_id, user_ids, since_ts):
+	"""Ranked-match rows in this channel involving any of ``user_ids``, no older
+	than ``since_ts``, ordered by match_id so streaks are reconstructable.
+
+	The window is a hard cutoff applied in SQL. It is not a stylistic choice:
+	over a full history everyone's win-rate with everyone converges to their own
+	baseline, so the best/worst-teammate swing stops clearing and the line dies.
+	"""
 	if len(user_ids) < 2:
 		return []
 	placeholders = ", ".join(["%s"] * len(user_ids))
@@ -523,9 +536,10 @@ async def _fetch_history(channel_id, user_ids):
 		"FROM qc_player_matches pm "
 		"JOIN qc_matches m ON m.match_id = pm.match_id AND m.channel_id = pm.channel_id "
 		"WHERE pm.channel_id = %s AND m.ranked = 1 AND pm.team IS NOT NULL "
+		"AND m.at >= %s "
 		"AND pm.user_id IN (" + placeholders + ") "
 		"ORDER BY pm.match_id ASC",
-		[channel_id, *user_ids]
+		[channel_id, since_ts, *user_ids]
 	)
 	return rows or []
 
@@ -556,7 +570,8 @@ async def build_insights_embed(match):
 		return None
 
 	players = team0 + team1
-	rows = await _fetch_history(match.qc.id, [p.id for p in players])
+	rows = await _fetch_history(match.qc.id, [p.id for p in players],
+	                            window_start(time.time()))
 	hist = _index_history(rows)
 	if not hist.order:
 		return None
@@ -582,5 +597,5 @@ async def build_insights_embed(match):
 		"⚔️ Tale of the Tape",
 	])
 	embed = Embed(title=title, colour=Colour(0xe67e22), description="\n\n".join(lines))
-	embed.set_footer(text=f"Recent form from {len(hist.order)} ranked games · just for fun")
+	embed.set_footer(text=f"Last {WINDOW_DAYS} days · {len(hist.order)} ranked games · just for fun")
 	return embed
