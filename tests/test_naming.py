@@ -13,6 +13,7 @@ OLD_NAMES = [
 	"qc_phrases", "qc_douche", "qc_match_civs", "qc_civ_reconcile",
 	"qc_lobbies", "qc_quiz_posts", "qc_quiz_answers", "qc_quiz_config",
 	"qc_prediction_posts", "qc_prediction_votes", "on_dublicate",
+	"bot_player_commentary", "disabled_guilds", "leaderboard_alternate", "alt_ratings",
 ]
 _ALLOW = ("core/migrations.py", "tests/test_naming.py")
 

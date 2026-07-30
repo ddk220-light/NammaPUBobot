@@ -1,5 +1,5 @@
 __all__ = [
-	'last_game', 'stats', 'top', 'rank', 'rank_detailed', 'leaderboard', 'leaderboard_alternate',
+	'last_game', 'stats', 'top', 'rank', 'rank_detailed', 'leaderboard',
 	'mapstats', 'activity'
 ]
 
@@ -10,13 +10,12 @@ from time import time
 from math import ceil
 from nextcord import Member, Embed, Colour, File
 
-from core.utils import get, find, seconds_to_str, get_nick, discord_table  # noqa: F401
+from core.utils import get, find, seconds_to_str, get_nick  # noqa: F401
 from core.database import db
 from core.console import log
 from core.config import cfg
 
 import bot
-from bot import alt_ratings
 
 
 async def last_game(ctx, queue: str = None, player: Member = None, match_id: int = None):
@@ -165,17 +164,11 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	# Dashboard-overview pieces (persona/scout description + duo quadrants),
 	# same server-side data the web profile page shows. Best-effort too.
 	snapshot = {}
-	commentary = None
 	try:
 		from bot import web as web_dashboard
 		snapshot = await web_dashboard.player_overview_snapshot(target.id)
 	except Exception as e:
 		log.error(f"player_overview_snapshot failed for {target.id}: {e}")
-	try:
-		from bot.commentary import query as commentary_query
-		commentary = await commentary_query.player_commentary(target.id, "all")
-	except Exception as e:
-		log.error(f"player_commentary failed for {target.id}: {e}")
 
 	# Mini version of the web profile: summary strip up top, then grouped
 	# sections mirroring the dashboard's layout.
@@ -237,9 +230,8 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 		)
 
 	# Player description: the persona line always leads (same as the overview
-	# page banner), then the stored bot commentary prose. The generated scout
-	# read is only a fallback, with its tag enumeration stripped — commentary
-	# text is what we want here, not tag counts.
+	# page banner); the generated scout read fills in below it, with its tag
+	# enumeration stripped, when available.
 	desc_lines = []
 	persona = snapshot.get("persona") or {}
 	scout = snapshot.get("scout_report") or {}
@@ -250,15 +242,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 		desc_lines.append(f"**{label}**")
 		if persona.get("tagline"):
 			desc_lines.append(persona["tagline"])
-	c = (commentary or {}).get("commentary") or {}
-	body = c.get("summary") or c.get("read") or c.get("description")
-	if isinstance(body, (list, tuple)):
-		body = " ".join(str(b) for b in body if b)
-	if body:
-		if c.get("headline"):
-			desc_lines.append(f"**{c['headline']}**")
-		desc_lines.append(str(body))
-	elif snapshot.get("parsed_matches") and scout.get("description"):
+	if snapshot.get("parsed_matches") and scout.get("description"):
 		desc_lines.append(re.sub(r"\s*Recurring tags:[^.]*\.", "", scout["description"]).strip())
 	if desc_lines:
 		text = "\n".join(desc_lines)
@@ -378,47 +362,6 @@ async def leaderboard(ctx, page: int = 1):
 		page=page + 1, pages=pages, count=len(full)
 	))
 	await ctx.reply(embed=embed)
-
-
-async def leaderboard_alternate(ctx, page: int = 1):
-	""" What-if leaderboard: Elo without the blanket weekly uncertainty (sigma) decay.
-
-	Reads the precomputed snapshot in data/alt_ratings.csv (regenerate with
-	utils/compute_alt_ratings.py) and shows it next to live ratings so players can
-	see how a decay-policy change would feel before anything is actually changed.
-	"""
-	page = (page or 1) - 1
-
-	alt_map = alt_ratings.load_alt_ratings()
-	if not alt_map:
-		raise bot.Exc.NotFoundError(ctx.qc.gt("No alternate-rating snapshot is available yet."))
-
-	rows = alt_ratings.build_alt_leaderboard(await ctx.qc.get_lb(), alt_map)
-	pages = ceil(len(rows) / 10) or 1
-	rows = rows[page * 10:(page + 1) * 10]
-	if not len(rows):
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
-
-	meta = alt_ratings.load_snapshot_meta()
-	note = (
-		"📊 **Alternate Elo — a what-if, not your live rating.**\n"
-		f"This is what the leaderboard would look like if the weekly *uncertainty (σ) decay* — which "
-		f"bumped **every** player's volatility up every week since {meta.get('branch_date', 'late 2025')} "
-		f"and stopped active players ever settling — had instead only applied to inactive players.\n"
-		f"`Δ` = alternate − current. Snapshot as of {meta.get('computed_date', 'now')} · page {page + 1} of {pages}.\n"
-		"Take a look and let us know how it feels before we decide whether to change anything.\n"
-	)
-	table = discord_table(
-		["№", "Nickname", "Elo", "Alt Elo", "Δ"],
-		[[
-			(page * 10) + (n + 1),
-			rows[n]['nick'].strip(),
-			rows[n]['current'],
-			rows[n]['alt'],
-			("+" if rows[n]['delta'] > 0 else "") + str(rows[n]['delta']),
-		] for n in range(len(rows))]
-	)
-	await ctx.reply(note + table)
 
 
 async def mapstats(ctx, period: str = None):

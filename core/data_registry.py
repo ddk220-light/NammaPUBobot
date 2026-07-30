@@ -44,8 +44,6 @@ REGISTRY = {
 	"queue_bans": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
 	"player_phrases": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
 	"douche_log": dict(layer="core", tenancy="channel", writers=("bot/douche.py",), retention="forever"),
-	# Declared but never written or read anywhere — retired in stage 1.7.
-	"disabled_guilds": dict(layer="core", tenancy="global", writers=(), retention="forever"),
 	# feature state (core contract)
 	"quiz_posts": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
 	"quiz_answers": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
@@ -128,7 +126,6 @@ REGISTRY = {
 	"cls_match_ingest": dict(
 		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
 	),
-	"bot_player_commentary": dict(layer="derived", tenancy="global", writers=(), retention="forever"),
 	# core — multi-tenancy root (stage 1.5)
 	"communities": dict(
 		layer="core", tenancy="community", writers=("bot/community.py",), retention="forever"

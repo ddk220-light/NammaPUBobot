@@ -26,7 +26,6 @@ from . import quiz  # noqa: F401  (qc_quiz_* ensure_table + the QuizJobs instanc
 from . import predictions  # noqa: F401  (qc_prediction_* ensure_table + the PredictionJobs instance)
 from . import replay_stats  # noqa: F401  (rs_* ensure_table + ReplayStatsJobs instance)
 from . import classifications  # noqa: F401  (cls_* ensure_table side effect)
-from . import commentary  # noqa: F401  (bot_player_commentary ensure_table side effect)
 
 
 class _TTLReactionDict(dict):

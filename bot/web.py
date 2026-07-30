@@ -1801,14 +1801,16 @@ async def _player_streak(user_id, at_clause, params):
 
 
 async def _match_stats_player(user_id, period):
-	from bot.commentary import query as commentary_query
+	# The stored player-commentary feature was retired (its backing table
+	# dropped) — the key stays in the payload for API compatibility, but is
+	# always None now.
+	commentary = None
 
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
 	rating_history = await _rating_history(period, user_id)
 	strategy_tags = await _player_profile_tags(profile_ids, period)
-	commentary = await commentary_query.player_commentary(user_id, period)
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -2048,8 +2050,6 @@ async def handle_leaderboard(request):
 
 
 async def handle_player_stats(request):
-	from bot.commentary import query as commentary_query
-
 	period = request.query.get("period", DEFAULT_STATS_PERIOD)
 	if period not in MATCH_STAT_PERIODS:
 		period = DEFAULT_STATS_PERIOD
@@ -2062,12 +2062,16 @@ async def handle_player_stats(request):
 	if not await _player_has_public_stats(user_id):
 		return web.json_response({"error": "Player not found"}, status=404)
 
+	# The stored player-commentary feature was retired (its backing table
+	# dropped) — the key stays in the payload for API compatibility, but is
+	# always None now.
+	commentary = None
+
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(period, user_id)
 	rating_history = await _rating_history(period, user_id)
 	strategy_tags = await _player_profile_tags(profile_ids, period)
-	commentary = await commentary_query.player_commentary(user_id, period)
 	base_args = [user_id, *params]
 	summary = await db.fetchone(
 		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "

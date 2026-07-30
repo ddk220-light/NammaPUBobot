@@ -122,3 +122,11 @@ async def _m001(db):
 	for old, new in _STAGE1_RENAMES:
 		await rename_table(db, old, new)
 	await rename_column(db, "matches", "at", "reported_at")
+
+
+@migration("002_drop_retired")
+async def _m002(db):
+	for t in ("bot_player_commentary", "disabled_guilds"):
+		if await table_exists(db, t):
+			await db.execute(f"DROP TABLE `{t}`")
+			log.info(f"migrations: dropped retired table {t}")
