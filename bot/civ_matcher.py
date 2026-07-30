@@ -99,7 +99,7 @@ async def _fetch_recent(session, sem, pid, pool):
 			pool[mid] = m
 
 
-async def _find_and_record(channel_id, bot_match_id, players, winner, match_at, post_updates=True):
+async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 	"""Return True if civs were recorded (or already present), False to retry."""
 	nick_to_pids = _load_profile_map()
 	uid_to_pids = _load_profile_uid_map()
@@ -177,31 +177,7 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at, 
 		f"Civ match: bot match {bot_match_id} -> aoe2 {aoe2_match_id}, "
 		f"recorded {len(rows)} civs (overlap {best_overlap})."
 	)
-
-	# Now that the aoe2 match is resolved, post the civ wrap-up (live path only —
-	# the reconcile sweep passes post_updates=False to avoid spamming old matches).
-	if post_updates:
-		await _post_civ_summary(channel_id, bot_match_id, rows, winner)
 	return True
-
-
-async def _post_civ_summary(channel_id, bot_match_id, rows, winner):
-	"""Post the "what the civs say" wrap-up now that civs are known.
-
-	Best-effort: any failure here must not affect civ recording.
-	"""
-	try:
-		from core.client import dc
-		from bot.post_game import build_post_game_embed
-
-		channel = dc.get_channel(channel_id)
-		if channel is None:
-			return
-		embed = await build_post_game_embed(channel_id, bot_match_id, rows, winner)
-		if embed is not None:
-			await channel.send(embed=embed)
-	except Exception as e:
-		log.error(f"Post-game civ summary failed (bot match {bot_match_id}): {e}")
 
 
 async def _record_with_retry(channel_id, bot_match_id, players, winner, match_at):
