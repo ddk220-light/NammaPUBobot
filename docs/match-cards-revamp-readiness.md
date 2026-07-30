@@ -4,6 +4,18 @@
 **Status:** pre-implementation. Nothing built yet.
 **Design spec:** [docs/superpowers/specs/2026-07-28-match-cards-revamp-design.md](superpowers/specs/2026-07-28-match-cards-revamp-design.md)
 
+> **Decision update (2026-07-29).** Part 2 (the replay archive, §10–17) is
+> **dropped**. The card work is strictly forward-looking: no archive, no backfill,
+> no bulk download. Read-only access to the live Railway DB was authorized for the
+> card's pre-work, which resolves the constraints Part 2 existed to work around —
+> coverage measurement, calibration and preview all run as SELECT-only live-DB
+> reads with results committed to the repo. The open questions in §7 are resolved
+> in the revised spec (eAPM on the stats line as average + peak, display-only;
+> stored values shown as-is for early-eliminated players; medals re-confirmed on
+> raw counts; strategy coverage measured before the implementation plan is
+> finalized). Part 2 is retained below for historical context only. The
+> `download.py` resume bug (§15) is tracked as its own task, outside this work.
+
 This document is the "what do we actually need, and what could bite us" pass before an
 implementation plan gets written. The design decisions themselves are settled and live in
 the spec — this covers **data availability, environment, calibration, blockers, and the

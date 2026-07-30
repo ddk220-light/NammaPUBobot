@@ -1,19 +1,18 @@
 # Match Cards revamp — design
 
-**Date:** 2026-07-28
-**Surfaces:** `bot/post_game.py` (Match Cards embed), `bot/replay_stats/scoring.py`
-**Status:** design agreed — **parked, sequenced second**
+**Date:** 2026-07-28 · **Revised:** 2026-07-29 (eAPM placement, pre-work pipeline)
+**Surfaces:** `bot/post_game.py` (Match Cards embed), `bot/replay_stats/card_scoring.py` (new)
+**Status:** design agreed — active
 
-> **Sequencing.** This spec is deliberately held until the per-player eAPM pipeline
-> ships. APM measures activity the production data cannot see — unit movement,
-> micro, fighting — and adding it afterwards would mean designing this card twice.
-> The APM work is a parser + schema change (`EXTRACT_VERSION` bump, new table,
-> backfill decision) and gets its own spec; this one is then revised to place
-> average and peak eAPM on the card and to reconsider which signals still earn
-> their space once activity data exists.
->
-> Everything below is agreed and should survive that revision, with the medal and
-> tag sets the most likely to change.
+> **Revision note (2026-07-29).** The original spec was parked until the per-player
+> eAPM pipeline shipped. It has now shipped (`feat/eapm-pipeline`), and this revision
+> resolves the deferred questions: average and peak eAPM go on the stats line (see
+> Stats line), eAPM is display-only and enters no score, and the medal basis is
+> re-confirmed as raw counts. It also records the agreed pre-work pipeline
+> (see Pre-work) and the scope decision that superseded the readiness doc's Part 2:
+> **strictly forward-looking — no replay archive, no backfill.** Newly played
+> matches are already ingested with every table this card reads; history is used
+> only to calibrate thresholds, via the existing live DB.
 
 ## Problem
 
@@ -150,6 +149,33 @@ needs a parameter or variant to point at `card_scoring.py` instead. Because the
 existing module is untouched, this calibration is additive — it cannot change how
 often any existing tag fires on the surfaces this revamp doesn't own.
 
+## Pre-work: coverage, calibration, preview
+
+Three steps run against the **live Railway MySQL** before the implementation plan
+is finalized. Access is **read-only and SELECT-only** — results are exported to
+files committed to the repo; nothing ever writes to the live DB. This constraint
+is part of the design, not an operational detail.
+
+1. **Strategy coverage measurement.** One query answering: what share of
+   player-games match at least one of the 17 classifications in `cls_results`?
+   This is the checkpoint that can invalidate the headline design. If coverage is
+   low, the preview step decides whether the headline slot needs rethinking —
+   either way the card never renders a placeholder.
+2. **Calibration.** `utils/tag_calibration.py` gains a parameter to target
+   `card_scoring.py`. Thresholds are derived from the live history; the
+   calibration **input snapshot** (per-player-game component inputs) is committed
+   to the repo so the derived thresholds are reproducible offline. The resulting
+   `TH` constants land in `card_scoring.py` with their provenance (snapshot file,
+   date, sample size) noted alongside.
+3. **Preview.** A small script renders the exact card text for ~5 recent
+   post-eAPM-deploy matches from live data — real strategy, spawn and eAPM, no
+   stubs. The preview is reviewed by a human before build; this spec is amended
+   if the design does not survive contact with real matches.
+
+There is no replay archive and no backfill. The forward ingest pipeline already
+writes every table this card reads; nothing here adds parsing, storage, or
+schema.
+
 ## Medals
 
 Two medal types, ranked **across all players in the match** (not per team):
@@ -165,6 +191,8 @@ most players carry zero or one medal, which is the intended discrimination.
 Medals rank on **raw counts**, not component scores. The medal answers "who made
 the most", which is a plain fact; the component score answers "who contributed
 most overall" and includes upgrade investment. Keeping them distinct is deliberate.
+Re-confirmed 2026-07-29 with eAPM data available: activity measures something
+other than production volume and does not change the medal basis.
 
 Ties break deterministically: raw count, then the other component's raw count,
 then nick ascending — so re-renders of the same match never reorder.
@@ -228,11 +256,31 @@ earliest-phase match (rush before castle before late). No label when none fire.
 Raw counts, given real space since they are more concrete than any derived score:
 
 ```
-84 vils · 46 military · 14 farms · 3 TC
+84 vils · 46 military · 14 farms · 3 TC · 62 eAPM (pk 89)
 ```
 
 `villagers` and `military` come from `rs_player_games`; farms and TCs from
 `rs_player_buildings` (counts only — that table stores no timestamps).
+
+### eAPM (added in the 2026-07-29 revision)
+
+- **Average** reads from `rs_player_games.eapm` — the parity-preserving stored
+  value. It must **never** be recomputed from `apm_query.apm_series`: that
+  function's `mean_active` divides by the last active minute, not whole game
+  minutes, and was renamed specifically so this card would not mistake it for
+  the average.
+- **Peak** is the maximum bucket from `rs_player_apm`. That table is
+  forward-only, so matches ingested before the eAPM deploy have no rows — the
+  `(pk N)` suffix is omitted silently, per the no-placeholder rule. The seam
+  closes on its own as forward-only matches accumulate.
+- **Early-eliminated players** show their stored average as-is. mgz divides
+  every player's actions by full game duration, which deflates a player who
+  died at minute 15 — but their low eAPM sits next to their low counts and
+  reads coherently as a short game. Inventing a survival-adjusted denominator
+  would break parity with the stored value.
+- eAPM is **display-only**. It enters no component mix, no medal ranking and no
+  tag threshold. Whether activity deserves a scored role is revisited after
+  live use.
 
 ## Spawn context
 
@@ -254,22 +302,23 @@ silently when absent — it must never render a placeholder or a guess.
 
 👑 Deepak — Franks · Castle drop
    ⚔⚔⚔ 🌾🌾 · `Low-eco pressure`
-   84 vils · 46 military · 14 farms · 3 TC · spawned alone
+   84 vils · 46 military · 14 farms · 3 TC · 62 eAPM (pk 89) · spawned alone
 
 • Sathish — Mongols · Scout rush
    ⚔ · `Constant production`
-   61 vils · 52 military · 8 farms · 2 TC
+   61 vils · 52 military · 8 farms · 2 TC · 48 eAPM (pk 71)
 
 • Ravi — Britons · Archer rush
-   71 vils · 38 military · 11 farms · 2 TC
+   71 vils · 38 military · 11 farms · 2 TC · 55 eAPM
 
 • Kumar — Mayans · ⚠ partial replay data
 ```
 
-Three lines per player, roughly 110 characters each. A four-player team lands near
-440 characters, comfortably inside Discord's 1024-character field cap. The existing
-hard truncation at `[:1024]` stays as a backstop but should no longer be reachable;
-if it ever triggers, drop the stats line before dropping a player.
+Three lines per player, roughly 110 characters each with the eAPM term included.
+A four-player team lands near 460 characters, comfortably inside Discord's
+1024-character field cap. The existing hard truncation at `[:1024]` stays as a
+backstop but should no longer be reachable; if it ever triggers, drop the stats
+line before dropping a player.
 
 `👑` still marks the highest impact score on each team. Sort order within a team
 remains `carry_sort_key` on the internal impact score.
@@ -286,6 +335,8 @@ All reads. No new parsing, no schema change, no backfill.
 | Production timeline | `rs_player_events` | Every ingested match |
 | Farms, TCs | `rs_player_buildings` | Every ingested match |
 | Spawn distances | `cls_result_metrics` | Nomad, 6/8 players, balanced result only |
+| Average eAPM | `rs_player_games.eapm` | Every ingested match |
+| Peak eAPM | `rs_player_apm` | Matches ingested after the eAPM deploy only |
 
 ## Correctness fixes in scope
 
@@ -320,8 +371,10 @@ see "Accepted consequence" above.
 4. **Hoist the roster fetch.** `build_match_cards_embed` and
    `build_match_analysis_embed` each call `_analysis_rows()` and `_team_names()`
    independently, and always post together — so the same queries run twice per
-   post. This design adds four more queries, which would double from 8 to 16.
-   Fetch once in `post_match_analysis` and pass the rows to both builders.
+   post. This design adds several more reads (`cls_results`, `rs_player_techs`,
+   `rs_player_events`, `cls_result_metrics`, `rs_player_apm`), which duplication
+   would double as well. Fetch once in `post_match_analysis` and pass the rows to
+   both builders.
 
 ## Error handling
 
@@ -331,6 +384,8 @@ see "Accepted consequence" above.
   "not measured". They are excluded from medal ranking entirely.
 - **No strategy match**: omit the label. No placeholder.
 - **No spawn metrics**: omit the phrase. No placeholder.
+- **No peak eAPM rows** (pre-deploy match): omit the `(pk N)` suffix. **No stored
+  average eAPM**: omit the eAPM term entirely. No placeholder in either case.
 - **Any failure in the new queries** must degrade to the card without that signal,
   never drop the post. `post_match_analysis` already wraps everything in a
   try/except and returns False; per-signal fetches get the same treatment
@@ -338,9 +393,9 @@ see "Accepted consequence" above.
 
 ## Testing
 
-`scoring.py` stays pure, DB-free and free of `core` imports, so everything below is
-unit-testable in the existing suite (547 tests, `tests/conftest.py` stubs the heavy
-imports):
+`card_scoring.py` stays pure, DB-free and free of `core` imports (the same
+discipline as `scoring.py`), so everything below is unit-testable in the existing
+suite (547 tests, `tests/conftest.py` stubs the heavy imports):
 
 - **Medal allocation**: top-three across the match, ties, fewer than three players
   with data, players excluded for missing data.
@@ -357,7 +412,9 @@ imports):
   include every column the mixes read.
 
 Rendering (`_player_card_line`, `_team_card_fields`) is tested for character budget
-against a 4v4 with maximum-length nicknames and civs.
+against a 4v4 with maximum-length nicknames and civs, and for the stats line in all
+three eAPM states: average + peak, average only (no `rs_player_apm` rows), and no
+eAPM at all.
 
 ## Risks
 
@@ -366,6 +423,7 @@ against a 4v4 with maximum-length nicknames and civs.
   flatness could return in a new form.
 - **Strategy label coverage is unknown.** No measurement yet of what share of
   players match at least one classification per match. If coverage is low, most
-  cards will show no headline label and the card gets sparse. Measure before ship.
+  cards will show no headline label and the card gets sparse. Now scheduled as
+  pre-work step 1, before the implementation plan is finalized.
 - **Medal scope is match-wide while tags are team-scoped.** Deliberate, but it is a
   mixed frame that may confuse readers. Worth revisiting after a few live matches.
