@@ -438,9 +438,8 @@ ALL_TABLES = frozenset(REGISTRY)
 **Files:**
 - Modify: `core/DBAdapters/mysql.py` (parameter name), plus every caller —
   find with `grep -rln "on_dublicate" --include="*.py" bot/ core/ utils/`.
-- Test: extend `tests/test_naming.py` (created in Task 1.4 — if executing in
-  order, park the grep-guard here as `tests/test_no_dublicate.py` and fold it
-  into `test_naming.py` in 1.4):
+- Test: **create** `tests/test_naming.py` here with the typo guard as its only
+  test. Task 1.4 adds the old-table-name test to the same file.
 
 - [ ] **Step 1:** Mechanical rename `on_dublicate` → `on_duplicate` in the
   adapter signature and all call sites (sed or scripted edit; TAB files stay TAB).
@@ -538,10 +537,15 @@ async def _m001(db):
 core/migrations.py (renames reference old names forever) and this test."""
 import os
 
+# Only names that cannot collide with ordinary identifiers. `players` and
+# `noadds` are deliberately absent: both are live command/module names
+# ("/noadds", bot/stats/noadds.py, team['players']), so a substring guard on
+# them fires on legitimate code. Their renames are enforced by
+# tests/test_data_registry.py instead, which compares actual declarations.
 OLD_NAMES = [
 	"qc_matches", "qc_player_matches", "qc_players", "qc_rating_history",
 	"qc_match_id_counter", "qc_configs", "pq_configs", "qc_saved_state",
-	"noadds", "qc_phrases", "qc_douche", "qc_match_civs", "qc_civ_reconcile",
+	"qc_phrases", "qc_douche", "qc_match_civs", "qc_civ_reconcile",
 	"qc_lobbies", "qc_quiz_posts", "qc_quiz_answers", "qc_quiz_config",
 	"qc_prediction_posts", "qc_prediction_votes", "on_dublicate",
 ]
@@ -578,14 +582,11 @@ def test_no_old_table_names_in_live_code():
 ### Task 1.5: Community entity + auto-enroll
 
 **Files:**
-- Create: `bot/community.py`
-- Modify: `core/migrations.py` (migration 002 creates tables — creation via
-  migration, not ensure_table, so the registry test's scan hint still finds a
-  declaration: declare them with ensure_table in `bot/community.py` AND list in
-  REGISTRY; migration 002 is then unnecessary for creation — ensure_table
-  creates on first import. **Use ensure_table, no migration.**)
+- Create: `bot/community.py` — declares `communities` and `community_channels`
+  with `db.ensure_table` (NOT a migration: ensure_table creates them on first
+  import, and the registry test's scanner needs a declaration to find).
 - Modify: `bot/events.py` (on_ready enroll hook), `config.example.cfg` +
-  `start.py` (add `FLAGSHIP_GUILD_IDS = []`)
+  `start.py` (add `FLAGSHIP_GUILD_IDS = []`), `core/data_registry.py`
 - Test: `tests/test_community.py`
 
 **Interfaces (Produces — binding for stages 2-5):**
