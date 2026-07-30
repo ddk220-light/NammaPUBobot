@@ -22,7 +22,6 @@ Python analysis (unit-testable without a DB), and build_post_game_embed returns
 an Embed or None. Heavy imports (nextcord / civ_stats / db) are deferred so the
 pure helpers import cleanly under CI.
 """
-import math  # noqa: F401  (kept for parity / future scoring tweaks)
 import random
 
 # ── Tunables ─────────────────────────────────────────────────────────────

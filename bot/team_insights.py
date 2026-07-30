@@ -586,9 +586,10 @@ def complement_of(c, nick, teams_meta, rosters):
 	"""Who on the subject's own side a line did not already name.
 
 	Returns ``(who, team_name, sole_team)``. ``who`` is "" when the line already
-	names everyone on that side. ``sole_team`` is False for opposing-pair lines
-	(h2h, deadlock), which have no single subject side. Public because
-	bot/storyline_payoff.py builds a past-tense frame from the same complement.
+	names everyone on that side — and also "", along with ``team_name``, when
+	``sole_team`` is False (opposing-pair lines like h2h/deadlock, which have no
+	single subject side). Public because bot/storyline_payoff.py builds a
+	past-tense frame from the same complement.
 	"""
 	teams = sorted(c["teams"])
 	if len(teams) != 1:
@@ -853,8 +854,8 @@ async def build_insights_embed(match):
 		return None
 
 	players = team0 + team1
-	rows = await _fetch_history(match.qc.id, [p.id for p in players],
-	                            window_start(time.time()))
+	since = window_start(time.time())
+	rows = await _fetch_history(match.qc.id, [p.id for p in players], since)
 	hist = _index_history(rows)
 	if not hist.order:
 		return None
@@ -870,6 +871,7 @@ async def build_insights_embed(match):
 
 	from nextcord import Colour, Embed
 
+	from core.console import log
 	from core.utils import get_nick
 
 	nick = {p.id: get_nick(p) for p in players}
@@ -878,8 +880,28 @@ async def build_insights_embed(match):
 		{"name": teams[1].name, "emoji": teams[1].emoji},
 	]
 	rosters = {0: [p.id for p in team0], 1: [p.id for p in team1]}
-	lines = [_phrase(c, nick, teams_meta, rosters, rng=rng) for c in chosen]
+	lines = []
+	for c in chosen:
+		try:
+			lines.append(_phrase(c, nick, teams_meta, rosters, rng=rng))
+		except Exception as e:
+			log.error(f"Storyline render failed ({c.get('type')}): {e}")
+	if not lines:
+		return None
 	title = "⚔️ Tale of the Tape"
 	embed = Embed(title=title, colour=Colour(0xe67e22), description="\n\n".join(lines))
 	embed.set_footer(text=f"Last {WINDOW_DAYS} days · {len(hist.order)} ranked games · just for fun")
+
+	# The payoff recomputes these storylines at report time. It must recompute
+	# against the same window, the same roster and the same seed, none of which
+	# are stable across a match's lifetime: the 90-day window slides as the game
+	# runs, /subfor and sub_auto can re-split the teams during WAITING_REPORT,
+	# and a redeploy hands a restored match a brand-new id. Stashing the three
+	# is not a retreat from recompute-don't-store — the storylines are still
+	# recomputed, this only pins what they are recomputed *from*.
+	match.storyline_ctx = {
+		"since": since,
+		"seed": match.id,
+		"rosters": rosters,
+	}
 	return embed

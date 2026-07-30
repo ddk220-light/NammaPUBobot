@@ -195,9 +195,11 @@ def test_h2h_payoff_frame_falls_back_to_generic_when_rival_backers_is_none():
 
 
 def test_payoff_frame_consumes_exactly_one_rng_choice_call_per_branch():
-	"""build_payoff_embed re-runs ti._phrase to burn the pre-game RNG draws so
-	its variant picks stay aligned -- every _payoff_frame branch must consume
-	exactly one rng.choice call or that alignment breaks."""
+	"""One branch, one draw: build_payoff_embed renders every settled candidate
+	off a single shared rng, so a branch that quietly grew a second rng.choice
+	call would shift the draw offset for every candidate rendered after it in
+	the same embed -- a branch change cannot silently reword the other module's
+	output just by changing how many draws its own branch takes."""
 	cases = [
 		("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False},
 		 (0, 1), _SMALL_ROSTERS, True),
@@ -229,12 +231,25 @@ class _T(list):
 		self.emoji = emoji
 
 
+_UNSET = object()
+
+
 class _M:
-	def __init__(self, winner):
+	"""``storyline_ctx`` defaults to a context matching this match's own teams --
+	the shape build_insights_embed would have stashed at tease time. Pass
+	``storyline_ctx=None`` to model a match that never posted a tease (e.g. a
+	restore), or a hand-built dict to model a stash that has drifted from the
+	current roster."""
+
+	def __init__(self, winner, *, storyline_ctx=_UNSET):
 		self.id = 500
 		self.winner = winner
 		self.teams = [_T([1, 2, 3, 4], "Alpha", "🟦"), _T([5, 6, 7, 8], "Beta", "🟥")]
 		self.qc = type("QC", (), {"id": 77})()
+		if storyline_ctx is _UNSET:
+			storyline_ctx = {"since": 0, "seed": self.id, "rosters": {0: [1, 2, 3, 4], 1: [5, 6, 7, 8]}}
+		if storyline_ctx is not None:
+			self.storyline_ctx = storyline_ctx
 
 
 def _history_rows():
@@ -256,7 +271,9 @@ def _history_rows():
 	return rows
 
 
-def _run_build(monkeypatch, winner, rows):
+def _run_build(monkeypatch, winner, rows, *, storyline_ctx=_UNSET, seen=None):
+	"""``seen``, if given, is filled with the sql/params the fake db received --
+	lets a test assert on what build_payoff_embed actually queried for."""
 	import asyncio
 	import sys
 	import types
@@ -265,6 +282,9 @@ def _run_build(monkeypatch, winner, rows):
 
 	class _DB:
 		async def fetchall(self, sql, params=None):
+			if seen is not None:
+				seen["sql"] = sql
+				seen["params"] = params
 			return rows
 
 	monkeypatch.setattr(ti, "db", _DB())
@@ -292,7 +312,7 @@ def _run_build(monkeypatch, winner, rows):
 	fake_nextcord.Embed = _FakeEmbed
 	fake_nextcord.Colour = lambda value: value
 	monkeypatch.setitem(sys.modules, "nextcord", fake_nextcord)
-	return asyncio.run(sp.build_payoff_embed(_M(winner)))
+	return asyncio.run(sp.build_payoff_embed(_M(winner, storyline_ctx=storyline_ctx)))
 
 
 def test_a_draw_builds_no_embed(monkeypatch):
@@ -318,3 +338,42 @@ def test_the_current_match_is_excluded_from_its_own_prior(monkeypatch):
 	with_current = _run_build(monkeypatch, 0, rows)
 	without = _run_build(monkeypatch, 0, _history_rows())
 	assert with_current.description == without.description
+
+
+# ── F1: the payoff is pinned to the tease's stashed window/roster/seed ─────
+def test_no_storyline_ctx_at_all_builds_no_embed(monkeypatch):
+	"""A match that never posted a tease (e.g. restored mid-report via
+	Match.from_json, which hands it a brand-new id) has no storyline_ctx at all.
+	Printing a verdict on a tease nobody saw would be worse than saying nothing."""
+	assert _run_build(monkeypatch, 0, _history_rows(), storyline_ctx=None) is None
+
+
+def test_a_roster_that_differs_from_the_stash_builds_no_embed(monkeypatch):
+	"""/subfor or sub_auto can re-split match.teams after the tease posted. Here
+	player 9 has replaced player 4 on Alpha relative to the stash -- the payoff
+	must not resolve storylines about a line-up that no longer exists."""
+	ctx = {"since": 0, "seed": 500, "rosters": {0: [1, 2, 3, 9], 1: [5, 6, 7, 8]}}
+	assert _run_build(monkeypatch, 0, _history_rows(), storyline_ctx=ctx) is None
+
+
+def test_since_from_the_stash_is_what_the_history_read_receives(monkeypatch):
+	"""build_payoff_embed must read ctx['since'], not recompute
+	window_start(time.time()) itself -- the window slides while a match is live,
+	so recomputing it independently is exactly the drift F1 fixes."""
+	seen = {}
+	ctx = {"since": 424242, "seed": 500, "rosters": {0: [1, 2, 3, 4], 1: [5, 6, 7, 8]}}
+	_run_build(monkeypatch, 0, _history_rows(), storyline_ctx=ctx, seen=seen)
+	assert seen["params"][1] == 424242
+
+
+def test_the_stashed_seed_not_match_id_drives_the_prior_filter(monkeypatch):
+	"""match.id is 500 in every _M here; a low ctx['seed'] should still cut the
+	prior history off at 3 (only match_ids 1-2 survive), starving the mate
+	candidate of the 6 games it needs and yielding no embed. If the code still
+	filtered on match.id instead of the stashed seed, this would build the same
+	embed as the default-ctx case (seed==match.id==500) does."""
+	ctx = {"since": 0, "seed": 3, "rosters": {0: [1, 2, 3, 4], 1: [5, 6, 7, 8]}}
+	assert _run_build(monkeypatch, 0, _history_rows(), storyline_ctx=ctx) is None
+	# Sanity: the default ctx (seed == match.id == 500) does build an embed from
+	# the same rows, so the None above is the seed's doing, not a fixture bug.
+	assert _run_build(monkeypatch, 0, _history_rows()) is not None

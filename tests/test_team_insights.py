@@ -300,6 +300,18 @@ def test_trio_fires_at_five_games_and_seventy_five_percent():
 	assert cands[0]["players"] == frozenset((1, 2, 3))
 
 
+def test_trio_fires_at_exactly_the_share_threshold():
+	"""TRIO_MIN_GAMES is a floor on the sample, not a fixture size -- at 8 games
+	6/8 == 0.75 exactly in binary, so the >= TRIO_MIN_SHARE boundary is directly
+	testable instead of needing a wider window to land on an exact fraction."""
+	h = _trio_hist([True, True, True, True, True, True, False, False])   # 6-2 = 75%
+	cands = ti._trio_candidates(h.order, h.matches, [1, 2, 3], [4])
+	assert len(cands) == 1
+	assert cands[0]["data"]["wins"] == 6
+	assert cands[0]["data"]["games"] == 8
+	assert cands[0]["data"]["won"] is True
+
+
 def test_trio_is_silent_below_the_share_bar():
 	h = _trio_hist([True, True, True, False, False])   # 3-2 = 60%
 	assert ti._trio_candidates(h.order, h.matches, [1, 2, 3], [4]) == []
@@ -629,9 +641,11 @@ def test_h2h_frame_falls_back_to_generic_when_rival_backers_is_none():
 
 
 def test_frame_consumes_exactly_one_rng_choice_call_per_branch():
-	"""_select and _phrase depend on _frame burning exactly one rng.choice draw
-	regardless of branch, or the payoff's replay of _phrase drifts out of sync
-	with the pre-game picks (see bot/storyline_payoff.py)."""
+	"""One branch, one draw: build_insights_embed renders every chosen candidate
+	off a single shared rng, so a branch that quietly grew a second rng.choice
+	call would shift the draw offset for every candidate rendered after it in
+	the same embed -- a branch change cannot silently reword the other module's
+	output just by changing how many draws its own branch takes."""
 	cases = [
 		("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6, "sweep": False},
 		 (0, 1), _SMALL_ROSTERS),
@@ -648,3 +662,92 @@ def test_frame_consumes_exactly_one_rng_choice_call_per_branch():
 		counter = _CountingChoice()
 		ti._frame(c, _NICK, _META, rosters, rng=counter)
 		assert counter.calls == 1, (typ, data)
+
+
+# ── build_insights_embed / storyline_ctx (F1) ───────────────────────────────
+class _IP:
+	def __init__(self, uid):
+		self.id = uid
+
+
+class _IT(list):
+	def __init__(self, ids, name, emoji):
+		super().__init__(_IP(i) for i in ids)
+		self.name = name
+		self.emoji = emoji
+
+
+class _IMatch:
+	def __init__(self, match_id=500):
+		self.id = match_id
+		self.teams = [_IT([1, 2, 3, 4], "Alpha", "🟦"), _IT([5, 6, 7, 8], "Beta", "🟥")]
+		self.qc = type("QC", (), {"id": 77})()
+
+
+def _mate_streak_rows():
+	"""Players 1 & 2 lost their last four as teammates, of seven together --
+	enough to clear MATE_MIN_TOGETHER/MATE_MIN_STREAK and produce a candidate."""
+	rows = []
+	for mid in range(1, 4):
+		for uid, team in ((1, 0), (2, 0), (5, 1), (6, 1)):
+			rows.append({"match_id": mid, "user_id": uid, "nick": f"u{uid}", "team": team, "winner": 0})
+	for mid in range(4, 8):
+		for uid, team in ((1, 0), (2, 0), (5, 1), (6, 1)):
+			rows.append({"match_id": mid, "user_id": uid, "nick": f"u{uid}", "team": team, "winner": 1})
+	return rows
+
+
+def _run_insights_build(monkeypatch, match, rows):
+	import asyncio
+	import sys
+	import types
+
+	class _DB:
+		async def fetchall(self, sql, params=None):
+			return rows
+
+	monkeypatch.setattr(ti, "db", _DB())
+
+	fake_utils = types.ModuleType("core.utils")
+	fake_utils.get_nick = lambda p: f"u{p.id}"
+	monkeypatch.setitem(sys.modules, "core.utils", fake_utils)
+
+	class _FakeEmbed:
+		def __init__(self, *, title=None, colour=None, description=None):
+			self.title = title
+			self.colour = colour
+			self.description = description
+			self.footer_text = None
+
+		def set_footer(self, *, text=None):
+			self.footer_text = text
+
+	fake_nextcord = types.ModuleType("nextcord")
+	fake_nextcord.Embed = _FakeEmbed
+	fake_nextcord.Colour = lambda value: value
+	monkeypatch.setitem(sys.modules, "nextcord", fake_nextcord)
+	return asyncio.run(ti.build_insights_embed(match))
+
+
+def test_build_insights_embed_stashes_the_tease_context_when_it_teases(monkeypatch):
+	"""F1: bot/storyline_payoff.py recomputes these storylines at report time and
+	needs the exact window/seed/rosters the tease used, because none of the three
+	is stable across a match's lifetime on its own. build_insights_embed must
+	stash them on the match the moment it actually posts a tease."""
+	match = _IMatch(match_id=500)
+	embed = _run_insights_build(monkeypatch, match, _mate_streak_rows())
+	assert embed is not None
+	ctx = match.storyline_ctx
+	assert ctx["seed"] == 500
+	assert ctx["rosters"] == {0: [1, 2, 3, 4], 1: [5, 6, 7, 8]}
+	assert isinstance(ctx["since"], int)
+
+
+def test_build_insights_embed_does_not_stash_when_there_is_no_tease(monkeypatch):
+	"""No candidates fired (empty history) -> no embed, and nothing to pin either;
+	build_payoff_embed's ``getattr(match, "storyline_ctx", None)`` check depends
+	on the attribute genuinely being absent here, not set to some empty value."""
+	match = _IMatch(match_id=500)
+	embed = _run_insights_build(monkeypatch, match, [])
+	assert embed is None
+	assert not hasattr(match, "storyline_ctx")

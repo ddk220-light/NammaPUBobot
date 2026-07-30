@@ -123,6 +123,15 @@ async def preview_one(pool, mrow):
     meta = [{"name": a_name, "emoji": ""}, {"name": b_name, "emoji": ""}]
     rosters = {0: t0, 1: t1}
     rng = random.Random(mid)
+    # This harness reads history ONCE (cut off at `mid`) and drives both the tease
+    # section above and the payoff section below off that single hist/rng. The live
+    # bot reads twice -- once at team-formation, once at report time -- and the
+    # window, roster and seed can all drift between those two reads (that drift is
+    # exactly what bot/team_insights.py's storyline_ctx stash and
+    # bot/storyline_payoff.py's module docstring exist to pin down). So a clean run
+    # through this harness is evidence about the copy reading well; it is not
+    # evidence that the tease and payoff will agree live, because this harness
+    # cannot reproduce that drift by construction.
     chosen = ti._select(ti._candidates(hist.order, hist.matches, t0, t1), rng=rng)
     if not chosen:
         print(f"  → nothing surfaced ({len(hist.order)} prior games, nothing met the thresholds)")

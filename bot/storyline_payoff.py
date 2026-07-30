@@ -6,20 +6,24 @@ nothing ever answered. This module answers, immediately at report time, with no
 replay parsing: everything it needs is win/loss and who was on which side.
 
 It does not read back what was posted. It recomputes the same storylines from
-the same windowed history with the same match-id-seeded RNG, which is why
-_select and _phrase take an injected rng. Two consequences worth knowing:
+the same windowed history with the same seeded RNG, which is why _select and
+_phrase take an injected rng. Three of the recompute's inputs are not stable
+across a match's lifetime on their own: the 90-day window slides as the match
+runs, /subfor and sub_auto can re-split the teams during WAITING_REPORT, and a
+restart hands a restored match a brand-new id. bot/team_insights.py pins all
+three the moment it posts a tease, stashing them on ``match.storyline_ctx``;
+this module reads that stash instead of recomputing window/seed/roster from
+scratch, and bails with None when there is no stash (nothing was teased) or
+the current roster no longer matches the stashed one (a substitution
+invalidated the tease). The storylines themselves are still recomputed — the
+stash only pins what they are recomputed *from*.
 
-  * A threshold change between a match forming and reporting changes the
-    recomputed set.
-  * Matches overlap. One that formed while this was live can finish first and
-    land in the window with a lower match_id, so the recompute can see history
-    the pre-game read did not. Rate lines will not move; a streak line
-    occasionally will.
-
-Both are accepted — see the design doc for why storing the claims was rejected.
+One drift source is still accepted: a threshold or generator change deployed
+between a match forming and it reporting changes the recomputed set. That is a
+code change mid-match, not a data drift, and is rare enough not to warrant its
+own guard.
 """
 import random
-import time
 
 from bot import team_insights as ti
 
@@ -53,19 +57,24 @@ def _payoff_frame(c, came_true, nick, teams_meta, rosters, *, rng=random):
 		if backers and all(w for _n, w, _t in backers):
 			ids = sorted(c["players"])
 			_kind, subj = ti.subject_of(c)
-			subj_idx = ids.index(subj)
-			_sname, sback, steam = backers[subj_idx]
-			_rname, rback, rteam = backers[1 - subj_idx]
-			sa, sb = ti._short_backers(sback, steam), ti._short_backers(rback, rteam)
-			if came_true:
+			# subj is a player id for every type that reaches this branch today
+			# (h2h, deadlock). A future candidate type could carry a team subject
+			# instead, which would not be a member of `ids` -- fall back to the
+			# generic clause rather than let .index() raise.
+			if subj in ids:
+				subj_idx = ids.index(subj)
+				_sname, sback, steam = backers[subj_idx]
+				_rname, rback, rteam = backers[1 - subj_idx]
+				sa, sb = ti._short_backers(sback, steam), ti._short_backers(rback, rteam)
+				if came_true:
+					return rng.choice([
+						f"{sa} got their answer.",
+						f"{sa} called it.",
+					])
 				return rng.choice([
-					f"{sa} got their answer.",
-					f"{sa} called it.",
+					f"{sb} had the last word.",
+					f"{sb} settled it.",
 				])
-			return rng.choice([
-				f"{sb} had the last word.",
-				f"{sb} settled it.",
-			])
 		return rng.choice([
 			"Their teammates had their own night.",
 			"The other six were along for the ride.",
@@ -219,30 +228,44 @@ def payoff_phrase(c, came_true, nick, teams_meta, rosters, *, rng=random):
 
 async def build_payoff_embed(match):
 	"""React to the storylines this match's teams were given. None when there is
-	nothing to settle (draw, no history, or nothing fired pre-game)."""
+	nothing to settle (draw, no tease was ever posted, the roster moved since the
+	tease, or nothing fired pre-game)."""
 	teams = getattr(match, "teams", None)
 	if not teams or len(teams) < 2:
 		return None
 	winner = getattr(match, "winner", None)
 	if winner is None:
 		return None
+	ctx = getattr(match, "storyline_ctx", None)
+	if not ctx:
+		return None
 	team0 = [p for p in teams[0] if p]
 	team1 = [p for p in teams[1] if p]
 	if not team0 or not team1:
 		return None
 
+	rosters = {0: [p.id for p in team0], 1: [p.id for p in team1]}
+	# Membership, not order: a captain swap or a matchmaking re-split can reorder
+	# a side without changing who is on it, and the tease's phrasing never
+	# depended on list order either.
+	if {i: frozenset(ids) for i, ids in rosters.items()} != \
+			{i: frozenset(ids) for i, ids in ctx["rosters"].items()}:
+		return None
+
 	players = team0 + team1
 
-	rows = await ti._fetch_history(match.qc.id, [p.id for p in players],
-	                               ti.window_start(time.time()))
+	rows = await ti._fetch_history(match.qc.id, [p.id for p in players], ctx["since"])
 	hist = ti._index_history(rows)
 	# This match is already persisted by the time the payoff runs, so the prior
-	# has to exclude it explicitly or every storyline would resolve itself.
-	prior = [mid for mid in hist.order if mid < match.id]
+	# has to exclude it explicitly or every storyline would resolve itself. The
+	# cutoff is the tease's seed, not this match's own id (from_json hands a
+	# restored match a new one) -- but a stashed ctx never survives a restore
+	# anyway, since the stash lives only on the in-memory match object.
+	prior = [mid for mid in hist.order if mid < ctx["seed"]]
 	if not prior:
 		return None
 
-	rng = random.Random(match.id)
+	rng = random.Random(ctx["seed"])
 	chosen = ti._select(ti._candidates(prior, hist.matches,
 	                                   [p.id for p in team0], [p.id for p in team1]),
 	                    rng=rng)
@@ -257,6 +280,7 @@ async def build_payoff_embed(match):
 
 	from nextcord import Colour, Embed
 
+	from core.console import log
 	from core.utils import get_nick
 
 	nick = {p.id: get_nick(p) for p in players}
@@ -264,13 +288,14 @@ async def build_payoff_embed(match):
 		{"name": teams[0].name, "emoji": teams[0].emoji},
 		{"name": teams[1].name, "emoji": teams[1].emoji},
 	]
-	rosters = {0: [p.id for p in team0], 1: [p.id for p in team1]}
-	# _phrase consumed rng for each chosen line pre-game; burn the same draws
-	# here so the payoff's variant picks line up with the teased ones.
-	for c in chosen:
-		ti._phrase(c, nick, teams_meta, rosters, rng=rng)
-	lines = [payoff_phrase(c, v, nick, teams_meta, rosters, rng=rng)
-	         for c, v in verdicts]
+	lines = []
+	for c, v in verdicts:
+		try:
+			lines.append(payoff_phrase(c, v, nick, teams_meta, rosters, rng=rng))
+		except Exception as e:
+			log.error(f"Storyline payoff render failed ({c.get('type')}): {e}")
+	if not lines:
+		return None
 	embed = Embed(title="⚔️ Final Tale of the Tape", colour=Colour(0xe67e22),
 	              description="\n\n".join(lines))
 	embed.set_footer(

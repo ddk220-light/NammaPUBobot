@@ -462,8 +462,8 @@ class Match:
 			insights_embed = await build_insights_embed(self)
 			if insights_embed is not None:
 				await ctx.notice(embed=insights_embed)
-		except Exception:
-			pass
+		except Exception as e:
+			log.error(f"Storyline insights failed for match {self.id}: {e}")
 
 	async def finish_match(self, ctx):
 		bot.active_matches.remove(self)
