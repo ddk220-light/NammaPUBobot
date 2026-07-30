@@ -38,7 +38,7 @@ async def find_new_match(max_age_days=None):
         "MAX(m.reported_at) AS at FROM civ_picks mc JOIN matches m ON m.match_id = mc.bot_match_id "
         "WHERE mc.aoe2_match_id IS NOT NULL " + age_clause +
         "AND mc.aoe2_match_id NOT IN (SELECT aoe2_match_id FROM rs_ingest) "
-        "GROUP BY mc.aoe2_match_id ORDER BY at DESC LIMIT 1", args)
+        "GROUP BY mc.aoe2_match_id ORDER BY MAX(m.reported_at) DESC LIMIT 1", args)
     return rows[0] if rows else None
 
 

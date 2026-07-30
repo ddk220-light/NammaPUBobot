@@ -100,6 +100,41 @@ async def run_all(db):
 			[name, int(time.time())])
 		n += 1
 	log.info(f"migrations: {n} applied this boot, {len(MIGRATIONS)} known")
+	await _assert_stage1_renames_landed(db)
+
+
+async def _assert_stage1_renames_landed(db):
+	"""Post-condition, checked on every boot regardless of what the loop above
+	did: none of the _STAGE1_RENAMES *source* tables may still exist.
+
+	run_all() decides what to run solely from the schema_migrations ledger.
+	If an operator restores a pre-deploy database backup, the ledger table
+	survives the restore (the dump predates it, and mysqldump does not drop
+	tables absent from the dump) while the renamed tables do not — so the
+	loop above sees every migration already marked done and skips all of
+	them. The bot would then boot straight into `import bot`, whose
+	ensure_table() calls CREATE every one of the new names empty, and the
+	bot would come up looking healthy while serving no history at all. The
+	same thing happens after a code-only rollback that leaves the ledger
+	ahead of the schema.
+
+	Crashing here is the intended behaviour: Railway restarts the
+	container, and a loud crash is vastly better than a silently empty bot.
+
+	Safe on a genuinely fresh install: at the point run_all() runs (after
+	db.connect(), before `import bot`), no old-named table has ever been
+	created — ensure_table() only runs later, when bot/ is imported — so
+	every table_exists() check below is False and this is a no-op.
+	"""
+	offenders = [old for old, _new in _STAGE1_RENAMES if await table_exists(db, old)]
+	if offenders:
+		raise RuntimeError(
+			"migrations: schema/ledger disagreement — these pre-rename tables still "
+			f"exist even though the ledger says the rename already ran: {', '.join(offenders)}. "
+			"This almost always means a pre-deploy database backup was restored (mysqldump "
+			"keeps schema_migrations but not the renamed tables) or a code-only rollback "
+			"happened. Fix: drop the `schema_migrations` table and reboot."
+		)
 
 
 _STAGE1_RENAMES = [

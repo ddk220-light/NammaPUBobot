@@ -70,7 +70,7 @@ def main():
                 seed[int(pid)] = (r["user_id"], r["nick"])
             except ValueError:
                 pass
-    lb = {r["user_id"]: r["nick"] for r in load_csv("player_ratings.csv")}  # leaderboard
+    lb = {r["user_id"]: r["nick"] for r in load_csv("qc_players.csv")}  # leaderboard, on-disk filename
     aoe2_to_bot = {}
     for r in load_csv("match_id_map.csv"):
         try:
@@ -78,7 +78,7 @@ def main():
         except ValueError:
             pass
     bot_roster = defaultdict(list)
-    for r in load_csv("match_players.csv"):
+    for r in load_csv("qc_player_matches.csv"):
         try:
             bot_roster[int(r["match_id"])].append(r["user_id"])
         except ValueError:

@@ -43,8 +43,9 @@ def load_match_civ_details():
 
 
 def load_nick_to_userid_from_csv():
-    """Build nick -> user_id map from player_ratings.csv."""
-    path = os.path.join(DATA_DIR, 'player_ratings.csv')
+    """Build nick -> user_id map from qc_players.csv (on-disk filename, not
+    the renamed player_ratings table)."""
+    path = os.path.join(DATA_DIR, 'qc_players.csv')
     mapping = {}
     with open(path, 'r') as f:
         for row in csv.DictReader(f):
@@ -53,8 +54,8 @@ def load_nick_to_userid_from_csv():
 
 
 def load_rating_history_from_csv():
-    """Load rating_history.csv. Returns dict of (match_id, user_id) -> rating_before."""
-    path = os.path.join(DATA_DIR, 'rating_history.csv')
+    """Load qc_rating_history.csv. Returns dict of (match_id, user_id) -> rating_before."""
+    path = os.path.join(DATA_DIR, 'qc_rating_history.csv')
     ratings = {}
     with open(path, 'r') as f:
         for row in csv.DictReader(f):

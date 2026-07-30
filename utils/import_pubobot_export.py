@@ -301,10 +301,14 @@ def print_samples(label, rows, limit=3):
 
 async def run_import(pool, export_dir, channel_id, tz, apply):
     # --- Read all CSVs ---
-    matches_path = os.path.join(export_dir, "matches.csv")
-    players_path = os.path.join(export_dir, "player_ratings.csv")
-    player_matches_path = os.path.join(export_dir, "match_players.csv")
-    rating_history_path = os.path.join(export_dir, "rating_history.csv")
+    # qc_*.csv are on-disk filenames from the upstream Pubobot export, not the
+    # renamed tables we write to below — this tool reads someone else's
+    # export format, which we don't control, so match --help (below), not
+    # our own table names.
+    matches_path = os.path.join(export_dir, "qc_matches.csv")
+    players_path = os.path.join(export_dir, "qc_players.csv")
+    player_matches_path = os.path.join(export_dir, "qc_player_matches.csv")
+    rating_history_path = os.path.join(export_dir, "qc_rating_history.csv")
 
     for p in (matches_path, players_path, player_matches_path, rating_history_path):
         if not os.path.exists(p):

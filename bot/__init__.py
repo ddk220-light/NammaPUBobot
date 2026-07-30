@@ -22,8 +22,8 @@ from . import utils
 from . import douche  # noqa: F401  (imported for its db.ensure_table side effect)
 from . import civ_reconcile  # noqa: F401  (ensure_table side effect + the reconcile job instance)
 from . import lobby  # noqa: F401  (lobbies/qc_profile_map ensure_table + the LobbyJobs instance)
-from . import quiz  # noqa: F401  (qc_quiz_* ensure_table + the QuizJobs instance)
-from . import predictions  # noqa: F401  (qc_prediction_* ensure_table + the PredictionJobs instance)
+from . import quiz  # noqa: F401  (quiz_* ensure_table + the QuizJobs instance)
+from . import predictions  # noqa: F401  (prediction_* ensure_table + the PredictionJobs instance)
 from . import replay_stats  # noqa: F401  (rs_* ensure_table + ReplayStatsJobs instance)
 from . import classifications  # noqa: F401  (cls_* ensure_table side effect)
 

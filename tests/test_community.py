@@ -10,7 +10,14 @@ import asyncio
 import bot.community as community
 
 
+class _FakeErrors:
+	class IntegrityError(Exception):
+		pass
+
+
 class FakeDb:
+	errors = _FakeErrors
+
 	def __init__(self):
 		self.communities = []  # [{community_id, guild_id, name, retention, created_at}]
 		self.community_channels = []  # [{channel_id, community_id, added_at}]
@@ -155,6 +162,44 @@ def test_ensure_community_flagship_guild_already_full_is_a_noop(monkeypatch):
 	assert fake.update_calls == update_calls_before, "already-full row must not trigger db.update"
 
 
+def test_ensure_community_recovers_from_lost_insert_race(monkeypatch):
+	"""Railway rolling deploys run two containers at once, so two concurrent
+	ensure_community() calls for a brand-new guild can both see no existing
+	row and both attempt the insert — exactly why the migration ledger
+	elsewhere uses INSERT IGNORE. With the UNIQUE constraint on
+	communities.guild_id, the losing container's insert now raises
+	IntegrityError instead of silently creating a duplicate row;
+	ensure_community must catch that and re-select so the loser still
+	returns the winner's community_id instead of propagating the error."""
+	fake = _setup(monkeypatch)
+	guild = _Guild(777)
+	winner_row = {"community_id": 42, "guild_id": 777, "name": guild.name, "retention": "lean", "created_at": 0}
+
+	real_select_one = fake.select_one
+	calls = {"n": 0}
+
+	async def select_one_misses_first_time(columns, table, where=None):
+		if table == "communities" and where == {"guild_id": 777}:
+			calls["n"] += 1
+			if calls["n"] == 1:
+				return None  # the race: no row visible yet on our first look
+		return await real_select_one(columns, table, where)
+
+	async def insert_loses_the_race(table, d, on_duplicate=None):
+		if table == "communities":
+			fake.communities.append(winner_row)  # the other container's insert landed first
+			raise fake.errors.IntegrityError("duplicate guild_id")
+		return await FakeDb.insert(fake, table, d, on_duplicate=on_duplicate)
+
+	monkeypatch.setattr(fake, "select_one", select_one_misses_first_time)
+	monkeypatch.setattr(fake, "insert", insert_loses_the_race)
+
+	community_id = asyncio.run(community.ensure_community(guild))
+
+	assert community_id == 42
+	assert len(fake.communities) == 1, "the losing container must not create a second row"
+
+
 def test_attach_channel_is_idempotent(monkeypatch):
 	fake = _setup(monkeypatch)
 
@@ -183,6 +228,25 @@ def test_community_for_channel_caches_a_hit(monkeypatch):
 	assert first == 7
 	assert second == 7
 	assert fake.select_calls == calls_after_first, "cached hit must not issue another query"
+
+
+def test_community_for_channel_does_not_cache_a_miss(monkeypatch):
+	"""If a lookup misses right between enrollment's write and its
+	invalidate_cache() call — e.g. the write happened in a different
+	process/container that never touches this process's cache — caching
+	that None would strand it there for the rest of the process's lifetime,
+	and every later link_match_replay for that channel would silently skip
+	forever. A miss must always re-query instead of sticking."""
+	fake = _setup(monkeypatch)
+
+	first = asyncio.run(community.community_for_channel(555))
+	assert first is None
+
+	# A write lands without this process's cache being invalidated.
+	fake.community_channels.append({"channel_id": 555, "community_id": 9, "added_at": 0})
+
+	second = asyncio.run(community.community_for_channel(555))
+	assert second == 9
 
 
 def test_retention_for_returns_stored_value(monkeypatch):

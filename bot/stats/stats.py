@@ -91,6 +91,7 @@ db.ensure_table(dict(
 	primary_keys=["match_id", "user_id"]
 ))
 
+
 async def check_match_id_counter():
 	"""
 	Set to current max match_id+1 if not persist or less

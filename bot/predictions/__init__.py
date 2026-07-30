@@ -5,7 +5,7 @@ Spectators call a winner by reacting to a card posted when teams are formed.
 Voting freezes on a timer, the tally is revealed, and once the match reports a
 win/loss every correct caller banks a point.
 
-Self-contained in the bot/quiz and bot/lobby mould: dedicated qc_prediction_*
+Self-contained in the bot/quiz and bot/lobby mould: dedicated prediction_*
 tables declared here via ensure_table at import, imported by bot/__init__.py for
 that side effect and the PredictionJobs singleton.
 

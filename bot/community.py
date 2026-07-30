@@ -43,7 +43,16 @@ db.ensure_table(dict(
 	tname="communities",
 	columns=[
 		dict(cname="community_id", ctype=db.types.int, autoincrement=True),
-		dict(cname="guild_id", ctype=db.types.int),
+		# UNIQUE: Railway rolling deploys can boot two containers at once, so
+		# two concurrent ensure_community() calls can both select None for a
+		# brand-new guild and both attempt the insert (see ensure_community's
+		# IntegrityError handling below). Without a database-level constraint,
+		# that race produces two community rows for one Discord server,
+		# silently splitting its channels across them. This must land before
+		# the table exists in production: _ensure_table only ever ADDs
+		# missing columns, it never alters an existing one, so adding this
+		# constraint later would need a hand-written migration.
+		dict(cname="guild_id", ctype=db.types.int, unique=True),
 		dict(cname="name", ctype=db.types.str),
 		dict(cname="retention", ctype=db.types.str, notnull=True, default="lean"),
 		dict(cname="created_at", ctype=db.types.int),
@@ -104,14 +113,23 @@ async def ensure_community(guild) -> int:
 	is_flagship = guild.id in cfg.FLAGSHIP_GUILD_IDS
 
 	if row is None:
-		community_id = await db.insert("communities", dict(
-			guild_id=guild.id,
-			name=guild.name,
-			retention="full" if is_flagship else "lean",
-			created_at=int(time.time()),
-		))
-		invalidate_cache()
-		return community_id
+		try:
+			community_id = await db.insert("communities", dict(
+				guild_id=guild.id,
+				name=guild.name,
+				retention="full" if is_flagship else "lean",
+				created_at=int(time.time()),
+			))
+			invalidate_cache()
+			return community_id
+		except db.errors.IntegrityError:
+			# Lost a race with another container's concurrent insert for the
+			# same guild_id (Railway rolling deploys run two containers at
+			# once — this is exactly what the UNIQUE constraint on guild_id
+			# above is for). The winner's row now exists; fall through to the
+			# existing-row path below so the loser still returns the winner's
+			# community_id instead of propagating the error.
+			row = await db.select_one(["community_id", "retention"], "communities", where={"guild_id": guild.id})
 
 	community_id = row["community_id"]
 	if is_flagship and row["retention"] != "full":
@@ -163,12 +181,21 @@ async def enroll_channel(channel) -> int | None:
 async def community_for_channel(channel_id: int) -> int | None:
 	""" The community_id `channel_id` is enrolled under, or None if it was
 	never enrolled — callers in later stages treat None as "skip". Cached in
-	a module-level dict since this runs on every match report. """
+	a module-level dict since this runs on every match report.
+
+	Only a successful resolution is cached. If a miss were cached and a
+	lookup happened to land between enrollment's write and its
+	invalidate_cache() call, the stale None would be cached for the rest of
+	the process's lifetime and every later link_match_replay for that
+	channel would silently skip forever. A miss is cheap to re-query and
+	self-heals on the next call instead. """
 	if channel_id in _channel_cache:
 		return _channel_cache[channel_id]
 
 	row = await db.select_one(["community_id"], "community_channels", where={"channel_id": channel_id})
-	community_id = row["community_id"] if row else None
+	if row is None:
+		return None
+	community_id = row["community_id"]
 	_channel_cache[channel_id] = community_id
 	return community_id
 

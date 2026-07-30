@@ -299,7 +299,8 @@ def main():
 
     # players table: identity -> current Elo (via profile_resolved user_id -> player_ratings rating)
     uid_rating = {}
-    for r in csv.DictReader(open(os.path.join(ROOT, "data", "player_ratings.csv"), encoding="utf-8")):
+    # qc_players.csv is an on-disk filename, not the renamed player_ratings table.
+    for r in csv.DictReader(open(os.path.join(ROOT, "data", "qc_players.csv"), encoding="utf-8")):
         try:
             uid_rating[r["user_id"]] = (int(r["rating"]), int(r["deviation"]))
         except (ValueError, KeyError):

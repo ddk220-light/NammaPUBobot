@@ -15,10 +15,16 @@ from bot.community import enroll_channel
 
 
 async def seed_ratings_from_csv():
-	"""One-time bulk seed of player ratings from data/player_ratings.csv into all queue channels."""
-	csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'player_ratings.csv')
+	"""One-time bulk seed of player ratings from data/qc_players.csv into all queue channels.
+
+	qc_players.csv is an on-disk *filename*, not the `player_ratings` table it
+	seeds — it predates the stage-1 table rename and nothing renames files on
+	disk, so keep this literal as-is even though the table below is now
+	called player_ratings.
+	"""
+	csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'qc_players.csv')
 	if not os.path.exists(csv_path):
-		log.info("No data/player_ratings.csv found, skipping rating seed.")
+		log.info("No data/qc_players.csv found, skipping rating seed.")
 		return
 
 	for qc in bot.queue_channels.values():

@@ -112,9 +112,11 @@ async def load_bot_matches_from_db(cutoff):
 
 def load_bot_matches_from_csv(cutoff):
     """Load bot matches since cutoff with their players."""
-    matches_path = os.path.join(PROJECT_ROOT, 'data', 'matches.csv')
-    players_path = os.path.join(PROJECT_ROOT, 'data', 'match_players.csv')
-    players_csv_path = os.path.join(PROJECT_ROOT, 'data', 'player_ratings.csv')
+    # qc_*.csv are on-disk filenames, not the renamed tables — nothing
+    # renames files on disk, so these stay as-is.
+    matches_path = os.path.join(PROJECT_ROOT, 'data', 'qc_matches.csv')
+    players_path = os.path.join(PROJECT_ROOT, 'data', 'qc_player_matches.csv')
+    players_csv_path = os.path.join(PROJECT_ROOT, 'data', 'qc_players.csv')
 
     nick_lookup = {}
     with open(players_csv_path, 'r') as f:

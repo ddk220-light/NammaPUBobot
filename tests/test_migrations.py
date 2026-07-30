@@ -165,3 +165,52 @@ def test_rename_column_noop_when_table_missing():
 	db = FakeDb(tables=set())
 	asyncio.run(mig.rename_column(db, "matches", "qc_id", "channel_id"))
 	assert not any(s.startswith("ALTER TABLE") for s in db.executed)
+
+
+def test_run_all_raises_when_a_rename_source_table_survives_the_ledger():
+	"""Simulates a restored pre-deploy backup: the ledger says every
+	migration already ran, but the dump predates the renames, so an
+	old-named table is still there. ensure_table would otherwise CREATE the
+	new name empty and the bot would boot healthy while serving no history
+	— run_all must crash instead."""
+	db = FakeDb(tables={"qc_matches"}, applied=["001_core_renames", "002_drop_retired"])
+	try:
+		asyncio.run(mig.run_all(db))
+	except RuntimeError as e:
+		assert "qc_matches" in str(e)
+	else:
+		raise AssertionError("run_all must crash when a rename-source table survives the ledger")
+
+
+def test_run_all_is_a_noop_on_a_genuinely_fresh_install():
+	# No tables (old or new) and no ledger rows at all — the ordinary first
+	# boot. The post-condition check must not fire here.
+	db = FakeDb()
+	asyncio.run(mig.run_all(db))
+	assert "001_core_renames" in db.applied
+
+
+def test_run_all_does_not_raise_once_renames_have_actually_happened():
+	old_names = {old for old, _new in mig._STAGE1_RENAMES}
+	new_names = {new for _old, new in mig._STAGE1_RENAMES}
+	db = FakeDb(tables=old_names)
+	asyncio.run(mig.run_all(db))
+	assert db.tables == new_names
+	assert not (old_names & db.tables), "old-named tables must not survive a normal first deploy"
+
+
+def test_stage1_renames_targets_are_registered_and_sources_are_not_declared():
+	"""A typo in a rename pair (e.g. a target that doesn't match any
+	ensure_table declaration) is invisible to every other test in this file
+	— they all treat table names as opaque strings — but would silently
+	rename a production table out from under its declaration, and
+	ensure_table would then create the correct name empty. Cross-check the
+	pairs against the same declaration scanner test_data_registry.py uses,
+	rather than duplicating the walk."""
+	from core.data_registry import REGISTRY
+	from tests.test_data_registry import _declared_tables
+
+	declared = _declared_tables()
+	for old, new in mig._STAGE1_RENAMES:
+		assert new in REGISTRY, f"rename target {new!r} has no core.data_registry entry"
+		assert old not in declared, f"rename source {old!r} is still declared by an ensure_table call"
