@@ -73,6 +73,7 @@ REGISTRY = {
 	"qc_profile_map": dict(
 		layer="raw", tenancy="global", writers=("bot/lobby/profile_map.py",), retention="forever"
 	),
+	"identities": dict(layer="raw", tenancy="global", writers=("bot/identity.py",), retention="forever"),
 	"rs_config": dict(layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
 	"rs_matches": dict(layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
 	"rs_player_games": dict(
@@ -136,6 +137,10 @@ REGISTRY = {
 	# link — cross-tenant joins (stage 1.6)
 	"match_replays": dict(
 		layer="link", tenancy="community", writers=("bot/community.py",), retention="forever"
+	),
+	# link — cross-tenant joins (stage 2.2)
+	"identity_aliases": dict(
+		layer="link", tenancy="community", writers=("bot/identity.py",), retention="forever"
 	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

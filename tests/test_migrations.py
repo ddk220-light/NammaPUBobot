@@ -199,6 +199,44 @@ def test_run_all_does_not_raise_once_renames_have_actually_happened():
 	assert not (old_names & db.tables), "old-named tables must not survive a normal first deploy"
 
 
+def test_parse_legacy_seed_csv_matches_bot_identity_parse_seed_csv():
+	"""003_seed_identities' CSV parsing deliberately duplicates
+	bot.identity.parse_seed_csv's row rules instead of importing it — see
+	_ensure_identities_table's docstring in core/migrations.py for why
+	(importing bot.identity from inside a migration crashes the boot: its
+	ensure_table() calls run loop.run_until_complete on a loop that
+	migrations.run_all() already has running). This test pins the two
+	copies together so a change to one without the other fails CI instead
+	of silently drifting."""
+	import bot.identity as identity
+
+	samples = [
+		("user_id,nick,aoe2_name,profile_id,country\n"
+		 "238042803093897216,fenrir05,Fenrir,209754,us\n"
+		 "not-a-number,x,Y,111,us\n"
+		 ",y,Z,222,us\n"
+		 "333,z,W,,us\n"
+		 "444,w,V,17841676 / 2885693,in\n"),
+		("profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		 "12297184,786488329864478751,guruGreatest,GuruGreatest,seed,31\n"
+		 "24413606,,,SomeName,unmapped,1\n"),
+	]
+	for text in samples:
+		assert mig._parse_legacy_seed_csv(text) == identity.parse_seed_csv(text, "profile_map")
+
+
+def test_ensure_identities_table_is_idempotent():
+	db = FakeDb()
+	asyncio.run(mig._ensure_identities_table(db))
+	asyncio.run(mig._ensure_identities_table(db))
+	assert db.executed.count(
+		"CREATE TABLE IF NOT EXISTS identities ("
+		"`profile_id` BIGINT, `user_id` BIGINT, `aoe2_name` VARCHAR(191), "
+		"`confidence` VARCHAR(191) NOT NULL, `first_seen_at` BIGINT NOT NULL, "
+		"`last_seen_at` BIGINT NOT NULL, PRIMARY KEY(`profile_id`))"
+	) == 2
+
+
 def test_stage1_renames_targets_are_registered_and_sources_are_not_declared():
 	"""A typo in a rename pair (e.g. a target that doesn't match any
 	ensure_table declaration) is invisible to every other test in this file
