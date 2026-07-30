@@ -48,5 +48,8 @@ def test_registry_entries_are_complete():
 	for name, meta in REGISTRY.items():
 		assert meta.get("layer") in ("core", "raw", "link", "derived", "ops"), name
 		assert meta.get("tenancy") in ("global", "community", "channel"), name
-		assert meta.get("writer"), name
+		writers = meta.get("writers")
+		assert isinstance(writers, tuple), name
+		for w in writers:
+			assert isinstance(w, str) and w.endswith(".py"), name
 		assert meta.get("retention") in ("forever", "sweepable"), name
