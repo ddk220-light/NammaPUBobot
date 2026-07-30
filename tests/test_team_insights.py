@@ -333,8 +333,10 @@ def test_lineup_needs_two_prior_games():
 	assert ti._lineup_candidates(h.order, h.matches, [1, 2, 3], [4, 5, 6]) == []
 
 
-def test_a_superset_side_does_not_count_as_the_same_lineup():
-	"""A prior 4-man side is a different lineup from tonight's 3-man side."""
+def test_a_prior_side_containing_tonights_roster_counts_as_shared_history():
+	"""_lineup_candidates matches on "every member of tonight's side was united
+	on one side of the prior match", not on exact roster equality — so a prior
+	4-man side that contains tonight's 3-man side still counts."""
 	h = _hist(
 		(1, 0, {1: 0, 2: 0, 3: 0, 9: 0, 4: 1, 5: 1, 6: 1, 8: 1}),
 		(2, 0, {1: 0, 2: 0, 3: 0, 9: 0, 4: 1, 5: 1, 6: 1, 8: 1}),
@@ -370,3 +372,35 @@ def test_lineup_is_skipped_for_tiny_sides():
 		(2, 0, {1: 0, 2: 0, 4: 1, 5: 1}),
 	)
 	assert ti._lineup_candidates(h.order, h.matches, [1, 2], [4, 5]) == []
+
+
+# ── per-type caps ────────────────────────────────────────────────────────
+def test_only_one_trio_line_survives_selection():
+	cands = [
+		_cand("trio", 50, (1, 2, 3), teams=(0,)),
+		_cand("trio", 49, (1, 2, 4), teams=(0,)),   # overlaps but is not a subset
+		_cand("form", 5, (7,), teams=(1,)),
+	]
+	chosen = ti._select(cands, rng=random.Random(0))
+	assert sum(1 for c in chosen if c["type"] == "trio") == 1
+
+
+def test_only_one_lineup_line_survives_selection():
+	cands = [
+		_cand("lineup", 100, (1, 2, 3), teams=(0,)),
+		_cand("lineup", 99, (4, 5, 6), teams=(1,)),
+		_cand("form", 5, (9,), teams=(1,)),
+	]
+	chosen = ti._select(cands, rng=random.Random(0))
+	assert sum(1 for c in chosen if c["type"] == "lineup") == 1
+
+
+def test_the_cap_holds_through_the_fill_pass():
+	"""PASS 3 relaxes the generic type cap; the hard caps must survive it."""
+	cands = [
+		_cand("trio", 50, (1, 2, 3), teams=(0,)),
+		_cand("trio", 49, (4, 5, 6), teams=(1,)),
+		_cand("trio", 48, (7, 8, 9), teams=(0,)),
+	]
+	chosen = ti._select(cands, rng=random.Random(0))
+	assert sum(1 for c in chosen if c["type"] == "trio") == 1

@@ -64,6 +64,11 @@ DEADLOCK_TYPE_CAP = 1
 TRIO_TYPE_CAP = 1
 LINEUP_TYPE_CAP = 1
 
+# Types capped harder than PER_TYPE_CAP. These are the ones whose candidates can
+# overlap without being subsets of each other, which _overlaps cannot dedup.
+_TYPE_CAPS = {"deadlock": DEADLOCK_TYPE_CAP, "trio": TRIO_TYPE_CAP,
+              "lineup": LINEUP_TYPE_CAP}
+
 # Drama weights — a single comparable axis across types.
 W_PERFECT = 6.0
 W_TRIO = 7.0
@@ -456,7 +461,7 @@ def _select(candidates, *, limit=MAX_BULLETS, rng=random):
 	chosen, per_player, per_type, covered = [], Counter(), Counter(), []
 
 	def type_cap(t):
-		return DEADLOCK_TYPE_CAP if t == "deadlock" else PER_TYPE_CAP
+		return _TYPE_CAPS.get(t, PER_TYPE_CAP)
 
 	def eligible(c):
 		if per_type[c["type"]] >= type_cap(c["type"]):
@@ -506,14 +511,14 @@ def _select(candidates, *, limit=MAX_BULLETS, rng=random):
 			break
 
 	# PASS 3 — relax the generic type cap (NOT the player cap, NOT dedup, NOT the
-	# hard deadlock cap) to fill a thin match rather than show fewer lines.
+	# hard per-type caps) to fill a thin match rather than show fewer lines.
 	if len(chosen) < limit:
 		for c in ordered:
 			if len(chosen) >= limit:
 				break
 			if any(c is x for x in chosen):
 				continue
-			if c["type"] == "deadlock" and per_type["deadlock"] >= DEADLOCK_TYPE_CAP:
+			if per_type[c["type"]] >= _TYPE_CAPS.get(c["type"], PER_TYPE_CAP + 1):
 				continue
 			if any(per_player[u] >= PER_PLAYER_CAP for u in c["players"]):
 				continue
