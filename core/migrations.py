@@ -12,6 +12,16 @@ Every migration is idempotent by construction (existence guards), and the
 schema_migrations ledger additionally records what ran, so seeds and drops
 execute exactly once. The prod DB is only ever written from inside the deployed
 bot — this module is that write path; never run it from a laptop.
+
+For future migration authors: MySQL DDL auto-commits, and there is no
+transaction wrapping a migration body together with its ledger write. If a
+migration dies partway through, everything it already executed is permanent,
+and the next boot re-runs the whole body from the top. That means every single
+statement inside a migration body must be individually idempotent on its own —
+guarded by `table_exists`/`column_exists` (as `rename_table`/`rename_column`
+already do) or written as `IF EXISTS`/`INSERT IGNORE` — not just the migration
+as a whole. Do not rely on the ledger to make a half-applied body safe to
+re-run; the ledger only records success after the entire body returns.
 """
 import time
 
@@ -80,8 +90,13 @@ async def run_all(db):
 			continue
 		log.info(f"migrations: applying {name}")
 		await fn(db)
+		# INSERT IGNORE: Railway rolling deploys can boot two containers at once,
+		# both passing the "already applied?" check above before either records
+		# it. The rename/column guards make the DDL itself safe to repeat, but
+		# without IGNORE the loser's ledger write would crash on a duplicate
+		# primary key even though its migration already succeeded harmlessly.
 		await db.execute(
-			f"INSERT INTO {LEDGER} (name, applied_at) VALUES (%s, %s)",
+			f"INSERT IGNORE INTO {LEDGER} (name, applied_at) VALUES (%s, %s)",
 			[name, int(time.time())])
 		n += 1
 	log.info(f"migrations: {n} applied this boot, {len(MIGRATIONS)} known")
