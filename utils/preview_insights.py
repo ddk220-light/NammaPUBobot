@@ -145,12 +145,18 @@ async def preview_one(pool, mrow):
         print("  ⚔️ Final Tale of the Tape: draw — nothing to settle")
         return
     team_of = {**{u: 0 for u in t0}, **{u: 1 for u in t1}}
+    # build_payoff_embed seeds its OWN Random(seed) and re-runs _select on it, so
+    # its stream has absorbed the selection draws — but not the tease's phrasing
+    # draws — by the time it phrases anything. Mirror that exactly, or the preview
+    # shows a variant the bot will never post for this match.
+    payoff_rng = random.Random(mid)
+    payoff_chosen = ti._select(ti._candidates(hist.order, hist.matches, t0, t1), rng=payoff_rng)
     print("  ⚔️ Final Tale of the Tape:")
-    for c in chosen:
+    for c in payoff_chosen:
         verdict = sp.resolve(c, winner, team_of)
         if verdict is None:
             continue
-        print("    " + sp.payoff_phrase(c, verdict, nick, meta, rosters, rng=rng))
+        print("    " + sp.payoff_phrase(c, verdict, nick, meta, rosters, rng=payoff_rng))
 
 
 async def main():
