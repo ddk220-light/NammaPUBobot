@@ -679,11 +679,11 @@ and in PASS 3 replace:
 with:
 
 ```python
-			if per_type[c["type"]] >= _TYPE_CAPS.get(c["type"], PER_TYPE_CAP + 1):
+			if c["type"] in _TYPE_CAPS and per_type[c["type"]] >= _TYPE_CAPS[c["type"]]:
 				continue
 ```
 
-Note the `PER_TYPE_CAP + 1` default: PASS 3 exists precisely to relax the *generic* cap, so an uncapped type must never match here.
+Note the membership test rather than a `.get()` default: PASS 3 exists precisely to relax the *generic* cap, so an uncapped type must never match here. A `.get(c["type"], PER_TYPE_CAP + 1)` default looks equivalent and is not — it silently gives uncapped types a hard ceiling of `PER_TYPE_CAP + 1`, so a thin match fills to 3 instead of `limit`.
 
 Update the PASS 3 comment above it from `# PASS 3 — relax the generic type cap (NOT the player cap, NOT dedup, NOT the` / `# hard deadlock cap)` to say `# hard per-type caps)`.
 
@@ -1181,7 +1181,11 @@ def payoff_phrase(c, came_true, nick, teams_meta, rosters, *, rng=random):
 	def name(uid):
 		return f"**{nick.get(uid, 'someone')}**"
 
-	frame = ti._frame(c, nick, teams_meta, rosters, rng=rng)
+	# NOT ti._frame: that one picks its tone from the PRE-GAME direction and is
+	# written in future tense. In a payoff the tone must follow tonight's result
+	# (the whole side shares it) and the tense must be past, or an unbeaten pair
+	# that loses gets "the run is over — good day to be Dee".
+	frame = _payoff_frame(c, came_true, nick, teams_meta, rosters, rng=rng)
 
 	if t == "lineup":
 		w, g = d["wins"], d["games"]
@@ -1284,7 +1288,9 @@ def payoff_phrase(c, came_true, nick, teams_meta, rosters, *, rng=random):
 			f"🎯 Someone had to. {ahead} takes the decider. {frame}",
 		])
 
-	# form
+	# form. NOTE: make this an explicit `if t == "form":` branch and follow it
+	# with `raise ValueError(f"payoff_phrase has no branch for candidate type {t!r}")`
+	# — an unmatched type must fail loud, matching ti._phrase.
 	p, k = name(d["p"]), d["k"]
 	if d["won"]:
 		return (rng.choice([
@@ -1417,20 +1423,32 @@ class _M:
 
 
 def _history_rows():
-	"""Players 1 & 2 have lost their last four as teammates."""
+	"""Players 1 & 2 have lost their last four as teammates, of seven together.
+
+	Order matters: the three wins are the OLDER match ids and the four losses
+	trail, so _trailing_streak sees a 4-game losing run. Seven games clears
+	MATE_MIN_TOGETHER=6 and the run clears MATE_MIN_STREAK=4.
+	"""
 	rows = []
-	for mid in range(1, 5):
-		for uid, team in ((1, 0), (2, 0), (5, 1), (6, 1)):
-			rows.append({"match_id": mid, "user_id": uid, "nick": f"u{uid}",
-			             "team": team, "winner": 1})
-	for mid in range(5, 8):
+	for mid in range(1, 4):          # 1-3: team 0 wins
 		for uid, team in ((1, 0), (2, 0), (5, 1), (6, 1)):
 			rows.append({"match_id": mid, "user_id": uid, "nick": f"u{uid}",
 			             "team": team, "winner": 0})
+	for mid in range(4, 8):          # 4-7: team 0 loses
+		for uid, team in ((1, 0), (2, 0), (5, 1), (6, 1)):
+			rows.append({"match_id": mid, "user_id": uid, "nick": f"u{uid}",
+			             "team": team, "winner": 1})
 	return rows
 
 
 def _run_build(monkeypatch, winner, rows):
+	# NOTE: once candidates actually fire, build_payoff_embed reaches
+	# `from nextcord import Colour, Embed`, and nextcord is installed nowhere in
+	# CI (ci.yml never installs it, and conftest's blank aiohttp stub collides
+	# with nextcord.gateway even if you do). So this helper must ALSO stub
+	# sys.modules["nextcord"] with a minimal fake exposing Embed(title=,
+	# colour=, description=) with a .set_footer(text=) method, plus an identity
+	# Colour. Use monkeypatch.setitem so it reverts per test.
 	import asyncio
 	import sys
 	import types
