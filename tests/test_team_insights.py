@@ -191,18 +191,25 @@ def test_select_deterministic_with_seeded_rng():
 
 # ── phrasing ─────────────────────────────────────────────────────────────
 def test_phrase_all_types_render_without_keyerror():
+	"""Every type _candidates can emit must render. Samples are keyed by type and
+	checked against ti.CANDIDATE_TYPES so a future type added to that tuple
+	without a matching sample here fails loudly instead of quietly passing."""
 	nick = {1: "Alice", 2: "Bob"}
 	meta = [{"name": "Alpha", "emoji": ""}, {"name": "Beta", "emoji": ""}]
 	rng = random.Random(0)
-	samples = [
-		{"type": "perfect", "data": {"ids": [1, 2], "n": 5, "won": False, "team_idx": 0}},
-		{"type": "mate_wr", "data": {"p": 1, "q": 2, "wr": 0.0, "base": 0.5, "games": 8, "kind": "worst"}},
-		{"type": "h2h", "data": {"winner": 1, "loser": 2, "k": 4, "series": 6, "sweep": False}},
-		{"type": "mate", "data": {"ids": [1, 2], "k": 4, "series": 12, "won": True}},
-		{"type": "deadlock", "data": {"ids": [1, 2], "each": 3, "n": 6}},
-		{"type": "form", "data": {"p": 1, "k": 5, "won": False}},
-	]
-	for c in samples:
+	samples = {
+		"perfect": {"ids": [1, 2], "n": 5, "won": False, "team_idx": 0},
+		"mate_wr": {"p": 1, "q": 2, "wr": 0.0, "base": 0.5, "games": 8, "kind": "worst"},
+		"h2h": {"winner": 1, "loser": 2, "k": 4, "series": 6, "sweep": False},
+		"mate": {"ids": [1, 2], "k": 4, "series": 12, "won": True},
+		"deadlock": {"ids": [1, 2], "each": 3, "n": 6},
+		"form": {"p": 1, "k": 5, "won": False},
+		"trio": {"ids": [1, 2], "wins": 4, "games": 5, "won": True, "team_idx": 0},
+		"lineup": {"ids": [1, 2], "wins": 2, "games": 2, "one_way": True, "won": True, "team_idx": 0},
+	}
+	assert set(samples) == set(ti.CANDIDATE_TYPES)
+	for t in ti.CANDIDATE_TYPES:
+		c = {"type": t, "data": samples[t]}
 		line = ti._phrase(c, nick, meta, rng=rng)
 		assert isinstance(line, str) and "Alice" in line
 

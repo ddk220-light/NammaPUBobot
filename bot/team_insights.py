@@ -80,6 +80,12 @@ LOSS_BIAS = 1.10
 WORST_BIAS = 1.15
 PERFECT_COND = 1.25
 
+# Every type _candidates can emit. _phrase must handle all of them: an
+# unrenderable candidate raises inside build_insights_embed's list
+# comprehension and silently costs the whole embed.
+CANDIDATE_TYPES = ("lineup", "perfect", "mate_wr", "h2h", "mate", "trio",
+                   "deadlock", "form")
+
 OrderedHistory = namedtuple("OrderedHistory", "order matches nicks")
 
 
@@ -520,6 +526,16 @@ def _select(candidates, *, limit=MAX_BULLETS, rng=random):
 
 
 # ── Phrasing (pure) ──────────────────────────────────────────────────────
+def _join_names(names):
+	"""Oxford-free join: 'a', 'a & b', 'a, b & c'. Local so the pure layer keeps
+	no core.* dependency (utils/preview_insights.py loads this module by path)."""
+	if not names:
+		return ""
+	if len(names) == 1:
+		return names[0]
+	return ", ".join(names[:-1]) + f" & {names[-1]}"
+
+
 def _phrase(c, nick, teams_meta, *, rng=random):
 	"""Render one candidate as a fun "will it flip tonight?" one-liner."""
 	def name(uid):
@@ -527,6 +543,41 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 
 	d = c["data"]
 	t = c["type"]
+
+	if t == "lineup":
+		who = _join_names([name(u) for u in d["ids"]])
+		w, g = d["wins"], d["games"]
+		if d["one_way"] and w == g:
+			opts = [
+				f"🃏 Jackpot: this exact side has shared a team {g} times and never lost — **{w}-0**.",
+				f"🎰 {who} — the same {len(d['ids'])} that are **{w}-0** together. Lightning, twice.",
+			]
+		elif d["one_way"]:
+			opts = [
+				f"🃏 This exact side has been assembled {g} times and won none of them (**0-{g}**).",
+				f"🎰 {who}, back for another go at a **0-{g}** record.",
+			]
+		else:
+			opts = [
+				f"🃏 Rare reunion: this exact side has only played together {g} times before — **{w}-{g - w}**.",
+				f"🎰 {who} ride again. Their shared record: **{w}-{g - w}**.",
+			]
+		return rng.choice(opts)
+
+	if t == "trio":
+		who = _join_names([name(u) for u in d["ids"]])
+		w, g = d["wins"], d["games"]
+		if d["won"]:
+			opts = [
+				f"🔱 {who} are **{w}-{g - w}** as a three.",
+				f"⛓️ The trio that keeps delivering: {who}, **{w}-{g - w}** together.",
+			]
+		else:
+			opts = [
+				f"🕳️ {who} are **{w}-{g - w}** whenever all three line up.",
+				f"🥀 History is unkind to {who} as a three — **{w}-{g - w}**.",
+			]
+		return rng.choice(opts)
 
 	if t == "perfect":
 		a, b = name(d["ids"][0]), name(d["ids"][1])
