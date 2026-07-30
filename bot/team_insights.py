@@ -13,6 +13,8 @@ recent ranked history:
   * Teammate streak         — teammates on a K-game win/loss run together
   * Deadlock decider        — opponents dead-even over their recent meetings
   * Form streak             — a player on a personal K-game heater / skid
+  * Trio record             — a three-player subset of one side with a lopsided shared record
+  * Exact lineup            — this exact side has shared a team before, inside the window
 
 All history is read once, ordered by match_id, and every bit of analysis is pure
 Python (unit-testable without a DB). ``build_insights_embed`` returns an ``Embed``
@@ -541,31 +543,91 @@ def _join_names(names):
 	return ", ".join(names[:-1]) + f" & {names[-1]}"
 
 
-def _phrase(c, nick, teams_meta, *, rng=random):
+def _positive(c):
+	"""Is this storyline good news for its subject side?"""
+	t, d = c["type"], c["data"]
+	if t == "mate_wr":
+		return d["kind"] == "best"
+	if t in ("perfect", "mate", "trio", "lineup", "form"):
+		return bool(d.get("won"))
+	return True   # h2h and deadlock are neutral until the match settles them
+
+
+def subject_of(c):
+	"""Whose win makes this storyline's tease come true.
+
+	Returns ("team", team_idx) or ("player", user_id). The player form exists
+	because h2h/deadlock/form/mate_wr candidates carry no team_idx — the caller
+	resolves the player to a side. bot/storyline_payoff.py depends on this.
+	"""
+	t, d = c["type"], c["data"]
+	if t == "h2h":
+		return ("player", d["winner"])
+	if t == "deadlock":
+		return ("player", d["ids"][0])
+	if t == "form":
+		return ("player", d["p"])
+	if t == "mate_wr":
+		return ("player", d["p"])
+	return ("team", d["team_idx"])
+
+
+def _frame(c, nick, teams_meta, rosters, *, rng=random):
+	"""A closing clause pulling the rest of the side into the story."""
+	teams = sorted(c["teams"])
+	if len(teams) != 1:
+		return rng.choice([
+			"Do their teammates get a say?",
+			"Six other players would like a word.",
+		])
+	team_idx = teams[0]
+	name = (teams_meta[team_idx]["name"] if team_idx < len(teams_meta)
+	        else f"Team {team_idx}")
+	rest = [u for u in (rosters.get(team_idx) or []) if u not in c["players"]]
+	if not rest:
+		return rng.choice([
+			f"That is the whole of {name}.",
+			f"All of {name}, back together.",
+		])
+	who = (f"the rest of {name}" if len(rest) > 2
+	       else _join_names([f"**{nick.get(u, 'someone')}**" for u in rest]))
+	if _positive(c):
+		return rng.choice([
+			f"{who} along for the ride.",
+			f"Good day to be {who}.",
+		])
+	return rng.choice([
+		f"Good luck to {who}.",
+		f"{who} inherit the problem.",
+	])
+
+
+def _phrase(c, nick, teams_meta, rosters, *, rng=random):
 	"""Render one candidate as a fun "will it flip tonight?" one-liner."""
 	def name(uid):
 		return f"**{nick.get(uid, 'someone')}**"
 
 	d = c["data"]
 	t = c["type"]
+	frame = _frame(c, nick, teams_meta, rosters, rng=rng)
 
 	if t == "lineup":
 		who = _join_names([name(u) for u in d["ids"]])
 		w, g = d["wins"], d["games"]
 		if d["one_way"] and w == g:
 			opts = [
-				f"🃏 Jackpot: this exact side has shared a team {g} times and never lost — **{w}-0**.",
-				f"🎰 {who} — the same {len(d['ids'])} that are **{w}-0** together. Lightning, twice.",
+				f"🃏 Jackpot: this exact side has shared a team {g} times and never lost — **{w}-0**. {frame}",
+				f"🎰 {who} — the same {len(d['ids'])} that are **{w}-0** together. Lightning, twice. {frame}",
 			]
 		elif d["one_way"]:
 			opts = [
-				f"🃏 This exact side has been assembled {g} times and won none of them (**0-{g}**).",
-				f"🎰 {who}, back for another go at a **0-{g}** record.",
+				f"🃏 This exact side has been assembled {g} times and won none of them (**0-{g}**). {frame}",
+				f"🎰 {who}, back for another go at a **0-{g}** record. {frame}",
 			]
 		else:
 			opts = [
-				f"🃏 Rare reunion: this exact side has only played together {g} times before — **{w}-{g - w}**.",
-				f"🎰 {who} ride again. Their shared record: **{w}-{g - w}**.",
+				f"🃏 Rare reunion: this exact side has only played together {g} times before — **{w}-{g - w}**. {frame}",
+				f"🎰 {who} ride again. Their shared record: **{w}-{g - w}**. {frame}",
 			]
 		return rng.choice(opts)
 
@@ -574,13 +636,13 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 		w, g = d["wins"], d["games"]
 		if d["won"]:
 			opts = [
-				f"🔱 {who} are **{w}-{g - w}** as a three.",
-				f"⛓️ The trio that keeps delivering: {who}, **{w}-{g - w}** together.",
+				f"🔱 {who} are **{w}-{g - w}** as a three. {frame}",
+				f"⛓️ The trio that keeps delivering: {who}, **{w}-{g - w}** together. {frame}",
 			]
 		else:
 			opts = [
-				f"🕳️ {who} are **{w}-{g - w}** whenever all three line up.",
-				f"🥀 History is unkind to {who} as a three — **{w}-{g - w}**.",
+				f"🕳️ {who} are **{w}-{g - w}** whenever all three line up. {frame}",
+				f"🥀 History is unkind to {who} as a three — **{w}-{g - w}**. {frame}",
 			]
 		return rng.choice(opts)
 
@@ -589,13 +651,13 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 		n = d["n"]
 		if d["won"]:
 			opts = [
-				f"💯 {a} & {b} have **never lost** as a pair — a flawless **{n}-0**. The streak rides again.",
-				f"🏆 Perfect record on the line: {a} & {b} are **{n}-0** together. Reunited tonight.",
+				f"💯 {a} & {b} have **never lost** as a pair — a flawless **{n}-0**. {frame}",
+				f"🏆 Perfect record on the line: {a} & {b} are **{n}-0** together. {frame}",
 			]
 		else:
 			opts = [
-				f"🪦 The cursed duo returns: {a} & {b} have **never won** together (0-{n}). Surely tonight?",
-				f"💀 {a} & {b} are **0-{n}** as teammates — paired up again. Curse-breaker today?",
+				f"🪦 The cursed duo returns: {a} & {b} have **never won** together (0-{n}). {frame}",
+				f"💀 {a} & {b} are **0-{n}** as teammates — paired up again. {frame}",
 			]
 		return rng.choice(opts)
 
@@ -604,19 +666,19 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 		wr, base, g = round(d["wr"] * 100), round(d["base"] * 100), d["games"]
 		if d["kind"] == "worst":
 			if d["wr"] == 0.0:
-				opts = [f"🪦 {p} has **never** won a game with {q} (0-fer over {g}). Same team again — flip it tonight?"]
+				opts = [f"🪦 {p} has **never** won a game with {q} (0-fer over {g}). {frame}"]
 			else:
 				opts = [
-					f"🧨 {p} sinks to **{wr}%** beside {q} (vs **{base}%** overall, {g}g) — paired again. Buck it tonight?",
-					f"💀 History says {p} & {q} don't click: **{wr}%** together vs **{base}%** apart. Rewrite it today?",
+					f"🧨 {p} sinks to **{wr}%** beside {q} (vs **{base}%** overall, {g}g) — paired again. {frame}",
+					f"💀 History says {p} & {q} don't click: **{wr}%** together vs **{base}%** apart. {frame}",
 				]
 		else:
 			if d["wr"] == 1.0:
-				opts = [f"🏆 {p} & {q} have **never lost** as a duo — {p}'s {base}% leaps to a perfect 100%. Cooking tonight."]
+				opts = [f"🏆 {p} & {q} have **never lost** as a duo — {p}'s {base}% leaps to a perfect 100%. {frame}"]
 			else:
 				opts = [
-					f"🚀 {p} is a different player next to {q} — **{wr}%** together vs **{base}%** otherwise ({g}g). Cheat code on.",
-					f"🍀 {q} is {p}'s lucky charm: **{wr}%** as a duo vs **{base}%** overall ({g}g). And they're teamed up.",
+					f"🚀 {p} is a different player next to {q} — **{wr}%** together vs **{base}%** otherwise ({g}g). {frame}",
+					f"🍀 {q} is {p}'s lucky charm: **{wr}%** as a duo vs **{base}%** overall ({g}g). {frame}",
 				]
 		return rng.choice(opts)
 
@@ -624,13 +686,13 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 		winner, loser, k, series = name(d["winner"]), name(d["loser"]), d["k"], d["series"]
 		if d["sweep"]:
 			opts = [
-				f"⚔️ {winner} has beaten {loser} **{k} straight** — {loser} has *never* won this one. Does it flip tonight?",
-				f"😤 {loser} is 0-for-the-last-{k} against {winner}. Opposite sides again — curse-breaking night?",
+				f"⚔️ {winner} has beaten {loser} **{k} straight** — {loser} has *never* won this one. {frame}",
+				f"😤 {loser} is 0-for-the-last-{k} against {winner}. {frame}",
 			]
 		else:
 			opts = [
-				f"🔁 {winner} owns this lately: **{k} in a row** over {loser} (of {series} meetings). Will {loser} finally answer?",
-				f"🔒 {k} straight to {winner} over {loser}. They're matched up again — flip incoming?",
+				f"🔁 {winner} owns this lately: **{k} in a row** over {loser} (of {series} meetings). {frame}",
+				f"🔒 {k} straight to {winner} over {loser}. {frame}",
 			]
 		return rng.choice(opts)
 
@@ -638,38 +700,40 @@ def _phrase(c, nick, teams_meta, *, rng=random):
 		a, b, k, series = name(d["ids"][0]), name(d["ids"][1]), d["k"], d["series"]
 		if d["won"]:
 			opts = [
-				f"🔥 {a} & {b} are on fire — **{k} straight wins** together (of {series}). Make it {k + 1}?",
-				f"📈 {a} & {b} just keep winning side-by-side ({k} in a row, {series} all-time). Streak survives?",
+				f"🔥 {a} & {b} are on fire — **{k} straight wins** together (of {series}). {frame}",
+				f"📈 {a} & {b} just keep winning side-by-side ({k} in a row, {series} all-time). {frame}",
 			]
 		else:
 			opts = [
-				f"🪦 {a} & {b} have **lost their last {k}** as teammates (of {series}). Reunited tonight — does it change?",
-				f"❄️ {series} games as a duo and {a} & {b} are ice-cold: **{k} straight losses**. Turn it around now?",
+				f"🪦 {a} & {b} have **lost their last {k}** as teammates (of {series}). {frame}",
+				f"❄️ {series} games as a duo and {a} & {b} are ice-cold: **{k} straight losses**. {frame}",
 			]
 		return rng.choice(opts)
 
 	if t == "deadlock":
 		a, b, each, n = name(d["ids"][0]), name(d["ids"][1]), d["each"], d["n"]
 		opts = [
-			f"⚖️ Deadlocked: {a} & {b} have split their last {n} meetings **{each}-{each}**. Tiebreaker tonight.",
-			f"🎯 The decider: {a} vs {b} is knotted **{each}-{each}** over their last {n}. Someone finally pulls ahead.",
-			f"🪢 {n} recent meetings, **{each}-{each}** — {a} & {b} can't be separated. Until now?",
+			f"⚖️ Deadlocked: {a} & {b} have split their last {n} meetings **{each}-{each}**. {frame}",
+			f"🎯 The decider: {a} vs {b} is knotted **{each}-{each}** over their last {n}. {frame}",
+			f"🪢 {n} recent meetings, **{each}-{each}** — {a} & {b} can't be separated. {frame}",
 		]
 		return rng.choice(opts)
 
-	# form
-	p, k = name(d["p"]), d["k"]
-	if d["won"]:
-		opts = [
-			f"🚀 {p} rolls in on a **{k}-game win streak**. Can anyone stop them tonight?",
-			f"👑 **{k} straight wins** for {p}. The hot hand looks to keep rolling.",
-		]
-	else:
-		opts = [
-			f"🩹 {p} is on a **{k}-game skid**. Is tonight where it turns around?",
-			f"📉 Rough patch for {p}: **{k} losses** in a row. Does the slump end today?",
-		]
-	return rng.choice(opts)
+	if t == "form":
+		p, k = name(d["p"]), d["k"]
+		if d["won"]:
+			opts = [
+				f"🚀 {p} rolls in on a **{k}-game win streak**. {frame}",
+				f"👑 **{k} straight wins** for {p}. {frame}",
+			]
+		else:
+			opts = [
+				f"🩹 {p} is on a **{k}-game skid**. {frame}",
+				f"📉 Rough patch for {p}: **{k} losses** in a row. {frame}",
+			]
+		return rng.choice(opts)
+
+	raise ValueError(f"_phrase has no branch for candidate type {t!r}")
 
 
 # ── DB read + embed (deferred heavy imports) ─────────────────────────────
@@ -732,11 +796,16 @@ async def build_insights_embed(match):
 		return None
 
 	# The freshly-formed match isn't persisted yet, so all of history is "prior".
-	chosen = _select(_candidates(hist.order, hist.matches, [p.id for p in team0], [p.id for p in team1]))
+	# One seeded RNG for the whole embed: bot/storyline_payoff.py recomputes
+	# these same lines at report time and must land on the same choices.
+	rng = random.Random(match.id)
+	chosen = _select(_candidates(hist.order, hist.matches,
+	                             [p.id for p in team0], [p.id for p in team1]), rng=rng)
 	if not chosen:
 		return None
 
-	from nextcord import Embed, Colour
+	from nextcord import Colour, Embed
+
 	from core.utils import get_nick
 
 	nick = {p.id: get_nick(p) for p in players}
@@ -744,13 +813,9 @@ async def build_insights_embed(match):
 		{"name": teams[0].name, "emoji": teams[0].emoji},
 		{"name": teams[1].name, "emoji": teams[1].emoji},
 	]
-	lines = [_phrase(c, nick, teams_meta) for c in chosen]
-	title = random.choice([
-		"🔮 Will It Flip Tonight?",
-		"🧠 Pre-Game Storylines",
-		"📜 History on the Line",
-		"⚔️ Tale of the Tape",
-	])
+	rosters = {0: [p.id for p in team0], 1: [p.id for p in team1]}
+	lines = [_phrase(c, nick, teams_meta, rosters, rng=rng) for c in chosen]
+	title = "⚔️ Tale of the Tape"
 	embed = Embed(title=title, colour=Colour(0xe67e22), description="\n\n".join(lines))
 	embed.set_footer(text=f"Last {WINDOW_DAYS} days · {len(hist.order)} ranked games · just for fun")
 	return embed

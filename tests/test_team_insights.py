@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 import bot.team_insights as ti
 
 
@@ -193,24 +195,29 @@ def test_select_deterministic_with_seeded_rng():
 def test_phrase_all_types_render_without_keyerror():
 	"""Every type _candidates can emit must render. Samples are keyed by type and
 	checked against ti.CANDIDATE_TYPES so a future type added to that tuple
-	without a matching sample here fails loudly instead of quietly passing."""
+	without a matching sample here fails loudly instead of quietly passing.
+
+	Each sample also carries the ``players``/``teams`` a real candidate would
+	have, since _frame (wired into _phrase) reads them directly off ``c``."""
 	nick = {1: "Alice", 2: "Bob"}
 	meta = [{"name": "Alpha", "emoji": ""}, {"name": "Beta", "emoji": ""}]
+	rosters = {0: [1, 2]}
 	rng = random.Random(0)
 	samples = {
-		"perfect": {"ids": [1, 2], "n": 5, "won": False, "team_idx": 0},
-		"mate_wr": {"p": 1, "q": 2, "wr": 0.0, "base": 0.5, "games": 8, "kind": "worst"},
-		"h2h": {"winner": 1, "loser": 2, "k": 4, "series": 6, "sweep": False},
-		"mate": {"ids": [1, 2], "k": 4, "series": 12, "won": True},
-		"deadlock": {"ids": [1, 2], "each": 3, "n": 6},
-		"form": {"p": 1, "k": 5, "won": False},
-		"trio": {"ids": [1, 2], "wins": 4, "games": 5, "won": True, "team_idx": 0},
-		"lineup": {"ids": [1, 2], "wins": 2, "games": 2, "one_way": True, "won": True, "team_idx": 0},
+		"perfect": ({"ids": [1, 2], "n": 5, "won": False, "team_idx": 0}, (1, 2), (0,)),
+		"mate_wr": ({"p": 1, "q": 2, "wr": 0.0, "base": 0.5, "games": 8, "kind": "worst"}, (1, 2), (0,)),
+		"h2h": ({"winner": 1, "loser": 2, "k": 4, "series": 6, "sweep": False}, (1, 2), (0, 1)),
+		"mate": ({"ids": [1, 2], "k": 4, "series": 12, "won": True}, (1, 2), (0,)),
+		"deadlock": ({"ids": [1, 2], "each": 3, "n": 6}, (1, 2), (0, 1)),
+		"form": ({"p": 1, "k": 5, "won": False}, (1,), (0,)),
+		"trio": ({"ids": [1, 2], "wins": 4, "games": 5, "won": True, "team_idx": 0}, (1, 2), (0,)),
+		"lineup": ({"ids": [1, 2], "wins": 2, "games": 2, "one_way": True, "won": True, "team_idx": 0}, (1, 2), (0,)),
 	}
 	assert set(samples) == set(ti.CANDIDATE_TYPES)
 	for t in ti.CANDIDATE_TYPES:
-		c = {"type": t, "data": samples[t]}
-		line = ti._phrase(c, nick, meta, rng=rng)
+		data, players, teams = samples[t]
+		c = {"type": t, "data": data, "players": frozenset(players), "teams": frozenset(teams)}
+		line = ti._phrase(c, nick, meta, rosters, rng=rng)
 		assert isinstance(line, str) and "Alice" in line
 
 
@@ -417,3 +424,103 @@ def test_the_fill_pass_relaxes_the_generic_cap_all_the_way_to_the_limit():
 	]
 	chosen = ti._select(cands, rng=random.Random(0))
 	assert len(chosen) == 4
+
+
+# ── team framing ─────────────────────────────────────────────────────────
+_NICK = {1: "Ann", 2: "Bo", 3: "Cy", 4: "Dee", 5: "Eve", 6: "Fay", 7: "Gil", 8: "Hal"}
+_META = [{"name": "Alpha", "emoji": "🟦"}, {"name": "Beta", "emoji": "🟥"}]
+_ROSTERS = {0: [1, 2, 3, 4], 1: [5, 6, 7, 8]}
+
+
+def _frame_for(typ, players, data, teams=(0,)):
+	c = {"type": typ, "score": 1, "players": frozenset(players),
+	     "teams": frozenset(teams), "data": data}
+	return ti._frame(c, _NICK, _META, _ROSTERS, rng=random.Random(0))
+
+
+def test_a_pair_line_names_the_other_two():
+	out = _frame_for("mate", (1, 2), {"ids": [1, 2], "won": False, "team_idx": 0})
+	assert "Cy" in out and "Dee" in out
+
+
+def test_a_trio_line_names_the_last_teammate():
+	out = _frame_for("trio", (1, 2, 3), {"ids": [1, 2, 3], "won": True, "team_idx": 0})
+	assert "Dee" in out
+	assert "Cy" not in out
+
+
+def test_a_lineup_line_has_no_complement_so_it_addresses_the_side():
+	out = _frame_for("lineup", (1, 2, 3, 4),
+	                 {"ids": [1, 2, 3, 4], "won": True, "team_idx": 0})
+	assert "Alpha" in out
+
+
+def test_a_complement_past_two_collapses_to_the_team_name():
+	out = _frame_for("form", (1,), {"p": 1, "k": 5, "won": True})
+	assert "the rest of Alpha" in out
+
+
+def test_join_names():
+	assert ti._join_names([]) == ""
+	assert ti._join_names(["a"]) == "a"
+	assert ti._join_names(["a", "b"]) == "a & b"
+	assert ti._join_names(["a", "b", "c"]) == "a, b & c"
+
+
+def test_positive_reads_the_right_field_per_type():
+	assert ti._positive({"type": "mate_wr", "data": {"kind": "best"}}) is True
+	assert ti._positive({"type": "mate_wr", "data": {"kind": "worst"}}) is False
+	assert ti._positive({"type": "trio", "data": {"won": False}}) is False
+	assert ti._positive({"type": "h2h", "data": {}}) is True
+
+
+def test_subject_of_picks_the_side_whose_win_settles_the_tease():
+	assert ti.subject_of({"type": "mate", "data": {"team_idx": 1}}) == ("team", 1)
+	assert ti.subject_of({"type": "trio", "data": {"team_idx": 0}}) == ("team", 0)
+	assert ti.subject_of({"type": "lineup", "data": {"team_idx": 1}}) == ("team", 1)
+	assert ti.subject_of({"type": "perfect", "data": {"team_idx": 0}}) == ("team", 0)
+	assert ti.subject_of({"type": "h2h", "data": {"winner": 42}}) == ("player", 42)
+	assert ti.subject_of({"type": "deadlock", "data": {"ids": [7, 9]}}) == ("player", 7)
+	assert ti.subject_of({"type": "form", "data": {"p": 5}}) == ("player", 5)
+	assert ti.subject_of({"type": "mate_wr", "data": {"p": 3, "q": 4}}) == ("player", 3)
+
+
+def test_every_candidate_type_phrases_with_a_frame():
+	"""No type may crash or silently drop the framing clause."""
+	cases = [
+		("lineup", (1, 2, 3, 4), {"ids": [1, 2, 3, 4], "wins": 2, "games": 2,
+		                          "one_way": True, "won": True, "team_idx": 0}, (0,)),
+		("trio", (1, 2, 3), {"ids": [1, 2, 3], "wins": 4, "games": 5,
+		                     "won": True, "team_idx": 0}, (0,)),
+		("perfect", (1, 2), {"ids": [1, 2], "n": 5, "won": False, "team_idx": 0}, (0,)),
+		("mate_wr", (1, 2), {"p": 1, "q": 2, "wr": 0.8, "base": 0.5,
+		                     "games": 8, "kind": "best"}, (0,)),
+		("h2h", (1, 5), {"winner": 1, "loser": 5, "k": 4, "series": 6,
+		                 "sweep": False}, (0, 1)),
+		("mate", (1, 2), {"ids": [1, 2], "k": 4, "series": 7, "won": True,
+		                  "team_idx": 0}, (0,)),
+		("deadlock", (1, 5), {"ids": [1, 5], "each": 3, "n": 6}, (0, 1)),
+		("form", (1,), {"p": 1, "k": 5, "won": True}, (0,)),
+	]
+	for typ, players, data, teams in cases:
+		c = {"type": typ, "score": 1, "players": frozenset(players),
+		     "teams": frozenset(teams), "data": data}
+		line = ti._phrase(c, _NICK, _META, _ROSTERS, rng=random.Random(1))
+		assert isinstance(line, str) and line.strip(), typ
+
+
+def test_phrasing_is_deterministic_under_a_seeded_rng():
+	c = {"type": "form", "score": 1, "players": frozenset((1,)),
+	     "teams": frozenset((0,)), "data": {"p": 1, "k": 5, "won": True}}
+	a = ti._phrase(c, _NICK, _META, _ROSTERS, rng=random.Random(7))
+	b = ti._phrase(c, _NICK, _META, _ROSTERS, rng=random.Random(7))
+	assert a == b
+
+
+def test_phrase_raises_for_an_unknown_candidate_type():
+	"""An unrenderable candidate must fail loudly at the call site rather than
+	silently costing the whole embed (the bug that shipped trio/lineup once)."""
+	c = {"type": "bogus", "score": 1, "players": frozenset((1,)),
+	     "teams": frozenset((0,)), "data": {}}
+	with pytest.raises(ValueError):
+		ti._phrase(c, _NICK, _META, _ROSTERS, rng=random.Random(0))

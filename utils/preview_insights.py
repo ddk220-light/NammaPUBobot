@@ -110,9 +110,10 @@ async def preview_one(pool, mrow):
         return
 
     meta = [{"name": a_name, "emoji": ""}, {"name": b_name, "emoji": ""}]
+    rosters = {0: t0, 1: t1}
     print(f"  Insights (from {len(hist.order)} prior ranked games):")
     for c in chosen:
-        print("    " + ti._phrase(c, nick, meta))
+        print("    " + ti._phrase(c, nick, meta, rosters))
 
 
 async def main():
