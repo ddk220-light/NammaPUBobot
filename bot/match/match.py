@@ -476,6 +476,18 @@ class Match:
 		else:
 			await bot.stats.register_match_unranked(ctx, self)
 
+		# Close the loop on the pre-game storylines. Purely win/loss, so it can
+		# post the instant the match reports — no replay needed. Best-effort:
+		# a payoff failure must never touch the report or rating flow.
+		if self.ranked:
+			try:
+				from bot.storyline_payoff import build_payoff_embed
+				payoff = await build_payoff_embed(self)
+				if payoff is not None:
+					await ctx.notice(embed=payoff)
+			except Exception as e:
+				log.error(f"Storyline payoff failed for match {self.id}: {e}")
+
 		# Pay out audience predictions now the winner is known. A match that ends
 		# without a clean win/loss (draw) is voided inside resolve_for_match.
 		if self.ranked:

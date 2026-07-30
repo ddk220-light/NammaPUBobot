@@ -115,3 +115,107 @@ def test_payoff_phrase_raises_for_an_unknown_candidate_type():
 	c = _c("bogus", (1,), {"p": 1, "k": 5, "won": True})
 	with pytest.raises(ValueError):
 		sp.payoff_phrase(c, True, _NICK, _META, _ROSTERS, rng=random.Random(0))
+
+
+# ── embed assembly ───────────────────────────────────────────────────────
+class _P:
+	def __init__(self, uid):
+		self.id = uid
+
+
+class _T(list):
+	def __init__(self, ids, name, emoji):
+		super().__init__(_P(i) for i in ids)
+		self.name = name
+		self.emoji = emoji
+
+
+class _M:
+	def __init__(self, winner):
+		self.id = 500
+		self.winner = winner
+		self.teams = [_T([1, 2, 3, 4], "Alpha", "🟦"), _T([5, 6, 7, 8], "Beta", "🟥")]
+		self.qc = type("QC", (), {"id": 77})()
+
+
+def _history_rows():
+	"""Players 1 & 2 have lost their last four as teammates, of seven together.
+
+	Order matters: the three wins are the OLDER match ids and the four losses
+	trail, so _trailing_streak sees a 4-game losing run. Seven games clears
+	MATE_MIN_TOGETHER=6 and the run clears MATE_MIN_STREAK=4.
+	"""
+	rows = []
+	for mid in range(1, 4):          # 1-3: team 0 wins
+		for uid, team in ((1, 0), (2, 0), (5, 1), (6, 1)):
+			rows.append({"match_id": mid, "user_id": uid, "nick": f"u{uid}",
+			             "team": team, "winner": 0})
+	for mid in range(4, 8):          # 4-7: team 0 loses
+		for uid, team in ((1, 0), (2, 0), (5, 1), (6, 1)):
+			rows.append({"match_id": mid, "user_id": uid, "nick": f"u{uid}",
+			             "team": team, "winner": 1})
+	return rows
+
+
+def _run_build(monkeypatch, winner, rows):
+	import asyncio
+	import sys
+	import types
+
+	import bot.team_insights as ti
+
+	class _DB:
+		async def fetchall(self, sql, params=None):
+			return rows
+
+	monkeypatch.setattr(ti, "db", _DB())
+
+	fake_utils = types.ModuleType("core.utils")
+	fake_utils.get_nick = lambda p: f"u{p.id}"
+	monkeypatch.setitem(sys.modules, "core.utils", fake_utils)
+
+	# build_payoff_embed defers `from nextcord import Colour, Embed` specifically so
+	# the pure helpers import cleanly under the CI test shim (see the module
+	# docstring) -- CI never installs nextcord (see ci.yml). A candidate-producing
+	# fixture reaches that import, so it needs the same treatment as core.utils
+	# above: a minimal fake standing in for the real package.
+	class _FakeEmbed:
+		def __init__(self, *, title=None, colour=None, description=None):
+			self.title = title
+			self.colour = colour
+			self.description = description
+			self.footer_text = None
+
+		def set_footer(self, *, text=None):
+			self.footer_text = text
+
+	fake_nextcord = types.ModuleType("nextcord")
+	fake_nextcord.Embed = _FakeEmbed
+	fake_nextcord.Colour = lambda value: value
+	monkeypatch.setitem(sys.modules, "nextcord", fake_nextcord)
+	return asyncio.run(sp.build_payoff_embed(_M(winner)))
+
+
+def test_a_draw_builds_no_embed(monkeypatch):
+	assert _run_build(monkeypatch, None, _history_rows()) is None
+
+
+def test_no_history_builds_no_embed(monkeypatch):
+	assert _run_build(monkeypatch, 0, []) is None
+
+
+def test_a_decisive_result_builds_a_titled_embed(monkeypatch):
+	embed = _run_build(monkeypatch, 0, _history_rows())
+	assert embed is not None
+	assert embed.title == "⚔️ Final Tale of the Tape"
+	assert embed.description.strip()
+
+
+def test_the_current_match_is_excluded_from_its_own_prior(monkeypatch):
+	"""Match 500 in history must not resolve itself."""
+	rows = _history_rows()
+	rows += [{"match_id": 500, "user_id": u, "nick": f"u{u}", "team": t, "winner": 0}
+	         for u, t in ((1, 0), (2, 0), (5, 1), (6, 1))]
+	with_current = _run_build(monkeypatch, 0, rows)
+	without = _run_build(monkeypatch, 0, _history_rows())
+	assert with_current.description == without.description
