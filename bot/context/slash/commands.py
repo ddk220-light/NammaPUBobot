@@ -347,6 +347,41 @@ async def _phrases_clear(
 ): await run_slash(bot.commands.phrases_clear, interaction=interaction, player=player)
 
 
+# identity -> ...
+
+@groups.admin_identity.subcommand(
+	name='link', description='Manually link a Discord member to an AoE2 profile id.'
+)
+async def _identity_link(
+		interaction: Interaction,
+		member: Member = SlashOption(verify=False),
+		profile_id: int = SlashOption(description='AoE2 profile id.'),
+		force: bool = SlashOption(
+			description='Reassign even if the profile is already linked to a different member.',
+			required=False, default=False
+		)
+): await run_slash(
+	bot.commands.identity_link, interaction=interaction, member=member, profile_id=profile_id, force=force
+)
+
+
+@groups.admin_identity.subcommand(
+	name='show', description="Show a member's known AoE2 profiles and channel nick."
+)
+async def _identity_show(
+		interaction: Interaction,
+		member: Member = SlashOption(verify=False)
+): await run_slash(bot.commands.identity_show, interaction=interaction, member=member)
+
+
+@groups.admin_identity.subcommand(
+	name='conflicts', description='List open profile_id/Discord-user disagreements awaiting resolution.'
+)
+async def _identity_conflicts(
+		interaction: Interaction,
+): await run_slash(bot.commands.identity_conflicts, interaction=interaction)
+
+
 # rating -> ...
 
 @groups.admin_rating.subcommand(name='seed', description='Set player rating and deviation')

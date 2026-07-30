@@ -70,8 +70,13 @@ REGISTRY = {
 		writers=("bot/lobby/announce.py", "bot/lobby/completed.py", "bot/lobby/jobs.py", "bot/lobby/watcher.py"),
 		retention="forever",
 	),
-	"qc_profile_map": dict(
-		layer="raw", tenancy="global", writers=("bot/lobby/profile_map.py",), retention="forever"
+	# Never populated in production; bot/lobby/profile_map.py (its only would-be
+	# writer) now reads/writes the identity resolver's `identities` table
+	# instead (task 2.3). Dropped outright in a later stage.
+	"qc_profile_map": dict(layer="raw", tenancy="global", writers=(), retention="forever"),
+	"identities": dict(layer="raw", tenancy="global", writers=("bot/identity.py",), retention="forever"),
+	"identity_conflicts": dict(
+		layer="derived", tenancy="global", writers=("bot/identity.py",), retention="forever"
 	),
 	"rs_config": dict(layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
 	"rs_matches": dict(layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
@@ -136,6 +141,10 @@ REGISTRY = {
 	# link — cross-tenant joins (stage 1.6)
 	"match_replays": dict(
 		layer="link", tenancy="community", writers=("bot/community.py",), retention="forever"
+	),
+	# link — cross-tenant joins (stage 2.2)
+	"identity_aliases": dict(
+		layer="link", tenancy="community", writers=("bot/identity.py",), retention="forever"
 	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

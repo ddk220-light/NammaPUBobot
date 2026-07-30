@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 """Async DB layer for replay-stats: enable flag, find-next, idempotent per-match write,
-ingest status bookkeeping, and rs_profiles seeding/lookup. All access via core.database.db."""
-import csv
-import os
+ingest status bookkeeping, and rs_profiles lookup. All access via core.database.db,
+except the profile_id->user_id read, which goes through the identity resolver
+(bot/identity.py) instead of querying rs_profiles directly."""
 import time
 
+from bot import identity
 from core.console import log
 from core.database import db
 
 from . import shape
-
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 # ── enable flag ──────────────────────────────────────────────────────────
@@ -81,15 +80,56 @@ async def upsert_ingest(aoe2_match_id, **fields):
 
 
 # ── per-match write (idempotent) ─────────────────────────────────────────
-async def load_profile_user_map():
-    rows = await db.fetchall("SELECT profile_id, user_id FROM rs_profiles WHERE user_id IS NOT NULL")
-    return {r["profile_id"]: r["user_id"] for r in rows}
+async def load_profile_user_map(profile_ids):
+    """{profile_id: user_id} for every profile_id in `profile_ids` with a known
+    Discord owner, via the identity resolver. Profiles with no known owner are
+    simply absent — never mapped to None."""
+    out = {}
+    for pid in profile_ids:
+        uid = await identity.user_for_profile(pid)
+        if uid is not None:
+            out[pid] = uid
+    return out
+
+
+async def _learn_from_ingest(players, profmap):
+    """Feed every profile_id this ingest resolved to a Discord user back into
+    the identity resolver (bot/identity.py) -- the "ingest learning" writer
+    that module's docstring describes but that never actually existed here.
+
+    profmap already comes from load_profile_user_map, i.e. from
+    identity.user_for_profile, so this can never discover a brand-new
+    mapping -- it reconfirms one the resolver already knows, at the same
+    'learned' tier, refreshing aoe2_name/last_seen_at with what THIS parse
+    just observed. That reconfirmation is not idle busywork: profile_upserts
+    below builds rs_profiles.user_id FROM profmap and writes it with
+    on_duplicate='replace', so if `identities` were ever missing a mapping
+    rs_profiles previously held, that write would silently wipe it rather
+    than merely fail to add one. Routing every resolved profile back through
+    learn() keeps the resolver current so that gap cannot open in the first
+    place.
+
+    Best-effort per player: an identity write failing must never break
+    ingest -- the raw parse output write_match already wrote is irreplaceable
+    (replays 404 upstream once they expire), so each failure is caught and
+    logged rather than allowed to propagate.
+    """
+    for p in players:
+        profile_id = p.get("profile_id")
+        user_id = profmap.get(profile_id)
+        if user_id is None:
+            continue
+        try:
+            await identity.learn(profile_id, user_id, "learned", aoe2_name=p.get("identity") or None)
+        except Exception as e:
+            log.error(f"Replay-stats identity learn failed for profile_id={profile_id} "
+                      f"user_id={user_id}: {e}")
 
 
 async def write_match(extracted, bot_match_id, parsed_at, parser_version, played_at_epoch=None):
     """Idempotent: replace this match's rows. Returns count of player rows written."""
     aoe2_id = extracted["match"]["aoe2_match_id"]
-    profmap = await load_profile_user_map()
+    profmap = await load_profile_user_map([p["profile_id"] for p in extracted["players"]])
     p2p = shape.pnum_to_profile(extracted["players"])
 
     # clear any prior rows for this match (idempotent re-ingest)
@@ -135,6 +175,7 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     profs = shape.profile_upserts(extracted["players"], profmap, parsed_at)
     if profs:
         await db.insert_many("rs_profiles", profs, on_duplicate="replace")
+    await _learn_from_ingest(extracted["players"], profmap)
     try:
         from . import classifications
         await classifications.write_extracted_match(extracted, played_at_epoch)
@@ -151,28 +192,3 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     except Exception as e:
         log.error(f"Replay-stats persona refresh failed for aoe2 match {aoe2_id}: {e}")
     return len(pg)
-
-
-# ── profile seeding (one-time / idempotent) ──────────────────────────────
-async def seed_profiles_from_csv():
-    """Seed rs_profiles from data/profile_resolved.csv (cols: profile_id,user_id,nick,...).
-    Only inserts profiles not already present (preserves learned user_ids)."""
-    path = os.path.join(_ROOT, "data", "profile_resolved.csv")
-    if not os.path.exists(path):
-        return 0
-    existing = {r["profile_id"] for r in await db.fetchall("SELECT profile_id FROM rs_profiles")}
-    rows, now = [], int(time.time())
-    with open(path, newline="", encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            try:
-                pid = int(r["profile_id"])
-            except (ValueError, KeyError):
-                continue
-            if pid in existing:
-                continue
-            uid = r.get("user_id")
-            rows.append(dict(profile_id=pid, user_id=int(uid) if uid else None,
-                             name=r.get("nick") or r.get("aoe2_name") or "", last_seen_at=now))
-    if rows:
-        await db.insert_many("rs_profiles", rows, on_duplicate="ignore")
-    return len(rows)

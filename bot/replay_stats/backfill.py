@@ -25,7 +25,6 @@ async def kick_off(days):
 
 
 async def _run(days):
-    await store.seed_profiles_from_csv()
     done, errors = 0, 0
     while True:
         try:

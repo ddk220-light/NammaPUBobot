@@ -19,6 +19,7 @@ from core.client import dc
 from core.console import log
 from core.database import db
 import bot
+from bot import identity
 from bot.replay_stats import persona as rs_persona
 from bot.replay_stats import persona_store as rs_persona_store
 from bot.replay_stats import scoring as rs_scoring
@@ -680,8 +681,14 @@ async def _match_stat_players():
 
 
 async def _mapped_player_identity(user_id):
-	mapped = (await _mapped_profiles_by_user()).get(int(user_id), {})
-	return sorted(mapped.get("profile_ids", [])), sorted(n.lower() for n in mapped.get("aoe2_names", []) if n)
+	"""(profile_ids, aoe2_names) for a Discord user, via the identity resolver.
+	aoe2_names feeds _civ_player_clause's fallback match on civ_picks rows
+	recorded without a user_id (the un-linked lobby scrape — see
+	bot.civ_sync.persist_lobby_civs)."""
+	uid = int(user_id)
+	profile_ids = (await identity.profiles_for_users([uid])).get(uid, [])
+	names = await identity.names_for_profiles(profile_ids)
+	return sorted(profile_ids), sorted({n.lower() for n in names.values() if n})
 
 
 def _civ_player_clause(user_id, aoe2_names):

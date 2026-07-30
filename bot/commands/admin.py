@@ -1,7 +1,7 @@
 __all__ = [
 	'noadds', 'noadd', 'forgive', 'rating_seed', 'rating_penality', 'rating_hide',
 	'rating_reset', 'rating_snap', 'stats_reset', 'stats_reset_player', 'stats_replace_player',
-	'phrases_add', 'phrases_clear', 'undo_match',
+	'phrases_add', 'phrases_clear', 'undo_match', 'identity_link', 'identity_show', 'identity_conflicts',
 	'douche_add', 'douche_summary', 'douche_leaderboard'
 ]
 
@@ -144,6 +144,81 @@ async def undo_match(ctx, match_id: int):
 		await ctx.success(ctx.qc.gt("Done."))
 	else:
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id."))
+
+
+async def identity_link(ctx, member: Member, profile_id: int, force: bool = False):
+	""" Manual override for bot/identity.py's resolver: records `profile_id`
+	as belonging to `member` with confidence='manual', which no automated
+	learning (seed/replay ingest) can ever overwrite -- see identity.learn's
+	docstring. If `profile_id` already resolves to a *different* Discord
+	user, this refuses to reassign it unless `force` is set, so a mistyped
+	profile id can't silently steal someone else's identity. """
+	ctx.check_perms(ctx.Perms.ADMIN)
+
+	existing_owner = await bot.identity.user_for_profile(profile_id)
+	if existing_owner is not None and existing_owner != member.id and not force:
+		raise bot.Exc.ValueError(ctx.qc.gt(
+			"Profile `{profile_id}` is already linked to <@{owner_id}>. "
+			"Re-run with `force: True` to relink it to **{member}**."
+		).format(profile_id=profile_id, owner_id=existing_owner, member=get_nick(member)))
+
+	await bot.identity.learn(profile_id, member.id, source="manual")
+	await ctx.success(ctx.qc.gt("Linked profile `{profile_id}` to **{member}**.").format(
+		profile_id=profile_id, member=get_nick(member)
+	))
+
+
+async def identity_show(ctx, member: Member):
+	""" Read-only lookup: `member`'s known AoE2 profile ids (bot/identity.py's
+	global profile_id<->user_id map) and their nickname within this channel's
+	community (per-community, so it's None both when unset and when the
+	channel was never enrolled in a community at all). """
+	ctx.check_perms(ctx.Perms.MODERATOR)
+
+	profiles = await bot.identity.profiles_for_users([member.id])
+	profile_ids = profiles.get(member.id, [])
+
+	community_id = await bot.community.community_for_channel(ctx.channel.id)
+	if community_id is None:
+		nick_line = ctx.qc.gt("This channel isn't enrolled in a community, so no per-community nick is tracked.")
+	else:
+		nick = await bot.identity.nick_for(community_id, member.id)
+		nick_line = nick or ctx.qc.gt("(none set)")
+
+	embed = Embed(title=ctx.qc.gt("Identity — {member}").format(member=get_nick(member)), colour=Colour(0x5865F2))
+	embed.add_field(
+		name=ctx.qc.gt("AoE2 profiles"),
+		value=", ".join(f"`{pid}`" for pid in profile_ids) if profile_ids else ctx.qc.gt("(none known)"),
+		inline=False
+	)
+	embed.add_field(name=ctx.qc.gt("Nick"), value=nick_line, inline=False)
+	await ctx.reply(embed=embed)
+
+
+async def identity_conflicts(ctx):
+	""" Read-only lookup: every open profile_id<->user_id disagreement that
+	learn() or migration 003_seed_identities recorded instead of silently
+	discarding a losing claim (see bot/identity.py's identity_conflicts
+	declaration and open_conflicts()). There is no resolution UI yet -- this
+	just surfaces what open_conflicts() already tracks so a moderator isn't
+	blind to it in the meantime; nothing here changes `status`. """
+	ctx.check_perms(ctx.Perms.MODERATOR)
+
+	conflicts = await bot.identity.open_conflicts()
+	if not conflicts:
+		await ctx.reply(ctx.qc.gt("no open identity conflicts"))
+		return
+
+	embed = Embed(title=ctx.qc.gt("Open identity conflicts"), colour=Colour(0x5865F2))
+	for c in conflicts:
+		owner = f"<@{c['current_owner']}>" if c["current_owner"] is not None else ctx.qc.gt("(none known)")
+		claimants = "\n".join(f"<@{claim['user_id']}> ({claim['source']})" for claim in c["claims"])
+		embed.add_field(
+			name=ctx.qc.gt("Profile `{profile_id}`").format(profile_id=c["profile_id"]),
+			value=f"{ctx.qc.gt('Current owner')}: {owner}\n{ctx.qc.gt('Competing claim(s)')}:\n{claimants}",
+			inline=False,
+		)
+	await ctx.reply(embed=embed)
 
 
 async def douche_add(ctx, player: Member, target: Member):

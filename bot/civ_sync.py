@@ -113,9 +113,11 @@ async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at
 		return True
 
 	if uid_to_pids is None or nick_to_pids is None:
-		from bot.civ_matcher import _load_profile_map, _load_profile_uid_map
-		uid_to_pids = _load_profile_uid_map()
-		nick_to_pids = _load_profile_map()
+		# No nick fallback here either (see bot/civ_matcher._map_players_to_profiles) —
+		# the identity resolver is user_id-keyed only.
+		from bot import identity
+		uid_to_pids = await identity.profiles_for_users([user_id for user_id, _nick, _team in players])
+		nick_to_pids = {}
 
 	player_info, active_pids = _bot_player_profiles(players, uid_to_pids or {}, nick_to_pids or {})
 	if len(player_info) < 2:

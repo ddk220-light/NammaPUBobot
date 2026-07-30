@@ -13,17 +13,15 @@ until it appears (or give up). Runs as a background task — the /report command
 returns immediately.
 """
 import asyncio
-import csv
-import os
 from datetime import datetime
 
 import aiohttp
 
+from bot import identity
 from core.console import log
 from core.database import db
 
 AOE2_API = "https://data.aoe2companion.com/api"
-_PROFILE_MAP_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "player_profile_map.csv")
 
 # Time window: bot match `at` (report time) minus API game start time should be
 # positive and within a few hours (game duration + report delay).
@@ -35,45 +33,28 @@ _RETRY_DELAYS = (60, 180, 420)
 _pending = set()
 
 
-def _load_profile_map():
-	"""nick -> [profile_id, ...] from data/player_profile_map.csv."""
-	nick_to_pids = {}
-	if not os.path.exists(_PROFILE_MAP_PATH):
-		return nick_to_pids
-	with open(_PROFILE_MAP_PATH, newline="") as f:
-		for row in csv.DictReader(f):
-			nick = row.get("nick")
-			pids_raw = (row.get("profile_id") or "").strip()
-			if not nick or not pids_raw:
-				continue
-			for p in pids_raw.split("/"):
-				p = p.strip()
-				if p.isdigit():
-					nick_to_pids.setdefault(nick, []).append(int(p))
-	return nick_to_pids
+async def _map_players_to_profiles(players):
+	"""user_id -> (nick, team, [pids]) for players with a known AoE2 profile, via
+	the identity resolver (bot/identity.py) — the single source of truth for
+	profile_id<->user_id, seeded at boot from every legacy store. Returns the
+	map plus the union of all mapped profile ids.
 
-
-def _load_profile_uid_map():
-	"""Discord user_id -> [profile_id, ...] from data/player_profile_map.csv.
-
-	Keyed on the stable Discord user_id (the CSV's user_id column) rather than
-	the nick. A player renaming used to silently break civ matching — the
-	nick-keyed lookup is why most matches went un-recorded. user_id never drifts.
+	No nick fallback: the old CSV-only nick-keyed lookup never resolved anyone
+	the user_id path couldn't (every row in data/player_profile_map.csv already
+	carried a user_id), and both live callers (bot/stats/stats.py's Discord
+	member ids, bot/civ_reconcile.py's match_players.user_id) always supply a
+	real user_id, never None.
 	"""
-	uid_to_pids = {}
-	if not os.path.exists(_PROFILE_MAP_PATH):
-		return uid_to_pids
-	with open(_PROFILE_MAP_PATH, newline="") as f:
-		for row in csv.DictReader(f):
-			uid = (row.get("user_id") or "").strip()
-			pids_raw = (row.get("profile_id") or "").strip()
-			if not uid.isdigit() or not pids_raw:
-				continue
-			for p in pids_raw.split("/"):
-				p = p.strip()
-				if p.isdigit():
-					uid_to_pids.setdefault(int(uid), []).append(int(p))
-	return uid_to_pids
+	uid_to_pids = await identity.profiles_for_users([user_id for user_id, _nick, _team in players])
+
+	player_info = {}   # user_id -> (nick, team, [pids])
+	active_pids = set()
+	for user_id, nick, team in players:
+		pids = uid_to_pids.get(user_id, [])
+		if pids:
+			player_info[user_id] = (nick, team, pids)
+			active_pids.update(pids)
+	return player_info, active_pids
 
 
 def _iso_to_unix(s):
@@ -101,19 +82,17 @@ async def _fetch_recent(session, sem, pid, pool):
 
 async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 	"""Return True if civs were recorded (or already present), False to retry."""
-	nick_to_pids = _load_profile_map()
-	uid_to_pids = _load_profile_uid_map()
-
-	# Map this match's players to AoE2 profile ids. Prefer the stable user_id
-	# (survives nick changes); fall back to nick for rows without a user_id.
-	player_info = {}   # user_id -> (nick, team, [pids])
-	active_pids = set()
-	for user_id, nick, team in players:
-		pids = uid_to_pids.get(user_id) or nick_to_pids.get(nick, [])
-		if pids:
-			player_info[user_id] = (nick, team, pids)
-			active_pids.update(pids)
+	player_info, active_pids = await _map_players_to_profiles(players)
 	if len(player_info) < 2:
+		# The observable symptom of a degraded/empty identity resolver (see
+		# bot/identity.py and core/migrations.py's 003_seed_identities): if
+		# `identities` is unexpectedly empty, every match lands here forever
+		# with no exception and no retry, so civ stats silently stop
+		# accruing. Log it so that failure mode is at least visible.
+		log.info(
+			f"Civ match: only {len(player_info)}/{len(players)} players for bot match "
+			f"{bot_match_id} resolved to a known AoE2 profile (need >= 2); skipping."
+		)
 		return True  # not enough mapped players to ever match — don't keep retrying
 
 	# Already recorded?

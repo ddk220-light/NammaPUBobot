@@ -10,9 +10,11 @@ named ``NammaNomad`` (auto-detected) or tracked via ``/lobby2`` / ``/lobby``. Ev
 entry point degrades silently if the (unofficial) lobby socket or API misbehaves.
 
 Durable store is ``lobbies`` (NOT saved_state.json) — lobbies survive a
-Railway redeploy the same way matches do, through MySQL. ``qc_profile_map`` is
-the DB-backed, self-healing Discord-user <-> AoE2-profile map that replaces the
-stale data/player_profile_map.csv.
+Railway redeploy the same way matches do, through MySQL. ``qc_profile_map`` was
+meant to be the DB-backed, self-healing Discord-user <-> AoE2-profile map that
+replaced the stale data/player_profile_map.csv, but it was never populated in
+production; bot/lobby/profile_map.py now reads/writes bot/identity.py's
+resolver instead, and this table is unused (dropped in a later stage).
 
 Tables are declared here (ensure_table auto-creates + ALTERs at import, the
 civ_sync.py pattern). bot/__init__.py imports this module for that side effect
@@ -44,12 +46,11 @@ db.ensure_table(dict(
 	primary_keys=["id"],
 ))
 
-# Self-healing Discord-user <-> AoE2-profile map. Learned from roster-confirmed
-# lobbies: each slot's (profileId, name) is authoritative for that match's
-# players. The results/ratings loop NEVER reads this — it only powers the
-# optional winner-name hint + per-player civ attribution, both best-effort.
-# Composite PK lets a user carry more than one profile (smurf/alt) without dup
-# rows; Phase 2 link logic prefers the most recent.
+# Unused since task 2.3 (see bot/lobby/profile_map.py) — kept only so a
+# pre-migration deploy doesn't error, dropped outright in a later stage.
+# Was meant to be a self-healing Discord-user <-> AoE2-profile map learned from
+# roster-confirmed lobbies, but was never populated in production; the identity
+# resolver (bot/identity.py) now owns that job.
 db.ensure_table(dict(
 	tname="qc_profile_map",
 	columns=[
