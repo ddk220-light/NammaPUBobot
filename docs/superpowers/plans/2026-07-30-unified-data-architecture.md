@@ -715,22 +715,89 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None   # source:
 async def set_nick(community_id, user_id, nick) -> None
 ```
 
-**Tasks:**
-- 2.1 Elaborate (mandatory).
-- 2.2 `bot/identity.py` + declarations + registry rows + migration 003 seeding
-  `identities` from `rs_profiles` ∪ `data/player_profile_map.csv` ∪
-  `data/profile_resolved.csv` (CSV parse is a pure function with unit tests;
-  seed rows get confidence='seed'; conflicts prefer rs_profiles' learned user_id).
-- 2.3 Cut over readers: `bot/civ_matcher.py` `_load_profile_map`/`_load_profile_uid_map`
-  → `identity.profiles_for_users`; `bot/lobby/profile_map.py` learn path →
-  `identity.learn(source='lobby')` (its `qc_profile_map` table stops being read;
-  dropped stage 6); `bot/replay_stats/store.py` profile map reads →
-  `identity`; `bot/web.py` `_mapped_player_identity` → `identity`.
-- 2.4 Admin correction command: `/identity link <member> <profile_id>` +
-  `/identity show <member>` under the existing admin group in
-  `bot/context/slash/groups.py` (writes `learn(source='manual')`).
-- 2.5 Deploy + verify (stage-1 checklist shape; smoke: civ match resolves for
-  the next reported match — check `railway logs` for `Civ match:` line).
+**Measured starting state (2026-07-30, read-only):** `rs_profiles` has 89 rows,
+48 with a `user_id`. `qc_profile_map` is empty. `data/player_profile_map.csv`
+columns: `user_id,nick,aoe2_name,profile_id,country`.
+`data/profile_resolved.csv` columns: `profile_id,user_id,nick,aoe2_name,source,appearances`.
+
+**Precedence when sources disagree about a `profile_id → user_id` mapping:**
+`rs_profiles` (learned at ingest from real matches) beats `profile_resolved.csv`
+(generated) beats `player_profile_map.csv` (hand-maintained, oldest). Later
+`learn(source='manual')` beats everything and is never overwritten.
+
+### Task 2.1: Elaborate this stage — DONE (this section)
+
+### Task 2.2: `bot/identity.py`, tables, seed migration
+
+**Files:** create `bot/identity.py`; modify `core/migrations.py` (migration 003),
+`core/data_registry.py`; test `tests/test_identity.py`.
+
+**Produces (binding for 2.3–2.5):**
+```python
+async def profiles_for_users(user_ids) -> dict[int, list[int]]
+async def user_for_profile(profile_id: int) -> int | None
+async def learn(profile_id, user_id, source, aoe2_name=None) -> None
+async def set_nick(community_id, user_id, nick) -> None
+async def nick_for(community_id, user_id) -> str | None
+def parse_seed_csv(text: str, kind: str) -> list[dict]   # pure; kind='profile_map'|'resolved'
+def invalidate_cache() -> None
+```
+`CONFIDENCE_ORDER = ("seed", "learned", "manual")` — `learn` never lowers a
+row's confidence and never overwrites a `manual` mapping with a non-manual one.
+
+- [ ] Steps: failing tests first (`parse_seed_csv` on both real header shapes
+  including a row with an empty `user_id`; precedence — a `manual` row survives a
+  `learned` write; `profiles_for_users` groups multiple profiles per user;
+  `user_for_profile` returns None for unknown) → implement → migration 003 seeding
+  `identities` from `rs_profiles` first, then the two CSVs, `INSERT IGNORE` so
+  earlier (higher-precedence) rows win → registry rows (`identities`
+  layer=raw/tenancy=global, `identity_aliases` layer=link/tenancy=community,
+  both `writers=("bot/identity.py",)`, retention=forever) → full suite → commit.
+
+### Task 2.3: Cut over every identity reader
+
+**Files:** `bot/civ_matcher.py`, `bot/lobby/profile_map.py`,
+`bot/replay_stats/store.py`, `bot/web.py`; tests as noted.
+
+Four readers, each replaced with the `bot/identity.py` API:
+1. `bot/civ_matcher.py:38,56` — `_load_profile_map()` / `_load_profile_uid_map()`
+   read `data/player_profile_map.csv` at runtime on **every** civ-match attempt.
+   Replace both with `profiles_for_users`. Delete `_PROFILE_MAP_PATH` and both
+   loaders. Note `_find_and_record` currently falls back from user_id to *nick*;
+   preserve that fallback via `nick_for` or drop it only if no caller depends on it.
+2. `bot/lobby/profile_map.py:32,46` — `known_for()` / `link()` wrap the empty
+   `qc_profile_map`. Re-point at `user_for_profile` / `learn(source='lobby')`.
+   Keep `eliminate()` (pure inference, unrelated). `qc_profile_map` stops being
+   read here; it is dropped in stage 6.
+3. `bot/replay_stats/store.py:85,158` — `SELECT profile_id, user_id FROM rs_profiles`
+   and the `profile_resolved.csv` seeder. Reads move to `identity`; the CSV
+   seeder is deleted (migration 003 now owns seeding). `rs_profiles` keeps being
+   **written** at ingest (dropped in stage 6) — do not remove the write.
+4. `bot/web.py:682` — `_mapped_player_identity` → `identity`.
+
+- [ ] Steps: per reader, write a failing test asserting it consults `identity`
+  (fake the module), implement, run the reader's own existing tests
+  (`tests/test_civ_matcher.py`, `tests/test_lobby_*.py`) → full suite → commit.
+
+### Task 2.4: Admin identity commands
+
+**Files:** `bot/commands/admin.py`, `bot/context/slash/groups.py`,
+`bot/context/slash/commands.py`; test `tests/test_identity.py`.
+
+`/namma_admin identity link <member> <profile_id>` → `learn(source='manual')`;
+`/namma_admin identity show <member>` → the member's profiles and current nick.
+Follow the existing admin subcommand-group pattern exactly.
+
+- [ ] Steps: failing test on the handler's pure path → implement → suite → commit.
+
+### Task 2.5: Deploy + verify
+
+- [ ] Follow `docs/runbooks/schema-migrations.md`: verified backup, merge,
+  suite on the merged result, `railway up --ci`.
+- [ ] Verify by query, not `/health` alone: `identities` row count ≥ 89 and every
+  `rs_profiles` row with a `user_id` has a matching `identities` row with the same
+  `user_id`; ledger contains `003_seed_identities`.
+- [ ] Smoke: next reported match still resolves civs — `railway logs | grep "Civ match:"`.
 
 ---
 
