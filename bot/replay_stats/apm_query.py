@@ -8,18 +8,18 @@ from core.database import db
 
 
 def apm_series(rows, names):
-    """rs_player_apm rows -> one zero-filled series per player.
+    """replay_apm rows -> one zero-filled series per player.
 
     Every player is padded to the match's last minute so the lines share an x-axis
     and a player who was eliminated reads as falling to zero, which is the honest
     picture (see the spec's note on mgz's whole-game denominator). Pure.
 
-    `mean_active` is deliberately NOT the eAPM stored on rs_player_games: it divides
+    `mean_active` is deliberately NOT the eAPM stored on replay_players: it divides
     by the match's last *active* minute (the last minute in which anyone acted), while
-    mgz — and therefore rs_player_games.eapm, the number every other surface shows —
+    mgz — and therefore replay_players.eapm, the number every other surface shows —
     divides by whole game minutes. The two disagree on any match whose final action
     isn't in the final minute. The name says `active` so a future consumer reaches for
-    rs_player_games.eapm when it wants the canonical figure; do not rename it back to
+    replay_players.eapm when it wants the canonical figure; do not rename it back to
     a bare `mean`, and do not display it beside the stored eAPM without saying which
     is which.
     """
@@ -47,10 +47,10 @@ def apm_series(rows, names):
     return out
 
 
-async def fetch_match_apm(aoe2_match_id):
+async def fetch_match_apm(replay_match_id):
     """Per-minute buckets for one match, ordered for apm_series."""
     rows = await db.fetchall(
-        "SELECT player_number, minute, actions FROM rs_player_apm "
-        "WHERE aoe2_match_id=%s ORDER BY player_number, minute",
-        [aoe2_match_id])
+        "SELECT player_number, minute, actions FROM replay_apm "
+        "WHERE replay_match_id=%s ORDER BY player_number, minute",
+        [replay_match_id])
     return rows or []

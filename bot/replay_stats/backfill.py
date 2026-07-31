@@ -35,7 +35,7 @@ async def _run(days):
             # The tick sweep may pick the same newest match concurrently; that's safe —
             # write_match is idempotent and the single-worker parse pool serializes the work
             # (worst case: one redundant parse + a double-counted attempt, never corruption).
-            await jobs.ingest_one(work["aoe2_match_id"], work.get("bot_match_id"),
+            await jobs.ingest_one(work["replay_match_id"], work.get("bot_match_id"),
                                   work.get("at"), now, post_summary=False)
             done += 1
             errors = 0

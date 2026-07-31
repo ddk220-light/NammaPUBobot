@@ -337,7 +337,7 @@ async def record_civs_by_id(channel_id, bot_match_id, match_api, players, winner
 			continue
 		result = ("W" if team == winner else "L") if (winner is not None and team is not None) else None
 		rows.append(dict(
-			channel_id=channel_id, aoe2_match_id=aoe2_match_id, aoe2_name="",
+			channel_id=channel_id, replay_match_id=aoe2_match_id, aoe2_name="",
 			civ=civ, at=match_at, bot_match_id=bot_match_id,
 			user_id=user_id, nick=nick, team=team, result=result,
 		))

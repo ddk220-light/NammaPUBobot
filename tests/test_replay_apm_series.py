@@ -51,7 +51,7 @@ def test_series_peak_and_mean_active():
 
 
 def test_series_never_exposes_a_bare_mean():
-    """`mean_active` divides by the last *active* minute, while rs_player_games.eapm
+    """`mean_active` divides by the last *active* minute, while replay_players.eapm
     divides by whole game minutes — the two disagree whenever the final action isn't in
     the final minute. A key called plain `mean` invites a consumer to treat it as the
     stored eAPM, which is exactly the parity trap this pipeline exists to avoid."""

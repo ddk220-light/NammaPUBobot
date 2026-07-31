@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Read-only aggregation over the rs_* tables for /player_details's build-timeline chart.
+"""Read-only aggregation over the replay_* tables for /player_details's build-timeline chart.
 
 Reuses the daily-quiz approach so the card lines up with the quiz: standard-map games only,
 age/timing metrics gated on age_reliable + a real Feudal click, and each tracked upgrade placed
@@ -61,7 +61,7 @@ def build_timeline(games, techs):
 async def resolve_profile_ids(user_id):
     """All AoE2 profile_ids that have games linked to this Discord user_id (covers alts)."""
     rows = await db.fetchall(
-        "SELECT DISTINCT profile_id FROM rs_player_games WHERE user_id=%s", [user_id])
+        "SELECT DISTINCT profile_id FROM replay_players WHERE user_id=%s", [user_id])
     return [r["profile_id"] for r in rows]
 
 
@@ -74,21 +74,21 @@ async def gather_timeline_data(profile_ids, days=90):
     pids = ",".join(["%s"] * len(profile_ids))
     smaps = ",".join(["%s"] * len(STANDARD_MAPS))
     games = await db.fetchall(
-        f"SELECT g.aoe2_match_id, g.feudal_s, g.castle_s, g.imperial_s, g.villagers, "
+        f"SELECT g.replay_match_id, g.feudal_s, g.castle_s, g.imperial_s, g.villagers, "
         f"g.vil_pre_feudal, g.vil_pre_castle, g.vil_pre_imperial, "
         f"g.military, g.mil_pre_feudal, g.mil_pre_castle, g.mil_pre_imperial "
-        f"FROM rs_player_games g JOIN rs_matches m ON m.aoe2_match_id=g.aoe2_match_id "
+        f"FROM replay_players g JOIN replay_matches m ON m.replay_match_id=g.replay_match_id "
         f"WHERE g.profile_id IN ({pids}) AND m.played_at >= %s AND m.map IN ({smaps}) "
         f"AND g.age_reliable=1 AND g.feudal_s IS NOT NULL",
         [*profile_ids, cutoff, *STANDARD_MAPS])
     if not games:
         return None
-    mids = [g["aoe2_match_id"] for g in games]
+    mids = [g["replay_match_id"] for g in games]
     mph = ",".join(["%s"] * len(mids))
     techs = await db.fetchall(
-        f"SELECT tech, AVG(c) t FROM (SELECT tech, MIN(click_s) c FROM rs_player_techs "
-        f"WHERE profile_id IN ({pids}) AND aoe2_match_id IN ({mph}) AND click_s IS NOT NULL "
-        f"GROUP BY aoe2_match_id, tech) x GROUP BY tech", [*profile_ids, *mids])
+        f"SELECT tech, AVG(c) t FROM (SELECT tech, MIN(click_s) c FROM replay_techs "
+        f"WHERE profile_id IN ({pids}) AND replay_match_id IN ({mph}) AND click_s IS NOT NULL "
+        f"GROUP BY replay_match_id, tech) x GROUP BY tech", [*profile_ids, *mids])
     return build_timeline(games, techs)
 
 
@@ -179,29 +179,29 @@ def build_growth_curve(games, grid_step=30, cap_s=None, max_cap_s=3600):   # har
 async def gather_growth_curve(profile_ids, days=90):
     """DB layer for build_growth_curve(): age-reliable standard-map games in the window that HAVE
     per-event data, each player's villager/military queue series, plus eco/military upgrade
-    annotations (avg first-click, from rs_player_techs). Returns the curve dict or None."""
+    annotations (avg first-click, from replay_techs). Returns the curve dict or None."""
     if not profile_ids:
         return None
     cutoff = (datetime.date.fromtimestamp(time.time()) - datetime.timedelta(days=days)).isoformat()
     pids = ",".join(["%s"] * len(profile_ids))
     smaps = ",".join(["%s"] * len(STANDARD_MAPS))
     rows = await db.fetchall(
-        f"SELECT g.aoe2_match_id, g.profile_id, m.duration_s, g.feudal_s, g.castle_s, g.imperial_s "
-        f"FROM rs_player_games g JOIN rs_matches m ON m.aoe2_match_id=g.aoe2_match_id "
+        f"SELECT g.replay_match_id, g.profile_id, m.duration_s, g.feudal_s, g.castle_s, g.imperial_s "
+        f"FROM replay_players g JOIN replay_matches m ON m.replay_match_id=g.replay_match_id "
         f"WHERE g.profile_id IN ({pids}) AND m.played_at >= %s AND m.map IN ({smaps}) "
         f"AND g.age_reliable=1 AND g.feudal_s IS NOT NULL AND m.duration_s IS NOT NULL",
         [*profile_ids, cutoff, *STANDARD_MAPS])
     if not rows:
         return None
-    mids = list({r["aoe2_match_id"] for r in rows})
+    mids = list({r["replay_match_id"] for r in rows})
     mph = ",".join(["%s"] * len(mids))
     evs = await db.fetchall(
-        f"SELECT aoe2_match_id, profile_id, t_s, amount, is_military, category FROM rs_player_events "
-        f"WHERE aoe2_match_id IN ({mph}) AND profile_id IN ({pids}) AND kind='queue' "
+        f"SELECT replay_match_id, profile_id, t_s, amount, is_military, category FROM replay_events "
+        f"WHERE replay_match_id IN ({mph}) AND profile_id IN ({pids}) AND kind='queue' "
         f"AND t_s IS NOT NULL", [*mids, *profile_ids])
     series = {}
     for e in evs:
-        d = series.setdefault((e["aoe2_match_id"], e["profile_id"]), {"vil": [], "mil": []})
+        d = series.setdefault((e["replay_match_id"], e["profile_id"]), {"vil": [], "mil": []})
         amt = e["amount"] or 1
         if e["is_military"]:                       # robust flag (parity-verified), symmetric with…
             d["mil"].append((e["t_s"], amt))
@@ -209,7 +209,7 @@ async def gather_growth_curve(profile_ids, days=90):
             d["vil"].append((e["t_s"], amt))
     games = []
     for r in rows:
-        s = series.get((r["aoe2_match_id"], r["profile_id"]))
+        s = series.get((r["replay_match_id"], r["profile_id"]))
         if not s or not s["vil"]:
             # No villager series (replay unbackfilled, or a data artifact) -> can't anchor the curve.
             # Requiring villagers keeps the shared live-set honest: every averaged game has a real
@@ -222,9 +222,9 @@ async def gather_growth_curve(profile_ids, days=90):
     if not curve:
         return None
     techs = await db.fetchall(
-        f"SELECT tech, AVG(c) t FROM (SELECT tech, MIN(click_s) c FROM rs_player_techs "
-        f"WHERE profile_id IN ({pids}) AND aoe2_match_id IN ({mph}) AND click_s IS NOT NULL "
-        f"GROUP BY aoe2_match_id, tech) x GROUP BY tech", [*profile_ids, *mids])
+        f"SELECT tech, AVG(c) t FROM (SELECT tech, MIN(click_s) c FROM replay_techs "
+        f"WHERE profile_id IN ({pids}) AND replay_match_id IN ({mph}) AND click_s IS NOT NULL "
+        f"GROUP BY replay_match_id, tech) x GROUP BY tech", [*profile_ids, *mids])
     curve["eco"] = _ann(ECO_TIMELINE, techs)
     curve["mil_upg"] = _ann(MIL_TIMELINE, techs)
     return curve

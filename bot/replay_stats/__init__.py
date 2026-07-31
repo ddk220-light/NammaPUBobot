@@ -1,30 +1,21 @@
 # -*- coding: utf-8 -*-
-"""Live replay-stats subsystem — strictly additive, opt-in (off until rs_config.enabled=1).
-Mirrors bot/quiz/ isolation: dedicated rs_* tables declared here via ensure_table at import,
-imported by bot/__init__.py for that side effect and the ReplayStatsJobs singleton. Heavy
-imports (mgz, requests) stay lazy inside fetch.py/parse.py so importing this package is
-test-safe under the conftest stubs."""
+"""Live replay-stats subsystem — strictly additive, opt-in (off unless the
+REPLAY_INGEST_ENABLED config var is set). Mirrors bot/quiz/ isolation: dedicated replay_*
+tables declared here via ensure_table at import, imported by bot/__init__.py for that side
+effect and the ReplayStatsJobs singleton. Heavy imports (mgz, requests) stay lazy inside
+fetch.py/parse.py so importing this package is test-safe under the conftest stubs."""
 from core.database import db
 
 # Bumped whenever the mgz pin or SUPPORTED_SAVE_VERSIONS policy changes (see policy.py),
 # or when the extractor's output shape changes. Stored on every parsed match; a bump
 # auto-reopens pending_parser_update rows (NOT 'done' rows — those are re-done by an explicit backfill).
-PARSER_VERSION = "mgz-a1683d8+4"   # +4: per-minute eAPM buckets -> rs_player_apm
-                                   # +3: emit per-queue production events -> rs_player_events
+PARSER_VERSION = "mgz-a1683d8+4"   # +4: per-minute eAPM buckets -> replay_apm
+                                   # +3: emit per-queue production events -> replay_events
 
 db.ensure_table(dict(
-    tname="rs_config",
+    tname="replay_matches",
     columns=[
-        dict(cname="id", ctype=db.types.int),          # always 1 (single-row global config)
-        dict(cname="enabled", ctype=db.types.bool, notnull=True, default=0),
-    ],
-    primary_keys=["id"],
-))
-
-db.ensure_table(dict(
-    tname="rs_matches",
-    columns=[
-        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="replay_match_id", ctype=db.types.int),
         dict(cname="bot_match_id", ctype=db.types.int, notnull=False),
         dict(cname="map", ctype=db.types.str, notnull=False),
         dict(cname="save_version", ctype=db.types.float, notnull=False),
@@ -34,13 +25,13 @@ db.ensure_table(dict(
         dict(cname="parsed_at", ctype=db.types.int, notnull=False),
         dict(cname="parser_version", ctype=db.types.str, notnull=False),
     ],
-    primary_keys=["aoe2_match_id"],
+    primary_keys=["replay_match_id"],
 ))
 
 db.ensure_table(dict(
-    tname="rs_player_games",
+    tname="replay_players",
     columns=[
-        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="replay_match_id", ctype=db.types.int),
         dict(cname="profile_id", ctype=db.types.int),
         dict(cname="player_number", ctype=db.types.int),
         dict(cname="user_id", ctype=db.types.int, notnull=False),
@@ -65,13 +56,13 @@ db.ensure_table(dict(
         dict(cname="mil_pre_castle", ctype=db.types.int, notnull=False),
         dict(cname="mil_pre_imperial", ctype=db.types.int, notnull=False),
     ],
-    primary_keys=["aoe2_match_id", "profile_id"],
+    primary_keys=["replay_match_id", "profile_id"],
 ))
 
 db.ensure_table(dict(
-    tname="rs_player_units",
+    tname="replay_units",
     columns=[
-        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="replay_match_id", ctype=db.types.int),
         dict(cname="player_number", ctype=db.types.int),
         dict(cname="unit", ctype=db.types.str),
         dict(cname="profile_id", ctype=db.types.int, notnull=False),
@@ -82,43 +73,43 @@ db.ensure_table(dict(
         dict(cname="pre_castle", ctype=db.types.int, notnull=False),
         dict(cname="pre_imperial", ctype=db.types.int, notnull=False),
     ],
-    primary_keys=["aoe2_match_id", "player_number", "unit"],
+    primary_keys=["replay_match_id", "player_number", "unit"],
 ))
 
 db.ensure_table(dict(
-    tname="rs_player_techs",
+    tname="replay_techs",
     columns=[
-        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="replay_match_id", ctype=db.types.int),
         dict(cname="player_number", ctype=db.types.int),
         dict(cname="tech", ctype=db.types.str),
         dict(cname="profile_id", ctype=db.types.int, notnull=False),
         dict(cname="click_s", ctype=db.types.int, notnull=False),
         dict(cname="phase", ctype=db.types.str, notnull=False),
     ],
-    primary_keys=["aoe2_match_id", "player_number", "tech"],
+    primary_keys=["replay_match_id", "player_number", "tech"],
 ))
 
 db.ensure_table(dict(
-    tname="rs_player_buildings",
+    tname="replay_buildings",
     columns=[
-        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="replay_match_id", ctype=db.types.int),
         dict(cname="player_number", ctype=db.types.int),
         dict(cname="building", ctype=db.types.str),
         dict(cname="profile_id", ctype=db.types.int, notnull=False),
         dict(cname="count", ctype=db.types.int, notnull=False),
     ],
-    primary_keys=["aoe2_match_id", "player_number", "building"],
+    primary_keys=["replay_match_id", "player_number", "building"],
 ))
 
 db.ensure_table(dict(
-    tname="rs_player_events",
+    tname="replay_events",
     # Per-action production timeline (the genuinely-new data the growth-curve chart needs):
     # one row per DE_QUEUE train-click, carrying its timestamp + batch amount + unit category.
     # `kind` is 'queue' today; 'build'/'research'/'age' are reserved for B3 (no migration needed).
-    # PK (aoe2_match_id, player_number, seq) indexes the match-id lookup AND makes re-ingest
-    # idempotent (write_match deletes by aoe2_match_id first, then re-inserts seq from 0).
+    # PK (replay_match_id, player_number, seq) indexes the match-id lookup AND makes re-ingest
+    # idempotent (write_match deletes by replay_match_id first, then re-inserts seq from 0).
     columns=[
-        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="replay_match_id", ctype=db.types.int),
         dict(cname="player_number", ctype=db.types.int),
         dict(cname="seq", ctype=db.types.int),               # per-(match,player) event index
         dict(cname="profile_id", ctype=db.types.int, notnull=False),
@@ -129,22 +120,22 @@ db.ensure_table(dict(
         dict(cname="is_military", ctype=db.types.bool, notnull=False),
         dict(cname="amount", ctype=db.types.int, notnull=False),
     ],
-    primary_keys=["aoe2_match_id", "player_number", "seq"],
+    primary_keys=["replay_match_id", "player_number", "seq"],
 ))
 
 db.ensure_table(dict(
-    tname="rs_player_apm",
+    tname="replay_apm",
     # Per-minute effective-APM buckets. Bucketed at extract time on purpose: the raw
     # action stream is ~32k rows for a 40-minute 8-player game, against ~320 bucketed.
-    # PK (aoe2_match_id, player_number, minute) makes re-ingest idempotent.
+    # PK (replay_match_id, player_number, minute) makes re-ingest idempotent.
     columns=[
-        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="replay_match_id", ctype=db.types.int),
         dict(cname="player_number", ctype=db.types.int),
         dict(cname="minute", ctype=db.types.int),        # 0-based, from game start
         dict(cname="profile_id", ctype=db.types.int, notnull=False),
         dict(cname="actions", ctype=db.types.int, notnull=False),
     ],
-    primary_keys=["aoe2_match_id", "player_number", "minute"],
+    primary_keys=["replay_match_id", "player_number", "minute"],
 ))
 
 db.ensure_table(dict(
@@ -171,9 +162,9 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-    tname="rs_ingest",
+    tname="replay_ingest",
     columns=[
-        dict(cname="aoe2_match_id", ctype=db.types.int),
+        dict(cname="replay_match_id", ctype=db.types.int),
         dict(cname="status", ctype=db.types.str, notnull=True),
         dict(cname="save_version", ctype=db.types.float, notnull=False),
         dict(cname="parser_version", ctype=db.types.str, notnull=False),
@@ -183,7 +174,7 @@ db.ensure_table(dict(
         dict(cname="next_attempt_at", ctype=db.types.int, notnull=False),
         dict(cname="error_reason", ctype=db.types.str, notnull=False),
     ],
-    primary_keys=["aoe2_match_id"],
+    primary_keys=["replay_match_id"],
 ))
 
 db.ensure_table(dict(

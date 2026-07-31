@@ -31,7 +31,7 @@ ARMY_MIX = (("military", 0.55), ("mil_pre_imperial", 0.25), ("mil_pre_castle", 0
 # Renormalised from scoring.py's (army 0.45, eco 0.32) with timing removed.
 IMPACT_WEIGHTS = (("army", 0.58), ("eco", 0.42))
 
-# Every rs_player_games column this module reads. Callers that SELECT explicit
+# Every replay_players column this module reads. Callers that SELECT explicit
 # column lists must include all of these (tests/test_post_game.py enforces it).
 REQUIRED_COLUMNS = tuple(dict.fromkeys(
 	[k for k, _ in ECO_MIX] + [k for k, _ in ARMY_MIX]
@@ -122,7 +122,7 @@ def _score_component(value):
 
 
 def component_scores(row, group):
-	"""0-100 component + impact scores for one rs_player_games row, relative to
+	"""0-100 component + impact scores for one replay_players row, relative to
 	``group`` (every player in the same match).
 
 	Scores are internal only — they drive sort order, the carry crown and tag

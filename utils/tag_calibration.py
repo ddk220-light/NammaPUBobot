@@ -11,9 +11,9 @@ prints the metrics that drove the recalibration:
   * team-average-impact vs actual winner agreement (sanity: should not drop)
   * carry flips between formulas, with examples
 
-Snapshot input is a JSON file with at least {"player_games": [rs_player_games
+Snapshot input is a JSON file with at least {"player_games": [replay_players
 rows joined with nothing else]} — produced by any read-only export of the
-rs_player_games table (player rows must include the team/winner columns).
+replay_players table (player rows must include the team/winner columns).
 
 Usage:
     python utils/tag_calibration.py --snapshot /path/to/rs_snapshot.json
@@ -173,7 +173,7 @@ def main():
     games = snap["player_games"] if isinstance(snap, dict) else snap
     by_match = defaultdict(list)
     for g in games:
-        by_match[g["aoe2_match_id"]].append(g)
+        by_match[g["replay_match_id"]].append(g)
 
     scoring = _load_scoring()
     legacy_carries = evaluate("legacy formula", by_match, legacy_scores, legacy_tags)

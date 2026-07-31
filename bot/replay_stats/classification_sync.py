@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Live replay -> cls_* sync.
 
-Replay parsing already writes the rich rs_* tables. This module runs the same strategy
+Replay parsing already writes the rich replay_* tables. This module runs the same strategy
 classifier used by the offline pipeline and stores per-match cls_* rows so web tags
 refresh as new matches are ingested.
 """

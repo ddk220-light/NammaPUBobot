@@ -14,8 +14,8 @@ from core.database import db
 def compute_game_stats(players, units, apm, computed_at):
 	"""Per-player derived facts for one match. Pure: no DB, no I/O.
 
-	`players` are rs_player_games-shaped dicts, `units` rs_player_units-shaped,
-	`apm` rs_player_apm-shaped. Returns one row per player, keyed by
+	`players` are replay_players-shaped dicts, `units` replay_units-shaped,
+	`apm` replay_apm-shaped. Returns one row per player, keyed by
 	player_number, with NO replay_match_id -- the caller stamps that, so the
 	same function serves the live ingest and the backfill without either one
 	teaching it where the id comes from.
@@ -68,7 +68,7 @@ def compute_game_stats(players, units, apm, computed_at):
 			civ=p.get("civ"),
 			team=p.get("team"),
 			winner=p.get("winner"),
-			# rs_player_games.eapm passed through unchanged -- never a mean of
+			# replay_players.eapm passed through unchanged -- never a mean of
 			# the buckets above. Bucket rows are absent for zero-action
 			# minutes, so averaging only the buckets that exist overstates;
 			# bot/replay_stats/apm_query.py computes a deliberately different

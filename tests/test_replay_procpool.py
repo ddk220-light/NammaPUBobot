@@ -8,7 +8,7 @@ repairable — the pool must be dropped so the next call builds a fresh one.
 
 The parse.py case is the severe one: parse_failed increments attempts,
 policy.parse_failed_exhausted gives up after 3, store.find_due_retry never reconsiders
-a 'gave_up' row, and find_new_match skips anything already in rs_ingest. So one dead
+a 'gave_up' row, and find_new_match skips anything already in replay_ingest. So one dead
 worker silently writes off every pending and newly-arriving match, permanently.
 
 Nothing here touches a real subprocess, matplotlib, mgz, or a database: the executor is

@@ -387,7 +387,7 @@ def test_build_matches_drops_a_match_with_a_null_bot_winner():
 
 
 def test_build_matches_drops_a_match_with_a_null_replay_winner():
-	# rs_player_games.winner is declared notnull=False, so this is reachable.
+	# replay_players.winner is declared notnull=False, so this is reachable.
 	# Without the guard, bool(None) is False and that player reads as a loser.
 	replay, discord = _raw_rows()
 	replay[0]["winner"] = None
@@ -462,7 +462,7 @@ class FakeDb:
 
 	async def fetchall(self, sql, params=None):
 		self.queries.append((sql, list(params or [])))
-		if "rs_player_games" in sql:
+		if "replay_players" in sql:
 			return [dict(r) for r in self.replay_rows]
 		if "match_players" in sql:
 			return [dict(r) for r in self.discord_rows]

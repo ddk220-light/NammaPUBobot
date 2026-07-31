@@ -141,18 +141,15 @@ UNSTABLE = "depends-on-existing-bindings"      # rule 1 in the module docstring
 SECOND_PROFILE = "would-be-a-second-profile"   # rule 2
 
 # The two per-community reads. Both start from match_replays, which is the
-# authority on "this bot match is that replay" going forward — rs_matches's
+# authority on "this bot match is that replay" going forward — replay_matches's
 # bot_match_id column hardcodes one community owning a replay and is dropped in
 # a later stage. match_replays is empty in production until the backfill task
 # populates it (1107 historical pairings), at which point this solver starts
 # seeing evidence with no change here.
-#
-# `rs_player_games` / `aoe2_match_id` are renamed to `replay_players` /
-# `replay_match_id` in a later stage; today's names are used here.
 _REPLAY_ROSTERS_SQL = (
 	"SELECT mr.match_id AS match_id, pg.profile_id AS profile_id, pg.winner AS winner "
 	"FROM match_replays mr "
-	"JOIN rs_player_games pg ON pg.aoe2_match_id = mr.replay_match_id "
+	"JOIN replay_players pg ON pg.replay_match_id = mr.replay_match_id "
 	"WHERE mr.community_id = %s"
 )
 
@@ -362,7 +359,7 @@ def _build_matches(replay_rows, discord_rows) -> list:
 	either.
 
 	All four NULLs are genuinely reachable: `matches.winner` is NULL for 8
-	production rows, `rs_player_games.winner` is declared notnull=False,
+	production rows, `replay_players.winner` is declared notnull=False,
 	`match_players.team` is written as None by bot/stats/stats.py for a player
 	on neither team, and `match_players.user_id` is nullable.
 

@@ -329,7 +329,7 @@ def extract_match(path, date_map=None):
             # the replay itself. It is kept (rather than dropped) because it is
             # the only thing distinguishing rows written by this clean path from
             # the 'seed'/'resolved'/'unmapped' rows the CSV path already wrote to
-            # rs_player_games -- provenance a repair pass needs.
+            # replay_players -- provenance a repair pass needs.
             player_number=pnum, profile_id=p.profile_id, identity=identity, attribution="replay",
             civ=civ, team=team, winner=bool(p.winner) if p.winner is not None else None, eapm=p.eapm,
             feudal_s=round(fc) if fc else None, castle_s=round(cc) if cc else None,

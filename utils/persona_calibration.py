@@ -2,7 +2,7 @@
 """Persona assignment report over a snapshot — sanity-check the taxonomy.
 
 Recomputes per-player aggregates (same shape bot/web.py feeds derive_persona)
-from a rs_player_games snapshot and prints every player's persona with the
+from a replay_players snapshot and prints every player's persona with the
 axis evidence, plus the style/role distribution. Use it whenever persona
 thresholds or scoring weights change.
 
@@ -40,7 +40,7 @@ def main():
     snap = json.loads(Path(args.snapshot).read_text())
     by_match = defaultdict(list)
     for g in snap["player_games"]:
-        by_match[g["aoe2_match_id"]].append(g)
+        by_match[g["replay_match_id"]].append(g)
 
     agg = defaultdict(lambda: {"n": 0, "army": 0.0, "eco": 0.0, "timing": 0.0, "reboom": 0.0,
                                "impacts": [], "carry": 0, "tags": Counter()})

@@ -33,7 +33,7 @@ PROFMAP = {111: 5001}   # profile 111 -> discord user; 222 unmapped
 
 def test_match_row():
     row = shape.match_row(EXTRACTED["match"], bot_match_id=7, parsed_at=123, parser_version="pv1")
-    assert row["aoe2_match_id"] == 999
+    assert row["replay_match_id"] == 999
     assert row["bot_match_id"] == 7
     assert row["played_at"] == "2026-06-20 10:00"
     assert row["replay_url"] == "https://www.aoe2insights.com/match/999/"
@@ -50,13 +50,13 @@ def test_player_game_rows_attributes_user_id():
     by_pid = {r["profile_id"]: r for r in rows}
     assert by_pid[111]["user_id"] == 5001
     assert by_pid[222]["user_id"] is None        # unmapped -> NULL
-    assert by_pid[111]["aoe2_match_id"] == 999
+    assert by_pid[111]["replay_match_id"] == 999
     assert by_pid[111]["villagers"] == 90
 
 
 def test_unit_rows_denormalize_profile_id():
     rows = shape.unit_rows(999, EXTRACTED["units"], {1: 111, 2: 222})
-    assert rows[0]["aoe2_match_id"] == 999
+    assert rows[0]["replay_match_id"] == 999
     assert rows[0]["player_number"] == 1
     assert rows[0]["profile_id"] == 111
     assert rows[0]["unit"] == "Archer"
@@ -73,7 +73,7 @@ def test_the_legacy_profile_upsert_shaper_is_gone():
 def test_apm_rows_denormalize_profile_id():
     rows = shape.apm_rows(999, EXTRACTED["apm"], shape.pnum_to_profile(EXTRACTED["players"]))
     assert len(rows) == 2
-    assert rows[0] == {"aoe2_match_id": 999, "player_number": 1, "minute": 0,
+    assert rows[0] == {"replay_match_id": 999, "player_number": 1, "minute": 0,
                        "profile_id": 111, "actions": 42}
     assert rows[1]["profile_id"] == 222
 

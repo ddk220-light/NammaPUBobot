@@ -42,7 +42,7 @@ async def rebuild_player_totals_from_rs():
 	await db.execute(
 		"REPLACE INTO cls_player_totals (identity, games, wins, losses) "
 		"SELECT MIN(identity), COUNT(*), SUM(winner=1), SUM(winner=0) "
-		"FROM rs_player_games WHERE identity IS NOT NULL AND identity <> '' "
+		"FROM replay_players WHERE identity IS NOT NULL AND identity <> '' "
 		"GROUP BY identity")
 
 

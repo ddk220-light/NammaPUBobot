@@ -98,7 +98,7 @@ def main():
 		cols = [c['Field'] for c in q("SHOW COLUMNS FROM civ_picks")]
 		print(f"\nciv_picks columns: {cols}")
 		rows = scalar("SELECT COUNT(*) FROM civ_picks")
-		mcol = 'bot_match_id' if 'bot_match_id' in cols else ('aoe2_match_id' if 'aoe2_match_id' in cols else None)
+		mcol = 'bot_match_id' if 'bot_match_id' in cols else ('replay_match_id' if 'replay_match_id' in cols else None)
 		if mcol:
 			print(f"civ_picks: {rows} rows | {scalar(f'SELECT COUNT(DISTINCT {mcol}) FROM civ_picks')} distinct {mcol} "
 			      f"({scalar(f'SELECT MIN({mcol}) FROM civ_picks')}..{scalar(f'SELECT MAX({mcol}) FROM civ_picks')})")

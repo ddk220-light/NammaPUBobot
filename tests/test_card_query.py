@@ -32,7 +32,7 @@ def _run(monkeypatch, db, match_end_s=600):
 
 
 def test_buildings_are_split_into_farms_and_tcs(monkeypatch):
-    db = _FakeDB({"rs_player_buildings": [
+    db = _FakeDB({"replay_buildings": [
         {"player_number": 1, "building": "Farm", "count": 14},
         {"player_number": 1, "building": "Town Center", "count": 3},
         {"player_number": 2, "building": "Farm", "count": 8},
@@ -45,7 +45,7 @@ def test_buildings_are_split_into_farms_and_tcs(monkeypatch):
 def test_building_query_asks_only_for_farms_and_town_centers(monkeypatch):
     db = _FakeDB()
     _run(monkeypatch, db)
-    sql = next(s for s in db.seen if "rs_player_buildings" in s)
+    sql = next(s for s in db.seen if "replay_buildings" in s)
     assert "building IN" in sql
 
 
@@ -96,7 +96,7 @@ def test_a_player_with_no_spawn_key_gets_no_phrase(monkeypatch):
 
 
 def test_peak_eapm_is_the_max_bucket_per_player(monkeypatch):
-    db = _FakeDB({"rs_player_apm": [
+    db = _FakeDB({"replay_apm": [
         {"player_number": 1, "peak": 89},
         {"player_number": 2, "peak": 71},
     ]})
@@ -108,7 +108,7 @@ def test_peak_eapm_uses_max_not_an_average(monkeypatch):
     """Bucket rows are sparse, so any average over them is wrong."""
     db = _FakeDB()
     _run(monkeypatch, db)
-    sql = next(s for s in db.seen if "rs_player_apm" in s)
+    sql = next(s for s in db.seen if "replay_apm" in s)
     assert "MAX(actions)" in sql
     assert "AVG" not in sql
 
@@ -119,14 +119,14 @@ def test_an_empty_apm_table_yields_no_peaks_rather_than_zeros(monkeypatch):
 
 
 def test_a_null_peak_is_dropped_rather_than_rendered_as_zero(monkeypatch):
-    db = _FakeDB({"rs_player_apm": [{"player_number": 1, "peak": None}]})
+    db = _FakeDB({"replay_apm": [{"player_number": 1, "peak": None}]})
     assert _run(monkeypatch, db)["peak_eapm"] == {}
 
 
 def test_one_failing_query_does_not_break_the_others(monkeypatch):
     db = _FakeDB(
-        {"rs_player_buildings": [{"player_number": 1, "building": "Farm", "count": 9}]},
-        fail_on=("rs_player_apm",))
+        {"replay_buildings": [{"player_number": 1, "building": "Farm", "count": 9}]},
+        fail_on=("replay_apm",))
     out = _run(monkeypatch, db)
     assert out["buildings"][1]["farms"] == 9
     assert out["peak_eapm"] == {}
@@ -162,7 +162,7 @@ def test_composition_joins_on_player_number_and_filters_to_military(monkeypatch)
 
 
 def test_clicks_are_grouped_by_player_in_time_order(monkeypatch):
-    db = _FakeDB({"rs_player_events": [
+    db = _FakeDB({"replay_events": [
         {"player_number": 1, "t_s": 300},
         {"player_number": 1, "t_s": 100},
         {"player_number": 2, "t_s": 50},

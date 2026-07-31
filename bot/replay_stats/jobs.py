@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Replay-stats ingest job on the shared 1-s think() tick. Self-isolating and cadence-gated
-like QuizJobs — a failure here can never break the tick. Does nothing unless rs_config.enabled.
+like QuizJobs — a failure here can never break the tick. Does nothing unless the
+REPLAY_INGEST_ENABLED config var is set.
 One match per sweep (bounded load, polite to aoe.ms)."""
 import asyncio
 import os
@@ -45,7 +46,7 @@ class ReplayStatsJobs:
             log.error(f"Replay-stats think() error (ignored): {e}")
 
     async def _run(self):
-        if not await store.is_enabled():
+        if not store.is_enabled():
             return
         now = int(time.time())
         if not self._reopened:
@@ -54,49 +55,49 @@ class ReplayStatsJobs:
             self._reopened = True
         work = await store.find_new_match()
         if work:
-            await self.ingest_one(work["aoe2_match_id"], work.get("bot_match_id"),
+            await self.ingest_one(work["replay_match_id"], work.get("bot_match_id"),
                                   work.get("at"), now)
             return
         retry = await store.find_due_retry(now)
         if retry:
-            await self.ingest_one(retry["aoe2_match_id"], None, None, now,
+            await self.ingest_one(retry["replay_match_id"], None, None, now,
                                   attempts=retry.get("attempts") or 0,
                                   first_seen_at=retry.get("first_seen_at") or now)
 
-    async def ingest_one(self, aoe2_match_id, bot_match_id, played_at_epoch, now,
+    async def ingest_one(self, replay_match_id, bot_match_id, played_at_epoch, now,
                          attempts=0, first_seen_at=None, post_summary=True):
-        """Run one match through fetch -> gate/parse -> store. Updates rs_ingest. Bulletproof."""
+        """Run one match through fetch -> gate/parse -> store. Updates replay_ingest. Bulletproof."""
         first_seen_at = first_seen_at or now
         try:
-            await store.upsert_ingest(aoe2_match_id, status="processing", attempts=attempts,
+            await store.upsert_ingest(replay_match_id, status="processing", attempts=attempts,
                                       first_seen_at=first_seen_at, last_attempt_at=now)
-            path, fstatus = await fetch_replay(aoe2_match_id)
+            path, fstatus = await fetch_replay(replay_match_id)
             if not path:
                 if fstatus in ("http_429", "429_exhausted"):
                     # Global aoe.ms rate-limit (per-IP) — cool down WITHOUT counting an attempt,
                     # so a busy backfill doesn't penalize matches toward longer backoff.
                     return await store.upsert_ingest(
-                        aoe2_match_id, status="unavailable", attempts=attempts,
+                        replay_match_id, status="unavailable", attempts=attempts,
                         first_seen_at=first_seen_at, next_attempt_at=now + 1800,
                         error_reason=fstatus)
-                return await self._mark_unavailable(aoe2_match_id, attempts, first_seen_at, now, fstatus)
+                return await self._mark_unavailable(replay_match_id, attempts, first_seen_at, now, fstatus)
 
             try:
-                date_map = {aoe2_match_id: _date_str(played_at_epoch)} if played_at_epoch else {}
+                date_map = {replay_match_id: _date_str(played_at_epoch)} if played_at_epoch else {}
                 result, pstatus, sv = await parse_replay(path, date_map)
             finally:
                 _safe_unlink(path)   # remove the temp replay on every path (success or error)
 
             if pstatus == "pending_parser_update":
-                await store.upsert_ingest(aoe2_match_id, status="pending_parser_update",
+                await store.upsert_ingest(replay_match_id, status="pending_parser_update",
                                           save_version=sv, parser_version=PARSER_VERSION,
                                           attempts=attempts, error_reason="save_version too new")
                 return
             if pstatus != "ok" or not result:
                 if policy.parse_failed_exhausted(attempts + 1):
-                    return await store.upsert_ingest(aoe2_match_id, status="gave_up",
+                    return await store.upsert_ingest(replay_match_id, status="gave_up",
                                                      attempts=attempts + 1, error_reason="parse_failed")
-                return await store.upsert_ingest(aoe2_match_id, status="parse_failed",
+                return await store.upsert_ingest(replay_match_id, status="parse_failed",
                                                  save_version=sv, attempts=attempts + 1,
                                                  next_attempt_at=now + 3600, error_reason="parse error")
 
@@ -106,11 +107,11 @@ class ReplayStatsJobs:
                 from .classification_sync import sync_match
                 cls_rows, cls_metrics = await sync_match(result, played_at_epoch or now)
                 log.info(
-                    f"Replay-stats classified aoe2 match {aoe2_match_id} "
+                    f"Replay-stats classified aoe2 match {replay_match_id} "
                     f"({cls_rows} tags, {cls_metrics} metrics).")
             except Exception as e:
-                log.error(f"Replay-stats classification sync failed ({aoe2_match_id}): {e}")
-            await store.upsert_ingest(aoe2_match_id, status="done", save_version=sv,
+                log.error(f"Replay-stats classification sync failed ({replay_match_id}): {e}")
+            await store.upsert_ingest(replay_match_id, status="done", save_version=sv,
                                       parser_version=PARSER_VERSION, attempts=attempts + 1)
             if post_summary and bot_match_id:
                 try:
@@ -120,17 +121,17 @@ class ReplayStatsJobs:
                         log.info(f"Replay-stats posted match analysis for bot match {bot_match_id}.")
                 except Exception as e:
                     log.error(f"Replay-stats analysis post failed (bot match {bot_match_id}): {e}")
-            log.info(f"Replay-stats ingested aoe2 match {aoe2_match_id} (save {sv}).")
+            log.info(f"Replay-stats ingested aoe2 match {replay_match_id} (save {sv}).")
         except Exception as e:
-            log.error(f"Replay-stats ingest({aoe2_match_id}) failed: {e}")
-            await store.upsert_ingest(aoe2_match_id, status="parse_failed", attempts=attempts + 1,
+            log.error(f"Replay-stats ingest({replay_match_id}) failed: {e}")
+            await store.upsert_ingest(replay_match_id, status="parse_failed", attempts=attempts + 1,
                                       next_attempt_at=now + 3600, error_reason=str(e)[:180])
 
-    async def _mark_unavailable(self, aoe2_match_id, attempts, first_seen_at, now, reason):
+    async def _mark_unavailable(self, replay_match_id, attempts, first_seen_at, now, reason):
         if policy.should_give_up_unavailable(first_seen_at, now):
-            return await store.upsert_ingest(aoe2_match_id, status="gave_up", attempts=attempts,
+            return await store.upsert_ingest(replay_match_id, status="gave_up", attempts=attempts,
                                              error_reason=f"unavailable:{reason}")
-        await store.upsert_ingest(aoe2_match_id, status="unavailable", attempts=attempts + 1,
+        await store.upsert_ingest(replay_match_id, status="unavailable", attempts=attempts + 1,
                                   first_seen_at=first_seen_at,
                                   next_attempt_at=now + policy.unavailable_backoff(attempts),
                                   error_reason=reason)

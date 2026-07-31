@@ -50,7 +50,7 @@ def test_record_lobby_match_matches_profiles_and_writes_civs():
 	assert fake.rows[:2] == [
 		{
 			"channel_id": 9,
-			"aoe2_match_id": 12345,
+			"replay_match_id": 12345,
 			"aoe2_name": "Alpha",
 			"civ": "Franks",
 			"at": 999,
@@ -62,7 +62,7 @@ def test_record_lobby_match_matches_profiles_and_writes_civs():
 		},
 		{
 			"channel_id": 9,
-			"aoe2_match_id": 12345,
+			"replay_match_id": 12345,
 			"aoe2_name": "Beta",
 			"civ": "Mayans",
 			"at": 999,

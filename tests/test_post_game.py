@@ -203,12 +203,12 @@ def test_team_field_stays_within_the_discord_character_cap():
 
 
 def test_analysis_rows_selects_every_column_the_card_needs():
-	"""The card joins on (aoe2_match_id, player_number) and reads age_reliable
+	"""The card joins on (replay_match_id, player_number) and reads age_reliable
 	and eapm, none of which the original SELECT carried."""
 	import inspect
 
 	src = inspect.getsource(pg._analysis_rows)
-	for column in ("aoe2_match_id", "player_number", "age_reliable", "eapm",
+	for column in ("replay_match_id", "player_number", "age_reliable", "eapm",
 	               "duration_s"):
 		assert column in src, f"{column} missing from the _analysis_rows SELECT"
 
@@ -334,7 +334,7 @@ def test_medals_for_reads_game_stats_keyed_on_replay_match_id_and_player_number(
 		{"player_number": 1, "military_medal": 1, "villager_medal": 2},
 		{"player_number": 2, "military_medal": None, "villager_medal": 1},
 	])
-	rows = [{"aoe2_match_id": 999, "player_number": 1}, {"aoe2_match_id": 999, "player_number": 2}]
+	rows = [{"replay_match_id": 999, "player_number": 1}, {"replay_match_id": 999, "player_number": 2}]
 	medals = asyncio.run(pg._medals_for(rows))
 	assert medals == {
 		1: {"military_medal": 1, "villager_medal": 2},
@@ -354,9 +354,9 @@ def test_medals_for_returns_empty_without_a_known_match_id(monkeypatch):
 	assert fake_db.seen == []  # never queries when there is nothing to key on
 
 
-def _analysis_row(nick, team, player_number, aoe2_match_id=999, **kw):
+def _analysis_row(nick, team, player_number, replay_match_id=999, **kw):
 	base = dict(nick=nick, bot_team=team, result="W" if team == 0 else "L",
-	            civ="Franks", aoe2_match_id=aoe2_match_id, player_number=player_number,
+	            civ="Franks", replay_match_id=replay_match_id, player_number=player_number,
 	            villagers=100, military=50, eapm=45, duration_s=1800)
 	base.update(kw)
 	return base

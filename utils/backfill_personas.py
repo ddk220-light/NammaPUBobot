@@ -31,7 +31,7 @@ async def run(limit=0, dry_run=False):
 	await database.db.connect()
 	try:
 		persona_store = _load_persona_store()
-		sql = "SELECT DISTINCT user_id FROM rs_player_games WHERE user_id IS NOT NULL"
+		sql = "SELECT DISTINCT user_id FROM replay_players WHERE user_id IS NOT NULL"
 		if limit:
 			sql += " LIMIT %s"
 			rows = await db.fetchall(sql, [limit])

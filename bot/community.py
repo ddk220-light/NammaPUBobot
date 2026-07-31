@@ -72,14 +72,13 @@ db.ensure_table(dict(
 
 # match_replays — links a bot match to the replay it was parsed from, keyed
 # by community. An AoE2 replay is a fact about a *game*; "our match #1234 is
-# that replay" is a fact about a *community*. rs_matches.bot_match_id is a
+# that replay" is a fact about a *community*. replay_matches.bot_match_id is a
 # single nullable column today, which hardcodes one community owning any
 # given replay. This table replaces that assumption for the multi-tenant
-# bot: dual-written alongside rs_matches.bot_match_id from stage 1.6 on,
-# authoritative from stage 5, and rs_matches.bot_match_id is dropped in
-# stage 6. `replay_match_id` matches the eventual rs_* column name after the
-# stage-3 rename (the rs_* tables still call the same value aoe2_match_id
-# today) — do not rename anything in rs_* here.
+# bot: dual-written alongside replay_matches.bot_match_id from stage 1.6 on,
+# authoritative from stage 5, and replay_matches.bot_match_id is dropped in
+# stage 6. `replay_match_id` is the same column name the raw replay_* tables
+# now use, since 007_raw_renames brought them into line with this one.
 db.ensure_table(dict(
 	tname="match_replays",
 	columns=[
@@ -202,7 +201,7 @@ async def community_for_channel(channel_id: int) -> int | None:
 
 async def link_match_replay(match_id: int, replay_match_id: int) -> bool:
 	""" Record that `match_id` (a row in `matches`) is `replay_match_id` (an
-	AoE2 replay, aka aoe2_match_id in the still-unrenamed rs_* tables) for
+	AoE2 replay, the same value replay_matches.replay_match_id holds) for
 	whichever community owns that match's channel. Returns whether the link
 	was written.
 

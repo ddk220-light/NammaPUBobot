@@ -9,9 +9,11 @@ from utils.db_helpers import parse_db_uri
 
 def window_query(days):
     since = int(time.time()) - days * 86400
-    sql = ("SELECT mc.aoe2_match_id AS aoe2_match_id, MAX(m.reported_at) AS played_at "
+    # civ_picks.replay_match_id since 007_raw_renames, aliased back to the name
+    # this pipeline's own SQLite ledger uses (see localdb.py).
+    sql = ("SELECT mc.replay_match_id AS aoe2_match_id, MAX(m.reported_at) AS played_at "
            "FROM civ_picks mc JOIN matches m ON m.match_id = mc.bot_match_id "
-           "WHERE mc.aoe2_match_id IS NOT NULL AND m.reported_at >= %s GROUP BY mc.aoe2_match_id")
+           "WHERE mc.replay_match_id IS NOT NULL AND m.reported_at >= %s GROUP BY mc.replay_match_id")
     return sql, [since]
 
 

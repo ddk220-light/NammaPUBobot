@@ -51,7 +51,7 @@ def _period_starts(now=None):
 def aggregate_player_stats(match_groups, user_id, period_start):
 	"""Pure aggregation of one player's rows into derive_persona() input.
 
-	``match_groups`` is ``[(played_at, [rs_player_games rows of one match])]``.
+	``match_groups`` is ``[(played_at, [replay_players rows of one match])]``.
 	Returns None when the player has no rows in the window.
 	"""
 	uid = str(user_id)
@@ -112,15 +112,15 @@ def aggregate_player_stats(match_groups, user_id, period_start):
 async def _match_groups_for_user(user_id):
 	rows = await db.fetchall(
 		"SELECT g.*, m.reported_at AS played_at "
-		"FROM rs_player_games g "
-		"JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"FROM replay_players g "
+		"JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
 		"LEFT JOIN matches m ON m.match_id=rm.bot_match_id "
-		"WHERE g.aoe2_match_id IN ("
-		"SELECT aoe2_match_id FROM rs_player_games WHERE user_id=%s)",
+		"WHERE g.replay_match_id IN ("
+		"SELECT replay_match_id FROM replay_players WHERE user_id=%s)",
 		[user_id])
 	by_match = defaultdict(list)
 	for r in rows or []:
-		by_match[r["aoe2_match_id"]].append(r)
+		by_match[r["replay_match_id"]].append(r)
 	return [(group[0].get("played_at"), group) for group in by_match.values()]
 
 
@@ -151,12 +151,12 @@ async def refresh_user(user_id, now=None):
 	return len(rows)
 
 
-async def refresh_match_users(aoe2_match_id):
+async def refresh_match_users(replay_match_id):
 	"""Post-ingest hook: refresh everyone who played this match."""
 	rows = await db.fetchall(
-		"SELECT DISTINCT user_id FROM rs_player_games "
-		"WHERE aoe2_match_id=%s AND user_id IS NOT NULL",
-		[aoe2_match_id])
+		"SELECT DISTINCT user_id FROM replay_players "
+		"WHERE replay_match_id=%s AND user_id IS NOT NULL",
+		[replay_match_id])
 	for r in rows or []:
 		await refresh_user(r["user_id"])
 	return len(rows or [])

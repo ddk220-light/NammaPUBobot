@@ -21,7 +21,7 @@ work, and doubles permanently as repair: if a live ingest-time write ever fails
 its best-effort guard, or a derived row is deleted by hand, or the SOURCE
 changes underneath an already-derived match, the next tick heals it.
 
-    game_stats  pending iff {DISTINCT player_number of rs_player_games}
+    game_stats  pending iff {DISTINCT player_number of replay_players}
                               <> {player_number of game_stats}
     game_labels pending iff {(player_number, allowlisted key) of cls_results}
                               <> {(player_number, label) of game_labels}
@@ -67,7 +67,7 @@ to contribute AT MOST ONE row per (mid, pn, tag) — otherwise a group could hol
     (replay_match_id, player_number, label). One source row in, one stored row
     out, nothing can collapse or duplicate.
 
-  * game_stats — rs_player_games' PK is (aoe2_match_id, profile_id); it does
+  * game_stats — replay_players' PK is (replay_match_id, profile_id); it does
     NOT constrain player_number, so two source rows CAN share one. game_stats'
     PK is (replay_match_id, player_number), so those two would store as one and
     a raw comparison would sit permanently unequal — precisely the
@@ -75,6 +75,12 @@ to contribute AT MOST ONE row per (mid, pn, tag) — otherwise a group could hol
     source side: it is the set of rows the write can actually persist, exact
     under every shape the raw table can hold, and a no-op in the normal case
     where replay slots are unique.
+
+Note the two spellings of the match id in the SQL below, which are not a typo:
+007_raw_renames renamed the raw side's column to `replay_match_id` (matching
+what the derived tables always called it) and deliberately left the legacy cls_*
+tables on `aoe2_match_id`, since stage 6 retires those outright. This module is
+the one place that reads across both.
 
 The grouping therefore only ever produces 1 (one side) or 2 (both sides), and
 the predicate is written `= 1` rather than `<> 2` deliberately: if some future
@@ -87,7 +93,7 @@ is a delete-then-insert of exactly the rows the compute returned — so a
 processed match leaves the pending set immediately and permanently.
 
 PLAYED_AT comes from the match's own cls_results rows, never from
-rs_matches.played_at. rs_matches.played_at is a VARCHAR date STRING out of the
+replay_matches.played_at. replay_matches.played_at is a VARCHAR date STRING out of the
 replay extract — bot/replay_stats/query.py compares it against an ISO date
 string — while game_labels.played_at is a BIGINT epoch, and every row the live
 path writes carries the bot match's reported_at epoch (see
@@ -95,7 +101,7 @@ bot/replay_stats/classification_sync.py's played_at_epoch).
 cls_results.played_at is that same epoch, written from matches.reported_at by
 both the offline runner (utils/classifications/dbio.window_matches) and the
 live sync. Reading it there makes a backfilled row identical to the row the
-live path would have written; reading rs_matches instead would push a date
+live path would have written; reading replay_matches instead would push a date
 string into an integer column and give history a different unit from live.
 
 Never raises into the think tick: think() only schedules, each drain is
@@ -125,8 +131,8 @@ LABEL_KEYS = tuple(game_labels.STRATEGY_KEYS) + tuple(game_labels.SPAWN_KEYS)
 # to (mid, pn) exactly as intended. A non-empty literal on purpose: '' would give
 # the unioned column MySQL type VARCHAR(0), which is legal but needlessly exotic
 # to group by.
-_STATS_SRC = ("SELECT DISTINCT aoe2_match_id AS mid, player_number AS pn, '-' AS tag "
-              "FROM rs_player_games")
+_STATS_SRC = ("SELECT DISTINCT replay_match_id AS mid, player_number AS pn, '-' AS tag "
+              "FROM replay_players")
 _STATS_DST = ("SELECT replay_match_id AS mid, player_number AS pn, '-' AS tag FROM game_stats")
 _LABELS_DST = ("SELECT replay_match_id AS mid, player_number AS pn, label AS tag FROM game_labels")
 
@@ -247,17 +253,17 @@ def played_at_of(result_rows):
 async def process_game_stats(match_id, computed_at):
 	"""Recompute and rewrite one match's game_stats rows. Returns rows written.
 
-	rs_player_apm is empty for every pre-backfill match — the bucket-capturing
+	replay_apm is empty for every pre-backfill match — the bucket-capturing
 	parser shipped after the last of them was played, and a parser bump does not
 	re-parse completed matches — so historical rows land with peak_eapm = NULL.
 	That is the correct value, not a failure: there are no buckets to take a
-	maximum over. avg_eapm still comes through, because it is rs_player_games.eapm
+	maximum over. avg_eapm still comes through, because it is replay_players.eapm
 	passed straight along and has nothing to do with the buckets.
 	"""
 	players = await db.fetchall(
-		"SELECT * FROM rs_player_games WHERE aoe2_match_id=%s ORDER BY player_number", [match_id])
-	units = await db.fetchall("SELECT * FROM rs_player_units WHERE aoe2_match_id=%s", [match_id])
-	apm = await db.fetchall("SELECT * FROM rs_player_apm WHERE aoe2_match_id=%s", [match_id])
+		"SELECT * FROM replay_players WHERE replay_match_id=%s ORDER BY player_number", [match_id])
+	units = await db.fetchall("SELECT * FROM replay_units WHERE replay_match_id=%s", [match_id])
+	apm = await db.fetchall("SELECT * FROM replay_apm WHERE replay_match_id=%s", [match_id])
 	rows = game_stats.compute_game_stats(list(players or []), list(units or []),
 	                                     list(apm or []), computed_at)
 	await game_stats.write(match_id, rows)
