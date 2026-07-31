@@ -109,8 +109,9 @@ Registered as a bare top-level `/link` (repo convention: no prefixes).
      recording the attempt.
    - Valid and unclaimed → bind at `self` tier. The confirmation echoes the
      profile's current in-game name from validation — "Linked to profile
-     2593442 (*HenryTheGreat*) — https://www.aoe2insights.com/user/2593442/" —
-     so a wrong-but-existing id is caught by the player's own eyes.
+     2593442 (*HenryTheGreat*) —
+     https://www.aoe2insights.com/user/relic/2593442/" — so a
+     wrong-but-existing id is caught by the player's own eyes.
 3. **Already linked** (with or without an id) → view-only: current profile id,
    observed name, insights URL, and "only an admin can change this." A player
    can always verify who they are linked to; they can never change it.
