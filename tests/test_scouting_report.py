@@ -517,6 +517,142 @@ def test_rank_says_nothing_at_all_on_a_channel_with_no_community(monkeypatch):
 	assert asked == [4242], "and no rollup is read"
 
 
+# ── the embed field itself ───────────────────────────────────────────────
+# _scouting_report returning None and the FIELD not being added are two
+# different facts, and only the second one is what a player sees. Nothing drove
+# _rank_profile: replacing its `if scouting:` guard with `value=scouting or "—"`
+# shipped green, putting the em-dash this stage explicitly forbids in front of
+# exactly the population the third state exists for. These drive the real
+# function and assert on the real embed.
+
+class _FakeQc:
+	def __init__(self, channel_id=4242):
+		self.id = channel_id
+		self.rating = types.SimpleNamespace(channel_id=channel_id)
+
+	def gt(self, text):
+		return text
+
+	async def get_lb(self):
+		return [dict(user_id=42, rating=1500, deviation=50, wins=6, losses=4, draws=0,
+		             is_hidden=0, streak=1)]
+
+	def rating_rank(self, _rating):
+		return dict(rank="〈Gold〉")
+
+
+class _FakeTarget:
+	id = 42
+	display_avatar = None
+	nick = None
+	name = "player"
+	display_name = "player"
+
+
+class _FakeRankCtx:
+	""" The narrowest ctx _rank_profile actually touches on the non-detailed
+	path: no interaction (so it never defers), a leaderboard the target is on,
+	and a reply that keeps the embed instead of sending it. """
+
+	def __init__(self, channel_id=4242):
+		self.qc = _FakeQc(channel_id)
+		self.channel = types.SimpleNamespace(id=channel_id)
+		self.author = _FakeTarget()
+		self.replied = []
+
+	async def reply(self, embed=None, file=None):
+		self.replied.append(embed)
+
+
+def _prepared_stats_module(monkeypatch):
+	""" stats.py, loaded standalone, with the two things _rank_profile needs
+	that the CI stubs cannot supply.
+
+	`find` comes from nextcord.utils, which conftest fakes as a function
+	returning None -- so the leaderboard lookup would miss its own row and fall
+	through to a database read. The real one-liner is restored rather than
+	worked around, because the row it finds is what every later line reads.
+
+	player_profile is faked because gathering a profile needs the database and
+	has nothing to do with the scouting field; everything between that profile
+	and the field is the shipped code.
+	"""
+	import bot.player_profile as player_profile
+
+	stats = _load_stats_module(monkeypatch)
+	monkeypatch.setattr(stats, "find", lambda predicate, seq: next(
+		(item for item in seq if predicate(item)), None))
+	monkeypatch.setattr(player_profile, "web_profile_url", lambda *_a, **_k: "")
+
+	async def _gather(*_a, **_k):
+		return {}
+
+	monkeypatch.setattr(player_profile, "gather_profile", _gather)
+	return stats
+
+
+def _drive_rank_profile(monkeypatch, rollup):
+	""" Run the REAL _rank_profile and hand back the embed it built. """
+	stats = _prepared_stats_module(monkeypatch)
+	_wire(monkeypatch, community_id=7, rollup=rollup)
+
+	ctx = _FakeRankCtx()
+	asyncio.run(stats._rank_profile(ctx))
+	assert len(ctx.replied) == 1
+	return ctx.replied[0]
+
+
+def _scouting_fields(embed):
+	return [f for f in embed.fields if "Scouting report" in (f["name"] or "")]
+
+
+def test_rank_omits_the_scouting_field_entirely_for_a_linked_player_with_nothing_to_report(monkeypatch):
+	""" The third state, end to end. A linked player whose every line is below
+	its floor gets NO field — not an em-dash, not a placeholder, not "pending
+	linking" (which would be false about a linked player). """
+	embed = _drive_rank_profile(monkeypatch, rollup=_blob())
+
+	assert _scouting_fields(embed) == []
+	values = " ".join(str(f["value"]) for f in embed.fields)
+	for placeholder in ("—", "--", "N/A", "n/a", "None"):
+		assert placeholder not in values, f"a {placeholder!r} stood in for a measurement nobody took"
+
+
+def test_rank_adds_the_pending_field_for_a_player_with_no_rollup_row(monkeypatch):
+	embed = _drive_rank_profile(monkeypatch, rollup=None)
+
+	fields = _scouting_fields(embed)
+	assert len(fields) == 1
+	assert fields[0]["value"] == scouting_report.PENDING
+	assert fields[0]["inline"] is False
+
+
+def test_rank_adds_the_measured_field_for_a_scouted_player(monkeypatch):
+	embed = _drive_rank_profile(monkeypatch, rollup=_rich())
+
+	fields = _scouting_fields(embed)
+	assert len(fields) == 1
+	assert fields[0]["value"] == scouting_report.render(_rich())
+	assert scouting_report.PENDING not in fields[0]["value"]
+
+
+def test_rank_survives_a_scouting_read_that_blows_up_and_shows_no_field(monkeypatch):
+	""" Best-effort like every other piece of the profile: a rollup read that
+	fails costs the field, not the command — and costs it silently rather than
+	rendering a placeholder for a number nobody has. """
+	stats = _prepared_stats_module(monkeypatch)
+
+	async def _boom(_channel_id):
+		raise RuntimeError("simulated community lookup failure")
+
+	monkeypatch.setattr(community, "community_for_channel", _boom)
+
+	ctx = _FakeRankCtx()
+	asyncio.run(stats._rank_profile(ctx))
+
+	assert _scouting_fields(ctx.replied[0]) == []
+
+
 # ── what stage 5a removed ────────────────────────────────────────────────
 # Source-level, because bot/web.py cannot be imported under CI (aiohttp.web +
 # core.client's nextcord) -- the same approach tests/test_web_identity.py

@@ -150,8 +150,19 @@ REGISTRY = {
 	"rs_player_game_tags": dict(
 		layer="derived", tenancy="global", writers=("bot/replay_stats/player_tags.py",), retention="forever"
 	),
+	# NO WRITER IN THE RUNNING BOT since stage 5a. `/rank` stopped printing the
+	# generated persona (bot/scouting_report.py renders measured facts out of
+	# player_rollups instead), so store.write_match's refresh_match_users call went
+	# with it and nothing on the ingest path touches this table any more. The stored
+	# rows have been frozen since that deploy — a reader finding one is reading
+	# whatever the persona generator last said, not current data.
+	# bot/replay_stats/persona_store.py survives only as the module
+	# utils/backfill_personas.py loads by path, an offline script; it is listed here
+	# because a table with no writer at all is indistinguishable in this registry
+	# from a table somebody forgot to declare one for. Migration 009 drops the table
+	# in stage 6 and both modules go with it.
 	"rs_player_personas": dict(
-		layer="derived", tenancy="global", writers=("bot/replay_stats/persona_store.py",), retention="forever"
+		layer="derived", tenancy="global", writers=("utils/backfill_personas.py",), retention="forever"
 	),
 	"cls_classifications": dict(
 		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
