@@ -1252,3 +1252,69 @@ def test_eapm_falls_back_to_the_user_id_when_no_in_game_name_is_known():
 	embed = _eapm_embed(_pytest.MonkeyPatch(),
 	                    {11: _apm_blob(median_avg=40, games_avg=20)}, names={})
 	assert "11" in {f["name"]: f["value"] for f in embed.fields}["Player"]
+
+
+# ── /eapm_explained ──────────────────────────────────────────────────────
+
+def _explainer(monkeypatch):
+	stats = _load_stats_module(monkeypatch)
+	ctx = _ReplyCtx()
+	asyncio.run(stats.eapm_explained(ctx))
+	return ctx.replies[0]
+
+
+def test_the_explainer_is_public_rather_than_a_whisper():
+	""" The command exists to settle the question for a whole channel at once.
+	ctx.reply is the non-ephemeral path; reply_dm and ignore both send
+	ephemeral=True (bot/context/slash/context.py), so using either would show
+	the answer to the one person who already asked. """
+	source = (_REPO_ROOT / "bot" / "commands" / "stats.py").read_text(encoding="utf-8")
+	body = source.split("async def eapm_explained", 1)[1].split("\nasync def ", 1)[0]
+
+	# The CALL, not a mention: this function's own docstring names the ephemeral
+	# helpers in order to explain why it does not use them.
+	assert "await ctx.reply(embed=embed)" in body
+	assert "await ctx.reply_dm" not in body
+	assert "await ctx.ignore" not in body
+
+
+def test_the_explainer_states_the_exclusion_that_makes_it_effective():
+	""" mgz counts every recorded ACTION belonging to a player EXCEPT AI_ORDER
+	(AI_ACTIONS = [ActionEnum.AI_ORDER]). That single exclusion is the whole
+	meaning of the "effective" in eAPM here, and a reader who does not know it
+	cannot check their own number. """
+	import pytest as _pytest
+	text = "\n".join(f["value"] for f in _explainer(_pytest.MonkeyPatch()).fields).lower()
+
+	assert "ai" in text and "effective" in text
+
+
+def test_the_explainer_names_what_cannot_be_counted_at_all():
+	""" Camera movement and selection are not in the replay's action vocabulary
+	(66 types, all commands), so no tool can count them. Saying so is what stops
+	a reader comparing this against an in-game APM overlay and concluding the
+	bot is broken. """
+	import pytest as _pytest
+	text = "\n".join(f["value"] for f in _explainer(_pytest.MonkeyPatch()).fields).lower()
+
+	assert "camera" in text and "selection" in text
+
+
+def test_the_explainer_gives_the_actual_formula_and_the_window():
+	import pytest as _pytest
+	embed = _explainer(_pytest.MonkeyPatch())
+	text = "\n".join(f["value"] for f in embed.fields)
+
+	assert "commands ÷ game length in minutes" in text
+	assert f"{rollups.WINDOW_DAYS} days" in text, "the window is read from the constant, not typed"
+	assert "{days}" not in text, "every placeholder is filled"
+
+
+def test_the_explainer_says_the_shown_figures_are_medians():
+	""" Both of them, and that peak is a median of peaks rather than a personal
+	best -- the exact misreading the report's own copy was fixed to prevent. """
+	import pytest as _pytest
+	text = "\n".join(f["value"] for f in _explainer(_pytest.MonkeyPatch()).fields).lower()
+
+	assert text.count("median") >= 2
+	assert "never a personal best" in text

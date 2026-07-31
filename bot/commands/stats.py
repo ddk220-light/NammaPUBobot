@@ -1,6 +1,6 @@
 __all__ = [
 	'last_game', 'stats', 'top', 'rank', 'rank_detailed', 'leaderboard',
-	'eapm', 'mapstats', 'activity'
+	'eapm', 'eapm_explained', 'mapstats', 'activity'
 ]
 
 import io
@@ -459,6 +459,83 @@ async def eapm(ctx, metric: str = None, page: int = 1):
 	).format(page=page + 1, pages=pages, count=len(board["rows"]),
 	         floor=scouting_report.MIN_GAMES,
 	         days=board["window_days"] or rollups.WINDOW_DAYS))
+	await ctx.reply(embed=embed)
+
+
+# The explainer's copy, as data so it can be asserted on rather than eyeballed.
+# Every claim here is checked against mgz's own source (mgz/model/__init__.py):
+#
+#   AI_ACTIONS = [ActionEnum.AI_ORDER]
+#   if 'player_id' in action_data and action_data['player_id'] in players:
+#       if action_type not in AI_ACTIONS:
+#           eapm[action_data['player_id']] += 1
+#   ...
+#   players[player_id].eapm = int(round(eapm[player_id] / ((timestamp/1000)/60)))
+#
+# — i.e. every recorded ACTION belonging to a real player except AI_ORDER, over
+# the game's length in minutes. Do not paraphrase this looser: the whole point
+# of the command is that somebody can check their own number against it.
+_EAPM_EXPLAINER = (
+	(
+		"✅ What counts",
+		"Every **command** the replay recorded for you:\n"
+		"• move, attack, patrol, garrison, set stance or formation\n"
+		"• queue units, research techs, place or repair buildings\n"
+		"• delete, set gather points, flare, tribute, sell or buy\n"
+		"One command = one action, whether it moved a single villager or forty knights.",
+	),
+	(
+		"❌ What does not count",
+		"• **Camera movement and unit selection.** The replay never records them, so no "
+		"tool can count them — this measures decisions, not mouse activity.\n"
+		"• **Orders the AI issued for you** (auto-scout and the like). Excluding those is "
+		"the only thing the \"effective\" in eAPM refers to here.",
+	),
+	(
+		"🧮 The arithmetic",
+		"**eAPM = commands ÷ game length in minutes**, rounded — measured over the whole "
+		"game, not just the busy part, so a long game with a quiet late phase pulls it down.",
+	),
+	(
+		"📊 What the bot shows you",
+		"• `/rank` and `/eapm` show your **median** across games in the last "
+		"{days} days — the middle game, not the average, so one frantic night cannot "
+		"move your figure.\n"
+		"• **Peak** is your busiest single minute in a game, and `/eapm metric:peak` "
+		"ranks the **median** of those — a typical hard moment, never a personal best.",
+	),
+	(
+		"⚠️ One caveat",
+		"Other tools use the name \"eAPM\" for slightly different filters, so this number "
+		"will not always match one you have seen elsewhere. It is measured the same way "
+		"for everybody here, which is what makes the ranking fair.",
+	),
+)
+
+
+async def eapm_explained(ctx):
+	""" How eAPM is measured, in public.
+
+	DELIBERATELY ctx.reply AND NOT ctx.reply_dm / ctx.ignore: those two send
+	`ephemeral=True` (bot/context/slash/context.py) and only the caller would
+	see it. This command exists so somebody can settle the question for a whole
+	channel at once, so the answer has to be visible to everybody — if a future
+	change makes replies ephemeral by default, this call site needs an explicit
+	override rather than to quietly become a whisper. """
+	from bot.derived import rollups
+
+	embed = Embed(
+		title="⚡ " + ctx.qc.gt("How eAPM is measured"),
+		colour=Colour(0x3498db),
+		description=ctx.qc.gt(
+			"eAPM counts the **commands** a replay recorded for you, divided by how long "
+			"the game lasted. It is read straight out of the replay file — nothing here "
+			"is estimated."),
+	)
+	for name, value in _EAPM_EXPLAINER:
+		embed.add_field(name=ctx.qc.gt(name),
+		                value=ctx.qc.gt(value).format(days=rollups.WINDOW_DAYS),
+		                inline=False)
 	await ctx.reply(embed=embed)
 
 

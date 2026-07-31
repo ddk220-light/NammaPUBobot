@@ -724,6 +724,15 @@ async def _eapm(
 ): await run_slash(bot.commands.eapm, interaction=interaction, metric=metric, page=page)
 
 
+@dc.slash_command(
+	name='eapm_explained',
+	description='Explain how eAPM is measured — which actions count and which do not.',
+	**guild_kwargs)
+async def _eapm_explained(
+		interaction: Interaction,
+): await run_slash(bot.commands.eapm_explained, interaction=interaction)
+
+
 # douche -> ...
 
 @groups.douche.subcommand(name='add', description='Record that a player douched another (moderator).')
