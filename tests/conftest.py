@@ -126,7 +126,154 @@ sys.modules['core.database'] = _fake_core_database
 # run. CI's pytest job installs only pytest, so a bare stub lets civ_matcher
 # import for its pure-helper tests (_load_profile_uid_map) without pulling in
 # the full aiohttp runtime dependency. Same trick as the core.* fakes above.
-sys.modules['aiohttp'] = types.ModuleType('aiohttp')
+_fake_aiohttp = types.ModuleType('aiohttp')
+sys.modules['aiohttp'] = _fake_aiohttp
+
+
+# ─── aiohttp.web (stub) ──────────────────────────────────────────────
+# `bot/web.py` does `from aiohttp import web` and every handler in it ends in
+# `web.json_response(...)`. Until stage 5d the only way to test that file was to
+# parse it with `ast` and assert on its source (see test_web_identity.py), which
+# is how a web endpoint could read a retired table for two stages without a test
+# noticing: a source-level assertion cannot tell you what an endpoint RETURNS.
+#
+# json_response here keeps the payload and the status on the object it returns
+# instead of serialising them, so a test can drive a handler and assert on the
+# actual response. That is the whole point — these are the real handlers, the
+# real SQL and the real payload shaping, with only the transport faked.
+class _FakeResponse:
+	def __init__(self, payload=None, status=200, text=None, content_type=None):
+		self.payload = payload
+		self.status = status
+		self.text = text
+		self.content_type = content_type
+
+
+class _FakeRouter:
+	def __init__(self):
+		self.routes = []
+
+	def add_get(self, path, handler):
+		self.routes.append(('GET', path, handler))
+
+	def add_post(self, path, handler):
+		self.routes.append(('POST', path, handler))
+
+
+class _FakeApplication:
+	def __init__(self):
+		self.router = _FakeRouter()
+
+
+_fake_aiohttp_web = types.ModuleType('aiohttp.web')
+_fake_aiohttp_web.json_response = lambda payload=None, status=200: _FakeResponse(payload=payload, status=status)
+_fake_aiohttp_web.Response = _FakeResponse
+_fake_aiohttp_web.Application = _FakeApplication
+_fake_aiohttp_web.AppRunner = object
+_fake_aiohttp_web.TCPSite = object
+
+
+class _FakeHTTPError(Exception):
+	def __init__(self, *a, **kw):
+		super().__init__(kw.get('text') or (a[0] if a else ''))
+		self.location = kw.get('location')
+
+
+_fake_aiohttp_web.HTTPBadRequest = _FakeHTTPError
+_fake_aiohttp_web.HTTPFound = _FakeHTTPError
+_fake_aiohttp_web.HTTPForbidden = _FakeHTTPError
+_fake_aiohttp_web.HTTPNotFound = _FakeHTTPError
+_fake_aiohttp_web.HTTPUnauthorized = _FakeHTTPError
+sys.modules['aiohttp.web'] = _fake_aiohttp_web
+_fake_aiohttp.web = _fake_aiohttp_web
+
+
+# ─── nextcord (stub) ─────────────────────────────────────────────────
+# Reached only through core/cfg_factory.py (`from nextcord import Guild`, for an
+# isinstance check) and core/utils.py (Embed + three utils helpers), both of
+# which bot/web.py imports. Permissive on purpose: nothing under test calls into
+# it, so a stand-in class that accepts anything is enough, and pinning a fuller
+# shape would be inventing an API contract this repo does not own.
+class _NextcordStub:
+	def __init__(self, *_a, **_k):
+		pass
+
+	def __getattr__(self, _name):
+		return _NextcordStub()
+
+
+class _FakeEmbed:
+	""" Faithful enough to assert on, unlike the permissive stub above.
+
+	This one is NOT a rubber stamp on purpose. core/utils.py's error_embed /
+	ok_embed build an Embed at import-of-core.utils time from whatever
+	sys.modules['nextcord'] holds, and core.utils is now imported (via
+	core.cfg_factory, via bot/web.py) during collection — before any test's own
+	nextcord fake is installed. A stub that swallowed the kwargs would make
+	`embed.title` a stub object, and every copy assertion in
+	tests/test_identity.py would compare a stub to a string and fail. Keep the
+	attribute names in step with tests/test_identity.py's own _FakeEmbed. """
+
+	def __init__(self, title=None, description=None, colour=None, color=None, **_kw):
+		self.title = title
+		self.description = description
+		self.colour = colour if colour is not None else color
+		self.color = self.colour
+		self.fields = []
+
+	def add_field(self, name=None, value=None, inline=True):
+		self.fields.append(dict(name=name, value=value, inline=inline))
+		return self
+
+	def set_footer(self, **_kw):
+		return self
+
+
+_fake_nextcord = types.ModuleType('nextcord')
+for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents'):
+	setattr(_fake_nextcord, _name, _NextcordStub)
+_fake_nextcord.Embed = _FakeEmbed
+_fake_nextcord.Colour = lambda value=0: value
+_fake_nextcord.Color = _fake_nextcord.Colour
+_fake_nextcord_utils = types.ModuleType('nextcord.utils')
+_fake_nextcord_utils.get = lambda *_a, **_k: None
+_fake_nextcord_utils.find = lambda *_a, **_k: None
+_fake_nextcord_utils.escape_markdown = lambda s: s
+_fake_nextcord.utils = _fake_nextcord_utils
+sys.modules['nextcord'] = _fake_nextcord
+sys.modules['nextcord.utils'] = _fake_nextcord_utils
+
+# core/cfg_factory.py's only other third-party import.
+_fake_emoji = types.ModuleType('emoji')
+_fake_emoji.emojize = lambda s, **_k: s
+_fake_emoji.demojize = lambda s, **_k: s
+_fake_emoji.EMOJI_DATA = {}
+sys.modules['emoji'] = _fake_emoji
+
+
+# ─── core.client (stub) ──────────────────────────────────────────────
+# The real module subclasses nextcord.Client and builds an Intents object at
+# import time, so it is faked outright rather than run against the permissive
+# nextcord stub above. bot/web.py reaches `dc` for three things only: looking up
+# a user's avatar, walking the guild list, and the readiness flag the health
+# endpoint reports. All three answer "nothing" here, which is the state a test
+# with no Discord connection is actually in.
+class _FakeDiscordClient:
+	guilds = ()
+
+	def get_user(self, _user_id):
+		return None
+
+	def get_channel(self, _channel_id):
+		return None
+
+	def is_ready(self):
+		return False
+
+
+_fake_core_client = types.ModuleType('core.client')
+_fake_core_client.dc = _FakeDiscordClient()
+sys.modules['core.client'] = _fake_core_client
 
 
 # ─── bot (package shim) ──────────────────────────────────────────────

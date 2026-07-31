@@ -1,6 +1,41 @@
-"""NammaPUBobot Web Dashboard — OAuth2, civ stats, channel/queue configuration."""
+"""NammaPUBobot Web Dashboard — OAuth2, civ stats, channel/queue configuration.
 
-import csv
+STAGE 5d, what this file may and may not read. The dashboard owns exactly two
+tables (`web_sessions`, `web_oauth_states`); everything else it shows is read
+from the core/raw/derived layers, and stage 5d moved the last four reads off
+the stores stage 6 drops:
+
+  * the strategy leaderboards, the per-player strategy tags and the per-match
+    strategy chips read `game_labels` (kind='strategy'), joined to `game_stats`
+    for the profile/winner/civ and to `replay_players` for the in-game name —
+    the same three-table join bot/classifications/query.py uses, for the same
+    reasons (see fetch_results' docstring). The `cls_*` tables are gone from
+    this file.
+  * `/api/civ-stats` reads the derived-community `civ_stats` table. It used to
+    read `data/civ_elo_stats.csv` off disk — a frozen April snapshot nothing
+    regenerated — which is why that file could not be deleted in 5c. The
+    per-elo-bracket splits went with it: `civ_stats` is a per-community tally
+    with no elo dimension, and inventing brackets it does not store would be a
+    fabricated number, not a smaller one.
+  * the player page's scouting report reads `player_rollups`, through the same
+    bot/scouting_report.py contract `/rank` renders. A player with NO ROW
+    yields exactly PENDING — the absence is the signal (identity v2 §5).
+  * the generated persona is gone from both ends: the stored overlay (the
+    legacy persona table, whose writer stage 5a deleted, so every row in it is
+    frozen at its last ingest) and the live `derive_persona`/scout-read
+    narration. Stage 5a retired the persona from `/rank` for asserting
+    personality where it had arithmetic; presenting the same blurb here, and
+    a frozen one at that, is exactly what this migration exists to delete.
+
+The luck page went with them rather than being repointed: its data source was
+`luck_baseline`, which fires for every player in every valid Nomad game and is
+deliberately stored in no table (bot/derived/game_labels.py's kind_for).
+
+The viewing layer is allowed to be thinner for it — the design says so in as
+many words (§1.5) — and the community-first web redesign is a separate future
+project. Do not repopulate any of the above from a live re-derivation.
+"""
+
 import json
 import os
 import secrets
@@ -16,18 +51,21 @@ from core.cfg_factory import (
 	BoolVar, IntVar, SliderVar, OptionVar, DurationVar, TextVar
 )
 from core.client import dc
-from core.console import log
 from core.database import db
 import bot
-from bot import identity
-from bot.replay_stats import persona as rs_persona
-from bot.replay_stats import persona_store as rs_persona_store
+from bot import identity, scouting_report
+from bot.derived import game_labels, rollups
 from bot.replay_stats import scoring as rs_scoring
 from bot.tag_leaderboard import tag_leaderboard_score
 
 # --- Paths ---
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 HTML_PATH = os.path.join(os.path.dirname(__file__), 'web_page.html')
+# A civ needs this many recorded picks in the community before /api/civ-stats
+# lists it. Applied at read time and NOT shared with bot/civ_stats.py's
+# MIN_CIV_GAMES, which happens to hold the same number for a different question
+# ("enough evidence to put this civ in a randomised pool"): `civ_stats` is a
+# plain tally with no opinion about what counts as enough evidence, and two
+# readers must be free to disagree without a schema change.
 MIN_GAMES = 50
 DEFAULT_STATS_PERIOD = "all"
 MATCH_STAT_PERIODS = {
@@ -387,50 +425,101 @@ async def handle_health(request):
 	return web.json_response(payload, status=200 if healthy else 503)
 
 
-# ─── Civ stats API (public, unchanged) ───
+# ─── The community the public pages describe ───
+
+async def _public_community_id():
+	""" The community_id every community-keyed public read is scoped to, or
+	None when there is not one yet.
+
+	The public pages have no channel to resolve through, so the one resolver
+	every other consumer uses (bot/community.community_for_channel) does not
+	apply here. The flagship guild is the honest stand-in: cfg.FLAGSHIP_GUILD_IDS
+	is already "the server this deployment is really for" (bot/community.py's
+	ensure_community pins it to retention='full' for exactly that reason), and
+	it is a stated configuration value rather than a guess.
+
+	What this deliberately does NOT do is sum across communities. A union would
+	be the one number the derived-community layer exists to stop us printing:
+	two communities sharing a player must be able to disagree about that
+	player's numbers, and adding their rows together produces a figure that
+	describes neither.
+
+	None is a real state (no flagship configured, or configured but never
+	enrolled), and every caller has to answer it as "nothing measured here" —
+	never as an empty measurement. """
+	for guild_id in getattr(cfg, "FLAGSHIP_GUILD_IDS", None) or []:
+		row = await db.select_one(["community_id"], "communities", where={"guild_id": int(guild_id)})
+		if row:
+			return row["community_id"]
+	return None
+
+
+# ─── Civ stats API (public) ───
 
 async def handle_civ_stats(request):
-	csv_path = os.path.join(DATA_DIR, 'civ_elo_stats.csv')
-	if not os.path.exists(csv_path):
-		return web.json_response({'error': 'civ_elo_stats.csv not found'}, status=404)
+	""" Per-civ win rates for this community, from the derived `civ_stats` table.
 
+	games == wins + losses holds on every stored row by construction (see
+	bot/derived/civ_stats.py's compute_civ_stats: a game whose outcome was never
+	resolved is counted into none of the three), so the quotient below is a real
+	win rate rather than one deflated by games nobody won.
+
+	`winrate` is a 0..1 fraction, matching what the page's fmtWr() has always
+	been handed. """
+	community_id = await _public_community_id()
 	rows = []
-	with open(csv_path, 'r') as f:
-		reader = csv.DictReader(f)
-		player_threshold = 1000
-		team_threshold = 1100
-		for name in (reader.fieldnames or []):
-			if name.startswith('games_player_elo_above_'):
-				player_threshold = int(name.split('_')[-1])
-			elif name.startswith('games_team_elo_above_'):
-				team_threshold = int(name.split('_')[-1])
-		pt, tt = player_threshold, team_threshold
-		for row in reader:
-			games = int(row['games'])
-			if games < MIN_GAMES:
-				continue
-			rows.append({
-				'civ': row['civ'],
-				'games': games,
-				'winrate': float(row['winrate']),
-				'games_player_above': int(row.get(f'games_player_elo_above_{pt}', 0)),
-				'winrate_player_above': float(row.get(f'winrate_player_elo_above_{pt}', 0)),
-				'games_player_below': int(row.get(f'games_player_elo_below_{pt}', 0)),
-				'winrate_player_below': float(row.get(f'winrate_player_elo_below_{pt}', 0)),
-				'games_team_above': int(row.get(f'games_team_elo_above_{tt}', 0)),
-				'winrate_team_above': float(row.get(f'winrate_team_elo_above_{tt}', 0)),
-				'games_team_below': int(row.get(f'games_team_elo_below_{tt}', 0)),
-				'winrate_team_below': float(row.get(f'winrate_team_elo_below_{tt}', 0)),
-			})
+	if community_id is not None:
+		rows = await db.fetchall(
+			"SELECT civ, games, wins, losses FROM civ_stats "
+			"WHERE community_id=%s AND games >= %s ORDER BY games DESC, civ ASC",
+			[community_id, MIN_GAMES]) or []
 
-	return web.json_response({
-		'civs': rows,
-		'player_threshold': player_threshold,
-		'team_threshold': team_threshold,
-	})
+	civs = []
+	for r in rows:
+		games = int(r["games"] or 0)
+		if not games or not r["civ"]:
+			continue
+		civs.append({
+			"civ": r["civ"],
+			"games": games,
+			"wins": int(r["wins"] or 0),
+			"losses": int(r["losses"] or 0),
+			"winrate": int(r["wins"] or 0) / games,
+		})
+
+	return web.json_response({"civs": civs, "min_games": MIN_GAMES})
 
 
 # ─── Strategy insights API (public) ───
+
+# The join every strategy read in this file makes, and why each table is in it
+# (bot/classifications/query.py's fetch_results argues the same three in full):
+#
+#   game_labels    — which (game, player) earned the label, and when. Its `kind`
+#                    column is the stored answer to "is this a strategy or a
+#                    spawn", so a reader asks for a kind instead of carrying its
+#                    own copy of the 17-key allowlist.
+#   game_stats     — the profile behind that slot, whether it won, and the civ it
+#                    played. game_labels stores none of the three by design (see
+#                    bot/derived/__init__.py); its PK is exactly game_labels'
+#                    grain minus the label, so this join can neither drop a
+#                    labelled player nor duplicate one.
+#   replay_players — the in-game name to print, LEFT JOINed on its own PK
+#                    (match, profile_id). Deliberately NOT joined on
+#                    player_number: that PK does not constrain player_number
+#                    (bot/derived/backfill.py says so explicitly), so joining on
+#                    it could duplicate rows.
+_LABEL_JOIN = (
+	"FROM game_labels gl "
+	"JOIN game_stats gs ON gs.replay_match_id=gl.replay_match_id "
+	"AND gs.player_number=gl.player_number "
+	"LEFT JOIN replay_players rp ON rp.replay_match_id=gs.replay_match_id "
+	"AND rp.profile_id=gs.profile_id "
+)
+
+# Bound as a parameter everywhere rather than inlined, so the one place that
+# decides which stored category the web shows is this constant.
+_STRATEGY_KIND = "strategy"
 
 # Phase label per classification key, for grouping in the dashboard.
 _STRATEGY_PHASE = {
@@ -445,30 +534,47 @@ _STRATEGY_PHASE = {
 
 
 async def handle_strategies(request):
-	"""Public: play-style ('strategy') leaderboards from the cls_* tables — per-strategy totals
+	"""Public: play-style ('strategy') leaderboards from `game_labels` — per-strategy totals
 	plus a per-player roster, for the dashboard Strategies tab. Titles/conditions come from the
-	classification registry; counts from cls_results."""
+	classification registry; counts from the derived label rows.
+
+	The luck category is absent from this payload, and that is the reason the luck page went
+	rather than being repointed. Its rows rested on `luck_baseline`, which fires for every
+	player in every valid Nomad game and is stored in no table by design
+	(bot/derived/game_labels.kind_for) — so the "% of valid starts" denominator every luck
+	figure was quoted against does not exist any more. `kind='strategy'` is now the whole
+	filter, which also retires the old NOT IN (luck keys) exclusion the categorized count
+	needed."""
 	from utils.classifications.registry import REGISTRY
 
 	rows = await db.fetchall(
-		"SELECT `key` AS k, identity AS player, COUNT(*) AS games, "
-		"SUM(winner=1) AS wins, SUM(winner=0) AS losses "
-		"FROM cls_results GROUP BY `key`, identity")
+		"SELECT gl.label AS k, rp.identity AS player, COUNT(*) AS games, "
+		"SUM(gs.winner=1) AS wins, SUM(gs.winner=0) AS losses "
+		+ _LABEL_JOIN +
+		"WHERE gl.kind=%s GROUP BY gl.label, rp.identity", [_STRATEGY_KIND])
 	by_key = {}
 	for r in (rows or []):
 		by_key.setdefault(r["k"], []).append({
 			"player": r["player"] or "?", "games": int(r["games"]),
 			"wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0)})
 
-	# Top civs per strategy.
+	# Top civs per strategy. The civ comes off game_stats, which stores it per
+	# (match, player) slot — the same grain the label was earned at.
 	civ_by_key = {}
 	for r in (await db.fetchall(
-			"SELECT `key` AS k, civ, COUNT(*) AS n FROM cls_results "
-			"WHERE civ IS NOT NULL AND civ <> '' GROUP BY `key`, civ") or []):
+			"SELECT gl.label AS k, gs.civ AS civ, COUNT(*) AS n "
+			+ _LABEL_JOIN +
+			"WHERE gl.kind=%s AND gs.civ IS NOT NULL AND gs.civ <> '' "
+			"GROUP BY gl.label, gs.civ", [_STRATEGY_KIND]) or []):
 		civ_by_key.setdefault(r["k"], []).append((r["civ"], int(r["n"])))
 
 	strategies = []
 	for key, c in REGISTRY.items():
+		if game_labels.kind_for(key) != _STRATEGY_KIND:
+			# Registered upstream but stored under no strategy kind — a luck key,
+			# or a key the storage allowlist has never seen. Rendering it would
+			# print a row of zeros for a question this table cannot answer.
+			continue
 		roster = sorted(by_key.get(key, []), key=lambda p: -p["games"])
 		for p in roster:
 			dec = p["wins"] + p["losses"]
@@ -493,22 +599,28 @@ async def handle_strategies(request):
 
 	# Per-player corpus totals (the denominator for "% of total") + distinct categorized matches
 	# (so the web can derive the "mixed / uncategorized" remainder = total - categorized).
+	#
+	# The totals come from `replay_players` — one row per (match, profile), the raw record of
+	# every parsed game — rather than from the retired per-player totals mirror of it. Same
+	# grain, same numbers, and one fewer table to keep in step.
 	totals = {}
-	for r in (await db.fetchall("SELECT identity, games, wins, losses FROM cls_player_totals") or []):
+	for r in (await db.fetchall(
+			"SELECT identity, COUNT(DISTINCT replay_match_id) AS games, "
+			"SUM(winner=1) AS wins, SUM(winner=0) AS losses "
+			"FROM replay_players WHERE identity IS NOT NULL AND identity <> '' "
+			"GROUP BY identity") or []):
 		totals[r["identity"]] = {"games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
 		                         "losses": int(r["losses"] or 0)}
-	# "categorized" feeds the STRATEGIES "mixed / uncategorized" remainder, so it must count only
-	# strategy keys — luck keys (esp. luck_baseline, which fires every valid game) would otherwise
-	# mark nearly every game as categorized and collapse the remainder to ~0.
-	luck_keys = [k for k, cc in REGISTRY.items() if getattr(cc, "category", "strategy") == "luck"]
-	cat_filter = ("WHERE `key` NOT IN ({}) ".format(",".join(["%s"] * len(luck_keys)))
-	              if luck_keys else "")
+	# "categorized" feeds the STRATEGIES "mixed / uncategorized" remainder. It counts DISTINCT
+	# matches, not label rows: one game can earn several strategy labels, and summing them would
+	# let a player's categorized count exceed their games played.
 	categorized = {}
 	for r in (await db.fetchall(
-			"SELECT identity, COUNT(DISTINCT aoe2_match_id) AS g, "
-			"COUNT(DISTINCT IF(winner=1, aoe2_match_id, NULL)) AS w, "
-			"COUNT(DISTINCT IF(winner=0, aoe2_match_id, NULL)) AS l "
-			"FROM cls_results " + cat_filter + "GROUP BY identity", luck_keys) or []):
+			"SELECT rp.identity AS identity, COUNT(DISTINCT gl.replay_match_id) AS g, "
+			"COUNT(DISTINCT IF(gs.winner=1, gl.replay_match_id, NULL)) AS w, "
+			"COUNT(DISTINCT IF(gs.winner=0, gl.replay_match_id, NULL)) AS l "
+			+ _LABEL_JOIN +
+			"WHERE gl.kind=%s GROUP BY rp.identity", [_STRATEGY_KIND]) or []):
 		categorized[r["identity"]] = {"games": int(r["g"] or 0), "wins": int(r["w"] or 0),
 		                              "losses": int(r["l"] or 0)}
 
@@ -835,19 +947,25 @@ def _label_for(mapped, user_id):
 
 
 async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
+	"""The strategy half of /api/leaderboard?mode=tags, from `game_labels`.
+
+	`gl.kind` carries the filtering the old `key IN (...17 keys...)` list did by
+	hand: the allowlist that decided what to store is the same one that decides
+	what this reads, so the two cannot drift. The window is applied to the stored
+	`played_at`, which is the match's own timestamp rather than the ingest's."""
 	start = _period_start(period)
-	keys = list(STRATEGY_TAG_LABELS)
-	args = [*keys]
+	args = [_STRATEGY_KIND]
 	time_clause = ""
 	if start is not None:
-		time_clause = " AND r.played_at >= %s"
+		time_clause = " AND gl.played_at >= %s"
 		args.append(start)
 	rows = await db.fetchall(
-		"SELECT r.profile_id, r.identity, r.`key`, MAX(c.title) AS title, COUNT(*) AS games, "
-		"SUM(r.winner=1) AS wins, SUM(r.winner=0) AS losses, MAX(r.played_at) AS last_tagged_at "
-		"FROM cls_results r LEFT JOIN cls_classifications c ON c.`key`=r.`key` "
-		"WHERE r.`key` IN (" + ",".join(["%s"] * len(keys)) + ")" + time_clause +
-		" GROUP BY r.profile_id, r.identity, r.`key`",
+		"SELECT gs.profile_id AS profile_id, rp.identity AS identity, gl.label AS `key`, "
+		"COUNT(*) AS games, SUM(gs.winner=1) AS wins, SUM(gs.winner=0) AS losses, "
+		"MAX(gl.played_at) AS last_tagged_at "
+		+ _LABEL_JOIN +
+		"WHERE gl.kind=%s" + time_clause +
+		" GROUP BY gs.profile_id, rp.identity, gl.label",
 		args)
 	out = {}
 	available = {}
@@ -1105,6 +1223,16 @@ async def _player_strategy_profile(user_id, profile_ids, period):
 	}
 
 
+def _strategy_label(key):
+	""" A stored strategy key as a display name.
+
+	The hand-written map first, then the same `archer_rush` -> `Archer Rush`
+	fallback bot/scouting_report.py and bot/replay_stats/card_query.py apply.
+	The fallback is what makes this safe against a new classifier key: it renders
+	as its own name rather than as nothing at all. """
+	return STRATEGY_TAG_LABELS.get(key, str(key or "").replace("_", " ").title())
+
+
 def _strategy_tag_payload(row):
 	key = row.get("key")
 	games = int(row.get("games") or 0)
@@ -1112,7 +1240,7 @@ def _strategy_tag_payload(row):
 	losses = int(row.get("losses") or 0)
 	return {
 		"key": key,
-		"label": STRATEGY_TAG_LABELS.get(key, row.get("title") or str(key or "").replace("_", " ").title()),
+		"label": _strategy_label(key),
 		"category": "strategy",
 		"type": "strategy",
 		"games": games,
@@ -1124,22 +1252,30 @@ def _strategy_tag_payload(row):
 
 
 async def _player_strategy_tags(profile_ids, period, limit=24):
+	"""One player's strategy labels in the selected window, from `game_labels`.
+
+	Deliberately NOT read out of that player's `player_rollups` blob, which
+	carries the same three splits: the rollup is a lifetime, community-scoped
+	aggregate with no time dimension, and this page has a period selector. Serving
+	lifetime numbers under a "3 months" filter is the class of quiet lie this
+	migration exists to remove. The rollup drives the scouting-report block
+	instead, where it is labelled as what it is."""
 	profile_ids = [str(p) for p in profile_ids or []]
 	if not profile_ids:
 		return []
 	start = _period_start(period)
-	args = [*profile_ids, *STRATEGY_TAG_LABELS.keys()]
+	args = [_STRATEGY_KIND, *profile_ids]
 	time_clause = ""
 	if start is not None:
-		time_clause = " AND r.played_at >= %s"
+		time_clause = " AND gl.played_at >= %s"
 		args.append(start)
 	rows = await db.fetchall(
-		"SELECT r.`key`, MAX(c.title) AS title, COUNT(*) AS games, "
-		"SUM(r.winner=1) AS wins, SUM(r.winner=0) AS losses "
-		"FROM cls_results r LEFT JOIN cls_classifications c ON c.`key`=r.`key` "
-		"WHERE r.profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ") "
-		"AND r.`key` IN (" + ",".join(["%s"] * len(STRATEGY_TAG_LABELS)) + ")" + time_clause +
-		" GROUP BY r.`key` ORDER BY games DESC, wins DESC, r.`key` LIMIT %s",
+		"SELECT gl.label AS `key`, COUNT(*) AS games, "
+		"SUM(gs.winner=1) AS wins, SUM(gs.winner=0) AS losses "
+		+ _LABEL_JOIN +
+		"WHERE gl.kind=%s AND gs.profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ")"
+		+ time_clause +
+		" GROUP BY gl.label ORDER BY games DESC, wins DESC, gl.label LIMIT %s",
 		[*args, limit])
 	return [_strategy_tag_payload(r) for r in rows or []]
 
@@ -1192,20 +1328,33 @@ async def _player_profile_tags(profile_ids, period):
 
 
 async def _classification_tags_for_bot_matches(match_ids):
+	"""Per-(match, player) chips for the match rows: strategy labels from
+	`game_labels`, plus the stored impact tags.
+
+	The bot-match -> replay hop still goes through `replay_matches.bot_match_id`.
+	`match_replays` is the authoritative link from stage 5 on and that column is
+	dropped in stage 6 — but the link table is keyed by community, and switching
+	this join to it would silently empty every chip on a deployment whose
+	flagship community is not resolvable. Stage 6 owns that column drop and the
+	repoint that has to land with it."""
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
 		return {}, {}
 	rows = await db.fetchall(
-		"SELECT rm.bot_match_id, r.profile_id, r.identity, r.`key`, c.title "
-		"FROM replay_matches rm JOIN cls_results r ON r.aoe2_match_id=rm.replay_match_id "
-		"LEFT JOIN cls_classifications c ON c.`key`=r.`key` "
-		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ") "
-		"AND r.`key` IN (" + ",".join(["%s"] * len(STRATEGY_TAG_LABELS)) + ")",
-		[*match_ids, *STRATEGY_TAG_LABELS.keys()])
+		"SELECT rm.bot_match_id, gs.profile_id AS profile_id, rp.identity AS identity, "
+		"gl.label AS `key` "
+		"FROM replay_matches rm "
+		"JOIN game_labels gl ON gl.replay_match_id=rm.replay_match_id "
+		"JOIN game_stats gs ON gs.replay_match_id=gl.replay_match_id "
+		"AND gs.player_number=gl.player_number "
+		"LEFT JOIN replay_players rp ON rp.replay_match_id=gs.replay_match_id "
+		"AND rp.profile_id=gs.profile_id "
+		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ") AND gl.kind=%s",
+		[*match_ids, _STRATEGY_KIND])
 	by_profile = {}
 	by_name = {}
 	for row in rows or []:
-		tag = {"key": row.get("key"), "label": STRATEGY_TAG_LABELS.get(row.get("key"), row.get("title") or row.get("key"))}
+		tag = {"key": row.get("key"), "label": _strategy_label(row.get("key"))}
 		if row.get("profile_id") is not None:
 			by_profile.setdefault((row["bot_match_id"], str(row["profile_id"])), []).append(tag)
 		if row.get("identity"):
@@ -1224,42 +1373,20 @@ async def _classification_tags_for_bot_matches(match_ids):
 	return by_profile, by_name
 
 
-def _style_scout_report(style, top_tags, best_civs, duration_edges, has_impacts):
-	if not has_impacts:
-		return {
-			"headline": "Replay sample needed",
-			"description": "No parsed replay sample yet, so style read is unavailable.",
-			"traits": [],
-		}
-	openers = {
-		"Pressure player": "Tempo-forward profile: creates map space through army presence before full boom.",
-		"Boom carry": "Boom-first carry profile: keeps early army lean, banks economy, then turns the villager lead into late-game weight.",
-		"Economy carry": "Boom-and-carry profile: scales well when allowed to build economy and take late fights.",
-		"Timing specialist": "Timing-window profile: impact spikes around age-up or upgrade windows.",
-		"Recovery anchor": "Stabilizer profile: absorbs rough starts and rebuilds into useful team position.",
-		"High-impact flex": "Flex profile: contributes across army, economy, timing, and recovery lanes.",
-		"Balanced flex": "Balanced team profile: no single lane dominates, but output stays steady.",
-	}
-	parts = [openers.get(style, openers["Balanced flex"])]
-	traits = [t["tag"] for t in top_tags[:3]]
-	if best_civs:
-		civ_names = ", ".join(c["civ"] for c in best_civs[:3])
-		parts.append(f"Best civ results: {civ_names}.")
-		traits.extend(f"{c['civ']} comfort pick" for c in best_civs[:2])
-	if duration_edges:
-		buckets = ", ".join(d["bucket"] for d in duration_edges[:2])
-		parts.append(f"Strongest match window: {buckets}.")
-		traits.extend(f"{d['bucket']} window" for d in duration_edges[:1])
-	if top_tags:
-		parts.append("Recurring tags: " + ", ".join(t["tag"] for t in top_tags[:3]) + ".")
-	return {
-		"headline": style,
-		"description": " ".join(parts),
-		"traits": traits[:6],
-	}
-
-
 def _player_impact_profile(impacts, civs=None, durations=None):
+	"""The per-match impact scores this page shows, averaged over the window.
+
+	These are render-time numbers computed from the match's own replay_players
+	rows (bot/replay_stats/scoring.py) — the same component scores the match
+	cards compute, never stored, and explicitly kept that way by the design.
+
+	What stage 5d removed from this dict is the NARRATION built on top of them:
+	the generated persona (name/epithet/tagline) and the `scout_report` prose.
+	Stage 5a deleted both from `/rank` for asserting personality where they had
+	arithmetic, and the player page's measured facts now come from
+	`player_rollups` through _scouting_payload below. Do not reintroduce either
+	here — a sentence generated from four averages reads as a finding, and it
+	is not one."""
 	impacts = list(impacts or [])
 	if not impacts:
 		return {
@@ -1273,11 +1400,9 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 			"avg_recovery": None,
 			"impact_sd": None,
 			"carry_rate": None,
-			"persona": rs_persona.derive_persona({"matches": 0}),
 			"top_tags": [],
 			"best_civs": [],
 			"duration_edges": [],
-			"scout_report": _style_scout_report("No replay style", [], [], [], False),
 		}
 
 	tag_counts = {}
@@ -1348,16 +1473,6 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 		mean = sum(impact_scores) / len(impact_scores)
 		impact_sd = round((sum((x - mean) ** 2 for x in impact_scores) / len(impact_scores)) ** 0.5, 1)
 	carry_rate = round(100 * sum(1 for i in impacts if i.get("team_top")) / len(impacts))
-	persona = rs_persona.derive_persona({
-		"matches": len(impacts),
-		"avg_army": avg_army,
-		"avg_eco": avg_eco,
-		"avg_timing": avg_timing,
-		"avg_recovery": avg_recovery,
-		"impact_sd": impact_sd,
-		"carry_rate": carry_rate,
-		"tag_rates": {tag: count * 100 / len(impacts) for tag, count in tag_counts.items()},
-	})
 	return {
 		"style": style,
 		"summary": "; ".join(summary_bits),
@@ -1369,27 +1484,108 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 		"avg_recovery": avg_recovery,
 		"impact_sd": impact_sd,
 		"carry_rate": carry_rate,
-		"persona": persona,
 		"top_tags": top_tags,
 		"best_civs": best_civs,
 		"duration_edges": duration_edges,
-		"scout_report": _style_scout_report(style, top_tags, best_civs, duration_edges, True),
 	}
 
 
-async def _overlay_stored_persona(impact_profile, user_id, period):
-	"""Prefer the materialized persona (refreshed after every ingested match)
-	over the live-derived one; keep the live value when no row exists yet."""
-	try:
-		stored = await rs_persona_store.get_persona(user_id, period)
-	except Exception as e:
-		# Fall back to the live-derived persona, but never silently: a broken
-		# query here would otherwise be indistinguishable from "no row yet".
-		log.error(f"Stored persona lookup failed for user {user_id} period {period}: {e}")
-		return impact_profile
-	if stored and stored.get("key"):
-		impact_profile["persona"] = stored
-	return impact_profile
+def _scouting_payload(rollup):
+	""" One player's measured scouting report as data, from their
+	`player_rollups` blob — or the pending sentinel when they have no row.
+
+	Pure, and deliberately the web's own shaping of the same blob
+	bot/scouting_report.py renders for `/rank`. The copy rules are that module's,
+	restated here because they are the point rather than a formatting detail:
+
+	  * NO ROW -> exactly PENDING, imported from scouting_report so the two
+	    surfaces cannot drift into two slightly different sentences. An unlinked
+	    player has no row at all rather than a row of zeros (identity v2 §5), so
+	    the absence IS the signal, and a payload of zeros here would be a report
+	    of a measurement nobody took.
+	  * EVERY NUMBER CARRIES ITS OWN SAMPLE. medal rates ship with
+	    games_ranked, each eAPM median with its own count, each split with its
+	    own games — the denominators genuinely differ and only naming them makes
+	    that legible.
+	  * A MISSING PIECE IS OMITTED, NEVER ZEROED. `peak_eapm` is NULL on every
+	    production row today, so median_peak is null and games_peak is 0: the
+	    peak keys are absent from the payload rather than shipped as a null the
+	    page would have to render as a blank, an em-dash, or a 0. When buckets
+	    start arriving they appear on their own, with their own count.
+	  * THE SPLITS ARE ALREADY FLOORED. compute_rollup drops a split below
+	    SPLIT_MIN_GAMES from the blob entirely, so there is no low-sample flag to
+	    pass through and there must never be one. A split's `games` can also be
+	    smaller than the player's total games (unresolved outcomes count as games
+	    played but are excluded from splits) — that is correct and must not be
+	    reconciled.
+
+	`losses` is derived as games - wins rather than stored: inside a split both
+	describe the same set of RESOLVED games, so the subtraction is exact. """
+	if rollup is None:
+		return {"pending": scouting_report.PENDING}
+
+	medals = rollup.get("medal_rates") or {}
+	military, villager = medals.get("military"), medals.get("villager")
+	ranked = medals.get("games_ranked") or 0
+	medal_payload = None
+	if ranked and military is not None and villager is not None:
+		medal_payload = {
+			"military_pct": round(military * 100),
+			"villager_pct": round(villager * 100),
+			"games_ranked": ranked,
+		}
+
+	apm = rollup.get("apm") or {}
+	median_avg, games_avg = apm.get("median_avg"), apm.get("games_avg") or 0
+	median_peak, games_peak = apm.get("median_peak"), apm.get("games_peak") or 0
+	apm_payload = None
+	if median_avg is not None and games_avg:
+		apm_payload = {"median_avg": median_avg, "games_avg": games_avg}
+		if median_peak is not None and games_peak:
+			apm_payload["median_peak"] = median_peak
+			apm_payload["games_peak"] = games_peak
+
+	def split(block, key_field, label):
+		out = []
+		for row in rollup.get(block) or []:
+			games, wins = row.get("games") or 0, row.get("wins") or 0
+			out.append({
+				"key": row.get(key_field),
+				"label": label(row.get(key_field)),
+				"games": games,
+				"wins": wins,
+				"losses": games - wins,
+				"winrate": _winrate(wins, games - wins),
+			})
+		return out
+
+	return {
+		"pending": None,
+		"medals": medal_payload,
+		"apm": apm_payload,
+		# The `spawn_` prefix is stripped for display only — the line already
+		# says spawn, so the prefix would render twice.
+		"strategies": split("strategies", "key", _strategy_label),
+		"spawns": split("spawns", "key", lambda k: str(k or "").removeprefix("spawn_").replace("_", " ").title()),
+		"units": split("units", "unit", lambda u: str(u or "")),
+	}
+
+
+async def _player_scouting_report(user_id):
+	""" The scouting-report block for `user_id`, or None when there is no
+	community to read one from.
+
+	Three outcomes, the same three bot/commands/stats.py's _scouting_report
+	distinguishes, because they are three different statements:
+
+	  no community resolved -> None. Nothing was ever measured here; the page
+	    omits the block rather than claiming a linking gap that does not exist.
+	  no rollup row         -> {"pending": PENDING}.
+	  a rollup              -> its measured blocks. """
+	community_id = await _public_community_id()
+	if community_id is None:
+		return None
+	return _scouting_payload(await rollups.fetch(community_id, int(user_id)))
 
 
 def _relationship_payload(row):
@@ -1788,7 +1984,7 @@ async def _match_stats_player(user_id, period):
 	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
 	if period_impacts:
 		impact_profile = _player_impact_profile(period_impacts.values(), civs)
-	await _overlay_stored_persona(impact_profile, user_id, period)
+	scouting = await _player_scouting_report(user_id)
 	if recent:
 		match_ids = [r["match_id"] for r in recent]
 		match_rosters = await _match_rosters(match_ids)
@@ -1825,6 +2021,7 @@ async def _match_stats_player(user_id, period):
 			"last_match_at": (summary or {}).get("last_match_at"),
 			"streak": await _player_streak(user_id, at_clause, params),
 			"impact_profile": impact_profile,
+			"scouting_report": scouting,
 			"strategy_tags": strategy_tags,
 		},
 		"rating_history": rating_history,
@@ -2071,7 +2268,7 @@ async def handle_player_stats(request):
 		base_args)
 	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
 	impact_profile = _player_impact_profile(period_impacts.values(), civs, durations)
-	await _overlay_stored_persona(impact_profile, user_id, period)
+	scouting = await _player_scouting_report(user_id)
 	strategy_profile = await _player_strategy_profile(user_id, profile_ids, period)
 	match_civs = {}
 	opp_match_civs = {}
@@ -2111,6 +2308,7 @@ async def handle_player_stats(request):
 			"winrate": _winrate((summary or {}).get("wins"), (summary or {}).get("losses")),
 			"last_match_at": (summary or {}).get("last_match_at"),
 			"impact_profile": impact_profile,
+			"scouting_report": scouting,
 			"strategy_profile": strategy_profile,
 			"strategy_tags": strategy_tags,
 			"best_ally": _best_relationship(allies, "ally"),
@@ -2587,8 +2785,15 @@ def create_app():
 	app.router.add_get('/api/channels/{channel_id}/queues/{queue_name}/config', handle_api_queue_config)
 	app.router.add_post('/api/channels/{channel_id}/queues/{queue_name}/config', handle_api_queue_config)
 	# SPA routes. Keep after API/auth/lobby routes so refresh preserves app views without shadowing endpoints.
+	#
+	# `/luck` is deliberately absent and must not come back: the luck page's rows
+	# rested on `luck_baseline`, which fires for every player in every valid Nomad
+	# game and is stored in no table (bot/derived/game_labels.kind_for), so the
+	# "% of valid starts" denominator every figure on it was quoted against no
+	# longer exists. An unregistered route 404s, which is the honest answer to a
+	# bookmarked link — re-adding it would serve the SPA shell for a page whose
+	# data source is gone.
 	app.router.add_get('/strategies', handle_index)
-	app.router.add_get('/luck', handle_index)
 	app.router.add_get('/match-stats', handle_index)
 	app.router.add_get('/leaderboard', handle_index)
 	app.router.add_get('/civ-stats', handle_index)

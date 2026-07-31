@@ -477,40 +477,6 @@ td.wr-mid { color: #b9bbbe; }
 td.wr-low { color: #e06060; }
 td.games { color: #b9bbbe; }
 
-.col-group-label {
-  text-align: center; background: #1a1a1a; color: #b9bbbe;
-  font-size: 11px; letter-spacing: 0.08em; font-weight: 600;
-  padding: 0.5rem; border-bottom: 1px solid #484c54;
-}
-
-.anomalies { margin-top: 2rem; }
-.anomalies h2 {
-  font-family: 'Oswald', sans-serif; font-weight: 300;
-  font-size: 1.2rem; color: white; letter-spacing: 1px; margin-bottom: 0.3rem;
-}
-
-.anomaly-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 0.75rem; margin-top: 0.75rem;
-}
-
-.anomaly-card { background: #2f3136; border: 1px solid #484c54; border-radius: 6px; padding: 1.1rem; }
-.anomaly-card .civ-name { font-weight: 700; font-size: 1rem; color: white; margin-bottom: 0.3rem; }
-.anomaly-card .anomaly-desc { font-size: 0.9rem; color: #b9bbbe; line-height: 1.6; }
-.anomaly-card .anomaly-desc .wr-val { font-weight: 600; }
-.anomaly-card .anomaly-desc .wr-val.high { color: #57d98b; }
-.anomaly-card .anomaly-desc .wr-val.low { color: #e06060; }
-
-.anomaly-card .tag {
-  display: inline-block; font-size: 0.7rem; font-weight: 600;
-  letter-spacing: 0.06em; text-transform: uppercase;
-  padding: 0.15rem 0.5rem; border-radius: 3px; margin-bottom: 0.4rem;
-}
-.tag.better-below { background: rgba(87,217,139,0.1); color: #57d98b; border: 1px solid rgba(87,217,139,0.25); }
-.tag.better-above { background: rgba(224,96,96,0.1); color: #e06060; border: 1px solid rgba(224,96,96,0.25); }
-
-.no-anomalies { text-align: center; padding: 2rem; color: #b9bbbe; font-style: italic; }
-
 footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a; }
 
 /* ─── Match Stats ─── */
@@ -928,10 +894,6 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   table.stats-table { min-width: 500px; font-size: 12px; }
   table.stats-table th { font-size: 10px; padding: 0.5rem 0.4rem; }
   table.stats-table td { padding: 0.4rem 0.4rem; }
-  .col-group-label { font-size: 9px; padding: 0.3rem; }
-
-  /* Anomaly cards */
-  .anomaly-grid { grid-template-columns: 1fr; }
   .card-grid { grid-template-columns: 1fr; padding: 1rem; }
 
   /* Breadcrumb */
@@ -994,9 +956,6 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
 .delta-bar-cell { min-width: 130px; }
 .delta-bar { position: relative; height: 9px; border-radius: 999px; background: rgba(255,255,255,0.07); overflow: hidden; }
 .delta-bar .winbar-mid { top: -2px; bottom: -2px; }
-table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
-.luck-factor-name { font-weight: 700; }
-.luck-factor-cond { color: #8a8d93; font-size: 11.5px; font-weight: 400; margin-top: 2px; line-height: 1.4; }
 @media (max-width: 640px) {
   .commentary-grid { grid-template-columns: 1fr; }
   .strat-card-grid { grid-template-columns: 1fr; }
@@ -1012,10 +971,10 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
    context that would trap the sticky thead. */
 .match-panel h2 { position: static; }
 .table-scroll { overflow-x: auto; }
-#stats-table td:first-child, #header-row th:first-child, #group-row th:first-child {
+#stats-table td:first-child, #header-row th:first-child {
   position: sticky; left: 0; z-index: 5; background: #2f3136;
 }
-#header-row th:first-child, #group-row th:first-child { z-index: 11; background: #202225; }
+#header-row th:first-child { z-index: 11; background: #202225; }
 #stats-table tr:hover td:first-child { background: #36393f; }
 .civ-filter-row { margin-bottom: 12px; }
 .wr-cell-bar { min-width: 64px; }
@@ -1026,17 +985,6 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
 .wr-cell-bar .wr-mid { color: #b9bbbe; }
 .wr-cell-bar .wr-low { color: #ff6d73; }
 .rank-medal { font-size: 0.95rem; }
-.persona-banner {
-  display: flex; align-items: center; gap: 1.1rem; flex-wrap: wrap;
-  border: 1px solid rgba(143,180,255,0.28); border-radius: 8px;
-  background: linear-gradient(120deg, rgba(91,140,238,0.16), rgba(217,144,38,0.10));
-  padding: 1rem 1.2rem; margin-bottom: 0.9rem;
-}
-.persona-title { font-family: 'Oswald', sans-serif; color: white; font-size: 1.5rem; letter-spacing: 0.5px; line-height: 1.2; }
-.persona-epithet { color: #ffd9a8; font-size: 0.85rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 0.15rem; }
-.persona-tagline { color: #c9d4ea; font-size: 0.92rem; flex: 1 1 260px; line-height: 1.5; }
-.persona-evidence { display: flex; flex-wrap: wrap; gap: 0.3rem; flex-basis: 100%; }
-.persona-evidence .roster-tag { font-size: 0.7rem; }
 .relation-sub { color: #85868a; font-size: 0.78rem; font-family: 'Outfit', sans-serif; letter-spacing: 0; text-transform: none; font-weight: 400; margin-left: 0.5rem; }
 </style>
 </head>
@@ -1063,9 +1011,6 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
   </div>
   <div class="tb-link" onclick="showPage('strategies')" style="cursor:pointer;">
     <span>Strategies</span>
-  </div>
-  <div class="tb-link" onclick="showPage('luck')" style="cursor:pointer;">
-    <span>Luck</span>
   </div>
   <div class="tb-link" onclick="showPage('dashboard')" style="cursor:pointer;">
     <span>PUBobot2 Config</span>
@@ -1129,29 +1074,12 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
     </div>
   </div>
 
-  <!-- Luck Page (spawn / map factors) -->
-  <div class="page" id="page-luck">
-    <div class="stats-container">
-      <header>
-        <h1>Luck Insights</h1>
-        <div class="subtitle">Map-given spawn factors &mdash; settle position, nearby resources &amp; villager spread vs win rate (baseline 50%)</div>
-      </header>
-      <div class="strat-controls">
-        <div class="strat-toggle">
-          <button id="luck-tab-total" class="strat-tab selected" onclick="setLuckView('total')">By factor</button>
-          <button id="luck-tab-player" class="strat-tab" onclick="setLuckView('player')">By player</button>
-        </div>
-        <select id="luck-player-select" style="display:none" onchange="onLuckPlayer(this.value)"></select>
-      </div>
-      <div class="table-wrap">
-        <table class="stats-table" id="luck-table">
-          <thead><tr id="luck-header"></tr></thead>
-          <tbody id="luck-body"><tr><td class="loading">Loading luck factors&hellip;</td></tr></tbody>
-        </table>
-      </div>
-      <footer>Facts only &mdash; Nomad 4v4 player-games; 50% baseline by construction.</footer>
-    </div>
-  </div>
+  <!-- The Luck page lived here. It was removed rather than repointed: every
+       figure on it was a share of, or a delta against, the luck_baseline
+       classification, which fires for every player in every valid Nomad game
+       and is deliberately stored in no table (bot/derived/game_labels.py's
+       kind_for). Without that denominator there is no honest version of the
+       page, and /api/strategies no longer returns luck rows at all. -->
 
   <!-- Leaderboard Page -->
   <div class="page active" id="page-leaderboard">
@@ -1225,7 +1153,6 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
       </div>
       <div id="player-detail">
         <div id="player-profile-overview">
-          <div id="player-persona-banner" style="display:none"></div>
           <div class="metric-grid" id="player-detail-summary"></div>
           <section class="match-panel detail-section" id="player-tags-panel"></section>
           <div class="trend-panel" id="player-elo-trend"></div>
@@ -1322,32 +1249,22 @@ table.stats-table td.luck-factor-cell { white-space: normal; max-width: 260px; }
         <input id="civ-stats-filter" class="filter-control filter-input" type="text"
           placeholder="Filter civilizations&hellip;" oninput="onCivStatsFilter(this.value)">
       </div>
+      <!-- The four elo-bracket column groups (player elo above/below, team avg
+           above/below) and the Anomalies section below them went with the CSV
+           this page used to read. `civ_stats` is a per-community win/loss tally
+           with no elo dimension at all, so those brackets could only be
+           reproduced by inventing them. -->
       <div class="table-wrap">
         <table class="stats-table" id="stats-table">
           <thead>
-            <tr class="col-group-row" id="group-row">
-              <!-- First cell pins with the civ column; "Overall" spans only the
-                   scrolling games/win columns so group labels stay aligned. -->
-              <th class="col-group-label"></th>
-              <th class="col-group-label" colspan="2">Overall</th>
-              <th class="col-group-label" colspan="2">Player Elo &#8805; 1000</th>
-              <th class="col-group-label" colspan="2">Player Elo &lt; 1000</th>
-              <th class="col-group-label" colspan="2">Team Avg &#8805; 1100</th>
-              <th class="col-group-label" colspan="2">Team Avg &lt; 1100</th>
-            </tr>
             <tr id="header-row"></tr>
           </thead>
           <tbody id="table-body">
-            <tr><td colspan="11" class="loading">Loading statistics...</td></tr>
+            <tr><td colspan="5" class="loading">Loading statistics...</td></tr>
           </tbody>
         </table>
       </div>
-      <div class="anomalies" id="anomalies-section" style="display:none;">
-        <h2>Anomalies</h2>
-        <div class="subtitle" style="font-size:0.85rem;margin-bottom:0.5rem;">Civs with significant winrate gaps across elo brackets (&ge;15%, min 20 games each)</div>
-        <div id="anomaly-grid" class="anomaly-grid"></div>
-      </div>
-      <footer>Data sourced from PUB bot matches &amp; AoE2 Companion API</footer>
+      <footer>Recorded civ picks from this community's pickup matches.</footer>
     </div>
   </div>
 
@@ -1372,18 +1289,11 @@ var currentPage = 'leaderboard';
 var COLUMNS = [
   { key: 'civ', label: 'Civilization', type: 'string' },
   { key: 'games', label: 'Games', type: 'number' },
+  { key: 'wins', label: 'Won', type: 'number' },
+  { key: 'losses', label: 'Lost', type: 'number' },
   { key: 'winrate', label: 'Win %', type: 'number' },
-  { key: 'games_player_above', label: 'Games', type: 'number' },
-  { key: 'winrate_player_above', label: 'Win %', type: 'number' },
-  { key: 'games_player_below', label: 'Games', type: 'number' },
-  { key: 'winrate_player_below', label: 'Win %', type: 'number' },
-  { key: 'games_team_above', label: 'Games', type: 'number' },
-  { key: 'winrate_team_above', label: 'Win %', type: 'number' },
-  { key: 'games_team_below', label: 'Games', type: 'number' },
-  { key: 'winrate_team_below', label: 'Win %', type: 'number' },
 ];
 
-var MIN_ANOMALY_GAMES = 20, ANOMALY_GAP = 0.15;
 var civData = [], sortCol = 'civ', sortAsc = true;
 
 // Match stats
@@ -1456,7 +1366,6 @@ function routePath(page) {
   if (page === 'player-profile' && playerProfileUserId) return '/player/' + encodeURIComponent(playerProfileUserId);
   return {
     strategies: '/strategies',
-    luck: '/luck',
     'match-stats': '/match-stats',
     leaderboard: '/leaderboard',
     'civ-stats': '/civ-stats',
@@ -1478,9 +1387,6 @@ function routeQuery(page) {
   } else if (page === 'player-profile') {
     q.set('period', playerProfilePeriod || 'all');
     q.set('view', playerProfileView || 'overview');
-  } else if (page === 'luck') {
-    q.set('view', luckView || 'total');
-    if (luckPlayer) q.set('player', luckPlayer);
   } else if (page === 'strategies') {
     q.set('view', stratView || 'total');
     if (stratPlayer) q.set('player', stratPlayer);
@@ -1536,10 +1442,6 @@ function applyRouteFromLocation() {
       var id = decodeURIComponent(path.split('/').pop() || '');
       playerProfileView = validPlayerProfileView(q.get('view'));
       loadPlayerDetail(id, validPeriod(q.get('period')), { route: false });
-    } else if (path === '/luck') {
-      luckView = q.get('view') === 'player' ? 'player' : 'total';
-      luckPlayer = q.get('player') || luckPlayer;
-      showPage('luck', { route: false });
     } else if (path === '/civ-stats') {
       showPage('civ-stats', { route: false });
     } else if (path === '/dashboard') {
@@ -1567,7 +1469,6 @@ function showPage(page, opts) {
   if (page === 'strategies') initStrategies();
   if (page === 'civ-stats') initCivStats();
   if (page === 'dashboard') loadDashboard();
-  if (page === 'luck') initLuck();
   if (page === 'match-stats') initMatchStats();
   if (page === 'leaderboard') initLeaderboard();
   // Show/hide guild nav + menu for dashboard only
@@ -1632,7 +1533,6 @@ function renderAuth() {
 /* ─── Civ Stats ─── */
 function wrClass(v) { return v >= 0.55 ? 'wr wr-high' : v >= 0.45 ? 'wr wr-mid' : 'wr wr-low'; }
 function fmtWr(v) { return (v*100).toFixed(1)+'%'; }
-function wrSpan(v) { var c = v >= 0.55 ? 'high' : v < 0.45 ? 'low' : ''; return '<span class="wr-val '+c+'">'+fmtWr(v)+'</span>'; }
 
 function buildHeaders() {
   var row = document.getElementById('header-row'); row.innerHTML = '';
@@ -1681,54 +1581,25 @@ function renderCivTable() {
       if (col.key.startsWith('winrate')) return '<td class="'+wrClass(v)+'">'+fmtWr(v)+'</td>';
       return '<td class="games">'+v+'</td>';
     }).join('')+'</tr>';
-  }).join('') || '<tr><td colspan="11" class="loading">No civilizations match "'+esc(civStatsFilter)+'".</td></tr>';
-}
-
-function findAnomalies() {
-  var a = [];
-  civData.forEach(function(r) {
-    if (r.games_player_above >= MIN_ANOMALY_GAMES && r.games_player_below >= MIN_ANOMALY_GAMES) {
-      var g = r.winrate_player_above - r.winrate_player_below;
-      if (Math.abs(g) >= ANOMALY_GAP) a.push({civ:r.civ,type:'player_elo',betterBelow:g<0,above:r.winrate_player_above,below:r.winrate_player_below,gamesAbove:r.games_player_above,gamesBelow:r.games_player_below,gap:Math.abs(g)});
-    }
-    if (r.games_team_above >= MIN_ANOMALY_GAMES && r.games_team_below >= MIN_ANOMALY_GAMES) {
-      var g = r.winrate_team_above - r.winrate_team_below;
-      if (Math.abs(g) >= ANOMALY_GAP) a.push({civ:r.civ,type:'team_elo',betterBelow:g<0,above:r.winrate_team_above,below:r.winrate_team_below,gamesAbove:r.games_team_above,gamesBelow:r.games_team_below,gap:Math.abs(g)});
-    }
-  });
-  a.sort(function(x,y) { return y.gap-x.gap; }); return a;
-}
-
-function renderAnomalies() {
-  var anoms = findAnomalies();
-  var sec = document.getElementById('anomalies-section');
-  var grid = document.getElementById('anomaly-grid');
-  if (!anoms.length) { sec.style.display='block'; grid.innerHTML='<div class="no-anomalies">No significant anomalies.</div>'; return; }
-  sec.style.display='block';
-  grid.innerHTML = anoms.map(function(a) {
-    var tc=a.betterBelow?'better-below':'better-above';
-    var tt=a.betterBelow?'Stronger at lower ':'Stronger at higher '; tt += a.type==='player_elo'?'player elo':'team avg elo';
-    var lb=a.type==='player_elo'?'Player Elo':'Team Avg';
-    var ds=a.betterBelow ? lb+' below: '+wrSpan(a.below)+' ('+a.gamesBelow+')<br>'+lb+' above: '+wrSpan(a.above)+' ('+a.gamesAbove+')'
-      : lb+' above: '+wrSpan(a.above)+' ('+a.gamesAbove+')<br>'+lb+' below: '+wrSpan(a.below)+' ('+a.gamesBelow+')';
-    return '<div class="anomaly-card"><div class="tag '+tc+'">'+tt+'</div><div class="civ-name">'+esc(a.civ)+'</div><div class="anomaly-desc">'+ds+'</div></div>';
-  }).join('');
+  }).join('') || '<tr><td colspan="5" class="loading">No civilizations match "'+esc(civStatsFilter)+'".</td></tr>';
 }
 
 async function initCivStats() {
   try {
     var resp = await fetch('/api/civ-stats');
     if (!resp.ok) throw new Error('HTTP '+resp.status);
-    var res = await resp.json(); civData = res.civs;
-    var gr = document.getElementById('group-row'); var ths = gr.querySelectorAll('th');
-    // ths[0] pins with the civ column, ths[1] is "Overall" \u2014 thresholds start at [2].
-    ths[2].textContent='Player Elo \u2265 '+res.player_threshold;
-    ths[3].textContent='Player Elo < '+res.player_threshold;
-    ths[4].textContent='Team Avg \u2265 '+res.team_threshold;
-    ths[5].textContent='Team Avg < '+res.team_threshold;
-    buildHeaders(); renderCivTable(); renderAnomalies();
+    var res = await resp.json(); civData = res.civs || [];
+    buildHeaders();
+    if (!civData.length) {
+      // An empty table is a real state (no community resolved, or no civ has
+      // min_games picks yet) and says so, rather than rendering as a load error.
+      document.getElementById('table-body').innerHTML =
+        '<tr><td colspan="5" class="loading">No civilization has '+esc(res.min_games)+'+ recorded picks yet.</td></tr>';
+      return;
+    }
+    renderCivTable();
   } catch(e) {
-    document.getElementById('table-body').innerHTML='<tr><td colspan="11" class="error">Failed to load: '+esc(e.message)+'</td></tr>';
+    document.getElementById('table-body').innerHTML='<tr><td colspan="5" class="error">Failed to load: '+esc(e.message)+'</td></tr>';
   }
 }
 
@@ -1787,12 +1658,6 @@ function profileTagItems(profile, strategyTags) {
   });
   return out;
 }
-function profileTagLabels(profile, strategyTags) {
-  var out = profileTagItems(profile, strategyTags).map(function (t) {
-    return t.label + (t.count ? ' ' + t.count + 'x' : '');
-  });
-  return out.length ? out.join(', ') : 'No style tags';
-}
 function traitChips(profile, strategyTags) {
   var rows = profileTagItems(profile, strategyTags);
   if (!rows.length) return '<span class="trait-chip">No style tags</span>';
@@ -1802,14 +1667,6 @@ function traitChips(profile, strategyTags) {
       + (t.count ? '<span class="trait-count">' + esc(t.count + 'x') + '</span>' : '')
       + '</span>';
   }).join('') + '</div>';
-}
-function styleTags(profile) {
-  return profileTagLabels(profile, []);
-}
-function scoutTraits(profile) {
-  var report = profile && profile.scout_report ? profile.scout_report : {};
-  var traits = report.traits || [];
-  return traits.length ? traits.map(tagLabel).join(', ') : styleTags(profile);
 }
 function relationSummary(r, empty) {
   return r ? (r.games + ' matches, ' + fmtPct(r.winrate) + ' win rate') : empty;
@@ -2216,8 +2073,7 @@ function renderMatchSummary() {
       card('Matches played', s.games || 0, (s.wins || 0) + ' won, ' + (s.losses || 0) + ' lost, ' + (s.draws || 0) + ' drawn'),
       card('Win rate', fmtPct(s.winrate), 'decided ranked games'),
       card('Elo gain/loss', fmtGain(s.rating_delta), fmtElo(s.rating_start) + ' to ' + fmtElo(s.rating_end)),
-      card('Persona', (p.persona && p.persona.key !== 'unscouted' && personaLabel(p.persona)) || style.label,
-        (p.persona && p.persona.key !== 'unscouted' && p.persona.tagline) || style.read || p.summary || 'No parsed replay impact data'),
+      scoutingCard(s.scouting_report),
       htmlCard('Style traits', traitChips(p, s.strategy_tags), 'impact + strategy tags'),
       '<div class="metric-card"><div class="metric-label">Recent form</div><div class="form-run">'
         + ((s.streak || []).length ? s.streak.map(function (x) { return '<span class="form-pill ' + x + '">' + x + '</span>'; }).join('') : '<span class="metric-sub">No ranked form</span>')
@@ -2796,13 +2652,8 @@ async function loadPlayerDetail(userId, period, opts) {
   document.getElementById('player-detail-summary').innerHTML = '<div class="loading">Loading player stats...</div>';
   document.getElementById('player-elo-trend').innerHTML = '<div class="trend-title">Elo over time</div><div class="loading">Loading Elo history...</div>';
   try {
-    if (!stratData.length) {
-      try {
-        await loadStrategyData();
-      } catch (e) {
-        console.warn('Luck profile data unavailable', e);
-      }
-    }
+    /* The /api/strategies preload that used to sit here fed the luck profile
+       this page no longer renders. The player payload is self-contained. */
     var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(playerProfilePeriod) + '&player_id=' + encodeURIComponent(userId));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var d = await resp.json();
@@ -2815,23 +2666,61 @@ async function loadPlayerDetail(userId, period, opts) {
   }
 }
 
-function personaBanner(p, nick) {
-  if (!p || !p.name) return '';
-  var chips = (p.evidence || []).map(function (e) {
-    return '<span class="roster-tag">' + esc(e) + '</span>';
-  }).join('');
-  return '<div class="persona-banner">'
-    + '<div><div class="persona-title">' + esc(p.name) + '</div>'
-    + (p.epithet ? '<div class="persona-epithet">' + esc(p.epithet) + '</div>' : '')
-    + '</div>'
-    + '<div class="persona-tagline">' + esc(p.tagline || '') + '</div>'
-    + (chips ? '<div class="persona-evidence">' + chips + '</div>' : '')
-    + '</div>';
+/* ─── Scouting report (player_rollups) ───
+   The generated persona banner that used to sit here is gone. It named a
+   player ("The Siege Enjoyer") and narrated a temperament off four averages,
+   carrying no sample size at all — /rank stopped printing it in stage 5a for
+   exactly that reason, and the stored copy the web overlaid on top had been
+   frozen since its writer was deleted. What replaces it is measured: every
+   line below prints the sample it rests on, and a player with no rollup row
+   gets the pending sentence and nothing else. */
+
+function scoutingLines(rep) {
+  /* The report as display lines, each already carrying its own denominator.
+     Returns [] for a player with no measured block, and NEVER substitutes a
+     zero for a missing one — an absent block means nobody measured it. */
+  if (!rep || rep.pending) return [];
+  var lines = [];
+  var m = rep.medals;
+  if (m) lines.push('Medals: ' + m.military_pct + '% military · ' + m.villager_pct + '% villager, over '
+    + m.games_ranked + ' ranked games');
+  var a = rep.apm;
+  if (a) {
+    /* median_peak/games_peak are absent, not null, when no peak was ever
+       captured — so this renders the median alone rather than an em-dash or a
+       0 standing in for a measurement nobody took. */
+    lines.push(a.median_peak != null
+      ? 'eAPM: ' + a.median_avg + ' median over ' + a.games_avg + ' games · peak ' + a.median_peak
+        + ' over ' + a.games_peak
+      : 'eAPM: ' + a.median_avg + ' median over ' + a.games_avg + ' games');
+  }
+  [['strategies', 'Top strategy'], ['spawns', 'Top spawn'], ['units', 'Top unit']].forEach(function (pair) {
+    var rows = rep[pair[0]] || [];
+    /* Ranked (games desc) by compute_rollup, and already floored: a split below
+       the sample floor is absent from the blob entirely rather than flagged. */
+    if (rows.length) lines.push(pair[1] + ': ' + rows[0].label + ' · ' + rows[0].wins + 'W-' + rows[0].losses + 'L');
+  });
+  return lines;
 }
 
-function personaLabel(p) {
-  if (!p || !p.name) return '';
-  return p.epithet ? p.name + ' · ' + p.epithet : p.name;
+function scoutingCard(rep) {
+  if (!rep) return '';  /* no community resolved — nothing was measured here */
+  if (rep.pending) return htmlCard('Scouting report', '<div class="metric-sub">' + esc(rep.pending) + '</div>', 'link an AoE2 profile');
+  var lines = scoutingLines(rep);
+  if (!lines.length) return htmlCard('Scouting report', '<div class="metric-sub">Nothing above the sample floor yet</div>', 'measured facts only');
+  return htmlCard('Scouting report', lines.map(function (l) {
+    return '<div class="metric-sub">' + esc(l) + '</div>';
+  }).join(''), 'measured facts, with their samples');
+}
+
+function scoutingSpawnText(rep) {
+  if (!rep) return 'No community stats configured.';
+  if (rep.pending) return rep.pending;
+  var rows = rep.spawns || [];
+  if (!rows.length) return 'No spawn split above the sample floor yet.';
+  return rows.slice(0, 3).map(function (r) {
+    return r.label + ' ' + r.wins + 'W-' + r.losses + 'L';
+  }).join('; ') + '.';
 }
 
 function relationQuadrant(rows, direction, excludeRows) {
@@ -2866,15 +2755,8 @@ function renderPlayerDetail(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
   var style = scoredPlaystyle(d);
-  var persona = p.persona || null;
   var subtitle = document.getElementById('player-profile-subtitle');
-  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + (personaLabel(persona) || style.label);
-  var banner = document.getElementById('player-persona-banner');
-  if (banner) {
-    var bannerHtml = persona && persona.key !== 'unscouted' ? personaBanner(persona, s.nick) : '';
-    banner.innerHTML = bannerHtml;
-    banner.style.display = bannerHtml ? '' : 'none';
-  }
+  if (subtitle) subtitle.textContent = (s.nick || 'Player') + ' · ' + periodLabel(playerProfilePeriod) + ' · ' + style.label;
   setPlayerProfileView(playerProfileView);
   document.getElementById('player-profile-commentary').innerHTML = playerProfileCommentary(d);
   document.getElementById('player-detail-summary').innerHTML = [
@@ -2886,7 +2768,7 @@ function renderPlayerDetail(d) {
     playerInfoCard('Cursed duo', s.worst_ally, 'No ally sample', 'worst win rate together'),
     playerInfoCard('Nemesis', s.worst_enemy, 'No enemy sample', 'beats you the most'),
     playerInfoCard('Free Elo', s.easiest_enemy, 'No enemy sample', 'you beat them the most'),
-    card('Generated scout report', style.label, style.read || p.summary || 'No parsed replay impact data'),
+    scoutingCard(s.scouting_report),
     htmlCard('Style traits', traitChips(p, s.strategy_tags), 'impact + strategy tags'),
     card('Avg impact', fmtImpactAvg(p.avg_impact), (p.matches || 0) + ' parsed matches'),
     card('Impact mix', 'Army ' + fmtImpactAvg(p.avg_army) + ' / Eco ' + fmtImpactAvg(p.avg_eco),
@@ -3051,74 +2933,13 @@ function impactStyleLabel(style, leader) {
   return 'Map-adaptive team-game flex';
 }
 
-function luckFactorText(key) {
-  var map = {
-    spawn_isolated: 'free-boom isolated starts',
-    spawn_near_enemy: 'near-enemy pressure spawns',
-    spawn_near_ally: 'close ally / shared-space spawns',
-    spawn_near_gold: 'safe early gold access',
-    spawn_gold_poor: 'gold-starved openings',
-    spawn_near_stone: 'stone-access starts',
-    spawn_stone_poor: 'stone-poor map states',
-    spawn_near_food: 'food-safe openings',
-    spawn_food_poor: 'food-poor openings',
-    tight_villagers: 'tight villager spawns',
-    scattered_villagers: 'scattered villager starts'
-  };
-  return map[key] || String(key || '').replace(/_/g, ' ');
-}
-
-function luckProfileForPlayer(name) {
-  if (!name || !stratData.length) return null;
-  var base = luckBaseline();
-  var norm = String(name).toLowerCase();
-  var pb = base ? (base.roster || []).find(function (x) { return String(x.player || '').toLowerCase() === norm; }) : null;
-  var total = pb ? Number(pb.games || 0) : 0;
-  if (!total) return null;
-  var rows = luckRows().map(function (s) {
-    var p = (s.roster || []).find(function (x) { return String(x.player || '').toLowerCase() === norm; });
-    var games = p ? Number(p.games || 0) : 0;
-    var winrate = p ? p.winrate : null;
-    return {
-      key: s.key,
-      title: s.title,
-      games: games,
-      pct: Math.round(100 * games / total),
-      winrate: winrate,
-      delta: winrate == null ? null : winrate - 50
-    };
-  }).filter(function (r) { return r.games > 0; });
-  var meaningful = rows.filter(function (r) { return r.games >= Math.max(3, Math.round(total * 0.08)); });
-  var exposure = meaningful.slice().sort(function (a, b) { return b.pct - a.pct || b.games - a.games; });
-  var best = meaningful.filter(function (r) { return r.delta !== null; }).sort(function (a, b) { return b.delta - a.delta || b.games - a.games; })[0] || null;
-  var worst = meaningful.filter(function (r) { return r.delta !== null; }).sort(function (a, b) { return a.delta - b.delta || b.games - a.games; })[0] || null;
-  return { total: total, rows: rows, exposure: exposure, best: best, worst: worst };
-}
-
-function luckSummary(profile) {
-  if (!profile) return 'Luck/spawn data is not available for this player yet.';
-  var parts = [];
-  if (profile.exposure[0]) parts.push('Most common map state: ' + luckFactorText(profile.exposure[0].key) + ' (' + profile.exposure[0].pct + '% of valid starts).');
-  if (profile.best) parts.push('Best spawn adaptation: ' + luckFactorText(profile.best.key) + ' at ' + fmtPct(profile.best.winrate) + ' (' + (profile.best.delta > 0 ? '+' : '') + profile.best.delta + ' vs 50).');
-  if (profile.worst && profile.worst !== profile.best) parts.push('Hardest spawn state: ' + luckFactorText(profile.worst.key) + ' at ' + fmtPct(profile.worst.winrate) + ' (' + (profile.worst.delta > 0 ? '+' : '') + profile.worst.delta + ' vs 50).');
-  return parts.join(' ');
-}
-
-function spawnRead(profile) {
-  if (!profile) return 'Spawn sample not parsed yet.';
-  var parts = [];
-  if (profile.exposure[0]) parts.push('usual ' + luckFactorText(profile.exposure[0].key) + ' ' + profile.exposure[0].pct + '%');
-  if (profile.best) parts.push('best ' + luckFactorText(profile.best.key) + ' ' + fmtPct(profile.best.winrate));
-  if (profile.worst && profile.worst !== profile.best) parts.push('watch ' + luckFactorText(profile.worst.key) + ' ' + fmtPct(profile.worst.winrate));
-  return parts.length ? parts.join('; ') + '.' : 'Spawn sample too thin.';
-}
-
-function luckCardText(profile, key, empty) {
-  if (!profile) return empty || 'No spawn sample yet.';
-  var row = profile.rows.find(function (r) { return r.key === key; });
-  if (!row) return empty || 'No sample yet.';
-  return row.games + ' games, ' + row.pct + '% of valid starts, ' + fmtPct(row.winrate) + ' win rate';
-}
+/* The spawn/luck reads that used to live here (luckProfileForPlayer,
+   luckSummary, spawnRead, luckCardText, luckFactorText) went with the Luck
+   page. Every one of them divided a player's spawn games by their
+   luck_baseline games, and that baseline is stored in no table by design —
+   there is no denominator left to compute a "% of valid starts" against. The
+   player page's measured spawn line now comes from the scouting report block,
+   which carries its own sample counts. */
 
 function impactNum(v) {
   return v === null || v === undefined || v === '' ? null : Number(v);
@@ -3194,7 +3015,6 @@ function scoredPlaystyle(d) {
   var p = s.impact_profile || {};
   var strategy = s.strategy_profile || {};
   var strategyTags = s.strategy_tags || [];
-  var luck = luckProfileForPlayer(s.nick);
   var leader = impactLeader(p);
   var army = impactNum(p.avg_army) || 0;
   var eco = impactNum(p.avg_eco) || 0;
@@ -3225,10 +3045,6 @@ function scoredPlaystyle(d) {
   var archerLean = /archer|skirm|crossbow|chu ko nu|hand cannoneer/.test(topCat + ' ' + topUnit);
   var infantryLean = /infantry|spear|pikeman|halberd|militia|eagle|champion/.test(topCat + ' ' + topUnit);
   var siegeLean = /siege|mangonel|ram|scorpion|trebuchet|bombard/.test(topCat + ' ' + topUnit);
-  var poorSpawnBest = luck && luck.best && luck.best.key && luck.best.key.indexOf('_poor') >= 0 && luck.best.delta >= 6;
-  var isolatedBest = luck && luck.best && luck.best.key === 'spawn_isolated' && luck.best.delta >= 4;
-  var nearEnemyBest = luck && luck.best && luck.best.key === 'spawn_near_enemy' && luck.best.delta >= 3;
-  var nearEnemyFrequent = luck && luck.exposure[0] && luck.exposure[0].key === 'spawn_near_enemy';
   var candidates = [];
   var boomStrategy = hasStrategyKey(strategyTags, ['boom_to_imp']);
   var scoutKnightStrategy = hasStrategyKey(strategyTags, ['scout_rush', 'knight_rush', 'late_knight', 'camel_rush', 'late_camel']);
@@ -3256,25 +3072,23 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Greedy boom carry',
-    eco * 0.75 + Math.min(28, roleGreedyBoom.count * 0.22) + boomTagRate * 0.25 + (isolatedBest ? 8 : 0) + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.45,
+    eco * 0.75 + Math.min(28, roleGreedyBoom.count * 0.22) + boomTagRate * 0.25 + (impMin && impMin <= 34 ? 4 : 0) - preCastleMil * 0.45,
     'Greedy-boom read: wants space, adds TCs/eco techs, then converts villager lead into late Castle or Imperial army mass.',
     [
       roleGreedyBoom.count ? roleGreedyBoom.count + ' greedy-boom games' : '',
       quietBoomRate ? quietBoomRate + '% quiet starts' : '',
       eco ? 'eco score ' + fmtImpactAvg(eco) : '',
       strategy.avg_imperial_min ? 'Imp around ' + minutesText(strategy.avg_imperial_min) : '',
-      isolatedBest ? 'best on isolated/free-boom starts' : '',
       boomStrategy ? 'strategy tag: ' + strategyTagEvidence(strategyTags) : ''
     ]);
 
   addStyleCandidate(candidates, 'Flank pressure engine',
-    army + armyPressureRate * 0.35 + Math.min(24, rolePressure.count * 0.15) + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) + (nearEnemyBest || nearEnemyFrequent ? 6 : 0) - quietBoomRate * 0.2,
+    army + armyPressureRate * 0.35 + Math.min(24, rolePressure.count * 0.15) + (maaStrategy ? 10 : 0) + (preCastleMil >= 8 ? 10 : 0) - quietBoomRate * 0.2,
     'Pressure-flank read: makes army before comfort boom, contests map, raids, and buys team economy time.',
     [
       rolePressure.count ? rolePressure.count + ' opening-pressure games' : '',
       armyPressureTags ? armyPressureTags + ' impact pressure tags (' + Math.round(armyPressureRate) + '% rate)' : '',
       preCastleMil ? preCastleMil + ' military before Castle' : '',
-      nearEnemyBest ? 'wins near-enemy spawns' : '',
       army ? 'army score ' + fmtImpactAvg(army) : '',
       maaStrategy ? 'strategy tag: MAA opening' : ''
     ]);
@@ -3289,12 +3103,11 @@ function scoredPlaystyle(d) {
     ]);
 
   addStyleCandidate(candidates, 'Reboom anchor',
-    recovery + recoveryTagRate * 0.35 + (poorSpawnBest ? 5 : 0) + (tagStat(p, 'Low-eco pressure').rate ? 2 : 0),
+    recovery + recoveryTagRate * 0.35 + (tagStat(p, 'Low-eco pressure').rate ? 2 : 0),
     'Anchor read: can take messy starts, reboom after damage, and keep a side alive until team stabilizes.',
     [
       recoveryTagCount ? recoveryTagCount + ' reboom tags (' + Math.round(recoveryTagRate) + '% rate)' : '',
-      recovery ? 'recovery score ' + fmtImpactAvg(recovery) : '',
-      poorSpawnBest ? 'adapts to poor-resource starts' : ''
+      recovery ? 'recovery score ' + fmtImpactAvg(recovery) : ''
     ]);
 
   addStyleCandidate(candidates, 'Cavalry map-control pocket',
@@ -3356,9 +3169,6 @@ function scoredPlaystyle(d) {
     read: styleRead(p.style),
     reasons: [strategy.games ? strategySignalText(strategy) : 'needs more parsed replay data']
   };
-  if (best.label === 'Map-adaptive team-game flex' && luck && luck.best && luck.best.delta >= 6) {
-    best.reasons.push('spawn edge: ' + luckFactorText(luck.best.key) + ' at ' + fmtPct(luck.best.winrate));
-  }
   return best;
 }
 
@@ -3526,10 +3336,9 @@ function storedPlayerCommentary(d) {
     cards.push(html);
   }
   var s = d.summary || {};
-  var luck = luckProfileForPlayer(s.nick);
   [
     ['Recent form', c.recent_form || c.recentForm],
-    ['Spawn read', c.spawn_read || c.spawnRead || spawnRead(luck)],
+    ['Spawn read', c.spawn_read || c.spawnRead || scoutingSpawnText(s.scouting_report)],
     ['Game plan', c.game_plan || c.gamePlan],
     ['Strengths', c.strengths],
     ['Watchouts', c.watchouts || c.watchout],
@@ -3629,7 +3438,6 @@ function techText(rows, empty) {
 function playerProfileDescription(d) {
   var s = d.summary || {};
   var p = s.impact_profile || {};
-  var report = p.scout_report || {};
   var strategy = s.strategy_profile || {};
   var strategyTags = s.strategy_tags || [];
   var name = s.nick || 'This player';
@@ -3639,20 +3447,14 @@ function playerProfileDescription(d) {
   var dur = bestRow(durRows, 'winrate');
   var tags = (p.top_tags || []).slice(0, 3).map(function (t) { return t.tag; });
   var leader = impactLeader(p);
-  var luck = luckProfileForPlayer(name);
   var style = scoredPlaystyle(d);
   var headline = style.label;
-  var persona = p.persona || null;
-  var first = persona && persona.key !== 'unscouted'
-    ? name + ' is ' + personaLabel(persona) + '. ' + (persona.tagline || '')
-      + ' (' + periodLabel(playerProfilePeriod) + ' read.)'
-    : name + ' reads as a ' + headline + ' in ' + periodLabel(playerProfilePeriod) + '.';
-  var second = style.read || report.description || p.summary || 'No parsed replay sample is available yet.';
+  var first = name + ' reads as a ' + headline + ' in ' + periodLabel(playerProfilePeriod) + '.';
+  var second = style.read || p.summary || 'No parsed replay sample is available yet.';
   if (style.reasons && style.reasons.length) second += ' Evidence: ' + style.reasons.slice(0, 3).join('; ') + '.';
   if (tags.length) second += ' Recurring game tags: ' + tags.map(tagLabel).join(', ') + '.';
   if (strategyTags.length) second += ' Classified strategy tags: ' + strategyTagLabels(strategyTags).slice(0, 3).join(', ') + '.';
   if (strategy.games) second += ' Strategy read: ' + strategyProfileText(strategy);
-  var luckText = luckSummary(luck);
   var third = '';
   if (civ) third += name + ' gets best civ results with ' + civ.civ + ' at ' + fmtPct(civ.winrate) + ' across ' + civ.games + ' games. ';
   if (dur) third += 'Best duration window is ' + dur.bucket + ' at ' + fmtPct(dur.winrate) + ' across ' + dur.games + ' games. ';
@@ -3675,16 +3477,14 @@ function playerProfileDescription(d) {
     commentaryCard('Army mix', armyMixText(strategy)),
     commentaryCard('Eco techs', techText(strategy.eco_techs, 'No economy tech timing sample yet.')),
     commentaryCard('Army techs', techText(strategy.army_techs, 'No army tech timing sample yet.')),
-    commentaryCard('Spawn read', luckText),
-    commentaryCard('Free boom', luckCardText(luck, 'spawn_isolated', 'No isolated-start sample yet.')),
-    commentaryCard('Early contact', luckCardText(luck, 'spawn_near_enemy', 'No near-enemy sample yet.')),
+    commentaryCard('Spawn read', scoutingSpawnText(s.scouting_report)),
     commentaryCard('Strength', strength),
     commentaryCard('Watchout', profileWatchout(p, s)),
     commentaryCard('Best setup', setup.join(' + ')),
     commentaryCard('Enemy prep', s.worst_enemy ? 'Plan specifically for ' + (s.worst_enemy.nick || '-') + '; this is lowest head-to-head win rate.' : 'No tough-opponent sample yet.'),
     commentaryCard('Civ plan', civ ? 'Lean into ' + civ.civ + ' or similar tempo profile when draft allows.' : 'No civ edge yet.')
   ].filter(Boolean).join('');
-  return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p><p>' + esc(luckText) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
+  return '<p>' + esc(first) + '</p><p>' + esc(second) + '</p>' + (third ? '<p>' + esc(third) + '</p>' : '')
     + (cards ? '<div class="commentary-grid">' + cards + '</div>' : '');
 }
 
@@ -3828,7 +3628,9 @@ function stratCard(s, maxGames) {
 }
 
 function renderStratTotal() {
-  var rows = stratData.filter(function (s) { return s.category !== 'luck' && stratMatchesSearch(s); }).sort(function (a, b) {
+  /* No category filter: /api/strategies returns strategy rows only now — the
+     kind is applied in SQL, so there is no other category to exclude here. */
+  var rows = stratData.filter(stratMatchesSearch).sort(function (a, b) {
     var va = a[stratSort.col], vb = b[stratSort.col];
     if (typeof va === 'string') return stratSort.asc ? (va || '').localeCompare(vb || '') : (vb || '').localeCompare(va || '');
     va = va == null ? -1 : va; vb = vb == null ? -1 : vb;
@@ -3847,7 +3649,6 @@ function renderStratPlayer() {
   var pctCell = function (g) { return '<td class="games">' + (totGames ? Math.round(100 * g / totGames) + '%' : '-') + '</td>'; };
   var rows = [];
   stratData.forEach(function (s) {
-    if (s.category === 'luck') return;
     var p = (s.roster || []).find(function (x) { return x.player === stratPlayer; });
     if (p) rows.push({ title: s.title, phase: s.phase, games: p.games, wins: p.wins, winrate: p.winrate });
   });
@@ -3865,104 +3666,6 @@ function renderStratPlayer() {
     }
   }
   document.getElementById('strat-body').innerHTML = html || '<tr><td colspan="6" class="loading">No data for this player.</td></tr>';
-}
-
-/* ─── Luck Insights (spawn / map factors) ─── */
-var luckView = 'total', luckPlayer = '';
-
-function luckRows() { return stratData.filter(function (s) { return s.category === 'luck' && s.key !== 'luck_baseline'; }); }
-function luckBaseline() { return stratData.find(function (s) { return s.key === 'luck_baseline'; }); }
-
-async function initLuck() {
-  if (!stratData.length) { try { await initStrategies(); } catch (e) {} }
-  buildLuckPlayerSelect();
-  renderLuck();
-}
-
-function buildLuckPlayerSelect() {
-  var base = luckBaseline();
-  var players = base ? (base.roster || []).slice().sort(function (a, b) { return b.games - a.games; }).map(function (p) { return p.player; }) : [];
-  if (!luckPlayer && players.length) luckPlayer = players[0];
-  document.getElementById('luck-player-select').innerHTML = players.map(function (p) {
-    return '<option value="' + esc(p) + '"' + (p === luckPlayer ? ' selected' : '') + '>' + esc(p) + '</option>';
-  }).join('');
-}
-
-function setLuckView(v) {
-  luckView = v;
-  document.getElementById('luck-tab-total').classList.toggle('selected', v === 'total');
-  document.getElementById('luck-tab-player').classList.toggle('selected', v === 'player');
-  document.getElementById('luck-player-select').style.display = v === 'player' ? '' : 'none';
-  if (currentPage === 'luck') updateRoute('luck', true);
-  renderLuck();
-}
-
-function onLuckPlayer(p) {
-  luckPlayer = p;
-  if (currentPage === 'luck') updateRoute('luck', true);
-  renderLuck();
-}
-
-function deltaCell(wr) {
-  if (wr == null) return '<td>-</td>';
-  var d = wr - 50, cls = d > 0 ? 'wr wr-high' : d < 0 ? 'wr wr-low' : 'wr wr-mid';
-  return '<td class="' + cls + '">' + (d > 0 ? '+' : '') + d + '</td>';
-}
-
-function deltaBarCell(wr, maxAbs) {
-  var scale = maxAbs ? Math.min(10, 45 / maxAbs) : 1;
-  return '<td class="delta-bar-cell">' + winBar(wr, scale) + '</td>';
-}
-
-function maxDelta(rows) {
-  return rows.reduce(function (m, r) {
-    return r.winrate == null ? m : Math.max(m, Math.abs(r.winrate - 50));
-  }, 0);
-}
-
-function luckFactorCell(title, condition) {
-  return '<td class="luck-factor-cell"><div class="luck-factor-name">' + esc(title) + '</div>'
-    + (condition ? '<div class="luck-factor-cond">' + esc(condition) + '</div>' : '') + '</td>';
-}
-
-function renderLuck() {
-  document.getElementById('luck-tab-total').classList.toggle('selected', luckView === 'total');
-  document.getElementById('luck-tab-player').classList.toggle('selected', luckView === 'player');
-  document.getElementById('luck-player-select').style.display = luckView === 'player' ? '' : 'none';
-  if (luckView === 'total') renderLuckTotal(); else renderLuckPlayer();
-}
-
-function renderLuckTotal() {
-  document.getElementById('luck-header').innerHTML =
-    '<th>Factor</th><th>Games</th><th>% of games</th><th>Win %</th><th>&Delta; vs 50</th><th>Luck swing</th>';
-  var base = luckBaseline(), N = base ? base.games : 0;
-  var rows = luckRows().slice().sort(function (a, b) {
-    return Math.abs((b.winrate == null ? 50 : b.winrate) - 50) - Math.abs((a.winrate == null ? 50 : a.winrate) - 50);
-  });
-  var maxAbs = maxDelta(rows);
-  document.getElementById('luck-body').innerHTML = rows.map(function (s) {
-    var pct = N ? Math.round(100 * s.games / N) + '%' : '-';
-    return '<tr>' + luckFactorCell(s.title, s.condition) + '<td class="games">' + s.games + '</td><td class="games">' + pct + '</td>'
-      + wrPctCell(s.winrate) + deltaCell(s.winrate) + deltaBarCell(s.winrate, maxAbs) + '</tr>';
-  }).join('') || '<tr><td colspan="6" class="loading">No luck data yet.</td></tr>';
-}
-
-function renderLuckPlayer() {
-  document.getElementById('luck-header').innerHTML =
-    '<th>Factor</th><th>Games</th><th>% of luck games</th><th>Win %</th><th>&Delta; vs 50</th><th>Luck swing</th>';
-  var base = luckBaseline();
-  var pb = base ? (base.roster || []).find(function (x) { return x.player === luckPlayer; }) : null;
-  var N = pb ? pb.games : 0;
-  var rows = luckRows().map(function (s) {
-    var p = (s.roster || []).find(function (x) { return x.player === luckPlayer; });
-    return { title: s.title, games: p ? p.games : 0, winrate: p ? p.winrate : null };
-  }).sort(function (a, b) { return b.games - a.games; });
-  var maxAbs = maxDelta(rows);
-  document.getElementById('luck-body').innerHTML = rows.map(function (r) {
-    var pct = N ? Math.round(100 * r.games / N) + '%' : '-';
-    return '<tr><td>' + esc(r.title) + '</td><td class="games">' + r.games + '</td><td class="games">' + pct + '</td>'
-      + wrPctCell(r.winrate) + deltaCell(r.winrate) + deltaBarCell(r.winrate, maxAbs) + '</tr>';
-  }).join('') || '<tr><td colspan="6" class="loading">No data for this player.</td></tr>';
 }
 
 /* ─── Dashboard ─── */
