@@ -178,3 +178,56 @@ def test_write_with_no_rows_still_deletes_but_never_inserts():
 		game_stats.db = original_db
 
 	assert [c[0] for c in recorder.calls] == ["execute"]
+
+
+# ── payload column order ─────────────────────────────────────────────────
+# core/DBAdapters/mysql.py's insert_many takes its column list from the FIRST
+# row's keys and then zips every later row's .values() against it. Two rows
+# carrying the same keys in a DIFFERENT order therefore write values into the
+# wrong columns -- silently, with no MySQL error whenever the types happen to be
+# compatible (civ/team, avg_eapm/peak_eapm, the two medals). Every caller is
+# safe by construction today; nothing enforced it until write() normalised.
+
+def _written_payload(rows, replay_match_id=555):
+	recorder = _RecordingDB()
+	original_db = game_stats.db
+	game_stats.db = recorder
+	try:
+		asyncio.run(game_stats.write(replay_match_id, rows))
+	finally:
+		game_stats.db = original_db
+	return recorder.calls[1][2]
+
+
+def _stats_row(**kw):
+	base = dict(player_number=1, profile_id=11, civ="Franks", team="1", winner=True,
+	            avg_eapm=50, peak_eapm=60, military_medal=1, villager_medal=2,
+	            top_units=[], computed_at=1000)
+	base.update(kw)
+	return base
+
+
+def test_every_written_row_uses_one_column_order():
+	# Second row's dict is built in a deliberately different key order.
+	first = _stats_row(player_number=1)
+	second = {k: v for k, v in reversed(list(_stats_row(player_number=2, civ="Goths").items()))}
+
+	payload = _written_payload([first, second])
+
+	assert list(payload[0].keys()) == list(game_stats._COLUMNS)
+	assert list(payload[1].keys()) == list(game_stats._COLUMNS)
+	# ...and the values still belong to their own columns after normalising.
+	assert payload[1]["player_number"] == 2
+	assert payload[1]["civ"] == "Goths"
+
+
+def test_a_row_with_an_unexpected_key_set_is_rejected_loudly():
+	# Dropping or defaulting the difference is how a column silently stops being
+	# written; write()'s callers are all best-effort-guarded, so this logs.
+	import pytest
+
+	with pytest.raises(ValueError, match="expected exactly"):
+		_written_payload([_stats_row(surprise="unmapped")])
+
+	with pytest.raises(ValueError, match="expected exactly"):
+		_written_payload([{k: v for k, v in _stats_row().items() if k != "civ"}])

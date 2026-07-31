@@ -1,19 +1,26 @@
 # -*- coding: utf-8 -*-
 """Derived-global layer (stage 3): per-game facts computed once at ingest
-instead of recomputed at render time. Two tables share one grain here --
-keyed on (replay_match_id, player_number), never on user_id or community_id.
+instead of recomputed at render time. Both tables are keyed on the match and
+the player within it, never on user_id or community_id:
 
-game_stats  -- medal places, avg/peak eAPM, top units. Table declared and
-             written by this package (task 3.2, bot/derived/game_stats.py).
-game_labels -- strategy/spawn labels, replacing cls_results (one namespace,
-             a `kind` column instead of separate tables). Table declared
-             here so its schema lands in the same deploy as game_stats, and
-             written by bot/derived/game_labels.py (task 3.3).
+game_stats  -- PK (replay_match_id, player_number). Medal places, avg/peak
+             eAPM, top units. Table declared and written by this package
+             (task 3.2, bot/derived/game_stats.py).
+game_labels -- PK (replay_match_id, player_number, label): one row per label a
+             player earned, so the grain is finer than game_stats' by exactly
+             one column. Strategy/spawn labels, replacing cls_results (one
+             namespace, a `kind` column instead of separate tables). Table
+             declared here so its schema lands in the same deploy as
+             game_stats, and written by bot/derived/game_labels.py (task 3.3).
 
-Neither table carries a `user_id` column (identity v2 §5): derived-global
-keys on `profile_id` only, so a consumer resolves profile -> user through
-`identities` at read time, and a late `/link` backfills a player's whole
-history with no backfill job of its own. Both are named `replay_match_id`
+Neither table carries a `user_id` column (identity v2 §5). game_stats reaches
+a Discord user through its nullable `profile_id`, resolved via `identities` at
+read time, so a late `/link` backfills a player's whole history with no
+backfill job of its own. game_labels carries no `profile_id` either: a label is
+a fact about a slot in a match, and the profile behind that slot is already
+recorded once per match on game_stats (and on the raw rs_player_games row it is
+computed from) -- duplicating it here would be a second copy to keep correct
+for no read it enables. Both are named `replay_match_id`
 while the raw rs_* tables this data is computed from still call the same
 column `aoe2_match_id` -- task 3.7 renames the raw side to match, so the
 derived side is written correctly from the start and never needs a rename.

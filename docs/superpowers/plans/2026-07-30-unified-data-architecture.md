@@ -1113,8 +1113,11 @@ are written for all of them regardless — that is the whole point of keying on
    which is genuinely eAPM because `apm_buckets` replicates mgz's
    effective-APM filter.
 4. **Migration numbers shift.** 005 is taken by
-   `005_identity_conflict_history`. Raw renames are **006**; stage 6's final
-   drops become **007**.
+   `005_identity_conflict_history`, and **006** is `006_derived_indexes` (the
+   per-match index on `cls_results`/`cls_result_metrics` that task 3.4's
+   reconciliation loop needs — added during the 3a review, since both tables
+   carry only their PK in production and every per-match read was a full scan).
+   Raw renames are therefore **007**; stage 6's final drops become **008**.
 5. **The label allowlist lives in `bot/derived/game_labels.py`, not
    `card_query.py`.** What to *store* and what to *say* are different
    concerns: `game_labels` stores 11 spawn keys, while `card_query`'s
@@ -1611,10 +1614,10 @@ check:
 
 ---
 
-## Task 3.7 — Migration 006: raw renames + `rs_config` retirement
+## Task 3.7 — Migration 007: raw renames + `rs_config` retirement
 
 **Files:**
-- Modify: `core/migrations.py` (new `@migration("006_raw_renames")`)
+- Modify: `core/migrations.py` (new `@migration("007_raw_renames")`)
 - Modify: every `rs_*` reference across `bot/`, `utils/`, `tests/`
 - Modify: `core/data_registry.py`, `config.example.cfg`, `start.py`
 - Test: `tests/test_data_registry.py`, plus the existing rename sweep guard
@@ -1644,7 +1647,7 @@ update the registry, run `pytest tests/ -q` and `ruff check .`, commit.
 
 - [ ] Back up the database first (`scripts/backup_db.sh`) — this migration is
       irreversible in practice
-- [ ] Ledger reads `[001, 002, 003, 004, 005, 006_raw_renames]`
+- [ ] Ledger reads `[001, 002, 003, 004, 005, 006_derived_indexes, 007_raw_renames]`
 - [ ] Every `replay_*` table present with the row counts its `rs_*` predecessor had
       (`replay_players` 8885, `replay_events` 591099, `replay_techs` 205466,
       `replay_buildings` 117892, `replay_matches` 1126, `replay_ingest` 2479)
@@ -1750,7 +1753,7 @@ match; sweeper log lists 0 candidates — no lean communities exist yet).
 
 # Stage 6 — Final retirements
 
-- Migration 007 drops (006 is stage 3's raw renames): `cls_classifications`, `cls_data_requirements`,
+- Migration 008 drops (006 is stage 3a's derived indexes, 007 its raw renames): `cls_classifications`, `cls_data_requirements`,
   `cls_results`, `cls_result_metrics`, `cls_player_totals`, `cls_match_ingest`,
   `rs_player_game_tags`, `rs_player_personas` (`rs_profiles`, `qc_profile_map`,
   `identity_aliases` already dropped in 2.5);

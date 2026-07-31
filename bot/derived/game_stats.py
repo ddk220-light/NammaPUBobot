@@ -85,6 +85,15 @@ def compute_game_stats(players, units, apm, computed_at):
 	return rows
 
 
+# The column order every payload row is emitted in -- see the identical note in
+# bot/derived/game_labels.py: insert_many builds its column list from the FIRST
+# row's keys and zips every other row's .values() against it, so rows whose keys
+# are in a different order write values into the wrong columns with no error.
+_COLUMNS = ("replay_match_id", "player_number", "profile_id", "civ", "team", "winner",
+            "avg_eapm", "peak_eapm", "military_medal", "villager_medal", "top_units",
+            "computed_at")
+
+
 async def write(replay_match_id, rows):
 	"""Idempotent per-match write: DELETE this match's rows, then insert what
 	compute_game_stats returned, stamping replay_match_id onto each row (the
@@ -95,6 +104,16 @@ async def write(replay_match_id, rows):
 	stage-3.4 backfill correcting a stale row) and the stored set must exactly
 	match the latest compute, never accumulate leftovers from a run with a
 	different player count.
+
+	ACCEPTED TRADEOFF, deliberate: the DELETE and the INSERT are not one
+	transaction, because the adapter runs in autocommit (see
+	core/DBAdapters/mysql.py's connect) and has no transaction surface to reach
+	for. If the insert fails after the delete succeeded, this match briefly has
+	no stored medals and its card renders bare -- and bot/derived/backfill.py's
+	reconciliation loop notices the set difference and rewrites it within
+	POLL_INTERVAL. Making this atomic means giving the adapter transactions,
+	which is a change to every writer in the bot, for a window that already
+	self-heals. Do not "fix" it here.
 	"""
 	await db.execute("DELETE FROM game_stats WHERE replay_match_id=%s", [replay_match_id])
 	if not rows:
@@ -104,5 +123,10 @@ async def write(replay_match_id, rows):
 		row = dict(r)
 		row["replay_match_id"] = replay_match_id
 		row["top_units"] = json.dumps(row.get("top_units") or [], sort_keys=True)
-		payload.append(row)
+		if set(row) != set(_COLUMNS):
+			# Loud, not coerced -- see game_labels.write for why.
+			raise ValueError(
+				f"game_stats row for match {replay_match_id} has keys {sorted(row)}, "
+				f"expected exactly {sorted(_COLUMNS)}")
+		payload.append({c: row[c] for c in _COLUMNS})
 	await db.insert_many("game_stats", payload, on_duplicate="replace")

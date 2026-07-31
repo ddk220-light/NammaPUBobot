@@ -1,7 +1,21 @@
 # -*- coding: utf-8 -*-
 """Read-side of the classification framework: the cls_* tables (written offline by
 utils/classifications/runner.py) are declared here via ensure_table so the bot can read them
-for /insights. Columns mirror utils/classifications/schema.py exactly."""
+for /insights. Columns mirror utils/classifications/schema.py exactly.
+
+The `indexes=` entries below only take effect when this declaration CREATES the table
+(a fresh install) -- ensure_table never alters the keys of a table that already exists,
+by design (see core/DBAdapters/mysql.py's table_blank). An existing database gets the
+same indexes from migration 006_derived_indexes instead. Both halves are required:
+neither one covers the other's case, so an index added here must be added there too.
+
+The indexes themselves are the per-match access path bot/derived/backfill.py's
+reconciliation loop needs: it reads one match's rows at a time (WHERE aoe2_match_id=%s)
+and both primary keys lead with `key`, so without them every read is a full table scan.
+Index names are written out literally rather than via a shared constant so
+tests/test_migrations.py::test_the_index_names_match_the_ensure_table_declaration can
+compare all three declarations as text without importing this module (importing it
+executes ensure_table)."""
 from core.database import db
 
 db.ensure_table(dict(
@@ -44,6 +58,7 @@ db.ensure_table(dict(
 		dict(cname="played_at", ctype=db.types.int, notnull=False),
 	],
 	primary_keys=["key", "aoe2_match_id", "player_number"],
+	indexes=[("cls_results_match", ["aoe2_match_id"])],
 ))
 
 db.ensure_table(dict(
@@ -56,6 +71,7 @@ db.ensure_table(dict(
 		dict(cname="value", ctype=db.types.float, notnull=False),
 	],
 	primary_keys=["key", "aoe2_match_id", "player_number", "metric"],
+	indexes=[("cls_result_metrics_match", ["aoe2_match_id"])],
 ))
 
 db.ensure_table(dict(

@@ -13,8 +13,22 @@ import json
 from core.database import db
 
 # cls_results mixes strategy rows and luck/spawn rows in one table with no
-# category column -- copied verbatim from bot/replay_stats/card_query.py so
-# the two allowlists never drift apart.
+# category column, so what to STORE has to be stated explicitly. The two tuples
+# below have different provenance, and conflating them silently drops labels:
+#
+#   STRATEGY_KEYS is the same 17 keys as bot/replay_stats/card_query.py's
+#   STRATEGY_KEYS, and is expected to stay identical to it.
+#
+#   SPAWN_KEYS is NOT card_query's SPAWN_PHRASES. SPAWN_PHRASES holds only the 3
+#   spawn facts worth rendering as a sentence on a card; these 11 are every luck
+#   classification in utils/classifications/defs/luck.py except luck_baseline
+#   (which fires for every player in every valid Nomad game and is deliberately
+#   stored nowhere). Storing is not displaying: "re-syncing" this tuple with
+#   card_query would throw away 8 spawn labels with no error anywhere.
+#
+# tests/test_game_labels.py guards both directions against the upstream
+# registry, so a NEW classifier key added there fails the build here rather than
+# being silently dropped by label_rows.
 STRATEGY_KEYS = (
 	"archer_rush", "scout_rush", "maa_rush", "knight_rush", "crossbow_rush",
 	"cav_archer_rush", "camel_rush", "ram_push", "forward_castle", "safe_castle",
@@ -80,7 +94,18 @@ def label_rows(result_rows, metric_rows, played_at):
 	return rows
 
 
-async def write(replay_match_id, rows):
+# The column order every payload row is emitted in. core/DBAdapters/mysql.py's
+# insert_many takes its column list from the FIRST row's keys and then zips each
+# subsequent row's .values() against it -- so two rows whose dicts carry the same
+# keys in a DIFFERENT order write values into the wrong columns, silently, with
+# no error from MySQL as long as the types happen to be compatible. Every caller
+# is safe by construction today (both build rows from the same literal), but
+# nothing enforced it. Normalising here makes the payload order a property of
+# this function rather than of its callers' dict-literal order.
+_COLUMNS = ("replay_match_id", "player_number", "label", "kind", "evidence", "played_at")
+
+
+async def write(replay_match_id, rows, db_adapter=None):
 	"""Idempotent per-match write: DELETE this match's rows, then insert what
 	label_rows returned, stamping replay_match_id onto each row (the pure
 	function above deliberately never sees it -- see its docstring).
@@ -90,8 +115,23 @@ async def write(replay_match_id, rows):
 	correcting a stale row) and the stored set must exactly match the latest
 	compute, never accumulate leftovers from a run with a different label
 	set.
+
+	`db_adapter` overrides the module-global adapter for callers that write a
+	whole match through one specific connection --
+	bot/replay_stats/classification_sync.py's sync_match takes one and must not
+	split its cls_* writes and this write across two different databases.
+
+	ACCEPTED TRADEOFF, deliberate: the DELETE and the INSERT are not one
+	transaction, because the adapter runs in autocommit (see
+	core/DBAdapters/mysql.py's connect) and has no transaction surface to reach
+	for. If the insert fails after the delete succeeded, this match is briefly
+	label-less -- and bot/derived/backfill.py's reconciliation loop notices the
+	set difference and rewrites it within POLL_INTERVAL. Making this atomic
+	means giving the adapter transactions, which is a change to every writer in
+	the bot, for a window that already self-heals. Do not "fix" it here.
 	"""
-	await db.execute("DELETE FROM game_labels WHERE replay_match_id=%s", [replay_match_id])
+	dbw = db_adapter or db
+	await dbw.execute("DELETE FROM game_labels WHERE replay_match_id=%s", [replay_match_id])
 	if not rows:
 		return
 	payload = []
@@ -99,5 +139,13 @@ async def write(replay_match_id, rows):
 		row = dict(r)
 		row["replay_match_id"] = replay_match_id
 		row["evidence"] = json.dumps(row.get("evidence") or {}, sort_keys=True)
-		payload.append(row)
-	await db.insert_many("game_labels", payload, on_duplicate="replace")
+		if set(row) != set(_COLUMNS):
+			# Loud, not coerced. A row with an unexpected key set means the
+			# compute and the table have diverged, and quietly dropping or
+			# defaulting the difference is how a column silently stops being
+			# written. Both callers are best-effort-guarded, so this logs.
+			raise ValueError(
+				f"game_labels row for match {replay_match_id} has keys {sorted(row)}, "
+				f"expected exactly {sorted(_COLUMNS)}")
+		payload.append({c: row[c] for c in _COLUMNS})
+	await dbw.insert_many("game_labels", payload, on_duplicate="replace")

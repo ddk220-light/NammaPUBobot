@@ -88,6 +88,12 @@ class FakeDb:
 				ix.discard("PRIMARY")
 			if "PRIMARY KEY" in tail.upper():
 				ix.add("PRIMARY")
+		if sql.startswith("CREATE INDEX"):
+			# `CREATE INDEX `ix` ON `t` (`c`)` — 006's non-unique secondary
+			# index. Absorbed so index_exists() answers True for the rest of
+			# that boot, which is what makes the idempotency guard testable.
+			parts = sql.split("`")
+			self.indexes.setdefault(parts[3], set()).add(parts[1])
 		if sql.startswith("DROP TABLE"):
 			# `DROP TABLE `name``
 			self.tables.discard(sql.split("`")[1])
@@ -1641,3 +1647,85 @@ def test_the_conflicts_ddl_matches_the_ensure_table_declaration():
 	assert declared_unique[0] == mig._CONFLICT_CLAIM_INDEX
 	assert f"UNIQUE KEY `{declared_unique[0]}` ({declared_unique[1].replace(chr(34), '`')})" in sql, \
 		"unique claim index drifted"
+
+
+# ─── 006_derived_indexes ──────────────────────────────────────────────────
+# bot/derived/backfill.py reads one match at a time out of cls_results and
+# cls_result_metrics. Both primary keys lead with `key`, so `WHERE
+# aoe2_match_id=%s` cannot use them and every read is a full scan of 32k / 112k
+# rows — ~2,250 times over on the first deploy of stage 3a.
+
+def _m006_db(**kwargs):
+	kwargs.setdefault("tables", ("cls_results", "cls_result_metrics"))
+	return FakeDb(**kwargs)
+
+
+def test_m006_creates_the_per_match_index_on_both_tables():
+	db = _m006_db()
+	asyncio.run(mig._m006(db))
+
+	created = [s for s in db.executed if s.startswith("CREATE INDEX")]
+	assert created == [
+		"CREATE INDEX `cls_results_match` ON `cls_results` (`aoe2_match_id`)",
+		"CREATE INDEX `cls_result_metrics_match` ON `cls_result_metrics` (`aoe2_match_id`)",
+	]
+
+
+def test_m006_is_idempotent_when_the_indexes_already_exist():
+	# Half-applied bodies re-run from the top on the next boot (see the module
+	# docstring), and MySQL has no CREATE INDEX IF NOT EXISTS, so the guard has
+	# to be the information_schema check — not the ledger.
+	db = _m006_db(indexes={"cls_results": {"cls_results_match"},
+	                       "cls_result_metrics": {"cls_result_metrics_match"}})
+	asyncio.run(mig._m006(db))
+
+	assert [s for s in db.executed if s.startswith("CREATE INDEX")] == []
+
+
+def test_m006_finishes_the_job_after_a_body_that_died_between_the_two():
+	db = _m006_db(indexes={"cls_results": {"cls_results_match"}})
+	asyncio.run(mig._m006(db))
+
+	assert [s for s in db.executed if s.startswith("CREATE INDEX")] == [
+		"CREATE INDEX `cls_result_metrics_match` ON `cls_result_metrics` (`aoe2_match_id`)",
+	]
+
+
+def test_m006_skips_tables_that_do_not_exist_yet():
+	# The fresh-install case: migrations run BEFORE `import bot`, so the tables
+	# bot/classifications declares are genuinely absent here. It must not create
+	# them (that declaration owns their shape) and must not raise.
+	db = FakeDb(tables=())
+	asyncio.run(mig._m006(db))
+
+	assert db.executed == []
+
+
+def test_m006_runs_in_the_ledger_after_005(monkeypatch):
+	names = [name for name, _fn in mig.MIGRATIONS]
+	assert names[-1] == "006_derived_indexes"
+	assert names.index("005_identity_conflict_history") < names.index("006_derived_indexes")
+
+
+def test_the_index_names_match_the_ensure_table_declaration():
+	""" These indexes are declared in THREE places, by necessity: this module (for
+	an existing database), bot/classifications/__init__.py's ensure_table (for a
+	fresh install, which this migration deliberately skips), and
+	utils/classifications/schema.py's raw DDL (for the offline runner's own
+	database). Nothing but agreement on the name makes the idempotency guard work
+	— a declaration creating `cls_results_match` while the migration looks for
+	`cls_results_idx` means every boot tries to create a duplicate index and
+	fails. Parsed as text rather than imported, for the same reason
+	test_the_conflicts_ddl_matches_the_ensure_table_declaration is. """
+	import os
+
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	with open(os.path.join(root, "bot", "classifications", "__init__.py"), encoding="utf-8") as f:
+		declared = dict(re.findall(r'indexes=\[\("(\w+)", \["(\w+)"\]\)\]', f.read()))
+	with open(os.path.join(root, "utils", "classifications", "schema.py"), encoding="utf-8") as f:
+		offline = f.read()
+
+	assert declared, "bot/classifications/__init__.py no longer declares any index"
+	for _table, index, column in mig._DERIVED_MATCH_INDEXES:
+		assert declared.get(index) == column, f"{index} drifted from the ensure_table declaration"
+		assert f"INDEX {index} ({column})" in offline, f"{index} drifted from the offline DDL"

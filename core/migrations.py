@@ -999,3 +999,61 @@ async def _m005(db):
 		log.info(
 			"migrations: 005_identity_conflict_history: moved identity_conflicts onto a surrogate "
 			"primary key; the claim key is now (profile_id, claimed_user_id, status)")
+
+
+# (table, index name, column) for 006_derived_indexes. The names are duplicated in
+# bot/classifications/__init__.py's ensure_table declarations — which is the half of
+# this that covers a FRESH install, where these tables do not exist yet when
+# migrations run — and in utils/classifications/schema.py's raw DDL for the offline
+# runner. All three must name the same index on the same column; keep them in step.
+# Duplicated rather than imported for the reason in this module's docstring:
+# core/migrations.py runs before `import bot` and importing anything under bot.*
+# from here drives db.ensure_table's loop.run_until_complete on an already-running
+# loop and crashes the boot.
+_DERIVED_MATCH_INDEXES = (
+	("cls_results", "cls_results_match", "aoe2_match_id"),
+	("cls_result_metrics", "cls_result_metrics_match", "aoe2_match_id"),
+)
+
+
+@migration("006_derived_indexes")
+async def _m006(db):
+	"""Give cls_results and cls_result_metrics a per-match access path.
+
+	Both tables carry only their PRIMARY KEY in the flagship database — the two
+	secondary indexes utils/classifications/schema.py declares were never
+	actually created there, because the tables predate that DDL and
+	`CREATE TABLE IF NOT EXISTS` cannot retrofit a key. Both primary keys lead
+	with `key` (`(key, aoe2_match_id, player_number)` and the same plus
+	`metric`), and a leading-column mismatch means `WHERE aoe2_match_id=%s`
+	cannot use them at all.
+
+	bot/derived/backfill.py issues exactly that lookup, twice per match, and has
+	~2,250 of them to do on the first deploy against 32k and 112k rows. Without
+	this migration every one of them is a full table scan.
+
+	Idempotent per statement, not merely per migration, per this module's
+	docstring: the index_exists guard makes a re-run after a half-applied body a
+	no-op, and MySQL has no `CREATE INDEX IF NOT EXISTS`.
+
+	The guard is check-then-act, so two containers booting simultaneously (a
+	Railway rolling deploy) can both pass it and the loser's CREATE INDEX then
+	fails on a duplicate key name. That is the same tolerance 005 already relies
+	on: the loser crashes, Railway restarts it, the retry finds the index present
+	and does nothing, and the previous container serves throughout.
+
+	A table that is absent is skipped, not created. That is the fresh-install
+	case — bot/classifications declares these tables and is only imported AFTER
+	migrations run, so at this point they genuinely do not exist yet — and the
+	ensure_table declaration there carries the same `indexes=` entries, so the
+	table is created WITH them moments later and needs nothing from here.
+	"""
+	for table, index, column in _DERIVED_MATCH_INDEXES:
+		if not await table_exists(db, table):
+			log.info(f"migrations: 006_derived_indexes: {table} does not exist yet, skipping "
+			         f"(bot/classifications/__init__.py creates it with {index} already on it)")
+			continue
+		if await index_exists(db, table, index):
+			continue
+		await db.execute(f"CREATE INDEX `{index}` ON `{table}` (`{column}`)")
+		log.info(f"migrations: 006_derived_indexes: created index {index} on {table}({column})")

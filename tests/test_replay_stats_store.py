@@ -148,3 +148,95 @@ def test_learn_from_ingest_is_best_effort_across_players(monkeypatch):
     assert fake.learn_calls == [(102, 20, "learned", "PlayerB")]
     assert len(fake_log.error_calls) == 1
     assert "101" in fake_log.error_calls[0]
+
+
+# ─── write_match's best-effort derived-layer guard ────────────────────────
+# game_stats is computed and written inside write_match, behind a try/except
+# that logs and continues. That guard is the whole reason the derived layer can
+# be added to the ingest path at all: the raw parse write_match has already
+# committed is irreplaceable (replays 404 upstream once they expire), so a bug
+# in the medal maths must never be able to cost it. The equivalent guard on the
+# game_labels side is covered by tests/test_replay_classification_sync.py; this
+# is its counterpart, and it exists because replacing the log.error below with a
+# bare `raise` previously passed the entire suite.
+
+class _FakeDB:
+    """Records writes and answers reads with nothing. Every optional post-step
+    in write_match is independently guarded, so the ones this test does not care
+    about degrade to logged errors on their own -- which is exactly the shape
+    production has when a downstream table is missing."""
+
+    def __init__(self):
+        self.inserted = []
+
+    async def execute(self, sql, args=None):
+        return None
+
+    async def insert(self, table, row, on_duplicate=None):
+        self.inserted.append(table)
+
+    async def insert_many(self, table, rows, on_duplicate=None):
+        self.inserted.append(table)
+
+    async def fetchall(self, sql, args=None):
+        return []
+
+    async def fetchone(self, sql, args=None):
+        return None
+
+    async def select_one(self, columns, table, where=None):
+        return None
+
+
+def _extracted():
+    return {
+        "match": {"aoe2_match_id": 4242, "map": "Nomad", "duration_s": 1800, "date": "2026-01-01"},
+        "players": [
+            {"player_number": 1, "profile_id": 101, "identity": "A", "civ": "Franks",
+             "team": "1", "winner": True, "villagers": 90, "military": 20, "eapm": 40},
+            {"player_number": 2, "profile_id": 102, "identity": "B", "civ": "Goths",
+             "team": "2", "winner": False, "villagers": 80, "military": 30, "eapm": 50},
+        ],
+        "units": [], "techs": [], "buildings": [], "events": [], "apm": [],
+    }
+
+
+def _run_write_match(monkeypatch, game_stats_write):
+    """write_match with everything stubbed except the game_stats step under test."""
+    from bot.derived import game_stats
+
+    fake_db = _FakeDB()
+    fake_log = _FakeLog()
+    monkeypatch.setattr(store, "db", fake_db)
+    monkeypatch.setattr(store, "log", fake_log)
+    monkeypatch.setattr(store, "identity", _FakeIdentityWithLearn())
+    monkeypatch.setattr(game_stats, "write", game_stats_write)
+    written = asyncio.run(store.write_match(_extracted(), None, 1700000000, "v1"))
+    return written, fake_db, fake_log
+
+
+def test_write_match_survives_a_game_stats_write_failure(monkeypatch):
+    async def _boom(replay_match_id, rows):
+        raise RuntimeError("simulated game_stats write failure")
+
+    written, fake_db, fake_log = _run_write_match(monkeypatch, _boom)
+
+    # The raw parse still landed and write_match still reported its player count.
+    assert written == 2
+    assert "rs_matches" in fake_db.inserted
+    assert "rs_player_games" in fake_db.inserted
+    # ...and the failure was reported rather than swallowed silently.
+    assert any("game_stats write failed" in m for m in fake_log.error_calls)
+
+
+def test_write_match_writes_game_stats_for_the_match_it_just_parsed(monkeypatch):
+    seen = []
+
+    async def _record(replay_match_id, rows):
+        seen.append((replay_match_id, [r["player_number"] for r in rows]))
+
+    written, _fake_db, fake_log = _run_write_match(monkeypatch, _record)
+
+    assert written == 2
+    assert seen == [(4242, [1, 2])]
+    assert not any("game_stats write failed" in m for m in fake_log.error_calls)

@@ -71,6 +71,75 @@ def test_medals_appear_on_the_top_three_of_the_match():
 	assert "**fourth**" in fields[1]["value"]
 
 
+def _medal_glyphs(field_value, nick):
+	"""(swords, wheat) rendered on `nick`'s own card line."""
+	line = next(chunk for chunk in field_value.split("\n\n") if f"**{nick}**" in chunk)
+	return line.count("⚔"), line.count("🌾")
+
+
+def test_medals_follow_player_number_not_roster_position():
+	"""THE property this whole table exists to get right, and the one CI could
+	not see: medals must be looked up BY player_number, never by where the
+	player happens to sit in the roster list.
+
+	Every other fixture in this suite uses player_number == position + 1, which
+	makes a positional lookup indistinguishable from a keyed one. Production
+	never looks like that: _analysis_rows orders the roster by `g.team,
+	g.identity` (post_game.py) while player_number comes from the replay slot,
+	so the two orders routinely differ. Getting this wrong attributes somebody
+	else's medals to a player on a public Discord post.
+
+	So: non-contiguous, non-sorted player numbers (4, 1, 7), a roster whose
+	order matches neither, and a distinct medal pair per player -- each of which
+	is wrong for BOTH of the other two, on both axes."""
+	rows = [_cp("four", 0, player_number=4, impact_score=70),
+	        _cp("one", 0, player_number=1, impact_score=60),
+	        _cp("seven", 1, player_number=7, impact_score=50)]
+	# Insertion order deliberately unlike the roster order: this is what
+	# _medals_for returns, built from a game_stats read keyed on player_number.
+	medals_by_player = {
+		1: {"military_medal": 1, "villager_medal": 3},
+		4: {"military_medal": 2, "villager_medal": None},
+		7: {"military_medal": 3, "villager_medal": 1},
+	}
+	fields = pg._team_card_fields(rows, {0: "A", 1: "B"}, medals_by_player)
+	body = {f["name"]: f["value"] for f in fields}
+	alpha = next(v for k, v in body.items() if "A" in k)
+	beta = next(v for k, v in body.items() if "B" in k)
+
+	# military_medal 1 -> 3 glyphs, 2 -> 2, 3 -> 1 (same scale for villagers).
+	assert _medal_glyphs(alpha, "four") == (2, 0)    # pn 4: silver military, no villager
+	assert _medal_glyphs(alpha, "one") == (3, 1)     # pn 1: gold military, bronze villager
+	assert _medal_glyphs(beta, "seven") == (1, 3)    # pn 7: bronze military, gold villager
+
+
+def test_build_match_cards_embed_attributes_medals_by_player_number(monkeypatch):
+	"""The same property end to end, through the real game_stats read: the
+	roster arrives ordered by team/identity and the stored rows arrive ordered
+	by player_number, so a positional join silently swaps them."""
+	import asyncio
+
+	rows = [_analysis_row("zed", 0, player_number=4), _analysis_row("amy", 0, player_number=1),
+	        _analysis_row("moe", 1, player_number=7)]
+	_wire_build_match_cards_embed(monkeypatch, [
+		{"player_number": 1, "military_medal": 1, "villager_medal": 3},
+		{"player_number": 4, "military_medal": 2, "villager_medal": None},
+		{"player_number": 7, "military_medal": 3, "villager_medal": 1},
+	])
+	embed = asyncio.run(pg.build_match_cards_embed(
+		1, 7, rows=rows, team_names={0: "A", 1: "B"}))
+
+	def glyphs(nick):
+		# Per FIELD, never over the concatenation: joining the two team fields
+		# would fuse the last line of one with the first of the other.
+		field = next(f for f in embed.fields if f"**{nick}**" in f["value"])
+		return _medal_glyphs(field["value"], nick)
+
+	assert glyphs("zed") == (2, 0)
+	assert glyphs("amy") == (3, 1)
+	assert glyphs("moe") == (1, 3)
+
+
 def test_a_player_absent_from_medals_by_player_renders_without_medals():
 	rows = [_cp("solo", 0, player_number=1)]
 	fields = pg._team_card_fields(rows, {0: "A", 1: "B"}, medals_by_player={})

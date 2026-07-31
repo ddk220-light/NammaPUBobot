@@ -81,6 +81,70 @@ def test_kind_for_unknown_and_luck_baseline_is_none():
 	assert game_labels.kind_for("brand_new_thing") is None
 
 
+# ── drift guard against the upstream registry ───────────────────────────
+# The verbatim test above pins the allowlists against a hardcoded copy of
+# themselves, so it catches an accidental EDIT here but is blind to the failure
+# that actually costs data: a new classification appearing upstream. label_rows
+# drops any key it does not recognise (deliberately -- see kind_for), so an
+# unhandled new key means its cls_results rows are silently thrown away at
+# ingest with no error, no log line, and no test failure anywhere. These
+# compare against the real registry instead of a copy.
+
+# Keys that exist upstream and are deliberately NOT stored. Adding to this is a
+# decision, and has to be made here in writing rather than by an allowlist
+# quietly not mentioning a key.
+#   luck_baseline -- fires for every player in every valid Nomad game; it is the
+#   50% reference cohort, not a fact about a player, and storing it would make
+#   it the most common "strategy" in the database.
+_DOCUMENTED_EXCLUSIONS = frozenset({"luck_baseline"})
+
+
+def test_no_upstream_classification_key_is_silently_dropped():
+	from utils.classifications.registry import REGISTRY
+
+	handled = set(game_labels.STRATEGY_KEYS) | set(game_labels.SPAWN_KEYS) | _DOCUMENTED_EXCLUSIONS
+	unhandled = sorted(set(REGISTRY) - handled)
+	assert unhandled == [], (
+		f"classification key(s) {unhandled} exist in utils/classifications/registry.py but are in "
+		f"neither allowlist in bot/derived/game_labels.py nor _DOCUMENTED_EXCLUSIONS here. "
+		f"label_rows drops them, so their cls_results rows are stored nowhere. Add each one to "
+		f"STRATEGY_KEYS or SPAWN_KEYS, or to _DOCUMENTED_EXCLUSIONS with the reason.")
+
+
+def test_the_allowlists_name_only_keys_that_still_exist_upstream():
+	# The other direction: a key renamed or retired upstream leaves a dead entry
+	# here that matches nothing, which reads as "we store this" and does not.
+	from utils.classifications.registry import REGISTRY
+
+	stale = sorted((set(game_labels.STRATEGY_KEYS) | set(game_labels.SPAWN_KEYS)) - set(REGISTRY))
+	assert stale == [], f"allowlisted key(s) {stale} no longer exist in the classification registry"
+
+
+def test_spawn_keys_are_the_luck_definitions_minus_the_baseline():
+	# SPAWN_KEYS' actual provenance, asserted rather than described in a comment.
+	from utils.classifications.defs import luck
+
+	assert set(game_labels.SPAWN_KEYS) == {c.key for c in luck.CLASSIFICATIONS} - _DOCUMENTED_EXCLUSIONS
+
+
+def test_strategy_keys_still_match_card_querys_copy():
+	# STRATEGY_KEYS *is* card_query's list verbatim, and is meant to stay so.
+	from bot.replay_stats import card_query
+
+	assert game_labels.STRATEGY_KEYS == card_query.STRATEGY_KEYS
+
+
+def test_spawn_keys_are_deliberately_wider_than_card_querys_display_subset():
+	# SPAWN_KEYS is NOT card_query.SPAWN_PHRASES, and must never be "re-synced"
+	# with it: what to STORE and what to SAY are different questions, and
+	# SPAWN_PHRASES answers only the second one (3 of the 11).
+	from bot.replay_stats import card_query
+
+	phrase_keys = {key for key, _phrase in card_query.SPAWN_PHRASES}
+	assert phrase_keys < set(game_labels.SPAWN_KEYS)
+	assert len(game_labels.SPAWN_KEYS) > len(phrase_keys)
+
+
 # ── write() ──────────────────────────────────────────────────────────────
 # No pytest-asyncio in this repo, so this is a plain sync test driving the
 # coroutine with asyncio.run() -- never `async def test_...` (which pytest
@@ -143,3 +207,49 @@ def test_write_with_no_rows_still_deletes_but_never_inserts():
 		game_labels.db = original_db
 
 	assert [c[0] for c in recorder.calls] == ["execute"]
+
+
+# ── payload column order ─────────────────────────────────────────────────
+# See the identical note in tests/test_game_stats.py: insert_many builds its
+# column list from the FIRST row's keys and zips every other row's .values()
+# against it, so divergent key order writes values into the wrong columns with
+# no error. label/kind are both VARCHARs, which is exactly the pair that would
+# swap silently.
+
+def _written_payload(rows, replay_match_id=555):
+	recorder = _RecordingDB()
+	original_db = game_labels.db
+	game_labels.db = recorder
+	try:
+		asyncio.run(game_labels.write(replay_match_id, rows))
+	finally:
+		game_labels.db = original_db
+	return recorder.calls[1][2]
+
+
+def _label_row(**kw):
+	base = dict(player_number=1, label="scout_rush", kind="strategy", evidence={}, played_at=500)
+	base.update(kw)
+	return base
+
+
+def test_every_written_row_uses_one_column_order():
+	first = _label_row()
+	second = {k: v for k, v in reversed(list(_label_row(player_number=2, label="ram_push").items()))}
+
+	payload = _written_payload([first, second])
+
+	assert list(payload[0].keys()) == list(game_labels._COLUMNS)
+	assert list(payload[1].keys()) == list(game_labels._COLUMNS)
+	assert payload[1]["label"] == "ram_push"
+	assert payload[1]["kind"] == "strategy"
+
+
+def test_a_row_with_an_unexpected_key_set_is_rejected_loudly():
+	import pytest
+
+	with pytest.raises(ValueError, match="expected exactly"):
+		_written_payload([_label_row(surprise="unmapped")])
+
+	with pytest.raises(ValueError, match="expected exactly"):
+		_written_payload([{k: v for k, v in _label_row().items() if k != "kind"}])

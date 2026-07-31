@@ -14,37 +14,77 @@ matches whose only classifier hits are luck_baseline, which both allowlists in
 game_labels.py deliberately exclude. Under that predicate those matches are
 re-processed on every tick, forever.
 
-So the predicate is a COUNT COMPARISON between the source rows and the derived
-rows. It is stateless — no marker table, no completion flag — so it resumes
-correctly after a restart mid-run, converges to exactly zero work, and doubles
-permanently as repair: if a live ingest-time write ever fails its best-effort
-guard, or a row is deleted by hand, the next tick heals it.
+So the predicate is a SET COMPARISON between the rows the source implies and
+the rows actually stored. It is stateless — no marker table, no completion flag
+— so it resumes correctly after a restart mid-run, converges to exactly zero
+work, and doubles permanently as repair: if a live ingest-time write ever fails
+its best-effort guard, or a derived row is deleted by hand, or the SOURCE
+changes underneath an already-derived match, the next tick heals it.
 
-    game_stats  pending iff COUNT(DISTINCT rs_player_games.player_number)
-                              > COUNT(game_stats rows)
-    game_labels pending iff COUNT(allowlisted cls_results rows)
-                              > COUNT(game_labels rows)
+    game_stats  pending iff {DISTINCT player_number of rs_player_games}
+                              <> {player_number of game_stats}
+    game_labels pending iff {(player_number, allowlisted key) of cls_results}
+                              <> {(player_number, label) of game_labels}
 
-Both become EXACT equalities the moment a match is processed, and that
-exactness — not mere shrinkage — is what makes the loop terminate. The
-asymmetry between the two (DISTINCT on one side, a plain count on the other) is
-deliberate, and each half is provable from the primary keys involved:
+A COUNT comparison is NOT enough, in three separate ways, and the third is why
+this compares sets rather than cardinalities.
+
+  1. `src > dst` heals under-population only. The source side is not
+     append-only: utils/classifications/dbio.py's wipe_results is a documented,
+     supported operation the offline runner calls once per classification
+     before a full-window rebuild, so retuning a trigger legitimately REDUCES a
+     match's cls_results rows. A match that went from 5 allowlisted rows to 4
+     is never pending again under `>` (4 > 5 is false) and keeps the retired
+     label forever.
+
+  2. A source count that falls to ZERO produces no group on the source side at
+     all, so a `FROM (src) LEFT JOIN (dst)` shape never sees that match and its
+     orphaned derived rows are never cleaned by any predicate written that way.
+     What is wanted is a FULL OUTER JOIN, which MySQL does not have.
+
+  3. `src <> dst` still cannot see a SUBSTITUTION — archer_rush becoming
+     scout_rush for one player leaves 5 rows facing 5 rows, so no comparison of
+     cardinalities can fire, and the stored label is silently WRONG rather than
+     merely stale. A full-window rebuild retunes several classifications in one
+     pass, so one key losing a row while another gains one in the same match is
+     an ordinary outcome, not a contrived one.
+
+Comparing the SETS fixes all three at once and subsumes the count comparison
+entirely (equal sets imply equal counts, so any count difference is also a set
+difference). _body below implements it as a single symmetric query: tag every
+row on both sides into the same (mid, pn, tag) shape, UNION ALL them, group,
+and keep the groups seen exactly once — a group of size 1 is a row present on
+one side only, in whichever direction. Nothing about the shape prefers a side,
+so the zero-drop case falls out for free.
+
+TERMINATION, which is the property the whole design exists for, needs each side
+to contribute AT MOST ONE row per (mid, pn, tag) — otherwise a group could hold
+3 and stay unequal forever. Both are provable from the primary keys involved:
 
   * game_labels — cls_results' PK is (key, aoe2_match_id, player_number), so
     within one match a (key, player_number) pair cannot repeat; label_rows
     emits exactly one row per allowlisted result row; game_labels' PK is
     (replay_match_id, player_number, label). One source row in, one stored row
-    out, nothing can collapse. A plain COUNT(*) is exact.
+    out, nothing can collapse or duplicate.
 
   * game_stats — rs_player_games' PK is (aoe2_match_id, profile_id); it does
-    NOT constrain player_number. compute_game_stats emits one row per input
-    row, but game_stats' PK is (replay_match_id, player_number), so two source
-    rows sharing a player_number would store as one, and a plain COUNT(*)
-    would sit permanently above the stored count — precisely the
-    non-termination this design exists to rule out. COUNT(DISTINCT
-    player_number) is the number of rows the write can actually persist, so it
-    is exact under every shape the raw table can hold, and identical to
-    COUNT(*) in the normal case where replay slots are unique.
+    NOT constrain player_number, so two source rows CAN share one. game_stats'
+    PK is (replay_match_id, player_number), so those two would store as one and
+    a raw comparison would sit permanently unequal — precisely the
+    non-termination this design exists to rule out. Hence the DISTINCT on the
+    source side: it is the set of rows the write can actually persist, exact
+    under every shape the raw table can hold, and a no-op in the normal case
+    where replay slots are unique.
+
+The grouping therefore only ever produces 1 (one side) or 2 (both sides), and
+the predicate is written `= 1` rather than `<> 2` deliberately: if some future
+schema change ever did admit a duplicate, `= 1` degrades to a stale row, while
+`<> 2` would degrade to a match that is pending forever. Staleness is
+recoverable; non-termination is the one failure mode this loop must not have.
+
+After a write both sets are equal BY CONSTRUCTION, not merely closer — write()
+is a delete-then-insert of exactly the rows the compute returned — so a
+processed match leaves the pending set immediately and permanently.
 
 PLAYED_AT comes from the match's own cls_results rows, never from
 rs_matches.played_at. rs_matches.played_at is a VARCHAR date STRING out of the
@@ -79,19 +119,23 @@ MAX_ATTEMPTS = 3        # per-process retries before a match is quarantined (see
 # rather than entering it and deriving zero rows on every tick forever.
 LABEL_KEYS = tuple(game_labels.STRATEGY_KEYS) + tuple(game_labels.SPAWN_KEYS)
 
-_STATS_SRC = ("SELECT aoe2_match_id AS mid, COUNT(DISTINCT player_number) AS n "
-              "FROM rs_player_games GROUP BY aoe2_match_id")
-_STATS_DST = ("SELECT replay_match_id AS mid, COUNT(*) AS n "
-              "FROM game_stats GROUP BY replay_match_id")
-_LABELS_DST = ("SELECT replay_match_id AS mid, COUNT(*) AS n "
-               "FROM game_labels GROUP BY replay_match_id")
+# Both sides of both comparisons project into one common (mid, pn, tag) shape so
+# _body can be written once. game_stats has no per-row tag — its grain is the
+# player alone — so it carries a constant, which makes the group key degenerate
+# to (mid, pn) exactly as intended. A non-empty literal on purpose: '' would give
+# the unioned column MySQL type VARCHAR(0), which is legal but needlessly exotic
+# to group by.
+_STATS_SRC = ("SELECT DISTINCT aoe2_match_id AS mid, player_number AS pn, '-' AS tag "
+              "FROM rs_player_games")
+_STATS_DST = ("SELECT replay_match_id AS mid, player_number AS pn, '-' AS tag FROM game_stats")
+_LABELS_DST = ("SELECT replay_match_id AS mid, player_number AS pn, label AS tag FROM game_labels")
 
 # Match ids that failed MAX_ATTEMPTS times in THIS process. Process-local on
 # purpose: a restart clears it, so a transient DB blip is retried on the next
 # deploy, while a genuinely undigestible row stops occupying a slot in every
 # future batch. Without this a handful of permanently-failing matches sorted
-# into the top BATCH would stall the whole reconciliation — the counts stay
-# unequal, so the same ids come back every pass and nothing behind them is ever
+# into the top BATCH would stall the whole reconciliation — the two sides stay
+# different, so the same ids come back every pass and nothing behind them is ever
 # reached. Quarantined ids are excluded from the batch query but NOT from the
 # "still pending" figure in the log line, which stays the honest total.
 _stats_attempts = {}
@@ -102,35 +146,70 @@ _tasks = set()   # strong refs to in-flight drain tasks (asyncio only keeps weak
 
 def _labels_src():
 	holes = ",".join(["%s"] * len(LABEL_KEYS))
-	return (f"SELECT aoe2_match_id AS mid, COUNT(*) AS n FROM cls_results "
-	        f"WHERE `key` IN ({holes}) GROUP BY aoe2_match_id"), list(LABEL_KEYS)
+	return (f"SELECT aoe2_match_id AS mid, player_number AS pn, `key` AS tag FROM cls_results "
+	        f"WHERE `key` IN ({holes})"), list(LABEL_KEYS)
 
 
 def _quarantined(attempts):
 	return sorted(mid for mid, n in attempts.items() if n >= MAX_ATTEMPTS)
 
 
-def _body(src, dst, skip):
+def _body(src, src_args, dst, skip):
 	"""The shared FROM/WHERE of both the batch query and the count query, so the
-	two can never drift into disagreeing about what 'pending' means."""
-	sql = (f"FROM ({src}) src LEFT JOIN ({dst}) dst ON dst.mid = src.mid "
-	       f"WHERE src.n > COALESCE(dst.n, 0)")
+	two can never drift into disagreeing about what 'pending' means. Returns
+	(sql_fragment, args).
+
+	One symmetric pass, because MySQL has no FULL OUTER JOIN and the predicate
+	needs one: a match is pending when the source implies a row the derived side
+	lacks AND when the derived side holds a row the source no longer implies —
+	including the case where the source drops to zero and the match stops being
+	a row on that side at all. Stacking both sides into one (mid, pn, tag)
+	relation and keeping the groups of size one expresses exactly the symmetric
+	difference; a group of two is a row both sides agree on. See the module
+	docstring for why size can only be 1 or 2, and why `= 1` rather than `<> 2`.
+
+	`pending` therefore yields one row per DIFFERING (pn, tag) — a match with
+	three wrong labels appears three times — so both callers reduce it to
+	distinct mids themselves.
+	"""
+	# No parentheses around the two operands: MySQL accepts them, sqlite (which
+	# tests/test_derived_backfill.py runs this very SQL against) does not. Both
+	# bind a trailing WHERE/DISTINCT to their own SELECT, which is what the two
+	# sources rely on.
+	sql = (f"FROM (SELECT mid FROM ({src} UNION ALL {dst}) sides "
+	       f"GROUP BY mid, pn, tag HAVING COUNT(*) = 1) pending")
+	args = list(src_args)
 	if skip:
-		sql += " AND src.mid NOT IN (" + ",".join(["%s"] * len(skip)) + ")"
-	return sql
+		sql += " WHERE pending.mid NOT IN (" + ",".join(["%s"] * len(skip)) + ")"
+		args += list(skip)
+	return sql, args
 
 
 async def _pending(src, src_args, dst, skip, limit):
-	sql = f"SELECT src.mid AS mid {_body(src, dst, skip)} ORDER BY src.mid DESC LIMIT %s"
-	rows = await db.fetchall(sql, [*src_args, *skip, limit])
+	body, args = _body(src, src_args, dst, skip)
+	sql = f"SELECT DISTINCT pending.mid AS mid {body} ORDER BY mid DESC LIMIT %s"
+	rows = await db.fetchall(sql, [*args, limit])
 	return [r["mid"] for r in rows or []]
 
 
-async def _count_pending(src, src_args, dst):
-	"""Total pending, ignoring the quarantine — the log must report the real
-	backlog, not the part of it this process is still willing to attempt."""
-	row = await db.fetchone(f"SELECT COUNT(*) AS n {_body(src, dst, [])}", list(src_args))
-	return (row or {}).get("n") or 0
+async def _count_pending(src, src_args, dst, skip=()):
+	"""(total pending, how many of those this process has quarantined).
+
+	The total ignores the quarantine — the log must report the real backlog, not
+	the part of it this process is still willing to attempt. The second figure is
+	what separates "converged" from "permanently stuck": it is the total minus
+	what a batch query would still pick up, i.e. the quarantined ids that are
+	genuinely still pending (an id can sit in the attempts dict and no longer be
+	pending, because the live ingest path wrote its rows in the meantime).
+	"""
+	body, args = _body(src, src_args, dst, [])
+	row = await db.fetchone(f"SELECT COUNT(DISTINCT pending.mid) AS n {body}", args)
+	total = (row or {}).get("n") or 0
+	if not skip:
+		return total, 0
+	body, args = _body(src, src_args, dst, skip)
+	row = await db.fetchone(f"SELECT COUNT(DISTINCT pending.mid) AS n {body}", args)
+	return total, total - ((row or {}).get("n") or 0)
 
 
 async def pending_game_stats(limit=BATCH):
@@ -155,6 +234,16 @@ def played_at_of(result_rows):
 	return None
 
 
+# ACCEPTED TRADEOFF — do not "fix" this by adding locking or a transaction.
+# Both process_* functions below read the raw/cls_ rows of a match that
+# store.write_match may be re-ingesting at that exact moment: write_match
+# DELETEs a match's rows and re-INSERTs them non-transactionally (the adapter is
+# autocommit), so a read landing inside that ~1s window can see a partially
+# rewritten match and derive rows from it. It is self-healing by construction —
+# the re-ingest finishes, the two sides disagree again, and the next pass
+# (POLL_INTERVAL seconds later) rewrites the match from the settled rows. The
+# alternatives (a lock, or making the adapter transactional) cost far more than
+# a derived row being stale for ten seconds.
 async def process_game_stats(match_id, computed_at):
 	"""Recompute and rewrite one match's game_stats rows. Returns rows written.
 
@@ -192,11 +281,22 @@ async def process_game_labels(match_id):
 
 async def _drain(name, pending, count_pending, process, attempts):
 	"""One batch: at most BATCH matches, each isolated from the others, then a
-	single log line carrying the outcome. Silent when there is nothing to do, so
-	the steady state after convergence costs one query and no noise."""
+	single log line carrying the outcome.
+
+	The pending total is computed on EVERY pass, including a pass that picked up
+	nothing. An empty batch has two completely different causes — nothing is
+	pending, or everything still pending is quarantined in this process — and
+	returning early before the count made the second one indistinguishable from
+	convergence: a permanent hole with no log line anywhere. The line now names
+	both figures, so "0 still pending" and "7 still pending, all 7 quarantined"
+	can never be confused, which is exactly what the 3a deploy is verified on.
+
+	The only silent case left is the genuinely converged one (nothing processed,
+	nothing failed, nothing pending), which is reported at debug rather than
+	info: it is the designed steady state, it costs one line every POLL_INTERVAL
+	forever, and it carries no information a reader does not already have.
+	"""
 	ids = await pending(BATCH)
-	if not ids:
-		return 0
 	done = failed = written = 0
 	for match_id in ids:
 		try:
@@ -209,10 +309,14 @@ async def _drain(name, pending, count_pending, process, attempts):
 			attempts[match_id] = n
 			log.error(f"Derived backfill {name} failed for match {match_id} "
 			          f"(attempt {n}/{MAX_ATTEMPTS}): {e}")
-	remaining = await count_pending()
-	log.info(f"Derived backfill {name}: {done} matches processed, {written} rows written, "
-	         f"{failed} failed, {remaining} still pending, "
-	         f"{len(_quarantined(attempts))} quarantined.")
+	remaining, blocked = await count_pending(_quarantined(attempts))
+	line = (f"Derived backfill {name}: {done} matches processed, {written} rows written, "
+	        f"{failed} failed, {remaining} still pending "
+	        f"({blocked} of those quarantined in this process, {remaining - blocked} attemptable).")
+	if done or failed or remaining:
+		log.info(line)
+	else:
+		log.debug(line)
 	return done
 
 
@@ -220,7 +324,7 @@ async def drain_game_stats(computed_at=None):
 	computed_at = int(time.time()) if computed_at is None else computed_at
 	return await _drain(
 		"game_stats", pending_game_stats,
-		lambda: _count_pending(_STATS_SRC, [], _STATS_DST),
+		lambda skip: _count_pending(_STATS_SRC, [], _STATS_DST, skip),
 		lambda mid: process_game_stats(mid, computed_at), _stats_attempts)
 
 
@@ -228,7 +332,7 @@ async def drain_game_labels():
 	src, args = _labels_src()
 	return await _drain(
 		"game_labels", pending_game_labels,
-		lambda: _count_pending(src, args, _LABELS_DST),
+		lambda skip: _count_pending(src, args, _LABELS_DST, skip),
 		process_game_labels, _labels_attempts)
 
 

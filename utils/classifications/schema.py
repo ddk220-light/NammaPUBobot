@@ -33,7 +33,13 @@ CLS_TABLES = [
         played_at BIGINT,
         PRIMARY KEY (`key`, aoe2_match_id, player_number),
         INDEX cls_results_window (`key`, played_at),
-        INDEX cls_results_profile (`key`, profile_id)
+        INDEX cls_results_profile (`key`, profile_id),
+        -- Per-match lookup for bot/derived/backfill.py. The PK leads with `key`,
+        -- so it cannot serve a match-only WHERE. Mirrored by the ensure_table
+        -- declaration in bot/classifications/__init__.py and by migration
+        -- 006_derived_indexes (this DDL only ever runs on a table that does not
+        -- exist yet, so it cannot add the index to the live database).
+        INDEX cls_results_match (aoe2_match_id)
     )""",
     """CREATE TABLE IF NOT EXISTS cls_result_metrics (
         `key` VARCHAR(191) NOT NULL,
@@ -42,7 +48,8 @@ CLS_TABLES = [
         metric VARCHAR(191) NOT NULL,
         value FLOAT,
         PRIMARY KEY (`key`, aoe2_match_id, player_number, metric),
-        INDEX cls_metrics_metric (`key`, metric)
+        INDEX cls_metrics_metric (`key`, metric),
+        INDEX cls_result_metrics_match (aoe2_match_id)
     )""",
     # Per-player corpus totals (ALL scanned player-games, categorized or not). The denominator
     # for "% of total games" and the source of the "mixed / uncategorized" remainder on the web.

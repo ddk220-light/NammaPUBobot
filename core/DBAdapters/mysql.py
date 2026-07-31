@@ -29,7 +29,17 @@ reference_options = dict(
 # existing table is limited to adding missing COLUMNS, and changing a key on a
 # populated table is a migration's decision (it can fail on the data), never
 # something an import-time declaration should attempt behind an operator's back.
-table_blank = dict(tname=None, columns=[], primary_keys=[], foreign_keys=[], unique_keys=[])
+#
+# `indexes` is the same list shape for NON-unique secondary indexes, and carries
+# the same create_table-only rule for the same reason. It exists so a table's
+# access paths are declared next to its columns rather than living only in a
+# migration: a fresh install creates the table here and would otherwise get no
+# index at all, because the migration that adds one to an EXISTING database runs
+# before `import bot` and finds nothing to alter. The two halves are deliberate
+# and complementary — declaration covers new databases, migration covers old
+# ones — so an index added here must also be added as a migration, and vice
+# versa.
+table_blank = dict(tname=None, columns=[], primary_keys=[], foreign_keys=[], unique_keys=[], indexes=[])
 column_blank = dict(cname=None, ctype=Types.str, notnull=False, unique=False, autoincrement=False, default=None)
 fkey_blank = dict(cname=None, refTable=None, refColumn=None, on_delete=None, on_update=None)
 
@@ -161,10 +171,14 @@ class Adapter:
 			", UNIQUE KEY `{}` ({})".format(name, ", ".join("`{}`".format(c) for c in cols))
 			for name, cols in table['unique_keys']
 		)
+		ikeys = "".join(
+			", INDEX `{}` ({})".format(name, ", ".join("`{}`".format(c) for c in cols))
+			for name, cols in table['indexes']
+		)
 
 		request = "CREATE TABLE {tname} ({tdeskr})".format(
 			tname=table['tname'],
-			tdeskr=", ".join((columns + fkeys)) + pkeys + ukeys
+			tdeskr=", ".join((columns + fkeys)) + pkeys + ukeys + ikeys
 		)
 
 		await self.execute(request)

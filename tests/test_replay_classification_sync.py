@@ -84,10 +84,22 @@ def test_sync_match_uses_live_classifier_shape():
 
 
 # ── sync_match's game_labels dual-write ──────────────────────────────────
-# game_labels.write() always goes through bot.derived.game_labels.db (the
-# same shape as bot/derived/game_stats.py -- see that module's docstring for
-# why), never the `db_adapter` sync_match's cls_* writes use. So these tests
-# monkeypatch game_labels.db directly rather than passing a db_adapter.
+# game_labels.write() honours the SAME db_adapter sync_match's cls_* writes
+# use. That matters: a caller passing an adapter is writing one match through
+# one connection, and a derived write that ignored it would land this match's
+# cls_* rows in the caller's database and its game_labels rows in the bot's.
+# So these tests read the game_labels calls off the db_adapter they passed.
+
+
+def _calls_for(fake, table):
+    """Every recorded call naming `table`, in order. Both a DELETE (whose table
+    is inside the SQL) and an insert_many (whose table is an argument)."""
+    return [
+        call for call in fake.calls
+        if (call[0] == "execute" and table in call[1])
+        or (call[0] == "insert_many" and call[1] == table)
+    ]
+
 
 def _archer_rush_extracted():
     return {
@@ -113,6 +125,22 @@ def _archer_rush_extracted():
 
 def test_sync_match_writes_game_labels_from_the_same_result_and_metric_rows():
     fake = FakeDB()
+    asyncio.run(classification_sync.sync_match(_archer_rush_extracted(), 456, fake))
+
+    calls = _calls_for(fake, "game_labels")
+    assert calls[0] == ("execute", "DELETE FROM game_labels WHERE replay_match_id=%s", [99])
+    assert calls[1][0] == "insert_many"
+    inserted = calls[1][2]
+    assert any(r["label"] == "archer_rush" and r["kind"] == "strategy" for r in inserted)
+    # replay_match_id stamped, played_at threaded through from sync_match's arg.
+    assert all(r["replay_match_id"] == 99 and r["played_at"] == 456 for r in inserted)
+
+
+def test_sync_match_sends_the_derived_write_to_the_db_adapter_it_was_given():
+    # The split-brain guard: with an adapter passed, NOTHING may reach the
+    # module-global db. gl_recorder stands in for that global and must stay
+    # untouched, while the adapter sees the full DELETE + INSERT.
+    fake = FakeDB()
     gl_recorder = FakeDB()
     original_db = game_labels.db
     game_labels.db = gl_recorder
@@ -121,27 +149,36 @@ def test_sync_match_writes_game_labels_from_the_same_result_and_metric_rows():
     finally:
         game_labels.db = original_db
 
-    assert gl_recorder.calls[0] == ("execute", "DELETE FROM game_labels WHERE replay_match_id=%s", [99])
-    assert gl_recorder.calls[1][0] == "insert_many"
-    assert gl_recorder.calls[1][1] == "game_labels"
-    inserted = gl_recorder.calls[1][2]
-    assert any(r["label"] == "archer_rush" and r["kind"] == "strategy" for r in inserted)
-    # replay_match_id stamped, played_at threaded through from sync_match's arg.
-    assert all(r["replay_match_id"] == 99 and r["played_at"] == 456 for r in inserted)
+    assert gl_recorder.calls == []
+    assert len(_calls_for(fake, "game_labels")) == 2
+
+
+def test_sync_match_still_uses_the_module_global_db_when_given_no_adapter(monkeypatch):
+    # And the other half: with no adapter, the module-global is still the writer,
+    # so the ordinary ingest path is unchanged.
+    gl_recorder = FakeDB()
+    monkeypatch.setattr(game_labels, "db", gl_recorder)
+    monkeypatch.setattr(classification_sync, "db", FakeDB())
+
+    asyncio.run(classification_sync.sync_match(_archer_rush_extracted(), 456))
+
+    assert [c[0] for c in gl_recorder.calls] == ["execute", "insert_many"]
 
 
 def test_sync_match_survives_a_game_labels_write_failure():
     # A bug in the derived-layer mapping/write must never cost the cls_*
     # write that already succeeded -- best-effort per the task brief.
-    fake = FakeDB()
-    original_db = game_labels.db
-    game_labels.db = None  # any attribute access inside write() raises AttributeError
-    try:
-        counts = asyncio.run(classification_sync.sync_match(_archer_rush_extracted(), 456, fake))
-    finally:
-        game_labels.db = original_db
+    class _FailsOnGameLabels(FakeDB):
+        async def insert_many(self, table, rows, on_duplicate=None):
+            if table == "game_labels":
+                raise RuntimeError("simulated derived-layer write failure")
+            await super().insert_many(table, rows, on_duplicate)
+
+    fake = _FailsOnGameLabels()
+    counts = asyncio.run(classification_sync.sync_match(_archer_rush_extracted(), 456, fake))
 
     assert counts[0] >= 1
     # cls_* rows were still inserted despite game_labels blowing up.
     assert fake.calls[2][0] == "insert_many"
     assert fake.calls[2][1] == "cls_results"
+    assert _calls_for(fake, "game_labels")[-1][0] == "execute"  # the insert never landed

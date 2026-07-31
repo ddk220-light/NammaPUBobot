@@ -261,6 +261,116 @@ def test_deleted_derived_row_is_repaired_on_the_next_pass(monkeypatch):
 	assert len(fake.rows("game_stats", replay_match_id=4)) == 3
 
 
+# ── over-population: the half `>` could never heal ───────────────────────
+# utils/classifications/dbio.py's wipe_results is a supported operation — the
+# offline runner calls it per classification before a full-window rebuild — so a
+# retuned trigger legitimately REDUCES or SUBSTITUTES a match's cls_results
+# rows. Under `src.n > COALESCE(dst.n, 0)` none of the three cases below is ever
+# pending again and the stale label survives forever.
+
+def test_a_source_row_removed_upstream_repairs_the_stored_label(monkeypatch):
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_labels(fake, 20, ["archer_rush", "knight_rush"])
+	asyncio.run(backfill.drain_game_labels())
+	assert len(fake.rows("game_labels", replay_match_id=20)) == 2
+
+	# The runner retunes archer_rush; this match no longer qualifies for it.
+	fake.conn.execute("DELETE FROM cls_results WHERE aoe2_match_id=20 AND `key`='archer_rush'")
+
+	assert asyncio.run(backfill.pending_game_labels()) == [20]
+	asyncio.run(backfill.drain_game_labels())
+	assert [r["label"] for r in fake.rows("game_labels", replay_match_id=20)] == ["knight_rush"]
+
+
+def test_a_same_count_substitution_upstream_is_repaired(monkeypatch):
+	# The case NO count comparison can see: the same number of rows on both
+	# sides, but a different label. `>` and `<>` are both blind to it and leave a
+	# silently WRONG label on a public match card forever; comparing the (player,
+	# label) SETS is what catches it.
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_labels(fake, 21, ["archer_rush", "spawn_isolated"])
+	asyncio.run(backfill.drain_game_labels())
+	assert sorted(r["label"] for r in fake.rows("game_labels", replay_match_id=21)) == \
+		["archer_rush", "spawn_isolated"]
+
+	# A full-window rebuild retunes both triggers: archer_rush -> scout_rush for
+	# the same player. Two source rows before, two after.
+	fake.conn.execute("DELETE FROM cls_results WHERE aoe2_match_id=21 AND `key`='archer_rush'")
+	fake.add("cls_results", key="scout_rush", aoe2_match_id=21, player_number=1,
+	         played_at=1700000000)
+
+	assert asyncio.run(backfill.pending_game_labels()) == [21]
+	asyncio.run(backfill.drain_game_labels())
+	assert sorted(r["label"] for r in fake.rows("game_labels", replay_match_id=21)) == \
+		["scout_rush", "spawn_isolated"]
+	assert asyncio.run(backfill.pending_game_labels()) == []
+
+
+def test_a_label_moving_to_another_player_is_repaired(monkeypatch):
+	# Same label, same count, different PLAYER — the medal-misattribution shape
+	# of the same blind spot, on the labels side.
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_labels(fake, 25, ["archer_rush"], player_number=1)
+	asyncio.run(backfill.drain_game_labels())
+	assert [r["player_number"] for r in fake.rows("game_labels", replay_match_id=25)] == [1]
+
+	fake.conn.execute("DELETE FROM cls_results WHERE aoe2_match_id=25")
+	fake.add("cls_results", key="archer_rush", aoe2_match_id=25, player_number=2,
+	         played_at=1700000000)
+
+	assert asyncio.run(backfill.pending_game_labels()) == [25]
+	asyncio.run(backfill.drain_game_labels())
+	assert [r["player_number"] for r in fake.rows("game_labels", replay_match_id=25)] == [2]
+
+
+def test_a_source_dropping_to_zero_still_cleans_the_orphaned_rows(monkeypatch):
+	# The case a LEFT JOIN from the source cannot express at all: with no source
+	# rows left the match produces no `src` group, so it never appears in the
+	# join and its orphaned derived rows are never touched again.
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_labels(fake, 22, ["archer_rush"])
+	asyncio.run(backfill.drain_game_labels())
+	assert len(fake.rows("game_labels", replay_match_id=22)) == 1
+
+	fake.conn.execute("DELETE FROM cls_results WHERE aoe2_match_id=22")
+
+	assert asyncio.run(backfill.pending_game_labels()) == [22]
+	asyncio.run(backfill.drain_game_labels())
+	assert fake.rows("game_labels", replay_match_id=22) == []
+	# ...and having cleaned them it converges: an all-zero match is not pending.
+	assert asyncio.run(backfill.pending_game_labels()) == []
+
+
+def test_orphaned_game_stats_rows_are_cleaned_when_the_raw_rows_go(monkeypatch):
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_players(fake, 23, players=2)
+	asyncio.run(backfill.drain_game_stats(computed_at=1))
+	fake.conn.execute("DELETE FROM rs_player_games WHERE aoe2_match_id=23")
+
+	assert asyncio.run(backfill.pending_game_stats()) == [23]
+	asyncio.run(backfill.drain_game_stats(computed_at=2))
+	assert fake.rows("game_stats", replay_match_id=23) == []
+	assert asyncio.run(backfill.pending_game_stats()) == []
+
+
+def test_an_extra_derived_row_is_healed_rather_than_left_forever(monkeypatch):
+	# Over-population from the other direction: a stray row nobody derived.
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_players(fake, 24, players=2)
+	asyncio.run(backfill.drain_game_stats(computed_at=1))
+	fake.add("game_stats", replay_match_id=24, player_number=9, computed_at=1)
+
+	assert asyncio.run(backfill.pending_game_stats()) == [24]
+	asyncio.run(backfill.drain_game_stats(computed_at=2))
+	assert sorted(r["player_number"] for r in fake.rows("game_stats", replay_match_id=24)) == [1, 2]
+
+
 # ── batch cap ────────────────────────────────────────────────────────────
 
 def test_drain_processes_at_most_BATCH_matches_per_pass(monkeypatch):
@@ -428,6 +538,11 @@ def test_batch_logs_one_line_with_the_real_counts(monkeypatch):
 
 
 def test_nothing_pending_logs_nothing(monkeypatch):
+	# The converged steady state is the ONE silent case: nothing processed,
+	# nothing failed, nothing pending. It still computes the total (see
+	# test_a_fully_quarantined_backlog_is_never_silent) -- it just reports it at
+	# debug, because an identical line every POLL_INTERVAL forever carries no
+	# information a reader does not already have.
 	fake = _SqliteDB()
 	_install(monkeypatch, fake)
 	logs = _RecordingLog()
@@ -436,6 +551,59 @@ def test_nothing_pending_logs_nothing(monkeypatch):
 	assert asyncio.run(backfill.drain_game_stats(computed_at=1)) == 0
 	assert asyncio.run(backfill.drain_game_labels()) == 0
 	assert logs.info_lines == []
+
+
+def test_a_fully_quarantined_backlog_is_never_silent(monkeypatch):
+	# The hole this must never hide: every remaining pending match has failed
+	# MAX_ATTEMPTS times, so the batch query returns nothing and the drain
+	# processes nothing -- but the backlog is real and permanent. Returning early
+	# on an empty batch made that indistinguishable from convergence, with no log
+	# line anywhere. The line must still be emitted, must carry the real total,
+	# and must say the total is quarantined rather than merely "pending".
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	logs = _RecordingLog()
+	monkeypatch.setattr(backfill, "log", logs)
+	for mid in (1, 2):
+		_match_with_players(fake, mid, players=2)
+	fake.fail_on.update({1, 2})
+
+	for _ in range(backfill.MAX_ATTEMPTS):
+		asyncio.run(backfill.drain_game_stats(computed_at=1))
+	assert asyncio.run(backfill.pending_game_stats()) == []   # nothing attemptable left
+	logs.info_lines.clear()
+
+	# A pass that picks up nothing at all, with the backlog fully quarantined.
+	assert asyncio.run(backfill.drain_game_stats(computed_at=1)) == 0
+
+	assert len(logs.info_lines) == 1
+	line = logs.info_lines[0]
+	assert "0 matches processed" in line
+	assert "2 still pending" in line
+	assert "2 of those quarantined" in line
+	assert "0 attemptable" in line
+
+
+def test_the_pending_total_separates_quarantined_from_attemptable(monkeypatch):
+	# Two failing matches and one healthy one: the log must not blur them into a
+	# single "3 pending" that looks like ordinary backlog.
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	logs = _RecordingLog()
+	monkeypatch.setattr(backfill, "log", logs)
+	for mid in (1, 2, 3):
+		_match_with_labels(fake, mid, ["archer_rush"])
+	fake.fail_on.update({1, 2})
+
+	for _ in range(backfill.MAX_ATTEMPTS):
+		asyncio.run(backfill.drain_game_labels())
+
+	line = logs.info_lines[-1]
+	assert "2 still pending" in line
+	assert "2 of those quarantined" in line
+	assert "0 attemptable" in line
+	# The healthy match was written and left the backlog entirely.
+	assert [r["replay_match_id"] for r in fake.rows("game_labels")] == [3]
 
 
 # ── tick integration ─────────────────────────────────────────────────────
@@ -468,6 +636,45 @@ def test_think_never_raises_when_every_query_fails(monkeypatch):
 
 	# Both drains reported their own failure; neither cost the other its pass.
 	assert len(logs.error_lines) == 2
+
+
+def test_think_swallows_a_failure_in_its_own_body(monkeypatch):
+	# Distinct from the test above, which only exercises failures inside the
+	# spawned _run task. think()'s own try/except covers the scheduling code --
+	# create_task raising under memory pressure, a patched asyncio, a bad
+	# frame_time -- and on_think has no guard of its own, so anything escaping
+	# here takes down the whole 1s tick for every other job in it.
+	logs = _RecordingLog()
+	monkeypatch.setattr(backfill, "log", logs)
+
+	class _BrokenAsyncio:
+		@staticmethod
+		def create_task(coro):
+			coro.close()   # never scheduled; keeps "coroutine was never awaited" quiet
+			raise RuntimeError("cannot schedule")
+
+	monkeypatch.setattr(backfill, "asyncio", _BrokenAsyncio)
+	job = backfill.DerivedBackfill()
+
+	asyncio.run(job.think(1000.0))   # must not raise
+
+	assert job._running is False     # and must not wedge the job shut forever
+	assert len(logs.error_lines) == 1
+	assert "think()" in logs.error_lines[0]
+
+	# Proof it is not wedged: with asyncio restored the next due pass runs.
+	monkeypatch.undo()
+	logs2 = _RecordingLog()
+	monkeypatch.setattr(backfill, "log", logs2)
+	calls = []
+
+	async def _noop():
+		calls.append(1)
+
+	monkeypatch.setattr(backfill, "drain_game_stats", _noop)
+	monkeypatch.setattr(backfill, "drain_game_labels", _noop)
+	_run_think(job, 1000.0 + backfill.POLL_INTERVAL)
+	assert calls == [1, 1]
 
 
 def test_think_is_cadence_gated_and_non_overlapping(monkeypatch):
