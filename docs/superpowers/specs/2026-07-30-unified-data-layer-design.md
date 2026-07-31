@@ -196,6 +196,32 @@ One writer each: ingest writes derived-global; a per-community refresh job
 writes derived-community. Nothing else writes derived, nothing reads raw for
 analysis.
 
+**Derived-global is reconciled, not just written forward** (added during
+stage 3 elaboration, 2026-07-30). Both tables are pure functions of data the
+raw layer already holds, so they are not limited to matches ingested after
+they ship: a stateless loop recomputes any match missing its derived rows.
+Measured on the flagship at elaboration time, that recovers 8885 `game_stats`
+rows over 1126 matches (from `rs_player_games` + `rs_player_units`) and ~24109
+`game_labels` rows (from `cls_results`, dropping 7936 `luck_baseline`) — so
+the stage-5a scouting report launches on full history rather than
+accumulating from zero.
+
+The loop is deliberately not a migration: `core/migrations.py` runs before
+`import bot` and may not import `bot.*`, while the medal maths lives in
+`bot/replay_stats/`. Re-deriving medals in SQL to work around that would fork
+the logic — the same divergence identity v2 spent a stage repairing. Being a
+permanent reconciliation rather than a one-shot also makes the ingest-time
+write safely best-effort: a failed write is repaired on the next tick instead
+of leaving a permanent hole.
+
+One exception, accepted: `peak_eapm` cannot be reconstructed for historical
+matches. The per-minute bucket table is empty because the parser version that
+captures buckets shipped after the last match was played, and a parser bump
+does not re-parse completed matches. Historical rows therefore carry a null
+peak; rows written from the next ingest onward carry a real one. The stage-4
+`apm` contract already reports a `games` count beside its medians, which is
+what keeps that partial coverage visible instead of silently thin.
+
 ### 3.4 Identity (v2 — full design in `2026-07-30-identity-v2-design.md`)
 
 Global truth, replacing five stores (`player_profile_map.csv`,
