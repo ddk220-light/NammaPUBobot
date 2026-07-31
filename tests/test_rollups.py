@@ -73,7 +73,8 @@ def _blob(**overrides):
 	tests that are about something else rather than tripped by them."""
 	blob = dict(medal_rates=dict(military=None, villager=None, games_ranked=0),
 	            apm=dict(median_avg=None, median_peak=None, games_avg=0, games_peak=0),
-	            strategies=[], spawns=[], units=[])
+	            strategies=[], spawns=[], units=[],
+	            window_days=None, baseline=dict(games=0, wins=0))
 	blob.update(overrides)
 	return blob
 
@@ -87,15 +88,21 @@ def test_floors_are_the_calibrated_values():
 	# line. BOARD_MIN_GAMES=3 clears every user (min games = 6).
 	assert rollups.SPLIT_MIN_GAMES == 5
 	assert rollups.BOARD_MIN_GAMES == 3
+	# Also measured: at 60 days 35 of 42 linked players have a game and 30 clear
+	# SPLIT_MIN_GAMES; at 30 that is 29 and 26, and the number keeping a full
+	# three-clause sentence falls from 19 to 13.
+	assert rollups.WINDOW_DAYS == 60
 
 
 # ── the contract shape ───────────────────────────────────────────────────
 
 def test_rollup_has_exactly_the_contract_keys():
 	rollup = compute_rollup([_stat(1)], [], 5)
-	assert set(rollup) == {"medal_rates", "apm", "strategies", "spawns", "units"}
+	assert set(rollup) == {"medal_rates", "apm", "strategies", "spawns", "units",
+	                       "window_days", "baseline"}
 	assert set(rollup["medal_rates"]) == {"military", "villager", "games_ranked"}
 	assert set(rollup["apm"]) == {"median_avg", "median_peak", "games_avg", "games_peak"}
+	assert set(rollup["baseline"]) == {"games", "wins"}
 
 
 def test_no_games_produces_the_shape_with_no_invented_numbers():

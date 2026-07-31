@@ -1507,3 +1507,163 @@ async def _m009(db):
 
 	await db.execute(_M009_BACKFILL)
 	log.info("migrations: 009_identities_bound_at: seeded identities.bound_at from last_seen_at")
+
+
+# --- 010: game_stats gains a date and a compute version ----------------------
+
+# Nullable, and no DEFAULT, because "this match has no recorded date" is a real
+# state: 19 production matches carry an empty replay_matches.played_at, and
+# bot/derived/rollups.in_window deliberately reads a NULL as OUTSIDE every
+# window. A DEFAULT of 0 would say the same thing (0 is before every window
+# start) but would say it as data rather than as an absence, and the next reader
+# to write `COALESCE(played_at, NOW())` would have nothing to warn them off.
+_M010_ADD_PLAYED_AT = "ALTER TABLE `game_stats` ADD COLUMN `played_at` BIGINT NULL"
+
+# NOT NULL WITH A DEFAULT OF 0, and unlike 008 the default here carries meaning
+# rather than hiding a bug. 0 means "written by a compute older than this
+# deploy's", which is exactly true of every row already in the table and exactly
+# what makes them all pending for bot/derived/backfill.py — whose source side
+# tags rows with `v{game_stats.COMPUTE_VERSION}` while the derived side tags them
+# with their own stored version, so a 0 row is a plain set difference and gets
+# rewritten by the ordinary reconciliation loop.
+#
+# The DEFAULT also buys the rollback safety 009 has and 008 declines: during a
+# rolling deploy the OLD container keeps inserting game_stats rows without this
+# column, and rather than failing they land version 0 — which self-corrects,
+# because 0 is precisely the value that means "recompute me".
+_M010_ADD_VERSION = ("ALTER TABLE `game_stats` "
+                     "ADD COLUMN `compute_version` BIGINT NOT NULL DEFAULT '0'")
+
+# The date backfill, from the raw match row rather than from game_labels.
+#
+# PROVISIONAL, AND DELIBERATELY REDUNDANT. bot/derived/backfill.played_at_epoch_of
+# is the authoritative writer of this column and overwrites every row here within
+# minutes — the compute_version seed above makes all of them pending, and the
+# reconciliation loop stamps played_at as it rewrites each one. This statement
+# exists only so the window is right at the FIRST boot rather than eight minutes
+# into it, because the state it avoids is every player's /rank reading "No games
+# in the last 60 days" while the loop catches up.
+#
+# So these two are NOT a pair of implementations to be kept in sync, and unifying
+# them is not an improvement available to this module (a migration runs before
+# `import bot` and cannot call into bot/derived/ at all). If they ever disagreed,
+# the Python one wins by construction and a 60-day window could not tell.
+#
+# WHY NOT game_labels, which already holds a BIGINT epoch and would need no
+# parsing: it only holds one for a match some classifier fired on. Dating a game
+# by whether a classifier happened to match it means a player's 60-day window
+# silently contains a different set of games from the one they played, and the
+# two matches with no labels at all would be undateable forever. replay_matches
+# has a row for every ingested match, which is the population being dated.
+#
+# STR_TO_DATE parses what bot/replay_stats/jobs._date_str wrote — UTC,
+# "%Y-%m-%d %H:%M" — and returns NULL on the empty strings, which is the value
+# those rows should have anyway.
+#
+# TIMESTAMPDIFF FROM THE EPOCH LITERAL, NOT UNIX_TIMESTAMP. UNIX_TIMESTAMP reads
+# a naive datetime in the SERVER's session timezone, so on any container not set
+# to UTC it would shift every historical date by that offset — silently, and in
+# a direction nothing downstream could detect, since the numbers would stay
+# plausible. TIMESTAMPDIFF against a literal is timezone-free by construction.
+#
+# The bare `%` needs no doubling: this runs through db.execute with no args, and
+# aiomysql only applies `%`-interpolation when args are passed. Adding an
+# argument to this statement means escaping them.
+#
+# Guarded on `played_at IS NULL` so a re-run after a body that died partway
+# through cannot clobber the full-precision epochs the running bot has since
+# written through the live ingest path (store.write_match), which are strictly
+# better than the minute-truncated values recovered here.
+_M010_BACKFILL_PLAYED_AT = (
+	"UPDATE game_stats gs JOIN replay_matches rm "
+	"ON rm.replay_match_id = gs.replay_match_id "
+	"SET gs.played_at = TIMESTAMPDIFF(SECOND, '1970-01-01 00:00:00', "
+	"STR_TO_DATE(rm.played_at, '%Y-%m-%d %H:%i')) "
+	"WHERE gs.played_at IS NULL")
+
+
+@migration("010_game_stats_played_at")
+async def _m010(db):
+	"""Give `game_stats` the two columns the windowed scouting report needs: the
+	date of the game, and the version of the compute that wrote the row.
+
+	WHY played_at. player_rollups now covers the last WINDOW_DAYS rather than all
+	of history (bot/derived/rollups.py), because a scouting report is a claim
+	about how somebody plays NOW and the busiest production player has games
+	going back years. Windowing needs every stat row to know its own date, and
+	the two ways of getting one without a column are both wrong: joining
+	game_labels dates a game only if a classifier fired on it, and parsing
+	replay_matches' VARCHAR on every read puts a per-row STR_TO_DATE in the path
+	of every rollup recompute.
+
+	WHY compute_version, AND WHY THIS ONE IS NOT 008 AGAIN. 008's docstring
+	explains that bot/derived/backfill.py's set-comparison predicate cannot see a
+	change to what a row CONTAINS — adding a column changes neither side's row
+	set — and concludes that a migration beats "a second, column-level
+	predicate". This migration ships in the same deploy as a change to what
+	top_units contains (military-only becomes style-only: no trash-line units, no
+	trebuchets, filtered BEFORE the top-3 cut), which is exactly that blind spot
+	for the second time in three migrations.
+
+	It is not answered with a column-level predicate. The version travels in the
+	EXISTING (mid, pn, tag) tuple the comparison already groups on, so a stale row
+	is an ordinary set difference with no new query and the same termination
+	proof. What that buys is precisely what a migration could not: recomputing
+	top_units in SQL would mean a second implementation of the style-unit rules —
+	a window function, a JSON_ARRAYAGG, and a category list kept in step by hand
+	with bot/derived/game_stats.py. Seeding a version column instead leaves the
+	one implementation in Python and lets the loop that already exists apply it.
+
+	So this migration deliberately does NOT recompute anything. It seeds
+	compute_version to 0 on every existing row, which makes all 8885 of them
+	differ from game_stats.COMPUTE_VERSION and therefore pending; the
+	reconciliation loop then rewrites them 25 at a time, ~8 minutes for the whole
+	table, using the same code the live ingest path uses.
+
+	WHY PURE SQL, as ever: this module runs before `import bot` (see the docstring
+	at the top of this file), so it cannot call into bot/derived/ at all —
+	db.ensure_table's sync wrapper would drive loop.run_until_complete on an
+	already-running loop and crash the boot.
+
+	IDEMPOTENT PER STATEMENT, not merely per migration: both ADDs are guarded on
+	information_schema because MySQL has no `ADD COLUMN IF NOT EXISTS`, and the
+	UPDATE only touches rows still holding NULL. The guards are check-then-act, so
+	two containers booting at once can both pass one and the loser's ALTER fails
+	on a duplicate column name — the same tolerance 005/006/008/009 rely on: the
+	loser crashes, Railway restarts it, and the retry finds the columns present
+	and re-runs only the harmless UPDATE.
+
+	The UPDATE runs even when the column was already there, deliberately, for the
+	same reason 008's and 009's do: `import bot`'s ensure_table ADDs any declared
+	column it does not find, so played_at can exist holding NULL for every row
+	without this migration ever having run. Short-circuiting on the ADD's guard
+	would leave that database with a scouting report whose window contains no
+	game at all — every player reading "No games in the last 60 days" forever.
+
+	A missing `game_stats` is not a state to invent: bot/derived/__init__.py
+	creates it with both columns on first import, so skipping is correct here and
+	is logged rather than passed over silently.
+	"""
+	if not await table_exists(db, "game_stats"):
+		log.info("migrations: 010_game_stats_played_at: game_stats does not exist, skipping "
+		         "(bot/derived/__init__.py creates it with both columns already on it)")
+		return
+
+	if not await column_exists(db, "game_stats", "played_at"):
+		await db.execute(_M010_ADD_PLAYED_AT)
+		log.info("migrations: 010_game_stats_played_at: added game_stats.played_at")
+
+	if not await column_exists(db, "game_stats", "compute_version"):
+		await db.execute(_M010_ADD_VERSION)
+		log.info("migrations: 010_game_stats_played_at: added game_stats.compute_version "
+		         "(0 on every existing row, which is what makes them all pending for "
+		         "bot/derived/backfill.py)")
+
+	if not await table_exists(db, "replay_matches"):
+		log.info("migrations: 010_game_stats_played_at: replay_matches does not exist, "
+		         "leaving played_at NULL (every game then reads as outside the window)")
+		return
+
+	await db.execute(_M010_BACKFILL_PLAYED_AT)
+	log.info("migrations: 010_game_stats_played_at: seeded game_stats.played_at from "
+	         "replay_matches.played_at")

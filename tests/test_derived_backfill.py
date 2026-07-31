@@ -14,6 +14,7 @@ Two things shape this file.
    coroutines with asyncio.run().
 """
 import asyncio
+import calendar
 import json
 import sqlite3
 
@@ -47,7 +48,7 @@ CREATE TABLE game_stats (
 	replay_match_id INTEGER, player_number INTEGER, profile_id INTEGER, civ TEXT, team TEXT,
 	winner INTEGER, avg_eapm INTEGER, peak_eapm INTEGER, military_medal INTEGER,
 	villager_medal INTEGER, has_production INTEGER NOT NULL, top_units TEXT,
-	computed_at INTEGER,
+	computed_at INTEGER, played_at INTEGER, compute_version INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (replay_match_id, player_number));
 CREATE TABLE game_labels (
 	replay_match_id INTEGER, player_number INTEGER, label TEXT, kind TEXT, evidence TEXT,
@@ -169,11 +170,82 @@ def test_pending_game_stats_lists_only_matches_missing_derived_rows(monkeypatch)
 	_match_with_players(fake, 1)          # nothing derived  -> pending
 	_match_with_players(fake, 2)          # fully derived    -> not pending
 	_match_with_players(fake, 3)          # half derived     -> pending
+	# compute_version explicitly at the CURRENT one: a row written by an older
+	# compute is pending by design (see backfill._STATS_SRC), so "fully derived"
+	# has to mean derived by THIS deploy or match 2 belongs in the answer.
 	for pn in (1, 2):
-		fake.add("game_stats", replay_match_id=2, player_number=pn, has_production=1, computed_at=1)
-	fake.add("game_stats", replay_match_id=3, player_number=1, has_production=1, computed_at=1)
+		fake.add("game_stats", replay_match_id=2, player_number=pn, has_production=1,
+		         computed_at=1, compute_version=game_stats.COMPUTE_VERSION)
+	fake.add("game_stats", replay_match_id=3, player_number=1, has_production=1,
+	         computed_at=1, compute_version=game_stats.COMPUTE_VERSION)
 
 	assert asyncio.run(backfill.pending_game_stats()) == [3, 1]
+
+
+def test_a_row_from_an_older_compute_is_pending_even_though_both_sides_agree(monkeypatch):
+	""" The whole reason game_stats.COMPUTE_VERSION exists.
+
+	Match 2 has exactly the rows its source implies -- same match, same player
+	numbers, nothing missing and nothing orphaned -- so every set comparison this
+	module made before the version tag existed reported it converged, and the
+	stale VALUES in it (top_units computed under the old military-only rule, a
+	NULL played_at) would have stood forever. Carrying the version in the tag is
+	what turns "this row was computed by an older revision" into an ordinary set
+	difference. """
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_players(fake, 2)
+	for pn in (1, 2):
+		fake.add("game_stats", replay_match_id=2, player_number=pn, has_production=1,
+		         computed_at=1, compute_version=game_stats.COMPUTE_VERSION - 1)
+
+	assert asyncio.run(backfill.pending_game_stats()) == [2]
+
+	# ...and rewriting it at the current version is what makes it converge, so a
+	# version bump cannot leave the loop spinning on the same match forever.
+	asyncio.run(backfill.process_game_stats(2, computed_at=99))
+	assert asyncio.run(backfill.pending_game_stats()) == []
+
+
+def test_a_rebuilt_row_carries_the_matchs_date_and_the_current_version(monkeypatch):
+	""" played_at is parsed out of replay_matches (UTC, to the minute) and
+	stamped on every row, because rollups windows the report on it. A rebuild
+	that left it NULL would put every historical game outside the window and
+	report every player as having played nothing. """
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_players(fake, 7)          # played_at "2024-05-01 13:22"
+
+	asyncio.run(backfill.process_game_stats(7, computed_at=99))
+
+	rows = asyncio.run(fake.fetchall("SELECT * FROM game_stats WHERE replay_match_id=7"))
+	assert rows, "the rebuild wrote nothing"
+	assert {r["compute_version"] for r in rows} == {game_stats.COMPUTE_VERSION}
+	assert {r["played_at"] for r in rows} == {calendar.timegm((2024, 5, 1, 13, 22, 0, 0, 0, 0))}
+
+
+def test_an_undated_match_rebuilds_with_no_date_rather_than_failing(monkeypatch):
+	""" 19 production matches carry an empty played_at. The right outcome is a
+	stat row with no date -- which rollups.in_window reads as outside every
+	window -- not a match that loses its medals over a missing string. """
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_players(fake, 8)
+	asyncio.run(fake.execute("UPDATE replay_matches SET played_at='' WHERE replay_match_id=8"))
+
+	assert asyncio.run(backfill.process_game_stats(8, computed_at=99)) == 2
+	rows = asyncio.run(fake.fetchall("SELECT * FROM game_stats WHERE replay_match_id=8"))
+	assert {r["played_at"] for r in rows} == {None}
+
+
+def test_played_at_is_parsed_as_utc_not_as_local_time():
+	""" replay_matches.played_at is written by time.gmtime, so reading it with
+	anything local-timezone-aware shifts every historical game by the container's
+	offset -- silently, since the shifted epochs stay entirely plausible. """
+	assert backfill.parse_played_at("2024-05-01 13:22") == 1714569720
+	assert backfill.parse_played_at("") is None
+	assert backfill.parse_played_at(None) is None
+	assert backfill.parse_played_at("not a date") is None
 
 
 def test_pending_game_labels_ignores_keys_outside_the_allowlist(monkeypatch):

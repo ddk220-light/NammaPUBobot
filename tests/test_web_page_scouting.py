@@ -139,16 +139,36 @@ def _render(tmp_path, cases):
 	return json.loads(proc.stdout)
 
 
-# ── payloads, shaped exactly as bot/web.py's _scouting_report_payload emits ──
-# 34% military and 18% villager sum to 52%, which is CORRECT: the two medals are
-# independent and a player earns neither in most games. That is the number the
-# denominator exists to make legible, and the number a "normalise to 100%" bug
-# destroys.
+# ── payloads, shaped exactly as bot/web.py's _scouting_payload emits ──
+# 0.34 military and 0.18 villager sum past a half, which is CORRECT: the two
+# medals are independent and a player earns neither in most games. That is the
+# number the denominator exists to make legible, and the number a "normalise to
+# 1.0" bug destroys.
 
 FULL = {
 	"pending": None,
-	"medals": {"military_pct": 34, "villager_pct": 18, "games_ranked": 50},
+	"window_days": 60,
+	"window_games": 93,
+	"medals": {"military_per_game": 0.34, "villager_per_game": 0.18, "games_ranked": 50},
 	"apm": {"median_avg": 62.5, "games_avg": 38},
+	# Chosen server-side by bot/scouting_report.highlights — the page phrases
+	# them and must never re-rank.
+	"highlights": {
+		"wins_most": [
+			{"dimension": "strategy", "key": "archer_rush", "name": "Archer Rush",
+			 "games": 12, "wins": 7, "losses": 5},
+			{"dimension": "spawn", "key": "spawn_isolated", "name": "spawning alone",
+			 "games": 7, "wins": 5, "losses": 2},
+			{"dimension": "unit", "key": "Crossbowman", "name": "Crossbowman",
+			 "games": 11, "wins": 6, "losses": 5},
+		],
+		"loses_most": [
+			{"dimension": "strategy", "key": "knight_rush", "name": "Knight Rush",
+			 "games": 6, "wins": 2, "losses": 4},
+			{"dimension": "spawn", "key": "spawn_near_enemy", "name": "spawning next to the enemy",
+			 "games": 9, "wins": 4, "losses": 5},
+		],
+	},
 	"strategies": [{"key": "archer_rush", "label": "Archer Rush", "games": 12, "wins": 7,
 	                "losses": 5, "winrate": 58.3},
 	               {"key": "knight_rush", "label": "Knight Rush", "games": 6, "wins": 2,
@@ -166,8 +186,13 @@ WITH_PEAK = dict(FULL, apm={"median_avg": 62.5, "games_avg": 38,
 
 # A linked player with a row and nothing above any floor. `pending` is null:
 # they ARE linked, so the pending sentence would be a lie about them.
-THIN = {"pending": None, "medals": None, "apm": None,
+THIN = {"pending": None, "window_days": 60, "window_games": 3, "medals": None, "apm": None,
+        "highlights": {"wins_most": [], "loses_most": []},
         "strategies": [], "spawns": [], "units": []}
+
+# Linked, with history, none of it inside the window. Distinct from THIN and
+# from UNLINKED, because all three are different statements about the player.
+DORMANT = dict(THIN, window_games=0)
 
 UNLINKED = {"pending": "Statistics pending linking"}
 
@@ -175,7 +200,8 @@ UNLINKED = {"pending": "Statistics pending linking"}
 @pytest.fixture(scope="module")
 def rendered(tmp_path_factory):
 	return _render(tmp_path_factory.mktemp("scouting"),
-	               {"full": FULL, "with_peak": WITH_PEAK, "thin": THIN, "unlinked": UNLINKED})
+	               {"full": FULL, "with_peak": WITH_PEAK, "thin": THIN,
+	                "dormant": DORMANT, "unlinked": UNLINKED})
 
 
 # ── the peak, which is absent on every production row today ──────────────
@@ -202,36 +228,61 @@ def test_the_peak_renders_with_its_own_count_once_buckets_arrive(rendered):
 
 # ── medal rates and their denominator ────────────────────────────────────
 
-def test_medal_rates_render_exactly_as_measured_and_are_never_normalised(rendered):
-	""" 34 + 18 = 52, not 100. The two medals are independent, most games earn
-	neither, and rescaling them to fill a pie turns a true 34% into a false 65%.
-	The denominator beside them is what makes the 52% legible. """
-	medals = [ln for ln in rendered["full"]["lines"] if ln.startswith("Medals")]
+def test_medals_render_per_game_and_are_never_normalised(rendered):
+	""" 0.34 + 0.18 = 0.52, not 1.0. The two medals are independent, most games
+	earn neither, and rescaling them to fill a pie turns a true 0.34 into a false
+	0.65. The denominator beside them is what makes the 0.52 legible.
 
-	assert medals == ["Medals: 34% military · 18% villager, over 50 ranked games"]
-	assert "65%" not in medals[0] and "35%" not in medals[0]
+	Per game rather than a percentage, matching `/rank` exactly: the same number,
+	framed as a quantity a reader can picture. """
+	medals = [ln for ln in rendered["full"]["lines"] if "military" in ln]
+
+	assert medals == ["⚔ 0.34 military · 🌾 0.18 villager medals per game, over 50 ranked games"]
+	assert "%" not in medals[0]
+	assert "0.65" not in medals[0] and "0.35" not in medals[0]
 
 
 def test_the_medal_line_always_carries_its_ranked_denominator(rendered):
-	medals = [ln for ln in rendered["full"]["lines"] if ln.startswith("Medals")][0]
+	medals = [ln for ln in rendered["full"]["lines"] if "military" in ln][0]
 
 	assert "over 50 ranked games" in medals
 
 
-def test_a_report_with_no_measured_block_renders_no_line_for_it(rendered):
-	""" Each block is independent: a missing one is omitted, never zeroed. """
-	assert rendered["thin"]["lines"] == []
+def test_a_linked_player_with_a_few_recent_games_is_told_how_few(rendered):
+	""" Not silence, which reads as "we have nothing on you", and not the
+	pending sentence, which would tell a linked player to link. """
+	assert rendered["thin"]["lines"] == ["Only 3 games in the last 60 days"]
+
+
+def test_a_linked_player_with_no_recent_game_is_told_that_rather_than_told_to_link(rendered):
+	""" The state the window created. They ARE linked and their history exists;
+	it is simply all older than 60 days. """
+	assert rendered["dormant"]["lines"] == ["No games in the last 60 days"]
 
 
 # ── the splits, already floored upstream ─────────────────────────────────
 
-def test_each_split_renders_its_top_key_with_a_win_loss_record(rendered):
+def test_the_two_sentences_phrase_exactly_the_clauses_the_server_chose(rendered):
+	""" The page must not re-rank. `highlights` already names the strategy,
+	spawn and unit, picked by a shrunk win rate against the player's own
+	baseline; all the page does is join them into a sentence. """
 	lines = rendered["full"]["lines"]
 
-	assert "Top strategy: Archer Rush · 7W-5L" in lines
-	assert "Top spawn: Near Enemy · 4W-5L" in lines
-	assert "Top unit: Crossbowman · 6W-5L" in lines
-	assert not [ln for ln in lines if "Knight Rush" in ln], "only the top key reaches the reader"
+	assert ("Wins most opening Archer Rush (7W-5L), spawning alone (5W-2L) "
+	        "and massing Crossbowman (6W-5L).") in lines
+	assert ("Loses most opening Knight Rush (2W-4L) and "
+	        "spawning next to the enemy (4W-5L).") in lines
+
+
+def test_a_sentence_missing_a_clause_still_reads_as_a_sentence(rendered):
+	""" The loses-most side here has two clauses, not three: the unit block held
+	one split, so it is the wins-most pick and nothing is left to be the worst.
+	Joining must degrade to "a and b" rather than leaving a dangling comma. """
+	loses = [ln for ln in rendered["full"]["lines"] if ln.startswith("Loses most")][0]
+
+	assert loses.count(",") == 0
+	assert loses.count(" and ") == 1
+	assert "Crossbowman" not in loses
 
 
 def test_no_split_line_carries_a_low_sample_caveat(rendered):
@@ -249,6 +300,7 @@ def test_no_split_line_carries_a_low_sample_caveat(rendered):
 def test_the_spawn_read_lists_the_measured_splits_and_nothing_else(rendered):
 	assert rendered["full"]["spawn"] == "Near Enemy 4W-5L; Isolated 5W-2L."
 	assert rendered["thin"]["spawn"] == "No spawn split above the sample floor yet."
+	assert rendered["dormant"]["spawn"] == "No spawn split above the sample floor yet."
 	assert rendered["unlinked"]["spawn"] == "Statistics pending linking"
 
 
@@ -278,10 +330,12 @@ def test_a_linked_player_with_a_rollup_is_never_told_their_stats_are_pending(ren
 
 def test_a_linked_player_with_nothing_above_the_floor_is_told_exactly_that(rendered):
 	""" Not pending (they are linked), not zeros (nobody measured it), not an
-	empty card. """
+	empty card. The count is the whole message: it says "quiet player", which an
+	empty card does not distinguish from "broken report". """
 	card = rendered["thin"]["card"]
 
-	assert "Nothing above the sample floor yet" in card
+	assert "Only 3 games in the last 60 days" in card
+	assert "pending" not in card.lower()
 	assert "0%" not in card and "0W-0L" not in card
 
 

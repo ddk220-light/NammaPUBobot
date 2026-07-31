@@ -257,3 +257,47 @@ def test_a_row_with_an_unexpected_key_set_is_rejected_loudly():
 
 	with pytest.raises(ValueError, match="expected exactly"):
 		_written_payload([{k: v for k, v in _label_row().items() if k != "kind"}])
+
+
+def test_position_keys_are_a_subset_of_the_stored_spawn_keys():
+	""" A display subset, never a replacement. The other eight spawn labels are
+	stored exactly as before -- storing is not displaying -- and only the
+	scouting report's summary narrows to these three. """
+	assert set(game_labels.POSITION_KEYS) <= set(game_labels.SPAWN_KEYS)
+	assert len(set(game_labels.POSITION_KEYS)) == 3
+
+
+def test_position_keys_match_the_cards_spawn_phrases_exactly():
+	""" bot/replay_stats/card_query.SPAWN_PHRASES pairs the SAME three keys with
+	card-specific wording, in the same priority order. Deliberately two tuples
+	and not one import -- the card picks ONE phrase per player and needs a
+	priority, the scouting report ranks all three on their records and needs
+	none -- so this test is the only thing stopping them drifting into two
+	different ideas of what "position" means.
+
+	Parsed as text rather than imported: bot/replay_stats/card_query.py reaches
+	the database on import. """
+	import ast
+	import os
+
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	with open(os.path.join(root, "bot", "replay_stats", "card_query.py"), encoding="utf-8") as f:
+		block = f.read().split("SPAWN_PHRASES = ", 1)[1]
+	# Up to and including the closing paren of the literal.
+	depth, end = 0, 0
+	for i, ch in enumerate(block):
+		depth += (ch == "(") - (ch == ")")
+		if depth == 0 and i:
+			end = i + 1
+			break
+	phrases = ast.literal_eval(block[:end])
+
+	assert tuple(k for k, _phrase in phrases) == game_labels.POSITION_KEYS
+
+
+def test_a_map_fact_is_stored_but_is_not_a_position():
+	""" "Wins most when spawning stone-poor" is a claim about the map generator,
+	not about the player. These stay in SPAWN_KEYS so game_labels keeps them. """
+	for key in ("spawn_gold_poor", "spawn_near_stone", "tight_villagers"):
+		assert game_labels.kind_for(key) == "spawn"
+		assert key not in game_labels.POSITION_KEYS

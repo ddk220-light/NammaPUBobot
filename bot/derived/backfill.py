@@ -118,6 +118,7 @@ wrapped, and every per-match failure is caught, logged and stepped over so one
 bad match cannot cost the other twenty-four in its batch.
 """
 import asyncio
+import calendar
 import time
 
 from core.console import log
@@ -135,14 +136,37 @@ MAX_ATTEMPTS = 3        # per-process retries before a match is quarantined (see
 LABEL_KEYS = tuple(game_labels.STRATEGY_KEYS) + tuple(game_labels.SPAWN_KEYS)
 
 # Both sides of both comparisons project into one common (mid, pn, tag) shape so
-# _body can be written once. game_stats has no per-row tag — its grain is the
-# player alone — so it carries a constant, which makes the group key degenerate
-# to (mid, pn) exactly as intended. A non-empty literal on purpose: '' would give
-# the unioned column MySQL type VARCHAR(0), which is legal but needlessly exotic
-# to group by.
-_STATS_SRC = ("SELECT DISTINCT replay_match_id AS mid, player_number AS pn, '-' AS tag "
-              "FROM replay_players")
-_STATS_DST = ("SELECT replay_match_id AS mid, player_number AS pn, '-' AS tag FROM game_stats")
+# _body can be written once. game_labels' tag is the label itself; game_stats has
+# no per-row label — its grain is the player alone — so its tag carries the
+# compute version instead, which is the next paragraph.
+#
+# THE TAG IS THE COMPUTE VERSION, which is what lets this loop see a change in
+# what a row CONTAINS and not only in which rows exist. The source side tags
+# every row with the version this deploy would write; the derived side tags each
+# row with the version that actually wrote it. A row computed by an older
+# revision lands in a different group from its source row, both groups have size
+# 1, and the match is pending by exactly the predicate that was already here —
+# no second query and no column-level comparison. The termination proof is
+# unchanged: each side still contributes at most one row per (mid, pn, tag),
+# since the source is DISTINCTed and game_stats' PK is (mid, pn). After the
+# rewrite the two versions agree, the group has size 2, and the match leaves the
+# pending set permanently.
+#
+# See bot/derived/game_stats.COMPUTE_VERSION for why this exists at all, and why
+# 008's "a migration beats a column-level predicate" is not contradicted by it.
+#
+# An INTEGER tag, not a string: the two comparisons are separate queries, so
+# game_stats' tag column has no obligation to match game_labels' (which is the
+# label text), and a bare integer avoids CONCAT — which MySQL and sqlite spell
+# differently, while tests/test_derived_backfill.py runs this very SQL against
+# sqlite. Interpolated rather than bound because _body's args belong to the
+# source's own WHERE clause and the version is a constant of the deploy, not a
+# parameter; it is an int literal from a module constant, so there is nothing
+# here for a bind to protect.
+_STATS_SRC = (f"SELECT DISTINCT replay_match_id AS mid, player_number AS pn, "
+              f"{int(game_stats.COMPUTE_VERSION)} AS tag FROM replay_players")
+_STATS_DST = ("SELECT replay_match_id AS mid, player_number AS pn, "
+              "compute_version AS tag FROM game_stats")
 _LABELS_DST = ("SELECT replay_match_id AS mid, player_number AS pn, label AS tag FROM game_labels")
 
 # Match ids that failed MAX_ATTEMPTS times in THIS process. Process-local on
@@ -259,6 +283,72 @@ def played_at_of(result_rows):
 # (POLL_INTERVAL seconds later) rewrites the match from the settled rows. The
 # alternatives (a lock, or making the adapter transactional) cost far more than
 # a derived row being stale for ten seconds.
+# What bot/replay_stats/jobs._date_str writes into replay_matches.played_at:
+# time.strftime("%Y-%m-%d %H:%M", time.gmtime(epoch)). UTC, to the minute.
+_PLAYED_AT_FORMAT = "%Y-%m-%d %H:%M"
+
+
+def parse_played_at(value):
+	"""replay_matches.played_at -> epoch, or None when it says nothing. Pure.
+
+	calendar.timegm, never time.mktime or datetime.timestamp(): the stored string
+	was produced by time.gmtime and carries no offset, so anything that reads it
+	in LOCAL time shifts every date by the container's timezone — silently, and
+	undetectably downstream, since the shifted numbers stay entirely plausible.
+	timegm is the exact inverse of gmtime and is timezone-free by construction.
+
+	A malformed or empty value returns None rather than raising. The column is a
+	free-text VARCHAR that predates any of this (bot/replay_stats/query.py
+	compares it against ISO date strings), 19 production rows are empty, and the
+	right answer for "this match's date is unknown" is an undated stat row —
+	which rollups.in_window reads as outside every window. Raising would instead
+	cost the match its whole game_stats rebuild, medals and all, over a date."""
+	text = str(value or "").strip()
+	if not text:
+		return None
+	try:
+		return calendar.timegm(time.strptime(text, _PLAYED_AT_FORMAT))
+	except ValueError:
+		return None
+
+
+async def played_at_epoch_of(match_id):
+	"""The match's played-at epoch for game_stats, out of replay_matches. None
+	when the match has no recorded date (19 production matches do not).
+
+	DELIBERATELY A DIFFERENT SOURCE FROM played_at_of ABOVE, which reads
+	cls_results for game_labels, and the asymmetry is the point rather than an
+	oversight. game_labels is a derived copy of a cls_* row and takes its date
+	from the same place that row did, so a backfilled label is byte-identical to
+	the one the live path writes. game_stats is derived from the RAW replay
+	tables and must not acquire a dependency on the cls_* chain that stage 6
+	retires — reading the date beside the raw rows it is already reading keeps
+	the two derived tables' dependencies exactly as separate as their sources.
+
+	The parsing happens in Python (parse_played_at above) rather than in the
+	SELECT. STR_TO_DATE and TIMESTAMPDIFF would work against MySQL and against
+	nothing else — tests/test_derived_backfill.py runs this module's real SQL
+	against sqlite, which has neither — and pushing the format into a query string
+	makes the one rule that matters here, that the string is UTC, invisible to
+	every reader and untestable without a database.
+
+	THIS IS THE AUTHORITATIVE WRITER of game_stats.played_at for historical rows.
+	010_game_stats_played_at also seeds the column, in SQL, because it cannot
+	import this module — but that seed is PROVISIONAL and this overwrites every
+	row of it within minutes (the same migration seeds compute_version to 0, which
+	makes every row pending). The two are therefore not a pair of implementations
+	kept in sync and must not be "unified": if they ever disagreed, this one wins
+	by construction, and a 60-day window could not tell the difference anyway.
+
+	The <60s difference from the live path's full-precision epoch is accepted for
+	the same reason. It is also invisible to the pending predicate, which compares
+	versions and not dates, so it cannot make a match oscillate.
+	"""
+	row = await db.fetchone(
+		"SELECT played_at FROM replay_matches WHERE replay_match_id=%s", [match_id])
+	return parse_played_at((row or {}).get("played_at"))
+
+
 async def process_game_stats(match_id, computed_at):
 	"""Recompute and rewrite one match's game_stats rows. Returns rows written.
 
@@ -274,7 +364,8 @@ async def process_game_stats(match_id, computed_at):
 	units = await db.fetchall("SELECT * FROM replay_units WHERE replay_match_id=%s", [match_id])
 	apm = await db.fetchall("SELECT * FROM replay_apm WHERE replay_match_id=%s", [match_id])
 	rows = game_stats.compute_game_stats(list(players or []), list(units or []),
-	                                     list(apm or []), computed_at)
+	                                     list(apm or []), computed_at,
+	                                     await played_at_epoch_of(match_id))
 	await game_stats.write(match_id, rows)
 	return len(rows)
 

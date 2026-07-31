@@ -1528,10 +1528,14 @@ def _scouting_payload(rollup):
 	military, villager = medals.get("military"), medals.get("villager")
 	ranked = medals.get("games_ranked") or 0
 	medal_payload = None
-	if ranked and military is not None and villager is not None:
+	if ranked >= scouting_report.MIN_GAMES and military is not None and villager is not None:
+		# PER GAME, not a percentage, matching `/rank` exactly. The two are the
+		# same number — a player holds at most one military medal in a game — so
+		# this is a framing choice, and it is made in one place so the card and
+		# the Discord report cannot end up quoting the same figure two ways.
 		medal_payload = {
-			"military_pct": round(military * 100),
-			"villager_pct": round(villager * 100),
+			"military_per_game": military,
+			"villager_per_game": villager,
 			"games_ranked": ranked,
 		}
 
@@ -1539,9 +1543,9 @@ def _scouting_payload(rollup):
 	median_avg, games_avg = apm.get("median_avg"), apm.get("games_avg") or 0
 	median_peak, games_peak = apm.get("median_peak"), apm.get("games_peak") or 0
 	apm_payload = None
-	if median_avg is not None and games_avg:
+	if median_avg is not None and games_avg >= scouting_report.MIN_GAMES:
 		apm_payload = {"median_avg": median_avg, "games_avg": games_avg}
-		if median_peak is not None and games_peak:
+		if median_peak is not None and games_peak >= scouting_report.MIN_GAMES:
 			apm_payload["median_peak"] = median_peak
 			apm_payload["games_peak"] = games_peak
 
@@ -1561,9 +1565,23 @@ def _scouting_payload(rollup):
 
 	return {
 		"pending": None,
+		# What span every figure below covers, so the page can say so. None on a
+		# lifetime rollup. Shipped rather than hardcoded in the page for the same
+		# reason it is stored in the blob at all: a card captioned "last 60 days"
+		# over a 30-day rollup is wrong in the one way none of its numbers show.
+		"window_days": rollup.get("window_days"),
+		"window_games": (rollup.get("baseline") or {}).get("games") or 0,
 		"medals": medal_payload,
 		"apm": apm_payload,
-		# The `spawn_` prefix is stripped for display only — the line already
+		# THE CHOSEN CLAUSES, PICKED IN PYTHON. Which strategy is a player's
+		# strength is a shrunk-rate calculation against their own baseline
+		# (bot/scouting_report.highlights), not "the first row of the list" — so
+		# the page is handed the answer instead of re-deriving it in JavaScript,
+		# where a second copy of the shrinkage would drift silently and both
+		# surfaces would still look entirely plausible.
+		"highlights": scouting_report.highlights(rollup),
+		# The full ranked lists stay, for the page's own table and spawn read.
+		# The `spawn_` prefix is stripped for display only — the label already
 		# says spawn, so the prefix would render twice.
 		"strategies": split("strategies", "key", _strategy_label),
 		"spawns": split("spawns", "key", lambda k: str(k or "").removeprefix("spawn_").replace("_", " ").title()),

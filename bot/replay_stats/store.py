@@ -188,8 +188,15 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
         log.error(f"Replay-stats classification write failed for aoe2 match {aoe2_id}: {e}")
     try:
         from bot.derived import game_stats as _gs
+        # played_at_epoch, not parsed_at: the two differ by however long the
+        # replay sat in the ingest queue, and player_rollups windows the
+        # scouting report on when the game was PLAYED. Passed straight down —
+        # the same value replay_matches.played_at was written from above, so a
+        # row rebuilt later by bot/derived/backfill.py from that column agrees
+        # with this one to the minute.
         await _gs.write(aoe2_id, _gs.compute_game_stats(
-            extracted["players"], extracted["units"], extracted.get("apm", []), parsed_at))
+            extracted["players"], extracted["units"], extracted.get("apm", []), parsed_at,
+            played_at_epoch))
     except Exception as e:
         log.error(f"game_stats write failed ({aoe2_id}): {e}")
     try:

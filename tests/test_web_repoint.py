@@ -152,6 +152,8 @@ FULL_ROLLUP = {
 	               {"key": "knight_rush", "games": 6, "wins": 2}],
 	"spawns": [{"key": "spawn_near_enemy", "games": 9, "wins": 4}],
 	"units": [{"unit": "Crossbowman", "games": 11, "wins": 6}],
+	"window_days": 60,
+	"baseline": {"games": 93, "wins": 44},
 }
 
 
@@ -348,14 +350,22 @@ def test_player_scouting_report_is_rendered_from_the_rollup(monkeypatch):
 	report = asyncio.run(web._player_scouting_report(42))
 
 	assert report["pending"] is None
-	assert report["medals"] == {"military_pct": 34, "villager_pct": 18, "games_ranked": 50}
+	assert report["medals"] == {"military_per_game": 0.34, "villager_per_game": 0.18,
+	                            "games_ranked": 50}
 	assert report["apm"]["median_avg"] == 62.5 and report["apm"]["games_avg"] == 38
+	assert report["window_days"] == 60 and report["window_games"] == 93
 	assert [s["key"] for s in report["strategies"]] == ["archer_rush", "knight_rush"]
 	assert report["strategies"][0]["label"] == "Feudal archer poke"
 	assert report["strategies"][0] == {"key": "archer_rush", "label": "Feudal archer poke",
 	                                   "games": 12, "wins": 7, "losses": 5, "winrate": 58}
 	assert report["spawns"][0]["label"] == "Near Enemy"
 	assert report["units"][0]["label"] == "Crossbowman"
+	# The clauses are CHOSEN server-side, so the page never re-ranks. With a
+	# 47% baseline, archer_rush (58%) is the strength and knight_rush (33%) the
+	# weakness -- the shrunk rate, not the row order.
+	assert [h["key"] for h in report["highlights"]["wins_most"]] == [
+		"archer_rush", "spawn_near_enemy", "Crossbowman"]
+	assert [h["key"] for h in report["highlights"]["loses_most"]] == ["knight_rush"]
 
 
 def test_the_scouting_report_reads_the_rollup_for_the_resolved_community(monkeypatch):
@@ -410,14 +420,24 @@ def test_the_peak_eapm_is_omitted_while_no_peak_was_ever_captured():
 	assert "games_peak" not in report["apm"]
 
 
+def test_the_peak_is_held_back_until_its_own_sample_clears_the_floor():
+	""" The peak carries its own count, so it gets the floor separately: a
+	median over 38 games beside a peak over 2 quotes two very different
+	confidences in one line without saying so. """
+	rollup = dict(FULL_ROLLUP, apm={"median_avg": 62.5, "median_peak": 180,
+	                                "games_avg": 38, "games_peak": 2})
+
+	assert web._scouting_payload(rollup)["apm"] == {"median_avg": 62.5, "games_avg": 38}
+
+
 def test_the_peak_appears_on_its_own_once_buckets_arrive():
 	rollup = dict(FULL_ROLLUP, apm={"median_avg": 62.5, "median_peak": 180,
-	                                "games_avg": 38, "games_peak": 4})
+	                                "games_avg": 38, "games_peak": 9})
 
 	report = web._scouting_payload(rollup)
 
 	assert report["apm"] == {"median_avg": 62.5, "games_avg": 38,
-	                         "median_peak": 180, "games_peak": 4}
+	                         "median_peak": 180, "games_peak": 9}
 
 
 def test_a_split_smaller_than_the_players_game_count_is_not_reconciled():

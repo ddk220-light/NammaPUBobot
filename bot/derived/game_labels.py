@@ -46,6 +46,26 @@ SPAWN_KEYS = (
 	"spawn_food_poor", "tight_villagers", "scattered_villagers",
 )
 
+# The subset of SPAWN_KEYS that describes WHERE a player started relative to the
+# other players, as opposed to what was near them. The three are near-exclusive
+# and together cover the one spawn fact worth reading a win rate against: a
+# player who does well next to the enemy and badly across the map from everyone
+# is telling you something about how they play.
+#
+# The other eight are resource and layout facts (gold_poor, near_stone,
+# tight_villagers, ...). They are stored -- storing is not displaying, see the
+# comment above -- and simply have no place in a sentence that reads "wins most
+# when spawning X": "wins most when spawning stone-poor" is a statement about the
+# map generator, not the player.
+#
+# The SAME three keys, in the same priority order, back
+# bot/replay_stats/card_query.SPAWN_PHRASES, which pairs them with card-specific
+# wording. Deliberately two tuples and not one import: the card picks ONE phrase
+# per player and needs a priority order, while the scouting report ranks all
+# three on their records and needs none. tests/test_game_labels.py pins the two
+# key sets equal, so the duplication cannot drift into disagreement.
+POSITION_KEYS = ("spawn_near_enemy", "spawn_isolated", "spawn_near_ally")
+
 
 def kind_for(label):
 	"""'strategy' | 'spawn' | None. luck_baseline is in neither allowlist and

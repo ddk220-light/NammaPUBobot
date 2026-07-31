@@ -2342,6 +2342,7 @@ def test_m008_is_registered_once_under_the_next_free_number():
 		"001_core_renames", "002_drop_retired", "003_seed_identities", "004_identity_v2",
 		"005_identity_conflict_history", "006_derived_indexes", "007_raw_renames",
 		"008_game_stats_has_production", "009_identities_bound_at",
+		"010_game_stats_played_at",
 	]
 
 
@@ -2470,7 +2471,6 @@ def test_m009_is_a_noop_on_a_fresh_install():
 def test_m009_is_registered_once_under_the_next_free_number():
 	names = [name for name, _fn in mig.MIGRATIONS]
 	assert names.count("009_identities_bound_at") == 1
-	assert names[-1] == "009_identities_bound_at"
 
 
 def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
@@ -2509,3 +2509,85 @@ def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
 	src = open(os.path.join(root, "core", "migrations.py"), encoding="utf-8").read()  # noqa: SIM115
 	assert '"`last_seen_at` BIGINT NOT NULL, `bound_at` BIGINT NOT NULL DEFAULT \'0\', "' in src, (
 		"_ensure_identities_table's CREATE drifted from the declaration")
+
+
+def test_m010_is_registered_once_under_the_next_free_number():
+	names = [name for name, _fn in mig.MIGRATIONS]
+	assert names.count("010_game_stats_played_at") == 1
+	assert names[-1] == "010_game_stats_played_at"
+
+
+def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
+	""" Both columns are declared twice — bot/derived/__init__.py's ensure_table
+	and this module's raw ALTERs (a migration cannot import bot.*) — and are kept
+	in sync by hand, exactly like has_production and bound_at above. Drift is not
+	cosmetic: production's columns come from the ALTERs and a fresh install's
+	from the declaration, and _ensure_table never alters an existing column, so a
+	NOT NULL that lands on only one of the two is permanent.
+
+	Types are read from core/DBAdapters/mysql.py's own Types rather than
+	hardcoded, so changing what `db.types.int` means fails this test instead of
+	silently leaving the migration on the old type.
+
+	Parsed as text rather than imported: `import bot.derived` executes
+	db.ensure_table() against conftest's fake. """
+	import os
+
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	with open(os.path.join(root, "bot", "derived", "__init__.py"), encoding="utf-8") as f:
+		block = f.read().split('tname="game_stats"', 1)[1].split("primary_keys=", 1)[0]
+
+	played_at = re.search(r'dict\(cname="played_at"[^\n]*', block)
+	assert played_at, "bot/derived/__init__.py no longer declares game_stats.played_at"
+	assert "ctype=db.types.int" in played_at.group(0)
+	assert "notnull=False" in played_at.group(0), (
+		"played_at must stay nullable: 19 production matches have no recorded date, and "
+		"rollups.in_window reads NULL as outside every window")
+
+	version = re.search(r'dict\(cname="compute_version"[^\n]*', block)
+	assert version, "bot/derived/__init__.py no longer declares game_stats.compute_version"
+	assert "ctype=db.types.int" in version.group(0)
+	assert "notnull=True" in version.group(0), (
+		"compute_version must stay NOT NULL: a NULL would be a third value meaning "
+		"'not backfilled', which is the ambiguity the column exists to remove")
+
+	# Read out of the adapter's source, the same way 008's test does: importing
+	# core.DBAdapters.mysql needs aiomysql, which CI does not install.
+	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+		int_type = re.search(r'^\tint = "([^"]+)"', f.read(), re.M)
+	assert int_type, "core/DBAdapters/mysql.py no longer defines Types.int"
+
+	assert (f"ALTER TABLE `game_stats` ADD COLUMN `played_at` {int_type.group(1)} NULL"
+	        == mig._M010_ADD_PLAYED_AT)
+	assert ("ALTER TABLE `game_stats` ADD COLUMN `compute_version` "
+	        f"{int_type.group(1)} NOT NULL DEFAULT '0'" == mig._M010_ADD_VERSION)
+
+
+def test_the_version_column_defaults_to_zero_so_every_existing_row_is_pending():
+	""" THE MECHANISM, not an incidental default. 0 means "written by a compute
+	older than this deploy's", which is exactly true of every row already in the
+	table — and bot/derived/backfill.py tags its source side with the CURRENT
+	version, so a 0 row is a plain set difference and gets rewritten by the
+	ordinary reconciliation loop. Without the default the seed would have to be a
+	separate UPDATE, and an old container's inserts during a rolling deploy would
+	fail rather than landing a value that self-corrects. """
+	assert "DEFAULT '0'" in mig._M010_ADD_VERSION
+
+	import bot.derived.game_stats as game_stats
+	assert game_stats.COMPUTE_VERSION > 0, (
+		"the current version must differ from the 0 this migration seeds, or nothing "
+		"becomes pending and top_units is never recomputed")
+
+
+def test_the_played_at_backfill_is_timezone_free_and_guarded():
+	""" UNIX_TIMESTAMP reads a naive datetime in the SERVER's session timezone,
+	so on any container not set to UTC it would shift every historical date by
+	that offset — silently, and undetectably downstream, since the numbers stay
+	plausible. TIMESTAMPDIFF against a literal is timezone-free.
+
+	The guard is what makes a re-run safe after a body that died partway: without
+	it, a second pass would overwrite the full-precision epochs the live ingest
+	path has since written with minute-truncated ones. """
+	assert "TIMESTAMPDIFF" in mig._M010_BACKFILL_PLAYED_AT
+	assert "UNIX_TIMESTAMP" not in mig._M010_BACKFILL_PLAYED_AT
+	assert "WHERE gs.played_at IS NULL" in mig._M010_BACKFILL_PLAYED_AT

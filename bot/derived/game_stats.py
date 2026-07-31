@@ -10,8 +10,75 @@ import json
 
 from core.database import db
 
+# Bumped whenever THIS function's output changes for unchanged input. Stored on
+# every row, and bot/derived/backfill.py's pending predicate compares the stored
+# version against this constant -- so changing the compute below and bumping this
+# is all it takes for the reconciliation loop to rewrite every stale row on its
+# own.
+#
+# WHY THIS EXISTS. The loop's predicate is a set comparison of the ROWS each side
+# implies, which is structurally blind to a change in what a row CONTAINS: adding
+# has_production (008) and switching top_units to style units (010) both changed
+# every row's value while changing neither side's row set, so both compared equal
+# forever and needed a hand-written migration to bypass the loop. 008's docstring
+# calls that out and argues a migration beats "a second, column-level predicate".
+# It is right about the column-level predicate and this is not one: the version
+# travels in the EXISTING (mid, pn, tag) tuple the comparison already groups on
+# (see backfill._STATS_SRC), so a stale row is a plain set difference like any
+# other, with no new query machinery and the same termination proof. A migration
+# still has to seed the column, but it no longer has to reimplement this compute
+# in SQL -- which for top_units would mean a second, silently divergent copy of
+# the style-unit rules below.
+COMPUTE_VERSION = 1
 
-def compute_game_stats(players, units, apm, computed_at):
+# Unit lines that cost no gold -- AoE2's "trash" units. Excluded from top_units
+# because they are what a player is FORCED into (a counter, or an empty gold
+# pile), not what they chose, and the whole point of the stored list is to say
+# something about how somebody plays. In production these are three of the six
+# most-built units in the game, so leaving them in means the scouting report
+# tells most players they mass Spearman.
+#
+# Categories rather than unit names, because the category is exactly the "line":
+# utils/replay/extract.classify_unit already folds Scout Cavalry, Light Cavalry,
+# Hussar and the Camel/Eagle scouts into `scout`, and Spearman/Pikeman/
+# Halberdier into `spearman_line`. A name list would have to be extended for
+# every civ-specific variant and would silently miss the next one.
+TRASH_CATEGORIES = ("scout", "skirmisher", "spearman_line")
+
+# Matched as a substring of the unit name, case-insensitively, so `Trebuchet`,
+# `Traction Trebuchet` and `Mounted Trebuchet` are all caught -- three spellings
+# exist in production today and a civ release can add a fourth.
+#
+# Not a trash unit (it costs gold) and excluded for the other reason: it is
+# UBIQUITOUS. It is the second most common military unit in the whole database,
+# built in a quarter of all player-games but only ~5 at a time, because almost
+# every imperial-age game ends with somebody making a couple to knock a building
+# down. A unit nearly everybody builds separates nobody, so it crowds out the
+# unit that would have.
+UBIQUITOUS_UNITS = ("trebuchet",)
+
+
+def is_style_unit(unit_row):
+	"""Whether a replay_units row says anything about how this player CHOOSES to
+	play, i.e. belongs in top_units. Pure.
+
+	Military, gold-costing, and not ubiquitous -- see TRASH_CATEGORIES and
+	UBIQUITOUS_UNITS for why each exclusion is here. Applied BEFORE the top-3
+	cut below, which is the load-bearing part: filtering the stored list at read
+	time instead would leave a player whose three most-built units are Spearman,
+	Scout Cavalry and Skirmisher with no unit line at all, and in production the
+	first style unit sits outside the unfiltered top 3 for 1429 of 6061
+	player-games. The cut has to happen after the filter or the filter mostly
+	deletes rather than selects."""
+	if not unit_row.get("is_military"):
+		return False
+	if unit_row.get("category") in TRASH_CATEGORIES:
+		return False
+	name = str(unit_row.get("unit") or "").lower()
+	return not any(token in name for token in UBIQUITOUS_UNITS)
+
+
+def compute_game_stats(players, units, apm, computed_at, played_at=None):
 	"""Per-player derived facts for one match. Pure: no DB, no I/O.
 
 	`players` are replay_players-shaped dicts, `units` replay_units-shaped,
@@ -19,6 +86,19 @@ def compute_game_stats(players, units, apm, computed_at):
 	player_number, with NO replay_match_id -- the caller stamps that, so the
 	same function serves the live ingest and the backfill without either one
 	teaching it where the id comes from.
+
+	`played_at` is the match's epoch, stamped onto every row so a stat row can
+	be placed in time WITHOUT a join. player_rollups windows the scouting report
+	to the last WINDOW_DAYS (bot/derived/rollups.py), and the two obvious
+	alternatives both decide that window with the wrong thing: joining
+	game_labels means a game is dated only if some classifier happened to fire on
+	it, and joining replay_matches means parsing a VARCHAR date string on every
+	read. Passed in rather than derived, for the same reason replay_match_id is:
+	the live path already holds the bot match's epoch and the backfill reads the
+	raw table's, and neither should teach this function about the other.
+	None is legitimate -- 19 production matches have no recorded date -- and
+	rollups treats an undated game as outside every window rather than inside the
+	current one.
 
 	Precondition, not enforced here: `bot.replay_stats` must already be
 	imported somewhere in the process before the first call, because the lazy
@@ -56,11 +136,13 @@ def compute_game_stats(players, units, apm, computed_at):
 		if pn is not None and n > peak.get(pn, -1):
 			peak[pn] = n
 
-	# top_units is military-only: unfiltered, "top 3 by total" is Villager
-	# plus two others for every player alive, which says nothing.
+	# top_units is STYLE units only -- see is_style_unit. Unfiltered, "top 3 by
+	# total" is Villager plus two others for every player alive; military-only
+	# but trash-inclusive, it is Spearman and Scout Cavalry for most of them.
+	# Neither says anything about how somebody plays.
 	tops = {}
 	for u in units:
-		if not u.get("is_military"):
+		if not is_style_unit(u):
 			continue
 		tops.setdefault(u.get("player_number"), []).append(u)
 	for lst in tops.values():
@@ -91,6 +173,8 @@ def compute_game_stats(players, units, apm, computed_at):
 			top_units=[dict(unit=u.get("unit"), category=u.get("category"),
 			                total=u.get("total")) for u in tops.get(pn, [])[:3]],
 			computed_at=computed_at,
+			played_at=played_at,
+			compute_version=COMPUTE_VERSION,
 		))
 	return rows
 
@@ -101,7 +185,7 @@ def compute_game_stats(players, units, apm, computed_at):
 # are in a different order write values into the wrong columns with no error.
 _COLUMNS = ("replay_match_id", "player_number", "profile_id", "civ", "team", "winner",
             "avg_eapm", "peak_eapm", "military_medal", "villager_medal", "has_production",
-            "top_units", "computed_at")
+            "top_units", "computed_at", "played_at", "compute_version")
 
 
 async def write(replay_match_id, rows):
