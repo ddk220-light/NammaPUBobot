@@ -21,14 +21,12 @@ import bot.community as community
 class FakeDb:
 	def __init__(self):
 		self.identities = []  # [{profile_id, user_id, aoe2_name, confidence, first_seen_at, last_seen_at}]
-		self.identity_aliases = []  # [{community_id, user_id, nick, updated_at}]
 		self.identity_conflicts = []  # [{profile_id, claimed_user_id, source, noticed_at, status}]
 		self.select_calls = 0
 
 	def _table(self, table):
 		return {
 			"identities": self.identities,
-			"identity_aliases": self.identity_aliases,
 			"identity_conflicts": self.identity_conflicts,
 		}[table]
 
@@ -51,7 +49,6 @@ class FakeDb:
 
 	_PRIMARY_KEYS = {
 		"identities": ("profile_id",),
-		"identity_aliases": ("community_id", "user_id"),
 		"identity_conflicts": ("profile_id", "claimed_user_id"),
 	}
 
@@ -281,16 +278,6 @@ def test_learn_always_bumps_last_seen_at_even_when_blocked(monkeypatch):
 	assert fake.identities[0]["last_seen_at"] != 1
 
 
-def test_learn_same_confidence_updates_user_id(monkeypatch):
-	fake = _setup(monkeypatch)
-	asyncio.run(identity.learn(111, 222, "learned"))
-
-	asyncio.run(identity.learn(111, 333, "learned"))
-
-	assert fake.identities[0]["user_id"] == 333
-	assert fake.identities[0]["confidence"] == "learned"
-
-
 def test_learn_preserves_aoe2_name_when_not_provided(monkeypatch):
 	fake = _setup(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "seed", aoe2_name="Original"))
@@ -298,6 +285,109 @@ def test_learn_preserves_aoe2_name_when_not_provided(monkeypatch):
 	asyncio.run(identity.learn(111, 222, "learned"))
 
 	assert fake.identities[0]["aoe2_name"] == "Original"
+
+
+# ─── learn: the v2 tie rule ──────────────────────────────────────────────
+# Stage 2 let an EQUAL-confidence write overwrite the stored owner (ties
+# won). Identity v2 forbids it: an equal-confidence disagreement is a fact
+# for an admin to settle, not a coin flip the last writer wins. Only a
+# strictly higher tier may move a binding, and doing so records the owner it
+# displaced.
+
+def test_confidence_lattice_places_self_between_learned_and_manual():
+	assert identity.CONFIDENCE_ORDER == ("seed", "learned", "self", "manual")
+	assert identity._rank("learned") < identity._rank("self") < identity._rank("manual")
+
+
+def test_learn_equal_rank_different_user_no_longer_overwrites(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned", aoe2_name="First"))
+	fake.identities[0]["last_seen_at"] = 1
+
+	asyncio.run(identity.learn(111, 333, "learned", aoe2_name="Second"))
+
+	row = fake.identities[0]
+	assert row["user_id"] == 222, "an equal-confidence claim must not take the binding"
+	assert row["aoe2_name"] == "First"
+	assert row["confidence"] == "learned"
+	assert row["last_seen_at"] != 1, "the profile genuinely was observed again just now"
+
+
+def test_learn_equal_rank_different_user_records_an_open_conflict(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+
+	asyncio.run(identity.learn(111, 333, "learned"))
+
+	assert len(fake.identity_conflicts) == 1
+	row = fake.identity_conflicts[0]
+	assert row["profile_id"] == 111
+	assert row["claimed_user_id"] == 333, "the losing claim is the one that was just refused"
+	assert row["source"] == "learned"
+	assert row["status"] == "open"
+
+
+def test_learn_equal_rank_same_user_still_refreshes(monkeypatch):
+	""" Not a disagreement at all — the same owner observed again, so the
+	newly observed in-game name and last_seen_at must still land. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned", aoe2_name="Old"))
+	fake.identities[0]["last_seen_at"] = 1
+
+	asyncio.run(identity.learn(111, 222, "learned", aoe2_name="New"))
+
+	row = fake.identities[0]
+	assert row["aoe2_name"] == "New"
+	assert row["last_seen_at"] != 1
+	assert fake.identity_conflicts == []
+
+
+def test_learn_equal_rank_binds_an_unowned_row(monkeypatch):
+	""" user_id NULL is the seeded "profile known, owner unknown" state — it
+	makes no competing claim, so an equal-tier write binds it rather than
+	being refused. Without this carve-out an unowned row could never be
+	claimed by a same-tier writer, and the refusal would log a conflict
+	against nobody. """
+	fake = _setup(monkeypatch)
+	fake.identities.append(dict(
+		profile_id=111, user_id=None, aoe2_name=None,
+		confidence="learned", first_seen_at=1, last_seen_at=1,
+	))
+
+	asyncio.run(identity.learn(111, 222, "learned"))
+
+	assert fake.identities[0]["user_id"] == 222
+	assert fake.identity_conflicts == []
+
+
+def test_learn_higher_rank_records_the_displaced_owner_as_superseded(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+
+	asyncio.run(identity.learn(111, 999, "manual"))
+
+	assert fake.identities[0]["user_id"] == 999
+	assert fake.identities[0]["confidence"] == "manual"
+	assert len(fake.identity_conflicts) == 1
+	row = fake.identity_conflicts[0]
+	assert row["profile_id"] == 111
+	assert row["claimed_user_id"] == 222, "the DISPLACED owner is what gets recorded, not the winner"
+	assert row["source"] == "learned", "the tier that had made the now-displaced claim"
+	assert row["status"] == "superseded"
+
+
+def test_learn_higher_rank_over_an_unowned_row_records_no_conflict(monkeypatch):
+	""" Filling in the owner of a seeded, ownerless profile displaces nobody. """
+	fake = _setup(monkeypatch)
+	fake.identities.append(dict(
+		profile_id=111, user_id=None, aoe2_name="Fenrir",
+		confidence="seed", first_seen_at=1, last_seen_at=1,
+	))
+
+	asyncio.run(identity.learn(111, 222, "learned"))
+
+	assert fake.identities[0]["user_id"] == 222
+	assert fake.identity_conflicts == []
 
 
 # ─── learn: conflict recording ───────────────────────────────────────────
@@ -348,17 +438,19 @@ def test_learn_does_not_record_a_block_by_a_non_manual_row(monkeypatch):
 
 
 def test_learn_does_not_record_on_a_normal_successful_write(monkeypatch):
-	""" learn() calls that are NOT blocked (brand-new profile_id, or a write
-	that outranks/ties the stored row) must never touch identity_conflicts --
-	only a genuinely discarded disagreement does. """
+	""" learn() calls that displace nobody -- a brand-new profile_id, or a
+	higher-tier write that agrees with the stored owner -- must never touch
+	identity_conflicts. (A higher-tier write that displaces a DIFFERENT owner
+	does record one, as `superseded`: see
+	test_learn_higher_rank_records_the_displaced_owner_as_superseded.) """
 	fake = _setup(monkeypatch)
 
 	asyncio.run(identity.learn(111, 222, "seed"))          # brand-new row
-	asyncio.run(identity.learn(111, 333, "learned"))        # outranks -> succeeds
-	asyncio.run(identity.learn(111, 333, "manual"))         # outranks -> succeeds
+	asyncio.run(identity.learn(111, 222, "learned"))        # outranks, same owner
+	asyncio.run(identity.learn(111, 222, "manual"))         # outranks, same owner
 
 	assert fake.identity_conflicts == []
-	assert fake.identities[0]["user_id"] == 333
+	assert fake.identities[0]["user_id"] == 222
 	assert fake.identities[0]["confidence"] == "manual"
 
 
@@ -562,40 +654,209 @@ def test_profiles_for_users_survives_invalidate_during_in_flight_load(monkeypatc
 	)
 
 
-# ─── set_nick / nick_for ────────────────────────────────────────────────
+# ─── link_self ──────────────────────────────────────────────────────────
+# The player's own one-time /link, at the `self` tier. It is deliberately not
+# just learn(source="self"): a player must never be able to take a profile
+# somebody else is already linked to, even though `self` outranks `learned`.
 
-def test_nick_for_returns_none_when_unset(monkeypatch):
-	_setup(monkeypatch)
-
-	assert asyncio.run(identity.nick_for(1, 555)) is None
-
-
-def test_set_nick_then_nick_for_round_trips(monkeypatch):
-	_setup(monkeypatch)
-
-	asyncio.run(identity.set_nick(1, 555, "Foo"))
-
-	assert asyncio.run(identity.nick_for(1, 555)) == "Foo"
-
-
-def test_set_nick_is_scoped_per_community(monkeypatch):
-	_setup(monkeypatch)
-	asyncio.run(identity.set_nick(1, 555, "Foo"))
-
-	asyncio.run(identity.set_nick(2, 555, "Bar"))
-
-	assert asyncio.run(identity.nick_for(1, 555)) == "Foo"
-	assert asyncio.run(identity.nick_for(2, 555)) == "Bar"
-
-
-def test_set_nick_overwrites_existing_nick_for_same_community_and_user(monkeypatch):
+def test_link_self_binds_an_unowned_profile(monkeypatch):
 	fake = _setup(monkeypatch)
-	asyncio.run(identity.set_nick(1, 555, "Foo"))
 
-	asyncio.run(identity.set_nick(1, 555, "Renamed"))
+	assert asyncio.run(identity.link_self(111, 222, "Fenrir")) is True
 
-	assert len(fake.identity_aliases) == 1
-	assert asyncio.run(identity.nick_for(1, 555)) == "Renamed"
+	row = fake.identities[0]
+	assert row["user_id"] == 222
+	assert row["confidence"] == "self"
+	assert row["aoe2_name"] == "Fenrir"
+	assert fake.identity_conflicts == []
+
+
+def test_link_self_binds_a_profile_whose_owner_is_unknown(monkeypatch):
+	""" The seeded "profile known, owner unknown" row (user_id NULL) — and the
+	state unlink() leaves behind — is unowned, so a player may claim it. """
+	fake = _setup(monkeypatch)
+	fake.identities.append(dict(
+		profile_id=111, user_id=None, aoe2_name=None,
+		confidence="seed", first_seen_at=1, last_seen_at=1,
+	))
+
+	assert asyncio.run(identity.link_self(111, 222, "Fenrir")) is True
+
+	assert len(fake.identities) == 1
+	assert fake.identities[0]["user_id"] == 222
+	assert fake.identities[0]["confidence"] == "self"
+
+
+def test_link_self_refuses_and_records_when_owned_by_another(monkeypatch):
+	""" `self` outranks `learned`, so the lattice alone would have let this
+	overwrite — link_self must refuse on ownership, not on rank. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 999, "learned", aoe2_name="SomeoneElse"))
+
+	assert asyncio.run(identity.link_self(111, 222, "Fenrir")) is False
+
+	row = fake.identities[0]
+	assert row["user_id"] == 999
+	assert row["confidence"] == "learned"
+	assert row["aoe2_name"] == "SomeoneElse"
+	assert len(fake.identity_conflicts) == 1
+	conflict = fake.identity_conflicts[0]
+	assert conflict["profile_id"] == 111
+	assert conflict["claimed_user_id"] == 222
+	assert conflict["source"] == "self"
+	assert conflict["status"] == "open"
+
+
+def test_link_self_is_idempotent_for_the_same_owner(monkeypatch):
+	fake = _setup(monkeypatch)
+	assert asyncio.run(identity.link_self(111, 222, "Fenrir")) is True
+
+	assert asyncio.run(identity.link_self(111, 222, "FenrirRenamed")) is True
+
+	assert len(fake.identities) == 1
+	assert fake.identities[0]["user_id"] == 222
+	assert fake.identities[0]["aoe2_name"] == "FenrirRenamed", "the newly observed name refreshes"
+	assert fake.identity_conflicts == []
+
+
+def test_link_self_does_not_lower_an_admin_set_confidence(monkeypatch):
+	""" Re-running /link on a profile an admin already bound to the same
+	player must not demote that `manual` row to `self` — it would become
+	overwritable by a later admin-tier write from anywhere. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual", aoe2_name="Old"))
+
+	assert asyncio.run(identity.link_self(111, 222, "New")) is True
+
+	assert fake.identities[0]["confidence"] == "manual"
+	assert fake.identities[0]["aoe2_name"] == "New"
+
+
+# ─── unlink ─────────────────────────────────────────────────────────────
+
+def test_unlink_clears_owner_and_records_the_removed_claim(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual", aoe2_name="Fenrir"))
+	fake.identities[0]["last_seen_at"] = 1
+
+	asyncio.run(identity.unlink(111))
+
+	row = fake.identities[0]
+	assert row["user_id"] is None
+	assert row["confidence"] == "seed", "back to the unowned state, not left at manual"
+	assert row["aoe2_name"] == "Fenrir", "the observed in-game name is not ownership and survives"
+	assert row["last_seen_at"] != 1
+	assert asyncio.run(identity.profiles_for_users([222])) == {}
+	assert len(fake.identity_conflicts) == 1
+	conflict = fake.identity_conflicts[0]
+	assert conflict["profile_id"] == 111
+	assert conflict["claimed_user_id"] == 222
+	assert conflict["source"] == "manual", "an admin is the only caller"
+	assert conflict["status"] == "unlinked"
+
+
+def test_unlink_is_a_noop_for_an_unknown_profile(monkeypatch):
+	fake = _setup(monkeypatch)
+
+	asyncio.run(identity.unlink(999999))
+
+	assert fake.identities == []
+	assert fake.identity_conflicts == []
+
+
+def test_unlink_records_nothing_for_an_already_unowned_profile(monkeypatch):
+	fake = _setup(monkeypatch)
+	fake.identities.append(dict(
+		profile_id=111, user_id=None, aoe2_name="Fenrir",
+		confidence="seed", first_seen_at=1, last_seen_at=1,
+	))
+
+	asyncio.run(identity.unlink(111))
+
+	assert fake.identities[0]["user_id"] is None
+	assert fake.identity_conflicts == [], "there was no claim to remove"
+
+
+# ─── relink ─────────────────────────────────────────────────────────────
+# The admin correction, at `manual` tier, atomic by construction: the profile
+# moves AND the member stops owning anything else in one call, so a relink can
+# never leave a member owning both the wrong profile and the right one (which
+# would double-count their statistics).
+
+def test_relink_supersedes_the_previous_owner_atomically(monkeypatch):
+	""" Note the previous owner is itself a `manual` row: plain learn() would
+	refuse this as an equal-rank disagreement, but an admin correction of an
+	earlier admin mistake is exactly what relink exists for. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+
+	asyncio.run(identity.relink(111, 999))
+
+	row = fake.identities[0]
+	assert row["user_id"] == 999
+	assert row["confidence"] == "manual"
+	assert len(fake.identity_conflicts) == 1
+	conflict = fake.identity_conflicts[0]
+	assert conflict["profile_id"] == 111
+	assert conflict["claimed_user_id"] == 222
+	assert conflict["status"] == "superseded"
+
+
+def test_relink_without_additional_releases_the_members_other_profiles(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))  # the wrong profile
+
+	asyncio.run(identity.relink(112, 222))  # admin: it is really this one
+
+	by_pid = {r["profile_id"]: r for r in fake.identities}
+	assert by_pid[112]["user_id"] == 222
+	assert by_pid[112]["confidence"] == "manual"
+	assert by_pid[111]["user_id"] is None, "the member must not end up owning both"
+	assert by_pid[111]["confidence"] == "seed"
+	assert asyncio.run(identity.profiles_for_users([222])) == {222: [112]}
+	assert [
+		(c["profile_id"], c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts
+	] == [(111, 222, "unlinked")]
+
+
+def test_relink_additional_keeps_the_members_other_profiles(monkeypatch):
+	""" Multi-account players are real (the flagship community has several), so
+	`additional` adds a second profile instead of replacing the first. """
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+
+	asyncio.run(identity.relink(112, 222, additional=True))
+
+	assert sorted(asyncio.run(identity.profiles_for_users([222]))[222]) == [111, 112]
+
+
+def test_relink_leaves_another_members_profiles_alone(monkeypatch):
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+	asyncio.run(identity.learn(113, 333, "learned"))
+
+	asyncio.run(identity.relink(112, 222))
+
+	assert asyncio.run(identity.profiles_for_users([333])) == {333: [113]}
+
+
+def test_link_self_unlink_and_relink_each_invalidate_the_cache(monkeypatch):
+	""" profiles_for_users() has no TTL — a write that forgets to invalidate
+	stays invisible to every reader until some unrelated write happens to
+	invalidate the cache, possibly forever. """
+	_setup(monkeypatch)
+
+	before = identity._cache_generation
+	asyncio.run(identity.link_self(111, 222, "Fenrir"))
+	after_link_self = identity._cache_generation
+	assert after_link_self > before
+
+	asyncio.run(identity.relink(112, 222, additional=True))
+	after_relink = identity._cache_generation
+	assert after_relink > after_link_self
+
+	asyncio.run(identity.unlink(112))
+	assert identity._cache_generation > after_relink
 
 
 # ─── admin identity commands (bot/commands/admin.py) ────────────────────
@@ -818,23 +1079,13 @@ def test_identity_show_requires_moderator_permission(monkeypatch):
 	assert calls == []
 
 
-def test_identity_show_lists_known_profiles_and_nick(monkeypatch):
+def test_identity_show_lists_known_profiles(monkeypatch):
 	admin = _load_admin_module(monkeypatch)
 
 	async def _profiles_for_users(user_ids):
 		return {222: [111, 222]}
 
-	async def _community_for_channel(channel_id):
-		return 5
-
-	async def _nick_for(community_id, user_id):
-		assert community_id == 5
-		assert user_id == 222
-		return "Fenrir05"
-
 	monkeypatch.setattr(identity, "profiles_for_users", _profiles_for_users)
-	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
-	monkeypatch.setattr(identity, "nick_for", _nick_for)
 	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
 	member = _FakeMember(222, name="Fenrir")
 
@@ -844,7 +1095,9 @@ def test_identity_show_lists_known_profiles_and_nick(monkeypatch):
 	embed = ctx.replies[0].embed
 	values = [f["value"] for f in embed.fields]
 	assert any("111" in v and "222" in v for v in values)
-	assert any("Fenrir05" in v for v in values)
+	assert not any("Nick" in (f["name"] or "") for f in embed.fields), (
+		"identity_aliases is gone — Discord supplies display names live"
+	)
 
 
 def test_identity_show_reports_no_known_profiles(monkeypatch):
@@ -853,49 +1106,41 @@ def test_identity_show_reports_no_known_profiles(monkeypatch):
 	async def _profiles_for_users(user_ids):
 		return {}
 
-	async def _community_for_channel(channel_id):
-		return 5
-
-	async def _nick_for(community_id, user_id):
-		return None
-
 	monkeypatch.setattr(identity, "profiles_for_users", _profiles_for_users)
-	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
-	monkeypatch.setattr(identity, "nick_for", _nick_for)
 	ctx = _FakeCtx()
 	member = _FakeMember(222)
 
 	asyncio.run(admin.identity_show(ctx, member))
 
 	embed = ctx.replies[0].embed
-	profiles_field = next(f for f in embed.fields if "111" not in f["value"])
-	assert profiles_field["value"]  # some "none known" placeholder, not blank
+	assert len(embed.fields) == 1
+	assert embed.fields[0]["value"]  # some "none known" placeholder, not blank
 
 
-def test_identity_show_reports_unenrolled_channel_without_erroring(monkeypatch):
+def test_identity_show_no_longer_resolves_a_community(monkeypatch):
+	""" identity_show used to look up this channel's community purely to print
+	a per-community nick. With identity_aliases deleted that lookup is dead
+	weight — and it made a moderator-visible read fail differently in a
+	channel that was never enrolled. """
 	admin = _load_admin_module(monkeypatch)
 
 	async def _profiles_for_users(user_ids):
 		return {222: [111]}
 
-	async def _community_for_channel(channel_id):
+	community_calls = []
+
+	async def _community_for_channel(*a, **k):
+		community_calls.append((a, k))
 		return None
-
-	nick_for_calls = []
-
-	async def _nick_for(*a, **k):
-		nick_for_calls.append((a, k))
-		return "should not be called"
 
 	monkeypatch.setattr(identity, "profiles_for_users", _profiles_for_users)
 	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
-	monkeypatch.setattr(identity, "nick_for", _nick_for)
 	ctx = _FakeCtx()
 	member = _FakeMember(222)
 
 	asyncio.run(admin.identity_show(ctx, member))  # must not raise
 
-	assert nick_for_calls == []
+	assert community_calls == []
 	assert len(ctx.replies) == 1
 
 

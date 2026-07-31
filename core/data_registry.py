@@ -142,10 +142,6 @@ REGISTRY = {
 	"match_replays": dict(
 		layer="link", tenancy="community", writers=("bot/community.py",), retention="forever"
 	),
-	# link — cross-tenant joins (stage 2.2)
-	"identity_aliases": dict(
-		layer="link", tenancy="community", writers=("bot/identity.py",), retention="forever"
-	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
 	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

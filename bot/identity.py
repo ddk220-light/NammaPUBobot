@@ -10,20 +10,33 @@ in this bot, so that fragmentation blocks everything downstream. This module
 is the single resolver; a later stage re-points the four existing readers at
 it (this module does not touch them, and does not delete the CSVs or rs_profiles).
 
-Two tables, reflecting a split that matters:
+Two tables:
 
-  identities        — profile_id <-> user_id is GLOBAL truth. An AoE2 account
+  identities         — profile_id <-> user_id is GLOBAL truth. An AoE2 account
                        belongs to a person regardless of which Discord server
                        cares about them. One row per AoE2 profile_id; a person
                        can own several (profiles_for_users' value is a list).
-  identity_aliases   — a nickname is PER-COMMUNITY: the same person can go by
-                       a different name in each Discord server.
+  identity_conflicts — every claim that was refused, superseded or removed, so
+                       a disagreement is never silently discarded.
 
-`learn()` is how automated sources (replay ingest, CSV seeding) record a
-profile_id<->user_id pairing without being able to clobber a human's
-correction: confidence only ever moves up CONFIDENCE_ORDER, and a `manual`
-row can only be overwritten by another `manual` write. See its docstring for
-the exact precedence rule.
+Four write paths over one lattice (CONFIDENCE_ORDER: seed < learned < self <
+manual):
+
+  learn()     — automated sources: replay ingest, the deduction solver, CSV
+                seeding. Only a STRICTLY higher tier may move a binding; an
+                equal-tier disagreement is refused and recorded rather than
+                settled by whoever wrote last.
+  link_self() — the player's own one-time `/link`, at `self`. Refuses on
+                OWNERSHIP, not on rank: a profile someone else already owns is
+                never taken, even though `self` outranks `learned`.
+  unlink()    — admin removal, back to the unowned state (user_id NULL).
+  relink()    — admin correction at `manual`, atomic: displaces whoever owned
+                the profile AND releases the member's other profiles in one
+                call. This is the ONLY path that can overwrite a `manual` row,
+                since learn() now refuses equal-tier writes.
+
+See identity v2 (docs/superpowers/specs/2026-07-30-identity-v2-design.md §1
+and §3) for why the tie rule inverted and why relink must be atomic.
 
 CI installs only pytest (no nextcord/aiomysql/aiohttp), so this module must
 import cleanly with nothing but the stdlib and core.database — same
@@ -55,25 +68,25 @@ db.ensure_table(dict(
 	primary_keys=["profile_id"],
 ))
 
-db.ensure_table(dict(
-	tname="identity_aliases",
-	columns=[
-		dict(cname="community_id", ctype=db.types.int),
-		dict(cname="user_id", ctype=db.types.int),
-		dict(cname="nick", ctype=db.types.str, notnull=False),
-		dict(cname="updated_at", ctype=db.types.int, notnull=True),
-	],
-	primary_keys=["community_id", "user_id"],
-))
-
-# Every losing profile_id<->user_id claim that would otherwise be silently
-# discarded -- either by 003_seed_identities' INSERT IGNORE (see that
-# migration's docstring) or by learn() below refusing to overwrite a
-# `manual` row. Recording these instead of dropping them is the whole point:
-# there is no resolution UI yet, so a human needs somewhere to go look, and
-# a later management UI needs somewhere to read from. `status` stays 'open'
-# forever as far as this module is concerned -- nothing here ever writes
-# 'dismissed'/'applied'; that is exclusively the future UI's job.
+# Every profile_id<->user_id claim that would otherwise be silently discarded
+# -- by 003_seed_identities' INSERT IGNORE (see that migration's docstring),
+# by learn() refusing a lower- or equal-tier write, by link_self() refusing a
+# profile someone else owns, or by relink()/unlink() removing a binding.
+# Recording these instead of dropping them is the whole point: there is no
+# resolution UI yet, so a human needs somewhere to go look, and a later
+# management UI needs somewhere to read from.
+#
+# `status` is one of:
+#   open       — a live disagreement: this claim lost, the stored owner stands
+#   superseded — this claim WAS the stored owner until a higher tier displaced it
+#   unlinked   — this claim was the stored owner until an admin removed it
+# Nothing here ever writes 'dismissed'/'applied'; resolution is exclusively
+# the future UI's job.
+#
+# NOTE the (profile_id, claimed_user_id) primary key: one row per pair, and
+# _record_conflict's INSERT IGNORE keeps the FIRST status recorded for a pair.
+# The same user re-claiming a profile they were once superseded from does not
+# add a second row (see _record_conflict's docstring).
 #
 # Same "why is this raw DDL duplicated in core/migrations.py" answer as
 # `identities` above: 003_seed_identities needs to write this table too, and
@@ -172,13 +185,20 @@ def _rank(confidence):
 	return CONFIDENCE_ORDER.index(confidence)
 
 
-async def _record_conflict(profile_id, claimed_user_id, source, noticed_at) -> None:
+async def _record_conflict(profile_id, claimed_user_id, source, noticed_at, status="open") -> None:
 	""" Record that `source` claimed `profile_id` belongs to `claimed_user_id`
-	but was refused (see learn()'s manual-block branch and
-	core/migrations.py's 003_seed_identities, the two callers). INSERT IGNORE
-	on the (profile_id, claimed_user_id) primary key: the same disagreement
-	observed again later (e.g. a source relearning the same losing claim) is
-	a no-op rather than a duplicate row — `status` only ever moves off 'open'
+	and that claim is not (or is no longer) the stored binding — see the
+	identity_conflicts declaration up top for what each `status` means and who
+	writes it. INSERT IGNORE on the (profile_id, claimed_user_id) primary key:
+	the same disagreement observed again later (e.g. a source relearning the
+	same losing claim) is a no-op rather than a duplicate row.
+
+	Consequence of that primary key, worth knowing before reading the table:
+	a (profile_id, claimed_user_id) pair can hold only ONE row, so the FIRST
+	status recorded for a pair is the one that sticks — a user whose `open`
+	claim is later `superseded` (or vice versa) keeps the earlier status.
+	Distinguishing those would need a wider primary key, i.e. a real schema
+	change, not a write-side workaround. Beyond that, `status` only ever moves
 	by human action through the future management UI, never by re-observing
 	the same claim. """
 	await db.insert("identity_conflicts", dict(
@@ -186,34 +206,87 @@ async def _record_conflict(profile_id, claimed_user_id, source, noticed_at) -> N
 		claimed_user_id=claimed_user_id,
 		source=source,
 		noticed_at=noticed_at,
-		status="open",
+		status=status,
 	), on_duplicate="ignore")
 
 
+async def _insert_binding(profile_id, user_id, aoe2_name, confidence, now) -> None:
+	""" The first-ever row for `profile_id`. Nothing can be displaced, so
+	nothing is recorded in identity_conflicts. """
+	await db.insert("identities", dict(
+		profile_id=profile_id,
+		user_id=user_id,
+		aoe2_name=aoe2_name,
+		confidence=confidence,
+		first_seen_at=now,
+		last_seen_at=now,
+	))
+	invalidate_cache()
+
+
+async def _overwrite_binding(profile_id, user_id, confidence, aoe2_name, existing, now) -> None:
+	""" Move `profile_id` to `user_id` at `confidence`, recording whoever this
+	displaces as a `superseded` claim. `existing` is the row being overwritten,
+	as the caller already read it (user_id/confidence/aoe2_name).
+
+	Nothing is recorded when nothing is actually displaced: a row with
+	user_id NULL is unowned, and a rewrite that agrees with the stored owner
+	displaces no one. The displaced claim is recorded under the confidence
+	tier that had made it — that tier is what a human reading the conflict
+	needs to judge it.
+
+	aoe2_name=None means "not observed by this call"; the stored name is kept
+	rather than clobbered with None. """
+	if existing["user_id"] is not None and existing["user_id"] != user_id:
+		await _record_conflict(
+			profile_id, existing["user_id"], existing["confidence"], now, status="superseded")
+
+	await db.update("identities", dict(
+		user_id=user_id,
+		aoe2_name=aoe2_name if aoe2_name is not None else existing["aoe2_name"],
+		confidence=confidence,
+		last_seen_at=now,
+	), keys=dict(profile_id=profile_id))
+	invalidate_cache()
+
+
 async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
-	""" Record that `profile_id` belongs to `user_id`, as observed by `source`
-	(one of CONFIDENCE_ORDER). Never lowers an existing row's confidence, and
-	never overwrites a `manual` mapping with a non-manual one — a human
-	correction is the highest authority and must not get clobbered by
-	automated learning that runs afterwards.
+	""" Record that `profile_id` belongs to `user_id`, as observed by the
+	automated `source` (one of CONFIDENCE_ORDER). This is the path every
+	automated writer takes, and it can never clobber a human's correction.
 
-	Concretely: if `source` outranks (or ties) the row's current confidence,
-	user_id/aoe2_name/confidence are all updated to the new values. If it is
-	outranked, none of those three change — but last_seen_at is bumped
-	regardless, since the profile genuinely was observed again just now.
+	The precedence rule, by the rank of `source` against the stored row's
+	confidence:
 
-	When the outranked write is specifically blocked by a `manual` row (a
-	human correction) that disagrees on user_id, the losing claim is recorded
-	via _record_conflict() rather than silently dropped — see
-	identity_conflicts' declaration up top and open_conflicts() below; there
-	is no resolution UI yet, so the record is the only trace this
-	disagreement leaves anywhere. Nothing else is recorded: an outranked
-	write blocked by a non-manual row (e.g. a `seed` write outranked by an
-	existing `learned` row) is the resolver's ordinary, working precedence
-	order, not the "a human said so, and everyone else's claim was
-	discarded" failure this exists to surface — and an outranked write that
-	simply *agrees* with the stored user_id isn't a disagreement at all, just
-	a repeat observation.
+	  STRICTLY HIGHER — the binding moves: user_id/aoe2_name/confidence are
+	    all updated. If that displaces a DIFFERENT previous owner, the
+	    displaced claim is recorded as `superseded`.
+	  EQUAL, same user — not a disagreement, just a fresh observation of what
+	    is already stored: aoe2_name (when provided) and last_seen_at are
+	    refreshed, the binding is left alone, nothing is recorded.
+	  EQUAL, different user — the binding does NOT move, and the incoming
+	    claim is recorded as an `open` conflict. Two sources of equal
+	    confidence disagreeing is a fact for an admin to settle, not a race
+	    the last writer wins. (Stage 2 did the opposite — ties overwrote —
+	    and identity v2 inverted it; do not "restore" that.) last_seen_at is
+	    still bumped: the profile genuinely was observed again just now.
+	  LOWER — the binding does not move, last_seen_at is bumped, and the
+	    losing claim is recorded as an `open` conflict only when it was
+	    blocked specifically by a `manual` row (a human correction) that
+	    disagrees on user_id. A block by a non-manual row is the resolver's
+	    ordinary, working precedence order — not the "a human said so, and
+	    someone else's claim was discarded" case identity_conflicts exists to
+	    surface — so it is not recorded.
+
+	An existing row with user_id NULL ("profile known, owner unknown" — the
+	state 003_seed_identities and unlink() leave behind) is UNOWNED, not a
+	rival claim: it makes no equal-rank disagreement, so an equal-tier write
+	binds it and displaces nobody. Refusing there would strand the row
+	unclaimable by its own tier and log a conflict against no one.
+
+	Note what learn() therefore cannot do: it can never overwrite a `manual`
+	row, not even from `manual`. An admin correcting an earlier admin mistake
+	goes through relink(), which is authoritative by construction.
 
 	aoe2_name=None means "not known by this call"; an existing name is kept
 	rather than clobbered with None. Always calls invalidate_cache().
@@ -231,51 +304,144 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 		["user_id", "confidence", "aoe2_name"], "identities", where={"profile_id": profile_id})
 
 	if existing is None:
-		await db.insert("identities", dict(
-			profile_id=profile_id,
-			user_id=user_id,
-			aoe2_name=aoe2_name,
-			confidence=source,
-			first_seen_at=now,
+		await _insert_binding(profile_id, user_id, aoe2_name, source, now)
+		return
+
+	new_rank, stored_rank = _rank(source), _rank(existing["confidence"])
+
+	# A strictly higher tier moves the binding; so does any tier over an
+	# unowned row, which has no claim to lose.
+	if new_rank > stored_rank or (new_rank == stored_rank and existing["user_id"] is None):
+		await _overwrite_binding(profile_id, user_id, source, aoe2_name, existing, now)
+		return
+
+	if new_rank == stored_rank and existing["user_id"] == user_id:
+		# Same owner, same tier: refresh the observation, not the binding.
+		await db.update("identities", dict(
+			aoe2_name=aoe2_name if aoe2_name is not None else existing["aoe2_name"],
 			last_seen_at=now,
-		))
+		), keys=dict(profile_id=profile_id))
 		invalidate_cache()
 		return
 
-	if _rank(source) < _rank(existing["confidence"]):
-		# Lower-precedence write: the mapping stays as-is, but this profile_id
-		# was seen again just now.
-		if existing["confidence"] == "manual" and existing["user_id"] != user_id:
-			await _record_conflict(profile_id, user_id, source, now)
-		await db.update("identities", dict(last_seen_at=now), keys=dict(profile_id=profile_id))
-		invalidate_cache()
+	# Refused: an equal-tier disagreement, or an outranked write. The mapping
+	# stays as-is, but this profile_id was seen again just now.
+	if new_rank == stored_rank or (existing["confidence"] == "manual" and existing["user_id"] != user_id):
+		await _record_conflict(profile_id, user_id, source, now)
+	await db.update("identities", dict(last_seen_at=now), keys=dict(profile_id=profile_id))
+	invalidate_cache()
+
+
+async def link_self(profile_id, user_id, observed_name) -> bool:
+	""" The player's own one-time `/link` claim of `profile_id`, at the `self`
+	tier. Returns True when the binding is (now) theirs, False when refused.
+
+	Unlike learn(), this refuses on OWNERSHIP rather than on rank: `self`
+	outranks `learned`, so the lattice alone would let a player take a profile
+	the deduction solver had already bound to somebody else. A player may only
+	ever claim a profile nobody owns:
+
+	  unowned (no row, or user_id NULL) → bound at `self`, True
+	  already theirs                    → name/last_seen_at refreshed, True
+	                                      (idempotent: `/link` is re-runnable)
+	  owned by someone else             → `identities` untouched, an `open`
+	                                      conflict recorded, False
+
+	`observed_name` is the in-game name the caller validated the profile id
+	against; it is stored as the display-only aoe2_name (None = not observed,
+	keeping any stored name). Callers validate the id against the AoE2 API
+	*before* calling — this module never checks that a profile id is real.
+
+	A confidence already above `self` (an admin's `manual` binding to this
+	same player) is never lowered: demoting it would make an admin's decision
+	overwritable by any later `manual`-tier write. """
+	now = int(time.time())
+	existing = await db.select_one(
+		["user_id", "confidence", "aoe2_name"], "identities", where={"profile_id": profile_id})
+
+	if existing is None:
+		await _insert_binding(profile_id, user_id, observed_name, "self", now)
+		return True
+
+	if existing["user_id"] is not None and existing["user_id"] != user_id:
+		await _record_conflict(profile_id, user_id, "self", now)
+		return False
+
+	confidence = existing["confidence"] if _rank(existing["confidence"]) > _rank("self") else "self"
+	await _overwrite_binding(profile_id, user_id, confidence, observed_name, existing, now)
+	return True
+
+
+async def unlink(profile_id) -> None:
+	""" Remove `profile_id`'s owner with no replacement: user_id → None and
+	confidence → `seed`, the unowned state — so the profile is claimable again
+	by any tier, including the player's own `/link`. last_seen_at is bumped
+	(it was acted on just now) and aoe2_name is kept: an observed in-game name
+	is an observation, not ownership.
+
+	The removed claim is recorded as `unlinked`, with source `manual` because
+	an admin is the only caller — relink() below is the one internal user, and
+	it is itself an admin action.
+
+	An unknown profile_id is a no-op: unlinking something that was never
+	linked must not fabricate a row. A profile that had no owner records no
+	conflict either — there was no claim to remove. """
+	now = int(time.time())
+	existing = await db.select_one(["user_id"], "identities", where={"profile_id": profile_id})
+	if existing is None:
 		return
 
 	await db.update("identities", dict(
-		user_id=user_id,
-		aoe2_name=aoe2_name if aoe2_name is not None else existing["aoe2_name"],
-		confidence=source,
+		user_id=None,
+		confidence="seed",
 		last_seen_at=now,
 	), keys=dict(profile_id=profile_id))
 	invalidate_cache()
 
-
-async def set_nick(community_id, user_id, nick) -> None:
-	""" Set/replace `user_id`'s nickname within `community_id`. Idempotent on
-	the (community_id, user_id) primary key. """
-	await db.insert("identity_aliases", dict(
-		community_id=community_id,
-		user_id=user_id,
-		nick=nick,
-		updated_at=int(time.time()),
-	), on_duplicate="replace")
+	if existing["user_id"] is not None:
+		await _record_conflict(profile_id, existing["user_id"], "manual", now, status="unlinked")
 
 
-async def nick_for(community_id, user_id):
-	""" `user_id`'s nickname within `community_id`, or None if unset. """
-	row = await db.select_one(
-		["nick"], "identity_aliases", where={"community_id": community_id, "user_id": user_id})
-	return row["nick"] if row else None
+async def relink(profile_id, user_id, additional=False) -> None:
+	""" The admin correction: bind `profile_id` to `user_id` at `manual` and,
+	unless `additional`, release every OTHER profile that member owns — one
+	call, so the member ends up owning exactly the profile just assigned.
+
+	Atomic on purpose. "Relink this member to a different profile id" that
+	only bound the new one would leave them owning both, and every consumer
+	resolves profile → user through this table, so their statistics would be
+	double-attributed from two profiles at once. Releasing goes through
+	unlink(), so a released profile leaves the same audit trail as any other
+	admin removal.
+
+	`additional=True` is for genuine multi-account players (the flagship
+	community has several): it adds this profile alongside whatever the member
+	already owns.
+
+	Unlike learn(), the bind is UNCONDITIONAL — it overwrites even an existing
+	`manual` row, recording the previous owner as `superseded`. It has to:
+	learn() refuses equal-tier writes, so `manual` over `manual` (an admin
+	correcting an earlier admin's mistake, the single most likely relink)
+	would otherwise be silently refused, which is exactly the "you must unlink
+	first" workflow this function exists to remove. """
+	now = int(time.time())
+	existing = await db.select_one(
+		["user_id", "confidence", "aoe2_name"], "identities", where={"profile_id": profile_id})
+
+	if existing is None:
+		await _insert_binding(profile_id, user_id, None, "manual", now)
+	else:
+		await _overwrite_binding(profile_id, user_id, "manual", None, existing, now)
+
+	if additional:
+		return
+
+	# _overwrite_binding/_insert_binding just invalidated the cache, so this
+	# reload sees the binding written above and skips it by profile_id.
+	owned = await profiles_for_users([user_id])
+	for other_profile_id in owned.get(user_id, []):
+		if other_profile_id != profile_id:
+			await unlink(other_profile_id)
 
 
 async def open_conflicts() -> list[dict]:

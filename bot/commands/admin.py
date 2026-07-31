@@ -169,21 +169,17 @@ async def identity_link(ctx, member: Member, profile_id: int, force: bool = Fals
 
 
 async def identity_show(ctx, member: Member):
-	""" Read-only lookup: `member`'s known AoE2 profile ids (bot/identity.py's
-	global profile_id<->user_id map) and their nickname within this channel's
-	community (per-community, so it's None both when unset and when the
-	channel was never enrolled in a community at all). """
+	""" Read-only lookup: `member`'s known AoE2 profile ids, from
+	bot/identity.py's global profile_id<->user_id map.
+
+	It used to print a per-community nick alongside them, from
+	identity_aliases -- that table was write-never and is deleted in identity
+	v2, since Discord supplies display names live. The community lookup that
+	fed it went with it. """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 
 	profiles = await bot.identity.profiles_for_users([member.id])
 	profile_ids = profiles.get(member.id, [])
-
-	community_id = await bot.community.community_for_channel(ctx.channel.id)
-	if community_id is None:
-		nick_line = ctx.qc.gt("This channel isn't enrolled in a community, so no per-community nick is tracked.")
-	else:
-		nick = await bot.identity.nick_for(community_id, member.id)
-		nick_line = nick or ctx.qc.gt("(none set)")
 
 	embed = Embed(title=ctx.qc.gt("Identity — {member}").format(member=get_nick(member)), colour=Colour(0x5865F2))
 	embed.add_field(
@@ -191,7 +187,6 @@ async def identity_show(ctx, member: Member):
 		value=", ".join(f"`{pid}`" for pid in profile_ids) if profile_ids else ctx.qc.gt("(none known)"),
 		inline=False
 	)
-	embed.add_field(name=ctx.qc.gt("Nick"), value=nick_line, inline=False)
 	await ctx.reply(embed=embed)
 
 

@@ -246,8 +246,7 @@ async def _ensure_identities_table(db):
 	that used to be duplicated alongside it now lives in
 	core/identity_seed.py (stdlib-only, safe to import from both here and
 	bot/identity.py) precisely so it does not have to be kept in sync by
-	hand too. `identity_aliases` needs no such duplicate CREATE TABLE:
-	nothing seeds it before `import bot` runs.
+	hand too.
 	"""
 	await db.execute(
 		"CREATE TABLE IF NOT EXISTS identities ("
@@ -312,8 +311,14 @@ def _record_seed_conflicts(claimed, seed_rows, conflicts, now):
 
 # Confidence tiers this migration writes, taken from core.identity_seed's
 # CONFIDENCE_ORDER (rather than the literal strings) so a rename there can't
-# silently desync from here.
-_SEED_CONFIDENCE, _LEARNED_CONFIDENCE, _MANUAL_CONFIDENCE = CONFIDENCE_ORDER
+# silently desync from here. Read by POSITION IN THE LATTICE, not by a
+# fixed-arity unpack: identity v2 added a fourth tier (`self`, between
+# `learned` and `manual`) and an unpack of the whole tuple would have crashed
+# this module at import — i.e. crashed the boot before any migration ran.
+# This migration never writes `self`; a player's own link postdates seeding.
+_SEED_CONFIDENCE = CONFIDENCE_ORDER[0]     # weakest tier
+_LEARNED_CONFIDENCE = CONFIDENCE_ORDER[1]
+_MANUAL_CONFIDENCE = CONFIDENCE_ORDER[-1]  # strongest tier — a human correction
 
 
 def _confidence_for_seed_row(source):

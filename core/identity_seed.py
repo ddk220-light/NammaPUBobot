@@ -20,7 +20,16 @@ would reintroduce the exact reentrancy hazard this module exists to avoid.
 import csv
 import io
 
-CONFIDENCE_ORDER = ("seed", "learned", "manual")
+# The confidence lattice, weakest first — position IS the precedence, so
+# order matters and index arithmetic on it must never assume a fixed length
+# (identity v2 inserted `self` between `learned` and `manual`; more tiers may
+# follow). bot/identity.py's _rank() and core/migrations.py's
+# _SEED_CONFIDENCE/_MANUAL_CONFIDENCE both derive from this tuple.
+#   seed    — legacy/CSV rows, and the "profile known, owner unknown" state
+#   learned — automated inference (replay ingest, the deduction solver)
+#   self    — the player's own one-time /link
+#   manual  — an admin correction; the highest authority
+CONFIDENCE_ORDER = ("seed", "learned", "self", "manual")
 
 _SEED_CSV_KINDS = ("profile_map", "resolved")
 # Both real header shapes carry the same three columns this module cares
