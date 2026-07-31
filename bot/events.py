@@ -116,6 +116,17 @@ async def on_think(frame_time):
 	# think() only schedules (the batch runs off-tick) and is self-isolating; the loop
 	# converges to zero work and then stays permanently as repair — see bot/derived/backfill.py.
 	await bot.derived.jobs.think(frame_time)
+	# Rebuilds the derived-COMMUNITY layer (player_rollups / metric_boards / civ_stats)
+	# for whoever is out of date. Same self-isolating shape as the backfill above, and
+	# the same stateless convergence: it derives its own work list on every pass rather
+	# than keeping one, so a deploy mid-pass loses nothing — see bot/derived/refresh.py.
+	await bot.derived.refresh_jobs.think(frame_time)
+	# Ages the bulky per-match replay detail out for LEAN communities once their
+	# summary provably exists — daily, off-tick, self-isolating like the two above.
+	# The only job in this bot that permanently destroys data, so it ships with
+	# DRY_RUN = True and deletes nothing until that constant is flipped in a commit
+	# of its own — see bot/derived/sweeper.py before touching it.
+	await bot.derived.sweeper_jobs.think(frame_time)
 	await bot.expire_auto_ready(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict

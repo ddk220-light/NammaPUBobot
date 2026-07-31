@@ -30,6 +30,13 @@ def compute_game_stats(players, units, apm, computed_at):
 	"""
 	from bot.replay_stats import card_scoring
 
+	# `has_production` is defined HERE and nowhere else. It decides two things
+	# at once -- whether assign_medals ranks this player, and whether the game
+	# belongs in player_rollups' medal-rate denominator -- and those two must be
+	# the same predicate by construction, not by two implementations agreeing.
+	# So the row below reads it back off this payload rather than recomputing
+	# it; a second copy of the expression is how the stored flag would drift
+	# from the medals it explains.
 	payloads = [dict(
 		player_number=p.get("player_number"),
 		military=p.get("military"),
@@ -78,6 +85,9 @@ def compute_game_stats(players, units, apm, computed_at):
 			peak_eapm=peak.get(pn),
 			military_medal=medals[i]["military_medal"],
 			villager_medal=medals[i]["villager_medal"],
+			# Indexed the same way medals[i] is, off the payload list built in
+			# the same order as `players` -- never recomputed. See above.
+			has_production=payloads[i]["has_production"],
 			top_units=[dict(unit=u.get("unit"), category=u.get("category"),
 			                total=u.get("total")) for u in tops.get(pn, [])[:3]],
 			computed_at=computed_at,
@@ -90,8 +100,8 @@ def compute_game_stats(players, units, apm, computed_at):
 # row's keys and zips every other row's .values() against it, so rows whose keys
 # are in a different order write values into the wrong columns with no error.
 _COLUMNS = ("replay_match_id", "player_number", "profile_id", "civ", "team", "winner",
-            "avg_eapm", "peak_eapm", "military_medal", "villager_medal", "top_units",
-            "computed_at")
+            "avg_eapm", "peak_eapm", "military_medal", "villager_medal", "has_production",
+            "top_units", "computed_at")
 
 
 async def write(replay_match_id, rows):

@@ -1,7 +1,20 @@
 # -*- coding: utf-8 -*-
-"""Derived-global layer (stage 3): per-game facts computed once at ingest
-instead of recomputed at render time. Both tables are keyed on the match and
-the player within it, never on user_id or community_id:
+"""Derived layers. Two generations of table live in this package and the
+difference between them is the point of stage 4, so read the split first:
+
+DERIVED-GLOBAL (stage 3) -- per-game facts computed once at ingest instead of
+recomputed at render time. Keyed on the match and the player within it, never
+on user_id or community_id.
+
+DERIVED-COMMUNITY (stage 4) -- per-player aggregates OF those facts, keyed on
+(community_id, user_id). A separate layer rather than more columns on the
+global one, because the same game means different things to different
+communities: a
+community's rollup is scoped to its own channels, and two communities sharing a
+player must be able to disagree about that player's numbers without either one
+rewriting a fact about the game itself.
+
+Derived-global:
 
 game_stats  -- PK (replay_match_id, player_number). Medal places, avg/peak
              eAPM, top units. Table declared and written by this package
@@ -27,6 +40,47 @@ raw side into line, so neither derived table ever needed a rename of its own.
 The legacy cls_* tables still spell it `aoe2_match_id` -- they are retired
 outright in stage 6 rather than renamed, and bot/derived/backfill.py is the one
 module that reads across both spellings.
+
+Derived-community:
+
+player_rollups -- PK (community_id, user_id). One blob per player per
+             community: medal rates, eAPM medians, and the strategy/spawn/unit
+             splits /rank reads in stage 5a. Written by
+             bot/derived/rollups.py (task 4.2) and driven by task 4.5's
+             refresh job, which is where identity resolution happens: a user's
+             profile set is resolved through `identities` and their
+             profile-keyed game_stats/game_labels rows aggregated across it.
+             An UNLINKED player therefore gets no row at all rather than a row
+             of zeros, which is exactly what makes 5a's "Statistics pending
+             linking" implementable -- the absence IS the signal (identity v2
+             §5). This is the first table in this package to carry user_id and
+             community_id, because it is the first one whose grain is a person
+             in a community rather than a slot in a match.
+
+metric_boards -- PK (community_id, metric_id). One leaderboard blob per
+             metric per community: label/unit/direction plus a leaders list
+             (BOARD_MIN_GAMES-gated averages) and a top_games list (single
+             best performances, uncapped by the floor). Written by
+             bot/derived/boards.py (task 4.3), whose module docstring carries
+             the metric catalog and the retention boundary that shapes it:
+             only replay_players/game_stats fields, never a replay_techs or
+             replay_buildings field the task-4.6 sweeper can delete out from
+             under a lean community. Like player_rollups, the caller resolves
+             identity before handing rows over -- compute_board never touches
+             `identities` itself.
+
+civ_stats   -- PK (community_id, civ). Per-civ win/loss tallies for one
+             community, aggregated from `civ_picks` by
+             bot/derived/civ_stats.py (task 4.4). Unlike the two tables
+             above, this one performs its own community join (civ_picks
+             carries no community_id column; the join is a single
+             community_channels lookup, not an identities graph walk) --
+             see that module's docstring for why that asymmetry with
+             player_rollups/metric_boards is deliberate. Name deliberately
+             collides in spelling only with the pre-existing
+             `bot/civ_stats.py` (CSV-backed civ pool randomiser, retired
+             stage 5c) -- the two are unrelated and neither imports the
+             other.
 
 Imported by bot/__init__.py for the db.ensure_table side effect below, the
 same as bot/replay_stats/__init__.py: ensure_table's sync wrapper drives the
@@ -54,6 +108,33 @@ db.ensure_table(dict(
 		dict(cname="peak_eapm", ctype=db.types.int, notnull=False),
 		dict(cname="military_medal", ctype=db.types.int, notnull=False),  # 1|2|3
 		dict(cname="villager_medal", ctype=db.types.int, notnull=False),  # 1|2|3
+		# Whether the parser measured this player's production at all, i.e.
+		# whether card_scoring.assign_medals RANKED them -- the two medal
+		# columns above are None both for "ranked and placed fourth" and for
+		# "never ranked", and those are different claims. Stored rather than
+		# inferred because it is the denominator of player_rollups' medal_rates
+		# (bot/derived/rollups.py), and inferring it from a medal or a non-empty
+		# top_units silently drops the player who built villagers, no military,
+		# and placed outside the top three.
+		#
+		# notnull=True, joining computed_at as the only two here, and NOT for
+		# stylistic symmetry with player_rollups below: this value is always
+		# knowable. It is a total function of the source row
+		# (COALESCE(villagers,0) + COALESCE(military,0) > 0), so there is no
+		# state in which a writer legitimately has nothing to say -- whereas
+		# civ/team/winner/eapm all genuinely can be absent from a replay, which
+		# is what every notnull=False above is recording.
+		# NULL would be a third value meaning "not backfilled", which is exactly
+		# the ambiguity this column exists to remove. Deliberately carries no
+		# DEFAULT either: the sole writer validates its whole key set (see
+		# game_stats.write), so a DEFAULT could only ever be reached by a writer
+		# that is already a bug, and it would turn that bug into a silently
+		# unranked player instead of a loud error. 008_game_stats_has_production
+		# adds this column to the live table under exactly the same definition
+		# and backfills it; _ensure_table only ever ADDs missing columns and
+		# never alters nullability, so this choice is permanent without another
+		# migration.
+		dict(cname="has_production", ctype=db.types.bool, notnull=True),
 		# [{unit, category, total}], top 3 military-only units by total, JSON-encoded.
 		dict(cname="top_units", ctype=db.types.dict, notnull=False),
 		dict(cname="computed_at", ctype=db.types.int, notnull=True),
@@ -77,9 +158,83 @@ db.ensure_table(dict(
 	primary_keys=["replay_match_id", "player_number", "label"],
 ))
 
-# Imported last, after both ensure_table declarations above, exactly like
+db.ensure_table(dict(
+	tname="player_rollups",
+	# Every non-key column is notnull: a rollup row exists only because the
+	# refresh job computed one, and each of these three is part of that
+	# computation's output. _ensure_table only ever ADDs missing columns and
+	# never alters nullability, so a column shipped nullable stays nullable
+	# until a migration tightens it -- which is why the intent is stated here,
+	# now, rather than left to the default.
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="user_id", ctype=db.types.int),
+		# Total game_stats rows behind the blob, i.e. every game the user
+		# played on any profile they own. A column rather than a key inside
+		# the blob so task 4.7 can reconcile it against a COUNT(*) without
+		# parsing JSON, and so a later "who has enough games?" query does not
+		# have to.
+		dict(cname="games", ctype=db.types.int, notnull=True),
+		# The five-block contract in bot/derived/rollups.py, JSON-encoded.
+		dict(cname="rollup", ctype=db.types.dict, notnull=True),
+		dict(cname="computed_at", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["community_id", "user_id"],
+))
+
+db.ensure_table(dict(
+	tname="metric_boards",
+	# Every non-key column is notnull for the same reason as player_rollups
+	# above: a board row exists only because a refresh pass computed one.
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="metric_id", ctype=db.types.str),
+		# The board contract in bot/derived/boards.py -- {label, unit,
+		# direction, leaders, top_games} -- JSON-encoded.
+		dict(cname="board", ctype=db.types.dict, notnull=True),
+		dict(cname="computed_at", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["community_id", "metric_id"],
+))
+
+db.ensure_table(dict(
+	tname="civ_stats",
+	# Every non-key column is notnull: a row exists only because
+	# bot/derived/civ_stats.py's write() put it there for a civ that had at
+	# least one resolved-result pick, and games/wins/losses are always
+	# knowable once that is true (unlike, say, replay_players' avg_eapm,
+	# which can genuinely be absent from a replay).
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="civ", ctype=db.types.str),
+		dict(cname="games", ctype=db.types.int, notnull=True),
+		dict(cname="wins", ctype=db.types.int, notnull=True),
+		dict(cname="losses", ctype=db.types.int, notnull=True),
+		dict(cname="computed_at", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["community_id", "civ"],
+))
+
+# Imported last, after every ensure_table declaration above, exactly like
 # bot/replay_stats/__init__.py's trailing `from .jobs import jobs`: backfill
-# reads and writes these two tables, so their schemas must be settled before the
-# job singleton it exposes can ever run. bot/events.py's on_think drives it as
-# `bot.derived.jobs.think(frame_time)`.
+# reads and writes the two derived-global tables, so their schemas must be
+# settled before the job singleton it exposes can ever run. bot/events.py's
+# on_think drives it as `bot.derived.jobs.think(frame_time)`.
 from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)
+
+# The derived-COMMUNITY counterpart, exported under its own name rather than
+# replacing `jobs`: the two loops are independent and bot/events.py drives both.
+# `jobs` keeps the bare name it has had since stage 3 so that call site (and the
+# tests pinning it) do not have to move for a rename that buys nothing.
+# refresh imports bot.identity, which is already imported by this point --
+# bot/__init__.py pulls in bot.replay_stats (whose store.py imports it) before
+# this package.
+from .refresh import jobs as refresh_jobs  # noqa: E402,F401  (DerivedRefresh singleton)
+
+# The retention sweeper (task 4.6) -- the counterpart to both loops above and
+# the only job in this package that DELETES rather than recomputes. It reads the
+# derived-community tables declared above as its proof that a lean community's
+# summary exists before the raw detail behind it is destroyed, so it is imported
+# last for the same reason the other two are. Ships with DRY_RUN = True; read
+# bot/derived/sweeper.py before changing that.
+from .sweeper import jobs as sweeper_jobs  # noqa: E402,F401  (RetentionSweeper singleton)

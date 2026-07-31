@@ -50,6 +50,55 @@ def test_player_with_no_production_gets_no_medal():
 	assert by_pnum[2]["villager_medal"] == 1
 
 
+# ── has_production ───────────────────────────────────────────────────────
+# The flag was always computed for assign_medals' payload and then discarded,
+# which left "no medal because nobody measured me" and "no medal because I
+# placed fourth" indistinguishable from a stored row -- and that distinction is
+# the denominator of player_rollups' medal_rates. It is now emitted, and these
+# pin it to the SAME predicate the medals are ranked by, not merely to a
+# plausible one.
+
+def test_has_production_is_emitted_on_every_row():
+	players = [_p(1, 11, villagers=100, military=20), _p(2, 22, villagers=0, military=0)]
+	rows = compute_game_stats(players, [], [], 1000)
+	by_pnum = {r["player_number"]: r for r in rows}
+	assert by_pnum[1]["has_production"] is True
+	assert by_pnum[2]["has_production"] is False
+
+
+def test_has_production_is_true_on_either_axis_alone():
+	# Villagers only and military only are both "measured". A mutant reading
+	# only one of the two counts passes on one of these rows and fails the other.
+	players = [_p(1, 11, villagers=7, military=0), _p(2, 22, villagers=0, military=7)]
+	rows = compute_game_stats(players, [], [], 1000)
+	by_pnum = {r["player_number"]: r for r in rows}
+	assert by_pnum[1]["has_production"] is True
+	assert by_pnum[2]["has_production"] is True
+
+
+def test_missing_counts_read_as_no_production_not_as_an_error():
+	# NULL villagers/military is what an unparsed slot looks like in
+	# replay_players; `(x or 0)` must read them as zero, same as the SQL
+	# COALESCE in 008_game_stats_has_production's backfill.
+	rows = compute_game_stats([_p(1, 11, villagers=None, military=None)], [], [], 1000)
+	assert rows[0]["has_production"] is False
+
+
+def test_has_production_agrees_with_medal_eligibility_for_every_player():
+	# The property that matters, stated directly: a player the medals ranked
+	# must carry the flag, and a player they refused to rank must not. Three
+	# measured players means all three place on both axes, so "ranked" is
+	# observable from the medals alone -- and the fourth, unmeasured, gets
+	# neither. A second, drifting definition of "has production" fails here
+	# rather than merely producing a wrong number in a rollup two layers away.
+	players = [_p(1, 11, villagers=100, military=30), _p(2, 22, villagers=80, military=20),
+	           _p(3, 33, villagers=60, military=10), _p(4, 44, villagers=0, military=0)]
+	rows = compute_game_stats(players, [], [], 1000)
+	for row in rows:
+		medalled = row["military_medal"] is not None or row["villager_medal"] is not None
+		assert row["has_production"] is medalled, row
+
+
 def test_exact_tie_breaks_on_player_number_not_input_order():
 	# Identical counts, with the higher player_number listed FIRST: a pass only
 	# proves the tie is decided by player_number, not by input list order.
@@ -136,11 +185,12 @@ def test_write_deletes_before_insert_stamps_id_and_serialises_top_units():
 		rows = [
 			dict(player_number=1, profile_id=11, civ="Franks", team="1", winner=True,
 			     avg_eapm=50, peak_eapm=60, military_medal=1, villager_medal=None,
+			     has_production=True,
 			     top_units=[dict(unit="Knight", category="cavalry", total=30)],
 			     computed_at=1000),
 			dict(player_number=2, profile_id=22, civ="Mongols", team="2", winner=False,
 			     avg_eapm=40, peak_eapm=None, military_medal=None, villager_medal=1,
-			     top_units=[], computed_at=1000),
+			     has_production=True, top_units=[], computed_at=1000),
 		]
 		asyncio.run(game_stats.write(555, rows))
 	finally:
@@ -202,7 +252,7 @@ def _written_payload(rows, replay_match_id=555):
 def _stats_row(**kw):
 	base = dict(player_number=1, profile_id=11, civ="Franks", team="1", winner=True,
 	            avg_eapm=50, peak_eapm=60, military_medal=1, villager_medal=2,
-	            top_units=[], computed_at=1000)
+	            has_production=True, top_units=[], computed_at=1000)
 	base.update(kw)
 	return base
 
@@ -219,6 +269,17 @@ def test_every_written_row_uses_one_column_order():
 	# ...and the values still belong to their own columns after normalising.
 	assert payload[1]["player_number"] == 2
 	assert payload[1]["civ"] == "Goths"
+
+
+def test_write_accepts_exactly_what_compute_game_stats_returns():
+	# The two halves are validated against each other by write()'s key-set
+	# guard, so a field added to the compute and not to _COLUMNS (or vice
+	# versa) raises here instead of the ingest path swallowing it -- store.
+	# write_match calls write() inside a try/except that only logs.
+	players = [_p(1, 11, villagers=100, military=20), _p(2, 22, villagers=0, military=0)]
+	payload = _written_payload(compute_game_stats(players, [], [], 1000))
+	assert [r["has_production"] for r in payload] == [True, False]
+	assert all(list(r.keys()) == list(game_stats._COLUMNS) for r in payload)
 
 
 def test_a_row_with_an_unexpected_key_set_is_rejected_loudly():

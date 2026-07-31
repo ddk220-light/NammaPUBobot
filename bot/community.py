@@ -85,7 +85,21 @@ db.ensure_table(dict(
 		dict(cname="community_id", ctype=db.types.int),
 		dict(cname="match_id", ctype=db.types.int),
 		dict(cname="replay_match_id", ctype=db.types.int),
-		dict(cname="linked_at", ctype=db.types.int),
+		# notnull=True because there is no state in which a writer legitimately
+		# has nothing to say here: link_match_replay stamps int(time.time()) and
+		# 004's backfill falls back through parsed_at -> reported_at -> now, so
+		# both writers always supply a value. It was nullable only because
+		# core/DBAdapters/mysql.py's column_blank defaults notnull=False, and a
+		# NULL would be a third meaning ("linked, at an unknown time") that
+		# bot/derived/sweeper.py's retention window has to defend against.
+		#
+		# This does NOT tighten the live column: _ensure_table only ever ADDs
+		# missing columns and never alters nullability, so production's
+		# `linked_at` stays nullable until a migration says otherwise. That is
+		# exactly why the sweeper keeps its own NULL guard rather than leaning on
+		# this declaration -- and why the guard is written to hold per community
+		# as well as across them.
+		dict(cname="linked_at", ctype=db.types.int, notnull=True),
 	],
 	primary_keys=["community_id", "match_id"],
 ))
