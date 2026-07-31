@@ -395,6 +395,76 @@ def render(rollup, gt=None):
 	return None
 
 
+# (metric id -> the two blob keys it reads). Two SEPARATE samples, never one:
+# median_avg rests on games_avg and median_peak on games_peak, and today those
+# are 173 and 0 for the same player. A board that shared one count would rank
+# players on a figure most of them do not have.
+EAPM_METRICS = {
+	"average": ("median_avg", "games_avg"),
+	"peak": ("median_peak", "games_peak"),
+}
+
+
+def eapm_board(rollups_by_user, metric="average", exclude=()):
+	""" One community's eAPM ranking, over the same window `/rank` reports.
+
+	{"metric", "window_days", "rows": [{user_id, value, label, games}]},
+	ranked best first. Pure -- the caller resolves the community, the hidden
+	set and the names.
+
+	READS player_rollups RATHER THAN QUERYING game_stats, and that is the whole
+	design. The rollups are already windowed to WINDOW_DAYS, already resolved
+	across every profile a user owns, and already refreshed by the job -- so a
+	board built on them shows each player EXACTLY the number their own `/rank`
+	shows. A separate windowed query would be a second implementation of the
+	same median over the same rows, and the first time the two disagreed by one
+	game the bug would be invisible: both numbers would look entirely plausible.
+
+	NOT metric_boards, for the opposite reason. Those are deliberately NOT
+	windowed (bot/derived/refresh.py: "a leaderboard is a record, and a record
+	that silently expires is not one"), and this is not a record -- it is a
+	form table, "who is fast right now". Two different questions, so two
+	different sources rather than one source bent to answer both.
+
+	THE FLOOR IS THE SAME MIN_GAMES the report applies, and applying it here is
+	not optional: compute_rollup stores a median from a single game quite
+	happily, so without this a player who turned up once and had a frantic game
+	tops the table ahead of everyone who plays every week.
+
+	`exclude` is the set of user_ids an admin has hidden from the leaderboard
+	(`/rating hide_player`). Honoured here because this IS a leaderboard: a
+	player hidden from the rating table and left visible on this one is not
+	hidden.
+
+	Ties break on the larger sample and then on user_id, so the order is total
+	and two players on the same median always render in the same order. """
+	if metric not in EAPM_METRICS:
+		# Loud. A typo'd metric that silently fell back to the average would
+		# render a peak board full of averages, under a peak heading.
+		raise ValueError(f"unknown eAPM metric {metric!r}, expected one of {sorted(EAPM_METRICS)}")
+	value_key, games_key = EAPM_METRICS[metric]
+	exclude = set(exclude or ())
+
+	rows, windows = [], set()
+	for user_id, rollup in (rollups_by_user or {}).items():
+		if user_id in exclude:
+			continue
+		apm = (rollup or {}).get("apm") or {}
+		value, games = apm.get(value_key), apm.get(games_key) or 0
+		if value is None or games < MIN_GAMES:
+			continue
+		rows.append(dict(user_id=user_id, value=value, label=_num(value), games=games))
+		windows.add((rollup or {}).get("window_days"))
+
+	rows.sort(key=lambda r: (-r["value"], -r["games"], str(r["user_id"])))
+	# The window is read off the blobs that actually contributed, not from
+	# rollups.WINDOW_DAYS: a constant would keep printing "60 days" over blobs
+	# computed at 30 during the deploy that changed it. Blobs disagreeing means
+	# a pass is mid-flight, and then the honest footer names no window at all.
+	return dict(metric=metric, rows=rows,
+	            window_days=windows.pop() if len(windows) == 1 else None)
+
+
 def gaps(rollups_by_user, window_user_ids):
 	""" Which report lines this community's data cannot fill yet, as counts
 	over the players it has actually seen.

@@ -714,6 +714,16 @@ async def _leaderboard(
 ): await run_slash(bot.commands.leaderboard, interaction=interaction, page=page)
 
 
+@dc.slash_command(name='eapm', description='Show the eAPM ranking for the last 60 days.', **guild_kwargs)
+async def _eapm(
+		interaction: Interaction,
+		metric: str = SlashOption(
+			name='metric', description='Median of per-game eAPM, or of per-game peak eAPM.',
+			required=False, default='average', choices=['average', 'peak']),
+		page: int = SlashOption(required=False),
+): await run_slash(bot.commands.eapm, interaction=interaction, metric=metric, page=page)
+
+
 # douche -> ...
 
 @groups.douche.subcommand(name='add', description='Record that a player douched another (moderator).')

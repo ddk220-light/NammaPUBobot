@@ -25,7 +25,9 @@ import types
 from pathlib import Path
 
 import bot.community as community
+import bot.identity as identity
 import bot.derived.rollups as rollups
+from core.database import db
 import bot.scouting_report as scouting_report
 from bot.derived.rollups import SPLIT_MIN_GAMES, compute_rollup
 
@@ -1007,3 +1009,239 @@ def test_the_peak_is_named_as_a_median_rather_than_as_a_high_score():
 	assert apm == "eAPM: median **54.5** over 8 games · median peak **103** over 5"
 	# No spelling of the line may leave a bare "peak N" for a reader to misread.
 	assert "· peak" not in apm and not apm.endswith("peak")
+
+
+# ── the eAPM board ───────────────────────────────────────────────────────
+
+def _apm_blob(median_avg=None, games_avg=0, median_peak=None, games_peak=0, window_days=60):
+	return _blob(apm=dict(median_avg=median_avg, games_avg=games_avg,
+	                      median_peak=median_peak, games_peak=games_peak),
+	             window_days=window_days)
+
+
+def test_the_board_ranks_by_the_median_best_first():
+	rollups_by_user = {
+		1: _apm_blob(median_avg=40, games_avg=20),
+		2: _apm_blob(median_avg=62, games_avg=11),
+		3: _apm_blob(median_avg=51, games_avg=30),
+	}
+	board = scouting_report.eapm_board(rollups_by_user)
+
+	assert [r["user_id"] for r in board["rows"]] == [2, 3, 1]
+	assert board["metric"] == "average" and board["window_days"] == 60
+
+
+def test_the_board_reports_the_same_number_the_players_own_report_does():
+	""" The whole reason this reads player_rollups instead of re-querying
+	game_stats: a second implementation of the same median over the same rows
+	would look plausible while disagreeing by a game. """
+	rollup = compute_rollup([_stat(i, avg_eapm=40 + i) for i in range(1, 9)], [], now=NOW)
+	board = scouting_report.eapm_board({7: rollup})
+
+	assert board["rows"][0]["label"] in _line_with(scouting_report.render(rollup), "eAPM")
+
+
+def test_a_player_below_the_floor_is_not_on_the_board():
+	""" compute_rollup will happily store a median from ONE game, so without
+	this floor a player who turned up once and had a frantic game outranks
+	everybody who plays every week. """
+	rollups_by_user = {
+		1: _apm_blob(median_avg=200, games_avg=scouting_report.MIN_GAMES - 1),
+		2: _apm_blob(median_avg=45, games_avg=scouting_report.MIN_GAMES),
+	}
+	board = scouting_report.eapm_board(rollups_by_user)
+
+	assert [r["user_id"] for r in board["rows"]] == [2], "the 4-game 200 eAPM player is not first"
+
+
+def test_the_peak_metric_reads_its_own_sample_not_the_averages():
+	""" Two independent counts. A player with 40 games of average and 2 of peak
+	belongs on the average board and not on the peak one -- sharing one count
+	would rank most of the community on a figure they do not have. """
+	rollups_by_user = {1: _apm_blob(median_avg=50, games_avg=40, median_peak=180, games_peak=2)}
+
+	assert [r["user_id"] for r in scouting_report.eapm_board(rollups_by_user)["rows"]] == [1]
+	assert scouting_report.eapm_board(rollups_by_user, "peak")["rows"] == []
+
+
+def test_the_peak_board_ranks_on_the_peak_median():
+	rollups_by_user = {
+		1: _apm_blob(median_avg=90, games_avg=30, median_peak=120, games_peak=30),
+		2: _apm_blob(median_avg=40, games_avg=30, median_peak=175, games_peak=30),
+	}
+	board = scouting_report.eapm_board(rollups_by_user, "peak")
+
+	assert [r["user_id"] for r in board["rows"]] == [2, 1]
+	assert board["rows"][0]["value"] == 175
+
+
+def test_a_hidden_player_is_off_the_board():
+	""" `/rating hide_player` hides somebody from the leaderboard. This is a
+	leaderboard; hiding them from one table and not the other is not hiding. """
+	rollups_by_user = {1: _apm_blob(median_avg=90, games_avg=30),
+	                   2: _apm_blob(median_avg=40, games_avg=30)}
+
+	board = scouting_report.eapm_board(rollups_by_user, exclude={1})
+	assert [r["user_id"] for r in board["rows"]] == [2]
+
+
+def test_an_unknown_metric_raises_rather_than_falling_back():
+	""" A typo that silently fell back to the average would render a board full
+	of averages under a peak heading -- every number real, the whole thing
+	wrong. """
+	import pytest as _pytest
+	with _pytest.raises(ValueError):
+		scouting_report.eapm_board({}, "maximum")
+
+
+def test_ties_break_on_the_larger_sample_so_the_order_is_total():
+	rollups_by_user = {1: _apm_blob(median_avg=50, games_avg=10),
+	                   2: _apm_blob(median_avg=50, games_avg=40)}
+
+	assert [r["user_id"] for r in scouting_report.eapm_board(rollups_by_user)["rows"]] == [2, 1]
+
+
+def test_the_window_comes_off_the_blobs_rather_than_from_a_constant():
+	""" A constant would keep printing "60 days" over blobs computed at 30
+	during the very deploy that changed it. """
+	assert scouting_report.eapm_board(
+		{1: _apm_blob(median_avg=50, games_avg=10, window_days=30)})["window_days"] == 30
+
+
+def test_blobs_that_disagree_about_the_window_name_no_window_at_all():
+	""" Only reachable mid-pass, and then the footer says nothing rather than
+	picking one of two windows to claim. """
+	rollups_by_user = {1: _apm_blob(median_avg=50, games_avg=10, window_days=60),
+	                   2: _apm_blob(median_avg=40, games_avg=10, window_days=30)}
+
+	assert scouting_report.eapm_board(rollups_by_user)["window_days"] is None
+
+
+def test_an_empty_community_produces_an_empty_board_not_an_error():
+	assert scouting_report.eapm_board({})["rows"] == []
+	assert scouting_report.eapm_board(None)["rows"] == []
+
+
+# ── /eapm: the command around the board ──────────────────────────────────
+
+class _ReplyCtx(_FakeCtx):
+	"""_FakeCtx plus the reply capture the board command needs."""
+
+	def __init__(self, channel_id=4242):
+		super().__init__(channel_id)
+		self.replies = []
+
+	async def reply(self, embed=None, **_kw):
+		self.replies.append(embed)
+
+
+class _FakeExc:
+	"""The two error types the board command raises. bot.Exc is assembled by
+	bot/__init__.py, which this suite deliberately never imports (it builds a
+	Discord client); the command only needs the names to exist and to raise."""
+
+	class NotFoundError(Exception):
+		pass
+
+	class SyntaxError(Exception):  # noqa: A001 — mirrors bot.Exc's own name
+		pass
+
+
+def _wire_board(monkeypatch, community_id, rollups_by_user, hidden=(), names=None):
+	import bot as bot_pkg
+	monkeypatch.setattr(bot_pkg, "Exc", _FakeExc, raising=False)
+
+	async def _community_for_channel(_channel_id):
+		return community_id
+
+	async def _fetch_community(_cid):
+		return rollups_by_user
+
+	async def _fetchall(_sql, *_a):
+		return [{"user_id": u} for u in hidden]
+
+	async def _names():
+		return names or {}
+
+	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
+	monkeypatch.setattr(rollups, "fetch_community", _fetch_community)
+	monkeypatch.setattr(identity, "profiles_and_names_by_user", _names)
+	monkeypatch.setattr(db, "fetchall", _fetchall)
+
+
+def _eapm_embed(monkeypatch, rollups_by_user, metric=None, hidden=(), names=None, page=1):
+	stats = _load_stats_module(monkeypatch)
+	_wire_board(monkeypatch, 7, rollups_by_user, hidden, names)
+	ctx = _ReplyCtx()
+	asyncio.run(stats.eapm(ctx, metric=metric, page=page))
+	return ctx.replies[0]
+
+
+def test_eapm_renders_a_ranked_board_with_every_players_sample():
+	""" Three medians over three different game counts. A column of medians
+	with no counts beside it invites reading 12 games and 120 as equal
+	evidence, which is the same rule the report itself follows. """
+	rollups_by_user = {
+		11: _apm_blob(median_avg=40, games_avg=20),
+		22: _apm_blob(median_avg=62, games_avg=11),
+		33: _apm_blob(median_avg=51, games_avg=30),
+	}
+	names = {11: {"aoe2_names": ["Alpha"]}, 22: {"aoe2_names": ["Bravo"]},
+	         33: {"aoe2_names": ["Charlie"]}}
+
+	import pytest as _pytest
+	embed = _eapm_embed(_pytest.MonkeyPatch(), rollups_by_user, names=names)
+	fields = {f["name"]: f["value"] for f in embed.fields}
+
+	assert "Bravo" in fields["Player"].split("\n")[0], "the highest median leads"
+	assert fields["eAPM"] == "**62**\n**51**\n**40**"
+	assert fields["Games"] == "11\n30\n20"
+	assert "60 days" in embed.footer_text and "5+ games" in embed.footer_text
+
+
+def test_eapm_titles_the_peak_board_as_a_peak_board():
+	import pytest as _pytest
+	rollups_by_user = {11: _apm_blob(median_avg=40, games_avg=20,
+	                                 median_peak=150, games_peak=20)}
+
+	avg = _eapm_embed(_pytest.MonkeyPatch(), rollups_by_user)
+	peak = _eapm_embed(_pytest.MonkeyPatch(), rollups_by_user, metric="peak")
+
+	assert "Median eAPM" in avg.title and "peak" not in avg.title.lower()
+	assert "Median peak eAPM" in peak.title
+	assert {f["name"]: f["value"] for f in peak.fields}["eAPM"] == "**150**"
+
+
+def test_eapm_on_a_channel_with_no_community_says_so_rather_than_showing_nothing():
+	import pytest as _pytest
+
+	mp = _pytest.MonkeyPatch()
+	stats = _load_stats_module(mp)
+	_wire_board(mp, None, {})
+
+	with _pytest.raises(Exception) as exc:
+		asyncio.run(stats.eapm(_ReplyCtx()))
+	assert "community" in str(exc.value).lower()
+
+
+def test_the_empty_peak_board_explains_why_it_is_empty():
+	""" An empty peak board is not "nobody qualifies" -- the figure comes from
+	per-minute buckets that only games played from now on carry, and a bare
+	"no data" would read as a bug in a community that plays every day. """
+	import pytest as _pytest
+
+	mp = _pytest.MonkeyPatch()
+	stats = _load_stats_module(mp)
+	_wire_board(mp, 7, {11: _apm_blob(median_avg=40, games_avg=20)})
+
+	with _pytest.raises(Exception) as exc:
+		asyncio.run(stats.eapm(_ReplyCtx(), metric="peak"))
+	message = str(exc.value).lower()
+	assert "bucket" in message and "from now on" in message
+
+
+def test_eapm_falls_back_to_the_user_id_when_no_in_game_name_is_known():
+	import pytest as _pytest
+	embed = _eapm_embed(_pytest.MonkeyPatch(),
+	                    {11: _apm_blob(median_avg=40, games_avg=20)}, names={})
+	assert "11" in {f["name"]: f["value"] for f in embed.fields}["Player"]

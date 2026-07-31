@@ -1,6 +1,6 @@
 __all__ = [
 	'last_game', 'stats', 'top', 'rank', 'rank_detailed', 'leaderboard',
-	'mapstats', 'activity'
+	'eapm', 'mapstats', 'activity'
 ]
 
 import io
@@ -360,6 +360,98 @@ async def leaderboard(ctx, page: int = 1):
 	embed.set_footer(text="Page {page} of {pages} · {count} ranked players".format(
 		page=page + 1, pages=pages, count=len(full)
 	))
+	await ctx.reply(embed=embed)
+
+
+_EAPM_TITLES = {
+	"average": "Median eAPM",
+	"peak": "Median peak eAPM",
+}
+
+# Why a metric can be empty while the other one is full, said in the copy
+# rather than left as a blank board. `peak` is the only one that can be empty
+# on a busy community, and the reason is not "nobody qualifies" -- it is that
+# the figure is derived from per-minute buckets that only games ingested after
+# the +4 parser carry, so it fills in as new games are played rather than by
+# anybody doing anything.
+_EAPM_EMPTY = {
+	"average": "No player has {floor} games with a recorded eAPM in the last {days} days.",
+	"peak": ("No player has {floor} games with a recorded peak in the last {days} days yet — "
+	         "peak eAPM comes from per-minute buckets, which only games played from now on "
+	         "carry. It fills in as those games are played."),
+}
+
+
+async def eapm(ctx, metric: str = None, page: int = 1):
+	""" The community's eAPM ranking over the scouting report's own window.
+
+	Reads the SAME player_rollups rows `/rank` renders (see
+	bot/scouting_report.eapm_board for why that matters rather than querying
+	game_stats again), so a player's place here and the number on their own
+	report can never disagree.
+
+	Two metrics, each on its own sample: `average` ranks the median of a
+	player's per-game eAPM, `peak` the median of their per-game busiest minute.
+	Neither is a maximum -- see bot/scouting_report.py. """
+	from bot import community, identity, player_profile, scouting_report
+	from bot.derived import rollups
+
+	metric = (metric or "average").lower()
+	if metric not in scouting_report.EAPM_METRICS:
+		raise bot.Exc.SyntaxError(ctx.qc.gt("Unknown metric '{metric}'.").format(metric=metric))
+
+	community_id = await community.community_for_channel(ctx.channel.id)
+	if community_id is None:
+		# The ordinary state for most channels, and NOT a linking gap: nothing
+		# was ever measured here, so there is no board rather than an empty one.
+		raise bot.Exc.NotFoundError(ctx.qc.gt("This channel is not part of a community with stats."))
+
+	# Hidden players are hidden from THIS leaderboard too. Same read
+	# bot/web.py's boards use; `/rating hide_player` that only hid one table
+	# would not be hiding anybody.
+	hidden = {r["user_id"] for r in await db.fetchall(
+		"SELECT DISTINCT user_id FROM player_ratings WHERE is_hidden=1") or []}
+
+	board = scouting_report.eapm_board(
+		await rollups.fetch_community(community_id), metric, exclude=hidden)
+	if not board["rows"]:
+		raise bot.Exc.NotFoundError(ctx.qc.gt(_EAPM_EMPTY[metric]).format(
+			floor=scouting_report.MIN_GAMES, days=board["window_days"] or rollups.WINDOW_DAYS))
+
+	page = (page or 1) - 1
+	pages = ceil(len(board["rows"]) / 10) or 1
+	page = max(0, min(page, pages - 1))
+	data = board["rows"][page * 10:(page + 1) * 10]
+
+	names = await identity.profiles_and_names_by_user()
+	root_url = getattr(cfg, "WS_ROOT_URL", "")
+	medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+
+	places, values, samples = [], [], []
+	for n, row in enumerate(data):
+		place = (page * 10) + n + 1
+		# The in-game name, not a Discord nickname -- the same rule
+		# bot/derived/boards.py follows: a board entry describes the account
+		# that played the games (bot/identity.py's profiles_and_names_by_user).
+		aoe2_names = (names.get(row["user_id"]) or {}).get("aoe2_names") or []
+		nick = (aoe2_names[0] if aoe2_names else str(row["user_id"]))[:16]
+		places.append(f"{medals.get(place, f'**{place}.**')} "
+		              + player_profile.web_profile_link(root_url, row["user_id"], nick))
+		values.append(f"**{row['label']}**")
+		samples.append(str(row["games"]))
+
+	embed = Embed(title="⚡ " + ctx.qc.gt(_EAPM_TITLES[metric]), colour=Colour(0x3498db))
+	embed.add_field(name=ctx.qc.gt("Player"), value="\n".join(places), inline=True)
+	embed.add_field(name=ctx.qc.gt("eAPM"), value="\n".join(values), inline=True)
+	# The sample sits beside every row for the same reason it does on the
+	# report: these are medians over different numbers of games, and a column
+	# of them with no counts invites reading 12 games and 120 as equal evidence.
+	embed.add_field(name=ctx.qc.gt("Games"), value="\n".join(samples), inline=True)
+	embed.set_footer(text=ctx.qc.gt(
+		"Page {page} of {pages} · {count} players with {floor}+ games in the last {days} days"
+	).format(page=page + 1, pages=pages, count=len(board["rows"]),
+	         floor=scouting_report.MIN_GAMES,
+	         days=board["window_days"] or rollups.WINDOW_DAYS))
 	await ctx.reply(embed=embed)
 
 

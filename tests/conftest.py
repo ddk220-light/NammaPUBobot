@@ -302,12 +302,18 @@ class FakeEmbed:
 		self.colour = colour if colour is not None else color
 		self.color = self.colour
 		self.fields = []
+		self.footer_text = None
 
 	def add_field(self, name=None, value=None, inline=True):
 		self.fields.append(dict(name=name, value=value, inline=inline))
 		return self
 
-	def set_footer(self, **_kw):
+	def set_footer(self, text=None, **_kw):
+		# RECORDED, not swallowed. A footer is not decoration here: it is where
+		# the boards state their window, their sample floor and how many players
+		# cleared it, and a fake that dropped it left every one of those claims
+		# unassertable while the embed still "rendered".
+		self.footer_text = text
 		return self
 
 
