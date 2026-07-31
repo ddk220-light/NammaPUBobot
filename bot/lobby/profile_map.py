@@ -47,10 +47,16 @@ async def known_for(profile_ids):
 async def link(user_id, profile_id, name, source="learned"):
 	"""Persist a discord<->profile binding via the identity resolver (idempotent).
 
-	This is automated self-healing (see LobbyWatcher._confirm), never a human
+	This is an automated observation (see LobbyWatcher._confirm), never a human
 	correction, so `source` must stay within the non-manual tiers identity.learn
-	accepts — 'manual' is reserved for human corrections and would be silently
-	rejected from overwriting one anyway.
+	accepts — 'manual' is reserved for human corrections and would be refused
+	from overwriting one anyway.
+
+	It fills GAPS; it does not heal wrong bindings. Under identity v2's tie
+	rule a 'learned' write can no longer take a profile another 'learned' write
+	already bound to somebody else: identity.learn refuses it and records an
+	`open` conflict for an admin to settle with /identity link. Only a strictly
+	higher tier (the player's own /link, or an admin) moves an existing binding.
 	"""
 	try:
 		await identity.learn(profile_id, user_id, source, aoe2_name=name or None)

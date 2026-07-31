@@ -309,16 +309,28 @@ def _record_seed_conflicts(claimed, seed_rows, conflicts, now):
 		claimed[pid] = uid
 
 
-# Confidence tiers this migration writes, taken from core.identity_seed's
-# CONFIDENCE_ORDER (rather than the literal strings) so a rename there can't
-# silently desync from here. Read by POSITION IN THE LATTICE, not by a
-# fixed-arity unpack: identity v2 added a fourth tier (`self`, between
-# `learned` and `manual`) and an unpack of the whole tuple would have crashed
-# this module at import — i.e. crashed the boot before any migration ran.
+# Confidence tiers this migration writes. These are NAMES, not positions: the
+# CSV's own `source` column is compared against _MANUAL_CONFIDENCE as a string,
+# so what matters is the literal value, never where it sits in the lattice.
+# They were briefly derived positionally (CONFIDENCE_ORDER[0]/[1]/[-1]) — that
+# is wrong for a name lookup and silently so: adding a tier above `manual` or
+# below `learned` would leave this seeding at whatever moved into the slot,
+# with no error anywhere. The check below keeps the anti-desync property that
+# deriving from the tuple was reaching for, by failing loudly at import (i.e.
+# at boot, before any migration runs) if a tier this file names is renamed or
+# removed from the lattice.
 # This migration never writes `self`; a player's own link postdates seeding.
-_SEED_CONFIDENCE = CONFIDENCE_ORDER[0]     # weakest tier
-_LEARNED_CONFIDENCE = CONFIDENCE_ORDER[1]
-_MANUAL_CONFIDENCE = CONFIDENCE_ORDER[-1]  # strongest tier — a human correction
+_SEED_CONFIDENCE = "seed"        # weakest tier
+_LEARNED_CONFIDENCE = "learned"
+_MANUAL_CONFIDENCE = "manual"    # strongest tier — a human correction
+
+for _tier in (_SEED_CONFIDENCE, _LEARNED_CONFIDENCE, _MANUAL_CONFIDENCE):
+	if _tier not in CONFIDENCE_ORDER:
+		raise RuntimeError(
+			f"core/migrations.py seeds `identities` at confidence {_tier!r}, which is no longer in "
+			f"core.identity_seed.CONFIDENCE_ORDER ({CONFIDENCE_ORDER}). Renaming a tier requires "
+			f"updating 003_seed_identities (and any already-seeded rows) to match."
+		)
 
 
 def _confidence_for_seed_row(source):

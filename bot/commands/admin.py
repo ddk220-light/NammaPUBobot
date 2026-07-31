@@ -152,17 +152,35 @@ async def identity_link(ctx, member: Member, profile_id: int, force: bool = Fals
 	learning (seed/replay ingest) can ever overwrite -- see identity.learn's
 	docstring. If `profile_id` already resolves to a *different* Discord
 	user, this refuses to reassign it unless `force` is set, so a mistyped
-	profile id can't silently steal someone else's identity. """
+	profile id can't silently steal someone else's identity.
+
+	`force` goes through identity.relink(), NOT identity.learn(): learn()
+	refuses an equal-tier write to a different user (identity v2's tie rule),
+	so forcing through it would refuse the reassignment, record an `open`
+	conflict, and still reply "Linked" -- a false success. relink() is the one
+	writer allowed to move a `manual` binding, and it is what `force` has
+	always claimed to do.
+
+	Note what relink() does beyond moving this one profile: it also releases
+	every OTHER profile `member` owns (spec section 3 -- a member who owns two
+	profiles has their statistics double-attributed). Each released profile is
+	recorded in identity_conflicts as `superseded`. The `additional: true`
+	flag that opts out of that, for genuine multi-account players, lands with
+	the identity v2 command wiring; until then a forced link is a full
+	relink. """
 	ctx.check_perms(ctx.Perms.ADMIN)
 
 	existing_owner = await bot.identity.user_for_profile(profile_id)
-	if existing_owner is not None and existing_owner != member.id and not force:
-		raise bot.Exc.ValueError(ctx.qc.gt(
-			"Profile `{profile_id}` is already linked to <@{owner_id}>. "
-			"Re-run with `force: True` to relink it to **{member}**."
-		).format(profile_id=profile_id, owner_id=existing_owner, member=get_nick(member)))
+	if existing_owner is not None and existing_owner != member.id:
+		if not force:
+			raise bot.Exc.ValueError(ctx.qc.gt(
+				"Profile `{profile_id}` is already linked to <@{owner_id}>. "
+				"Re-run with `force: True` to relink it to **{member}**."
+			).format(profile_id=profile_id, owner_id=existing_owner, member=get_nick(member)))
+		await bot.identity.relink(profile_id, member.id)
+	else:
+		await bot.identity.learn(profile_id, member.id, source="manual")
 
-	await bot.identity.learn(profile_id, member.id, source="manual")
 	await ctx.success(ctx.qc.gt("Linked profile `{profile_id}` to **{member}**.").format(
 		profile_id=profile_id, member=get_nick(member)
 	))

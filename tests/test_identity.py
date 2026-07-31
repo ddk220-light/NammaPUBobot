@@ -424,16 +424,63 @@ def test_learn_does_not_record_a_claim_that_agrees_with_the_manual_row(monkeypat
 	assert fake.identity_conflicts == []
 
 
-def test_learn_does_not_record_a_block_by_a_non_manual_row(monkeypatch):
-	""" A `seed` write outranked by an existing `learned` row is the
-	resolver's ordinary precedence order working as intended, not a human
-	correction discarding someone else's claim -- only a block by `manual`
-	is recorded. """
+def test_learn_lower_rank_different_user_records_a_conflict_against_a_learned_row(monkeypatch):
+	""" A lower-tier claim that disagrees with the stored owner is recorded
+	whatever tier that owner holds -- not only when the row is `manual`.
+
+	This test previously asserted the opposite (a block by a non-manual row
+	went unrecorded, on the reasoning that ordinary precedence is not a
+	conflict). Spec section 1 says "same or LOWER tier, different user: no
+	change + an `open` conflict row", and the deduction solver writes at
+	`learned`, so a `seed` disagreement against it is two automated sources
+	contradicting each other -- exactly what must not be silently discarded. """
 	fake = _setup(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "learned"))
 
 	asyncio.run(identity.learn(111, 999, "seed"))
 
+	assert fake.identities[0]["user_id"] == 222, "the lower tier must not take the binding"
+	assert len(fake.identity_conflicts) == 1
+	row = fake.identity_conflicts[0]
+	assert row["profile_id"] == 111
+	assert row["claimed_user_id"] == 999
+	assert row["source"] == "seed"
+	assert row["status"] == "open"
+
+
+def test_learn_lower_rank_against_an_unowned_row_records_nothing(monkeypatch):
+	""" ...but an unowned row (user_id NULL) is nobody to disagree with. The
+	write is still outranked and refused, and recording it would produce a
+	conflict whose current_owner is None -- unreadable to the human it exists
+	for. """
+	fake = _setup(monkeypatch)
+	fake.identities.append(dict(
+		profile_id=111, user_id=None, aoe2_name=None,
+		confidence="learned", first_seen_at=1, last_seen_at=1,
+	))
+
+	asyncio.run(identity.learn(111, 999, "seed"))
+
+	assert fake.identities[0]["user_id"] is None
+	assert fake.identity_conflicts == []
+
+
+def test_learn_lower_rank_same_user_refreshes_the_observed_name(monkeypatch):
+	""" Spec section 1: "same or lower tier, same user: refresh last_seen_at /
+	aoe2_name only". The lower branch used to bump last_seen_at alone, so a
+	name observed by a weaker source was thrown away -- even though aoe2_name
+	is a display-only observation, not part of the binding that outranked it. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual", aoe2_name="Old"))
+	fake.identities[0]["last_seen_at"] = 1
+
+	asyncio.run(identity.learn(111, 222, "learned", aoe2_name="RenamedInGame"))
+
+	row = fake.identities[0]
+	assert row["aoe2_name"] == "RenamedInGame"
+	assert row["confidence"] == "manual", "the name refresh must not touch the tier"
+	assert row["user_id"] == 222
+	assert row["last_seen_at"] != 1
 	assert fake.identity_conflicts == []
 
 
@@ -501,6 +548,44 @@ def test_open_conflicts_groups_multiple_claimants_under_one_profile(monkeypatch)
 	assert len(result) == 1
 	claimants = sorted(c["user_id"] for c in result[0]["claims"])
 	assert claimants == [555, 999]
+
+
+def test_open_conflicts_omits_a_claim_that_now_owns_the_profile(monkeypatch):
+	""" A claimant who was refused and later WON the profile must not be listed
+	as their own rival. Nothing ever clears `status`, so that stale `open` row
+	is permanent, and reporting it renders as "Current owner: @999, Competing
+	claim(s): @999" -- a self-contradiction on the only surface a moderator
+	has. With no other live claim the profile drops out of the result entirely.
+
+	Filtered on the READ side on purpose: migration 003_seed_identities has
+	already written rows of this shape to production, so fixing only the
+	writers would leave them showing forever. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+	asyncio.run(identity.learn(111, 999, "learned"))  # refused -> open conflict for 999
+	asyncio.run(identity.relink(111, 999))            # admin: it really is 999's
+
+	assert asyncio.run(identity.user_for_profile(111)) == 999
+	assert any(
+		c["claimed_user_id"] == 999 and c["status"] == "open" for c in fake.identity_conflicts
+	), "the stale open row is still in the table -- this is a read-side filter, not a delete"
+	assert asyncio.run(identity.open_conflicts()) == []
+
+
+def test_open_conflicts_keeps_the_rival_claims_on_a_profile_the_owner_once_lost(monkeypatch):
+	""" Dropping the owner's own stale claim must not drop the profile when
+	somebody else is still contesting it. """
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+	asyncio.run(identity.learn(111, 999, "learned"))  # refused -> open
+	asyncio.run(identity.learn(111, 555, "learned"))  # refused -> open
+	asyncio.run(identity.relink(111, 999))
+
+	result = asyncio.run(identity.open_conflicts())
+
+	assert len(result) == 1
+	assert result[0]["current_owner"] == 999
+	assert [c["user_id"] for c in result[0]["claims"]] == [555]
 
 
 # ─── profiles_for_users / user_for_profile ──────────────────────────────
@@ -732,6 +817,26 @@ def test_link_self_does_not_lower_an_admin_set_confidence(monkeypatch):
 	assert fake.identities[0]["aoe2_name"] == "New"
 
 
+def test_link_self_does_not_inherit_a_higher_tier_from_an_unowned_row(monkeypatch):
+	""" Keeping a stored tier above `self` is only ever right when the row is
+	ALREADY this player's (an admin bound it to them). An UNOWNED row's tier
+	belongs to whoever wrote it -- data/profile_resolved.csv seeds rows at
+	`manual` from its own `source` column, and such a row can carry no user_id
+	at all -- so inheriting it would let a self-service /link mint a `manual`
+	binding, a tier only an admin is allowed to create, and one no later
+	`self` write could correct. """
+	fake = _setup(monkeypatch)
+	fake.identities.append(dict(
+		profile_id=111, user_id=None, aoe2_name="Fenrir",
+		confidence="manual", first_seen_at=1, last_seen_at=1,
+	))
+
+	assert asyncio.run(identity.link_self(111, 222, "Fenrir")) is True
+
+	assert fake.identities[0]["user_id"] == 222
+	assert fake.identities[0]["confidence"] == "self", "a player's own claim is `self`, never `manual`"
+
+
 # ─── unlink ─────────────────────────────────────────────────────────────
 
 def test_unlink_clears_owner_and_records_the_removed_claim(monkeypatch):
@@ -777,6 +882,51 @@ def test_unlink_records_nothing_for_an_already_unowned_profile(monkeypatch):
 	assert fake.identity_conflicts == [], "there was no claim to remove"
 
 
+def test_unlink_does_not_demote_an_already_unowned_row(monkeypatch):
+	""" A no-op unlink used to still rewrite the row to confidence='seed'. That
+	silently WEAKENS the profile: a `learned` row that a `seed` write could not
+	touch becomes one that an equal-tier `seed` write binds outright. Unlinking
+	twice must not make a profile easier to claim than unlinking once. """
+	fake = _setup(monkeypatch)
+	fake.identities.append(dict(
+		profile_id=111, user_id=None, aoe2_name="Fenrir",
+		confidence="learned", first_seen_at=1, last_seen_at=1,
+	))
+
+	asyncio.run(identity.unlink(111))
+
+	assert fake.identities[0]["confidence"] == "learned"
+
+	# ...and the tier it kept still outranks a `seed` claim, which is the whole
+	# point of not demoting it.
+	asyncio.run(identity.learn(111, 222, "seed"))
+	assert fake.identities[0]["user_id"] is None
+
+
+def test_unlink_records_the_removed_claim_before_dropping_the_binding(monkeypatch):
+	""" The adapter runs with autocommit and has no transaction API, so the
+	record and the write are two independent statements. Recording first means
+	a failure between them leaves a conflict row for a binding that still
+	stands (visible, and self-correcting on a retry) rather than a binding
+	silently gone with no trace of who held it. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+
+	async def _boom(*a, **k):
+		raise RuntimeError("conflict insert failed")
+
+	monkeypatch.setattr(identity, "_record_conflict", _boom)
+
+	try:
+		asyncio.run(identity.unlink(111))
+	except RuntimeError:
+		pass
+	else:
+		raise AssertionError("unlink must not swallow a failed conflict record")
+
+	assert fake.identities[0]["user_id"] == 222, "the binding must still stand if its audit row never landed"
+
+
 # ─── relink ─────────────────────────────────────────────────────────────
 # The admin correction, at `manual` tier, atomic by construction: the profile
 # moves AND the member stops owning anything else in one call, so a relink can
@@ -816,7 +966,38 @@ def test_relink_without_additional_releases_the_members_other_profiles(monkeypat
 	assert asyncio.run(identity.profiles_for_users([222])) == {222: [112]}
 	assert [
 		(c["profile_id"], c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts
-	] == [(111, 222, "unlinked")]
+	] == [(111, 222, "superseded")]
+
+
+def test_relink_records_released_profiles_as_superseded(monkeypatch):
+	""" Spec section 3: BOTH halves of a relink -- the displaced owner of the
+	new profile and every profile the member is released from -- are recorded
+	as `superseded`. Releasing goes through unlink(), whose default status is
+	`unlinked`, so relink must override it: "an admin removed this link" and
+	"an admin moved this member elsewhere" are different events, and a reader
+	of identity_conflicts has only `status` to tell them apart. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))  # the member's wrong profile
+	asyncio.run(identity.learn(112, 999, "learned"))  # the right profile, wrongly owned
+
+	asyncio.run(identity.relink(112, 222))
+
+	recorded = {(c["profile_id"], c["claimed_user_id"]): c for c in fake.identity_conflicts}
+	assert recorded[(112, 999)]["status"] == "superseded", "the displaced owner of the new profile"
+	assert recorded[(111, 222)]["status"] == "superseded", "the profile the member was released from"
+	assert recorded[(111, 222)]["source"] == "manual"
+
+
+def test_unlink_on_its_own_still_records_unlinked(monkeypatch):
+	""" The counterpart to the test above: the default must stay `unlinked`, so
+	relink's `superseded` remains a distinction and not just the only value
+	anything ever writes. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+
+	asyncio.run(identity.unlink(111))
+
+	assert fake.identity_conflicts[0]["status"] == "unlinked"
 
 
 def test_relink_additional_keeps_the_members_other_profiles(monkeypatch):
@@ -828,6 +1009,23 @@ def test_relink_additional_keeps_the_members_other_profiles(monkeypatch):
 	asyncio.run(identity.relink(112, 222, additional=True))
 
 	assert sorted(asyncio.run(identity.profiles_for_users([222]))[222]) == [111, 112]
+
+
+def test_relink_coerces_the_profile_id_to_an_int(monkeypatch):
+	""" The release loop compares `profile_id` against ids read back out of the
+	DB, which are ints. A str one (an uncoerced command argument) would compare
+	unequal to its own just-bound row, so the loop would unlink it again and
+	the member would end up owning NOTHING.
+
+	This fake stores whatever it is handed and compares with ==, so it cannot
+	reproduce that mismatch -- what it CAN pin is the coercion itself: without
+	int(), the row lands with a str profile_id. """
+	fake = _setup(monkeypatch)
+
+	asyncio.run(identity.relink("112", 222))
+
+	assert fake.identities[0]["profile_id"] == 112
+	assert isinstance(fake.identities[0]["profile_id"], int)
 
 
 def test_relink_leaves_another_members_profiles_alone(monkeypatch):
@@ -1039,26 +1237,73 @@ def test_identity_link_refuses_to_steal_a_different_owner_without_force(monkeypa
 	assert learn_calls == []
 
 
-def test_identity_link_force_reassigns_from_a_different_owner(monkeypatch):
+def test_identity_link_force_routes_to_relink_not_learn(monkeypatch):
+	""" learn() refuses an equal-tier write to a different user, so forcing
+	through it would refuse the reassignment, record an `open` conflict, and
+	still reply "Linked". relink() is the only writer allowed to move a
+	`manual` binding. """
 	admin = _load_admin_module(monkeypatch)
 
 	async def _user_for_profile(profile_id):
 		return 999
 
-	learn_calls = []
+	learn_calls, relink_calls = [], []
 
 	async def _learn(profile_id, user_id, source, aoe2_name=None):
 		learn_calls.append((profile_id, user_id, source))
 
+	async def _relink(profile_id, user_id, additional=False):
+		relink_calls.append((profile_id, user_id, additional))
+
 	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
 	monkeypatch.setattr(identity, "learn", _learn)
+	monkeypatch.setattr(identity, "relink", _relink)
 	ctx = _FakeCtx()
 	member = _FakeMember(222)
 
 	asyncio.run(admin.identity_link(ctx, member, 111, force=True))
 
-	assert learn_calls == [(111, 222, "manual")]
+	assert relink_calls == [(111, 222, False)]
+	assert learn_calls == []
 	assert len(ctx.successes) == 1
+
+
+def test_identity_link_force_actually_reassigns_a_manual_owner(monkeypatch):
+	""" End to end against the real resolver, no stubbed writer: the case the
+	command's own docstring has always promised and, until this fix, silently
+	failed at -- a profile a *different* member owns at `manual`. The reply
+	said "Linked" while the binding never moved and an `open` conflict was
+	filed against the admin's own instruction. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 999, "manual", aoe2_name="WrongPerson"))
+	ctx = _FakeCtx()
+	member = _FakeMember(222, name="Fenrir")
+
+	asyncio.run(admin.identity_link(ctx, member, 111, force=True))
+
+	row = fake.identities[0]
+	assert row["user_id"] == 222, "force must actually move the binding, not just claim it did"
+	assert row["confidence"] == "manual"
+	assert len(ctx.successes) == 1
+	assert [(c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts] == [(999, "superseded")]
+
+
+def test_identity_link_without_force_still_writes_through_learn(monkeypatch):
+	""" Only the force path is a relink. An unowned profile is an ordinary
+	`manual` observation, and routing it through relink() would additionally
+	release every other profile the member owns -- a side effect nobody asked
+	for when there was nothing to correct. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(112, 222, "manual"))  # the member's existing profile
+	ctx = _FakeCtx()
+	member = _FakeMember(222)
+
+	asyncio.run(admin.identity_link(ctx, member, 111))
+
+	assert sorted(asyncio.run(identity.profiles_for_users([222]))[222]) == [111, 112]
+	assert fake.identity_conflicts == []
 
 
 # ─── identity show ───────────────────────────────────────────────────────

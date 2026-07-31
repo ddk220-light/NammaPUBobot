@@ -23,8 +23,10 @@ import io
 # The confidence lattice, weakest first — position IS the precedence, so
 # order matters and index arithmetic on it must never assume a fixed length
 # (identity v2 inserted `self` between `learned` and `manual`; more tiers may
-# follow). bot/identity.py's _rank() and core/migrations.py's
-# _SEED_CONFIDENCE/_MANUAL_CONFIDENCE both derive from this tuple.
+# follow). bot/identity.py's _rank() compares by position; core/migrations.py
+# names its tiers as literals and checks them against this tuple at import, so
+# RENAMING or REMOVING a value here is a breaking change that fails the boot
+# loudly — inserting one is not.
 #   seed    — legacy/CSV rows, and the "profile known, owner unknown" state
 #   learned — automated inference (replay ingest, the deduction solver)
 #   self    — the player's own one-time /link
