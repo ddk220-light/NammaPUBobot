@@ -1154,7 +1154,13 @@ match. The derived side is written correctly from the start so it never needs
 renaming.
 
 **Registry entries** (`core/data_registry.py`, layer `derived`, tenancy
-`global`, retention `derivable`):
+`global`, retention **`forever`**). The registry vocabulary is
+`forever | sweepable`, and derived-global is the side that survives: §7's
+sweeper deletes the bulky RAW children only once the derived rows and
+rollups exist, so `game_stats`/`game_labels` are exactly the durable summary
+that outlives them (§2.5, "captured before any retention sweep"). Marking
+them `sweepable` would let the sweeper delete the summary and its own
+precondition together:
 - `game_stats`: writers `("bot/derived/game_stats.py", "bot/derived/backfill.py")`
 - `game_labels`: writers `("bot/derived/game_labels.py", "bot/derived/backfill.py")`
 
