@@ -193,7 +193,11 @@ def assign_medals(payloads):
 			key=lambda i: (
 				-(payloads[i].get(primary) or 0),
 				-(payloads[i].get(secondary) or 0),
-				str(payloads[i].get("nick") or ""),
+				# player_number, not nick: a medal is stored permanently, and a
+				# Discord nick is mutable -- ranking on it would let a rename
+				# silently reorder a historical result. Identity v2 §1: a name is
+				# never an input to anything but display.
+				payloads[i].get("player_number") or 0,
 			))
 		for place, i in enumerate(ranked[:3], start=1):
 			out[i][field] = place

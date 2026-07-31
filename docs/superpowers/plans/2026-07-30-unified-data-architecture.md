@@ -1038,6 +1038,97 @@ repaired names correct (spot-check profile 612690 = `ddk220`),
 
 # Stage 3 — Derived-global + raw renames
 
+## Task 3.1 — Elaboration (DONE; facts pinned live 2026-07-30)
+
+Measured against production (read-only probe) and the shipped code. Every
+number below is a fact, not an estimate.
+
+**Ingest is alive.** `rs_config.enabled = 1`; `rs_ingest` = 1126 `done`, 1353
+`gave_up`; newest parse 2026-07-26 20:30, which is the same timestamp as the
+newest row in `matches`. Ingest tracks play; the community simply had not
+played for 4 days at elaboration time. Writing derived rows at ingest
+therefore does produce data as matches arrive.
+
+**Both derived tables can be backfilled from data already stored.** This is
+the single most consequential finding of the elaboration and it changes the
+stage's value: stage 5a launches on full history rather than on nothing.
+
+| source | rows available | feeds |
+|---|---|---|
+| `rs_player_games` | 8885 (1126 matches, 0 null profile_id, 0 null eapm, 0 null winner) | civ/team/winner/avg_eapm, medal inputs |
+| `rs_player_units` | 31046, of which 24519 `is_military=1`; 6061 player-games have ≥1 military row | `top_units` |
+| `cls_results` | 32045 (1129 matches): 6529 strategy-key rows + 17580 spawn-key rows + 7936 `luck_baseline` to drop | `game_labels` |
+| `cls_result_metrics` | 111995 | `game_labels.evidence` |
+| `rs_player_apm` | **0** | `peak_eapm` — see below |
+
+Only 8 replay-ingested matches have no `cls_results` row at all, so label
+coverage is effectively complete for history.
+
+**`peak_eapm` cannot be backfilled, and that is not a bug.**
+`rs_player_apm` is empty while its siblings hold 591099 / 205466 / 117892
+rows, because `PARSER_VERSION` is `mgz-a1683d8+4` ("per-minute eAPM buckets")
+while every ingested row carries `+3` or older. The bucket feature shipped
+after the last match was played. `store.reopen_pending_parser_update` only
+reopens rows whose status is `pending_parser_update`, and production has none
+— so a parser bump does **not** re-parse `done` matches. Consequences, all
+accepted deliberately:
+- every backfilled `game_stats` row has `peak_eapm = NULL`;
+- rows written from the next ingested match onward carry a real value;
+- stage 4's `apm.median_peak` therefore starts thin and thickens. Its
+  contract already carries a `games` count beside the medians, which is
+  exactly the field that makes partial coverage honest rather than hidden.
+- Re-parsing the 1126 historical matches to recover buckets was considered
+  and rejected: replays expire from aoe.ms (the 1353 `gave_up` rows are the
+  evidence), history reaches back to 2024-02, and the recoverable subset
+  would be small and arbitrary.
+
+**Identity coverage bounds what rolls up.** 89 distinct profiles appear in
+`rs_player_games`; 49 are linked, 41 are not. Roughly half of players will
+have rollups at stage 4 until more of them run `/link`. Derived-global rows
+are written for all of them regardless — that is the whole point of keying on
+`profile_id` and resolving at refresh time.
+
+### Contract corrections this elaboration forces
+
+1. **Medal tiebreaker changes from `nick` to `player_number`.** The plan said
+   "unchanged math". `card_scoring.assign_medals` currently breaks exact ties
+   with `str(payloads[i].get("nick"))` — a mutable Discord name. Storing a
+   medal decided that way makes a permanent fact depend on a name that can
+   change, which is precisely what identity v2 §1 forbids ("a name is a
+   display-only observation, never a matching input"). It is also
+   unavailable at backfill time: the only name on a historical row is
+   `rs_player_games.identity`, which for pre-v2 rows holds the polluted
+   Discord nick. `player_number` is stable, immutable, always present, and
+   unique within a match. Output changes only where two players tie on BOTH
+   military and villager counts.
+2. **`top_units` is military-only.** Unfiltered, "top 3 by total" is
+   Villager plus two others for every player alive. The stage-4 rollup
+   contract's own example is `{"unit": "Knight"}`. Filter `is_military=1`,
+   order by `total` descending, tiebreak on unit name for determinism.
+3. **`avg_eapm` is `rs_player_games.eapm` passed through, never a mean of
+   the buckets.** Bucket rows are absent for zero-action minutes, so
+   averaging them overstates. `bot/replay_stats/apm_query.py` computes a
+   deliberately different `mean_active` for charts and documents that the two
+   must not be conflated. `peak_eapm` is `MAX(actions)` over the buckets,
+   which is genuinely eAPM because `apm_buckets` replicates mgz's
+   effective-APM filter.
+4. **Migration numbers shift.** 005 is taken by
+   `005_identity_conflict_history`, and **006** is `006_derived_indexes` (the
+   per-match index on `cls_results`/`cls_result_metrics` that task 3.4's
+   reconciliation loop needs — added during the 3a review, since both tables
+   carry only their PK in production and every per-match read was a full scan).
+   Raw renames are therefore **007**; stage 6's final drops become **008**.
+5. **The label allowlist lives in `bot/derived/game_labels.py`, not
+   `card_query.py`.** What to *store* and what to *say* are different
+   concerns: `game_labels` stores 11 spawn keys, while `card_query`'s
+   `SPAWN_PHRASES` renders only the 3 worth a sentence. `card_query` keeps
+   its display subset unchanged.
+6. **The deploy splits in two.** 3a = derived tables, writers, backfill,
+   cards. 3b = renames + `rs_config` retirement. The renames touch every
+   `rs_*` reference in the repo; landing them in the same deploy as four new
+   moving parts would make any post-deploy failure ambiguous. Splitting also
+   starts the data accumulating a deploy earlier.
+
 **Binding schemas:**
 
 ```
@@ -1045,7 +1136,7 @@ game_stats   replay_match_id (int), player_number (int), profile_id (int, null),
              civ (str, null), team (str, null), winner (bool, null),
              avg_eapm (int, null), peak_eapm (int, null),
              military_medal (int, null: 1|2|3), villager_medal (int, null: 1|2|3),
-             top_units (dict: [{unit, category, total}] top 3 by total),
+             top_units (dict, null: [{unit, category, total}] top 3 military by total),
              computed_at (int), pk (replay_match_id, player_number)
 game_labels  replay_match_id (int), player_number (int), label (str),
              kind (str: 'strategy'|'spawn'),
@@ -1053,49 +1144,518 @@ game_labels  replay_match_id (int), player_number (int), label (str),
              pk (replay_match_id, player_number, label)
 ```
 
-**No `user_id` columns** (changed by identity v2, spec §5): derived-global keys
-on `profile_id` only; every consumer resolves profile → user through
-`identities` at refresh/read time. That is what makes a late `/link` backfill
-the player's whole history with no backfill job.
+Both are declared in `bot/derived/__init__.py` with `db.ensure_table`, tabs,
+`ctype=db.types.dict` for the JSON columns (the same type `bot/main.py` uses
+for its MEDIUMTEXT blob). **Neither carries a `user_id` column** (identity v2
+§5): derived-global keys on `profile_id` only, and every consumer resolves
+profile → user through `identities` at refresh time. That is what makes a
+late `/link` backfill a player's whole history with no backfill job.
 
+During stage 3 both tables are named with `replay_match_id` while the raw
+tables still call the column `aoe2_match_id`; task 3.7 renames the raw side to
+match. The derived side is written correctly from the start so it never needs
+renaming.
+
+**Registry entries** (`core/data_registry.py`, layer `derived`, tenancy
+`global`, retention **`forever`**). The registry vocabulary is
+`forever | sweepable`, and derived-global is the side that survives: §7's
+sweeper deletes the bulky RAW children only once the derived rows and
+rollups exist, so `game_stats`/`game_labels` are exactly the durable summary
+that outlives them (§2.5, "captured before any retention sweep"). Marking
+them `sweepable` would let the sweeper delete the summary and its own
+precondition together:
+- `game_stats`: writers `("bot/derived/game_stats.py", "bot/derived/backfill.py")`
+- `game_labels`: writers `("bot/derived/game_labels.py", "bot/derived/backfill.py")`
+
+---
+
+## Task 3.2 — `game_stats`: table, pure compute, ingest write
+
+**Files:**
+- Create: `bot/derived/__init__.py` (table declarations for both derived tables)
+- Create: `bot/derived/game_stats.py`
+- Modify: `bot/replay_stats/card_scoring.py` (medal tiebreaker only)
+- Modify: `bot/replay_stats/store.py` (call the writer)
+- Modify: `core/data_registry.py`
+- Test: `tests/test_game_stats.py`, `tests/test_card_scoring.py` (tiebreaker)
+
+**Interfaces produced** (later tasks depend on these exact names):
+- `bot.derived.game_stats.compute_game_stats(players, units, apm, computed_at) -> list[dict]`
+- `bot.derived.game_stats.write(replay_match_id, rows) -> None` (async)
+
+TABS for indentation — `bot/` convention. `bot/derived/` is a new package
+inside `bot/`, so it follows `bot/`, not `utils/`.
+
+- [ ] **Step 1: Write the failing tests** in `tests/test_game_stats.py`.
+
+Sync tests only — this repo has no `pytest-asyncio`, so an `async def test_`
+silently SKIPS and false-passes. Drive async code with `asyncio.run()`.
+
+```python
+from bot.derived.game_stats import compute_game_stats
+
+
+def _p(pnum, profile_id, **kw):
+	row = dict(player_number=pnum, profile_id=profile_id, civ="Franks", team="1",
+	           winner=True, eapm=50, villagers=100, military=20)
+	row.update(kw)
+	return row
+
+
+def test_medals_rank_match_wide_on_raw_counts():
+	players = [_p(1, 11, villagers=120, military=10), _p(2, 22, villagers=90, military=40),
+	           _p(3, 33, villagers=80, military=30)]
+	rows = compute_game_stats(players, [], [], 1000)
+	by_pnum = {r["player_number"]: r for r in rows}
+	assert by_pnum[1]["villager_medal"] == 1
+	assert by_pnum[2]["military_medal"] == 1
+	assert by_pnum[3]["military_medal"] == 2
+
+
+def test_player_with_no_production_gets_no_medal():
+	players = [_p(1, 11, villagers=0, military=0), _p(2, 22, villagers=50, military=5)]
+	rows = compute_game_stats(players, [], [], 1000)
+	by_pnum = {r["player_number"]: r for r in rows}
+	assert by_pnum[1]["military_medal"] is None
+	assert by_pnum[1]["villager_medal"] is None
+	assert by_pnum[2]["villager_medal"] == 1
+
+
+def test_exact_tie_breaks_on_player_number_not_name():
+	# Identical counts; the loser must be decided by player_number so a stored
+	# medal never depends on a mutable display name.
+	players = [_p(2, 22, villagers=50, military=50, identity="zzz"),
+	           _p(1, 11, villagers=50, military=50, identity="aaa")]
+	rows = compute_game_stats(players, [], [], 1000)
+	by_pnum = {r["player_number"]: r for r in rows}
+	assert by_pnum[1]["villager_medal"] == 1
+	assert by_pnum[2]["villager_medal"] == 2
+
+
+def test_top_units_is_military_only_top_three_by_total():
+	units = [
+		dict(player_number=1, unit="Villager", category="economy", is_military=False, total=999),
+		dict(player_number=1, unit="Knight", category="cavalry", is_military=True, total=30),
+		dict(player_number=1, unit="Spearman", category="infantry", is_military=True, total=20),
+		dict(player_number=1, unit="Archer", category="archer", is_military=True, total=10),
+		dict(player_number=1, unit="Scout Cavalry", category="cavalry", is_military=True, total=5),
+	]
+	rows = compute_game_stats([_p(1, 11)], units, [], 1000)
+	assert [u["unit"] for u in rows[0]["top_units"]] == ["Knight", "Spearman", "Archer"]
+
+
+def test_top_units_empty_when_no_military_rows():
+	units = [dict(player_number=1, unit="Villager", category="economy", is_military=False, total=99)]
+	rows = compute_game_stats([_p(1, 11)], units, [], 1000)
+	assert rows[0]["top_units"] == []
+
+
+def test_avg_eapm_passes_through_and_is_not_a_bucket_mean():
+	# 3 buckets averaging 20, but eapm says 50. The stored value must be 50 --
+	# bucket rows are absent for zero-action minutes, so their mean overstates.
+	apm = [dict(player_number=1, minute=0, actions=10),
+	       dict(player_number=1, minute=1, actions=20),
+	       dict(player_number=1, minute=2, actions=30)]
+	rows = compute_game_stats([_p(1, 11, eapm=50)], [], apm, 1000)
+	assert rows[0]["avg_eapm"] == 50
+	assert rows[0]["peak_eapm"] == 30
+
+
+def test_peak_eapm_is_none_without_buckets():
+	rows = compute_game_stats([_p(1, 11)], [], [], 1000)
+	assert rows[0]["peak_eapm"] is None
 ```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `python3 -m pytest tests/test_game_stats.py -v`
+Expected: FAIL — `ModuleNotFoundError: No module named 'bot.derived'`
+
+- [ ] **Step 3: Change the medal tiebreaker** in
+`bot/replay_stats/card_scoring.py`. Replace the sort key's third element:
+
+```python
+	out = [{"military_medal": None, "villager_medal": None} for _ in payloads]
+	for field, primary, secondary in MEDAL_AXES:
+		ranked = sorted(
+			(i for i, p in enumerate(payloads) if p.get("has_production")),
+			key=lambda i: (
+				-(payloads[i].get(primary) or 0),
+				-(payloads[i].get(secondary) or 0),
+				# player_number, not nick: a medal is stored permanently, and a
+				# Discord nick is mutable -- ranking on it would let a rename
+				# silently reorder a historical result. Identity v2 §1: a name is
+				# never an input to anything but display.
+				payloads[i].get("player_number") or 0,
+			))
+		for place, i in enumerate(ranked[:3], start=1):
+			out[i][field] = place
+	return out
 ```
 
-**Binding decisions:**
-- Writer: `bot/derived/game_stats.py`, called from `store.write_match`
-  immediately after raw writes, one pure `compute_game_stats(players, units,
-  apm_rows) -> rows` function (medal logic reuses
-  `card_scoring.assign_medals` — moved call, unchanged math) + one
-  `async write(...)`.
-- Labels: `bot/replay_stats/classification_sync.py` maps classifier output →
-  `game_labels` using `card_query.STRATEGY_KEYS` (kind='strategy') and
-  `SPAWN_PHRASES` keys + `spawn_near_food/gold/stone`, `spawn_*_poor`,
-  `scattered_villagers`, `tight_villagers` (kind='spawn'). `luck_baseline` is
-  dropped at the source. **cls_ dual-write continues** (insights + web still
-  read it) until stage 5.
-- Match cards read stored medals from `game_stats` (join on
-  (replay_match_id, player_number)) instead of calling `assign_medals` at
-  render; the pure function remains for the ingest writer.
-- Raw renames, migration 005 (004 is identity v2): `rs_matches→replay_matches`,
-  `rs_player_games→replay_players`, `rs_player_units→replay_units`,
-  `rs_player_techs→replay_techs`, `rs_player_buildings→replay_buildings`,
-  `rs_player_events→replay_events`, `rs_player_apm→replay_apm`,
-  `rs_ingest→replay_ingest`; `rs_config` DROPPED — its single `enabled` flag
-  becomes config var `REPLAY_INGEST_ENABLED` (config.example.cfg + start.py).
-  Column rename across all replay_* + civ_picks: `aoe2_match_id` →
-  `replay_match_id`. Sweep + OLD_NAMES additions + registry update ride the
-  same commit.
-- `rs_player_game_tags` and `rs_player_personas` keep their writers running
-  (their consumers are still live) — names unchanged until they drop in 6.
+Update `tests/test_card_scoring.py`'s stability test to seed `player_number`
+and assert the tie orders by it.
 
-**Tasks:** 3.1 elaborate → 3.2 `game_stats` writer (TDD on the pure function:
-medals match `assign_medals` output; top_units top-3 by total; apm avg/peak
-from buckets; age_reliable gating identical to cards) → 3.3 `game_labels`
-writer + allowlist tests (luck_baseline dropped; kinds correct) → 3.4 cards
-read stored medals (existing card tests updated to seed `game_stats` fakes) →
-3.5 raw renames migration + sweep + guards → 3.6 deploy + verify (post one
-match end-to-end on flagship: raw rows AND game_stats/game_labels rows appear;
-cards render with medals).
+- [ ] **Step 4: Write `bot/derived/__init__.py`** — both table declarations,
+tabs, matching the binding schemas above. Follow the shape of
+`bot/replay_stats/__init__.py`.
+
+- [ ] **Step 5: Write `bot/derived/game_stats.py`**
+
+```python
+def compute_game_stats(players, units, apm, computed_at):
+	""" Per-player derived facts for one match. Pure: no DB, no I/O.
+
+	`players` are rs_player_games-shaped dicts, `units` rs_player_units-shaped,
+	`apm` rs_player_apm-shaped. Returns one row per player, keyed by
+	player_number, with NO replay_match_id -- the caller stamps that, so the
+	same function serves the live ingest and the backfill without either one
+	teaching it where the id comes from. """
+	from bot.replay_stats import card_scoring
+
+	payloads = [dict(
+		player_number=p.get("player_number"),
+		military=p.get("military"),
+		villagers=p.get("villagers"),
+		has_production=bool((p.get("villagers") or 0) + (p.get("military") or 0)),
+	) for p in players]
+	medals = card_scoring.assign_medals(payloads)
+
+	peak = {}
+	for a in apm:
+		pn, n = a.get("player_number"), a.get("actions") or 0
+		if pn is not None and n > peak.get(pn, -1):
+			peak[pn] = n
+
+	tops = {}
+	for u in units:
+		if not u.get("is_military"):
+			continue
+		tops.setdefault(u.get("player_number"), []).append(u)
+	for pn, lst in tops.items():
+		lst.sort(key=lambda u: (-(u.get("total") or 0), str(u.get("unit") or "")))
+
+	rows = []
+	for i, p in enumerate(players):
+		pn = p.get("player_number")
+		rows.append(dict(
+			player_number=pn,
+			profile_id=p.get("profile_id"),
+			civ=p.get("civ"),
+			team=p.get("team"),
+			winner=p.get("winner"),
+			avg_eapm=p.get("eapm"),
+			peak_eapm=peak.get(pn),
+			military_medal=medals[i]["military_medal"],
+			villager_medal=medals[i]["villager_medal"],
+			top_units=[dict(unit=u.get("unit"), category=u.get("category"),
+			                total=u.get("total")) for u in tops.get(pn, [])[:3]],
+			computed_at=computed_at,
+		))
+	return rows
+```
+
+Plus `async def write(replay_match_id, rows)`: DELETE the match's rows then
+`db.insert_many("game_stats", ...)` with `replay_match_id` stamped onto each —
+the same delete-then-insert idempotency the raw writes already use.
+
+- [ ] **Step 6: Run tests to verify they pass**
+
+Run: `python3 -m pytest tests/test_game_stats.py tests/test_card_scoring.py -v`
+Expected: PASS
+
+- [ ] **Step 7: Wire into `store.write_match`** — after the raw writes, in the
+existing best-effort block alongside `classifications.write_extracted_match`,
+so a derived-layer bug can never lose a raw write:
+
+```python
+	try:
+		from bot.derived import game_stats as _gs
+		await _gs.write(aoe2_id, _gs.compute_game_stats(
+			extracted["players"], extracted["units"], extracted.get("apm", []), parsed_at))
+	except Exception as e:
+		log.error(f"game_stats write failed ({aoe2_id}): {e}")
+```
+
+- [ ] **Step 8: Add registry entries + run the registry test**
+
+Run: `python3 -m pytest tests/test_data_registry.py -v && ruff check .`
+Expected: PASS, clean
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add bot/derived core/data_registry.py bot/replay_stats/card_scoring.py bot/replay_stats/store.py tests/
+git commit -m "feat(derived): compute and store per-game player stats at ingest"
+```
+
+---
+
+## Task 3.3 — `game_labels`: allowlist, pure mapping, live write
+
+**Files:**
+- Create: `bot/derived/game_labels.py`
+- Modify: `bot/replay_stats/classification_sync.py`
+- Modify: `core/data_registry.py`
+- Test: `tests/test_game_labels.py`
+
+**Interfaces consumed:** the `game_labels` table declared in task 3.2's
+`bot/derived/__init__.py`.
+**Interfaces produced:**
+- `bot.derived.game_labels.STRATEGY_KEYS`, `.SPAWN_KEYS`, `.kind_for(label)`
+- `bot.derived.game_labels.label_rows(result_rows, metric_rows, played_at) -> list[dict]`
+- `bot.derived.game_labels.write(replay_match_id, rows)` (async)
+
+- [ ] **Step 1: Write the failing tests** in `tests/test_game_labels.py`
+
+```python
+from bot.derived import game_labels
+
+
+def test_luck_baseline_is_dropped():
+	rows = [dict(key="luck_baseline", player_number=1),
+	        dict(key="scout_rush", player_number=1)]
+	out = game_labels.label_rows(rows, [], 500)
+	assert [r["label"] for r in out] == ["scout_rush"]
+
+
+def test_kinds_are_assigned_from_the_allowlist():
+	rows = [dict(key="knight_rush", player_number=1),
+	        dict(key="spawn_near_enemy", player_number=1),
+	        dict(key="tight_villagers", player_number=2)]
+	out = game_labels.label_rows(rows, [], 500)
+	kinds = {r["label"]: r["kind"] for r in out}
+	assert kinds == {"knight_rush": "strategy", "spawn_near_enemy": "spawn",
+	                 "tight_villagers": "spawn"}
+
+
+def test_unknown_key_is_dropped_not_stored_with_a_guessed_kind():
+	out = game_labels.label_rows([dict(key="brand_new_thing", player_number=1)], [], 500)
+	assert out == []
+
+
+def test_evidence_is_gathered_per_player_and_label():
+	rows = [dict(key="scout_rush", player_number=1)]
+	metrics = [dict(key="scout_rush", player_number=1, metric="first_scout_s", value=310),
+	           dict(key="scout_rush", player_number=2, metric="first_scout_s", value=999),
+	           dict(key="knight_rush", player_number=1, metric="other", value=1)]
+	out = game_labels.label_rows(rows, metrics, 500)
+	assert out[0]["evidence"] == {"first_scout_s": 310}
+
+
+def test_played_at_is_stamped_on_every_row():
+	out = game_labels.label_rows([dict(key="ram_push", player_number=3)], [], 777)
+	assert out[0]["played_at"] == 777
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `python3 -m pytest tests/test_game_labels.py -v`
+Expected: FAIL — `ImportError: cannot import name 'game_labels'`
+
+- [ ] **Step 3: Write `bot/derived/game_labels.py`**
+
+`STRATEGY_KEYS` is the 17-key tuple currently in
+`bot/replay_stats/card_query.py` (copy verbatim: archer_rush, scout_rush,
+maa_rush, knight_rush, crossbow_rush, cav_archer_rush, camel_rush, ram_push,
+forward_castle, safe_castle, late_knight, late_crossbow, late_cav_archer,
+late_camel, late_unique, late_ram, boom_to_imp).
+
+`SPAWN_KEYS` is the 11-key tuple: spawn_near_enemy, spawn_isolated,
+spawn_near_ally, spawn_near_gold, spawn_gold_poor, spawn_near_stone,
+spawn_stone_poor, spawn_near_food, spawn_food_poor, tight_villagers,
+scattered_villagers.
+
+`luck_baseline` appears in neither and is therefore dropped by construction
+rather than by a special case — it fires for every player in every valid
+Nomad game and would otherwise become the most common "strategy" in the
+database. An unrecognised key is dropped for the same reason a guessed kind
+would be worse than no row: `kind` is a stored contract, not a hint.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `python3 -m pytest tests/test_game_labels.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Wire into `classification_sync.sync_match`** — it already has
+`result_rows` and `metric_rows` in hand, so mapping is free. Write
+`game_labels` in the same function, best-effort, after the `cls_*` writes.
+The `cls_*` dual-write CONTINUES — `/insights` and the web still read it
+until stage 5c.
+
+- [ ] **Step 6: Add registry entry, run the full suite**
+
+Run: `python3 -m pytest tests/ -q && ruff check .`
+Expected: PASS, clean
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add bot/derived/game_labels.py bot/replay_stats/classification_sync.py core/data_registry.py tests/
+git commit -m "feat(derived): store strategy and spawn labels at ingest"
+```
+
+---
+
+## Task 3.4 — Reconciliation backfill
+
+**Files:**
+- Create: `bot/derived/backfill.py`
+- Modify: `bot/events.py` (drain on the think tick)
+- Test: `tests/test_derived_backfill.py`
+
+**Interfaces consumed:** `compute_game_stats`, `label_rows`, and both `write`
+functions from tasks 3.2 and 3.3.
+
+This is a **reconciliation loop, not a one-shot migration.** It cannot be a
+migration at all: `core/migrations.py` runs before `import bot` and may not
+import `bot.*`, while the medal maths lives in `bot/replay_stats/`.
+Recomputing medals in SQL to dodge that would fork the logic — the exact
+divergence identity v2 spent a stage repairing.
+
+So it is stateless and self-describing, in the same spirit as
+`bot/identity_solver.py`: each tick it asks "which matches in `rs_matches`
+have no `game_stats` rows?", processes at most `BATCH = 25`, and stops. It
+needs no marker table and no completion flag, converges to zero work
+(~45 ticks for the 1126 historical matches), resumes correctly after a
+restart mid-run, and doubles permanently as repair — if a live write ever
+fails its best-effort guard, the next tick heals it.
+
+- [ ] **Step 1: Write the failing tests** — `pending_matches` returns only
+matches missing derived rows; a batch is capped at `BATCH`; a match whose
+rows exist is not reprocessed; an exception on one match does not abort the
+batch. Sync tests driving `asyncio.run()` with a fake db adapter.
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `python3 -m pytest tests/test_derived_backfill.py -v`
+Expected: FAIL — module missing
+
+- [ ] **Step 3: Implement.** Two independent drains, because their sources
+differ: `game_stats` reads `rs_player_games` + `rs_player_units` +
+`rs_player_apm`; `game_labels` reads `cls_results` + `cls_result_metrics`,
+taking `played_at` from **`cls_results.played_at`** — a `bigint` epoch holding
+the same value the live path writes. NOT from `rs_matches.played_at`, which is
+a `varchar(191)` date string ('2024-02-11 09:57'); sourcing it there would put
+a formatted string into an epoch column. (131 of 32045 `cls_results` rows carry
+`played_at = 0`; they backfill with 0 rather than being dropped, and fall
+outside stage 4's time windows the same way a genuinely undated row would.)
+Historical `game_stats` rows get `peak_eapm = NULL` — there are no buckets to
+read, per task 3.1.
+
+The pending predicate uses `COUNT(DISTINCT player_number)` on the `game_stats`
+side: `rs_player_games`' PK is `(aoe2_match_id, profile_id)` while
+`game_stats`' is `(replay_match_id, player_number)`, so a plain `COUNT(*)`
+comparison would park a match forever if two source rows ever shared a slot.
+(Verified 0 such rows in production today — the DISTINCT is what keeps that a
+fact about today rather than a load-bearing assumption.) `game_labels` is
+genuinely one-to-one and uses plain `COUNT(*)`.
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `python3 -m pytest tests/test_derived_backfill.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Wire the drain into `bot/events.py`'s `on_think`**, guarded
+the way `replay_stats.jobs.think` already is: self-isolating, never raising
+into the tick, and logging one line per batch with counts so the run is
+observable rather than silent.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add bot/derived/backfill.py bot/events.py tests/test_derived_backfill.py
+git commit -m "feat(derived): reconcile missing game_stats and game_labels rows"
+```
+
+---
+
+## Task 3.5 — Match cards read stored medals
+
+**Files:**
+- Modify: `bot/post_game.py` (`_team_card_fields`, `_card_payload`, `build_match_cards_embed`)
+- Test: `tests/test_post_game.py` (existing card tests seed `game_stats` fakes)
+
+`bot/post_game.py:248` calls `card_scoring.assign_medals(player_rows)` at
+render. Replace with a read of `game_stats` joined on
+`(replay_match_id, player_number)`. The pure function stays — it is the
+ingest writer's medal source; only the render-time call goes.
+
+No fallback to live computation. `jobs.ingest_one` writes `game_stats` inside
+`store.write_match`, strictly before `post_match_analysis` renders, so a
+freshly ingested match always has its rows; and the task 3.4 loop heals any
+gap within a tick. Keeping a second render-time path alive to cover a case
+that cannot happen is how two sources of truth get born.
+
+- [ ] **Step 1** Update existing card tests to seed `game_stats` rows and
+assert medals render from them; add one asserting that a match with no
+`game_stats` rows renders cards without medals rather than raising.
+- [ ] **Step 2** Run: `python3 -m pytest tests/test_post_game.py -v` → FAIL
+- [ ] **Step 3** Implement the read.
+- [ ] **Step 4** Run: `python3 -m pytest tests/ -q && ruff check .` → PASS
+- [ ] **Step 5** Commit: `refactor(cards): render medals from stored game_stats`
+
+---
+
+## Task 3.6 — Deploy 3a + verify
+
+Merge to main, push, `railway up --ci` (watch for "build will skip"), wait
+for the container swap, then verify **against the database**, not the health
+check:
+
+- [ ] `game_stats` converges to 8885 rows across 1126 matches
+- [ ] `game_labels` lands ~24109 rows; `SELECT COUNT(*) ... WHERE label='luck_baseline'` = **0**
+- [ ] `kind` is only ever `'strategy'` or `'spawn'`
+- [ ] every `game_stats` row has `avg_eapm` non-null and `peak_eapm` null (history)
+- [ ] the backfill log line reaches 0 pending and stays there
+- [ ] a match card still renders medals (check the most recent posted card)
+- [ ] `/health` 200, all-true
+- [ ] append the outcome to `.superpowers/sdd/progress.md`
+
+---
+
+## Task 3.7 — Migration 007: raw renames + `rs_config` retirement
+
+**Files:**
+- Modify: `core/migrations.py` (new `@migration("007_raw_renames")`)
+- Modify: every `rs_*` reference across `bot/`, `utils/`, `tests/`
+- Modify: `core/data_registry.py`, `config.example.cfg`, `start.py`
+- Test: `tests/test_data_registry.py`, plus the existing rename sweep guard
+
+Renames: `rs_matches→replay_matches`, `rs_player_games→replay_players`,
+`rs_player_units→replay_units`, `rs_player_techs→replay_techs`,
+`rs_player_buildings→replay_buildings`, `rs_player_events→replay_events`,
+`rs_player_apm→replay_apm`, `rs_ingest→replay_ingest`. Column rename across
+all `replay_*` and `civ_picks`: `aoe2_match_id → replay_match_id`.
+
+`rs_config` is DROPPED; its single `enabled` flag becomes config var
+`REPLAY_INGEST_ENABLED`, which needs an entry in **both**
+`config.example.cfg` and `start.py`'s generated template — `start.py` builds
+`config.cfg` from env vars on Railway, so a var missing there is missing in
+production regardless of what the example file says.
+
+`rs_player_game_tags` and `rs_player_personas` keep their names and their
+writers: their consumers are still live and they drop in stage 6.
+
+Steps follow the shape of migration 001 (which did the same job for core
+tables): add the migration, run the sweep, add every old name to `OLD_NAMES`,
+update the registry, run `pytest tests/ -q` and `ruff check .`, commit.
+
+---
+
+## Task 3.8 — Deploy 3b + verify
+
+- [ ] Back up the database first (`scripts/backup_db.sh`) — this migration is
+      irreversible in practice
+- [ ] Ledger reads `[001, 002, 003, 004, 005, 006_derived_indexes, 007_raw_renames]`
+- [ ] Every `replay_*` table present with the row counts its `rs_*` predecessor had
+      (`replay_players` 8885, `replay_events` 591099, `replay_techs` 205466,
+      `replay_buildings` 117892, `replay_matches` 1126, `replay_ingest` 2479)
+- [ ] No `rs_matches`/`rs_player_*`/`rs_ingest`/`rs_config` survivors
+- [ ] `civ_picks.replay_match_id` present, `aoe2_match_id` gone
+- [ ] Ingest still completes end-to-end on the next match (raw + derived rows appear,
+      and `replay_apm` finally gets its first rows under parser `+4`)
+- [ ] `/health` 200, all-true; append outcome to the ledger
 
 ---
 
@@ -1193,7 +1753,7 @@ match; sweeper log lists 0 candidates — no lean communities exist yet).
 
 # Stage 6 — Final retirements
 
-- Migration 006 drops: `cls_classifications`, `cls_data_requirements`,
+- Migration 008 drops (006 is stage 3a's derived indexes, 007 its raw renames): `cls_classifications`, `cls_data_requirements`,
   `cls_results`, `cls_result_metrics`, `cls_player_totals`, `cls_match_ingest`,
   `rs_player_game_tags`, `rs_player_personas` (`rs_profiles`, `qc_profile_map`,
   `identity_aliases` already dropped in 2.5);

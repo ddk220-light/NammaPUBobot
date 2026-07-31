@@ -9,10 +9,17 @@ grepping bot/ and core/ for db.insert/insert_many/update/delete and raw
 INSERT/UPDATE/DELETE/REPLACE execute() calls. It is a description of the
 current, imperfect state — several tables below are written from more than
 one module. The project's target is exactly one dedicated writer per table;
-later stages consolidate these multi-writer entries down to one each. An
-empty tuple means the table is read-only from bot/core (populated
-externally, e.g. by an offline utils/ script) — do not invent a writer for
-it."""
+later stages consolidate these multi-writer entries down to one each.
+
+An empty tuple carries one of two distinct meanings, and the entry's comment
+must say which:
+1. The table is read-only from bot/core (populated externally, e.g. by an
+   offline utils/ script) — do not invent a writer for it.
+2. The table is declared ahead of its writer: its `ensure_table`/
+   `FactoryTable` landed in this deploy so its schema ships early, but the
+   module that writes to it is a later task. The entry's comment must name
+   that task (e.g. "task 3.3 adds bot/derived/game_labels.py as its
+   writer"), so the empty tuple reads as "not yet" rather than "never"."""
 
 REGISTRY = {
 	# core — irreplaceable
@@ -153,6 +160,16 @@ REGISTRY = {
 	"match_replays": dict(
 		layer="link", tenancy="community", writers=("bot/community.py", "core/migrations.py"),
 		retention="forever"
+	),
+	# derived-global (stage 3) — computed once at ingest from the rs_* raw
+	# tables, community-independent (unlike derived-community's per-community
+	# rollups, a later stage). Neither table carries a user_id; both key on
+	# profile_id only (identity v2 §5).
+	"game_stats": dict(
+		layer="derived", tenancy="global", writers=("bot/derived/game_stats.py",), retention="forever"
+	),
+	"game_labels": dict(
+		layer="derived", tenancy="global", writers=("bot/derived/game_labels.py",), retention="forever"
 	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

@@ -31,4 +31,21 @@ async def sync_match(extracted, played_at_epoch, db_adapter=None):
     aoe2_match_id = extracted["match"]["aoe2_match_id"]
     result_rows, metric_rows = classification_rows(extracted, aoe2_match_id, played_at_epoch)
     await write_classification_rows(aoe2_match_id, result_rows, metric_rows, db_adapter=db_adapter)
+    # cls_* above is the dual-write /insights and the web still read until
+    # stage 5c -- this is ADDING a write, not replacing it. Best-effort: a
+    # bug in the derived-layer mapping must never cost the cls_* write that
+    # already succeeded above.
+    #
+    # db_adapter is threaded through, not dropped: a caller that passes one is
+    # writing this whole match through that specific adapter, and letting
+    # game_labels fall back to its module-global `db` would split one match's
+    # writes across two different databases -- the cls_* rows in the caller's,
+    # the derived rows in the bot's.
+    try:
+        from bot.derived import game_labels
+        rows = game_labels.label_rows(result_rows, metric_rows, played_at_epoch)
+        await game_labels.write(aoe2_match_id, rows, db_adapter=db_adapter)
+    except Exception as e:
+        from core.console import log
+        log.error(f"game_labels write failed ({aoe2_match_id}): {e}")
     return len(result_rows), len(metric_rows)

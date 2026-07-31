@@ -181,6 +181,12 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     except Exception as e:
         log.error(f"Replay-stats classification write failed for aoe2 match {aoe2_id}: {e}")
     try:
+        from bot.derived import game_stats as _gs
+        await _gs.write(aoe2_id, _gs.compute_game_stats(
+            extracted["players"], extracted["units"], extracted.get("apm", []), parsed_at))
+    except Exception as e:
+        log.error(f"game_stats write failed ({aoe2_id}): {e}")
+    try:
         from . import player_tags
         await player_tags.write_match_tags(aoe2_id)
     except Exception as e:
