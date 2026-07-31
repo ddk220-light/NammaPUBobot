@@ -20,6 +20,11 @@ Players can never CHANGE a link -- only an admin can, via `/identity link`.
 That is stated in every message that could otherwise leave them looking for a
 `/unlink` that does not exist.
 
+Everything personal is EPHEMERAL (the instructions, the current-link view and
+both refusals); only the success is public, because a visible "linked" is what
+nudges the next player to run it. See _reply_privately for why that is not
+ctx.error().
+
 nextcord imports stay inside the functions (bot.commands.changelog's pattern)
 so this module loads under a pytest-only CI.
 """
@@ -29,8 +34,11 @@ import bot
 
 # The player-verifiable profile page. This exact shape is proven in production
 # by bot/civ_sync.py:295, which parses it back out of live LobbyBOT embeds --
-# which is also why a player can always find their own id in a lobby post.
+# which is also why a lobby card is a second place a player can read their id.
 INSIGHTS_URL = "https://www.aoe2insights.com/user/relic/{profile_id}/"
+
+# Where anyone can search their own in-game name, in any community.
+INSIGHTS_HOME = "https://www.aoe2insights.com/"
 
 # The worked example in the instructions. A real, long-lived profile, so a
 # player who pastes the example URL to check sees a genuine page.
@@ -43,40 +51,53 @@ async def link(ctx, profile_id: int = None):
 	if owned:
 		# View only -- deliberately before any use of `profile_id`. A player who
 		# passes an id here has not made an error, they just cannot act on it.
-		await ctx.reply(embed=await _current_link_embed(ctx, owned))
+		await _reply_privately(ctx, await _current_link_embed(ctx, owned))
 		return
 
 	if profile_id is None:
-		await ctx.reply(embed=_instructions_embed(ctx))
+		await _reply_privately(ctx, _instructions_embed(ctx))
 		return
 
 	profile_id = int(profile_id)
 	if profile_id < 1:
-		# The API answers a non-positive id with a 400, which fetch_profile maps
-		# to "unavailable" -- so without this the player would be told the
-		# SERVICE is broken when it is their number that cannot exist.
-		raise bot.Exc.ValueError(_unknown_id_message(ctx, profile_id))
+		# Verified live 2026-07-30: the API answers `-5` with a 400 and `0` with
+		# a 404, and fetch_profile maps a 400 to "unavailable" -- so without this
+		# guard a negative id would be reported as the SERVICE being broken. To
+		# the player both are one thing, a number that cannot exist, so both are
+		# refused here with the one wrong-number message.
+		await _refuse(ctx, "Couldn't find that profile", _unknown_id_message(ctx, profile_id))
+		return
 
 	from bot.lobby import api as lobby_api
 
 	status, data = await lobby_api.fetch_profile(profile_id)
 	if status == "not_found":
-		raise bot.Exc.ValueError(_unknown_id_message(ctx, profile_id))
+		await _refuse(ctx, "Couldn't find that profile", _unknown_id_message(ctx, profile_id))
+		return
 	if status != "ok":
-		raise bot.Exc.ValueError(ctx.qc.gt(
+		await _refuse(ctx, "Couldn't check that just now", ctx.qc.gt(
 			"I couldn't reach the AoE2 profile service just now, so nothing was linked. "
 			"This isn't a problem with your number — please try again in a minute."
 		))
+		return
+
+	# From here on the API's own id is canonical, not the number that was typed:
+	# it is what the service says the profile IS. They agree in every normal
+	# case; if they ever disagreed (an alias, a redirect), writing the typed one
+	# would bind an id nothing ever validated.
+	profile_id = data["profile_id"]
 
 	# `or None` matters: link_self reads None as "not observed, keep the stored
 	# name", while "" would blank a name somebody else's replay had recorded.
 	if not await bot.identity.link_self(profile_id, ctx.author.id, data["name"] or None):
 		# link_self has already recorded the losing claim in identity_conflicts.
-		raise bot.Exc.ValueError(ctx.qc.gt(
+		await _refuse(ctx, "That profile is already linked", ctx.qc.gt(
 			"Profile `{profile_id}` is already linked to another player, so I haven't "
 			"changed anything. If it really is yours, ask an admin to sort it out."
 		).format(profile_id=profile_id))
+		return
 
+	# Public, deliberately: the only social proof that this command exists.
 	await ctx.success(ctx.qc.gt(
 		"You're now linked to AoE2 profile `{profile_id}`{name}.\n{url}\n\n"
 		"Open that page and check it's really you — if it isn't, ask an admin to fix it, "
@@ -86,6 +107,32 @@ async def link(ctx, profile_id: int = None):
 		name=f" — {_bold_name(data['name'])}" if data["name"] else "",
 		url=INSIGHTS_URL.format(profile_id=profile_id),
 	))
+
+
+async def _reply_privately(ctx, embed):
+	""" Only the caller sees it, on BOTH interaction paths.
+
+	SlashContext.reply forwards kwargs to interaction.response.send_message
+	before a defer and to interaction.followup.send after one, and both honour
+	ephemeral=True -- so the flag is passed explicitly rather than relying on a
+	context method that only happens to be private. ctx.error() would NOT do:
+	it drops ephemeral on its post-defer branch, and /link can reach that branch
+	whenever the profile API is slow (fetch_profile waits up to 15s, run_slash
+	defers at 2.5s), which is exactly when a failure would go public. """
+	await ctx.reply(embed=embed, ephemeral=True)
+
+
+async def _refuse(ctx, title, message):
+	""" A player-facing refusal, private, under a human heading.
+
+	Deliberately not `raise bot.Exc.ValueError`: run_slash_coro renders a
+	PubobotException with title=e.__class__.__name__, so every one of these --
+	the messages a first-time player is most likely to see -- would arrive under
+	a red "ValueError". Nothing here is an internal error; they are ordinary
+	answers, so the handler renders them itself. """
+	from core.utils import error_embed
+
+	await _reply_privately(ctx, error_embed(message, title=ctx.qc.gt(title)))
 
 
 def _bold_name(name):
@@ -126,8 +173,14 @@ async def _current_link_embed(ctx, profile_ids):
 
 
 def _instructions_embed(ctx):
-	""" How to find the number, for somebody who has never heard of it. Concrete
-	sources first (they already have a lobby post), a worked example second. """
+	""" How to find the number, for somebody who has never heard of it.
+
+	The universal method leads: a name search works in every community, on a
+	site anyone can open. Lobby cards are LobbyBOT's, a third-party bot the
+	flagship server happens to run -- leading with them would describe something
+	most readers of this message will never find, so they are a qualified
+	second option. A worked URL shows which number to read: `/user/<id>/` and
+	`/user/relic/<id>/` both float around and only the latter is real. """
 	from nextcord import Embed, Colour
 
 	embed = Embed(
@@ -142,13 +195,14 @@ def _instructions_embed(ctx):
 	embed.add_field(
 		name=ctx.qc.gt("Finding your profile id"),
 		value=ctx.qc.gt(
-			"**From a lobby post** — in the post for any game you played, each player's "
-			"name is a link to a page like\n{example_url}\nThe number in that link "
-			"({example_id}) is their profile id. Find your own name and read off yours.\n\n"
-			"**Or look yourself up** — search your in-game name at "
-			"https://www.aoe2insights.com/ and open your page. Your profile id is the "
-			"number in the page address."
+			"**Look yourself up** — search your in-game name on {home} (aoe2companion.com "
+			"works too) and open your own profile page. Its address looks like\n"
+			"{example_url}\nYour profile id is the number at the end — `{example_id}` in "
+			"that example.\n\n"
+			"**If your server posts lobby cards** — your name in one is also a link to "
+			"your profile page, so you can read your id out of that address the same way."
 		).format(
+			home=INSIGHTS_HOME,
 			example_url=INSIGHTS_URL.format(profile_id=EXAMPLE_PROFILE_ID),
 			example_id=EXAMPLE_PROFILE_ID
 		),

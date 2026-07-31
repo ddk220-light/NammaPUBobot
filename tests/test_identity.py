@@ -1114,8 +1114,11 @@ class _FakeCtx:
 		if self.access_level.value < req_perms.value:
 			raise _PermsDenied("insufficient permissions")
 
-	async def reply(self, content=None, embed=None):
-		self.replies.append(types.SimpleNamespace(content=content, embed=embed))
+	async def reply(self, content=None, embed=None, ephemeral=False):
+		# `ephemeral` mirrors SlashContext.reply, which forwards its kwargs to
+		# interaction.response.send_message / interaction.followup.send — so a
+		# test can assert a message really is private to the caller.
+		self.replies.append(types.SimpleNamespace(content=content, embed=embed, ephemeral=ephemeral))
 
 	async def success(self, content=None, title=None):
 		self.successes.append(content)
@@ -1506,6 +1509,19 @@ def _embed_text(embed):
 	return "\n".join(parts)
 
 
+def _only_reply(ctx):
+	""" The single reply the command produced, asserted private.
+
+	Every personal answer -- instructions, the current-link view, both refusals
+	-- is ephemeral: none of them is anyone else's business, and the failures in
+	particular must not land in the channel. ctx.reply(ephemeral=True) is what
+	survives a defer; ctx.error() drops the flag on its post-defer branch, which
+	/link reaches whenever the profile API is slow. """
+	assert len(ctx.replies) == 1, f"expected exactly one reply, got {len(ctx.replies)}"
+	assert ctx.replies[0].ephemeral is True, "personal /link answers must be ephemeral"
+	return ctx.replies[0]
+
+
 def test_link_shows_current_link_when_already_linked(monkeypatch):
 	link_mod = _load_link_module(monkeypatch)
 	_setup(monkeypatch)
@@ -1514,8 +1530,7 @@ def test_link_shows_current_link_when_already_linked(monkeypatch):
 
 	asyncio.run(link_mod.link(ctx))
 
-	assert len(ctx.replies) == 1
-	text = _embed_text(ctx.replies[0].embed)
+	text = _embed_text(_only_reply(ctx).embed)
 	assert "612690" in text
 	assert "ddk220" in text, "the observed in-game name lets them recognise the link"
 	assert "https://www.aoe2insights.com/user/relic/612690/" in text
@@ -1572,8 +1587,7 @@ def test_link_ignores_a_supplied_id_when_already_linked(monkeypatch):
 	assert fake.identities == before, "an already-linked player's /link must never write"
 	assert fake.identity_conflicts == []
 	assert calls == [], "nothing can be written here, so don't even call the API"
-	assert len(ctx.replies) == 1
-	text = _embed_text(ctx.replies[0].embed)
+	text = _embed_text(_only_reply(ctx).embed)
 	assert "612690" in text, "they are shown what they ARE linked to"
 	assert ctx.successes == []
 
@@ -1589,11 +1603,20 @@ def test_link_gives_instructions_when_unlinked_and_no_id(monkeypatch):
 	assert fake.identities == [], "instructions are a read -- nothing is written"
 	assert fake.identity_conflicts == []
 	assert calls == []
-	assert len(ctx.replies) == 1
-	text = _embed_text(ctx.replies[0].embed)
+	text = _embed_text(_only_reply(ctx).embed)
 	assert "aoe2insights.com" in text, "must say concretely where to find the number"
 	assert "/link" in text, "must say what to run once they have it"
 	assert str(link_mod.EXAMPLE_PROFILE_ID) in text, "a worked example, not just a description"
+	assert "https://www.aoe2insights.com/user/relic/612690/" in text, \
+		"show the URL SHAPE -- '/user/<id>/' and '/user/relic/<id>/' both circulate and only " \
+		"the second is real, so 'the number in the address' alone is not enough to act on"
+
+	lower = text.lower()
+	assert lower.index("search your in-game name") < lower.index("lobby"), \
+		"lead with the method that works in ANY community: a name search on a public site"
+	assert "if your server posts lobby cards" in lower, \
+		"lobby cards come from LobbyBOT, a third-party bot the target community does not run " \
+		"-- state the method conditionally or it describes something they will never find"
 
 
 def test_link_rejects_an_unknown_profile_id_without_writing(monkeypatch):
@@ -1602,13 +1625,13 @@ def test_link_rejects_an_unknown_profile_id_without_writing(monkeypatch):
 	calls = _fake_fetch_profile(monkeypatch, ("not_found", None))
 	ctx = _FakeCtx(author=_FakeMember(222))
 
-	try:
-		asyncio.run(link_mod.link(ctx, profile_id=999999999))
-	except link_mod.bot.Exc.ValueError as e:
-		assert "999999999" in str(e), "name the id they actually typed"
-		assert "aoe2insights.com" in str(e) or "/link" in str(e), "point back at the instructions"
-	else:
-		raise AssertionError("an unknown profile id must be refused, not linked")
+	asyncio.run(link_mod.link(ctx, profile_id=999999999))
+
+	embed = _only_reply(ctx).embed
+	assert embed.title == "Couldn't find that profile", "a human heading, not an exception class name"
+	text = _embed_text(embed)
+	assert "`999999999`" in text, "name the id they actually typed"
+	assert "aoe2insights.com" in text or "/link" in text, "point back at the instructions"
 
 	assert calls == [999999999], "the id is validated BEFORE anything is written"
 	assert fake.identities == []
@@ -1624,17 +1647,58 @@ def test_link_reports_a_transient_api_failure_without_writing(monkeypatch):
 	_fake_fetch_profile(monkeypatch, ("unavailable", None))
 	ctx = _FakeCtx(author=_FakeMember(222))
 
-	try:
-		asyncio.run(link_mod.link(ctx, profile_id=612690))
-	except link_mod.bot.Exc.ValueError as e:
-		assert "612690" not in str(e), "an outage says nothing about their id -- don't blame it"
-		assert "again" in str(e).lower(), "tell them to retry"
-	else:
-		raise AssertionError("an unreachable validation service must not link")
+	asyncio.run(link_mod.link(ctx, profile_id=612690))
+
+	embed = _only_reply(ctx).embed
+	assert embed.title == "Couldn't check that just now"
+	text = _embed_text(embed)
+	assert "612690" not in text, "an outage says nothing about their id -- don't blame it"
+	assert "again" in text.lower(), "tell them to retry"
 
 	assert fake.identities == []
 	assert fake.identity_conflicts == []
 	assert ctx.successes == []
+
+
+def test_link_failures_are_answers_not_raised_exceptions(monkeypatch):
+	""" run_slash_coro renders any bot.Exc.PubobotException with
+	title=e.__class__.__name__, so raising from here would greet a first-time
+	player with a red "ValueError" -- and its post-defer branch sends without
+	ephemeral=True, so on the slow path (fetch_profile waits up to 15s,
+	run_slash defers at 2.5s) that ValueError would land in the channel for
+	everyone. None of these three is an internal error; each is an ordinary,
+	private answer. """
+	link_mod = _load_link_module(monkeypatch)
+	cases = [
+		("an id that does not exist", ("not_found", None), 999999999, None),
+		("an unreachable profile service", ("unavailable", None), 612690, None),
+		("a profile another player owns", ("ok", {"profile_id": 612690, "name": "SomeoneElse"}), 612690, 999),
+		("an id that cannot exist", None, -5, None),
+	]
+	for label, result, profile_id, other_owner in cases:
+		fake = _setup(monkeypatch)
+		if other_owner is not None:
+			asyncio.run(identity.learn(profile_id, other_owner, "learned", aoe2_name="SomeoneElse"))
+		if result is not None:
+			_fake_fetch_profile(monkeypatch, result)
+		ctx = _FakeCtx(author=_FakeMember(222))
+
+		try:
+			asyncio.run(link_mod.link(ctx, profile_id=profile_id))
+		except link_mod.bot.Exc.PubobotException as e:
+			raise AssertionError(
+				f"{label}: /link raised {e.__class__.__name__}, which run_slash_coro would "
+				f"render as the embed title"
+			)
+
+		embed = _only_reply(ctx).embed
+		assert embed.title and embed.title not in ("ValueError", "RuntimeError", "Error"), \
+			f"{label}: the heading a player reads must be human, got {embed.title!r}"
+		assert ctx.successes == [], f"{label}: nothing succeeded"
+		if other_owner is None:
+			assert fake.identities == [], f"{label}: nothing was written"
+		else:
+			assert fake.identities[0]["user_id"] == other_owner, f"{label}: the existing binding stands"
 
 
 def test_link_binds_a_valid_profile_and_echoes_the_ingame_name(monkeypatch):
@@ -1690,13 +1754,13 @@ def test_link_refuses_a_profile_owned_by_another_player(monkeypatch):
 	_fake_fetch_profile(monkeypatch, ("ok", {"profile_id": 612690, "name": "SomeoneElse"}))
 	ctx = _FakeCtx(author=_FakeMember(222))
 
-	try:
-		asyncio.run(link_mod.link(ctx, profile_id=612690))
-	except link_mod.bot.Exc.ValueError as e:
-		assert "612690" in str(e)
-		assert "admin" in str(e).lower(), "the only route forward is an admin"
-	else:
-		raise AssertionError("a profile another player owns must never be taken by /link")
+	asyncio.run(link_mod.link(ctx, profile_id=612690))
+
+	embed = _only_reply(ctx).embed
+	assert embed.title == "That profile is already linked"
+	text = _embed_text(embed)
+	assert "612690" in text
+	assert "admin" in text.lower(), "the only route forward is an admin"
 
 	assert fake.identities[0]["user_id"] == 999, "the existing binding stands"
 	assert fake.identities[0]["confidence"] == "learned"
@@ -1707,20 +1771,45 @@ def test_link_refuses_a_profile_owned_by_another_player(monkeypatch):
 
 
 def test_link_refuses_an_impossible_profile_id_without_calling_the_api(monkeypatch):
-	""" A zero or negative id cannot exist. The API answers those with a 400,
-	which fetch_profile maps to "unavailable" -- so without this guard the
-	player would be told the SERVICE is broken when their number is. """
+	""" A zero or negative id cannot exist. Verified live 2026-07-30: the API
+	answers `-5` with a 400 and `0` with a 404, and fetch_profile maps a 400 to
+	"unavailable" -- so without this guard a negative would tell the player the
+	SERVICE is broken when it is their number that cannot exist. """
+	link_mod = _load_link_module(monkeypatch)
+	for bad in (0, -5):
+		fake = _setup(monkeypatch)
+		calls = _fake_fetch_profile(monkeypatch, ("unavailable", None))
+		ctx = _FakeCtx(author=_FakeMember(222))
+
+		asyncio.run(link_mod.link(ctx, profile_id=bad))
+
+		embed = _only_reply(ctx).embed
+		assert embed.title == "Couldn't find that profile", \
+			f"{bad} is a wrong number, not an outage -- say so"
+		text = _embed_text(embed)
+		assert f"`{bad}`" in text, "quote back the number they typed, not just any digit"
+		assert "couldn't find" in text.lower()
+		assert "aoe2insights.com" in text or "/link" in text, "point back at the instructions"
+
+		assert calls == [], "an id that cannot exist is refused without asking the API"
+		assert fake.identities == []
+		assert ctx.successes == []
+
+
+def test_link_binds_the_profile_id_the_api_confirmed(monkeypatch):
+	""" fetch_profile parses the id back out of the profile body, and THAT is
+	what gets written, echoed and linked to -- it is what the service says the
+	profile is. They agree in every normal case; if they ever disagreed (an
+	alias, a redirect), writing the typed number would bind an id nothing had
+	validated, while the player was shown a page proving the opposite. """
 	link_mod = _load_link_module(monkeypatch)
 	fake = _setup(monkeypatch)
-	calls = _fake_fetch_profile(monkeypatch, ("unavailable", None))
+	_fake_fetch_profile(monkeypatch, ("ok", {"profile_id": 209754, "name": "Fenrir"}))
 	ctx = _FakeCtx(author=_FakeMember(222))
 
-	try:
-		asyncio.run(link_mod.link(ctx, profile_id=0))
-	except link_mod.bot.Exc.ValueError as e:
-		assert "0" in str(e)
-	else:
-		raise AssertionError("an impossible profile id must be refused")
+	asyncio.run(link_mod.link(ctx, profile_id=612690))
 
-	assert calls == []
-	assert fake.identities == []
+	assert fake.identities[0]["profile_id"] == 209754, "the validated id is the one stored"
+	msg = ctx.successes[0]
+	assert "209754" in msg and "https://www.aoe2insights.com/user/relic/209754/" in msg
+	assert "612690" not in msg, "don't echo an id the API never confirmed"
