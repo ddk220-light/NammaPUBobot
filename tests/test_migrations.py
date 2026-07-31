@@ -27,6 +27,15 @@ _PRIMARY_KEYS = {
 _DDL_COLUMN = re.compile(r"`(\w+)`\s+(?:BIGINT|VARCHAR|TINYINT|FLOAT|MEDIUMTEXT)", re.I)
 _DDL_UNIQUE_KEY = re.compile(r"UNIQUE KEY `(\w+)`", re.I)
 
+# 004's backfill SELECT, whose source table and match-id column are resolved
+# from the live schema (`replay_matches`/`replay_match_id` after 007,
+# `rs_matches`/`aoe2_match_id` before it). FakeDb recognises the query by shape
+# and reads back whichever names it actually names, so one fake serves both
+# schema generations — matching on the literal pre-007 names instead would make
+# the post-007 case return [] and look like a backfill that found nothing.
+_BACKFILL_FROM = re.compile(r"FROM (\w+) r LEFT JOIN matches m")
+_BACKFILL_MATCH_ID = re.compile(r"r\.(\w+) AS replay_match_id")
+
 
 def _pk_key(row, pk):
 	""" The dedup key insert_many's INSERT IGNORE emulation compares by --
@@ -146,27 +155,31 @@ class FakeDb:
 			return [{"name": n} for n in self.applied]
 		if "FROM rs_profiles" in sql:
 			return list(self.rows.get("rs_profiles", []))
-		if "FROM rs_matches" in sql:
-			return self._backfill_join()
+		if (m := _BACKFILL_FROM.search(sql)):
+			return self._backfill_join(m.group(1), _BACKFILL_MATCH_ID.search(sql).group(1))
 		return []
 
-	def _backfill_join(self):
-		""" Emulates 004_identity_v2's backfill SELECT: every rs_matches row
+	def _backfill_join(self, source, match_id_col):
+		""" Emulates 004_identity_v2's backfill SELECT: every `source` row
 		with a bot_match_id, LEFT JOINed to `matches` on match_id and then to
 		`community_channels` on that match's channel_id. LEFT, not inner, is
 		the whole point — the migration has to be able to *count* the rows it
 		cannot resolve, so an unknown match or an unenrolled channel must come
-		back as a row with NULLs rather than not come back at all. """
+		back as a row with NULLs rather than not come back at all.
+
+		`source`/`match_id_col` come from the SQL the migration actually built,
+		so a test seeds its rows under whichever table name and match-id column
+		the schema it is modelling uses. """
 		matches = {m["match_id"]: m for m in self.rows.get("matches", [])}
 		channels = {c["channel_id"]: c["community_id"] for c in self.rows.get("community_channels", [])}
 		out = []
-		for r in self.rows.get("rs_matches", []):
+		for r in self.rows.get(source, []):
 			if r.get("bot_match_id") is None:
 				continue
 			m = matches.get(r["bot_match_id"])
 			out.append(dict(
 				match_id=r["bot_match_id"],
-				replay_match_id=r["aoe2_match_id"],
+				replay_match_id=r[match_id_col],
 				parsed_at=r.get("parsed_at"),
 				found_match_id=m["match_id"] if m else None,
 				reported_at=m.get("reported_at") if m else None,
@@ -1081,11 +1094,35 @@ def test_m004_repair_skips_a_profile_that_is_not_in_identities(tmp_path, monkeyp
 # backfill must land before then.
 
 def _backfill_db(rs_matches, matches, channels, **kwargs):
+	""" The PRE-007 schema: the pairings live in `rs_matches.aoe2_match_id`. """
 	return FakeDb(
 		tables={"identities", "rs_matches", "matches", "community_channels", "match_replays"},
-		columns={"rs_matches": {"bot_match_id"}},
+		columns={"rs_matches": {"bot_match_id", "aoe2_match_id"}},
 		rows=dict(rs_matches=rs_matches, matches=matches, community_channels=channels, **kwargs),
 	)
+
+
+def _post007_backfill_db(rs_matches, matches, channels, **kwargs):
+	""" The SAME database after 007_raw_renames: identical data, new names.
+
+	This is the schema 004 re-runs against whenever the runbook's one repair
+	(drop `schema_migrations`, reboot) is applied to a deployed-and-migrated
+	production database — 004 is ledger-gated, not schema-gated, so it comes
+	back around long after 007 has renamed its source table away.
+
+	Derived from the pre-007 fixture by renaming rather than written out by
+	hand, so the two generations can never drift into testing different data. """
+	db = _backfill_db(rs_matches, matches, channels, **kwargs)
+	db.tables.discard("rs_matches")
+	db.tables.add("replay_matches")
+	db.columns["replay_matches"] = {
+		("replay_match_id" if c == "aoe2_match_id" else c) for c in db.columns.pop("rs_matches")
+	}
+	db.rows["replay_matches"] = [
+		{("replay_match_id" if k == "aoe2_match_id" else k): v for k, v in row.items()}
+		for row in db.rows.pop("rs_matches")
+	]
+	return db
 
 
 def test_m004_backfills_match_replays_from_bot_match_id(tmp_path, monkeypatch):
@@ -1178,25 +1215,87 @@ def test_m004_backfill_falls_back_to_the_matches_reported_at(tmp_path, monkeypat
 	assert db.rows["match_replays"][0]["linked_at"] == 1600
 
 
-def test_m004_backfill_is_skipped_when_rs_matches_does_not_exist(tmp_path, monkeypatch):
-	"""Fresh install: rs_matches is declared by bot/replay_stats, only created
-	once `import bot` runs — well after migrations."""
+# ─── 004 (b) reads BOTH schema generations ──────────────────────────────
+# 004 predates 007_raw_renames, but run_all gates on the schema_migrations
+# ledger alone — so the runbook's one repair (drop the ledger, reboot) re-runs
+# 004 against a database 007 has already renamed. Pinned to `rs_matches` it
+# skipped in silence there, logging a line indistinguishable from a fresh
+# install, and the 1107 historical pairings were never rebuilt: identity_solver
+# then reads an empty match_replays and sees no replay evidence at all, forever.
+# The three cases below are the whole matrix.
+
+def test_m004_backfills_from_the_post_007_schema(tmp_path, monkeypatch):
+	"""POST-007: the source table is `replay_matches` and its match-id column is
+	`replay_match_id`. This is the state of the production database from the
+	stage-3b deploy onward, and therefore the state any future ledger drop
+	re-runs 004 against."""
 	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	db = _post007_backfill_db(
+		rs_matches=[{"aoe2_match_id": 900, "bot_match_id": 10, "parsed_at": 1700}],
+		matches=[{"match_id": 10, "channel_id": 55, "reported_at": 1600}],
+		channels=[{"channel_id": 55, "community_id": 7}],
+	)
+
+	asyncio.run(mig._m004(db))
+
+	assert db.rows["match_replays"] == [
+		dict(community_id=7, match_id=10, replay_match_id=900, linked_at=1700)
+	], "the pairing must be rebuilt from the renamed table, not silently skipped"
+
+
+def test_m004_backfills_the_same_rows_from_either_schema_generation(tmp_path, monkeypatch):
+	"""PRE- and POST-007 side by side on identical data: renaming the source
+	table must change nothing about what lands in match_replays. Asserting the
+	equality (rather than each shape separately) is what catches a fallback that
+	resolves the table but reads the wrong match-id column — that would produce
+	rows, just with the wrong replay ids in them."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	pairings = [
+		{"aoe2_match_id": 900, "bot_match_id": 10, "parsed_at": 1700},
+		{"aoe2_match_id": 901, "bot_match_id": 11, "parsed_at": 1800},
+	]
+	matches = [
+		{"match_id": 10, "channel_id": 55, "reported_at": 1600},
+		{"match_id": 11, "channel_id": 55, "reported_at": 1601},
+	]
+	channels = [{"channel_id": 55, "community_id": 7}]
+
+	old = _backfill_db(pairings, matches, channels)
+	new = _post007_backfill_db(pairings, matches, channels)
+	asyncio.run(mig._m004(old))
+	asyncio.run(mig._m004(new))
+
+	assert new.rows["match_replays"] == old.rows["match_replays"]
+	assert len(new.rows["match_replays"]) == 2
+
+
+def test_m004_backfill_is_skipped_only_when_neither_source_table_exists(tmp_path, monkeypatch):
+	"""The genuine fresh install, and the ONLY case that may skip: the raw
+	replay tables are declared by bot/replay_stats and created once `import bot`
+	runs — well after migrations. The log line must name both spellings, so it
+	can never be mistaken for "the table is there under the other name", which
+	is exactly how the pre-fix skip read."""
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	rec = _capture_log(monkeypatch)
 	db = FakeDb(tables={"identities", "matches", "community_channels"})
 
 	asyncio.run(mig._m004(db))  # must not raise
 
 	assert db.rows.get("match_replays", []) == []
+	skip = [m for m in rec.info if "no source table" in m]
+	assert len(skip) == 1, rec.info
+	assert "replay_matches" in skip[0] and "rs_matches" in skip[0], skip[0]
+	assert rec.error == [], "a fresh install is not an error"
 
 
 def test_m004_backfill_is_skipped_once_bot_match_id_is_gone(tmp_path, monkeypatch):
-	"""Stage 6 drops rs_matches.bot_match_id. If the ledger is ever dropped
+	"""Stage 6 drops replay_matches.bot_match_id. If the ledger is ever dropped
 	after that (the runbook's one rollback path), 004 re-runs against a schema
 	with no such column — it must skip, not crash the boot."""
 	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
 	db = FakeDb(
-		tables={"identities", "rs_matches", "matches", "community_channels"},
-		columns={"rs_matches": {"aoe2_match_id"}},  # no bot_match_id
+		tables={"identities", "replay_matches", "matches", "community_channels"},
+		columns={"replay_matches": {"replay_match_id"}},  # no bot_match_id
 	)
 
 	asyncio.run(mig._m004(db))  # must not raise
@@ -1234,7 +1333,7 @@ def test_m004_backfill_is_skipped_when_match_replays_does_not_exist(tmp_path, mo
 	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
 	db = FakeDb(
 		tables={"identities", "rs_matches", "matches", "community_channels"},  # no match_replays
-		columns={"rs_matches": {"bot_match_id"}},
+		columns={"rs_matches": {"bot_match_id", "aoe2_match_id"}},
 		rows=dict(
 			rs_matches=[{"aoe2_match_id": 900, "bot_match_id": 10, "parsed_at": 1700}],
 			matches=[{"match_id": 10, "channel_id": 55, "reported_at": 1600}],
@@ -1251,7 +1350,7 @@ def _failing_backfill_db():
 	return FakeDb(
 		tables={"identities", "rs_matches", "matches", "community_channels", "match_replays",
 				"rs_profiles", "qc_profile_map", "identity_aliases"},
-		columns={"rs_matches": {"bot_match_id"}},
+		columns={"rs_matches": {"bot_match_id", "aoe2_match_id"}},
 		raise_on="FROM rs_matches",
 	)
 
@@ -1912,3 +2011,29 @@ def test_the_replay_ingest_switch_has_a_home_in_both_config_paths():
 	for relpath in ("start.py", "config.example.cfg", "core/config.py"):
 		with open(os.path.join(root, relpath), encoding="utf-8") as f:
 			assert "REPLAY_INGEST_ENABLED" in f.read(), f"{relpath} does not carry REPLAY_INGEST_ENABLED"
+
+
+def test_the_replay_ingest_switch_resolves_the_same_way_in_both_config_paths():
+	""" start.py prints whether ingestion resolved ON or OFF (a Railway variable
+	that EXISTS but is EMPTY yields "" rather than the "True" default, and ""
+	coerces to False — ingestion stops deployment-wide and that line is the only
+	thing that says so). It cannot IMPORT core/config.py to decide that: doing so
+	would execute it, and it loads the config.cfg start.py has not written yet.
+	So the truth values are mirrored, and mirrored constants drift — pin them.
+
+	Compared as text rather than by importing either module: conftest.py replaces
+	core.config with a fake, and start.py's import would run the generator. """
+	import ast
+	import os
+	import re
+
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	found = {}
+	for relpath in ("start.py", "core/config.py"):
+		with open(os.path.join(root, relpath), encoding="utf-8") as f:
+			m = re.search(r"^_TRUE = (\(.*\))$", f.read(), re.M)
+		assert m, f"{relpath} no longer defines a module-level _TRUE tuple"
+		found[relpath] = ast.literal_eval(m.group(1))
+	assert found["start.py"] == found["core/config.py"], (
+		"start.py reports an effective replay-ingest setting that core/config.py "
+		f"would not agree with: {found}")

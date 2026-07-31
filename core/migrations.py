@@ -715,21 +715,74 @@ async def _m003(db):
 # one-time grep.
 _M004_DROPS = ("rs_profiles", "qc_profile_map", "identity_aliases")
 
-# The historical pairings backfill, as one join rather than 1107 round trips.
-# LEFT (not inner) joins on purpose: a replay whose bot match is unknown, or
-# whose channel was never enrolled in a community, must come back as a row with
-# NULLs so it can be counted and logged, instead of silently not being in the
-# result set at all.
-_M004_BACKFILL_SQL = (
-	"SELECT r.bot_match_id AS match_id, r.aoe2_match_id AS replay_match_id, "
-	"r.parsed_at AS parsed_at, m.match_id AS found_match_id, "
-	"m.reported_at AS reported_at, cc.community_id AS community_id "
-	"FROM rs_matches r "
-	"LEFT JOIN matches m ON m.match_id = r.bot_match_id "
-	"LEFT JOIN community_channels cc ON cc.channel_id = m.channel_id "
-	"WHERE r.bot_match_id IS NOT NULL "
-	"ORDER BY r.aoe2_match_id"
-)
+# The two schema generations 004's backfill can find itself reading, newest
+# first. 004 was written long before 007_raw_renames, but run_all decides what
+# to run from the schema_migrations ledger ALONE — so the runbook's one repair
+# (drop the ledger, reboot) re-runs 004 against a database 007 has already
+# renamed, where `rs_matches` no longer exists. Pinning 004 to the old names
+# made that re-run skip the backfill silently, log a line indistinguishable
+# from the benign fresh-install case, and leave every historical pairing
+# unrebuilt: bot/identity_solver.py then reads an empty match_replays and sees
+# no replay evidence at all, forever, with nothing wrong anywhere in the logs.
+#
+# Editing an already-applied migration is safe here because every read below is
+# existence-guarded and the write is INSERT IGNORE — re-running on a database
+# that is already correct is a no-op either way.
+#
+# Table and column are resolved INDEPENDENTLY rather than as a matched pair:
+# 007's body renames the tables and only then the columns, so a body that dies
+# between the two leaves `replay_matches.aoe2_match_id`, a combination neither
+# generation has on its own.
+_M004_SOURCE_TABLES = ("replay_matches", "rs_matches")
+_M004_MATCH_ID_COLUMNS = ("replay_match_id", "aoe2_match_id")
+
+
+async def _m004_resolve_backfill_source(db):
+	"""`(table, match-id column)` for 004's backfill, either half None if absent.
+
+	Newest names win. The both-exist case — a rolled-back deploy whose
+	`ensure_table` recreated the eight empty `rs_*` tables beside the populated
+	`replay_*` ones — resolves to `replay_matches`, which is the table holding
+	the data; the same boot's 007 then refuses to rename over it and crashes
+	loudly (`rename_table`: both exist), which is the intended outcome. Reading
+	the authoritative table on the way there is strictly better than reading the
+	empty one.
+	"""
+	source = None
+	for name in _M004_SOURCE_TABLES:
+		if await table_exists(db, name):
+			source = name
+			break
+	if source is None:
+		return None, None
+	for name in _M004_MATCH_ID_COLUMNS:
+		if await column_exists(db, source, name):
+			return source, name
+	return source, None
+
+
+def _m004_backfill_sql(source, match_id_col):
+	"""The historical pairings backfill, as one join rather than 1107 round trips.
+
+	LEFT (not inner) joins on purpose: a replay whose bot match is unknown, or
+	whose channel was never enrolled in a community, must come back as a row
+	with NULLs so it can be counted and logged, instead of silently not being in
+	the result set at all.
+
+	`source` and `match_id_col` are always values `_m004_resolve_backfill_source`
+	picked out of the two module constants above — never anything a caller or a
+	row supplies — which is what makes interpolating them into the SQL safe.
+	"""
+	return (
+		f"SELECT r.bot_match_id AS match_id, r.{match_id_col} AS replay_match_id, "
+		"r.parsed_at AS parsed_at, m.match_id AS found_match_id, "
+		"m.reported_at AS reported_at, cc.community_id AS community_id "
+		f"FROM {source} r "
+		"LEFT JOIN matches m ON m.match_id = r.bot_match_id "
+		"LEFT JOIN community_channels cc ON cc.channel_id = m.channel_id "
+		"WHERE r.bot_match_id IS NOT NULL "
+		f"ORDER BY r.{match_id_col}"
+	)
 
 
 async def _m004_repair_polluted_names(db):
@@ -798,10 +851,14 @@ async def _m004_repair_polluted_names(db):
 
 async def _m004_backfill_match_replays(db):
 	"""004 part (b): copy every historical replay<->match pairing out of
-	`rs_matches.bot_match_id` into the `match_replays` link table.
+	`replay_matches.bot_match_id` into the `match_replays` link table.
+
+	The source table is whatever generation of the schema this boot actually
+	finds — `replay_matches` after 007_raw_renames, `rs_matches` before it — see
+	_M004_SOURCE_TABLES for why 004 must handle both.
 
 	This is load-bearing, and it must run before part (c) and long before
-	stage 6 drops `rs_matches.bot_match_id`. bot/replay_stats/store.py only
+	stage 6 drops `replay_matches.bot_match_id`. bot/replay_stats/store.py only
 	dual-writes match_replays going FORWARD (stage 1.6 on), so every pairing
 	made before that lives in the single nullable column and nowhere else.
 	Those pairings are the identity deduction solver's entire input and the
@@ -822,38 +879,55 @@ async def _m004_backfill_match_replays(db):
 	match's `reported_at` (the closest surviving stand-in for when the pairing
 	happened) and finally to now.
 
-	Skips, loudly, if any table involved is missing. On a fresh install
-	rs_matches does not exist at migration time at all (bot/replay_stats
-	declares it, and that is only imported after migrations run), which is the
-	ordinary case and logged at info. Missing `matches`/`community_channels`/
-	`match_replays` alongside a present rs_matches is not ordinary — it means a
-	backup predating stage 1.5/1.6 was restored — and is logged at error. It
-	still only skips rather than raising, because those tables can ONLY be
-	created by a boot getting far enough to `import bot`; crashing here would
-	make that state permanently unrecoverable. Recovery is the runbook's usual
-	one: drop the ledger and reboot once the tables exist.
+	Skips, loudly, if any table involved is missing — and each skip says WHICH
+	case it is, because they have completely different meanings. NEITHER source
+	table existing is the fresh install (bot/replay_stats declares the table, and
+	that is only imported after migrations run) and is logged at info naming both
+	spellings. A source table that exists but carries neither match-id column is
+	a schema nobody ships and is logged at error. Missing
+	`matches`/`community_channels`/`match_replays` alongside a present source is
+	not ordinary either — it means a backup predating stage 1.5/1.6 was restored
+	— and is logged at error. All of them only skip rather than raise, because
+	those tables can ONLY be created by a boot getting far enough to
+	`import bot`; crashing here would make that state permanently unrecoverable.
+	Recovery is the runbook's usual one: drop the ledger and reboot once the
+	tables exist.
 	"""
-	if not await table_exists(db, "rs_matches"):
-		log.info("migrations: 004_identity_v2: rs_matches does not exist yet, skipping the match_replays backfill")
+	source, match_id_col = await _m004_resolve_backfill_source(db)
+	if source is None:
+		# The genuine fresh install, and the ONLY case where there is nothing to
+		# read at all. Both spellings are named so this line can never be
+		# confused with "the table is there under the other name".
+		log.info(
+			"migrations: 004_identity_v2: no source table for the match_replays backfill "
+			f"({' / '.join(_M004_SOURCE_TABLES)}) exists yet, skipping it"
+		)
 		return
-	if not await column_exists(db, "rs_matches", "bot_match_id"):
+	if match_id_col is None:
+		log.error(
+			f"migrations: 004_identity_v2: {source} exists but carries neither "
+			f"{' nor '.join(_M004_MATCH_ID_COLUMNS)} — skipping the match_replays backfill. "
+			"This is not a schema any release produces; inspect it by hand."
+		)
+		return
+	if not await column_exists(db, source, "bot_match_id"):
 		# Stage 6 drops this column. If the ledger is ever dropped after that,
 		# 004 re-runs against a schema that no longer has the source data.
 		log.info(
-			"migrations: 004_identity_v2: rs_matches.bot_match_id is gone (stage 6), "
+			f"migrations: 004_identity_v2: {source}.bot_match_id is gone (stage 6), "
 			"skipping the match_replays backfill"
 		)
 		return
 	missing = [t for t in ("matches", "community_channels", "match_replays") if not await table_exists(db, t)]
 	if missing:
 		log.error(
-			f"migrations: 004_identity_v2: rs_matches holds pairings but {', '.join(missing)} "
+			f"migrations: 004_identity_v2: {source} holds pairings but {', '.join(missing)} "
 			"do(es) not exist — skipping the match_replays backfill. Drop the `schema_migrations` "
 			"table and reboot once those tables exist to run it."
 		)
 		return
 
-	rows = await db.fetchall(_M004_BACKFILL_SQL) or []
+	rows = await db.fetchall(_m004_backfill_sql(source, match_id_col)) or []
 	now = int(time.time())
 	wanted, no_match, unenrolled, collapsed = {}, 0, 0, 0
 	for r in rows:
@@ -865,17 +939,17 @@ async def _m004_backfill_match_replays(db):
 			continue
 		key = (r["community_id"], r["match_id"])
 		if key in wanted:
-			# TWO rs_matches rows naming ONE bot match. match_replays' primary
+			# TWO source rows naming ONE bot match. match_replays' primary
 			# key is (community_id, match_id), so only one of them can ever be
 			# stored and INSERT IGNORE drops the rest without a word. Counted
 			# and named here because the runbook otherwise attributes every gap
-			# between "paired rs_matches rows" and "match_replays rows" to an
+			# between "paired source rows" and "match_replays rows" to an
 			# unknown match or an unenrolled channel — and this gap has a
 			# completely different cause and a completely different fix.
 			collapsed += 1
 			log.warning(
 				f"migrations: 004_identity_v2: bot match {r['match_id']} is claimed by more than one "
-				f"rs_matches row; replay {r['replay_match_id']} cannot be linked because "
+				f"{source} row; replay {r['replay_match_id']} cannot be linked because "
 				f"{wanted[key]['replay_match_id']} already holds that pairing"
 			)
 			continue
@@ -904,7 +978,7 @@ async def _m004_backfill_match_replays(db):
 	displaced = len(wanted) - verified
 	log.info(
 		f"migrations: 004_identity_v2: {verified} of {len(wanted)} match_replays pairing(s) verified "
-		f"present from {len(rows)} paired rs_matches row(s) (skipped {no_match} with no matches row, "
+		f"present from {len(rows)} paired {source} row(s) (skipped {no_match} with no matches row, "
 		f"{unenrolled} whose channel is not enrolled in a community, {collapsed} sharing a bot match id "
 		f"with an already-taken pairing; {displaced} already linked to a different replay)"
 	)
@@ -916,7 +990,7 @@ async def _m004(db):
 	order: repair the polluted names, backfill match_replays, then drop the
 	retired tables.
 
-	Ordering: the backfill has to happen while `rs_matches.bot_match_id` is
+	Ordering: the backfill has to happen while `replay_matches.bot_match_id` is
 	still the only home of 1107 historical pairings, and the drops are the one
 	irreversible thing here — so they go last, and are skipped entirely if an
 	earlier part of the same boot failed. Nothing should take an irreversible

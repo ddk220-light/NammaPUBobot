@@ -97,22 +97,25 @@ SELECT COUNT(*) FROM match_replays;                                  -- was 0 be
 SELECT COUNT(*) FROM replay_matches WHERE bot_match_id IS NOT NULL;  -- the upper bound it backfills from
 ```
 
-(That table is `rs_matches` in 004's own SQL and log lines, and everywhere below.
-It is called `replay_matches` from `007_raw_renames` on — 004 runs first and can
-only ever see the old name, so both are correct in their own place. Use
-`replay_matches` when querying the database by hand today.)
+(That table was called `rs_matches` until `007_raw_renames`. 004 predates 007 but
+is gated on the ledger, not on the schema, so a ledger drop re-runs it against a
+database 007 has already renamed — it therefore resolves its source at run time,
+`replay_matches` first and `rs_matches` second, and names whichever it found in
+its SQL and in every log line below. Use `replay_matches` when querying by hand
+today. If it can find neither, it says so naming *both* spellings — that line
+means a genuine fresh install and nothing else.)
 
 Do **not** assume the gap between those two is all one thing. 004's log line
 breaks it into four causes, and they have different fixes:
 
 ```
-N of M match_replays pairing(s) verified present from R paired rs_matches row(s)
+N of M match_replays pairing(s) verified present from R paired replay_matches row(s)
   (skipped A with no matches row, B whose channel is not enrolled in a community,
    C sharing a bot match id with an already-taken pairing;
    D already linked to a different replay)
 ```
 
-`A`/`B` are the ordinary skips. `C` means two `rs_matches` rows claim the same
+`A`/`B` are the ordinary skips. `C` means two `replay_matches` rows claim the same
 bot match — `match_replays` is keyed `(community_id, match_id)` so only one can
 be stored, and each collapse is also logged as its own warning naming the match.
 `D` means the live writer had already linked that match to a different replay
@@ -145,6 +148,72 @@ value; the old `/replaystats enable|disable` subcommands are gone, because a
 deployment-wide switch is configuration, not state a command can flip. If
 ingestion needs turning off, set `REPLAY_INGEST_ENABLED=false` in Railway and
 redeploy.
+
+Every boot prints the resolved value in the deploy log, both ways:
+
+```
+Replay ingest: ENABLED (REPLAY_INGEST_ENABLED='True', unset - defaulted)
+Replay ingest: DISABLED (REPLAY_INGEST_ENABLED='')
+```
+
+The second line is the case worth knowing about: a Railway variable that
+**exists but is empty** yields `""`, not the `"True"` default — the default only
+applies when the name is absent entirely — and `""` coerces to False. If
+ingestion has stopped, `railway logs | grep 'Replay ingest'` says so in one
+line. To clear it, delete the variable rather than blanking it.
+
+### Recovering from a rollback to pre-007 code
+
+**Do not follow the generic "drop `schema_migrations` and reboot" advice for
+this one — it produces a second, different crash.**
+
+Rolling back to a pre-007 commit lets that container's `ensure_table` recreate
+all nine `rs_*` tables empty (the eight rename sources plus `rs_config`) and add
+`civ_picks.aoe2_match_id` back beside `replay_match_id`. Nothing is lost — the
+populated `replay_*` tables are untouched — but rolling forward then crashes on
+the `_assert_renames_landed` post-condition, whose message says to drop the
+ledger and reboot. Doing that makes `007_raw_renames` re-run and hit
+`rename_table: both exist; resolve manually`, because now both generations of
+the table are present. Both crashes are loud and safe; the first one's remedy
+just does not apply here.
+
+The correct recovery, in this order:
+
+1. **Confirm which side holds the data.** The `replay_*` tables are
+   authoritative; the `rs_*` ones were created empty moments ago.
+
+   ```sql
+   SELECT 'replay_matches' t, COUNT(*) n FROM replay_matches
+   UNION ALL SELECT 'rs_matches', COUNT(*) FROM rs_matches;
+   ```
+
+   Expect the full pre-deploy history on `replay_matches` and `0` on
+   `rs_matches`. A non-zero `rs_matches` means the rolled-back container
+   ingested during the window; those rows are replays that can simply be
+   re-ingested, but read them first if you want to keep the ids.
+
+2. **Drop the resurrected tables.** All nine, not just `rs_matches` — the
+   post-condition names every source it finds, so a partial cleanup just moves
+   the crash.
+
+   ```sql
+   DROP TABLE rs_matches, rs_player_games, rs_player_units, rs_player_techs,
+              rs_player_buildings, rs_player_events, rs_player_apm, rs_ingest,
+              rs_config;
+   ALTER TABLE civ_picks DROP COLUMN aoe2_match_id;   -- only if it came back
+   ```
+
+   Leave `rs_player_game_tags` and `rs_player_personas` alone: those two are
+   live tables that keep their names until stage 6.
+
+3. **Reboot without touching the ledger.** 007 is still recorded, the schema now
+   agrees with it, and the post-condition passes. Nothing needs to re-run.
+
+If the ledger was already dropped before you got here, that is still fine — do
+steps 1 and 2 and reboot. Every migration re-runs from the top, all of them are
+idempotent, and `004_identity_v2` reads whichever generation of the raw tables
+it finds (`replay_matches` first, `rs_matches` second), so the `match_replays`
+backfill still rebuilds the historical pairings on a post-007 schema.
 
 ## Adding a migration
 

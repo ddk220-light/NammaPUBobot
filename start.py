@@ -35,6 +35,15 @@ WS_ROOT_URL = "{ws_root_url}"
 '''
 
 
+# What core/config.py's _coerce() accepts as True for a bool key — the sole
+# authority on what a config string means. Mirrored here rather than imported
+# because importing core.config would EXECUTE it, and it loads config.cfg: the
+# very file this script has not written yet. tests/test_migrations.py's
+# test_the_replay_ingest_switch_resolves_the_same_way_in_both_config_paths pins
+# the two literals together so they cannot drift apart.
+_TRUE = ('1', 'true', 'yes', 'on')
+
+
 def build_db_uri():
     """Build DB_URI from Railway's MySQL plugin variables or explicit DB_URI."""
     if os.environ.get("DB_URI"):
@@ -86,6 +95,10 @@ def main():
         print("       match embeds NammaPUBobot should scrape for civ data.")
         sys.exit(1)
 
+    # Resolved once, here, so the value written into config.cfg and the value
+    # reported below are provably the same string.
+    replay_ingest_enabled = os.environ.get("REPLAY_INGEST_ENABLED", "True")
+
     config_content = TEMPLATE.format(
         dc_bot_token=token,
         dc_client_id=os.environ.get("DC_CLIENT_ID", "0"),
@@ -107,7 +120,7 @@ def main():
         # down over a config value. Quoted, it is always a valid string literal
         # and core/config.py's bool coercion ('1'/'true'/'yes'/'on', anything
         # else False) decides what it means.
-        replay_ingest_enabled=os.environ.get("REPLAY_INGEST_ENABLED", "True"),
+        replay_ingest_enabled=replay_ingest_enabled,
         db_uri=db_uri,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         commands_url=os.environ.get("COMMANDS_URL",
@@ -125,6 +138,19 @@ def main():
 
     print("config.cfg generated from environment variables.")
     print(f"Database: {db_uri.split('@')[-1] if '@' in db_uri else '(configured)'}")
+
+    # Report the RESOLVED replay-ingest switch, always, both ways. A Railway
+    # variable that EXISTS but is empty yields "" from the get() above — not the
+    # "True" default, which only applies when the name is absent entirely — and
+    # "" coerces to False. Ingestion would then stop for the whole deployment
+    # with nothing anywhere saying why; this line is that "why". The raw value is
+    # printed with !r specifically so the empty case shows up as '' rather than
+    # as blank space, and `unset` distinguishes the defaulted case from a var
+    # deliberately set to `True`.
+    _origin = "" if "REPLAY_INGEST_ENABLED" in os.environ else ", unset - defaulted"
+    _on = replay_ingest_enabled.strip().lower() in _TRUE
+    print(f"Replay ingest: {'ENABLED' if _on else 'DISABLED'} "
+          f"(REPLAY_INGEST_ENABLED={replay_ingest_enabled!r}{_origin})")
 
     # Launch the bot
     os.execvp(sys.executable, [sys.executable, "PUBobot2.py"])

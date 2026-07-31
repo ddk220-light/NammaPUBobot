@@ -72,26 +72,62 @@ def _scrub_csv_filenames(src):
 	return src
 
 
-def test_no_old_table_names_in_live_code():
-	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	hits = []
+# The extensions the walk below scans. `.html` is here for bot/web_page.html,
+# the self-contained dashboard SPA: 200KB of inline JS that calls bot/web.py's
+# REST API, so it is exactly the kind of file a stale table or field name
+# survives in — and, being the only non-Python file that talks about the schema
+# at all, exactly the kind CI would never look at. Substring matching is safe on
+# it for the same reason it is safe on the Python files: every name in OLD_NAMES
+# is a multi-word snake_case identifier that cannot occur in ordinary HTML, CSS
+# or JS text, and every name that COULD (`players`, `noadds`, `rs_profiles`) is
+# deliberately excluded above and enforced by tests/test_data_registry.py instead.
+_EXTENSIONS = (".py", ".html")
+
+# Files outside the four package directories that must still be guarded.
+# PUBobot2.py is the entrypoint (it drives migrations.run_all and imports every
+# bot package) and start.py generates config.cfg — both can name a table, and
+# neither lives under bot/, core/, utils/ or tests/, so the walk alone would
+# leave them unguarded.
+_ROOT_FILES = ("start.py", "PUBobot2.py")
+
+
+def _scanned_files(root):
+	""" Every file the guard checks, as (absolute path, repo-relative path). """
 	for base in ("bot", "core", "utils", "tests"):
 		for dirpath, _d, files in os.walk(os.path.join(root, base)):
 			if "__pycache__" in dirpath:
 				continue
-			for f in files:
-				if not f.endswith(".py"):
-					continue
-				path = os.path.join(dirpath, f)
-				rel = os.path.relpath(path, root)
-				if rel in _ALLOW:
-					continue
-				with open(path, encoding="utf-8") as fh:
-					src = _scrub_csv_filenames(fh.read())
-				for name in OLD_NAMES:
-					if name in src:
-						hits.append(f"{rel}: {name}")
+			for f in sorted(files):
+				if f.endswith(_EXTENSIONS):
+					path = os.path.join(dirpath, f)
+					yield path, os.path.relpath(path, root)
+	for f in _ROOT_FILES:
+		yield os.path.join(root, f), f
+
+
+def test_no_old_table_names_in_live_code():
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	hits = []
+	for path, rel in _scanned_files(root):
+		if rel in _ALLOW:
+			continue
+		with open(path, encoding="utf-8") as fh:
+			src = _scrub_csv_filenames(fh.read())
+		for name in OLD_NAMES:
+			if name in src:
+				hits.append(f"{rel}: {name}")
 	assert hits == [], "old names in live code:\n" + "\n".join(hits)
+
+
+def test_the_guard_covers_the_files_outside_the_package_directories():
+	""" The walk above only descends into bot/, core/, utils/ and tests/, so the
+	two root-level Python files and the dashboard SPA are reachable only because
+	they are named or matched explicitly. A regression there is invisible — the
+	guard would still pass, on fewer files. """
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	scanned = {rel for _path, rel in _scanned_files(root)}
+	for rel in ("start.py", "PUBobot2.py", os.path.join("bot", "web_page.html")):
+		assert rel in scanned, f"{rel} is not covered by the stale-name guard"
 
 
 def test_the_csv_scrub_does_not_blind_the_guard():
