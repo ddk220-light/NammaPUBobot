@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Async wrappers over utils/replay_quiz/download.py. The download code is sync (requests);
+"""Async wrappers over utils/replay/download.py. The download code is sync (requests);
 we run it in a thread so the bot event loop is never blocked. Returns a cached .aoe2record
 path or a status string."""
 import asyncio
@@ -12,7 +12,7 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 def _download_module():
     if _ROOT not in sys.path:
         sys.path.insert(0, _ROOT)
-    from utils.replay_quiz import download   # lazy: pulls requests/mgz only on first use
+    from utils.replay import download   # lazy: pulls requests/mgz only on first use
     return download
 
 

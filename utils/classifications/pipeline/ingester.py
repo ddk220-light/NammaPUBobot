@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", ".r
 from utils.classifications.pipeline import classify, localdb
 from utils.classifications.pipeline.downloader import REPLAY_DIR, _paths
 from utils.classifications.registry import REGISTRY
-from utils.replay_quiz.extract import EXTRACT_VERSION
+from utils.replay.extract import EXTRACT_VERSION
 
 CACHE_DIR = os.path.join(os.path.dirname(localdb.DEFAULT_DB), ".replay_extract_cache")
 
@@ -29,7 +29,7 @@ def _extract(path, mid, date_map):
     if os.path.exists(cp):
         with open(cp, encoding="utf-8") as f:
             return json.load(f)
-    from utils.replay_quiz.extract import extract_match
+    from utils.replay.extract import extract_match
     data = extract_match(path, date_map)
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(cp, "w", encoding="utf-8") as f:
@@ -45,7 +45,7 @@ def _ingest_one(conn, mid, date_map):
         except Exception as e:
             sv = None
             try:
-                from utils.replay_quiz.download import read_save_version
+                from utils.replay.download import read_save_version
                 sv = read_save_version(rec)
             except Exception:
                 pass
@@ -66,7 +66,7 @@ def run(idle_exits=3, poll=10.0):
     localdb.ensure_schema(conn)
     for c in REGISTRY.values():
         localdb.upsert_classification(conn, c)
-    from utils.replay_quiz.extract import load_date_map
+    from utils.replay.extract import load_date_map
     date_map = load_date_map()
     idle = 0
     done_marker = os.path.join(REPLAY_DIR, ".done")

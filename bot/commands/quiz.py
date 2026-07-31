@@ -15,11 +15,12 @@ async def quiz_leaderboard(ctx):
 	from bot.quiz import embeds, schedule, scoring, store
 	cfg = await store.get_config()
 	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id
-	# Show the current SCHEDULE week (the latest week with any posts) so the on-demand
-	# board matches the auto-posted "Week N" one rather than a rolling 7-day window.
+	# Show the current CALENDAR week (the week the latest post fell in) so the
+	# on-demand board matches the auto-posted "Week N" one rather than a rolling
+	# 7-day window. Derived from the channel's own post counter, not from the
+	# schedule file — half the questions were never in it.
 	posted = await store.posted_seqs(channel_id)
-	weeks = [q["week"] for q in schedule.load() if q["seq"] in posted]
-	week = max(weeks) if weeks else 1
+	week = schedule.slot_for_seq(max(posted))[0] if posted else 1
 	rows = await store.week_answers_by_week(channel_id, week)
 	await ctx.reply(embed=embeds.leaderboard_embed(scoring.tally(rows), f"Week {week} (so far)"))
 
@@ -79,13 +80,13 @@ async def quiz_post_now(ctx):
 
 
 async def quiz_status(ctx):
-	from bot.quiz import schedule, store
+	from bot.quiz import store
+	from bot.quiz.jobs import jobs as quiz_jobs
 	cfg = await store.get_config()
 	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id
-	seq = await store.next_seq(channel_id)
-	entry = schedule.entry_for_seq(schedule.load(), seq)
-	nxt = (f"#{entry['seq']} (Week {entry['week']} Day {entry['day']}, {entry['category']})"
-		   if entry else "schedule exhausted")
+	seq, week, day, entry = await quiz_jobs.next_up(channel_id)
+	nxt = (f"#{seq} (Week {week} Day {day}, {entry['source']}: {entry['category']})"
+		   if entry else f"#{seq} (Week {week} Day {day}) — no question available")
 	enabled = bool(cfg and cfg.get("enabled"))
 	await ctx.reply(
 		f"Quiz **{'ON' if enabled else 'OFF'}** · next: {nxt} · "
@@ -95,19 +96,23 @@ async def quiz_status(ctx):
 
 async def quiz_skip(ctx):
 	ctx.check_perms(ctx.Perms.ADMIN)
-	from bot.quiz import schedule, store
+	from bot.quiz import store
+	from bot.quiz.jobs import jobs as quiz_jobs
 	cfg = await store.get_config()
 	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id
-	seq = await store.next_seq(channel_id)
-	entry = schedule.entry_for_seq(schedule.load(), seq)
+	seq, _week, _day, entry = await quiz_jobs.next_up(channel_id)
 	if not entry:
-		return await ctx.error("Nothing to skip — schedule exhausted.")
+		return await ctx.error("Nothing to skip — no question available for the next slot.")
 	now = int(time.time())
 	pid = await store.create_post(channel_id, entry, now, now)
 	await store.close_post(pid)
-	await ctx.success(
-		f"Skipped #{entry['seq']} ({entry['id']}). Add its id to data/quiz_blocklist.json "
-		f"and regenerate the schedule to drop it permanently.", title="Quiz")
+	# Only a GAME question can be blocklisted: a player question is generated
+	# from live boards at post time and has no bank entry to exclude. Skipping
+	# one burns the slot; the next player day builds a fresh question anyway.
+	tail = ("Add its id to data/quiz_blocklist.json and regenerate the schedule to drop it "
+			"permanently." if entry.get("source") == "game" else
+			"It was generated live — the next player day builds a new one.")
+	await ctx.success(f"Skipped #{seq} ({entry['id']}). {tail}", title="Quiz")
 
 
 async def quiz_reveal_now(ctx):

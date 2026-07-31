@@ -39,6 +39,17 @@ async def asked_ids(channel_id):
 	return {r["question_id"] for r in (rows or [])}
 
 
+async def recent_question_ids(channel_id, n=6):
+	"""The channel's n most recently posted question_ids, newest first. Feeds the
+	player bank's "don't repeat a metric two player-days running" preference —
+	the metric is recoverable from the id (bot/quiz/player_bank.question_id), so
+	this needs no column of its own."""
+	rows = await db.fetchall(
+		"SELECT question_id FROM quiz_posts WHERE channel_id=%s ORDER BY id DESC LIMIT %s",
+		[channel_id, n])
+	return [r["question_id"] for r in (rows or [])]
+
+
 async def recent_categories(channel_id, n=3):
 	rows = await db.fetchall(
 		"SELECT category FROM quiz_posts WHERE channel_id=%s ORDER BY id DESC LIMIT %s",

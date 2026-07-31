@@ -1,4 +1,4 @@
-from utils.replay_quiz.extract import apm_buckets
+from utils.replay.extract import apm_buckets
 
 
 def test_buckets_count_actions_per_minute():

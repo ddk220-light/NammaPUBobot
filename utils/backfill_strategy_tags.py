@@ -114,8 +114,8 @@ async def _rebuild_player_totals():
 
 
 def _extract_for_match(aoe2_match_id, played_at_epoch, date_map):
-	from utils.replay_quiz import download as dl
-	from utils.replay_quiz.extract import extract_match
+	from utils.replay import download as dl
+	from utils.replay.extract import extract_match
 
 	path = status = None
 	pids = dl.resolve_profile_ids(aoe2_match_id)
@@ -142,7 +142,7 @@ async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
 				print("{} bot_match={} at={}".format(r["replay_match_id"], r.get("bot_match_id"), r.get("at")))
 			return 0
 
-		from utils.replay_quiz.extract import load_date_map
+		from utils.replay.extract import load_date_map
 
 		date_map = load_date_map()
 		await _upsert_registry()

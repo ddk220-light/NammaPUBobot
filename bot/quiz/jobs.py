@@ -10,9 +10,14 @@ import time
 
 from core.console import log
 
-from . import schedule, scoring, store
+from . import player_bank, schedule, scoring, store
 
-_SCHEDULE = schedule.load()    # ordered, numbered question schedule; [] until generated
+_SCHEDULE = schedule.load()    # the committed GAME queue; [] until generated
+
+# How many of a channel's most recent questions are read back to keep a player
+# metric from repeating. 6 covers the last three player days (they alternate
+# with game days), which is the span over which a repeat would be noticed.
+RECENT_WINDOW = 6
 _pending = set()           # keep create_task'd jobs from being GC'd mid-run
 
 
@@ -68,14 +73,48 @@ class QuizJobs:
 		await self._maybe_week_leaderboard(cfg["channel_id"])
 		await self._post_question(cfg["channel_id"], int(cfg.get("open_window") or 86400), now)
 
-	async def _post_question(self, channel_id, open_window, now):
-		"""Post the channel's next scheduled question (by seq). Claims last_post_ymd only
-		after a confirmed send. Returns the post id, or None when the schedule is
-		exhausted / the channel is missing."""
+	async def _next_question(self, channel_id, seq, day):
+		"""The question for this channel's `seq`-th slot, already stamped with its
+		source, or None when neither bank can fill it.
+
+		Player days are generated live from the community's metric_boards; a day
+		that cannot produce a FAIR player question (too few leaders on every
+		board, a young community, no community at all) falls back to the game
+		queue rather than posting a degraded one. Falling back keeps the daily
+		cadence, which is the whole point of the feature; posting a padded
+		four-option question from a board with two leaders would not."""
+		if schedule.source_for_day(day) == "player":
+			try:
+				recent = await store.recent_question_ids(channel_id, RECENT_WINDOW)
+				q = await player_bank.question_for_channel(
+					channel_id, seq, player_bank.metrics_of_ids(recent))
+				if q:
+					return q
+				log.info(f"Quiz seq {seq}: no board can carry a player question — using the game bank.")
+			except Exception as e:
+				log.error(f"Quiz player-bank generation failed at seq {seq} (using the game bank): {e}")
+		return schedule.next_game_entry(_SCHEDULE, await store.asked_ids(channel_id))
+
+	async def next_up(self, channel_id):
+		"""(seq, week, day, question|None) for the channel's next slot, stamped and
+		ready to store, but not posted.
+
+		/quiz status and /quiz skip go through here rather than reading the
+		schedule file themselves: half the questions are generated live and exist
+		nowhere until something asks for them, so "what is next" is only
+		answerable by producing it."""
 		seq = await store.next_seq(channel_id)
-		q = schedule.entry_for_seq(_SCHEDULE, seq)
+		week, day = schedule.slot_for_seq(seq)
+		q = await self._next_question(channel_id, seq, day)
+		return seq, week, day, (dict(q, seq=seq, week=week, day=day) if q else None)
+
+	async def _post_question(self, channel_id, open_window, now):
+		"""Post the channel's next question. Claims last_post_ymd only after a
+		confirmed send. Returns the post id, or None when neither bank can fill the
+		slot / the channel is missing."""
+		seq, _week, _day, q = await self.next_up(channel_id)
 		if not q:
-			log.info(f"Quiz schedule exhausted at seq {seq} — regenerate quiz_schedule.json.")
+			log.info(f"Quiz game bank exhausted at seq {seq} — regenerate quiz_schedule.json.")
 			return None
 		from core.client import dc
 		from . import embeds
@@ -148,8 +187,7 @@ class QuizJobs:
 		schedule weeks -> robust to calendar drift AND to several weeks completing in one
 		tick (which happens under the fast test cadence, so no week is silently skipped)."""
 		posted = await store.posted_seqs(channel_id)
-		done_weeks = [w for w in sorted({q["week"] for q in _SCHEDULE})
-					  if schedule.week_is_complete(_SCHEDULE, w, posted)]
+		done_weeks = schedule.completed_weeks(posted)
 		if not done_weeks:
 			return
 		cfg = await store.get_config(channel_id)

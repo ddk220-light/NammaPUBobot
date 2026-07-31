@@ -65,16 +65,18 @@ CI runs both on every PR via `.github/workflows/ci.yml`.
 - **`bot/web_page.html`** — Self-contained SPA (inline CSS + JS). Two tabs: Civ Stats (public) and Dashboard (authenticated). Config forms auto-generated from CfgFactory variable types
 
 ### Utils (`utils/`)
-Standalone analysis scripts (not imported by the bot at runtime):
+Mostly standalone analysis scripts. Two subpackages are exceptions and **are** imported by the bot at runtime — `utils/replay/` (below) and `utils/classifications/registry|pipeline`:
+- `replay/` — `extract.py` (replay → structured per-match records; `bot/replay_stats/parse.py` runs it in a worker process) and `download.py` (aoe2companion/aoe.ms fetch into the `data/replays/` cache; `bot/replay_stats/fetch.py` wraps it). Needs the vendored `mgz` fork (`PYTHONPATH=.replay_scratch`) only to actually parse. **Live ingest depends on both — do not move or break them.**
 - `civ_analysis.py` — Async civ performance analyzer using aiohttp + aiomysql
 - `analyze_matches.py` — DB match analysis tool
 - `db_helpers.py` — Shared `create_pool()` and `parse_db_uri()` for utility scripts
 
-### Quiz generation — two sources, one schedule (`utils/quiz_gen/`, `utils/replay_quiz/`)
-The daily quiz draws from **two independent offline banks in one shared record schema**, interleaved by a single scheduler. The bot reads only the baked `data/quiz_schedule.json` at runtime (never the source DBs).
-- **Game bank** (`utils/quiz_gen/`, source=`game`): unit/civ questions from the `aoe2_matchup` sim DBs → `build_bank.py` → `data/quiz_bank.json`. Categories: combat, techgaps, stats, effects.
-- **Player bank** (`utils/replay_quiz/`, source=`player`): "which *player*…" questions from real match replays → `build_db.py` → `data/replay_quiz.db` → `build_questions.py` → `data/question_bank.json`, then `utils/quiz_gen/convert_player_bank.py` → `data/quiz_bank_player.json` (unified schema; options show player name + Elo only, metric values go in the reveal; answers independently re-derived from `replay_quiz.db`).
-- **Master scheduler**: `utils/quiz_gen/build_schedule.py` reads both banks and **alternates per week — day 1/3/5/7 player, day 2/4/6 game** (player first, keyed on day-within-week) → `data/quiz_schedule.json`. `sample_weeks.make_game_taker` + `player_sample.make_player_taker` give the two source-symmetric takers. Regenerate: `python convert_player_bank.py && python build_schedule.py` from `utils/quiz_gen/`. The `replay_quiz/` pipeline needs the `mgz` fork (`utils/replay_quiz/requirements.txt`) only to (re)parse replays — NOT for scheduling and NOT for the bot.
+### Quiz generation — one offline bank, one live bank (`utils/quiz_gen/`, `bot/quiz/player_bank.py`)
+The daily quiz alternates two sources per week — **day 1/3/5/7 player, day 2/4/6 game** (player first, keyed on day-within-week, so week 2 also opens on player). The two sources are produced very differently:
+- **Game bank** (offline, source=`game`): unit/civ questions from the `aoe2_matchup` sim DBs → `utils/quiz_gen/build_bank.py` → `data/quiz_bank.json` → `utils/quiz_gen/build_schedule.py` → `data/quiz_schedule.json`, the committed **queue** the bot draws one entry from per game day (first entry the channel has not been asked). Categories: combat, techgaps, stats, effects. Regenerate: `python build_schedule.py` from `utils/quiz_gen/`.
+- **Player bank** (live, source=`player`): `bot/quiz/player_bank.py` builds "which of these four players ranks first?" from the community's `metric_boards` (stage 4, `bot/derived/boards.py`) at post time — no offline pipeline, no committed bank. A question needs ≥4 askable leaders on a board (the card's arity) and an untied answer, excludes `is_hidden` players, keys on `user_id` (names are display-only), and puts **name + Elo in the options, the metric value in the reveal**. A day that cannot produce a fair player question falls back to the game queue.
+- **The calendar is arithmetic, not a file**: `bot/quiz/schedule.py`'s `slot_for_seq`/`source_for_day` derive (week, day, source) from the channel's own post counter, so a channel that started late or was paused reads its own calendar. `quiz_schedule.json` carries no seq/week/day.
+- Retired in stage 5b: `utils/replay_quiz/` (the offline player pipeline), `utils/quiz_gen/convert_player_bank.py`, `utils/quiz_gen/player_sample.py`, `data/replay_quiz.db`, `data/question_bank.json`, `data/quiz_bank_player.json`. The replay parser/downloader that lived alongside them survives as `utils/replay/`.
 
 ### Command registration pattern
 Slash commands are defined in `bot/context/slash/commands.py`. Each wraps a handler from `bot/commands/` via `run_slash()`, which handles interaction timing, context creation, and error formatting. Admin commands use subcommand groups defined in `bot/context/slash/groups.py`.

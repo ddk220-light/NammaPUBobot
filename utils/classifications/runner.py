@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(_ROOT, ".replay_scratch"))   # vendored mgz fork
 from utils.db_helpers import create_pool                      # noqa: E402
 from utils.classifications import dbio, shape                 # noqa: E402
 from utils.classifications.registry import REGISTRY           # noqa: E402
-from utils.replay_quiz.extract import EXTRACT_VERSION   # noqa: E402  (single source of cache version)
+from utils.replay.extract import EXTRACT_VERSION   # noqa: E402  (single source of cache version)
 
 CACHE_DIR = os.path.join(_ROOT, "data", ".replay_extract_cache")
 REPLAY_DIR = os.path.join(_ROOT, "data", "replays")
@@ -38,7 +38,7 @@ async def _ensure_replay(aoe2_match_id, no_download=False):
         return path, False
     if no_download:
         return None, False
-    from utils.replay_quiz import download as dl
+    from utils.replay import download as dl
     pids = await dl.resolve_profile_ids(aoe2_match_id)
     for pid in pids:
         got, status = await dl.download_replay(aoe2_match_id, pid)
@@ -53,7 +53,7 @@ def _extract_cached(path, aoe2_match_id, date_map):
     if os.path.exists(cp):
         with open(cp, encoding="utf-8") as f:
             return json.load(f)
-    from utils.replay_quiz.extract import extract_match
+    from utils.replay.extract import extract_match
     data = extract_match(path, date_map)
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(cp, "w", encoding="utf-8") as f:
@@ -66,7 +66,7 @@ async def run(days, only_key=None, no_download=False):
     if pool is None:
         print("No DB pool (check config.cfg DB_URI).", file=sys.stderr)
         return 1
-    from utils.replay_quiz.extract import load_date_map
+    from utils.replay.extract import load_date_map
     date_map = load_date_map()
     classifications = [c for c in REGISTRY.values()
                        if only_key is None or c.key == only_key]

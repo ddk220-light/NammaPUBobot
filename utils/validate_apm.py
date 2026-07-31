@@ -77,7 +77,7 @@ sys.modules["bot"] = _fake_bot
 
 from bot.replay_stats.apm_query import apm_series          # noqa: E402
 from bot.replay_stats.chart import render_apm_curve        # noqa: E402
-from utils.replay_quiz.extract import extract_match   # noqa: E402
+from utils.replay.extract import extract_match   # noqa: E402
 
 
 def main():

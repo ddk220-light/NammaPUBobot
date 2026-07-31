@@ -1195,7 +1195,7 @@ _STAGE3_RENAMES = [
 # NOT included, for the same reason the two tables above are not renamed:
 # cls_results, cls_result_metrics, cls_match_ingest and rs_player_game_tags
 # keep `aoe2_match_id`. They are stage 6's problem, and their offline
-# producers (utils/classifications/, utils/replay_quiz/) keep their own
+# producers (utils/classifications/, utils/replay/) keep their own
 # schemas in step with them.
 _STAGE3_MATCH_ID_TABLES = [new for _old, new in _STAGE3_RENAMES] + ["civ_picks"]
 
