@@ -16,8 +16,14 @@ bot/replay_stats/classifications.py's write_extracted_match -- called from
 store.write_match on the same ingest, strictly before this runs -- is what keeps that
 source populated for a freshly ingested match. Deleting that writer without moving the
 backfill off cls_results would make every new match's cls_results set EMPTY while its
-game_labels set is not, i.e. permanently pending, and the reconciler would then "heal" it
-by deleting the labels this module just wrote. Stage 6 retires the two together.
+game_labels set is not, i.e. permanently pending. That used to mean the reconciler
+"healed" the match by deleting the labels this module had just written; it now refuses
+to act on an empty source it cannot verify (backfill._source_is_trustworthy) and
+quarantines the match loudly instead, so the failure costs reconciliation rather than
+data. That backstop is not a licence to delete the writer -- every new match would sit
+quarantined and unreconciled. tests/test_replay_stats_store.py's
+test_the_ingest_path_still_writes_cls_results_for_every_match pins the call, because
+three prose warnings including this one did not. Stage 6 retires the two together.
 """
 
 
@@ -39,8 +45,17 @@ async def sync_match(extracted, played_at_epoch, db_adapter=None):
 
     Raises rather than swallowing: bot/replay_stats/jobs.py's ingest already wraps this
     call, logs the failure against the match id, and carries on to mark the ingest done --
-    and bot/derived/backfill.py rewrites the match within POLL_INTERVAL either way. A
-    second guard here could only turn a failure into a silent "0 labels" success line.
+    and bot/derived/backfill.py writes the match's labels from its cls_results within
+    POLL_INTERVAL. A second guard here could only turn a failure into a silent "0 labels"
+    success line.
+
+    That recovery is one-directional, and the earlier claim here that the backfill
+    "rewrites the match either way" was false in the direction that mattered. It repairs
+    THIS module failing, because the source (cls_results, written moments earlier by
+    store.write_match) still describes the match while game_labels does not. It cannot
+    repair the SOURCE failing: an empty cls_results beside a full game_labels used to make
+    the reconciler delete the labels and report convergence. backfill.py now refuses that
+    write unless cls_match_ingest certifies the classifier completed with zero results.
 
     `db_adapter` is threaded through rather than dropped: a caller that passes one is
     writing this whole match through that specific connection, and letting the derived

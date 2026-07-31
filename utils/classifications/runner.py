@@ -104,6 +104,7 @@ async def run(days, only_key=None, no_download=False):
                 print("  parse failed {}: {}".format(mid, e))
                 continue
             scanned += 1
+            match_result_rows = 0
             for p in game.get("players", []):
                 ident = p.get("identity") or "?"
                 t = player_totals.setdefault(ident, [0, 0, 0])
@@ -123,6 +124,16 @@ async def run(days, only_key=None, no_download=False):
                 if result_rows:
                     await dbio.upsert_results(pool, c.key, mid, result_rows, metric_rows)
                     stats[c.key] += len(result_rows)
+                    match_result_rows += len(result_rows)
+            # Provenance for the match as a whole, written even when it matched
+            # nothing: bot/derived/backfill.py may only believe an empty
+            # cls_results (and so delete a match's game_labels) when this row
+            # certifies the classifier completed with zero results. Writing it
+            # only for matches that produced rows would leave every zero-row
+            # match permanently unverifiable. Full-run only: a --key run
+            # classifies one classification, so its count is not the match's.
+            if only_key is None:
+                await dbio.mark_match_classified(pool, mid, match_result_rows)
 
         if only_key is None:   # full run -> rebuild the per-player corpus totals
             await dbio.write_player_totals(pool, {k: tuple(v) for k, v in player_totals.items()})

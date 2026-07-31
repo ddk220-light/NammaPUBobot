@@ -164,10 +164,13 @@ REGISTRY = {
 	# still read them, and both readers moved to game_labels. ONE writer is left, and
 	# it is load-bearing rather than vestigial — bot/derived/backfill.py reconciles
 	# game_labels against cls_results every pass, so write_extracted_match keeping
-	# these populated at ingest is what stops the reconciler from finding a new
-	# match's source set empty and "healing" it by deleting the labels. Both tables,
-	# that writer and that half of the reconciler retire together in stage 6; do not
-	# retire the writer alone.
+	# these populated at ingest is what stops every new match from being permanently
+	# pending. It used to stop something worse: the reconciler answered an empty
+	# source by deleting the match's labels. It no longer can (see
+	# backfill._source_is_trustworthy and cls_match_ingest below), but the writer is
+	# still required, and tests/test_replay_stats_store.py now pins the call rather
+	# than leaving it to this comment. Both tables, that writer and that half of the
+	# reconciler retire together in stage 6; do not retire the writer alone.
 	"cls_results": dict(
 		layer="derived",
 		tenancy="global",
@@ -183,6 +186,13 @@ REGISTRY = {
 	"cls_player_totals": dict(
 		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
 	),
+	# Promoted from bookkeeping to a correctness dependency in stage 5c's follow-up:
+	# it is the ONLY thing that distinguishes "the classifier ran and matched nothing"
+	# from "the classifier never ran / its write failed", both of which cls_results
+	# spells as zero rows. bot/derived/backfill.py may delete a match's game_labels on
+	# an empty cls_results only when this table certifies the former. Every writer of
+	# cls_results must therefore write this too, for zero-result matches above all —
+	# utils/classifications/dbio.mark_match_classified is the offline runner's half.
 	"cls_match_ingest": dict(
 		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
 	),

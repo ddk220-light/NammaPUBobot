@@ -104,6 +104,15 @@ live sync. Reading it there makes a backfilled row identical to the row the
 live path would have written; reading replay_matches instead would push a date
 string into an integer column and give history a different unit from live.
 
+ONE ASYMMETRY IN THE SET COMPARISON, and it is not a hedge. The comparison is
+symmetric because both directions are real repairs — but the two sides are not
+equally trustworthy. The derived side is what this loop wrote; the source side
+is cls_results, whose EMPTY state is ambiguous by construction (classifier ran
+and matched nothing / classifier never ran / its write failed halfway all read
+as zero rows). Writing what an ambiguous-empty source implies means DELETING a
+match's labels, so process_game_labels refuses unless cls_match_ingest confirms
+the classifier completed with zero results. See _source_is_trustworthy.
+
 Never raises into the think tick: think() only schedules, each drain is
 wrapped, and every per-match failure is caught, logged and stepped over so one
 bad match cannot cost the other twenty-four in its batch.
@@ -270,16 +279,93 @@ async def process_game_stats(match_id, computed_at):
 	return len(rows)
 
 
+class UnverifiedEmptySource(Exception):
+	"""The source says nothing about this match, and cannot prove it ever ran.
+
+	Raised by process_game_labels and caught by _drain's per-match guard, which
+	logs it, counts an attempt and quarantines the match after MAX_ATTEMPTS —
+	the machinery this module already has for a row it cannot digest. See
+	_source_is_trustworthy for why this is an error rather than a deletion.
+	"""
+
+
+async def _source_is_trustworthy(match_id):
+	"""Whether an EMPTY cls_results set for this match may be believed.
+
+	THE HOLE THIS CLOSES. cls_results cannot represent "the classifier ran and
+	produced nothing": that state and "the classifier never ran" and "the write
+	failed halfway" are all spelled the same way — zero rows. The reconciler
+	writes what the source implies, so on an empty source it writes nothing,
+	which for a match that HAS stored labels means deleting them. Every one of
+	those three states therefore ended in the same place: labels gone,
+	permanently, on a table nothing else rebuilds.
+
+	That is not hypothetical. cls_results has exactly one live writer,
+	bot/replay_stats/classifications.write_extracted_match, called from
+	store.write_match inside a catch-and-log guard — so a transient DB error
+	there leaves a freshly ingested match with zero cls_results while
+	classification_sync.sync_match goes on to write its game_labels from the
+	same extract. Within POLL_INTERVAL this loop saw an empty source beside a
+	full derived side and deleted the labels, then reported convergence.
+
+	cls_match_ingest is the disambiguator, and it already exists:
+	write_extracted_match stamps one row per match at the END of its work,
+	carrying the number of result rows it wrote. So:
+
+	  no row              -> the classifier never completed for this match.
+	                         An empty cls_results proves nothing. REFUSE.
+	  row, result_rows=0  -> it completed and genuinely produced nothing.
+	                         An empty cls_results is the truth. BELIEVE, so an
+	                         orphaned label set is still cleaned up.
+	  row, result_rows>0  -> it once wrote N rows and none are there now. The
+	                         source is mid-rewrite or was partially wiped;
+	                         either way it is not a state to derive from.
+	                         REFUSE.
+
+	The refusal is deliberately NOT "skip quietly". A skipped match stays
+	pending forever, and permanent silent pending is the one failure mode this
+	module's whole design rules out (see the module docstring). Raising routes
+	it into the existing quarantine path instead: logged with the match id on
+	every attempt, retried MAX_ATTEMPTS times in case the source is mid-write,
+	then counted in the drain line's "N of those quarantined in this process"
+	figure — which is exactly the signal that separates converged from stuck.
+	Stale labels plus a loud log beat correct-looking silence and no labels.
+	"""
+	row = await db.fetchone(
+		"SELECT result_rows FROM cls_match_ingest WHERE aoe2_match_id=%s", [match_id])
+	if row is None:
+		return False
+	return not (row.get("result_rows") or 0)
+
+
 async def process_game_labels(match_id):
 	"""Recompute and rewrite one match's game_labels rows. Returns rows written.
 
 	Passes the match's full cls_results set to label_rows and lets it apply the
 	allowlist, so the stored set is decided by exactly one implementation of the
 	allowlist — the same one the live path uses.
+
+	The empty-source check reads the UNFILTERED cls_results set on purpose, not
+	the allowlisted one. A match whose only classifier hits are luck_baseline
+	has rows here and none in the pending query's source projection; that match
+	genuinely derives zero labels and must keep converging to zero. What the
+	check is looking for is the different thing: cls_results holding nothing at
+	all about this match.
+
+	A match reaching here with an empty cls_results necessarily HAS stored
+	labels — an empty source and an empty derived side produce no group at all
+	in the pending query, so such a match is never selected. Every empty-source
+	call is therefore a deletion, which is why the check gates it.
 	"""
 	results = await db.fetchall("SELECT * FROM cls_results WHERE aoe2_match_id=%s", [match_id])
-	metrics = await db.fetchall("SELECT * FROM cls_result_metrics WHERE aoe2_match_id=%s", [match_id])
 	results = list(results or [])
+	if not results and not await _source_is_trustworthy(match_id):
+		raise UnverifiedEmptySource(
+			f"cls_results holds nothing for match {match_id} and cls_match_ingest does not "
+			f"confirm the classifier completed with zero results — refusing to delete this "
+			f"match's stored game_labels on the strength of a source that may simply have "
+			f"failed to write")
+	metrics = await db.fetchall("SELECT * FROM cls_result_metrics WHERE aoe2_match_id=%s", [match_id])
 	rows = game_labels.label_rows(results, list(metrics or []), played_at_of(results))
 	await game_labels.write(match_id, rows)
 	return len(rows)
