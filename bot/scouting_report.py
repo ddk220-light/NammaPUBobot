@@ -350,14 +350,23 @@ def render(rollup, gt=None):
 	apm = rollup.get("apm") or {}
 	median_avg, games_avg = apm.get("median_avg"), apm.get("games_avg") or 0
 	median_peak, games_peak = apm.get("median_peak"), apm.get("games_peak") or 0
+	#
+	# BOTH FIGURES ARE MEDIANS AND THE COPY SAYS SO ON BOTH. A bare "peak 140"
+	# reads as a maximum -- this player's busiest minute ever -- when it is the
+	# median of their per-game busiest minutes, a typical hard moment rather than
+	# a record. The two are wildly different numbers on a heavy-tailed measure,
+	# and the one a reader would assume is the one this deliberately does not
+	# report: a max over a season is a single parse artefact away from fiction,
+	# which is why rollups takes a median on both axes in the first place.
 	if median_avg is not None and games_avg >= MIN_GAMES:
 		if median_peak is not None and games_peak >= MIN_GAMES:
 			lines.append(gt(
-				"eAPM: **{median}** median over {games} games · peak **{peak}** over {peak_games}"
+				"eAPM: median **{median}** over {games} games · "
+				"median peak **{peak}** over {peak_games}"
 			).format(median=_num(median_avg), games=games_avg,
 			         peak=_num(median_peak), peak_games=games_peak))
 		else:
-			lines.append(gt("eAPM: **{median}** median over {games} games").format(
+			lines.append(gt("eAPM: median **{median}** over {games} games").format(
 				median=_num(median_avg), games=games_avg))
 
 	# The two sentences. Each block contributes at most one clause to each, and

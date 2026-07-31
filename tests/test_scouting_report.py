@@ -252,7 +252,7 @@ def test_the_peak_appears_with_its_own_count_once_buckets_arrive():
 	assert (rollup["apm"]["median_peak"], rollup["apm"]["games_peak"]) == (103, 5)
 
 	apm = _line_with(scouting_report.render(rollup), "eAPM")
-	assert "peak **103** over 5" in apm
+	assert "median peak **103** over 5" in apm
 	assert "over 8 games" in apm
 
 
@@ -275,13 +275,13 @@ def test_a_half_median_is_not_rounded_away():
 	integer: 62 and 62.5 are different samples. """
 	stats = [_stat(i, avg_eapm=60) for i in range(1, 4)] + \
 	        [_stat(i, avg_eapm=65) for i in range(4, 7)]
-	assert "**62.5** median" in _line_with(scouting_report.render(compute_rollup(stats, [])), "eAPM")
+	assert "median **62.5**" in _line_with(scouting_report.render(compute_rollup(stats, [])), "eAPM")
 
 
 def test_a_whole_median_renders_without_a_pointless_decimal():
 	stats = [_stat(i, avg_eapm=60) for i in range(1, 4)] + \
 	        [_stat(i, avg_eapm=64) for i in range(4, 7)]
-	assert "**62** median" in _line_with(scouting_report.render(compute_rollup(stats, [])), "eAPM")
+	assert "median **62**" in _line_with(scouting_report.render(compute_rollup(stats, [])), "eAPM")
 
 
 def test_the_apm_line_is_omitted_when_no_game_carried_an_eapm():
@@ -990,3 +990,20 @@ def test_rank_still_builds_its_scouting_field_from_the_rollup_helper():
 	called = {n.func.id for n in ast.walk(profile)
 	          if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
 	assert "_scouting_report" in called
+
+
+def test_the_peak_is_named_as_a_median_rather_than_as_a_high_score():
+	""" A bare "peak 103" reads as a MAXIMUM -- this player's busiest minute
+	ever. It is the median of their per-game busiest minutes, which on a
+	heavy-tailed measure is a much smaller and much more useful number, and the
+	max is the one figure rollups deliberately never computes: over a season it
+	is one parse artefact away from fiction.
+
+	Both halves of the line say "median" for the same reason. """
+	stats = [_stat(i, peak_eapm=100 + i if i <= 5 else None, avg_eapm=50 + i)
+	         for i in range(1, 9)]
+	apm = _line_with(scouting_report.render(compute_rollup(stats, [])), "eAPM")
+
+	assert apm == "eAPM: median **54.5** over 8 games · median peak **103** over 5"
+	# No spelling of the line may leave a bare "peak N" for a reader to misread.
+	assert "· peak" not in apm and not apm.endswith("peak")

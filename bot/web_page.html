@@ -2697,10 +2697,13 @@ function scoutingLines(rep) {
     /* median_peak/games_peak are absent, not null, when no peak was ever
        captured — so this renders the median alone rather than an em-dash or a
        0 standing in for a measurement nobody took. */
+    /* "median peak", never a bare "peak": the figure is the median of each
+       game's busiest minute, not a season high. A reader who takes it for a max
+       is reading a much larger number than the one we measured. */
     lines.push(a.median_peak != null
-      ? 'eAPM: ' + a.median_avg + ' median over ' + a.games_avg + ' games · peak ' + a.median_peak
-        + ' over ' + a.games_peak
-      : 'eAPM: ' + a.median_avg + ' median over ' + a.games_avg + ' games');
+      ? 'eAPM: median ' + a.median_avg + ' over ' + a.games_avg + ' games · median peak '
+        + a.median_peak + ' over ' + a.games_peak
+      : 'eAPM: median ' + a.median_avg + ' over ' + a.games_avg + ' games');
   }
   /* The two sentences, built from clauses the SERVER chose
      (bot/scouting_report.highlights). Nothing here re-ranks or re-picks: which

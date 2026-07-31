@@ -212,7 +212,7 @@ def test_the_apm_line_omits_the_peak_entirely_when_none_was_captured(rendered):
 	renders `peak undefined over undefined`, which is what shipped green. """
 	apm = [ln for ln in rendered["full"]["lines"] if ln.startswith("eAPM")]
 
-	assert apm == ["eAPM: 62.5 median over 38 games"]
+	assert apm == ["eAPM: median 62.5 over 38 games"]
 	assert "undefined" not in json.dumps(rendered["full"])
 	assert "peak" not in apm[0].lower()
 	assert "—" not in apm[0] and "NaN" not in apm[0] and "null" not in apm[0]
@@ -223,7 +223,7 @@ def test_the_peak_renders_with_its_own_count_once_buckets_arrive(rendered):
 	average, 9 have a peak, and the line says both. """
 	apm = [ln for ln in rendered["with_peak"]["lines"] if ln.startswith("eAPM")]
 
-	assert apm == ["eAPM: 62.5 median over 38 games · peak 140 over 9"]
+	assert apm == ["eAPM: median 62.5 over 38 games · median peak 140 over 9"]
 
 
 # ── medal rates and their denominator ────────────────────────────────────
