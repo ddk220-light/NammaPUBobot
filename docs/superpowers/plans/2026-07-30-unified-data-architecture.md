@@ -851,7 +851,12 @@ via a new `fetch_profile` in `bot/lobby/api.py` — pin the aoe2companion
 endpoint during elaboration and verify it live before coding against it);
 admin `/identity link` gains `additional` flag and atomic-relink semantics;
 new `/identity unlink` and `/identity status`. Copy for gated analysis
-surfaces is exactly **"Statistics pending linking"**.
+surfaces is exactly **"Statistics pending linking"** — **deferred to stage 5,
+not shipped in 2.5**: no consumer resolves profile → user through `identities`
+yet, so no surface can tell an unlinked player apart from an absent row to
+branch on. See spec §5 for the full reasoning. Stage 2.5 ships the admin-facing
+half (`/identity status`'s unlinked count); the player-facing string is a
+stage-5 acceptance criterion.
 
 **Kill list (all verified live in the audit):** `bot/replay_stats/jobs.py`'s
 `_load_resolved` + the `utils/replay_quiz/extract.py` resolved-CSV plumbing it
@@ -957,7 +962,8 @@ Three behaviors per spec §2: already-linked → view-only (profile id, observed
 name, insights URL, "only an admin can change this") regardless of argument;
 unlinked + no id → instructions; unlinked + id → validate, then bind via
 `link_self` or refuse. Copy for the gated case elsewhere is exactly
-**"Statistics pending linking"**.
+**"Statistics pending linking"** — deferred to stage 5 with the consumer
+cutover; see spec §5.
 Tests drive the handler with a fake validation client: bad id → no write +
 instructions; transient → no write + retry copy; valid → `link_self` called
 with the API's `name`; already-linked → view-only, `link_self` NOT called;

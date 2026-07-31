@@ -19,6 +19,7 @@ collected and SILENTLY SKIPPED, so every async call here goes through
 asyncio.run() from a plain sync test.
 """
 import asyncio
+import types
 
 import bot.identity_solver as solver
 
@@ -577,6 +578,46 @@ def test_run_for_community_skips_a_match_whose_winner_is_unknown(monkeypatch):
 
 	assert asyncio.run(solver.run_for_community(7)) == 0
 	assert fake_identity.learned == []
+
+
+def test_run_for_community_logs_the_evidence_behind_every_binding(monkeypatch):
+	""" A refusal leaves a conflict row a human can go and read. A BINDING left
+	nothing at all: `confidence='learned'` is indistinguishable from a
+	migration-003 seed, and it is the one output of this module a player cannot
+	undo themselves (moving a `learned` row takes an admin). So the evidence has
+	to be recorded where it lands, or it is recorded nowhere. """
+	fake_db = _fake_db_for(_shuffled_2v2_season())
+	_setup(monkeypatch, fake_db)
+	lines = []
+	monkeypatch.setattr(solver, "log", types.SimpleNamespace(
+		info=lines.append, error=lines.append, warning=lines.append))
+
+	asyncio.run(solver.run_for_community(7))
+
+	bound = [line for line in lines if "BOUND" in line]
+	assert len(bound) == 4, f"one line per binding, got {bound}"
+	for profile_id, user_id in ((PA, A), (PB, B), (PC, C), (PD, D)):
+		line = next(ln for ln in bound if f"profile {profile_id} " in ln)
+		assert f"user {user_id}" in line
+		# The three numbers that decide a binding, so a wrong one can be argued
+		# with after the fact rather than merely noticed.
+		assert "game(s)" in line and "ratio" in line and "margin" in line, line
+
+
+def test_run_for_community_does_not_log_a_binding_that_was_refused(monkeypatch):
+	""" learn() can refuse, so logging before checking its answer would put a
+	binding in the record that the lattice never made. """
+	fake_db = _fake_db_for(_shuffled_2v2_season())
+	_setup(monkeypatch, fake_db, FakeIdentity(refuse=[PC]))
+	lines = []
+	monkeypatch.setattr(solver, "log", types.SimpleNamespace(
+		info=lines.append, error=lines.append, warning=lines.append))
+
+	asyncio.run(solver.run_for_community(7))
+
+	bound = [line for line in lines if "BOUND" in line]
+	assert len(bound) == 3
+	assert not any(f"profile {PC} " in line for line in bound)
 
 
 def test_run_for_community_keeps_writing_after_one_learn_fails(monkeypatch):

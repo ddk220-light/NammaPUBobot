@@ -5,17 +5,27 @@ exactly once, record it in the ledger, and make renames idempotent via
 existence guards. No MySQL involved.
 """
 import asyncio
+import re
+import types
 
 import core.migrations as mig
 
-# {table: primary key column(s)} for FakeDb.insert_many's INSERT IGNORE
-# emulation below. Only tables this suite actually writes via insert_many
-# need an entry. A tuple means a composite primary key.
+# {table: the column(s) an INSERT IGNORE dedups on} for FakeDb.insert_many's
+# emulation below. Only tables this suite actually writes via insert_many need
+# an entry. A tuple means a composite key. For identity_conflicts that is the
+# UNIQUE claim index migration 005 installs — NOT the primary key, which is a
+# surrogate `id` the writers never supply (see bot/identity.py's declaration).
 _PRIMARY_KEYS = {
 	"identities": "profile_id",
-	"identity_conflicts": ("profile_id", "claimed_user_id"),
+	"identity_conflicts": ("profile_id", "claimed_user_id", "status"),
 	"match_replays": ("community_id", "match_id"),
 }
+
+# `\`name\` TYPE` inside a CREATE TABLE body — how FakeDb learns which columns a
+# migration's raw DDL just created, so column_exists() answers the way MySQL
+# would for the rest of that boot.
+_DDL_COLUMN = re.compile(r"`(\w+)`\s+(?:BIGINT|VARCHAR|TINYINT|FLOAT|MEDIUMTEXT)", re.I)
+_DDL_UNIQUE_KEY = re.compile(r"UNIQUE KEY `(\w+)`", re.I)
 
 
 def _pk_key(row, pk):
@@ -26,10 +36,14 @@ def _pk_key(row, pk):
 
 
 class FakeDb:
-	def __init__(self, tables=(), applied=(), columns=None, rows=None, raise_on=None):
+	def __init__(self, tables=(), applied=(), columns=None, rows=None, raise_on=None, indexes=None):
 		self.tables = set(tables)
 		self.applied = list(applied)
 		self.executed = []
+		# {table: {index_name, ...}} — the primary key is called "PRIMARY", the
+		# same name information_schema.STATISTICS gives it, so a test can model a
+		# table that has one and 005 can guard its `DROP PRIMARY KEY` on it.
+		self.indexes = {t: set(ix) for t, ix in (indexes or {}).items()}
 		# {table: {column, ...}}
 		self.columns = {t: set(cols) for t, cols in (columns or {}).items()}
 		# {table: [row dict, ...]} — seed data fetchall's generic SELECT
@@ -51,7 +65,29 @@ class FakeDb:
 			# creates a table must leave table_exists() answering True for it
 			# afterwards, exactly as MySQL would, or a later post-condition
 			# check in the same boot would read a schema that never existed.
-			self.tables.add(sql[len("CREATE TABLE IF NOT EXISTS "):].split()[0].split("(")[0])
+			# Its columns and keys are absorbed too, so a later migration in the
+			# same boot (005 after 003) sees the table it actually created and
+			# does not re-ALTER a shape that is already right.
+			table = sql[len("CREATE TABLE IF NOT EXISTS "):].split()[0].split("(")[0]
+			self.tables.add(table)
+			self.columns.setdefault(table, set()).update(_DDL_COLUMN.findall(sql))
+			ix = self.indexes.setdefault(table, set())
+			ix.update(_DDL_UNIQUE_KEY.findall(sql))
+			if "PRIMARY KEY" in sql.upper():
+				ix.add("PRIMARY")
+		if sql.startswith("ALTER TABLE") and "ADD UNIQUE KEY" in sql:
+			# `ALTER TABLE `t` ADD UNIQUE KEY `ix` (...)`
+			self.indexes.setdefault(sql.split("`")[1], set()).update(_DDL_UNIQUE_KEY.findall(sql))
+		if sql.startswith("ALTER TABLE") and "ADD COLUMN" in sql:
+			# `ALTER TABLE `t` [DROP PRIMARY KEY, ]ADD COLUMN `c` ... [PRIMARY KEY] [FIRST]`
+			table = sql.split("`")[1]
+			tail = sql.split("ADD COLUMN", 1)[1]
+			self.columns.setdefault(table, set()).add(tail.split("`")[1])
+			ix = self.indexes.setdefault(table, set())
+			if "DROP PRIMARY KEY" in sql:
+				ix.discard("PRIMARY")
+			if "PRIMARY KEY" in tail.upper():
+				ix.add("PRIMARY")
 		if sql.startswith("DROP TABLE"):
 			# `DROP TABLE `name``
 			self.tables.discard(sql.split("`")[1])
@@ -78,6 +114,9 @@ class FakeDb:
 		if "information_schema.COLUMNS" in sql:
 			table, column = args[0], args[1]
 			return {"x": 1} if column in self.columns.get(table, set()) else None
+		if "information_schema.STATISTICS" in sql:
+			table, index = args[0], args[1]
+			return {"x": 1} if index in self.indexes.get(table, set()) else None
 		if "FROM schema_migrations" in sql:
 			# `SELECT 1 AS x FROM schema_migrations WHERE name = %s`
 			return {"x": 1} if args[0] in self.applied else None
@@ -333,9 +372,12 @@ def test_ensure_identity_conflicts_table_is_idempotent():
 	asyncio.run(mig._ensure_identity_conflicts_table(db))
 	assert db.executed.count(
 		"CREATE TABLE IF NOT EXISTS identity_conflicts ("
-		"`profile_id` BIGINT, `claimed_user_id` BIGINT, `source` VARCHAR(191) NOT NULL, "
+		"`id` BIGINT NOT NULL AUTO_INCREMENT, "
+		"`profile_id` BIGINT NOT NULL, `claimed_user_id` BIGINT NOT NULL, "
+		"`source` VARCHAR(191) NOT NULL, "
 		"`noticed_at` BIGINT NOT NULL, `status` VARCHAR(191) NOT NULL DEFAULT 'open', "
-		"PRIMARY KEY(`profile_id`, `claimed_user_id`))"
+		"PRIMARY KEY(`id`), "
+		"UNIQUE KEY `uniq_identity_conflicts_claim` (`profile_id`, `claimed_user_id`, `status`))"
 	) == 2
 
 
@@ -1284,3 +1326,318 @@ def test_stage1_renames_targets_are_registered_and_sources_are_not_declared():
 	for old, new in mig._STAGE1_RENAMES:
 		assert new in REGISTRY, f"rename target {new!r} has no core.data_registry entry"
 		assert old not in declared, f"rename source {old!r} is still declared by an ensure_table call"
+
+
+# ─── boot post-conditions run BEFORE anything irreversible ──────────────
+# run_all asserts the post-conditions on both sides of the migration loop. The
+# "before" half is the one that matters: the post-conditions describe a
+# database whose repair is "drop the ledger and reboot so 003 re-runs", and 004
+# DROPS 003's highest-precedence seed source. Checking only afterwards means
+# the advice is issued after the data it depends on is already gone.
+
+def _restored_backup_db():
+	""" The exact reachable state review found: a restored backup whose ledger
+	records 001-003 but whose `identities` did not come back with it, on a
+	database that still has rs_profiles. """
+	return FakeDb(
+		tables={new for _old, new in mig._STAGE1_RENAMES} | {"rs_profiles"},
+		applied=["001_core_renames", "002_drop_retired", "003_seed_identities"],
+	)
+
+
+def test_run_all_refuses_to_drop_anything_when_a_post_condition_already_fails():
+	db = _restored_backup_db()
+
+	try:
+		asyncio.run(mig.run_all(db))
+	except RuntimeError as e:
+		assert "identities" in str(e)
+	else:
+		raise AssertionError("run_all must crash on a restored backup that lost identities")
+
+	assert "rs_profiles" in db.tables, (
+		"004 must not drop 003's highest-precedence seed source while the post-condition "
+		"that tells the operator to re-run 003 is already failing")
+	assert "004_identity_v2" not in db.applied
+	assert not any(sql.startswith("DROP TABLE") for sql in db.executed)
+
+
+def test_run_all_still_checks_the_post_conditions_after_the_loop():
+	""" The "after" half is not redundant: a migration in the loop can itself
+	leave the schema in the state the post-conditions forbid. """
+	calls = []
+
+	async def _breaks_it(db):
+		db.tables.add("qc_matches")
+		calls.append("ran")
+
+	db = FakeDb(applied=["001_core_renames"])
+	original = list(mig.MIGRATIONS)
+	mig.MIGRATIONS[:] = [("999_breaks_it", _breaks_it)]
+	try:
+		try:
+			asyncio.run(mig.run_all(db))
+		except RuntimeError as e:
+			assert "qc_matches" in str(e)
+		else:
+			raise AssertionError("a migration that recreates a pre-rename table must still be caught")
+	finally:
+		mig.MIGRATIONS[:] = original
+	assert calls == ["ran"], "the loop still ran; the check fired afterwards"
+
+
+def test_the_pre_loop_post_conditions_do_not_fire_on_a_first_ever_deploy():
+	""" Ledger-gated, so a database that simply has not been migrated yet is
+	untouched by the pre-loop check -- the pre-rename tables existing IS the
+	ordinary state there, and crashing would make the first deploy impossible. """
+	old_names = {old for old, _new in mig._STAGE1_RENAMES}
+	db = FakeDb(tables=old_names)
+
+	asyncio.run(mig.run_all(db))
+
+	assert not (old_names & db.tables)
+	assert "004_identity_v2" in db.applied
+
+
+# ─── 004 (b): the backfill reports what LANDED, not what it meant to ────
+
+class _CapturedLog:
+	""" Stands in for mig.log, keeping what was said. conftest.py's real fake
+	swallows everything, and a one-shot backfill's log line IS its only output —
+	if it is wrong there is nothing else to be right. """
+
+	def __init__(self):
+		self.info, self.warning, self.error = [], [], []
+
+	def _record(self, bucket):
+		return lambda msg: bucket.append(msg)
+
+	def __getattr__(self, name):
+		raise AttributeError(f"migrations logged at an unexpected level: {name}")
+
+
+def _capture_log(monkeypatch):
+	rec = _CapturedLog()
+	monkeypatch.setattr(mig, "log", types.SimpleNamespace(
+		info=rec._record(rec.info),
+		warning=rec._record(rec.warning),
+		error=rec._record(rec.error),
+	))
+	return rec
+
+
+def test_m004_backfill_counts_a_collapsed_pairing_separately(tmp_path, monkeypatch):
+	""" Two rs_matches rows naming ONE bot match: match_replays' primary key is
+	(community_id, match_id), so only one can be stored and INSERT IGNORE drops
+	the other in silence. The runbook attributes every gap to "unknown match /
+	unenrolled channel", so a collapse counted as one of those would be
+	misdiagnosed. """
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	rec = _capture_log(monkeypatch)
+	db = _backfill_db(
+		rs_matches=[
+			{"aoe2_match_id": 900, "bot_match_id": 10, "parsed_at": 1700},
+			{"aoe2_match_id": 901, "bot_match_id": 10, "parsed_at": 1800},
+		],
+		matches=[{"match_id": 10, "channel_id": 55, "reported_at": 1600}],
+		channels=[{"channel_id": 55, "community_id": 7}],
+	)
+
+	asyncio.run(mig._m004_backfill_match_replays(db))
+
+	assert len(db.rows["match_replays"]) == 1
+	summary = rec.info[-1]
+	assert "1 of 1" in summary, f"report what landed, not the 2 rows it read: {summary}"
+	assert "1 sharing a bot match id" in summary, summary
+	assert any("more than one" in w for w in rec.warning), "name the match that collapsed"
+
+
+def test_m004_backfill_does_not_claim_a_row_the_ignore_left_alone(tmp_path, monkeypatch):
+	""" link_match_replay is authoritative, so INSERT IGNORE deliberately does
+	not overwrite a row it already wrote for this match. The log must not count
+	that as backfilled. """
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	rec = _capture_log(monkeypatch)
+	db = _backfill_db(
+		rs_matches=[{"aoe2_match_id": 900, "bot_match_id": 10, "parsed_at": 1700}],
+		matches=[{"match_id": 10, "channel_id": 55, "reported_at": 1600}],
+		channels=[{"channel_id": 55, "community_id": 7}],
+	)
+	db.rows["match_replays"] = [
+		dict(community_id=7, match_id=10, replay_match_id=999, linked_at=1)
+	]
+
+	asyncio.run(mig._m004_backfill_match_replays(db))
+
+	assert db.rows["match_replays"][0]["replay_match_id"] == 999, "the live writer wins"
+	summary = rec.info[-1]
+	assert "0 of 1" in summary, f"nothing landed, so do not claim 1: {summary}"
+	assert "1 already linked to a different replay" in summary, summary
+
+
+def test_m004_backfill_verified_count_matches_the_rows_written(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	rec = _capture_log(monkeypatch)
+	db = _backfill_db(
+		rs_matches=[
+			{"aoe2_match_id": 900, "bot_match_id": 10, "parsed_at": 1700},
+			{"aoe2_match_id": 901, "bot_match_id": 11, "parsed_at": 1800},
+		],
+		matches=[
+			{"match_id": 10, "channel_id": 55, "reported_at": 1600},
+			{"match_id": 11, "channel_id": 55, "reported_at": 1601},
+		],
+		channels=[{"channel_id": 55, "community_id": 7}],
+	)
+
+	asyncio.run(mig._m004_backfill_match_replays(db))
+
+	assert len(db.rows["match_replays"]) == 2
+	assert "2 of 2" in rec.info[-1]
+
+
+# ─── 005_identity_conflict_history ──────────────────────────────────────
+# Widens identity_conflicts' claim key from (profile_id, claimed_user_id) to
+# (profile_id, claimed_user_id, status) on a surrogate primary key. The bug:
+# INSERT IGNORE against the narrow key kept whichever status landed FIRST, so
+# a refusal recorded after a supersede for the same pair was swallowed and
+# `/identity conflicts` showed nothing.
+
+def _pre_005_conflicts_db(**kwargs):
+	""" identity_conflicts as 003 created it before this migration existed. """
+	return FakeDb(
+		tables={"identity_conflicts"},
+		columns={"identity_conflicts": {"profile_id", "claimed_user_id", "source", "noticed_at", "status"}},
+		indexes={"identity_conflicts": {"PRIMARY"}},
+		**kwargs,
+	)
+
+
+def test_m005_adds_the_claim_index_and_moves_the_primary_key(tmp_path, monkeypatch):
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	db = _pre_005_conflicts_db()
+
+	asyncio.run(mig._m005(db))
+
+	assert mig._CONFLICT_CLAIM_INDEX in db.indexes["identity_conflicts"]
+	assert "id" in db.columns["identity_conflicts"]
+	assert "PRIMARY" in db.indexes["identity_conflicts"], "a surrogate primary key, not none at all"
+
+
+def test_m005_adds_the_unique_index_before_it_moves_the_primary_key(tmp_path, monkeypatch):
+	""" Order is not cosmetic: between the two statements the table must never
+	be without a uniqueness constraint covering the dedup, or an INSERT IGNORE
+	landing in that window (a rolling deploy still serving from the previous
+	container) silently becomes a plain INSERT. """
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	db = _pre_005_conflicts_db()
+
+	asyncio.run(mig._m005(db))
+
+	alters = [sql for sql in db.executed if sql.startswith("ALTER TABLE")]
+	assert len(alters) == 2
+	assert "ADD UNIQUE KEY" in alters[0], alters
+	assert "DROP PRIMARY KEY" in alters[1] and "AUTO_INCREMENT" in alters[1], alters
+
+
+def test_m005_is_idempotent(tmp_path, monkeypatch):
+	""" Every statement is guarded on its own information_schema signal, not on
+	the ledger: a body that dies partway through is re-run from the top on the
+	next boot, and MySQL has no ADD COLUMN IF NOT EXISTS. """
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	db = _pre_005_conflicts_db()
+
+	asyncio.run(mig._m005(db))
+	before = list(db.executed)
+	asyncio.run(mig._m005(db))
+
+	assert db.executed == before, "a second run must issue no DDL at all"
+
+
+def test_m005_creates_the_table_in_the_new_shape_when_it_is_absent(tmp_path, monkeypatch):
+	""" A fresh install where 003 has not created it yet (or a database that
+	somehow lost it): create it right rather than ALTERing something missing. """
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	db = FakeDb()
+
+	asyncio.run(mig._m005(db))
+
+	assert "identity_conflicts" in db.tables
+	assert mig._CONFLICT_CLAIM_INDEX in db.indexes["identity_conflicts"]
+	assert "id" in db.columns["identity_conflicts"]
+	assert not any(sql.startswith("ALTER TABLE") for sql in db.executed)
+
+
+def test_m005_does_not_drop_a_primary_key_that_is_not_there(tmp_path, monkeypatch):
+	""" DROP PRIMARY KEY on a table with none is an error, not a no-op — so the
+	clause is guarded on information_schema rather than assumed. Reachable on a
+	half-applied body that got as far as dropping the old key. """
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	db = _pre_005_conflicts_db()
+	db.indexes["identity_conflicts"] = {mig._CONFLICT_CLAIM_INDEX}  # no PRIMARY
+
+	asyncio.run(mig._m005(db))
+
+	alters = [sql for sql in db.executed if sql.startswith("ALTER TABLE")]
+	assert len(alters) == 1
+	assert "DROP PRIMARY KEY" not in alters[0], alters
+
+
+def test_m005_is_a_noop_after_003_created_the_table_in_the_new_shape(tmp_path, monkeypatch):
+	""" On a genuinely fresh install 003 runs first and already builds the new
+	shape, so 005 must recognise its own work and do nothing. """
+	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
+	db = FakeDb()
+	asyncio.run(mig._ensure_identity_conflicts_table(db))
+	before = list(db.executed)
+
+	asyncio.run(mig._m005(db))
+
+	assert db.executed == before
+
+
+def test_the_conflicts_ddl_matches_the_ensure_table_declaration():
+	""" identity_conflicts is declared TWICE — bot/identity.py's ensure_table
+	and this module's raw CREATE TABLE (a migration cannot import bot.*) — and
+	they are kept in sync by hand. Drift is not theoretical: 005 exists because
+	the key was wrong, and a fresh install gets its schema from the raw DDL
+	while every runtime write assumes the declaration. Compare them here so the
+	build fails instead of production diverging.
+
+	Parses bot/identity.py's declaration as text rather than importing it:
+	`import bot.identity` executes db.ensure_table() against conftest's fake. """
+	import os
+
+	path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bot", "identity.py")
+	with open(path, encoding="utf-8") as f:
+		src = f.read()
+	block = src.split('tname="identity_conflicts"', 1)[1].split("))", 1)[0]
+
+	declared_columns = re.findall(r'cname="(\w+)"', block)
+	declared_pk = re.findall(r'primary_keys=\[([^\]]*)\]', block)[0]
+	declared_unique = re.findall(r'unique_keys=\[\("(\w+)", \[([^\]]*)\]\)\]', block)[0]
+	# Nullability is checked too, not just the column list. profile_id and
+	# claimed_user_id stopped being primary-key columns in 005, which is what
+	# used to force them NOT NULL — and a NULL in either defeats the unique
+	# index outright (NULLs never compare equal), so the two declarations
+	# drifting on this one attribute would silently disable the dedup on a
+	# fresh install while production kept working.
+	declared_notnull = [c for c in re.findall(r'cname="(\w+)"[^\n]*notnull=True', block)]
+
+	ddl = []
+
+	class _Collect:
+		@staticmethod
+		async def execute(sql, args=None):
+			ddl.append(sql)
+
+	asyncio.run(mig._ensure_identity_conflicts_table(_Collect))
+	sql = ddl[0]
+
+	assert _DDL_COLUMN.findall(sql) == declared_columns, "column list drifted"
+	assert re.findall(r"`(\w+)` (?:BIGINT|VARCHAR\(\d+\)) NOT NULL", sql) == declared_notnull, \
+		"NOT NULL drifted"
+	assert f"PRIMARY KEY({declared_pk.replace(chr(34), '`')})" in sql, "primary key drifted"
+	assert declared_unique[0] == mig._CONFLICT_CLAIM_INDEX
+	assert f"UNIQUE KEY `{declared_unique[0]}` ({declared_unique[1].replace(chr(34), '`')})" in sql, \
+		"unique claim index drifted"

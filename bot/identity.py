@@ -94,26 +94,51 @@ db.ensure_table(dict(
 # Nothing here ever writes 'dismissed'/'applied'; resolution is exclusively
 # the future UI's job.
 #
-# NOTE the (profile_id, claimed_user_id) primary key: one row per pair, and
-# _record_conflict's INSERT IGNORE keeps the FIRST status recorded for a pair.
-# The same user re-claiming a profile they were once superseded from does not
-# add a second row (see _record_conflict's docstring).
+# THE KEY IS (profile_id, claimed_user_id, STATUS), not (profile_id,
+# claimed_user_id). That third column is load-bearing and was added by
+# 005_identity_conflict_history after review found the narrower key could make
+# a refusal INVISIBLE: with one row per pair, _record_conflict's INSERT IGNORE
+# kept whichever status was written FIRST, so an admin mis-relinking B's
+# profile to A (recording `superseded` for that pair) silently swallowed B's
+# subsequent `open` row when B ran `/link` and was refused. B is told to ask an
+# admin; `/identity conflicts` and `/identity status` show the admin nothing.
+# That is the exact "admin typo, true owner complains" loop this table exists
+# to close, dead-ending in silence.
+#
+# One row per (pair, status) instead: every DISTINCT thing that happened to a
+# pair is recorded, while a repeated identical observation (the solver
+# re-deriving the same losing claim on every trigger) still dedups to one row,
+# which is all the original key was actually buying. The primary key is a
+# surrogate `id` because MySQL cannot INSERT IGNORE against a unique index it
+# does not have, and (profile_id, claimed_user_id, status) as the PRIMARY key
+# would make status immutable-in-place for a future resolution UI.
 #
 # Same "why is this raw DDL duplicated in core/migrations.py" answer as
 # `identities` above: 003_seed_identities needs to write this table too, and
 # it cannot import bot.identity (see this module's docstring, and
 # core/migrations.py's _ensure_identity_conflicts_table). Keep the two
-# declarations in sync by hand if this table's columns ever change.
+# declarations in sync by hand if this table's columns ever change --
+# tests/test_migrations.py::test_the_conflicts_ddl_matches_the_ensure_table
+# _declaration fails the build if they drift.
 db.ensure_table(dict(
 	tname="identity_conflicts",
 	columns=[
-		dict(cname="profile_id", ctype=db.types.int),
-		dict(cname="claimed_user_id", ctype=db.types.int),
+		dict(cname="id", ctype=db.types.int, notnull=True, autoincrement=True),
+		# NOT NULL is stated, not inherited. Both used to be PRIMARY KEY columns,
+		# which MySQL silently forces NOT NULL — so every existing database has
+		# them that way and 005 leaves them that way. Dropping the declaration's
+		# reliance on that is the point: a NULL in either would defeat the unique
+		# index below (MySQL treats NULLs in a unique index as never equal), so a
+		# fresh install created from this declaration must not be laxer than the
+		# production table it is supposed to match.
+		dict(cname="profile_id", ctype=db.types.int, notnull=True),
+		dict(cname="claimed_user_id", ctype=db.types.int, notnull=True),
 		dict(cname="source", ctype=db.types.str, notnull=True),
 		dict(cname="noticed_at", ctype=db.types.int, notnull=True),
 		dict(cname="status", ctype=db.types.str, notnull=True, default="open"),
 	],
-	primary_keys=["profile_id", "claimed_user_id"],
+	primary_keys=["id"],
+	unique_keys=[("uniq_identity_conflicts_claim", ["profile_id", "claimed_user_id", "status"])],
 ))
 
 # user_id -> [profile_id, ...] for every identity with a known Discord owner.
@@ -258,18 +283,22 @@ async def _record_conflict(profile_id, claimed_user_id, source, noticed_at, stat
 	""" Record that `source` claimed `profile_id` belongs to `claimed_user_id`
 	and that claim is not (or is no longer) the stored binding — see the
 	identity_conflicts declaration up top for what each `status` means and who
-	writes it. INSERT IGNORE on the (profile_id, claimed_user_id) primary key:
-	the same disagreement observed again later (e.g. a source relearning the
-	same losing claim) is a no-op rather than a duplicate row.
+	writes it.
 
-	Consequence of that primary key, worth knowing before reading the table:
-	a (profile_id, claimed_user_id) pair can hold only ONE row, so the FIRST
-	status recorded for a pair is the one that sticks — a user whose `open`
-	claim is later `superseded` (or vice versa) keeps the earlier status.
-	Distinguishing those would need a wider primary key, i.e. a real schema
-	change, not a write-side workaround. Beyond that, `status` only ever moves
-	by human action through the future management UI, never by re-observing
-	the same claim. """
+	INSERT IGNORE against the UNIQUE (profile_id, claimed_user_id, status) index
+	(migration 005). Two properties, and both matter:
+
+	  the same disagreement observed again later — a source relearning the same
+	    losing claim on every solver trigger — is a no-op rather than a
+	    duplicate row. That is what the IGNORE is for.
+	  a DIFFERENT thing happening to the same pair still lands. A user
+	    `superseded` off a profile who later claims it again and is refused gets
+	    an `open` row of their own. Under the old (profile_id, claimed_user_id)
+	    key that second row was swallowed, which is how a refusal could become
+	    invisible on every surface a human has — see the table declaration.
+
+	`status` still only ever MOVES by human action through the future management
+	UI; nothing here ever rewrites an existing row's status. """
 	await db.insert("identity_conflicts", dict(
 		profile_id=profile_id,
 		claimed_user_id=claimed_user_id,
@@ -290,12 +319,14 @@ async def record_refused_claim(profile_id, claimed_user_id, source) -> None:
 	Those are exactly the cases a human has to settle, and identity_conflicts is
 	where this bot puts claims a human has to settle. The row lands `open`, at
 	`source`'s own tier, so `/identity conflicts` shows it beside every claim
-	that lost a lattice comparison; INSERT IGNORE on the primary key means
-	re-running the solver on every trigger never accumulates duplicates.
+	that lost a lattice comparison; INSERT IGNORE on the unique claim index
+	means re-running the solver on every trigger never accumulates duplicates.
 
-	Both ids are required. identity_conflicts' primary key is
-	(profile_id, claimed_user_id), so a NULL in either would be a write error
-	surfacing far from whatever produced the None — refused here instead. """
+	Both ids are required. identity_conflicts dedups on
+	(profile_id, claimed_user_id, status), and MySQL treats NULLs in a unique
+	index as never equal — so a NULL in either id would defeat that dedup and
+	accumulate a fresh row on every solver run, unnoticed. Refused here
+	instead. """
 	if profile_id is None or claimed_user_id is None:
 		raise ValueError(
 			f"record_refused_claim needs both ids, got profile_id={profile_id!r} "
@@ -538,7 +569,7 @@ async def unlink(profile_id, status="unlinked") -> None:
 	invalidate_cache()
 
 
-async def relink(profile_id, user_id, additional=False) -> None:
+async def relink(profile_id, user_id, additional=False, aoe2_name=None) -> None:
 	""" The admin correction: bind `profile_id` to `user_id` at `manual` and,
 	unless `additional`, release every OTHER profile that member owns — one
 	call, so the member ends up owning exactly the profile just assigned.
@@ -564,6 +595,15 @@ async def relink(profile_id, user_id, additional=False) -> None:
 	community has several): it adds this profile alongside whatever the member
 	already owns.
 
+	`aoe2_name` is the in-game name the CALLER observed while validating this
+	profile id (bot/commands/admin.py validates against the AoE2 profile API
+	before ever calling here, exactly as `/link` does). None means "not observed
+	by this call" and keeps whatever name is stored — never blanks it. It is
+	accepted for the same reason link_self accepts one: the API's name comes
+	from the GAME, which is the only provenance `aoe2_name` is allowed to have
+	(see this module's docstring), and storing it is what makes `/identity show`
+	able to name the account an admin just bound.
+
 	Unlike learn(), the bind is UNCONDITIONAL — it overwrites even an existing
 	`manual` row, recording the previous owner as `superseded`. It has to:
 	learn() refuses equal-tier writes, so `manual` over `manual` (an admin
@@ -581,9 +621,9 @@ async def relink(profile_id, user_id, additional=False) -> None:
 		["user_id", "confidence", "aoe2_name"], "identities", where={"profile_id": profile_id})
 
 	if existing is None:
-		await _insert_binding(profile_id, user_id, None, "manual", now)
+		await _insert_binding(profile_id, user_id, aoe2_name, "manual", now)
 	else:
-		await _overwrite_binding(profile_id, user_id, "manual", None, existing, now)
+		await _overwrite_binding(profile_id, user_id, "manual", aoe2_name, existing, now)
 
 	if additional:
 		return

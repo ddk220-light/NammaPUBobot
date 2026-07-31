@@ -147,8 +147,12 @@ REGISTRY = {
 		layer="core", tenancy="channel", writers=("bot/community.py",), retention="forever"
 	),
 	# link — cross-tenant joins (stage 1.6)
+	# core/migrations.py is a writer too: 004_identity_v2 backfills every
+	# historical pairing out of rs_matches.bot_match_id (INSERT IGNORE, so
+	# bot/community.py's link_match_replay stays the authoritative one).
 	"match_replays": dict(
-		layer="link", tenancy="community", writers=("bot/community.py",), retention="forever"
+		layer="link", tenancy="community", writers=("bot/community.py", "core/migrations.py"),
+		retention="forever"
 	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

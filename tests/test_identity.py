@@ -18,6 +18,10 @@ from pathlib import Path
 
 import bot.identity as identity
 import bot.community as community
+# The command handlers refuse by raising bot.Exc.ValueError (the file's own
+# convention for an admin-facing refusal), so the tests need the real class to
+# assert on. Importable under CI: bot/exceptions.py is pure stdlib.
+from bot.exceptions import Exceptions as _Exc
 # The shared pure module both bot/identity.py and core/migrations.py read
 # their CSV parsing from. Imported directly because parse_name_repairs is a
 # migration-side reader only — bot/identity.py deliberately does not re-export
@@ -59,9 +63,15 @@ class FakeDb:
 			if all(row.get(k) == v for k, v in where.items())
 		]
 
+	# What an INSERT IGNORE dedups on. For identity_conflicts that is the UNIQUE
+	# (profile_id, claimed_user_id, status) index migration 005 installs, NOT
+	# the primary key -- the primary key is a surrogate `id` no writer supplies.
+	# Getting this wrong in EITHER direction hides a real bug: too narrow and a
+	# legitimate second status silently vanishes (the review finding 005 fixes),
+	# too wide and a re-observed identical claim duplicates on every solver run.
 	_PRIMARY_KEYS = {
 		"identities": ("profile_id",),
-		"identity_conflicts": ("profile_id", "claimed_user_id"),
+		"identity_conflicts": ("profile_id", "claimed_user_id", "status"),
 	}
 
 	async def insert(self, table, d, on_duplicate=None):
@@ -568,7 +578,7 @@ def test_learn_blocked_conflict_is_not_duplicated_on_a_repeat_observation(monkey
 	""" The exact same disagreement observed twice (e.g. a replay ingest that
 	re-learns the same, still-wrong, profile more than once) must not
 	accumulate duplicate identity_conflicts rows -- INSERT IGNORE on the
-	(profile_id, claimed_user_id) primary key keeps it to one. """
+	(profile_id, claimed_user_id, status) claim index keeps it to one. """
 	fake = _setup(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "manual"))
 
@@ -576,6 +586,74 @@ def test_learn_blocked_conflict_is_not_duplicated_on_a_repeat_observation(monkey
 	asyncio.run(identity.learn(111, 999, "learned"))
 
 	assert len(fake.identity_conflicts) == 1
+
+
+# ─── identity_conflicts: one row per (pair, STATUS) ─────────────────────
+#
+# Migration 005 widened the claim key. The bug it closes: with one row per
+# (profile_id, claimed_user_id), INSERT IGNORE kept whichever status landed
+# FIRST, so a later, DIFFERENT thing happening to the same pair was swallowed
+# -- and if that later thing was an `open` refusal, it vanished from
+# open_conflicts(), from `/identity conflicts` and from `/identity status`'s
+# count. A refusal that tells somebody "ask an admin" while showing the admin
+# nothing is the correction loop dead-ending in silence.
+
+def test_a_superseded_row_does_not_suppress_a_later_open_row_for_the_same_pair(monkeypatch):
+	fake = _setup(monkeypatch)
+	# B owned 111; an admin moves it to A, recording (111, B, superseded).
+	asyncio.run(identity.learn(111, 222, "learned"))
+	asyncio.run(identity.relink(111, 333))
+	assert [(c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts] == [(222, "superseded")]
+
+	# B claims it back and is refused -- a NEW fact about the same pair.
+	assert asyncio.run(identity.link_self(111, 222, "B")) is False
+
+	assert sorted((c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts) == [
+		(222, "open"), (222, "superseded")
+	]
+
+
+def test_the_refused_owner_is_visible_to_an_admin_after_being_superseded(monkeypatch):
+	""" The end-to-end version of the trace above, through the surface a
+	moderator actually reads. This is the whole point: `/identity conflicts` and
+	`/identity status` both go through open_conflicts(), and under the narrow key
+	both showed nothing at all here. """
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+	asyncio.run(identity.relink(111, 333))          # the admin's typo
+	asyncio.run(identity.link_self(111, 222, "B"))  # the true owner complains
+
+	conflicts = asyncio.run(identity.open_conflicts())
+
+	assert [(c["profile_id"], c["current_owner"]) for c in conflicts] == [(111, 333)]
+	assert [claim["user_id"] for claim in conflicts[0]["claims"]] == [222]
+
+
+def test_a_repeated_identical_observation_still_dedups(monkeypatch):
+	""" The property the narrow key WAS buying, which widening must not lose:
+	the solver re-derives the same losing claim on every trigger, and re-running
+	it must not accumulate a row per run. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+
+	for _ in range(5):
+		asyncio.run(identity.record_refused_claim(111, 999, "learned"))
+
+	assert [(c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts] == [(999, "open")]
+
+
+def test_an_unlink_and_a_supersede_of_the_same_pair_are_both_recorded(monkeypatch):
+	""" `unlinked` and `superseded` are deliberately distinguishable ("this link
+	was judged wrong" vs "this link lost its owner to a move") -- so a pair that
+	genuinely experiences both must end up holding both, not just the earlier
+	one. """
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+	asyncio.run(identity.unlink(111))                # -> (111, 222, unlinked)
+	asyncio.run(identity.learn(111, 222, "learned"))  # they get it back
+	asyncio.run(identity.relink(111, 333))            # -> (111, 222, superseded)
+
+	assert sorted(c["status"] for c in fake.identity_conflicts) == ["superseded", "unlinked"]
 
 
 # ─── learn: what it reports back ─────────────────────────────────────────
@@ -1446,6 +1524,26 @@ def _load_link_module(monkeypatch):
 	return _load_command_module(monkeypatch, "identity.py", "commands_identity_standalone_test")
 
 
+def _echo_fetch_profile(monkeypatch, name="Someone"):
+	""" fetch_profile stand-in for the tests that are about something OTHER than
+	validation: every id it is asked about is real, and it echoes that id back
+	with `name` as the in-game name.
+
+	Both `/link` and `/identity link` validate before they write, so a test of
+	either that does not fake this would reach the network -- and under CI, where
+	conftest.py installs a bare `aiohttp` stub, it does not even fail cleanly.
+	Returns the list of ids it was asked about, so a test can assert the API was
+	consulted (or that it was NOT). """
+	calls = []
+
+	async def _fetch(profile_id):
+		calls.append(profile_id)
+		return "ok", {"profile_id": profile_id, "name": name}
+
+	monkeypatch.setattr(lobby_api, "fetch_profile", _fetch)
+	return calls
+
+
 # ─── identity link ───────────────────────────────────────────────────────
 
 def test_identity_link_requires_admin_permission(monkeypatch):
@@ -1467,6 +1565,7 @@ def test_identity_link_requires_admin_permission(monkeypatch):
 def test_identity_link_records_a_brand_new_mapping(monkeypatch):
 	admin = _load_admin_module(monkeypatch)
 	fake = _setup(monkeypatch)
+	_echo_fetch_profile(monkeypatch)
 	ctx = _FakeCtx()
 	member = _FakeMember(222, name="Fenrir")
 
@@ -1486,6 +1585,7 @@ def test_identity_link_triggers_the_deduction_solver(monkeypatch):
 
 	admin = _load_admin_module(monkeypatch)
 	_setup(monkeypatch)
+	_echo_fetch_profile(monkeypatch)
 	ran = []
 
 	async def _run_for_channel(channel_id):
@@ -1519,6 +1619,7 @@ def test_identity_link_relinking_the_members_own_profile_releases_nothing(monkey
 	not invent a release. """
 	admin = _load_admin_module(monkeypatch)
 	fake = _setup(monkeypatch)
+	_echo_fetch_profile(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "manual"))
 	ctx = _FakeCtx()
 
@@ -1535,6 +1636,7 @@ def test_identity_link_additional_keeps_the_members_other_profiles(monkeypatch):
 	second one -- the only reassignment path released their others. """
 	admin = _load_admin_module(monkeypatch)
 	fake = _setup(monkeypatch)
+	_echo_fetch_profile(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "self", aoe2_name="Main"))
 	ctx = _FakeCtx()
 
@@ -1553,6 +1655,7 @@ def test_identity_link_default_releases_the_members_other_profiles(monkeypatch):
 	statistics. """
 	admin = _load_admin_module(monkeypatch)
 	fake = _setup(monkeypatch)
+	_echo_fetch_profile(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "learned"))  # the wrong profile
 	ctx = _FakeCtx()
 
@@ -1568,6 +1671,7 @@ def test_identity_link_reply_names_the_released_profiles(monkeypatch):
 	took away. """
 	admin = _load_admin_module(monkeypatch)
 	_setup(monkeypatch)
+	_echo_fetch_profile(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "learned"))
 	asyncio.run(identity.learn(113, 222, "learned"))
 	ctx = _FakeCtx()
@@ -1588,6 +1692,7 @@ def test_identity_link_reassigns_a_profile_owned_by_another_member(monkeypatch):
 	"Linked"; relink() is the one writer allowed to move a `manual` binding. """
 	admin = _load_admin_module(monkeypatch)
 	fake = _setup(monkeypatch)
+	_echo_fetch_profile(monkeypatch)
 	asyncio.run(identity.learn(111, 999, "manual", aoe2_name="WrongPerson"))
 	ctx = _FakeCtx()
 
@@ -1599,6 +1704,128 @@ def test_identity_link_reassigns_a_profile_owned_by_another_member(monkeypatch):
 	assert [(c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts] == [(999, "superseded")]
 	assert len(ctx.successes) == 1
 	assert "999" in ctx.successes[0], "say whose link was superseded"
+
+
+# ─── identity link: id validation ────────────────────────────────────────
+# The admin path writes at `manual`, the tier no automated writer can ever
+# displace, AND (by default) releases every other profile the member owned. So
+# a mistyped digit here is strictly worse than the same typo in a player's
+# `/link`: it creates a binding to a profile that does not exist and unowns
+# every real one, and the undo is lossy (re-linking restores at `manual`, so
+# whatever `self`/`learned` tier those profiles held is gone). Spec: "A
+# mistyped or nonexistent profile id must never link."
+
+def test_identity_link_refuses_an_unknown_profile_id_without_writing(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	# The member already owns a real profile -- the thing an unvalidated relink
+	# would silently release on the way to binding a profile that isn't there.
+	asyncio.run(identity.learn(612690, 222, "self", aoe2_name="ddk220"))
+	before = [dict(r) for r in fake.identities]
+	calls = _fake_fetch_profile(monkeypatch, ("not_found", None))
+	ctx = _FakeCtx()
+
+	try:
+		asyncio.run(admin.identity_link(ctx, _FakeMember(222), 999999999))
+	except _Exc.ValueError as e:
+		assert "999999999" in str(e), "name the id that was refused"
+	else:
+		raise AssertionError("a nonexistent profile id must never link")
+
+	assert calls == [999999999], "the id has to actually be checked"
+	assert fake.identities == before, "nothing may be written, released included"
+	assert fake.identity_conflicts == []
+	assert ctx.successes == []
+
+
+def test_identity_link_refuses_when_the_api_is_unavailable(monkeypatch):
+	""" "The service is down" says NOTHING about the id, so it must not be
+	reported as a bad number -- that sends an admin hunting for a replacement
+	for a number that was already right. And it still must not write. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	_fake_fetch_profile(monkeypatch, ("unavailable", None))
+	ctx = _FakeCtx()
+
+	try:
+		asyncio.run(admin.identity_link(ctx, _FakeMember(222), 612690))
+	except _Exc.ValueError as e:
+		message = str(e).lower()
+		assert "isn't a problem with the id" in message, "do not blame the id"
+		assert "again in a minute" in message, "say it is worth retrying"
+	else:
+		raise AssertionError("an unreachable profile service must never link")
+
+	assert fake.identities == []
+	assert ctx.successes == []
+
+
+def test_identity_link_refuses_a_non_positive_id_without_asking_the_api(monkeypatch):
+	""" fetch_profile maps the 400 the service answers a negative id with to
+	"unavailable", so without a local guard a number that cannot exist would be
+	reported to the admin as the SERVICE being broken. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	calls = _fake_fetch_profile(monkeypatch, ("unavailable", None))
+	ctx = _FakeCtx()
+
+	try:
+		asyncio.run(admin.identity_link(ctx, _FakeMember(222), -5))
+	except _Exc.ValueError as e:
+		assert "-5" in str(e)
+	else:
+		raise AssertionError("a non-positive profile id must never link")
+
+	assert calls == [], "no point asking the service about a number that cannot exist"
+	assert fake.identities == []
+
+
+def test_identity_link_echoes_the_ingame_name_on_success(monkeypatch):
+	""" A wrong-but-REAL id passes every check above and produces an otherwise
+	identical success, so the in-game name is the only part of the reply an
+	admin can check against the person in front of them. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	_fake_fetch_profile(monkeypatch, ("ok", {"profile_id": 612690, "name": "ddk220"}))
+	ctx = _FakeCtx()
+
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222, name="SomeDiscordNick"), 612690))
+
+	assert "ddk220" in ctx.successes[0], "name the account, not just the number"
+	assert "612690" in ctx.successes[0]
+	# ...and it is stored, so `/identity show` can name it later too. The API's
+	# name comes from the GAME, which is the only provenance aoe2_name may have.
+	assert fake.identities[0]["aoe2_name"] == "ddk220"
+
+
+def test_identity_link_binds_the_id_the_api_reported_not_the_one_typed(monkeypatch):
+	""" Same rule as `/link`: the service's own id is what the profile IS. Were
+	they ever to disagree (an alias, a redirect), writing the typed one would
+	bind an id nothing validated. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	_fake_fetch_profile(monkeypatch, ("ok", {"profile_id": 209754, "name": "Fenrir"}))
+	ctx = _FakeCtx()
+
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222), 209755))
+
+	assert [r["profile_id"] for r in fake.identities] == [209754]
+	assert "209754" in ctx.successes[0]
+
+
+def test_identity_link_survives_a_profile_the_api_has_no_name_for(monkeypatch):
+	""" fetch_profile returns name="" when the API omits it. That must still
+	link, and must not blank a name a replay had already observed. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(612690, 222, "learned", aoe2_name="FromAReplay"))
+	_fake_fetch_profile(monkeypatch, ("ok", {"profile_id": 612690, "name": ""}))
+	ctx = _FakeCtx()
+
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222), 612690))
+
+	assert fake.identities[0]["aoe2_name"] == "FromAReplay"
+	assert fake.identities[0]["confidence"] == "manual"
 
 
 # ─── identity unlink ─────────────────────────────────────────────────────
@@ -1633,7 +1860,25 @@ def test_identity_unlink_clears_the_binding(monkeypatch):
 	assert len(ctx.successes) == 1
 	msg = ctx.successes[0]
 	assert "111" in msg
-	assert "/link" in msg, "say it can be claimed again"
+
+
+def test_identity_unlink_states_the_remedy_that_actually_works(monkeypatch):
+	""" The reply used to say the member "can claim it with `/link` again". That
+	is FALSE for exactly the population an admin unlinks most: `/link` is
+	view-only for anybody who already owns any profile, so a multi-account
+	player cannot use it. Wrong remedy on an admin surface is worse than none —
+	it sends both of them down a path that cannot work. """
+	admin = _load_admin_module(monkeypatch)
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual", aoe2_name="Fenrir"))
+	asyncio.run(identity.learn(112, 222, "manual", aoe2_name="Alt"))  # a second account
+	ctx = _FakeCtx()
+
+	asyncio.run(admin.identity_unlink(ctx, _FakeMember(222, name="Fenrir"), 111))
+
+	msg = ctx.successes[0]
+	assert "/identity link" in msg, "name the command that always works"
+	assert "additional" in msg.lower(), "and the flag it needs to not release their other profile"
 
 
 def test_identity_unlink_refuses_when_the_profile_belongs_to_someone_else(monkeypatch):
@@ -1951,6 +2196,52 @@ def test_identity_conflicts_lists_profile_owner_and_claimants(monkeypatch):
 	assert "527532506153615360" in field["value"]
 	assert "850996190282776577" in field["value"]
 	assert "seed" in field["value"]
+
+
+def test_identity_conflicts_caps_the_fields_and_says_how_many_it_left_out(monkeypatch):
+	""" Discord rejects an embed with more than 25 fields outright, so an
+	uncapped listing does not degrade — the command stops working, and it stops
+	working precisely when there is the most to look at. The overflow is stated
+	rather than swallowed: a moderator must be able to tell "that is all of
+	them" from "that is the first twenty-four". """
+	admin = _load_admin_module(monkeypatch)
+
+	async def _open_conflicts():
+		return [
+			dict(profile_id=pid, current_owner=1, claims=[dict(user_id=2, source="seed", noticed_at=1)])
+			for pid in range(100, 140)  # 40 contested profiles
+		]
+
+	monkeypatch.setattr(identity, "open_conflicts", _open_conflicts)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_conflicts(ctx))
+
+	embed = ctx.replies[0].embed
+	assert len(embed.fields) <= 25, "Discord's hard limit"
+	assert len(embed.fields) == admin.MAX_CONFLICT_FIELDS + 1, "the listing plus one overflow notice"
+	overflow = embed.fields[-1]
+	assert "16" in overflow["name"], "say how many were omitted"
+	assert "40" in overflow["value"], "and how many there are in total"
+	# Lowest profile id first, so the truncated view is stable between runs.
+	assert "100" in embed.fields[0]["name"]
+
+
+def test_identity_conflicts_adds_no_overflow_notice_when_everything_fits(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+
+	async def _open_conflicts():
+		return [
+			dict(profile_id=pid, current_owner=1, claims=[dict(user_id=2, source="seed", noticed_at=1)])
+			for pid in range(100, 100 + admin.MAX_CONFLICT_FIELDS)
+		]
+
+	monkeypatch.setattr(identity, "open_conflicts", _open_conflicts)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_conflicts(ctx))
+
+	assert len(ctx.replies[0].embed.fields) == admin.MAX_CONFLICT_FIELDS
 
 
 def test_identity_conflicts_reports_unknown_current_owner_without_erroring(monkeypatch):

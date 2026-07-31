@@ -396,11 +396,44 @@ def _pair_lobby(lobbies, elo_parsed, elo_timestamp, source):
 	return candidates[0]
 
 
+def consume_lobby_result(parsed):
+	"""Drop `parsed`'s lobby from the buffer once it has been paired.
+
+	Without this the buffer is append-only and a paired lobby stays a candidate
+	forever, which makes the matcher degrade the longer a session runs. With the
+	past-only window and shape-only signals, a night of 4v4s poisons itself:
+	game 1 pairs, game 2 sees TWO same-shape candidates still in the window and
+	pairs nothing, game 3 sees three. Removing the entry the moment it is used
+	is what keeps "ambiguity means pair nothing" a statement about genuinely
+	concurrent games rather than about how many games have been played.
+
+	Keyed on aoe2_match_id, not identity, so the channel-history path can clear
+	a buffered copy of the same lobby it paired from history — otherwise that
+	copy would go on shadowing later matches even though its game is spoken for.
+	A lobby that is not in the buffer is a no-op."""
+	before = len(_lobby_buffer)
+	aoe2_match_id = parsed.get('aoe2_match_id')
+	_lobby_buffer[:] = [
+		lobby for lobby in _lobby_buffer if lobby.get('aoe2_match_id') != aoe2_match_id
+	]
+	if len(_lobby_buffer) != before:
+		log.info(
+			f"Civ sync: consumed LobbyBOT match aoe2_id={aoe2_match_id} from the buffer "
+			f"({len(_lobby_buffer)} left)")
+
+
 def find_matching_lobby(elo_parsed, elo_timestamp):
 	"""Find the buffered LobbyBOT result that matches this Pubobot ELO message.
 	Returns the matched lobby dict, or None when there is no candidate or more
-	than one (see _pair_lobby)."""
-	return _pair_lobby(_lobby_buffer, elo_parsed, elo_timestamp, 'buffer')
+	than one (see _pair_lobby).
+
+	A hit is CONSUMED: one LobbyBOT result describes one game, so once it has
+	been handed out it must stop competing for the next ELO message (see
+	consume_lobby_result)."""
+	matched = _pair_lobby(_lobby_buffer, elo_parsed, elo_timestamp, 'buffer')
+	if matched is not None:
+		consume_lobby_result(matched)
+	return matched
 
 
 async def find_matching_lobby_from_history(channel, elo_parsed, elo_timestamp):
@@ -410,6 +443,10 @@ async def find_matching_lobby_from_history(channel, elo_parsed, elo_timestamp):
 	than returning the first that fits — with the weaker signals _pair_lobby now
 	uses, "first match wins" would silently pick one of several equally good
 	candidates, which is exactly the wrong pairing that function refuses to make.
+
+	A hit is consumed from the in-memory buffer too, if it happens to be sitting
+	there: the game is spoken for either way, and leaving the copy behind would
+	let it shadow the next ELO message (see consume_lobby_result).
 	"""
 	from core.config import cfg
 	lobbybot_id = getattr(cfg, 'LOBBYBOT_USER_ID', None)
@@ -430,7 +467,10 @@ async def find_matching_lobby_from_history(channel, elo_parsed, elo_timestamp):
 		log.error(f"Civ sync: error scanning channel history: {e}")
 		return None
 
-	return _pair_lobby(found, elo_parsed, elo_timestamp, 'channel history')
+	matched = _pair_lobby(found, elo_parsed, elo_timestamp, 'channel history')
+	if matched is not None:
+		consume_lobby_result(matched)
+	return matched
 
 
 def link_and_write(bot_match_id, lobby_data):

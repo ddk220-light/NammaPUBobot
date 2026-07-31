@@ -58,6 +58,18 @@ async def column_exists(db, table, column):
 	return row is not None
 
 
+async def index_exists(db, table, index):
+	"""Whether `table` carries an index named `index`. The primary key is called
+	`PRIMARY` in information_schema, so this answers "does it have a primary
+	key?" too — which is what makes a `DROP PRIMARY KEY` clause guardable
+	(dropping one that is not there is an error, not a no-op)."""
+	row = await db.fetchone(
+		"SELECT 1 AS x FROM information_schema.STATISTICS "
+		"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND INDEX_NAME = %s LIMIT 1",
+		[table, index])
+	return row is not None
+
+
 async def rename_table(db, old, new):
 	old_there = await table_exists(db, old)
 	new_there = await table_exists(db, new)
@@ -87,6 +99,34 @@ async def run_all(db):
 	await _ledger_ensure(db)
 	rows = await db.fetchall(f"SELECT name FROM {LEDGER}")
 	done = {r["name"] for r in rows or []}
+
+	# BEFORE the loop, not only after it. The post-conditions describe a
+	# database that has to be repaired by dropping the ledger and rebooting, and
+	# migrations drop tables — so checking them only at the end means an
+	# irreversible body gets to run first, on a database already known to be
+	# broken, and the crash that follows tells the operator to re-run a
+	# migration whose source data the previous line just destroyed.
+	#
+	# Concretely, the case review found: a restored backup whose ledger records
+	# 001-003 but whose `identities` is missing. 004 runs, DROPS rs_profiles —
+	# 003's highest-precedence seed source — records itself, and only then does
+	# _assert_identities_seeded crash saying "drop the ledger and reboot so 003
+	# re-runs". It does re-run, from the CSVs alone, and every `learned` binding
+	# that lived only in rs_profiles is gone, silently, with a healthy-looking
+	# bot. The invariant this restores: nothing irreversible executes while the
+	# post-conditions would fail.
+	#
+	# Both checks are ledger-gated, so on a genuinely fresh install (or any
+	# database sitting legitimately behind) they are no-ops here and the loop
+	# below does its normal work.
+	#
+	# Consequence for future migration authors: a migration can NOT be the fix
+	# for a state a post-condition rejects, because the post-condition now runs
+	# first and the migration never gets to execute. Those states are repaired
+	# by the runbook (drop `schema_migrations`, reboot), not by new code — which
+	# was always the intent, and is now enforced rather than assumed.
+	await _assert_boot_post_conditions(db)
+
 	n = 0
 	for name, fn in MIGRATIONS:
 		if name in done:
@@ -103,13 +143,25 @@ async def run_all(db):
 			[name, int(time.time())])
 		n += 1
 	log.info(f"migrations: {n} applied this boot, {len(MIGRATIONS)} known")
+	await _assert_boot_post_conditions(db)
+
+
+async def _assert_boot_post_conditions(db):
+	"""Every boot-time schema invariant, in one place so run_all can assert them
+	both before and after the migration loop — see run_all for why "before"
+	is the half that matters. Each one is individually ledger-gated and is a
+	pure read, so running them twice a boot costs two trivial queries."""
 	await _assert_stage1_renames_landed(db)
 	await _assert_identities_seeded(db)
 
 
+_RENAMES_LEDGER_NAME = "001_core_renames"
+
+
 async def _assert_stage1_renames_landed(db):
 	"""Post-condition, checked on every boot regardless of what the loop above
-	did: none of the _STAGE1_RENAMES *source* tables may still exist.
+	did: if the ledger says 001_core_renames ran, none of the _STAGE1_RENAMES
+	*source* tables may still exist.
 
 	run_all() decides what to run solely from the schema_migrations ledger.
 	If an operator restores a pre-deploy database backup, the ledger table
@@ -129,7 +181,17 @@ async def _assert_stage1_renames_landed(db):
 	db.connect(), before `import bot`), no old-named table has ever been
 	created — ensure_table() only runs later, when bot/ is imported — so
 	every table_exists() check below is False and this is a no-op.
+
+	The ledger gate is what makes this callable BEFORE the migration loop as
+	well as after it (see run_all): on a database that simply has not been
+	migrated yet, the pre-rename tables existing is the ordinary state and not
+	a disagreement with anything. It costs nothing after the loop either — the
+	only case it excludes is one where 001 has not run, in which case the loop
+	either just renamed them (and recorded it) or died trying.
 	"""
+	applied = await db.fetchone(f"SELECT 1 AS x FROM {LEDGER} WHERE name = %s", [_RENAMES_LEDGER_NAME])
+	if applied is None:
+		return  # nothing has claimed to have renamed yet; the loop owns that
 	offenders = [old for old, _new in _STAGE1_RENAMES if await table_exists(db, old)]
 	if offenders:
 		raise RuntimeError(
@@ -311,6 +373,12 @@ async def _ensure_identities_table(db):
 	)
 
 
+# The UNIQUE index identity_conflicts dedups on, named so both the CREATE TABLE
+# below and 005's ALTER can refer to the same thing, and so 005 can ask
+# information_schema whether it is already there.
+_CONFLICT_CLAIM_INDEX = "uniq_identity_conflicts_claim"
+
+
 async def _ensure_identity_conflicts_table(db):
 	"""Minimal, idempotent CREATE TABLE for `identity_conflicts` —
 	bot/identity.py's table of losing profile_id<->user_id claims, duplicated
@@ -320,14 +388,28 @@ async def _ensure_identity_conflicts_table(db):
 	from inside a migration; bot/identity.py's learn() is the other writer,
 	at runtime, well after this table already exists.
 
+	The shape is a surrogate `id` primary key plus a UNIQUE index on
+	(profile_id, claimed_user_id, status) — see bot/identity.py's declaration
+	for why the status column is part of the dedup key and what went wrong
+	while it was not. A database created by THIS function therefore never needs
+	005_identity_conflict_history; that migration exists for the databases
+	created by the earlier version of it.
+
 	Must stay in sync with bot/identity.py's `identity_conflicts` declaration
-	by hand.
+	by hand — test_the_conflicts_ddl_matches_the_ensure_table_declaration pins it.
 	"""
 	await db.execute(
 		"CREATE TABLE IF NOT EXISTS identity_conflicts ("
-		"`profile_id` BIGINT, `claimed_user_id` BIGINT, `source` VARCHAR(191) NOT NULL, "
+		"`id` BIGINT NOT NULL AUTO_INCREMENT, "
+		# NOT NULL on both id columns is deliberate and load-bearing now that
+		# they are no longer the primary key (which forced it implicitly): a
+		# NULL in either defeats the unique index, since MySQL treats NULLs
+		# there as never equal. See bot/identity.py's declaration.
+		"`profile_id` BIGINT NOT NULL, `claimed_user_id` BIGINT NOT NULL, "
+		"`source` VARCHAR(191) NOT NULL, "
 		"`noticed_at` BIGINT NOT NULL, `status` VARCHAR(191) NOT NULL DEFAULT 'open', "
-		"PRIMARY KEY(`profile_id`, `claimed_user_id`))"
+		"PRIMARY KEY(`id`), "
+		f"UNIQUE KEY `{_CONFLICT_CLAIM_INDEX}` (`profile_id`, `claimed_user_id`, `status`))"
 	)
 
 
@@ -748,7 +830,7 @@ async def _m004_backfill_match_replays(db):
 
 	rows = await db.fetchall(_M004_BACKFILL_SQL) or []
 	now = int(time.time())
-	links, no_match, unenrolled = [], 0, 0
+	wanted, no_match, unenrolled, collapsed = {}, 0, 0, 0
 	for r in rows:
 		if r["found_match_id"] is None:
 			no_match += 1
@@ -756,19 +838,50 @@ async def _m004_backfill_match_replays(db):
 		if r["community_id"] is None:
 			unenrolled += 1
 			continue
-		links.append(dict(
+		key = (r["community_id"], r["match_id"])
+		if key in wanted:
+			# TWO rs_matches rows naming ONE bot match. match_replays' primary
+			# key is (community_id, match_id), so only one of them can ever be
+			# stored and INSERT IGNORE drops the rest without a word. Counted
+			# and named here because the runbook otherwise attributes every gap
+			# between "paired rs_matches rows" and "match_replays rows" to an
+			# unknown match or an unenrolled channel — and this gap has a
+			# completely different cause and a completely different fix.
+			collapsed += 1
+			log.warning(
+				f"migrations: 004_identity_v2: bot match {r['match_id']} is claimed by more than one "
+				f"rs_matches row; replay {r['replay_match_id']} cannot be linked because "
+				f"{wanted[key]['replay_match_id']} already holds that pairing"
+			)
+			continue
+		wanted[key] = dict(
 			community_id=r["community_id"],
 			match_id=r["match_id"],
 			replay_match_id=r["replay_match_id"],
 			linked_at=r["parsed_at"] or r["reported_at"] or now,
-		))
+		)
 
-	if links:
-		await db.insert_many("match_replays", links, on_duplicate="ignore")
+	if wanted:
+		await db.insert_many("match_replays", list(wanted.values()), on_duplicate="ignore")
+
+	# Read the table back rather than reporting the size of the batch. insert_many
+	# returns nothing, INSERT IGNORE is silent by design, and a one-shot backfill
+	# whose only record is a log line has to say what LANDED — "backfilled 1107"
+	# while 1105 rows exist is exactly the kind of claim that gets believed for a
+	# year. `displaced` is the other honest outcome: a row link_match_replay
+	# already wrote for this match with a DIFFERENT replay, which IGNORE
+	# deliberately leaves alone (that writer is authoritative).
+	stored = {
+		(r["community_id"], r["match_id"]): r["replay_match_id"]
+		for r in (await db.select(["community_id", "match_id", "replay_match_id"], "match_replays") or [])
+	}
+	verified = sum(1 for key, link in wanted.items() if stored.get(key) == link["replay_match_id"])
+	displaced = len(wanted) - verified
 	log.info(
-		f"migrations: 004_identity_v2: backfilled {len(links)} match_replays row(s) from "
-		f"{len(rows)} paired rs_matches row(s) (skipped {no_match} with no matches row, "
-		f"{unenrolled} whose channel is not enrolled in a community)"
+		f"migrations: 004_identity_v2: {verified} of {len(wanted)} match_replays pairing(s) verified "
+		f"present from {len(rows)} paired rs_matches row(s) (skipped {no_match} with no matches row, "
+		f"{unenrolled} whose channel is not enrolled in a community, {collapsed} sharing a bot match id "
+		f"with an already-taken pairing; {displaced} already linked to a different replay)"
 	)
 
 
@@ -816,3 +929,73 @@ async def _m004(db):
 		if await table_exists(db, t):
 			await db.execute(f"DROP TABLE `{t}`")
 			log.info(f"migrations: 004_identity_v2: dropped retired table {t}")
+
+
+@migration("005_identity_conflict_history")
+async def _m005(db):
+	"""Widen identity_conflicts' key from (profile_id, claimed_user_id) to
+	(profile_id, claimed_user_id, status), on a surrogate primary key.
+
+	WHY, precisely. _record_conflict writes with INSERT IGNORE, so under the old
+	primary key the FIRST status recorded for a pair was the only one that could
+	ever exist. Trace the case this table exists for: B owns profile 111; an
+	admin mis-relinks it to A, which records (111, B, `superseded`); B runs
+	`/link 111`, is refused, and is told to ask an admin — and B's `open` row is
+	SWALLOWED by that earlier row. `open_conflicts()` filters on status='open',
+	so `/identity conflicts` shows nothing and `/identity status` reports zero.
+	The correction loop dead-ends in silence at exactly the moment somebody is
+	complaining. One row per (pair, status) fixes that while keeping the only
+	property the narrow key was buying: a repeated IDENTICAL observation (the
+	solver re-deriving the same losing claim on every trigger) still dedups.
+
+	Existing rows are preserved — this is ALTER TABLE, never a rebuild. Nothing
+	can violate the new index either: (profile_id, claimed_user_id) being unique
+	makes (profile_id, claimed_user_id, status) unique a fortiori.
+
+	ORDER MATTERS. The unique index is added BEFORE the primary key moves, and
+	that is not cosmetic: between the two statements the table must never be
+	without a uniqueness constraint covering the dedup, or an INSERT IGNORE
+	landing in that window (a rolling deploy still serving from the previous
+	container) would silently become a plain INSERT and duplicate rows.
+
+	Each statement is guarded on its own information_schema signal rather than
+	on this migration's ledger entry, per this module's docstring: a body that
+	dies partway through is re-run from the top on the next boot, and MySQL has
+	no `ADD COLUMN IF NOT EXISTS`.
+
+	Those guards are check-then-act, so two containers booting simultaneously
+	(a Railway rolling deploy) can both pass a check and the loser's ALTER then
+	fails on a duplicate key name. MySQL offers no atomic alternative — there is
+	no `ADD KEY IF NOT EXISTS`. The loser crashes, Railway restarts it, and the
+	retry finds the work already done and does nothing; the previous container
+	keeps serving throughout. This is the same tolerance the ledger's INSERT
+	IGNORE and _m002's guarded DROP already rely on.
+
+	A table this migration finds ABSENT is created in the new shape and needs
+	nothing further — that is a fresh install, where 003 has already created it
+	from _ensure_identity_conflicts_table's current DDL.
+	"""
+	if not await table_exists(db, "identity_conflicts"):
+		await _ensure_identity_conflicts_table(db)
+		log.info("migrations: 005_identity_conflict_history: created identity_conflicts in the new shape")
+		return
+
+	if not await index_exists(db, "identity_conflicts", _CONFLICT_CLAIM_INDEX):
+		await db.execute(
+			f"ALTER TABLE `identity_conflicts` ADD UNIQUE KEY `{_CONFLICT_CLAIM_INDEX}` "
+			"(`profile_id`, `claimed_user_id`, `status`)")
+		log.info(
+			f"migrations: 005_identity_conflict_history: added the {_CONFLICT_CLAIM_INDEX} unique index")
+
+	if not await column_exists(db, "identity_conflicts", "id"):
+		# One ALTER, so the table is never momentarily without a primary key.
+		# AUTO_INCREMENT is only legal on a column that IS a key, which is why
+		# the PRIMARY KEY clause has to ride along in the same ADD COLUMN.
+		clauses = []
+		if await index_exists(db, "identity_conflicts", "PRIMARY"):
+			clauses.append("DROP PRIMARY KEY")
+		clauses.append("ADD COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST")
+		await db.execute("ALTER TABLE `identity_conflicts` " + ", ".join(clauses))
+		log.info(
+			"migrations: 005_identity_conflict_history: moved identity_conflicts onto a surrogate "
+			"primary key; the claim key is now (profile_id, claimed_user_id, status)")

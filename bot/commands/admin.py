@@ -27,6 +27,12 @@ CONFIDENCE_GLOSS = {
 	"manual": "set by an admin",
 }
 
+# Discord hard-rejects an embed carrying more than 25 fields, so `/identity
+# conflicts` lists at most 24 profiles and spends the 25th saying how many it
+# left out. 24, not 25: the overflow notice is itself a field, and a listing
+# that silently ends is worse than a shorter one that admits it did.
+MAX_CONFLICT_FIELDS = 24
+
 
 async def noadds(ctx):
 	data = await bot.noadds.get_noadds(ctx)
@@ -189,11 +195,69 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 
 	The reply names what was actually taken away, because a release is
 	destructive and otherwise invisible: an admin who meant `additional: true`
-	needs the ids back to undo it. """
+	needs the ids back to undo it.
+
+	The id is validated against the AoE2 API BEFORE anything is written, exactly
+	as the player's `/link` validates it (bot/commands/identity.py). This is the
+	higher-privilege command and it writes at the top tier, so it needs MORE
+	checking, not less: a `manual` binding to a profile id that does not exist
+	is one no automated writer can ever displace, and -- because the default
+	shape releases everything else the member owned -- a single mistyped digit
+	both creates that dead binding and unowns every real profile they had. The
+	undo is lossy even when spotted (re-linking restores at `manual`, so
+	whatever `self`/`learned` tier those profiles held is gone), which is why
+	the check has to happen before the write rather than being something an
+	admin corrects afterwards.
+
+	The three outcomes are kept apart for the same reason `/link` keeps them
+	apart: "no such profile" is the admin's typo to fix, while "the service is
+	unreachable" says nothing at all about the id and must never send somebody
+	hunting for a number that was already right.
+
+	KNOWN COST, accepted: while the AoE2 profile service is down, this command
+	cannot link at all, and there is deliberately no override — a `force` flag
+	would restore exactly the hazard above and would get used precisely when an
+	admin is in a hurry. The urgent half of an admin's job is still available:
+	`/identity unlink` REMOVES a wrong link and touches no external service, so
+	a bad binding can always be taken off immediately and replaced once the API
+	answers again. """
 	ctx.check_perms(ctx.Perms.ADMIN)
 	# relink() coerces this too, but the release list below is compared against
 	# ids read out of the DB, which are ints.
 	profile_id = int(profile_id)
+	if profile_id < 1:
+		# Refused locally, before the API is even asked: fetch_profile maps the
+		# 400 the service answers a negative id with to "unavailable", so
+		# without this a number that cannot exist would be reported as the
+		# SERVICE being broken (verified live 2026-07-30, see /link's guard).
+		raise bot.Exc.ValueError(ctx.qc.gt(
+			"`{profile_id}` isn't a valid AoE2 profile id, so nothing was changed. "
+			"Profile ids are positive numbers — check it on the player's "
+			"aoe2insights.com page."
+		).format(profile_id=profile_id))
+
+	from bot.lobby import api as lobby_api
+
+	status, data = await lobby_api.fetch_profile(profile_id)
+	if status == "not_found":
+		raise bot.Exc.ValueError(ctx.qc.gt(
+			"There's no AoE2 profile with the id `{profile_id}`, so nothing was changed. "
+			"Check the number on the player's aoe2insights.com page and try again."
+		).format(profile_id=profile_id))
+	if status != "ok":
+		# Deliberately does NOT blame the id: nothing here proves anything about
+		# it, and saying otherwise would send an admin looking for a new number.
+		raise bot.Exc.ValueError(ctx.qc.gt(
+			"I couldn't reach the AoE2 profile service just now, so nothing was changed. "
+			"This isn't a problem with the id — please try again in a minute."
+		))
+
+	# From here on the API's own id is canonical, not the number that was typed
+	# -- same rule as `/link`: it is what the service says the profile IS.
+	profile_id = data["profile_id"]
+	# `or None` matters: relink reads None as "not observed, keep the stored
+	# name", while "" would blank a name somebody else's replay had recorded.
+	observed_name = data["name"] or None
 
 	# Both reads happen BEFORE the write -- afterwards the previous owner is
 	# gone and the released profiles are no longer the member's.
@@ -201,13 +265,20 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 	owned = await bot.identity.profiles_for_users([member.id])
 	others = sorted(pid for pid in owned.get(member.id, []) if pid != profile_id)
 
-	await bot.identity.relink(profile_id, member.id, additional=additional)
+	await bot.identity.relink(profile_id, member.id, additional=additional, aoe2_name=observed_name)
 
+	# The in-game name is echoed because it is the ONLY part of this reply an
+	# admin can check against the person in front of them: a wrong-but-real id
+	# passes every check above and produces an otherwise identical success.
 	lines = [ctx.qc.gt(
-		"Linked profile `{profile_id}` to **{member}** as an additional account."
+		"Linked profile `{profile_id}`{name} to **{member}** as an additional account."
 		if additional else
-		"Linked profile `{profile_id}` to **{member}**."
-	).format(profile_id=profile_id, member=get_nick(member))]
+		"Linked profile `{profile_id}`{name} to **{member}**."
+	).format(
+		profile_id=profile_id,
+		name=f" — {escape_markdown(data['name'])}" if data["name"] else "",
+		member=get_nick(member),
+	)]
 
 	if previous_owner is not None and previous_owner != member.id:
 		lines.append(ctx.qc.gt(
@@ -277,9 +348,15 @@ async def identity_unlink(ctx, member: Member, profile_id: int):
 
 	await bot.identity.unlink(profile_id)
 
+	# Deliberately does NOT say "they can claim it back with `/link`". `/link` is
+	# view-only for anybody who already owns a profile (bot/commands/identity.py
+	# -- players may never CHANGE a link), so that advice is false for exactly
+	# the population an admin unlinks most: multi-account players. The remedy
+	# that always works is another admin link.
 	await ctx.success(ctx.qc.gt(
-		"Unlinked profile `{profile_id}` from **{member}**. It's unowned now, so anyone "
-		"can claim it with `/link` — including **{member}** again."
+		"Unlinked profile `{profile_id}` from **{member}**. It's unowned now. To give it "
+		"back, run `/identity link` with `additional: True` — `/link` only works for a "
+		"player who owns no profile at all."
 	).format(profile_id=profile_id, member=get_nick(member)))
 
 
@@ -409,7 +486,14 @@ async def identity_conflicts(ctx):
 	second account is granted). See bot/identity.py's identity_conflicts
 	declaration and open_conflicts(). There is no resolution UI yet -- this just
 	surfaces what open_conflicts() already tracks so a moderator isn't blind to
-	it in the meantime; nothing here changes `status`. """
+	it in the meantime; nothing here changes `status`.
+
+	Capped at MAX_CONFLICT_FIELDS profiles. Discord rejects an embed with more
+	than 25 fields outright, so an uncapped listing does not degrade — the
+	command simply stops working, and it stops working precisely when there is
+	the most to look at. The overflow is stated rather than swallowed: a
+	moderator has to be able to tell "that is all of them" from "that is the
+	first twenty-four". """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 
 	conflicts = await bot.identity.open_conflicts()
@@ -418,12 +502,24 @@ async def identity_conflicts(ctx):
 		return
 
 	embed = Embed(title=ctx.qc.gt("Open identity conflicts"), colour=Colour(0x5865F2))
-	for c in conflicts:
+	# Lowest profile id first, so the truncated view is at least stable between
+	# runs instead of reordering with whatever the DB returned.
+	shown = sorted(conflicts, key=lambda c: c["profile_id"])[:MAX_CONFLICT_FIELDS]
+	for c in shown:
 		owner = f"<@{c['current_owner']}>" if c["current_owner"] is not None else ctx.qc.gt("(none known)")
 		claimants = "\n".join(f"<@{claim['user_id']}> ({claim['source']})" for claim in c["claims"])
 		embed.add_field(
 			name=ctx.qc.gt("Profile `{profile_id}`").format(profile_id=c["profile_id"]),
 			value=f"{ctx.qc.gt('Current owner')}: {owner}\n{ctx.qc.gt('Competing claim(s)')}:\n{claimants}",
+			inline=False,
+		)
+	if len(conflicts) > len(shown):
+		embed.add_field(
+			name=ctx.qc.gt("And {omitted} more").format(omitted=len(conflicts) - len(shown)),
+			value=ctx.qc.gt(
+				"{total} profiles have open conflicts; only the first {shown} fit in one message. "
+				"Settle some with `/identity link` and re-run this to see the rest."
+			).format(total=len(conflicts), shown=len(shown)),
 			inline=False,
 		)
 	await ctx.reply(embed=embed)

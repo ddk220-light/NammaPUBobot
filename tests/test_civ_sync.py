@@ -19,6 +19,7 @@ from bot.civ_sync import (
 	MAX_BUFFER,
 	_lobby_buffer,
 	buffer_lobby_result,
+	consume_lobby_result,
 	find_matching_lobby,
 	parse_lobby_embed,
 )
@@ -306,6 +307,64 @@ class TestFindMatchingLobby:
 		elo = _elo_parsed([['alice'], ['bob']])
 		buffer_lobby_result(_lobby_parsed([['Alice_AoE'], ['Bob_AoE']], timestamp=940))
 		assert find_matching_lobby(elo, elo_timestamp=1000)['aoe2_match_id'] == 42
+
+
+class TestPairedLobbiesAreConsumed:
+	"""The buffer used to be append-only: a paired lobby stayed a candidate
+	forever, so the matcher degraded the longer a session ran. With a past-only
+	window and shape-only signals, a night of 4v4s poisoned itself — game 1
+	paired, game 2 saw TWO same-shape candidates still in the window and paired
+	nothing, game 3 saw three. "Ambiguity means pair nothing" has to be a
+	statement about genuinely concurrent games, not about how many have been
+	played."""
+
+	def test_a_paired_lobby_leaves_the_buffer(self):
+		all_nicks = ['alice', 'bob', 'carol', 'dave', 'eve', 'frank', 'grace', 'henry']
+		elo = _elo_parsed([all_nicks[:4], all_nicks[4:]])
+		buffer_lobby_result(_lobby_parsed([all_nicks[:4], all_nicks[4:]],
+										  aoe2_match_id=42, timestamp=940))
+
+		assert find_matching_lobby(elo, elo_timestamp=1000)['aoe2_match_id'] == 42
+		assert _lobby_buffer == [], "one lobby describes one game; it is spoken for now"
+
+	def test_a_second_game_of_the_same_shape_still_pairs(self):
+		"""The regression itself, end to end: two 4v4s an hour apart, each
+		buffered then reported. Both must pair. Before the fix the second saw
+		the first still sitting in the buffer, called it ambiguous, and paired
+		nothing — and every later game of that shape inherited the problem."""
+		all_nicks = ['alice', 'bob', 'carol', 'dave', 'eve', 'frank', 'grace', 'henry']
+		elo = _elo_parsed([all_nicks[:4], all_nicks[4:]])
+
+		buffer_lobby_result(_lobby_parsed([all_nicks[:4], all_nicks[4:]],
+										  aoe2_match_id=42, timestamp=940))
+		assert find_matching_lobby(elo, elo_timestamp=1000)['aoe2_match_id'] == 42
+
+		buffer_lobby_result(_lobby_parsed([all_nicks[:4], all_nicks[4:]],
+										  aoe2_match_id=43, timestamp=4500))
+		assert find_matching_lobby(elo, elo_timestamp=4600)['aoe2_match_id'] == 43
+
+	def test_an_unpaired_lobby_stays_in_the_buffer(self):
+		"""Consumption is on a HIT only. An ambiguous or out-of-window read must
+		leave every candidate where it is — the ELO message it could not be
+		matched to is not evidence that any of them is finished with."""
+		all_nicks = ['alice', 'bob', 'carol', 'dave', 'eve', 'frank', 'grace', 'henry']
+		elo = _elo_parsed([all_nicks[:4], all_nicks[4:]])
+		buffer_lobby_result(_lobby_parsed([all_nicks[:4], all_nicks[4:]],
+										  aoe2_match_id=42, timestamp=940))
+		buffer_lobby_result(_lobby_parsed([all_nicks[:4], all_nicks[4:]],
+										  aoe2_match_id=43, timestamp=900))
+
+		assert find_matching_lobby(elo, elo_timestamp=1000) is None
+		assert sorted(lobby['aoe2_match_id'] for lobby in _lobby_buffer) == [42, 43]
+
+	def test_consuming_a_lobby_that_was_never_buffered_is_a_noop(self):
+		"""The channel-history path pairs from a freshly scanned list and then
+		clears any buffered copy of the same game; usually there is none."""
+		buffer_lobby_result(_lobby_parsed([['alice'], ['bob']], aoe2_match_id=42))
+
+		consume_lobby_result({'aoe2_match_id': 999})
+
+		assert [lobby['aoe2_match_id'] for lobby in _lobby_buffer] == [42]
 
 
 class TestProfileMapIsGone:

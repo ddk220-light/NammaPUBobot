@@ -67,8 +67,9 @@ failure modes were found by review, both reproduced on hand-built fixtures:
      signature of that failure. Genuine multi-account players are rare and
      enumerable (five in the flagship), so such a conclusion is never
      auto-applied — it is recorded for admin review, and the correct handling
-     of a real second account is one `/identity link ... additional: True` or
-     the player's own `/link`.
+     of a real second account is one `/identity link ... additional: True`. NOT
+     the player's own `/link`: that command is view-only for anybody who already
+     owns a profile, which every member reaching this rule does by definition.
 
 CALIBRATION, measured on the real flagship data (1107 paired matches, of which
 the roster-size guard rejects 6). Every figure below is from the offline
@@ -354,8 +355,11 @@ def _build_matches(replay_rows, discord_rows) -> list:
 	silently dropping just the unreadable row would leave a roster that looks
 	complete but is not — worse than having no evidence, since the resulting
 	size mismatch is the one thing _rosters_agree could otherwise have caught.
-	A NULL user_id is doubly disqualifying: identity_conflicts' primary key
-	forbids one, so it must never reach learn().
+	A NULL user_id is doubly disqualifying: identity_conflicts dedups on
+	(profile_id, claimed_user_id, status) and MySQL treats NULLs in a unique
+	index as never equal, so a NULL claim would accumulate a fresh row on every
+	run. record_refused_claim rejects one outright; it must never reach learn()
+	either.
 
 	All four NULLs are genuinely reachable: `matches.winner` is NULL for 8
 	production rows, `rs_player_games.winner` is declared notnull=False,
@@ -402,8 +406,8 @@ async def run_for_community(community_id) -> int:
 	Everything deduce() refused for review is recorded through
 	identity.record_refused_claim() at the same `learned` tier, so `/identity
 	conflicts` shows it beside every other unsettled claim. Recording is
-	idempotent (identity_conflicts' primary key + INSERT IGNORE), so re-running
-	the solver on every trigger does not accumulate rows.
+	idempotent (identity_conflicts' unique claim index + INSERT IGNORE), so
+	re-running the solver on every trigger does not accumulate rows.
 
 	Each write is best-effort and independent: one failure is logged and the
 	rest still land. The alternative — aborting the run — would let a single
@@ -418,16 +422,26 @@ async def run_for_community(community_id) -> int:
 	bindings, review = deduce(matches, known)
 
 	written = 0
-	for profile_id, (user_id, _games, _ratio, _margin) in bindings.items():
+	for profile_id, (user_id, games, ratio, margin) in bindings.items():
 		if user_id is None:
 			# _build_matches already drops NULL user_ids, so this is unreachable
-			# today; it stays because learn() writing a NULL claimed_user_id
-			# would violate identity_conflicts' primary key, and that failure
-			# would surface far from here.
+			# today; it stays because a NULL claimed_user_id defeats
+			# identity_conflicts' unique claim index (NULLs never compare equal),
+			# so the refusal would silently duplicate on every run.
 			continue
 		try:
 			if await identity.learn(profile_id, user_id, "learned", aoe2_name=None):
 				written += 1
+				# One line per BINDING, not just per refusal. A refusal leaves a
+				# conflict row a human can go and read; a binding leaves nothing
+				# at all -- `confidence='learned'` is indistinguishable from a
+				# migration-003 seed, and this is the one output of this module
+				# that a player cannot undo themselves (a `learned` row takes an
+				# admin to move). So the evidence that produced it is recorded
+				# here, at the moment it lands, or it is recorded nowhere.
+				log.info(
+					f"identity solver: BOUND profile {profile_id} -> user {user_id} "
+					f"at learned ({games} game(s), ratio {ratio:.2f}, margin {margin:.2f})")
 		except Exception as e:
 			log.error(f"identity solver: learn failed for profile {profile_id} -> user {user_id}: {e}")
 
