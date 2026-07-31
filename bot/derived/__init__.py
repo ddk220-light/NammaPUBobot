@@ -1,7 +1,20 @@
 # -*- coding: utf-8 -*-
-"""Derived-global layer (stage 3): per-game facts computed once at ingest
-instead of recomputed at render time. Both tables are keyed on the match and
-the player within it, never on user_id or community_id:
+"""Derived layers. Two generations of table live in this package and the
+difference between them is the point of stage 4, so read the split first:
+
+DERIVED-GLOBAL (stage 3) -- per-game facts computed once at ingest instead of
+recomputed at render time. Keyed on the match and the player within it, never
+on user_id or community_id.
+
+DERIVED-COMMUNITY (stage 4) -- per-player aggregates OF those facts, keyed on
+(community_id, user_id). A separate layer rather than more columns on the
+global one, because the same game means different things to different
+communities: a
+community's rollup is scoped to its own channels, and two communities sharing a
+player must be able to disagree about that player's numbers without either one
+rewriting a fact about the game itself.
+
+Derived-global:
 
 game_stats  -- PK (replay_match_id, player_number). Medal places, avg/peak
              eAPM, top units. Table declared and written by this package
@@ -27,6 +40,22 @@ raw side into line, so neither derived table ever needed a rename of its own.
 The legacy cls_* tables still spell it `aoe2_match_id` -- they are retired
 outright in stage 6 rather than renamed, and bot/derived/backfill.py is the one
 module that reads across both spellings.
+
+Derived-community:
+
+player_rollups -- PK (community_id, user_id). One blob per player per
+             community: medal rates, eAPM medians, and the strategy/spawn/unit
+             splits /rank reads in stage 5a. Written by
+             bot/derived/rollups.py (task 4.2) and driven by task 4.5's
+             refresh job, which is where identity resolution happens: a user's
+             profile set is resolved through `identities` and their
+             profile-keyed game_stats/game_labels rows aggregated across it.
+             An UNLINKED player therefore gets no row at all rather than a row
+             of zeros, which is exactly what makes 5a's "Statistics pending
+             linking" implementable -- the absence IS the signal (identity v2
+             §5). This is the first table in this package to carry user_id and
+             community_id, because it is the first one whose grain is a person
+             in a community rather than a slot in a match.
 
 Imported by bot/__init__.py for the db.ensure_table side effect below, the
 same as bot/replay_stats/__init__.py: ensure_table's sync wrapper drives the
@@ -77,9 +106,33 @@ db.ensure_table(dict(
 	primary_keys=["replay_match_id", "player_number", "label"],
 ))
 
-# Imported last, after both ensure_table declarations above, exactly like
+db.ensure_table(dict(
+	tname="player_rollups",
+	# Every non-key column is notnull: a rollup row exists only because the
+	# refresh job computed one, and each of these three is part of that
+	# computation's output. _ensure_table only ever ADDs missing columns and
+	# never alters nullability, so a column shipped nullable stays nullable
+	# until a migration tightens it -- which is why the intent is stated here,
+	# now, rather than left to the default.
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="user_id", ctype=db.types.int),
+		# Total game_stats rows behind the blob, i.e. every game the user
+		# played on any profile they own. A column rather than a key inside
+		# the blob so task 4.7 can reconcile it against a COUNT(*) without
+		# parsing JSON, and so a later "who has enough games?" query does not
+		# have to.
+		dict(cname="games", ctype=db.types.int, notnull=True),
+		# The five-block contract in bot/derived/rollups.py, JSON-encoded.
+		dict(cname="rollup", ctype=db.types.dict, notnull=True),
+		dict(cname="computed_at", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["community_id", "user_id"],
+))
+
+# Imported last, after every ensure_table declaration above, exactly like
 # bot/replay_stats/__init__.py's trailing `from .jobs import jobs`: backfill
-# reads and writes these two tables, so their schemas must be settled before the
-# job singleton it exposes can ever run. bot/events.py's on_think drives it as
-# `bot.derived.jobs.think(frame_time)`.
+# reads and writes the two derived-global tables, so their schemas must be
+# settled before the job singleton it exposes can ever run. bot/events.py's
+# on_think drives it as `bot.derived.jobs.think(frame_time)`.
 from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)

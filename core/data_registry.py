@@ -180,6 +180,14 @@ REGISTRY = {
 	"game_labels": dict(
 		layer="derived", tenancy="global", writers=("bot/derived/game_labels.py",), retention="forever"
 	),
+	# derived-community (stage 4) — aggregates OF the derived-global rows above,
+	# keyed on (community_id, user_id) rather than on a slot in a match — the
+	# first derived grain that is a person in a community. Identity resolution
+	# happens in the task-4.5 refresh job that calls the writer, never in the
+	# writer and never in the table.
+	"player_rollups": dict(
+		layer="derived", tenancy="community", writers=("bot/derived/rollups.py",), retention="forever"
+	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
 	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
