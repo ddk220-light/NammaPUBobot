@@ -144,15 +144,18 @@ def test_fewer_than_three_players_with_data_still_awards_what_it_can():
     assert [m["military_medal"] for m in cs.assign_medals(ps)] == [1, 2]
 
 
-def test_medal_ties_break_deterministically_by_other_count_then_nick():
-    ps = [_p("zed", mil=50, vil=10), _p("amy", mil=50, vil=10)]
+def test_medal_ties_break_deterministically_by_other_count_then_player_number():
+    # Nick order (amy < zed) is the reverse of player_number order here, so a
+    # pass proves the tiebreak reads player_number, not the mutable nick.
+    ps = [_p("amy", mil=50, vil=10, player_number=9), _p("zed", mil=50, vil=10, player_number=3)]
     medals = cs.assign_medals(ps)
     assert medals[1]["military_medal"] == 1
     assert medals[0]["military_medal"] == 2
 
 
 def test_medal_allocation_is_stable_across_re_renders():
-    ps = [_p("a", mil=50, vil=50), _p("b", mil=50, vil=50), _p("c", mil=50, vil=50)]
+    ps = [_p("a", mil=50, vil=50, player_number=1), _p("b", mil=50, vil=50, player_number=2),
+          _p("c", mil=50, vil=50, player_number=3)]
     assert cs.assign_medals(ps) == cs.assign_medals(list(ps))
 
 

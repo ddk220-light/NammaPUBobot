@@ -154,6 +154,17 @@ REGISTRY = {
 		layer="link", tenancy="community", writers=("bot/community.py", "core/migrations.py"),
 		retention="forever"
 	),
+	# derived-global (stage 3) — computed once at ingest from the rs_* raw
+	# tables, community-independent (unlike derived-community's per-community
+	# rollups, a later stage). Neither table carries a user_id; both key on
+	# profile_id only (identity v2 §5).
+	"game_stats": dict(
+		layer="derived", tenancy="global", writers=("bot/derived/game_stats.py",), retention="forever"
+	),
+	# game_labels' table is declared in bot/derived/__init__.py alongside
+	# game_stats (task 3.2), but nothing writes to it yet -- task 3.3 adds
+	# bot/derived/game_labels.py as its writer.
+	"game_labels": dict(layer="derived", tenancy="global", writers=(), retention="forever"),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
 	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
