@@ -8,14 +8,15 @@ database. Identity is the join key for nearly every table in this bot, so that
 fragmentation blocked everything downstream. It is over: every runtime read and
 write of a Discord-user <-> AoE2-profile binding now goes through this module,
 the legacy readers and writers are deleted, and a migration drops the retired
-tables. The offline quiz pipeline (utils/replay_quiz/) still keeps its own
-mapping, deliberately — it runs on a laptop against downloaded replays, never
-against this database, and produces a display name for quiz copy rather than a
-binding anything joins on.
+tables. The fifth store — the offline quiz pipeline's own copy, which ran on a
+laptop against downloaded replays and produced a display name for quiz copy
+rather than a binding anything joins on — went with the pipeline itself in
+stage 5b (`bot/quiz/player_bank.py` builds the player questions live from
+`metric_boards` now). This module is the only mapping left.
 
 The one rule that makes this module worth having: an in-game name reaching
 `aoe2_name` must come from the GAME. Replay ingest used to hand it a Discord
-nickname (see utils/replay_quiz/extract.py's docstring), which is how most of
+nickname (see utils/replay/extract.py's docstring), which is how most of
 this column's production rows came to hold something the game never said.
 
 Two tables:

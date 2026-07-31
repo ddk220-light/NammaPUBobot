@@ -38,10 +38,13 @@ async def _ensure_replay(aoe2_match_id, no_download=False):
         return path, False
     if no_download:
         return None, False
+    # Both are plain `def` (utils/replay/download.py does its HTTP with the
+    # blocking `requests`), so they are CALLED, not awaited. Awaiting them
+    # raised TypeError on the first match of every run.
     from utils.replay import download as dl
-    pids = await dl.resolve_profile_ids(aoe2_match_id)
+    pids = dl.resolve_profile_ids(aoe2_match_id)
     for pid in pids:
-        got, status = await dl.download_replay(aoe2_match_id, pid)
+        got, status = dl.download_replay(aoe2_match_id, pid)
         if got and os.path.exists(got):
             return got, True
     return None, False

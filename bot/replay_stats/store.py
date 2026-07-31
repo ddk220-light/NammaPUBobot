@@ -112,7 +112,7 @@ async def _learn_from_ingest(players, profmap):
     supposed to be what this account is called IN THE GAME, and this ingest
     holds the freshest possible answer, straight out of the replay
     (extract_match sets `identity` from the parsed player's own name and
-    nothing else -- see utils/replay_quiz/extract.py's docstring for why a
+    nothing else -- see utils/replay/extract.py's docstring for why a
     Discord nick may never appear here again). last_seen_at then records that
     the profile was genuinely seen playing just now, which is what
     /identity status' coverage window is measured against.
