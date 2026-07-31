@@ -440,16 +440,11 @@ def _load_stats_module(monkeypatch):
 	fake_nextcord.Colour = lambda value=0: value
 	fake_nextcord.File = object
 
-	class _FakeEmbed:
-		def __init__(self, title=None, description=None, colour=None, color=None):
-			self.title, self.description = title, description
-			self.colour = colour if colour is not None else color
-			self.fields = []
+	# One Embed fake for the whole suite — see tests/conftest.py's FakeEmbed for
+	# why a per-file copy was order-dependent rather than merely duplicated.
+	from tests.conftest import FakeEmbed
 
-		def add_field(self, name=None, value=None, inline=True):
-			self.fields.append(dict(name=name, value=value, inline=inline))
-
-	fake_nextcord.Embed = _FakeEmbed
+	fake_nextcord.Embed = FakeEmbed
 	monkeypatch.setitem(sys.modules, "nextcord", fake_nextcord)
 
 	fake_nextcord_utils = types.ModuleType("nextcord.utils")

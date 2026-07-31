@@ -1487,21 +1487,19 @@ class _FakeCtx:
 
 
 def _load_command_module(monkeypatch, filename, modname):
+	# The Embed fake comes from conftest rather than being redefined here.
+	# core/utils.py builds Embeds at import time out of whatever
+	# sys.modules['nextcord'] holds, and it is imported during COLLECTION (via
+	# bot/web.py in tests/test_web_repoint.py) — so whether core.utils sits on
+	# conftest's fake or this file's depended on collection order, and the two
+	# only agreed because a comment asked someone to keep them in step. One
+	# definition, nothing to drift, order irrelevant.
+	from tests.conftest import FakeEmbed
+
 	fake_nextcord = types.ModuleType("nextcord")
 	fake_nextcord.Member = object
 	fake_nextcord.Colour = lambda value=0: value
-
-	class _FakeEmbed:
-		def __init__(self, title=None, description=None, colour=None, color=None):
-			self.title = title
-			self.description = description
-			self.colour = colour if colour is not None else color
-			self.fields = []
-
-		def add_field(self, name=None, value=None, inline=True):
-			self.fields.append(dict(name=name, value=value, inline=inline))
-
-	fake_nextcord.Embed = _FakeEmbed
+	fake_nextcord.Embed = FakeEmbed
 	monkeypatch.setitem(sys.modules, "nextcord", fake_nextcord)
 
 	fake_nextcord_utils = types.ModuleType("nextcord.utils")

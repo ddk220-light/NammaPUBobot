@@ -142,11 +142,30 @@ sys.modules['aiohttp'] = _fake_aiohttp
 # actual response. That is the whole point — these are the real handlers, the
 # real SQL and the real payload shaping, with only the transport faked.
 class _FakeResponse:
+	""" A response object, not a bag: the SPA branches on `status` (401 sends it
+	to the login screen, 404 to "not found"), so a fake that let a caller's
+	status evaporate would make an auth regression returning {"error": "Not
+	logged in"} with status 200 completely invisible. `status` is therefore
+	validated here rather than merely stored, and tests/test_web_repoint.py
+	asserts on it for every error branch it drives. """
+
 	def __init__(self, payload=None, status=200, text=None, content_type=None):
+		if not isinstance(status, int) or isinstance(status, bool):
+			raise TypeError(f"HTTP status must be an int, got {status!r}")
 		self.payload = payload
 		self.status = status
 		self.text = text
 		self.content_type = content_type
+		# aiohttp's Response carries the cookie jar the auth handlers write to.
+		self.cookies = {}
+		self.deleted_cookies = []
+
+	def set_cookie(self, name, value, **kwargs):
+		self.cookies[name] = dict(value=value, **kwargs)
+
+	def del_cookie(self, name, **kwargs):
+		self.deleted_cookies.append(name)
+		self.cookies.pop(name, None)
 
 
 class _FakeRouter:
@@ -165,25 +184,80 @@ class _FakeApplication:
 		self.router = _FakeRouter()
 
 
+def _fake_json_response(payload=None, status=200):
+	return _FakeResponse(payload=payload, status=status)
+
+
 _fake_aiohttp_web = types.ModuleType('aiohttp.web')
-_fake_aiohttp_web.json_response = lambda payload=None, status=200: _FakeResponse(payload=payload, status=status)
+_fake_aiohttp_web.json_response = _fake_json_response
 _fake_aiohttp_web.Response = _FakeResponse
 _fake_aiohttp_web.Application = _FakeApplication
 _fake_aiohttp_web.AppRunner = object
 _fake_aiohttp_web.TCPSite = object
 
 
-class _FakeHTTPError(Exception):
-	def __init__(self, *a, **kw):
-		super().__init__(kw.get('text') or (a[0] if a else ''))
-		self.location = kw.get('location')
+# ─── aiohttp.web's HTTP exceptions ───────────────────────────────────────
+# These were ONE class wearing five names, which did not merely leave the OAuth
+# path untested — it made it untestable. `isinstance(HTTPFound('/x'),
+# HTTPNotFound)` was True, so pytest.raises could not fail on any of them;
+# `location` was read from kwargs while all three call sites in bot/web.py pass
+# it positionally, so it was always None; and set_cookie/del_cookie were absent
+# entirely, so login and logout AttributeError'd the moment a test touched them.
+#
+# In real aiohttp these exceptions ARE responses (HTTPException subclasses
+# Response), which is why bot/web.py does `resp = web.HTTPFound("/")`,
+# `resp.set_cookie(...)`, `raise resp`. The shapes below keep that: distinct
+# types, the real positional signatures, a status per class, and the cookie jar.
+class _FakeHTTPException(_FakeResponse, Exception):
+	status_code = 500
+
+	def __init__(self, *, headers=None, reason=None, body=None, text=None, content_type=None):
+		_FakeResponse.__init__(self, payload=None, status=self.status_code,
+		                       text=text, content_type=content_type)
+		Exception.__init__(self, text or reason or type(self).__name__)
+		self.reason = reason
+		self.body = body
+		self.headers = dict(headers or {})
 
 
-_fake_aiohttp_web.HTTPBadRequest = _FakeHTTPError
-_fake_aiohttp_web.HTTPFound = _FakeHTTPError
-_fake_aiohttp_web.HTTPForbidden = _FakeHTTPError
-_fake_aiohttp_web.HTTPNotFound = _FakeHTTPError
-_fake_aiohttp_web.HTTPUnauthorized = _FakeHTTPError
+class _FakeHTTPRedirection(_FakeHTTPException):
+	def __init__(self, location, **kwargs):
+		super().__init__(**kwargs)
+		# Positional, and required. aiohttp raises ValueError on a missing
+		# location; a fake that quietly stored None is how "the redirect goes
+		# nowhere" ships green.
+		if not location:
+			raise ValueError("HTTP redirect requires a location")
+		self.location = str(location)
+		self.headers['Location'] = self.location
+
+
+class _FakeHTTPFound(_FakeHTTPRedirection):
+	status_code = 302
+
+
+class _FakeHTTPBadRequest(_FakeHTTPException):
+	status_code = 400
+
+
+class _FakeHTTPUnauthorized(_FakeHTTPException):
+	status_code = 401
+
+
+class _FakeHTTPForbidden(_FakeHTTPException):
+	status_code = 403
+
+
+class _FakeHTTPNotFound(_FakeHTTPException):
+	status_code = 404
+
+
+_fake_aiohttp_web.HTTPException = _FakeHTTPException
+_fake_aiohttp_web.HTTPBadRequest = _FakeHTTPBadRequest
+_fake_aiohttp_web.HTTPFound = _FakeHTTPFound
+_fake_aiohttp_web.HTTPForbidden = _FakeHTTPForbidden
+_fake_aiohttp_web.HTTPNotFound = _FakeHTTPNotFound
+_fake_aiohttp_web.HTTPUnauthorized = _FakeHTTPUnauthorized
 sys.modules['aiohttp.web'] = _fake_aiohttp_web
 _fake_aiohttp.web = _fake_aiohttp_web
 
@@ -202,17 +276,25 @@ class _NextcordStub:
 		return _NextcordStub()
 
 
-class _FakeEmbed:
-	""" Faithful enough to assert on, unlike the permissive stub above.
+class FakeEmbed:
+	""" Faithful enough to assert on, unlike the permissive stub above, and the
+	ONLY definition of it in the suite.
 
 	This one is NOT a rubber stamp on purpose. core/utils.py's error_embed /
 	ok_embed build an Embed at import-of-core.utils time from whatever
-	sys.modules['nextcord'] holds, and core.utils is now imported (via
-	core.cfg_factory, via bot/web.py) during collection — before any test's own
-	nextcord fake is installed. A stub that swallowed the kwargs would make
-	`embed.title` a stub object, and every copy assertion in
-	tests/test_identity.py would compare a stub to a string and fail. Keep the
-	attribute names in step with tests/test_identity.py's own _FakeEmbed. """
+	sys.modules['nextcord'] holds, and core.utils is imported (via
+	core.cfg_factory, via bot/web.py) during collection of
+	tests/test_web_repoint.py — before any test's own nextcord fake is
+	installed. A stub that swallowed the kwargs would make `embed.title` a stub
+	object and every copy assertion in tests/test_identity.py would compare a
+	stub to a string.
+
+	Which fake ends up behind core.utils therefore depends on COLLECTION ORDER,
+	and for a while the answer was "whichever of two hand-maintained copies got
+	there first" — tests/test_identity.py and tests/test_scouting_report.py each
+	carried their own, kept in step by a comment. Both now import this class
+	(`from tests.conftest import FakeEmbed`), so there is one definition, no
+	copy to drift, and nothing for an ordering to pick between. """
 
 	def __init__(self, title=None, description=None, colour=None, color=None, **_kw):
 		self.title = title
@@ -232,7 +314,7 @@ class _FakeEmbed:
 _fake_nextcord = types.ModuleType('nextcord')
 for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents'):
 	setattr(_fake_nextcord, _name, _NextcordStub)
-_fake_nextcord.Embed = _FakeEmbed
+_fake_nextcord.Embed = FakeEmbed
 _fake_nextcord.Colour = lambda value=0: value
 _fake_nextcord.Color = _fake_nextcord.Colour
 _fake_nextcord_utils = types.ModuleType('nextcord.utils')
@@ -265,6 +347,12 @@ class _FakeDiscordClient:
 		return None
 
 	def get_channel(self, _channel_id):
+		return None
+
+	def get_guild(self, _guild_id):
+		# bot/web.py's dashboard-config endpoints call this; without it they
+		# AttributeError on contact rather than taking their "Guild not found"
+		# branch, which is the branch a test with no Discord connection wants.
 		return None
 
 	def is_ready(self):

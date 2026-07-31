@@ -14,6 +14,7 @@ sync test with asyncio.run().
 import asyncio
 import json
 import os
+import time
 import types
 from pathlib import Path
 
@@ -41,6 +42,8 @@ class FakeDB:
 		self.rows = rows or {}
 		self.sql = []
 		self.selects = []
+		self.inserted = []
+		self.deleted = []
 
 	# --- raw SQL ---
 	def _answer(self, sql, args):
@@ -80,6 +83,11 @@ class FakeDB:
 
 	async def insert(self, table, row, on_duplicate=None):
 		self.selects.append((table, dict(row)))
+		self.inserted.append((table, dict(row)))
+		return None
+
+	async def delete(self, table, where=None):
+		self.deleted.append((table, dict(where or {})))
 		return None
 
 	@property
@@ -97,23 +105,32 @@ def install_db(monkeypatch, fake):
 	  * the METHODS on the shared adapter instance, since every module did
 	    `from core.database import db` at import and they all hold that one
 	    object — so this reaches any module in the path that this list forgets.
-	  * the module-level `db` attribute on each module the path actually uses.
-	    tests/test_derived_refresh.py rebinds `rollups.db` to its own sqlite
-	    double and never restores it, so by the time the full suite reaches this
-	    file `rollups.db` is no longer the shared adapter and patching the
-	    adapter alone would silently miss it. monkeypatch.setattr restores
-	    whatever was there, leak included.
+	  * the module-level `db` attribute on each module the path actually uses,
+	    since a module that rebound its own `db` no longer resolves through the
+	    shared instance at all. tests/test_derived_refresh.py used to rebind
+	    `rollups.db` to its own sqlite double and never restore it, which made
+	    this second pass load-bearing rather than belt-and-braces; that file now
+	    restores what it patched, and this stays because the general point
+	    (module-level references outlive an instance patch) is unchanged.
 	"""
 	from core.database import db as real_db
-	for name in ("fetchall", "fetchone", "select", "select_one", "execute", "insert"):
+	for name in ("fetchall", "fetchone", "select", "select_one", "execute", "insert", "delete"):
 		monkeypatch.setattr(real_db, name, getattr(fake, name), raising=False)
 	for module in (web, rollups):
 		monkeypatch.setattr(module, "db", fake)
 	return fake
 
 
-def request(**query):
-	return types.SimpleNamespace(query=dict(query))
+def request(cookies=None, match_info=None, headers=None, **query):
+	""" The slice of aiohttp's Request the handlers below actually read. """
+	return types.SimpleNamespace(
+		query=dict(query),
+		cookies=dict(cookies or {}),
+		match_info=dict(match_info or {}),
+		headers=dict(headers or {}),
+		scheme="https",
+		host="example.test",
+	)
 
 
 def with_community(monkeypatch, guild_id=777):
@@ -191,25 +208,35 @@ def test_civ_stats_with_no_community_returns_nothing_rather_than_every_community
 
 
 def test_civ_stats_reads_no_file_at_all(monkeypatch):
-	""" Behavioural, not a grep: the handler is driven with an empty table while
-	data/civ_elo_stats.csv is restored to disk. A surviving CSV fallback would
-	serve April's frozen snapshot here. """
-	csv_path = os.path.join(_REPO_ROOT, "data", "civ_elo_stats.csv")
-	fake_csv = (
-		"civ,games,winrate,games_player_elo_above_1000,winrate_player_elo_above_1000\n"
-		"Franks,900,0.55,400,0.58\n")
-	assert not os.path.exists(csv_path), "the stage-5c CSV is deleted; this test must not clobber a real one"
-	Path(csv_path).write_text(fake_csv)
-	try:
-		install_db(monkeypatch, FakeDB(answers={"FROM civ_stats": []},
-		                               rows={"communities": [COMMUNITY_ROW]}))
-		with_community(monkeypatch)
-		payload = asyncio.run(web.handle_civ_stats(request())).payload
-	finally:
-		os.remove(csv_path)
+	""" Behavioural, not a grep: the handler is driven with an empty table and
+	every file it opens is recorded. Nothing under data/ may be among them.
 
+	This used to plant a fake data/civ_elo_stats.csv in the TRACKED data
+	directory and delete it in a finally. An interrupted run left the file
+	behind, which then failed the "the CSV is gone from disk" test on every
+	later run, and two workers under pytest-xdist raced each other for it.
+	Watching the opens is hermetic, leaves nothing on disk, and is strictly
+	stronger: it catches a JSON or pickle fallback too, not just the one
+	filename the planted CSV would have answered. """
+	import builtins
+
+	opened = []
+	real_open = builtins.open
+
+	def _recording_open(file, *a, **kw):
+		opened.append(str(file))
+		return real_open(file, *a, **kw)
+
+	monkeypatch.setattr(builtins, "open", _recording_open)
+	install_db(monkeypatch, FakeDB(answers={"FROM civ_stats": []},
+	                               rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
+	payload = asyncio.run(web.handle_civ_stats(request())).payload
+
+	data_dir = os.path.join(_REPO_ROOT, "data")
+	from_disk = [p for p in opened if os.path.abspath(p).startswith(data_dir)]
+	assert from_disk == [], f"/api/civ-stats read {from_disk} — a frozen snapshot is not this community's data"
 	assert payload["civs"] == []
-	assert "Franks" not in json.dumps(payload)
 
 
 def test_the_retired_civ_csv_is_gone_from_disk():
@@ -574,3 +601,243 @@ def test_the_spa_does_not_reference_a_removed_payload_field():
 	             "games_player_above", "winrate_team_below"):
 		assert gone not in page, f"the SPA still reads {gone}"
 	assert "scouting_report" in page, "the SPA must render the block that replaced them"
+
+
+# ─── HTTP status codes are part of the contract, not decoration ───
+# ~30 responses in bot/web.py carry an explicit status (400/401/403/404/503) and
+# not one was asserted, so rewriting the fake's json_response to DISCARD the
+# caller's status passed the whole suite. The SPA branches on status — a 401
+# sends it to the login screen — so an auth regression returning
+# {"error": "Not logged in"} with status 200 would have shipped silently.
+
+def test_the_response_fake_cannot_quietly_lose_a_status(monkeypatch):
+	""" Guarding the guard. Every assertion below is worthless if the fake
+	drops what it is handed, and that is exactly the mutation that shipped
+	green. """
+	assert web.web.json_response({"error": "x"}, status=403).status == 403
+	assert web.web.json_response({"ok": True}).status == 200
+	with pytest.raises(TypeError):
+		web.web.json_response({}, status="403")
+
+
+def test_a_malformed_player_id_is_a_400_not_an_empty_200(monkeypatch):
+	install_db(monkeypatch, FakeDB())
+
+	response = asyncio.run(web.handle_player_stats(request(player_id="not-a-number")))
+
+	assert response.status == 400
+	assert response.payload == {"error": "Invalid player_id"}
+
+
+def test_a_missing_player_id_is_a_400(monkeypatch):
+	install_db(monkeypatch, FakeDB())
+
+	response = asyncio.run(web.handle_player_stats(request()))
+
+	assert response.status == 400
+	assert response.payload == {"error": "Missing player_id"}
+
+
+def test_an_unknown_player_is_a_404(monkeypatch):
+	install_db(monkeypatch, FakeDB())
+
+	async def _no_such_player(_user_id):
+		return False
+
+	monkeypatch.setattr(web, "_player_has_public_stats", _no_such_player)
+	response = asyncio.run(web.handle_player_stats(request(player_id="42")))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Player not found"}
+
+
+def _session_row(session_id="sess", user_id=42, expires_in=3600):
+	return {"session_id": session_id, "user_id": user_id, "username": "someone",
+	        "avatar": None, "csrf": "tok", "expires_at": int(time.time()) + expires_in}
+
+
+def test_an_anonymous_dashboard_read_is_a_401_not_an_empty_list(monkeypatch):
+	""" The distinction the SPA acts on: 401 means "log in", an empty 200 means
+	"you are logged in and own nothing". """
+	install_db(monkeypatch, FakeDB())
+
+	response = asyncio.run(web.handle_api_guilds(request()))
+
+	assert response.status == 401
+	assert response.payload == {"error": "Not logged in"}
+
+
+def test_an_expired_session_is_also_a_401(monkeypatch):
+	install_db(monkeypatch, FakeDB(rows={"web_sessions": [_session_row(expires_in=-1)]}))
+
+	response = asyncio.run(web.handle_api_guilds(request(cookies={web.COOKIE_NAME: "sess"})))
+
+	assert response.status == 401
+
+
+def test_a_logged_in_user_asking_about_an_unknown_guild_is_a_404(monkeypatch):
+	""" Drives past the auth gate on a real session row, so the 404 is the
+	guild branch rather than the login one. dc.get_guild answers None here,
+	which is the state a process with no Discord connection is actually in. """
+	install_db(monkeypatch, FakeDB(rows={"web_sessions": [_session_row()]}))
+
+	response = asyncio.run(web.handle_api_channels(
+		request(cookies={web.COOKIE_NAME: "sess"}, match_info={"guild_id": "777"})))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Guild not found"}
+
+
+def test_every_error_branch_in_the_module_carries_a_status(monkeypatch):
+	""" Source-level, and deliberately so: the four handlers above are the ones
+	worth driving, but a NEW error branch added without a status would return
+	200 with an error body and no test would notice. Any json_response whose
+	payload is an {"error": ...} literal must name a status. """
+	import ast
+
+	tree = ast.parse(Path(_REPO_ROOT, "bot", "web.py").read_text())
+	naked = []
+	for node in ast.walk(tree):
+		if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+		        and node.func.attr == "json_response"):
+			continue
+		if not node.args or not isinstance(node.args[0], ast.Dict):
+			continue
+		keys = [k.value for k in node.args[0].keys if isinstance(k, ast.Constant)]
+		if "error" not in keys:
+			continue
+		if not any(kw.arg == "status" for kw in node.keywords):
+			naked.append(node.lineno)
+	assert naked == [], f"error responses with no status (they return 200): lines {naked}"
+
+
+# ─── the OAuth path, which the old fakes made untestable ───
+# HTTPBadRequest/HTTPFound/HTTPForbidden/HTTPNotFound/HTTPUnauthorized used to be
+# ONE class wearing five names, so isinstance(HTTPFound(...), HTTPNotFound) was
+# True and pytest.raises could not fail; `location` was read from kwargs while
+# every call site passes it positionally, so it was always None; and
+# set_cookie/del_cookie did not exist, so login and logout AttributeError'd on
+# contact. Nothing here could be written at all until conftest's fakes became
+# distinct types with the real signatures.
+
+def test_the_http_exception_fakes_are_distinct_types():
+	""" The property every pytest.raises below rests on. """
+	found = web.web.HTTPFound("/somewhere")
+	assert not isinstance(found, web.web.HTTPNotFound)
+	assert not isinstance(web.web.HTTPBadRequest(), web.web.HTTPForbidden)
+	assert not isinstance(web.web.HTTPUnauthorized(), web.web.HTTPNotFound)
+	assert (found.status, found.location) == (302, "/somewhere")
+	assert (web.web.HTTPBadRequest().status, web.web.HTTPNotFound().status) == (400, 404)
+
+
+def test_login_without_oauth_configured_is_a_400(monkeypatch):
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "", raising=False)
+
+	with pytest.raises(web.web.HTTPBadRequest):
+		asyncio.run(web.handle_auth_login(request()))
+
+
+def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
+	""" The redirect target is the whole point of the handler, and it was
+	unreachable: `location` came from kwargs while bot/web.py passes it
+	positionally, so the fake reported None no matter what was raised. """
+	fake = install_db(monkeypatch, FakeDB())
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_ID", 1234, raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://pubobot.test/", raising=False)
+
+	with pytest.raises(web.web.HTTPFound) as raised:
+		asyncio.run(web.handle_auth_login(request()))
+
+	location = raised.value.location
+	assert location.startswith(web.DISCORD_OAUTH_AUTHORIZE + "?")
+	stored = [row for table, row in fake.inserted if table == "web_oauth_states"]
+	assert len(stored) == 1, "the state must be persisted before the user is sent to Discord"
+	assert f"state={stored[0]['state']}" in location
+	assert "redirect_uri=https%3A%2F%2Fpubobot.test%2Fauth%2Fcallback" in location
+
+
+def test_the_callback_rejects_a_request_with_no_code(monkeypatch):
+	install_db(monkeypatch, FakeDB())
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+
+	with pytest.raises(web.web.HTTPBadRequest):
+		asyncio.run(web.handle_auth_callback(request()))
+
+
+def test_the_callback_rejects_an_unknown_state(monkeypatch):
+	""" Not merely "raises something": a state nobody issued must be a 400,
+	which is only a meaningful assertion now that HTTPBadRequest is its own
+	type. """
+	install_db(monkeypatch, FakeDB(rows={"web_oauth_states": []}))
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+
+	with pytest.raises(web.web.HTTPBadRequest) as raised:
+		asyncio.run(web.handle_auth_callback(request(code="abc", state="forged")))
+	assert raised.value.status == 400
+
+
+def test_the_callback_rejects_an_expired_state_and_drops_the_row(monkeypatch):
+	expired = {"state": "old", "expires_at": int(time.time()) - 1}
+	fake = install_db(monkeypatch, FakeDB(rows={"web_oauth_states": [expired]}))
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+
+	with pytest.raises(web.web.HTTPBadRequest):
+		asyncio.run(web.handle_auth_callback(request(code="abc", state="old")))
+	assert ("web_oauth_states", {"state": "old"}) in fake.deleted
+
+
+def test_logout_clears_the_session_cookie_and_redirects_home(monkeypatch):
+	""" del_cookie was absent from the fakes entirely, so this handler could not
+	be reached without an AttributeError -- meaning "logout leaves the cookie
+	in place" was unfalsifiable. """
+	fake = install_db(monkeypatch, FakeDB(rows={"web_sessions": [_session_row()]}))
+
+	with pytest.raises(web.web.HTTPFound) as raised:
+		asyncio.run(web.handle_auth_logout(request(cookies={web.COOKIE_NAME: "sess"})))
+
+	assert raised.value.location == "/"
+	assert web.COOKIE_NAME in raised.value.deleted_cookies
+	assert ("web_sessions", {"session_id": "sess"}) in fake.deleted
+
+
+# ─── this file must not change what another file sees ───
+# `import bot.web` at module scope runs during COLLECTION and pulls in
+# core.cfg_factory -> core.utils, which builds Embeds at import time out of
+# whatever sys.modules['nextcord'] holds. That cached core.utils is then shared
+# with every later file, so a fake defined here can decide what an unrelated
+# file's assertions compare against. It stays correct only while there is
+# exactly ONE definition of that fake.
+
+def test_the_embed_fake_has_a_single_definition_in_the_suite():
+	""" tests/test_identity.py and tests/test_scouting_report.py both used to
+	carry their own copy, kept in step by a comment. Which one ended up behind
+	core.utils depended on collection order. """
+	import core.utils
+	from tests import conftest
+
+	assert core.utils.Embed is conftest.FakeEmbed, (
+		"core.utils was imported against some other nextcord fake — whichever file "
+		"collected first now decides what every Embed assertion in the suite compares "
+		"against")
+
+	# Built at runtime so this test's own source does not match itself.
+	needles = ("class " + "_FakeEmbed", "class " + "FakeEmbed")
+	defined_in = []
+	for name in ("test_identity.py", "test_scouting_report.py", "test_web_repoint.py"):
+		text = Path(_REPO_ROOT, "tests", name).read_text()
+		if any(needle in text for needle in needles):
+			defined_in.append(name)
+	assert defined_in == [], (
+		f"{defined_in} define their own Embed fake again; conftest.FakeEmbed is the one "
+		f"definition, because core.utils caches whichever it sees first")
+
+
+def test_importing_this_file_leaves_the_shared_adapter_alone():
+	""" Collection-time side effects are the other half of the same problem: a
+	file that permanently rebinds a shipped module's `db` makes the suite pass
+	in one order and fail in another. """
+	from core.database import db as real_db
+
+	assert web.db is real_db, "bot.web.db was left pointing at a test double"
+	assert rollups.db is real_db, "bot.derived.rollups.db was left pointing at a test double"
