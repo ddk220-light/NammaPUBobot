@@ -191,4 +191,20 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
         await persona_store.refresh_match_users(aoe2_id)
     except Exception as e:
         log.error(f"Replay-stats persona refresh failed for aoe2 match {aoe2_id}: {e}")
+    # A newly paired match is new evidence for the identity deduction solver
+    # (bot/identity_solver.py) -- it is what links players in a community with
+    # no seed CSVs and no admin willing to curate one. Run it last, after the
+    # match_replays link above exists, so this ingest is part of the evidence.
+    # run_for_match never raises and skips quietly when the match's channel is
+    # not enrolled in a community; the guard here is the same one every other
+    # optional post-step in this function carries, because the raw parse
+    # already written above is irreplaceable (replays 404 upstream once they
+    # expire) and nothing optional may cost us it.
+    if bot_match_id is not None:
+        try:
+            from bot import identity_solver
+            await identity_solver.run_for_match(bot_match_id)
+        except Exception as e:
+            log.error(f"Identity solver run failed for bot match {bot_match_id} "
+                      f"(aoe2 match {aoe2_id}): {e}")
     return len(pg)

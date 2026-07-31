@@ -4,11 +4,14 @@
 Created when a ranked match enters WAITING_REPORT (bot/match/match.py). It
 subscribes to the unfiltered lobby socket, keeps only lobbies named ``NammaNomad``,
 shows a live-fill embed, and — when a full lobby with the right player count
-appears — confirms the LINK: captures the gameId + slot profileIds, persists a
-``lobbies`` row tied to the match, and self-heals the identity resolver
-(bot/identity.py) by elimination. Once the game launches it leaves a durable
+appears — confirms the LINK: captures the gameId + slot profileIds and persists a
+``lobbies`` row tied to the match. Once the game launches it leaves a durable
 ``in_progress`` row and
 stops; the captain-confirmed result loop is Phase 3.
+
+It no longer infers identity. The by-elimination heal that used to run in
+``_confirm`` had no roster guard and could write a wrong global binding; the
+paired-match deduction solver (bot/identity_solver.py) replaces it.
 
 Strictly best-effort + isolated: the whole run loop is wrapped, every Discord/DB
 call is guarded, and match.py creates/destroys watchers inside try/except. Nothing
@@ -23,7 +26,7 @@ from nextcord import DiscordException
 from core.console import log
 from core.database import db
 
-from . import buttons, embeds, reducer, socket, view, profile_map
+from . import buttons, embeds, reducer, socket, view
 
 TARGET_NAME = "NammaNomad"  # the announce join key (v1: fixed, single active match)
 HARD_TTL = 90 * 60          # absolute cap on a watcher's life (seconds)
@@ -148,15 +151,13 @@ class LobbyWatcher:
 		self.linked = True
 		self.game_id = mid
 		pids = sorted(reducer.profile_ids(entry))
-		# Self-heal the profile map by elimination (safe: only the lone leftover).
-		try:
-			known = await profile_map.known_for(pids)
-			names = {pid: nm for pid, nm, _t, _s in reducer.roster(entry)}
-			match_uids = [p.id for p in self.match.players]
-			for uid, pid in profile_map.eliminate(match_uids, pids, known):
-				await profile_map.link(uid, pid, names.get(pid, ""))
-		except Exception as e:
-			log.error(f"LobbyWatcher({self.match.id}) profile-map heal failed: {e}")
+		# No identity inference happens here any more. This used to pin the lone
+		# leftover (user, profile) pair by elimination, which had no roster guard
+		# at all: one outsider in the lobby plus one absent match player made the
+		# two leftovers a WRONG pair, written as a global binding. Identity is
+		# now deduced by bot/identity_solver.py from the paired match's two
+		# rosters, scored across every paired game, with a roster-size guard and
+		# a margin threshold — see spec section 4.
 		await self._persist("filling")
 		await self._safe_edit(embeds.lobby_embed(
 			entry, mid,

@@ -31,6 +31,7 @@ so this module loads under a pytest-only CI.
 __all__ = ['link']
 
 import bot
+from core.console import log
 
 # The player-verifiable profile page. This exact shape is proven in production
 # by bot/civ_sync.py:295, which parses it back out of live LobbyBOT embeds --
@@ -107,6 +108,20 @@ async def link(ctx, profile_id: int = None):
 		name=f" — {_bold_name(data['name'])}" if data["name"] else "",
 		url=INSIGHTS_URL.format(profile_id=profile_id),
 	))
+
+	# A new link is a new constraint for the deduction solver (spec section 4):
+	# knowing this player rules them out as a candidate for every profile they
+	# share a game with, which can immediately resolve a teammate. Deliberately
+	# AFTER the reply, and guarded twice -- run_for_channel already swallows its
+	# own failures and skips an unenrolled channel quietly, but by this point the
+	# player IS linked and has been told so, so nothing here may turn their
+	# successful /link into a red error embed.
+	try:
+		from bot import identity_solver
+
+		await identity_solver.run_for_channel(ctx.qc.id)
+	except Exception as e:
+		log.error(f"identity solver trigger failed after /link of profile {profile_id}: {e}")
 
 
 async def _reply_privately(ctx, embed):

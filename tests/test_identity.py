@@ -1104,7 +1104,10 @@ class _FakeCtx:
 
 	def __init__(self, access_level=_Perms.ADMIN, channel_id=1, author=None):
 		self.access_level = access_level
-		self.qc = types.SimpleNamespace(gt=lambda s: s)
+		# `qc` is a QueueChannel on the real context, so it carries the channel
+		# id as well as the translator — both commands under test use the id to
+		# resolve the community for the deduction solver.
+		self.qc = types.SimpleNamespace(gt=lambda s: s, id=channel_id)
 		self.channel = types.SimpleNamespace(id=channel_id)
 		self.author = author if author is not None else _FakeMember(1)
 		self.replies = []
@@ -1205,6 +1208,49 @@ def test_identity_link_records_a_brand_new_mapping(monkeypatch):
 	assert learn_calls == [(111, 222, "manual")]
 	assert len(ctx.successes) == 1
 	assert "111" in ctx.successes[0] and "Fenrir" in ctx.successes[0]
+
+
+def test_identity_link_triggers_the_deduction_solver(monkeypatch):
+	""" Spec section 4: an admin's binding is a new constraint that can resolve
+	other profiles in the same games immediately, so the solver runs on the
+	spot. A solver failure must never turn a completed link into an error. """
+	import bot.identity_solver as identity_solver
+
+	admin = _load_admin_module(monkeypatch)
+
+	async def _user_for_profile(profile_id):
+		return None
+
+	async def _learn(profile_id, user_id, source, aoe2_name=None):
+		return None
+
+	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
+	monkeypatch.setattr(identity, "learn", _learn)
+	ran = []
+
+	async def _run_for_channel(channel_id):
+		ran.append(channel_id)
+		return 0
+
+	monkeypatch.setattr(identity_solver, "run_for_channel", _run_for_channel)
+	ctx = _FakeCtx(channel_id=4242)
+
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222), 111))
+
+	assert ran == [4242]
+
+	async def _boom(channel_id):
+		raise RuntimeError("solver exploded")
+
+	monkeypatch.setattr(identity_solver, "run_for_channel", _boom)
+	ctx = _FakeCtx(channel_id=4242)
+
+	try:
+		asyncio.run(admin.identity_link(ctx, _FakeMember(222), 111))
+	except RuntimeError:
+		raise AssertionError("a solver failure must never surface as a command error") from None
+
+	assert len(ctx.successes) == 1, "the link still reports success"
 
 
 def test_identity_link_relinking_the_same_owner_needs_no_force(monkeypatch):
@@ -1722,6 +1768,54 @@ def test_link_binds_a_valid_profile_and_echoes_the_ingame_name(monkeypatch):
 	assert "612690" in msg
 	assert "ddk220" in msg, "echo the in-game name so a wrong-but-real id is caught by eye"
 	assert "https://www.aoe2insights.com/user/relic/612690/" in msg
+
+
+def test_link_triggers_the_deduction_solver_for_the_channels_community(monkeypatch):
+	""" Spec section 4: a fresh link is a new constraint that can immediately
+	resolve this player's teammates, so the solver runs on the spot rather than
+	waiting for the next ingest. """
+	import bot.identity_solver as identity_solver
+
+	link_mod = _load_link_module(monkeypatch)
+	_setup(monkeypatch)
+	_fake_fetch_profile(monkeypatch, ("ok", {"profile_id": 612690, "name": "ddk220"}))
+	ran = []
+
+	async def _run_for_channel(channel_id):
+		ran.append(channel_id)
+		return 0
+
+	monkeypatch.setattr(identity_solver, "run_for_channel", _run_for_channel)
+	ctx = _FakeCtx(channel_id=4242, author=_FakeMember(222))
+
+	asyncio.run(link_mod.link(ctx, profile_id=612690))
+
+	assert ran == [4242]
+	assert len(ctx.successes) == 1, "the solver runs AFTER the reply, and never instead of it"
+
+
+def test_link_still_replies_when_the_deduction_solver_blows_up(monkeypatch):
+	""" run_for_channel swallows its own failures, but the command must not
+	depend on that: the link has already landed and the player must be told. """
+	import bot.identity_solver as identity_solver
+
+	link_mod = _load_link_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	_fake_fetch_profile(monkeypatch, ("ok", {"profile_id": 612690, "name": "ddk220"}))
+
+	async def _boom(channel_id):
+		raise RuntimeError("solver exploded")
+
+	monkeypatch.setattr(identity_solver, "run_for_channel", _boom)
+	ctx = _FakeCtx(author=_FakeMember(222))
+
+	try:
+		asyncio.run(link_mod.link(ctx, profile_id=612690))
+	except RuntimeError:
+		raise AssertionError("a solver failure must never surface as a /link error") from None
+
+	assert fake.identities[0]["user_id"] == 222
+	assert len(ctx.successes) == 1
 
 
 def test_link_succeeds_when_the_validated_profile_has_no_name(monkeypatch):

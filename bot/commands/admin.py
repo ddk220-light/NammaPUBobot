@@ -9,6 +9,7 @@ from time import time
 from datetime import timedelta
 from nextcord import Member, Embed, Colour
 
+from core.console import log
 from core.utils import seconds_to_str, get_nick
 
 import bot
@@ -184,6 +185,20 @@ async def identity_link(ctx, member: Member, profile_id: int, force: bool = Fals
 	await ctx.success(ctx.qc.gt("Linked profile `{profile_id}` to **{member}**.").format(
 		profile_id=profile_id, member=get_nick(member)
 	))
+
+	# An admin correction is a new constraint for the deduction solver (spec
+	# section 4): this member is now ruled out as a candidate for every other
+	# profile in the games they played, which can immediately resolve a
+	# teammate. Deliberately AFTER the reply, and guarded twice -- run_for_channel
+	# already swallows its own failures and skips an unenrolled channel quietly,
+	# but the link has LANDED by this point, so nothing that happens here may
+	# ever reach the admin as a failed command.
+	try:
+		from bot import identity_solver
+
+		await identity_solver.run_for_channel(ctx.qc.id)
+	except Exception as e:
+		log.error(f"identity solver trigger failed after an admin link of profile {profile_id}: {e}")
 
 
 async def identity_show(ctx, member: Member):
