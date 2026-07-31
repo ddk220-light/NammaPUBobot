@@ -31,6 +31,7 @@ import pytest
 import bot.identity as identity
 import bot.derived.boards as boards
 import bot.derived.civ_stats as civ_stats
+import bot.derived.game_stats as game_stats_mod
 import bot.derived.refresh as refresh
 import bot.derived.rollups as rollups
 
@@ -55,6 +56,7 @@ CREATE TABLE game_stats (
 	replay_match_id INTEGER, player_number INTEGER, profile_id INTEGER, civ TEXT, team TEXT,
 	winner INTEGER, avg_eapm INTEGER, peak_eapm INTEGER, military_medal INTEGER,
 	villager_medal INTEGER, has_production INTEGER NOT NULL, top_units TEXT, computed_at INTEGER,
+	played_at INTEGER, compute_version INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (replay_match_id, player_number));
 CREATE TABLE game_labels (
 	replay_match_id INTEGER, player_number INTEGER, label TEXT, kind TEXT, evidence TEXT,
@@ -265,7 +267,7 @@ def _link(db, profile_id, user_id, bound_at=T0):
 
 def _game(db, replay_match_id, player_number, profile_id, *, community_id=1, match_id=None,
           computed_at=T0, winner=1, top_units=None, military_medal=None, villager_medal=None,
-          eapm=100, villagers=50, first_tc_s=None):
+          eapm=100, villagers=50, first_tc_s=None, played_at=T0):
 	"""One replay slot: the raw replay_players row, the derived game_stats row,
 	and the community link that owns the replay."""
 	db.add("match_replays", community_id=community_id, match_id=match_id or replay_match_id,
@@ -276,7 +278,8 @@ def _game(db, replay_match_id, player_number, profile_id, *, community_id=1, mat
 	db.add("game_stats", replay_match_id=replay_match_id, player_number=player_number,
 	       profile_id=profile_id, civ="Franks", team="1", winner=winner, avg_eapm=eapm,
 	       peak_eapm=None, military_medal=military_medal, villager_medal=villager_medal,
-	       has_production=1, top_units=json.dumps(top_units or []), computed_at=computed_at)
+	       has_production=1, top_units=json.dumps(top_units or []), computed_at=computed_at,
+	       played_at=played_at, compute_version=game_stats_mod.COMPUTE_VERSION)
 
 
 def _label(db, replay_match_id, player_number, label, kind="strategy"):

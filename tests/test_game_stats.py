@@ -187,10 +187,11 @@ def test_write_deletes_before_insert_stamps_id_and_serialises_top_units():
 			     avg_eapm=50, peak_eapm=60, military_medal=1, villager_medal=None,
 			     has_production=True,
 			     top_units=[dict(unit="Knight", category="cavalry", total=30)],
-			     computed_at=1000),
+			     computed_at=1000, played_at=900, compute_version=game_stats.COMPUTE_VERSION),
 			dict(player_number=2, profile_id=22, civ="Mongols", team="2", winner=False,
 			     avg_eapm=40, peak_eapm=None, military_medal=None, villager_medal=1,
-			     has_production=True, top_units=[], computed_at=1000),
+			     has_production=True, top_units=[], computed_at=1000, played_at=900,
+			     compute_version=game_stats.COMPUTE_VERSION),
 		]
 		asyncio.run(game_stats.write(555, rows))
 	finally:
@@ -252,7 +253,8 @@ def _written_payload(rows, replay_match_id=555):
 def _stats_row(**kw):
 	base = dict(player_number=1, profile_id=11, civ="Franks", team="1", winner=True,
 	            avg_eapm=50, peak_eapm=60, military_medal=1, villager_medal=2,
-	            has_production=True, top_units=[], computed_at=1000)
+	            has_production=True, top_units=[], computed_at=1000, played_at=900,
+	            compute_version=game_stats.COMPUTE_VERSION)
 	base.update(kw)
 	return base
 
@@ -292,3 +294,110 @@ def test_a_row_with_an_unexpected_key_set_is_rejected_loudly():
 
 	with pytest.raises(ValueError, match="expected exactly"):
 		_written_payload([{k: v for k, v in _stats_row().items() if k != "civ"}])
+
+
+# ── style units: what top_units is allowed to contain ────────────────────
+
+def _unit(name, category, total, is_military=1, player_number=1):
+	return dict(player_number=player_number, unit=name, category=category,
+	            total=total, is_military=is_military)
+
+
+def test_a_non_military_unit_is_never_a_style_unit():
+	assert not game_stats.is_style_unit(_unit("Villager", "villager", 200, is_military=0))
+
+
+def test_the_three_trash_lines_are_excluded():
+	""" Spearman, Skirmisher and the scout line cost no gold. They are what a
+	player is FORCED into -- a counter, or an empty gold pile -- not what they
+	chose, and in production they are three of the six most-built units in the
+	game. Leaving them in tells most players they mass Spearman. """
+	for name, category in (("Spearman", "spearman_line"), ("Halberdier", "spearman_line"),
+	                       ("Skirmisher", "skirmisher"), ("Elite Skirmisher", "skirmisher"),
+	                       ("Scout Cavalry", "scout"), ("Hussar", "scout"),
+	                       ("Camel Scout", "scout"), ("Eagle Scout", "scout")):
+		assert not game_stats.is_style_unit(_unit(name, category, 60)), name
+
+
+def test_every_trebuchet_variant_is_excluded_however_it_is_spelled():
+	""" Not trash -- it costs gold -- and excluded for the other reason: it is
+	the second most common military unit in the database, built in a quarter of
+	all player-games and only ~5 at a time, because almost every imperial game
+	ends with somebody knocking a building down. A unit nearly everybody builds
+	separates nobody, so it crowds out the one that would have.
+
+	Matched as a substring because three spellings already exist in production
+	and a civ release can add a fourth. """
+	for name in ("Trebuchet", "Traction Trebuchet", "Mounted Trebuchet", "trebuchet"):
+		assert not game_stats.is_style_unit(_unit(name, "siege", 8)), name
+
+
+def test_the_other_siege_units_are_style_units():
+	""" The exclusion is Trebuchet specifically, not siege as a category: going
+	Scorpion or Bombard Cannon is a real choice about how somebody plays. """
+	for name in ("Mangonel", "Battering Ram", "Scorpion", "Bombard Cannon", "Organ Gun"):
+		assert game_stats.is_style_unit(_unit(name, "siege", 12)), name
+
+
+def test_gold_units_survive():
+	for name, category in (("Knight", "knight_line"), ("Archer", "archer_line"),
+	                       ("Champion", "militia_line"), ("Monk", "monk"),
+	                       ("Mangudai", "unique_other"), ("Camel Rider", "camel_line")):
+		assert game_stats.is_style_unit(_unit(name, category, 30)), name
+
+
+def test_the_trash_filter_runs_before_the_top_three_cut():
+	""" THE LOAD-BEARING ORDER. Filtering the stored list at read time instead
+	would leave a player whose three most-built units are Spearman, Scout
+	Cavalry and Skirmisher with no unit line at all -- and in production the
+	first style unit sits outside the unfiltered top 3 for 1429 of 6061
+	player-games, so this is the common case rather than the corner. """
+	players = [dict(player_number=1, profile_id=11, civ="Franks", team="1", winner=True,
+	                eapm=50, villagers=100, military=40)]
+	units = [
+		_unit("Spearman", "spearman_line", 200),      # would be 1st unfiltered
+		_unit("Scout Cavalry", "scout", 150),         # would be 2nd
+		_unit("Skirmisher", "skirmisher", 120),       # would be 3rd
+		_unit("Trebuchet", "siege", 90),              # would be 4th
+		_unit("Knight", "knight_line", 60),
+		_unit("Monk", "monk", 20),
+		_unit("Scorpion", "siege", 10),
+	]
+
+	rows = game_stats.compute_game_stats(players, units, [], computed_at=1)
+
+	assert [u["unit"] for u in rows[0]["top_units"]] == ["Knight", "Monk", "Scorpion"]
+
+
+def test_a_player_who_built_only_trash_gets_an_empty_list_not_a_trash_one():
+	players = [dict(player_number=1, profile_id=11, civ="Franks", team="1", winner=True,
+	                eapm=50, villagers=100, military=40)]
+	units = [_unit("Spearman", "spearman_line", 200), _unit("Trebuchet", "siege", 40)]
+
+	rows = game_stats.compute_game_stats(players, units, [], computed_at=1)
+
+	assert rows[0]["top_units"] == []
+
+
+# ── played_at and the compute version ────────────────────────────────────
+
+def test_every_row_carries_the_matchs_date_and_the_current_compute_version():
+	players = [dict(player_number=n, profile_id=10 + n, civ="Franks", team="1", winner=True,
+	                eapm=50, villagers=100, military=40) for n in (1, 2)]
+
+	rows = game_stats.compute_game_stats(players, [], [], computed_at=1, played_at=1700000000)
+
+	assert {r["played_at"] for r in rows} == {1700000000}
+	assert {r["compute_version"] for r in rows} == {game_stats.COMPUTE_VERSION}
+
+
+def test_an_undated_match_stamps_no_date_rather_than_inventing_one():
+	""" 19 production matches have no recorded date, and rollups.in_window reads
+	a NULL as outside every window. A 0 or a "now" would file a game from an
+	unknown year into the last 60 days. """
+	players = [dict(player_number=1, profile_id=11, civ="Franks", team="1", winner=True,
+	                eapm=50, villagers=100, military=40)]
+
+	rows = game_stats.compute_game_stats(players, [], [], computed_at=1)
+
+	assert rows[0]["played_at"] is None

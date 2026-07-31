@@ -2680,9 +2680,17 @@ function scoutingLines(rep) {
      Returns [] for a player with no measured block, and NEVER substitutes a
      zero for a missing one — an absent block means nobody measured it. */
   if (!rep || rep.pending) return [];
+  if (rep.window_days != null && !rep.window_games) {
+    /* Linked, with history, none of it recent. Not the pending case and not
+       silence — both would say something false about a different thing. */
+    return ['No games in the last ' + rep.window_days + ' days'];
+  }
   var lines = [];
   var m = rep.medals;
-  if (m) lines.push('Medals: ' + m.military_pct + '% military · ' + m.villager_pct + '% villager, over '
+  /* Per game, never a percentage: the same number, but "0.35 military medals
+     per game" is a quantity a reader can picture. */
+  if (m) lines.push('⚔ ' + m.military_per_game.toFixed(2) + ' military · 🌾 '
+    + m.villager_per_game.toFixed(2) + ' villager medals per game, over '
     + m.games_ranked + ' ranked games');
   var a = rep.apm;
   if (a) {
@@ -2694,12 +2702,26 @@ function scoutingLines(rep) {
         + ' over ' + a.games_peak
       : 'eAPM: ' + a.median_avg + ' median over ' + a.games_avg + ' games');
   }
-  [['strategies', 'Top strategy'], ['spawns', 'Top spawn'], ['units', 'Top unit']].forEach(function (pair) {
-    var rows = rep[pair[0]] || [];
-    /* Ranked (games desc) by compute_rollup, and already floored: a split below
-       the sample floor is absent from the blob entirely rather than flagged. */
-    if (rows.length) lines.push(pair[1] + ': ' + rows[0].label + ' · ' + rows[0].wins + 'W-' + rows[0].losses + 'L');
+  /* The two sentences, built from clauses the SERVER chose
+     (bot/scouting_report.highlights). Nothing here re-ranks or re-picks: which
+     strategy is a player's strength is a shrunk win rate against their own
+     baseline, and a second copy of that rule in JavaScript would drift while
+     still looking plausible. This only phrases what it is given. */
+  var h = rep.highlights || {};
+  [['wins_most', 'Wins most'], ['loses_most', 'Loses most']].forEach(function (pair) {
+    var picks = h[pair[0]] || [];
+    if (!picks.length) return;
+    var parts = picks.map(function (p) {
+      var lead = p.dimension === 'strategy' ? 'opening ' : (p.dimension === 'unit' ? 'massing ' : '');
+      return lead + p.name + ' (' + p.wins + 'W-' + p.losses + 'L)';
+    });
+    var joined = parts.length === 1 ? parts[0]
+      : parts.slice(0, -1).join(', ') + ' and ' + parts[parts.length - 1];
+    lines.push(pair[1] + ' ' + joined + '.');
   });
+  if (!lines.length && rep.window_days != null) {
+    return ['Only ' + rep.window_games + ' games in the last ' + rep.window_days + ' days'];
+  }
   return lines;
 }
 

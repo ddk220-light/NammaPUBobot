@@ -135,9 +135,27 @@ db.ensure_table(dict(
 		# never alters nullability, so this choice is permanent without another
 		# migration.
 		dict(cname="has_production", ctype=db.types.bool, notnull=True),
-		# [{unit, category, total}], top 3 military-only units by total, JSON-encoded.
+		# [{unit, category, total}], top 3 STYLE units by total, JSON-encoded --
+		# gold-costing, non-ubiquitous military units, filtered BEFORE the top-3
+		# cut (bot/derived/game_stats.is_style_unit).
 		dict(cname="top_units", ctype=db.types.dict, notnull=False),
 		dict(cname="computed_at", ctype=db.types.int, notnull=True),
+		# The match's own epoch, so a stat row can be placed in time with no
+		# join. player_rollups windows the scouting report on this column; see
+		# compute_game_stats' docstring for why it is stamped here rather than
+		# joined from game_labels or parsed out of replay_matches at read time.
+		# Nullable because 19 production matches genuinely have no recorded date,
+		# and rollups reads a NULL as "outside every window" rather than "now".
+		dict(cname="played_at", ctype=db.types.int, notnull=False),
+		# Which revision of compute_game_stats wrote this row. NOT NULL for the
+		# same reason has_production is: it is always knowable, and a NULL would
+		# be a third value meaning "not backfilled" -- exactly the ambiguity the
+		# column exists to remove. 010_game_stats_played_at seeds it to 0 on
+		# every historical row, which makes all of them differ from
+		# game_stats.COMPUTE_VERSION and so pending for the reconciliation loop,
+		# which then rewrites them with the current compute. That is the whole
+		# mechanism: see game_stats.COMPUTE_VERSION and backfill._STATS_SRC.
+		dict(cname="compute_version", ctype=db.types.int, notnull=True),
 	],
 	primary_keys=["replay_match_id", "player_number"],
 ))

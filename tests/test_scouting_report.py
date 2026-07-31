@@ -31,12 +31,18 @@ from bot.derived.rollups import SPLIT_MIN_GAMES, compute_rollup
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# A fixed "now" so every windowing assertion is arithmetic rather than a race
+# against the clock. A game defaults to being played at this instant, i.e. inside
+# any window, so a test that is not about the window need not think about one.
+NOW = 1_800_000_000
+DAY = 86400
+
 
 # ── fixtures ─────────────────────────────────────────────────────────────
 # game_stats / game_labels row shapes, same as tests/test_rollups.py's.
 
 def _stat(mid, winner=True, avg_eapm=50, peak_eapm=None, military_medal=None,
-          villager_medal=None, units=("Knight",), has_production=True):
+          villager_medal=None, units=("Knight",), has_production=True, played_at=NOW):
 	return dict(
 		replay_match_id=mid, player_number=1, profile_id=11,
 		civ="Franks", team="1", winner=winner,
@@ -44,7 +50,7 @@ def _stat(mid, winner=True, avg_eapm=50, peak_eapm=None, military_medal=None,
 		military_medal=military_medal, villager_medal=villager_medal,
 		has_production=has_production,
 		top_units=[dict(unit=u, category="cavalry", total=10) for u in units],
-		computed_at=1000,
+		computed_at=1000, played_at=played_at, compute_version=1,
 	)
 
 
@@ -90,7 +96,8 @@ def _blob(**overrides):
 	a blob shape rather than the arithmetic that produced it."""
 	blob = dict(medal_rates=dict(military=None, villager=None, games_ranked=0),
 	            apm=dict(median_avg=None, median_peak=None, games_avg=0, games_peak=0),
-	            strategies=[], spawns=[], units=[])
+	            strategies=[], spawns=[], units=[],
+	            window_days=None, baseline=dict(games=0, wins=0))
 	blob.update(overrides)
 	return blob
 
@@ -133,29 +140,53 @@ def test_the_pending_string_goes_through_the_callers_translator():
 	assert seen == ["Statistics pending linking"]
 
 
-def test_a_rollup_that_fills_no_line_renders_no_field_rather_than_pending():
-	""" A linked player whose every line is below its floor is NOT the unlinked
-	case. Saying "pending linking" at them would be false, and saying "0%"
-	would report a measurement nobody took -- so the field is omitted. """
-	assert scouting_report.render(_blob()) is None
+def test_the_two_floors_are_the_same_number():
+	""" MIN_GAMES is spelled here rather than imported from rollups (importing it
+	would drag core.database into a module whose whole test suite rests on
+	importing nothing that reaches a database), so nothing but this test stops
+	the two drifting. One report must not quote a strategy over 5 games and a
+	medal rate over 2. """
+	assert scouting_report.MIN_GAMES == SPLIT_MIN_GAMES
 
 
-# ── medal rates ──────────────────────────────────────────────────────────
+def test_the_medal_glyphs_are_the_ones_the_match_card_already_stamps():
+	""" Copied from bot/post_game.MEDAL_GLYPHS for the same import reason, and
+	pinned here: a player who sees a crossed sword on the card has to see the
+	same mark on the report, or they are two different awards. Parsed as text
+	rather than imported -- bot/post_game.py reaches Discord. """
+	source = (_REPO_ROOT / "bot" / "post_game.py").read_text(encoding="utf-8")
+	declared = ast.literal_eval(
+		source.split("MEDAL_GLYPHS = ", 1)[1].split("\n", 1)[0])
+	assert dict(declared) == {
+		"military_medal": scouting_report._MILITARY_GLYPH,
+		"villager_medal": scouting_report._VILLAGER_GLYPH,
+	}
 
-def test_medal_rates_render_over_the_ranked_denominator_not_games_played():
-	""" games_ranked (10) is neither the game count (12) nor the medal count.
-	Dividing by games played would print 42%/17% here. """
+
+def test_medals_render_as_a_count_per_game_not_as_a_percentage():
+	""" The framing this replaced. Rate and per-game count are the same number
+	here -- a player holds at most one military medal in a game -- but "50%
+	military" invites the reader to ask 50% of what, and the honest answer is
+	not something a percent sign conveys. """
 	rendered = scouting_report.render(_rich())
 	medals = _line_with(rendered, "military")
 
-	assert "**50%** military" in medals
-	assert "**20%** villager" in medals
+	assert "**0.50** military" in medals
+	assert "**0.20** villager" in medals
+	assert "%" not in medals
+
+
+def test_medal_counts_rest_on_the_ranked_denominator_not_games_played():
+	""" games_ranked (10) is neither the game count (12) nor the medal count.
+	Dividing by games played would print 0.42 and 0.17 here. """
+	medals = _line_with(scouting_report.render(_rich()), "military")
+
 	assert "over 10 ranked games" in medals
-	assert "42%" not in medals and "17%" not in medals
+	assert "0.42" not in medals and "0.17" not in medals
 
 
-def test_the_medal_denominator_is_always_printed_beside_the_rates():
-	""" The binding copy rule. Two rates that sum to 70% are only legible
+def test_the_medal_denominator_is_always_printed_beside_the_counts():
+	""" The binding copy rule. Two figures summing past a half are only legible
 	against the sample they were taken over. """
 	rendered = scouting_report.render(_rich())
 	medals = _line_with(rendered, "military")
@@ -172,12 +203,31 @@ def test_the_medal_line_is_omitted_when_no_game_was_ever_ranked():
 	assert "military" not in (scouting_report.render(rollup) or "")
 
 
+def test_the_medal_line_is_omitted_below_the_floor():
+	""" The state the window made common: somebody who played twice this month
+	and medalled in both would otherwise read "1.00 military medals per game".
+	The denominator is printed, but a reader who has to discount a number is
+	exactly what this report exists not to produce. """
+	stats = [_stat(i, military_medal=1, villager_medal=1)
+	         for i in range(1, SPLIT_MIN_GAMES)]
+	rollup = compute_rollup(stats, [])
+	assert rollup["medal_rates"]["games_ranked"] == SPLIT_MIN_GAMES - 1
+	assert "military" not in (scouting_report.render(rollup) or "")
+
+
+def test_the_medal_line_appears_at_exactly_the_floor():
+	""" A minimum, not a strict one -- a test that only asked about 4 and 6
+	games would pass against either. """
+	stats = [_stat(i, military_medal=1) for i in range(1, SPLIT_MIN_GAMES + 1)]
+	assert "military" in scouting_report.render(compute_rollup(stats, []))
+
+
 # ── eAPM ─────────────────────────────────────────────────────────────────
 
 def test_the_apm_line_omits_the_peak_entirely_while_none_was_captured():
-	""" peak_eapm is NULL on all 8885 production rows, so median_peak is null
-	and games_peak is 0. Nothing may stand in for it -- not a blank, not an
-	em-dash, not a zero. """
+	""" peak_eapm is NULL on every row ingested before the bucket-capturing
+	parser shipped, so median_peak is null and games_peak is 0. Nothing may
+	stand in for it -- not a blank, not an em-dash, not a zero. """
 	rollup = _rich()
 	assert (rollup["apm"]["median_peak"], rollup["apm"]["games_peak"]) == (None, 0)
 
@@ -196,33 +246,50 @@ def test_the_apm_line_carries_its_own_sample_count_not_the_game_count():
 def test_the_peak_appears_with_its_own_count_once_buckets_arrive():
 	""" Two independent samples, never one shared figure: the day peaks start
 	being captured they will be captured for fewer games than the averages. """
-	stats = [_stat(i, peak_eapm=100 + i if i <= 3 else None, avg_eapm=50 + i) for i in range(1, 6)]
+	stats = [_stat(i, peak_eapm=100 + i if i <= 5 else None, avg_eapm=50 + i)
+	         for i in range(1, 9)]
 	rollup = compute_rollup(stats, [])
-	assert (rollup["apm"]["median_peak"], rollup["apm"]["games_peak"]) == (102, 3)
+	assert (rollup["apm"]["median_peak"], rollup["apm"]["games_peak"]) == (103, 5)
 
 	apm = _line_with(scouting_report.render(rollup), "eAPM")
-	assert "peak **102** over 3" in apm
-	assert "over 5 games" in apm
+	assert "peak **103** over 5" in apm
+	assert "over 8 games" in apm
+
+
+def test_the_peak_is_held_back_until_its_own_sample_clears_the_floor():
+	""" The peak has a separate count, so it gets the floor separately. A median
+	over 40 games beside a peak over 2 is one line quoting two very different
+	confidences without saying so. """
+	stats = [_stat(i, peak_eapm=100 + i if i <= 2 else None, avg_eapm=50 + i)
+	         for i in range(1, 9)]
+	rollup = compute_rollup(stats, [])
+	assert rollup["apm"]["games_peak"] == 2
+
+	apm = _line_with(scouting_report.render(rollup), "eAPM")
+	assert "peak" not in apm.lower()
+	assert "over 8 games" in apm
 
 
 def test_a_half_median_is_not_rounded_away():
 	""" compute_rollup deliberately does not round an even-length sample to an
 	integer: 62 and 62.5 are different samples. """
-	rollup = compute_rollup([_stat(1, avg_eapm=60), _stat(2, avg_eapm=65)], [])
-	assert "**62.5** median" in _line_with(scouting_report.render(rollup), "eAPM")
+	stats = [_stat(i, avg_eapm=60) for i in range(1, 4)] + \
+	        [_stat(i, avg_eapm=65) for i in range(4, 7)]
+	assert "**62.5** median" in _line_with(scouting_report.render(compute_rollup(stats, [])), "eAPM")
 
 
 def test_a_whole_median_renders_without_a_pointless_decimal():
-	rollup = compute_rollup([_stat(1, avg_eapm=60), _stat(2, avg_eapm=64)], [])
-	assert "**62** median" in _line_with(scouting_report.render(rollup), "eAPM")
+	stats = [_stat(i, avg_eapm=60) for i in range(1, 4)] + \
+	        [_stat(i, avg_eapm=64) for i in range(4, 7)]
+	assert "**62** median" in _line_with(scouting_report.render(compute_rollup(stats, [])), "eAPM")
 
 
 def test_the_apm_line_is_omitted_when_no_game_carried_an_eapm():
-	rollup = compute_rollup([_stat(1, avg_eapm=None)], [])
+	rollup = compute_rollup([_stat(i, avg_eapm=None) for i in range(1, 9)], [])
 	assert "eAPM" not in (scouting_report.render(rollup) or "")
 
 
-# ── the three splits ─────────────────────────────────────────────────────
+# ── the two sentences ────────────────────────────────────────────────────
 
 def _split_fixture(strategy_games, spawn_games, unit_games):
 	"""Rows giving each block exactly one key, at exactly the game count asked
@@ -230,7 +297,7 @@ def _split_fixture(strategy_games, spawn_games, unit_games):
 	total = max(strategy_games, spawn_games, unit_games)
 	stats, labels = [], []
 	for i in range(1, total + 1):
-		stats.append(_stat(i, winner=(i == 1), units=("Knight",) if i <= unit_games else ("Militia",)))
+		stats.append(_stat(i, winner=(i == 1), units=("Knight",) if i <= unit_games else ()))
 		if i <= strategy_games:
 			labels.append(_label(i, "archer_rush", "strategy"))
 		if i <= spawn_games:
@@ -238,57 +305,176 @@ def _split_fixture(strategy_games, spawn_games, unit_games):
 	return compute_rollup(stats, labels)
 
 
-def test_every_split_line_renders_with_its_win_loss_record():
+def test_the_wins_most_sentence_names_all_three_dimensions_with_their_records():
+	rendered = scouting_report.render(_rich())
+	wins = _line_with(rendered, "Wins most")
+
+	assert "opening **Archer Rush** (5W-1L)" in wins
+	assert "**spawning next to the enemy** (5W-2L)" in wins
+	assert "massing **Knight** (5W-3L)" in wins
+	assert wins.endswith(".")
+
+
+def test_a_spawn_reads_as_a_phrase_rather_than_as_a_label():
+	""" Spawn is not something a player chooses, so the clause has to say what
+	happened to them. "Top spawn: Near Enemy" was a heading over a dice roll;
+	"wins most when spawning next to the enemy" is a sentence about how they
+	play when it happens. """
 	rendered = scouting_report.render(_rich())
 
-	assert "Top strategy: **Archer Rush** · 5W-1L" in rendered
-	assert "Top spawn: **Near Enemy** · 5W-2L" in rendered
-	assert "Top unit: **Knight** · 5W-3L" in rendered
+	assert "spawning next to the enemy" in rendered
+	assert "Near Enemy" not in rendered and "spawn_near_enemy" not in rendered
 
 
-def test_only_the_top_key_of_each_block_reaches_the_reader():
-	""" compute_rollup ranks by games descending; the report is the top line,
-	not the whole list. Both keys here clear the floor, so the second one is
-	dropped by the renderer rather than by the aggregation. """
+def test_only_the_three_position_spawns_can_ever_reach_the_sentence():
+	""" The other eight stored spawn labels describe the MAP -- gold_poor,
+	near_stone, tight_villagers -- and "wins most when spawning stone-poor" is a
+	claim about the map generator. compute_rollup drops them from the blob, so
+	they cannot reach the reader even as a fallback. """
 	stats = [_stat(i, winner=True) for i in range(1, 13)]
-	labels = [_label(i, "archer_rush" if i <= 7 else "scout_rush", "strategy") for i in range(1, 13)]
+	labels = [_label(i, "spawn_gold_poor", "spawn") for i in range(1, 13)]
+	labels += [_label(i, "tight_villagers", "spawn") for i in range(1, 13)]
 	rollup = compute_rollup(stats, labels)
-	assert [s["key"] for s in rollup["strategies"]] == ["archer_rush", "scout_rush"]
 
+	assert rollup["spawns"] == []
+	assert "gold" not in (scouting_report.render(rollup) or "").lower()
+
+
+def test_the_loses_most_sentence_never_repeats_the_wins_most_pick():
+	""" "This is both what they are best and what they are worst at" is not a
+	fact about a player. """
+	rollup = _three_way()
+	wins = _line_with(scouting_report.render(rollup), "Wins most")
+	loses = _line_with(scouting_report.render(rollup), "Loses most")
+
+	assert "Trebuchet" in wins and "Trebuchet" not in loses
+	assert "Safe Castle" in loses and "Safe Castle" not in wins
+
+
+def _three_way():
+	"""One block holding three units that each rank first under a DIFFERENT
+	rule, so the three candidate selections are told apart rather than merely
+	exercised:
+
+	  Safe Castle  28W-22L  (50 games, 56%) -- the most WINS, and the most games
+	  Trebuchet    27W-10L  (37 games, 73%) -- the most wins per game at scale
+	  Arambai       5W-1L   ( 6 games, 83%) -- the highest RAW rate, on nothing
+
+	Ranking on wins picks Safe Castle; ranking on raw rate picks Arambai; the
+	shrunk rate picks Trebuchet. Only the last is a true sentence.
+	"""
+	stats, mid = [], 1
+	for unit, games, wins in (("Safe Castle", 50, 28), ("Trebuchet", 37, 27), ("Arambai", 6, 5)):
+		for i in range(games):
+			stats.append(_stat(mid, winner=(i < wins), units=(unit,)))
+			mid += 1
+	# 27 more games carrying no unit at all, which drag the player's own record
+	# to exactly 50%. Without them the baseline is the mean of these three units
+	# (65%) and the shrinkage pulls the 6-game fluke UP toward it instead of back
+	# -- the fixture would then agree with the raw rate and prove nothing.
+	for _ in range(27):
+		stats.append(_stat(mid, winner=False, units=()))
+		mid += 1
+	return compute_rollup(stats, [])
+
+
+def test_the_wins_most_pick_is_the_frequent_winner_not_the_small_sample_fluke():
+	""" MUTANT GUARD: ranking on the raw win rate. At a 5-game floor the extreme
+	rates are always the smallest samples, so a raw rate reliably picks the
+	6-game fluke over the 37-game strength. """
+	wins = _line_with(scouting_report.render(_three_way()), "Wins most")
+
+	assert "massing **Trebuchet** (27W-10L)" in wins
+	assert "Arambai" not in wins
+
+
+def test_the_wins_most_pick_is_not_simply_the_most_played():
+	""" MUTANT GUARD: ranking on absolute wins, which is what "wins the most
+	games" literally means and which is really a volume measure. Safe Castle has
+	both the most games and the most wins here, at a 56% rate -- and on real
+	production data the same rule picked a 40%-win strategy as a player's
+	strength, printing "wins most opening Safe Castle (12W-18L)". """
+	wins = _line_with(scouting_report.render(_three_way()), "Wins most")
+	assert "Safe Castle" not in wins
+
+
+def test_the_loses_most_pick_is_the_weakest_relative_to_the_players_own_form():
+	loses = _line_with(scouting_report.render(_three_way()), "Loses most")
+	assert "massing **Safe Castle** (28W-22L)" in loses
+
+
+def test_the_baseline_is_the_players_own_record_not_an_even_coin():
+	""" Shrinking a 40%-win player's clauses toward 50% would rank their
+	least-bad option as a strength. The prior is their own form over the same
+	window, so "wins most" means "better than they usually are". """
+	rollup = _three_way()
+	assert rollup["baseline"] == dict(games=120, wins=60), "an even record, by construction"
+
+
+def test_a_block_with_one_key_gives_a_wins_clause_and_no_loses_clause():
+	""" The worst is chosen from what is left after the best is taken, so a
+	single split cannot be both. """
+	rollup = _split_fixture(strategy_games=SPLIT_MIN_GAMES, spawn_games=0, unit_games=0)
 	rendered = scouting_report.render(rollup)
-	assert "Archer Rush" in rendered and "Scout Rush" not in rendered
+
+	assert "Wins most opening **Archer Rush**" in rendered
+	assert "Loses most" not in rendered
 
 
-def test_a_thin_strategy_is_dropped_while_the_other_two_lines_stay():
+def test_a_one_clause_sentence_reads_as_a_sentence():
+	rendered = scouting_report.render(
+		_split_fixture(strategy_games=SPLIT_MIN_GAMES, spawn_games=0, unit_games=0))
+	wins = _line_with(rendered, "Wins most")
+
+	assert wins == "Wins most opening **Archer Rush** (1W-4L)."
+	assert " and " not in wins and "," not in wins
+
+
+def test_a_two_clause_sentence_joins_with_and_and_no_comma():
+	rendered = scouting_report.render(
+		_split_fixture(strategy_games=SPLIT_MIN_GAMES, spawn_games=SPLIT_MIN_GAMES, unit_games=0))
+	wins = _line_with(rendered, "Wins most")
+
+	assert " and " in wins and "," not in wins
+
+
+def test_a_three_clause_sentence_joins_with_commas_and_a_final_and():
+	wins = _line_with(scouting_report.render(_rich()), "Wins most")
+
+	assert wins.count(",") == 1
+	assert wins.count(" and ") == 1
+	assert wins.index(",") < wins.index(" and ")
+
+
+def test_a_thin_strategy_drops_its_clause_while_the_other_two_stay():
 	rendered = scouting_report.render(_split_fixture(
 		strategy_games=SPLIT_MIN_GAMES - 1, spawn_games=SPLIT_MIN_GAMES, unit_games=SPLIT_MIN_GAMES))
 
-	assert "Top strategy" not in rendered
-	assert "Top spawn" in rendered and "Top unit" in rendered
+	assert "opening" not in rendered
+	assert "spawning" in rendered and "massing" in rendered
 
 
-def test_a_thin_spawn_is_dropped_while_the_other_two_lines_stay():
+def test_a_thin_spawn_drops_its_clause_while_the_other_two_stay():
 	rendered = scouting_report.render(_split_fixture(
 		strategy_games=SPLIT_MIN_GAMES, spawn_games=SPLIT_MIN_GAMES - 1, unit_games=SPLIT_MIN_GAMES))
 
-	assert "Top spawn" not in rendered
-	assert "Top strategy" in rendered and "Top unit" in rendered
+	assert "spawning" not in rendered
+	assert "opening" in rendered and "massing" in rendered
 
 
-def test_a_thin_unit_is_dropped_while_the_other_two_lines_stay():
+def test_a_thin_unit_drops_its_clause_while_the_other_two_stay():
 	rendered = scouting_report.render(_split_fixture(
 		strategy_games=SPLIT_MIN_GAMES, spawn_games=SPLIT_MIN_GAMES, unit_games=SPLIT_MIN_GAMES - 1))
 
-	assert "Top unit" not in rendered
-	assert "Top strategy" in rendered and "Top spawn" in rendered
+	assert "massing" not in rendered
+	assert "opening" in rendered and "spawning" in rendered
 
 
 def test_a_split_at_exactly_the_floor_still_renders():
-	""" The floor is a minimum, not a strict one -- a test that only ever asked
-	about 4 and 6 games would pass against either. """
+	""" The floor is a minimum, not a strict one. """
 	rendered = scouting_report.render(_split_fixture(
 		strategy_games=SPLIT_MIN_GAMES, spawn_games=0, unit_games=0))
-	assert "Top strategy" in rendered
+	assert "Archer Rush" in rendered
 
 
 def test_a_dropped_split_is_dropped_silently_with_no_low_sample_warning():
@@ -298,7 +484,7 @@ def test_a_dropped_split_is_dropped_silently_with_no_low_sample_warning():
 		strategy_games=2, spawn_games=SPLIT_MIN_GAMES, unit_games=SPLIT_MIN_GAMES))
 
 	lowered = rendered.lower()
-	for hedge in ("only", "few", "small sample", "so far", "just", "low"):
+	for hedge in ("few", "small sample", "so far", "just", "low"):
 		assert hedge not in lowered
 
 
@@ -311,35 +497,141 @@ def test_a_split_smaller_than_the_players_game_count_renders_without_complaint()
 	rollup = compute_rollup(stats, labels)
 
 	assert rollup["strategies"][0]["games"] == 8, "4 unresolved games are out of the split"
-	rendered = scouting_report.render(rollup)
-	# 5W-3L is 8 games; the player played 12, and the split line never says so.
-	strategy = _line_with(rendered, "Top strategy")
-	assert strategy == "Top strategy: **Archer Rush** · 5W-3L"
-	assert "12" not in strategy
+	wins = _line_with(scouting_report.render(rollup), "Wins most")
+	assert "opening **Archer Rush** (5W-3L)" in wins
+	assert "12" not in wins
 
 
 def test_a_stored_label_key_renders_as_a_readable_name():
-	rollup = _split_fixture(strategy_games=SPLIT_MIN_GAMES, spawn_games=SPLIT_MIN_GAMES, unit_games=0)
-
-	rendered = scouting_report.render(rollup)
+	rendered = scouting_report.render(
+		_split_fixture(strategy_games=SPLIT_MIN_GAMES, spawn_games=0, unit_games=0))
 	assert "archer_rush" not in rendered and "**Archer Rush**" in rendered
-	# The line already says "spawn"; the stored spawn_ prefix would say it twice.
-	assert "Top spawn: **Near Enemy**" in rendered
+
+
+def test_a_unit_name_is_never_title_cased_or_pluralised():
+	""" Unit names arrive as display names already. Title-casing mangles
+	"Hei Guang Cavalry"-style names subtly, and a naive plural turns Arambai and
+	Mangudai -- which are already plural -- into nonsense. """
+	stats = [_stat(i, winner=True, units=("Bombard Cannon",)) for i in range(1, 9)]
+	rendered = scouting_report.render(compute_rollup(stats, []))
+
+	assert "massing **Bombard Cannon**" in rendered
+	assert "Cannons" not in rendered
+
+
+# ── the window ───────────────────────────────────────────────────────────
+
+def test_a_game_older_than_the_window_is_not_in_the_report():
+	stats = [_stat(i, played_at=NOW - 10 * DAY) for i in range(1, 9)]
+	stats += [_stat(i, played_at=NOW - 200 * DAY) for i in range(9, 40)]
+	rollup = compute_rollup(stats, [], now=NOW, window_days=60)
+
+	assert rollup["baseline"]["games"] == 8
+	assert rollup["window_days"] == 60
+
+
+def test_an_undated_game_is_outside_every_window_rather_than_inside_this_one():
+	""" 19 production matches carry no date. Filing an unknown year into "the
+	last 60 days" is the one claim the window exists to make. """
+	stats = [_stat(i, played_at=None) for i in range(1, 9)]
+	rollup = compute_rollup(stats, [], now=NOW, window_days=60)
+
+	assert rollup["baseline"]["games"] == 0
+
+
+def test_the_window_cutoff_and_the_printed_window_cannot_disagree():
+	""" One parameter pair, not a precomputed cutoff plus a label to print
+	beside it: a blob saying "last 60 days" over a 30-day cutoff is wrong in the
+	one way none of its own numbers would reveal. """
+	stats = [_stat(i, played_at=NOW - 45 * DAY) for i in range(1, 9)]
+
+	assert compute_rollup(stats, [], now=NOW, window_days=30)["baseline"]["games"] == 0
+	assert compute_rollup(stats, [], now=NOW, window_days=60)["baseline"]["games"] == 8
+	assert compute_rollup(stats, [], now=NOW, window_days=30)["window_days"] == 30
+
+
+def test_the_window_reaches_the_splits_through_the_stat_rows_alone():
+	""" The filter is applied once, to the stat rows. A label whose game fell
+	out of the window has no slot to join to and drops with it -- so the splits
+	cannot end up describing a different span of time from the medals above
+	them. """
+	stats = [_stat(i, winner=True, played_at=NOW - 200 * DAY) for i in range(1, 13)]
+	labels = [_label(i, "archer_rush", "strategy") for i in range(1, 13)]
+	rollup = compute_rollup(stats, labels, now=NOW, window_days=60)
+
+	assert rollup["strategies"] == []
+	assert rollup["medal_rates"]["games_ranked"] == 0
+
+
+def test_a_linked_player_with_no_recent_game_is_told_that_not_told_to_link():
+	""" The state the window created, and the one that must not collapse into
+	either neighbour. They ARE linked and their history is right there; PENDING
+	would tell them to do something they have already done, and silence would
+	read as "we have nothing on you". """
+	stats = [_stat(i, played_at=NOW - 200 * DAY) for i in range(1, 40)]
+	rendered = scouting_report.render(compute_rollup(stats, [], now=NOW, window_days=60))
+
+	assert rendered == "No games in the last 60 days"
+	assert scouting_report.PENDING not in rendered
+
+
+def test_a_player_with_a_few_recent_games_is_told_how_few_rather_than_nothing():
+	""" Some games, none of the lines above their floor. The count says which it
+	is -- a quiet player, not a broken report -- without printing one figure
+	that rests on it. """
+	stats = [_stat(i, avg_eapm=None, has_production=False) for i in range(1, 3)]
+	rendered = scouting_report.render(compute_rollup(stats, [], now=NOW, window_days=60))
+
+	assert rendered == "Only 2 games in the last 60 days"
+
+
+def test_the_one_game_case_is_a_sentence_rather_than_a_spliced_plural():
+	""" The common shape of this state, and "Only 1 games" is the first thing a
+	reader notices. Two whole sentences rather than one with an "s" spliced in:
+	a translator handed "Only {games} game{s}" cannot render a language whose
+	plural is not a suffix. """
+	rollup = compute_rollup([_stat(1, avg_eapm=None, has_production=False)],
+	                        [], now=NOW, window_days=60)
+	assert scouting_report.render(rollup) == "Only 1 game in the last 60 days"
+
+
+def test_an_unwindowed_rollup_with_nothing_to_say_still_renders_no_field():
+	""" window_days is None for a lifetime rollup, and neither window sentence
+	can be reached from one -- there is no window to name. """
+	assert scouting_report.render(_blob()) is None
 
 
 # ── translation ──────────────────────────────────────────────────────────
 
-def test_every_rendered_line_goes_through_the_callers_translator():
-	""" Same convention as every other user-facing string in these files. """
+def test_every_rendered_string_goes_through_the_callers_translator():
+	""" Same convention as every other user-facing string in these files: the
+	translator sees whole, formattable sentences, never assembled fragments. """
 	seen = []
 
 	def gt(text):
 		seen.append(text)
 		return text
 
-	rendered = scouting_report.render(_rich(), gt)
-	assert len(seen) == len(_lines(rendered)) == 5
-	assert all("{" in s for s in seen), "the translator sees whole sentences, not fragments"
+	scouting_report.render(_rich(), gt)
+
+	assert "Wins most" in seen
+	assert "opening {name}" in seen and "massing {name}" in seen
+	assert "spawning next to the enemy" in seen
+	assert any("ranked games" in s for s in seen)
+	assert any("median" in s for s in seen)
+	assert all(s == s.strip() for s in seen), "no fragment is handed over with loose whitespace"
+
+
+def test_the_window_sentences_go_through_the_translator_too():
+	seen = []
+
+	def gt(text):
+		seen.append(text)
+		return text
+
+	stats = [_stat(i, played_at=NOW - 200 * DAY) for i in range(1, 40)]
+	scouting_report.render(compute_rollup(stats, [], now=NOW, window_days=60), gt)
+	assert "No games in the last {days} days" in seen
 
 
 # ── the player_rollups readers ───────────────────────────────────────────

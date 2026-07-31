@@ -26,14 +26,34 @@ import statistics
 
 from core.database import db
 
+from . import game_labels
+
 SPLIT_MIN_GAMES = 5
 BOARD_MIN_GAMES = 3
 
-# The five blocks a rollup carries. Enforced by write() rather than assumed,
+# How far back the scouting report looks. The report answers "how is this player
+# playing now", so a lifetime aggregate is the wrong measurement: the busiest
+# production player has 571 games going back years, and a strategy they abandoned
+# eighteen months ago outweighs the one they have played all month.
+#
+# 60 days rather than 30, measured rather than guessed. At 60 days 35 of 42
+# linked players have a game, 30 clear SPLIT_MIN_GAMES and the median player has
+# 25 games; at 30 days that falls to 29 / 26 / 13, and the number of players who
+# keep a complete three-clause sentence drops from 19 to 13. 90 days was also
+# measured and is nearly identical to 60 on this community's activity (1692 vs
+# 1556 games), so 60 is the shorter of two equivalent choices rather than a
+# compromise.
+#
+# ONLY player_rollups is windowed. metric_boards deliberately are not: a
+# leaderboard is a record, and a record that silently expires is not one.
+WINDOW_DAYS = 60
+
+# The seven blocks a rollup carries. Enforced by write() rather than assumed,
 # for the same reason game_stats/game_labels validate their row key sets: a
 # blob missing a block does not fail anywhere, it just renders as a silently
 # shorter scouting report.
-_ROLLUP_KEYS = ("medal_rates", "apm", "strategies", "spawns", "units")
+_ROLLUP_KEYS = ("medal_rates", "apm", "strategies", "spawns", "units",
+                "window_days", "baseline")
 
 # Rates are stored rounded to 4 decimal places -- 100x finer than any renderer
 # needs, and the exact counts stay recoverable because games_ranked ships
@@ -162,7 +182,23 @@ def _bump(counts, key, won):
 	tally["wins"] += 1 if won else 0
 
 
-def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES):
+def in_window(stat_row, window_start):
+	"""Whether this game falls inside the report's window.
+
+	AN UNDATED GAME IS OUTSIDE EVERY WINDOW, never inside the current one.
+	game_stats.played_at is nullable because 19 production matches genuinely have
+	no recorded date, and `(None or 0) >= window_start` is False for every
+	window_start after 1970 — deliberately, not incidentally. The alternative,
+	treating an unknown date as "recent enough", would file a game from an unknown
+	year into "the last 60 days", which is the one claim the window exists to make.
+
+	`window_start=None` disables the window entirely and is what makes every
+	pre-window caller and test still meaningful."""
+	return window_start is None or (stat_row.get("played_at") or 0) >= window_start
+
+
+def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES,
+                   now=None, window_days=WINDOW_DAYS):
 	"""One user's whole scouting report, in one community. Pure: no DB, no I/O.
 
 	`stat_rows` are game_stats rows for ONE user, already resolved across
@@ -197,10 +233,29 @@ def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES):
 	default and the constant cannot drift, and stays an argument so tests can
 	pin the floor's behaviour rather than the value.
 
-	Returns exactly the five contract blocks. The row's top-level `games`
-	column is len(stat_rows) and is deliberately NOT in the blob: it is a
-	column so task 4.7 can spot-check it with a COUNT(*) without parsing
-	JSON, and the caller stamps it in write()."""
+	`now` is what makes the report a report on the last `window_days` rather than
+	on all of history: games played before `now - window_days` are dropped.
+	Passing now=None disables the window and keeps every pre-window caller
+	meaningful. The two are ONE parameter pair rather than a precomputed cutoff
+	plus a label to print beside it, deliberately: those could disagree, and a
+	blob that says "last 60 days" over a 30-day cutoff is wrong in the one way
+	none of its numbers would reveal.
+
+	The cutoff is applied to the STAT rows ONLY — once, at the top. Everything
+	else follows for free,
+	because every other figure here is already derived from that set: the label
+	join tests membership of a stat slot, so an out-of-window game's labels drop
+	out with it, and the unit tallies iterate the stat rows directly. One filter,
+	one place, and no way for the three splits to end up describing a different
+	span of time from the medals above them.
+
+	Returns exactly the seven contract blocks. The row's top-level `games`
+	column is len(stat_rows) — the user's LIFETIME game count in this community,
+	not the windowed one — and is deliberately NOT in the blob: it is a column so
+	task 4.7 can spot-check it with a COUNT(*) without parsing JSON, and the
+	caller stamps it in write(). The windowed count lives in `baseline.games`."""
+	window_start = None if now is None else now - window_days * 86400
+	stat_rows = [r for r in stat_rows if in_window(r, window_start)]
 	ranked = [r for r in stat_rows if was_medal_eligible(r)]
 	games_ranked = len(ranked)
 
@@ -234,7 +289,21 @@ def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES):
 		bucket = splits.get(lr.get("kind"))
 		if bucket is None:
 			continue
-		_bump(bucket, lr.get("label"), winner_by_slot[slot])
+		label = lr.get("label")
+		# Spawn labels are narrowed to the three POSITION keys here, and this is
+		# the one place a rollup drops a stored label on display grounds. The
+		# other eight spawn labels describe the map rather than the player
+		# (gold_poor, near_stone, tight_villagers), and the scouting report reads
+		# its spawn line as "wins most when spawning X" — "wins most when spawning
+		# stone-poor" is a fact about the map generator.
+		#
+		# Consistent with this table rather than a new exception to it:
+		# player_rollups already applies SPLIT_MIN_GAMES, which is equally a
+		# display rule. game_labels keeps all eleven, per its own "storing is not
+		# displaying" rule, so nothing is lost — only this summary narrows.
+		if bucket is splits["spawn"] and label not in game_labels.POSITION_KEYS:
+			continue
+		_bump(bucket, label, winner_by_slot[slot])
 
 	units = {}
 	for r in stat_rows:
@@ -268,6 +337,24 @@ def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES):
 		strategies=_ranked_list(splits["strategy"], "key", split_min_games),
 		spawns=_ranked_list(splits["spawn"], "key", split_min_games),
 		units=_ranked_list(units, "unit", split_min_games),
+		# Self-describing on purpose. A renderer told the window separately could
+		# print "the last 60 days" over a blob computed at 30 and nothing would
+		# catch it — every number in it would still be real. None when the
+		# rollup covers all of history.
+		window_days=(None if now is None else window_days),
+		# The player's OWN record over the same window: the prior that
+		# bot/scouting_report.py regresses each split's win rate toward when it
+		# picks the wins-most and loses-most clauses. Stored as counts rather than
+		# a rate so the renderer can choose its own shrinkage without the blob
+		# having pre-rounded the evidence away, and so `games` doubles as the
+		# windowed game count every "no games / only N games" line needs.
+		#
+		# RESOLVED GAMES ONLY, matching the splits exactly (see has_known_outcome).
+		# A baseline computed over unresolved games too would sit below every
+		# split's rate by construction, and every clause would then look
+		# above-average.
+		baseline=dict(games=len(winner_by_slot),
+		              wins=sum(1 for won in winner_by_slot.values() if won)),
 	)
 
 

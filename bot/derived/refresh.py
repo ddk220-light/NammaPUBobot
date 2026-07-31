@@ -105,6 +105,15 @@ MAX_AGE, so every rollup is recomputed at least daily whatever else did or did
 not fire. Same statelessness, and it doubles as the backstop for any hook this
 module has not thought of, including ones added later and wired up wrong.
 
+MAX_AGE CARRIES A SECOND JOB SINCE THE ROLLUP BECAME WINDOWED (rollups.
+WINDOW_DAYS). A rollup can now go stale with nothing changing at all: the window
+slides forward every second, so a game eventually falls out of it and the stored
+blob describes a span that has moved. No comparison against inputs can see that
+-- no input moved -- and giving (3) a time term would make every rollup pending
+on every pass. The daily cap is exactly the right instrument: the window is 60
+days, so recomputing daily keeps it accurate to within one day at the boundary,
+which is a game or two on the oldest edge of a two-month sample.
+
 -- CADENCE: PER-USER vs PER-COMMUNITY ---------------------------------------
 
 player_rollups is per (community, user) and drains BATCH per pass. metric_boards
@@ -394,7 +403,21 @@ async def refresh_user(community_id, user_id, now):
 		return False
 
 	label_rows = await db.fetchall(_USER_LABELS_SQL.format(holes=holes), args) or []
-	rollup = rollups.compute_rollup(list(stat_rows), list(label_rows))
+	# THE WINDOW IS APPLIED IN THE COMPUTE, NOT IN THE TWO QUERIES ABOVE, and the
+	# difference decides what a dormant player sees. The queries fetch the user's
+	# whole history here, so "has this user any game in this community?" — the
+	# test that decides whether they have a row at all — stays a question about
+	# their history rather than about the last 60 days. A windowed query would
+	# make a linked player who simply has not played this month indistinguishable
+	# from an unlinked one: their row would be deleted, and /rank would tell them
+	# "Statistics pending linking" when they are linked and their games are right
+	# there. compute_rollup drops the out-of-window games; the row survives, and
+	# bot/scouting_report.py renders the dormant case in its own words.
+	#
+	# `games` therefore stays len(stat_rows) — the LIFETIME count, which is what
+	# task 4.7's COUNT(*) reconciliation checks. The windowed count is
+	# rollup["baseline"]["games"].
+	rollup = rollups.compute_rollup(list(stat_rows), list(label_rows), now=now)
 	await rollups.write(community_id, user_id, len(stat_rows), rollup, now)
 	return True
 
