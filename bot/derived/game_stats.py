@@ -19,6 +19,14 @@ def compute_game_stats(players, units, apm, computed_at):
 	player_number, with NO replay_match_id -- the caller stamps that, so the
 	same function serves the live ingest and the backfill without either one
 	teaching it where the id comes from.
+
+	Precondition, not enforced here: `bot.replay_stats` must already be
+	imported somewhere in the process before the first call, because the lazy
+	`from bot.replay_stats import card_scoring` below runs that package's
+	`db.ensure_table` side effect on its first import -- fine from the bot's
+	synchronous boot phase, but an offline `utils/` script (e.g. task 3.4's
+	backfill) that imports this module standalone must import bot.replay_stats
+	itself first, or hit "event loop is already running".
 	"""
 	from bot.replay_stats import card_scoring
 

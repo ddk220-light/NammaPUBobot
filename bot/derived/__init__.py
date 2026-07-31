@@ -47,7 +47,7 @@ db.ensure_table(dict(
 		dict(cname="villager_medal", ctype=db.types.int, notnull=False),  # 1|2|3
 		# [{unit, category, total}], top 3 military-only units by total, JSON-encoded.
 		dict(cname="top_units", ctype=db.types.dict, notnull=False),
-		dict(cname="computed_at", ctype=db.types.int, notnull=False),
+		dict(cname="computed_at", ctype=db.types.int, notnull=True),
 	],
 	primary_keys=["replay_match_id", "player_number"],
 ))
@@ -61,7 +61,7 @@ db.ensure_table(dict(
 		dict(cname="replay_match_id", ctype=db.types.int),
 		dict(cname="player_number", ctype=db.types.int),
 		dict(cname="label", ctype=db.types.str),
-		dict(cname="kind", ctype=db.types.str, notnull=False),  # 'strategy' | 'spawn'
+		dict(cname="kind", ctype=db.types.str, notnull=True),  # 'strategy' | 'spawn'
 		dict(cname="evidence", ctype=db.types.dict, notnull=False),
 		dict(cname="played_at", ctype=db.types.int, notnull=False),
 	],
