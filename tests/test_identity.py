@@ -18,6 +18,11 @@ from pathlib import Path
 
 import bot.identity as identity
 import bot.community as community
+# The shared pure module both bot/identity.py and core/migrations.py read
+# their CSV parsing from. Imported directly because parse_name_repairs is a
+# migration-side reader only — bot/identity.py deliberately does not re-export
+# it the way it does parse_seed_csv.
+import core.identity_seed as identity_seed
 # /link validates an id through this module before it writes anything. Imported
 # for real (it is pure + lazy-imports aiohttp, see tests/test_lobby_api.py) so
 # the tests below can monkeypatch fetch_profile on the actual dependency the
@@ -153,6 +158,57 @@ def test_parse_seed_csv_skips_row_with_non_numeric_user_id():
 	)
 	rows = identity.parse_seed_csv(text, "profile_map")
 	assert rows == []
+
+
+# ─── parse_name_repairs ─────────────────────────────────────────────────
+# The nick/game-name pair 004_identity_v2 needs to un-pollute
+# identities.aoe2_name. Deliberately NOT folded into parse_seed_csv: this
+# reader cares about a different set of columns (no user_id at all) and so
+# has a different notion of a usable row.
+
+def test_parse_name_repairs_returns_the_nick_and_the_game_name():
+	text = (
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"612690,622810653878648873,ddk,ddk220,seed,17\n"
+	)
+	assert identity_seed.parse_name_repairs(text) == [
+		dict(profile_id=612690, nick="ddk", aoe2_name="ddk220")
+	]
+
+
+def test_parse_name_repairs_keeps_a_row_whose_user_id_is_unusable():
+	"""parse_seed_csv drops a row with a malformed user_id, since it exists to
+	bind profile->user. A name repair never reads user_id, so dropping the row
+	would forfeit a perfectly good repair."""
+	text = (
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"612690,not-a-number,ddk,ddk220,seed,17\n"
+	)
+	assert identity_seed.parse_name_repairs(text) == [
+		dict(profile_id=612690, nick="ddk", aoe2_name="ddk220")
+	]
+
+
+def test_parse_name_repairs_skips_rows_missing_any_of_the_three_columns():
+	text = (
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"612690,1,,ddk220,seed,1\n"          # no nick -> nothing to match against
+		"209754,1,fenrir05,,seed,1\n"        # no game name -> nothing to repair to
+		"not-a-number,1,x,y,seed,1\n"        # no profile_id -> unaddressable
+	)
+	assert identity_seed.parse_name_repairs(text) == []
+
+
+def test_parse_name_repairs_trims_but_does_not_case_fold():
+	"""Whitespace in a hand-edited CSV is noise; case is not — `guruGreatest`
+	(the Discord nick) and `GuruGreatest` (the game name) are a real row."""
+	text = (
+		"profile_id,user_id,nick,aoe2_name,source,appearances\n"
+		"12297184,1, guruGreatest , GuruGreatest ,seed,31\n"
+	)
+	assert identity_seed.parse_name_repairs(text) == [
+		dict(profile_id=12297184, nick="guruGreatest", aoe2_name="GuruGreatest")
+	]
 
 
 def test_parse_seed_csv_skips_row_with_missing_profile_id():

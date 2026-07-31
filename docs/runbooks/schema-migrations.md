@@ -89,6 +89,17 @@ SELECT COUNT(*) FROM matches;           -- expect the pre-deploy count
 SELECT COUNT(*) FROM channel_settings;  -- expect >= 1, else no queue channels load
 ```
 
+A migration that only *moves* rows is invisible to those two. Check its own
+destination as well — e.g. after `004_identity_v2`:
+
+```sql
+SELECT COUNT(*) FROM match_replays;                              -- was 0 before 004
+SELECT COUNT(*) FROM rs_matches WHERE bot_match_id IS NOT NULL;  -- the upper bound it backfills from
+```
+
+The gap between those two is the rows 004 skipped (unknown match, or a channel
+not enrolled in a community); its log line reports both counts separately.
+
 And confirm the migration actually ran:
 
 ```bash

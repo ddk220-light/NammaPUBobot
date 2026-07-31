@@ -82,6 +82,41 @@ def parse_seed_csv(text: str, kind: str) -> list:
 	return rows
 
 
+def parse_name_repairs(text: str) -> list:
+	""" Parse data/profile_resolved.csv into a list of
+	{profile_id, nick, aoe2_name} dicts — the pair of names
+	core/migrations.py's 004_identity_v2 needs to tell a Discord nick that was
+	wrongly stored as a game name apart from a genuine game name. Pure: no
+	file I/O, no DB.
+
+	Deliberately separate from parse_seed_csv rather than an extra key on its
+	output, because the two readers disagree about what a usable row IS.
+	parse_seed_csv exists to bind profile_id -> user_id, so it drops a row
+	whose user_id is present but malformed; a name repair never looks at
+	user_id, and dropping such a row would forfeit a repair for no reason. It
+	instead requires all three of profile_id, nick and aoe2_name, since a row
+	missing either name has nothing to match against or nothing to repair to.
+	Widening parse_seed_csv to serve both would mean one function with two
+	notions of validity, and any later change to its row filter would silently
+	change which names get repaired.
+
+	Values are trimmed (the file is hand-edited) but never case-folded:
+	`guruGreatest` (a Discord nick) and `GuruGreatest` (the game name) are a
+	real row in that CSV, and the difference between them is the entire
+	signal. """
+	rows = []
+	for r in csv.DictReader(io.StringIO(text)):
+		profile_id = _to_int(r.get("profile_id"))
+		if profile_id is None:
+			continue
+		nick = (r.get("nick") or "").strip()
+		aoe2_name = (r.get("aoe2_name") or "").strip()
+		if not nick or not aoe2_name:
+			continue
+		rows.append(dict(profile_id=profile_id, nick=nick, aoe2_name=aoe2_name))
+	return rows
+
+
 def _to_int(value):
 	if value is None:
 		return None
