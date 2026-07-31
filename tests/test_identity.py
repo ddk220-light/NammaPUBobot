@@ -18,6 +18,10 @@ from pathlib import Path
 
 import bot.identity as identity
 import bot.community as community
+# `/identity status`' gated-features half counts off this community's rollups.
+# Imported for real (pure aggregation + DB reads, no Discord) so the tests
+# monkeypatch the module the command actually resolves at call time.
+import bot.derived.rollups as rollups
 # The command handlers refuse by raising bot.Exc.ValueError (the file's own
 # convention for an admin-facing refusal), so the tests need the real class to
 # assert on. Importable under CI: bot/exceptions.py is pure stdlib.
@@ -2043,10 +2047,26 @@ def test_identity_status_requires_moderator_permission(monkeypatch):
 	assert calls == []
 
 
-def test_identity_status_reports_linked_and_unlinked_counts(monkeypatch):
-	""" The live figures at the time of writing: 49 players in the window, 35
-	linked, 1 open conflict. """
-	admin = _load_admin_module(monkeypatch)
+def _rollup(strategies=(("archer_rush", 6, 4),), spawns=(("spawn_near_enemy", 6, 3),),
+            units=(("Knight", 6, 3),)):
+	""" A contract-shaped player_rollups blob. Every block is filled by
+	default, so a test about one gated line does not accidentally gate the
+	other two. """
+	def rows(entries, key_field):
+		return [{key_field: k, "games": g, "wins": w} for k, g, w in entries]
+
+	return dict(
+		medal_rates=dict(military=0.5, villager=0.2, games_ranked=10),
+		apm=dict(median_avg=46, median_peak=None, games_avg=11, games_peak=0),
+		strategies=rows(strategies, "key"), spawns=rows(spawns, "key"), units=rows(units, "unit"),
+	)
+
+
+def _status_setup(monkeypatch, coverage, window=(), scouted=None):
+	""" Wire `/identity status`' three reads: the community lookup, the
+	coverage counts, and the two the gated-features half needs — the window's
+	player ids and this community's rollups. Returns the channel ids the
+	command asked about. """
 	asked = []
 
 	async def _community_for_channel(channel_id):
@@ -2055,10 +2075,30 @@ def test_identity_status_reports_linked_and_unlinked_counts(monkeypatch):
 
 	async def _coverage_for_community(community_id, days=90):
 		assert (community_id, days) == (7, 90)
-		return dict(players=49, linked=35, unlinked=14, conflicts=1)
+		return coverage
+
+	async def _window_player_ids(community_id, days=90):
+		assert (community_id, days) == (7, 90)
+		return set(window)
+
+	async def _fetch_community(community_id):
+		assert community_id == 7
+		return dict(scouted or {})
 
 	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
 	monkeypatch.setattr(identity, "coverage_for_community", _coverage_for_community)
+	monkeypatch.setattr(identity, "window_player_ids", _window_player_ids)
+	monkeypatch.setattr(rollups, "fetch_community", _fetch_community)
+	return asked
+
+
+def test_identity_status_reports_linked_and_unlinked_counts(monkeypatch):
+	""" The live figures at the time of writing: 49 players in the window, 35
+	linked, 1 open conflict. """
+	admin = _load_admin_module(monkeypatch)
+	asked = _status_setup(
+		monkeypatch, dict(players=49, linked=35, unlinked=14, conflicts=1),
+		window=range(49), scouted={i: _rollup() for i in range(49)})
 	ctx = _FakeCtx(access_level=_Perms.MODERATOR, channel_id=4242)
 
 	asyncio.run(admin.identity_status(ctx))
@@ -2078,15 +2118,8 @@ def test_identity_status_omits_conflicts_when_there_are_none(monkeypatch):
 	""" "0 open conflicts" is noise on the one surface that exists to make a
 	real number stand out. """
 	admin = _load_admin_module(monkeypatch)
-
-	async def _community_for_channel(channel_id):
-		return 7
-
-	async def _coverage_for_community(community_id, days=90):
-		return dict(players=49, linked=49, unlinked=0, conflicts=0)
-
-	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
-	monkeypatch.setattr(identity, "coverage_for_community", _coverage_for_community)
+	_status_setup(monkeypatch, dict(players=49, linked=49, unlinked=0, conflicts=0),
+	              window=range(49), scouted={i: _rollup() for i in range(49)})
 	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
 
 	asyncio.run(admin.identity_status(ctx))
@@ -2094,24 +2127,99 @@ def test_identity_status_omits_conflicts_when_there_are_none(monkeypatch):
 	assert not any("conflict" in (f["name"] or "").lower() for f in ctx.replies[0].embed.fields)
 
 
+# ─── identity status: the gated-features half (spec section 3, stage 5a) ──
+# "Coverage plus which analysis features are gated below their thresholds."
+# Every figure here is counted off the community's own player_rollups, so a
+# community where nothing is gated has to be told exactly that -- which is
+# what a hardcoded list of features could never say.
+
+def _gated_field(ctx):
+	fields = [f for f in ctx.replies[0].embed.fields if "gated" in (f["name"] or "").lower()]
+	assert len(fields) == 1, "exactly one gated-features field"
+	return fields[0]["value"]
+
+
+def test_identity_status_names_the_features_gated_by_missing_stats(monkeypatch):
+	""" Four players seen; two have a rollup, and one of those two has no spawn
+	split above the floor. Nothing else is gated, and nothing else may be
+	claimed. """
+	admin = _load_admin_module(monkeypatch)
+	_status_setup(
+		monkeypatch, dict(players=4, linked=2, unlinked=2, conflicts=0),
+		window=(1, 2, 3, 4), scouted={1: _rollup(), 2: _rollup(spawns=())})
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_status(ctx))
+
+	gated = _gated_field(ctx)
+	assert "**2 of 4**" in gated and "Statistics pending linking" in gated
+	assert "**1 of 2**" in gated and "spawn" in gated.lower()
+	assert "strategy" not in gated.lower() and "unit" not in gated.lower()
+	assert "5" in gated, "name the floor a split has to clear, or the count means nothing"
+
+
+def test_identity_status_says_so_when_no_feature_is_gated(monkeypatch):
+	""" The case a hardcoded list gets wrong: every player seen has a full
+	report, so the command must say nothing is gated rather than recite the
+	features that could be. """
+	admin = _load_admin_module(monkeypatch)
+	_status_setup(monkeypatch, dict(players=2, linked=2, unlinked=0, conflicts=0),
+	              window=(1, 2), scouted={1: _rollup(), 2: _rollup()})
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_status(ctx))
+
+	gated = _gated_field(ctx)
+	assert "None" in gated
+	assert "Statistics pending linking" not in gated
+	assert not any(word in gated.lower() for word in ("strategy", "spawn", "unit"))
+
+
+def test_identity_status_gates_every_player_when_no_rollup_exists_at_all(monkeypatch):
+	""" A community whose refresh has never run: the scouting report is gated
+	for everyone, and the split lines are not gated for anybody, because
+	nobody has a report for them to be missing from. """
+	admin = _load_admin_module(monkeypatch)
+	_status_setup(monkeypatch, dict(players=3, linked=1, unlinked=2, conflicts=0),
+	              window=(1, 2, 3), scouted={})
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_status(ctx))
+
+	gated = _gated_field(ctx)
+	assert "**3 of 3**" in gated
+	assert not any(word in gated.lower() for word in ("strategy", "spawn", "unit"))
+
+
+def test_identity_status_gated_counts_follow_the_data_not_the_command(monkeypatch):
+	""" The same command against two different communities must produce two
+	different lists. """
+	admin = _load_admin_module(monkeypatch)
+	_status_setup(monkeypatch, dict(players=2, linked=2, unlinked=0, conflicts=0),
+	              window=(1, 2), scouted={1: _rollup(strategies=()), 2: _rollup(strategies=(), units=())})
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_status(ctx))
+
+	gated = _gated_field(ctx)
+	assert "strategy" in gated.lower() and "**2 of 2**" in gated
+	assert "unit" in gated.lower() and "**1 of 2**" in gated
+	assert "spawn" not in gated.lower()
+	assert "Statistics pending linking" not in gated, "everyone seen has a report"
+
+
 def test_identity_status_reports_a_community_with_no_recent_matches(monkeypatch):
 	""" 0 of 0 read as a coverage failure would send an admin hunting for
-	players who do not exist. """
+	players who do not exist. Nothing is gated either: a feature nobody could
+	have used is not gated, it is unused. """
 	admin = _load_admin_module(monkeypatch)
-
-	async def _community_for_channel(channel_id):
-		return 7
-
-	async def _coverage_for_community(community_id, days=90):
-		return dict(players=0, linked=0, unlinked=0, conflicts=0)
-
-	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
-	monkeypatch.setattr(identity, "coverage_for_community", _coverage_for_community)
+	_status_setup(monkeypatch, dict(players=0, linked=0, unlinked=0, conflicts=0))
 	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
 
 	asyncio.run(admin.identity_status(ctx))  # must not raise
 
 	assert _embed_text(ctx.replies[0].embed).strip(), "some readable answer, not a blank embed"
+	assert not any("gated" in (f["name"] or "").lower() for f in ctx.replies[0].embed.fields)
 
 
 def test_identity_status_reports_an_unenrolled_channel_without_erroring(monkeypatch):

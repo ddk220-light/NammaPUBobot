@@ -4,7 +4,6 @@ __all__ = [
 ]
 
 import io
-import re
 import asyncio
 from time import time
 from math import ceil
@@ -125,6 +124,33 @@ async def rank_detailed(ctx, player: Member = None):
 	await _rank_profile(ctx, player, detailed=True)
 
 
+async def _scouting_report(ctx, user_id):
+	""" The scouting-report field's text for `user_id`, read out of this
+	channel's community rollup — or None when there is no field to render.
+
+	Three outcomes, and they are three different statements:
+
+	  channel not enrolled in a community -> None. Nothing was ever measured
+	    here and nothing is pending; an unenrolled channel is the ordinary
+	    state for most channels (bot/community.py), not a linking gap.
+	  no rollup row                       -> "Statistics pending linking".
+	    The absence IS the signal: an unlinked player gets no row rather than
+	    a row of zeros (bot/derived/rollups.py delete(), identity v2 §5).
+	  a rollup                            -> its measured lines, each one
+	    carrying the sample it rests on (bot/scouting_report.py).
+
+	Split out of _rank_profile so the wiring between those three states is
+	testable without driving a two-hundred-line command, its leaderboard
+	reads, its prediction lookup and its chart render. """
+	from bot import community, scouting_report
+	from bot.derived import rollups
+
+	community_id = await community.community_for_channel(ctx.channel.id)
+	if community_id is None:
+		return None
+	return scouting_report.render(await rollups.fetch(community_id, user_id), ctx.qc.gt)
+
+
 async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	# Defer — gathering the profile + rendering the ELO chart can exceed the
 	# 3-second interaction window.
@@ -160,15 +186,6 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 		prof = await player_profile.gather_profile(ctx.qc.rating.channel_id, target.id)
 	except Exception as e:
 		log.error(f"gather_profile failed for {target.id}: {e}")
-
-	# Dashboard-overview pieces (persona/scout description + duo quadrants),
-	# same server-side data the web profile page shows. Best-effort too.
-	snapshot = {}
-	try:
-		from bot import web as web_dashboard
-		snapshot = await web_dashboard.player_overview_snapshot(target.id)
-	except Exception as e:
-		log.error(f"player_overview_snapshot failed for {target.id}: {e}")
 
 	# Mini version of the web profile: summary strip up top, then grouped
 	# sections mirroring the dashboard's layout.
@@ -229,26 +246,17 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 			inline=False
 		)
 
-	# Player description: the persona line always leads (same as the overview
-	# page banner); the generated scout read fills in below it, with its tag
-	# enumeration stripped, when available.
-	desc_lines = []
-	persona = snapshot.get("persona") or {}
-	scout = snapshot.get("scout_report") or {}
-	if persona.get("name") and persona.get("key") != "unscouted":
-		label = persona["name"]
-		if persona.get("epithet"):
-			label += f" · {persona['epithet']}"
-		desc_lines.append(f"**{label}**")
-		if persona.get("tagline"):
-			desc_lines.append(persona["tagline"])
-	if snapshot.get("parsed_matches") and scout.get("description"):
-		desc_lines.append(re.sub(r"\s*Recurring tags:[^.]*\.", "", scout["description"]).strip())
-	if desc_lines:
-		text = "\n".join(desc_lines)
-		if len(text) > 1000:
-			text = text[:997] + "…"
-		embed.add_field(name="📜 " + ctx.qc.gt("Scouting report"), value=text, inline=False)
+	# The scouting report: measured facts out of this community's
+	# player_rollups row, each carrying the sample it rests on. Best-effort
+	# like every other piece here — a rollup read that fails costs this field,
+	# not the whole profile.
+	try:
+		scouting = await _scouting_report(ctx, target.id)
+	except Exception as e:
+		log.error(f"scouting report failed for {target.id}: {e}")
+		scouting = None
+	if scouting:
+		embed.add_field(name="📜 " + ctx.qc.gt("Scouting report"), value=scouting, inline=False)
 
 	if detailed:
 		if civs.get("best"):
@@ -264,27 +272,18 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 				inline=True
 			)
 
-		# Duo/rival quadrants, same cards as the overview page. Falls back to the
-		# lighter teammate/nemesis aggregation when the snapshot is unavailable.
-		def _rel_line(label, rel, suffix):
-			return f"{label}: `{rel['nick']}` · {rel['winrate']}% {suffix} ({rel['games']} games)"
-
+		# Teammate/nemesis aggregation from gather_profile. The four dashboard
+		# duo/rival quadrant cards used to lead here, read off bot/web.py's
+		# player_overview_snapshot; that function was deleted with the persona
+		# stack it also carried (stage 5a), and the web overview page still
+		# renders the quadrants from its own handler.
 		mates = []
-		if snapshot.get("best_ally"):
-			mates.append(_rel_line("💞 " + ctx.qc.gt("Dream duo"), snapshot["best_ally"], ctx.qc.gt("together")))
-		if snapshot.get("worst_ally"):
-			mates.append(_rel_line("💔 " + ctx.qc.gt("Cursed duo"), snapshot["worst_ally"], ctx.qc.gt("together")))
-		if snapshot.get("worst_enemy"):
-			mates.append(_rel_line("😤 " + ctx.qc.gt("Nemesis"), snapshot["worst_enemy"], ctx.qc.gt("vs them")))
-		if snapshot.get("easiest_enemy"):
-			mates.append(_rel_line("💰 " + ctx.qc.gt("Free Elo"), snapshot["easiest_enemy"], ctx.qc.gt("vs them")))
-		if not mates:
-			if prof.get("best_mate"):
-				matenick, wins, games = prof["best_mate"]
-				mates.append(ctx.qc.gt("Best teammate") + f": `{matenick}` · {int(wins * 100 / games)}% of {games}")
-			if prof.get("nemesis"):
-				nemnick, losses = prof["nemesis"]
-				mates.append(ctx.qc.gt("Nemesis") + f": `{nemnick}` · {losses} losses")
+		if prof.get("best_mate"):
+			matenick, wins, games = prof["best_mate"]
+			mates.append(ctx.qc.gt("Best teammate") + f": `{matenick}` · {int(wins * 100 / games)}% of {games}")
+		if prof.get("nemesis"):
+			nemnick, losses = prof["nemesis"]
+			mates.append(ctx.qc.gt("Nemesis") + f": `{nemnick}` · {losses} losses")
 		if mates:
 			embed.add_field(name="🤝 " + ctx.qc.gt("Duos & rivals"), value="\n".join(mates), inline=False)
 
