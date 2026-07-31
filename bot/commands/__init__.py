@@ -10,3 +10,4 @@ from .player_details import *
 from .insights import *
 from .predictions import *
 from .changelog import *
+from .identity import *

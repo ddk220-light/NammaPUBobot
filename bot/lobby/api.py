@@ -40,7 +40,85 @@ async def fetch_match_by_id(game_id):
 		return None
 
 
+async def fetch_profile(profile_id):
+	"""GET /profiles/{profile_id} -> ``(status, data)``, never raises.
+
+	``status`` is one of:
+	  "ok"          -- data is ``{"profile_id": int, "name": str}`` (name may be
+	                   "" when the API omits it)
+	  "not_found"   -- the id does not exist; data is None
+	  "unavailable" -- anything else (non-200/404 status, timeout, network
+	                   error, unreadable body); data is None
+
+	The three-way result exists for `/link` (bot/commands/identity.py): "your id
+	is wrong" and "the AoE2 service is down" must never be conflated, because
+	only the first is the player's problem to fix. A bare None return could not
+	tell them apart. Lazy aiohttp import, same as fetch_match_by_id.
+
+	This function is I/O ONLY -- every response-to-outcome decision lives in the
+	pure _classify() below, so the mapping that decides what a player is told is
+	unit-testable without a network."""
+	import aiohttp
+
+	url = f"{AOE2_API}/profiles/{profile_id}"
+	try:
+		async with aiohttp.ClientSession(headers=_UA) as session:
+			async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+				status = resp.status
+				# Only a 200 body is ever decoded: "not_found" must rest on the
+				# 404 STATUS alone, never on whether that body happens to parse.
+				payload = await resp.json() if status == 200 else None
+	except (aiohttp.ClientError, TimeoutError, ValueError) as e:
+		# Every network failure lands here and MUST report "unavailable". An "ok"
+		# here would write a binding nothing validated -- the single thing this
+		# whole validation path exists to prevent.
+		log.warning(f"fetch_profile({profile_id}) failed: {e}")
+		return "unavailable", None
+
+	result = _classify(status, payload)
+	if result[0] == "unavailable":
+		log.warning(f"fetch_profile({profile_id}) got an unusable HTTP {status} response")
+	return result
+
+
 # ── pure parsers (no I/O) ────────────────────────────────────────────────
+
+def _classify(status, payload):
+	"""(HTTP status, decoded 200 body) -> the ``(status, data)`` fetch_profile
+	returns. Pure: no I/O, no logging.
+
+	404 is the ONLY signal that means "no such profile". Anything else that is
+	not a readable 200 -- a 500, a 400, an unexpected body -- proves nothing
+	about the id, so it reports "unavailable" rather than blaming a number that
+	may be perfectly good and sending the player hunting for a new one."""
+	if status == 404:
+		return "not_found", None
+	if status != 200:
+		return "unavailable", None
+	if (parsed := _parse_profile(payload)) is None:
+		return "unavailable", None
+	return "ok", parsed
+
+
+def _parse_profile(payload):
+	"""The /profiles/{id} 200 body -> ``{"profile_id": int, "name": str}``, or
+	None for anything that is not a profile.
+
+	The 404 body echoes the requested id back (``{"success": false, "error":
+	"profile couldn't be found", "profileId": 999999999}``), so the presence of
+	``profileId`` proves nothing -- the explicit failure markers are checked
+	first. ``name`` is the real in-game name; it is display-only (identities
+	.aoe2_name) and never an input to matching."""
+	if not isinstance(payload, dict):
+		return None
+	if payload.get("success") is False or payload.get("error"):
+		return None
+	try:
+		profile_id = int(payload["profileId"])
+	except (KeyError, TypeError, ValueError):
+		return None
+	return {"profile_id": profile_id, "name": str(payload.get("name") or "")}
+
 
 def parse_iso(s):
 	"""ISO-8601 (optionally trailing 'Z') -> unix seconds (int), or None."""

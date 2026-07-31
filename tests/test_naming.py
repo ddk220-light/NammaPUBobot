@@ -14,7 +14,23 @@ OLD_NAMES = [
 	"qc_lobbies", "qc_quiz_posts", "qc_quiz_answers", "qc_quiz_config",
 	"qc_prediction_posts", "qc_prediction_votes", "on_dublicate",
 	"bot_player_commentary", "disabled_guilds", "leaderboard_alternate", "alt_ratings",
+	# Retired identity store (identity v2, task 2.5.7): no longer declared or
+	# queried anywhere, since `identities` is the sole answer to "who is this
+	# person", and dropped by a later migration. Guarded here so a query cannot
+	# come back after the table is gone, which would be a runtime error rather
+	# than merely stale data. core/migrations.py names it forever (the drop
+	# migration) and is allowlisted.
+	"qc_profile_map",
 ]
+# `rs_profiles` — the OTHER table retired by task 2.5.7 — is deliberately absent
+# for the same reason as `players` and `noadds` above: it is a substring of
+# ordinary identifiers this codebase already uses (`_match_players_profiles` in
+# bot/lobby/completed.py, `..._members_profiles_...` in tests/test_identity.py),
+# so a substring guard on it fires on legitimate code. Its retirement is
+# enforced by tests/test_data_registry.py instead, which compares actual
+# ensure_table declarations against core/data_registry.py: re-declaring the
+# table without a registry entry fails, and adding the entry back is a
+# deliberate act rather than an accident.
 # Whole-file exemptions, kept to the two files that must name old tables to do
 # their job. Everything else stays fully guarded.
 _ALLOW = (

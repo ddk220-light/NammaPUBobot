@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Async DB layer for replay-stats: enable flag, find-next, idempotent per-match write,
-ingest status bookkeeping, and rs_profiles lookup. All access via core.database.db,
-except the profile_id->user_id read, which goes through the identity resolver
-(bot/identity.py) instead of querying rs_profiles directly."""
+and ingest status bookkeeping. All access via core.database.db, except everything
+identity — both the profile_id->user_id read and the write-back of what this parse
+observed go through the identity resolver (bot/identity.py), which is the single
+store answering "who is this person"."""
 import time
 
 from bot import identity
@@ -93,21 +94,22 @@ async def load_profile_user_map(profile_ids):
 
 
 async def _learn_from_ingest(players, profmap):
-    """Feed every profile_id this ingest resolved to a Discord user back into
-    the identity resolver (bot/identity.py) -- the "ingest learning" writer
-    that module's docstring describes but that never actually existed here.
+    """Refresh `identities` with what THIS replay just observed, for every
+    profile the resolver already binds to a Discord user.
 
-    profmap already comes from load_profile_user_map, i.e. from
-    identity.user_for_profile, so this can never discover a brand-new
-    mapping -- it reconfirms one the resolver already knows, at the same
-    'learned' tier, refreshing aoe2_name/last_seen_at with what THIS parse
-    just observed. That reconfirmation is not idle busywork: profile_upserts
-    below builds rs_profiles.user_id FROM profmap and writes it with
-    on_duplicate='replace', so if `identities` were ever missing a mapping
-    rs_profiles previously held, that write would silently wipe it rather
-    than merely fail to add one. Routing every resolved profile back through
-    learn() keeps the resolver current so that gap cannot open in the first
-    place.
+    What it does now that the legacy replay-side profile table is gone: profmap
+    comes from load_profile_user_map, i.e. from identity.user_for_profile, so
+    this can never discover a brand-new mapping. It re-asserts a binding the resolver
+    already knows, at the same 'learned' tier, which per identity.learn()'s
+    "same or lower tier, same user" branch updates exactly two things --
+    aoe2_name and last_seen_at. That is the point: `identities.aoe2_name` is
+    supposed to be what this account is called IN THE GAME, and this ingest
+    holds the freshest possible answer, straight out of the replay
+    (extract_match sets `identity` from the parsed player's own name and
+    nothing else -- see utils/replay_quiz/extract.py's docstring for why a
+    Discord nick may never appear here again). last_seen_at then records that
+    the profile was genuinely seen playing just now, which is what
+    /identity status' coverage window is measured against.
 
     Best-effort per player: an identity write failing must never break
     ingest -- the raw parse output write_match already wrote is irreplaceable
@@ -172,9 +174,6 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     apm = shape.apm_rows(aoe2_id, extracted.get("apm", []), p2p)
     if apm:
         await db.insert_many("rs_player_apm", apm, on_duplicate="replace")
-    profs = shape.profile_upserts(extracted["players"], profmap, parsed_at)
-    if profs:
-        await db.insert_many("rs_profiles", profs, on_duplicate="replace")
     await _learn_from_ingest(extracted["players"], profmap)
     try:
         from . import classifications
@@ -191,4 +190,20 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
         await persona_store.refresh_match_users(aoe2_id)
     except Exception as e:
         log.error(f"Replay-stats persona refresh failed for aoe2 match {aoe2_id}: {e}")
+    # A newly paired match is new evidence for the identity deduction solver
+    # (bot/identity_solver.py) -- it is what links players in a community with
+    # no seed CSVs and no admin willing to curate one. Run it last, after the
+    # match_replays link above exists, so this ingest is part of the evidence.
+    # run_for_match never raises and skips quietly when the match's channel is
+    # not enrolled in a community; the guard here is the same one every other
+    # optional post-step in this function carries, because the raw parse
+    # already written above is irreplaceable (replays 404 upstream once they
+    # expire) and nothing optional may cost us it.
+    if bot_match_id is not None:
+        try:
+            from bot import identity_solver
+            await identity_solver.run_for_match(bot_match_id)
+        except Exception as e:
+            log.error(f"Identity solver run failed for bot match {bot_match_id} "
+                      f"(aoe2 match {aoe2_id}): {e}")
     return len(pg)

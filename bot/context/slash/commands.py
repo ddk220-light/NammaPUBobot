@@ -350,28 +350,47 @@ async def _phrases_clear(
 # identity -> ...
 
 @groups.admin_identity.subcommand(
-	name='link', description='Manually link a Discord member to an AoE2 profile id.'
+	name='link', description='Link a Discord member to an AoE2 profile id, replacing any other link.'
 )
 async def _identity_link(
 		interaction: Interaction,
 		member: Member = SlashOption(verify=False),
 		profile_id: int = SlashOption(description='AoE2 profile id.'),
-		force: bool = SlashOption(
-			description='Reassign even if the profile is already linked to a different member.',
+		additional: bool = SlashOption(
+			description='Add this as a second account instead of replacing the member\'s other profiles.',
 			required=False, default=False
 		)
 ): await run_slash(
-	bot.commands.identity_link, interaction=interaction, member=member, profile_id=profile_id, force=force
+	bot.commands.identity_link, interaction=interaction, member=member, profile_id=profile_id,
+	additional=additional
 )
 
 
 @groups.admin_identity.subcommand(
-	name='show', description="Show a member's known AoE2 profiles and channel nick."
+	name='unlink', description='Remove a member\'s link to an AoE2 profile id, with no replacement.'
+)
+async def _identity_unlink(
+		interaction: Interaction,
+		member: Member = SlashOption(verify=False),
+		profile_id: int = SlashOption(description='AoE2 profile id.')
+): await run_slash(bot.commands.identity_unlink, interaction=interaction, member=member, profile_id=profile_id)
+
+
+@groups.admin_identity.subcommand(
+	name='show', description="Show a member's known AoE2 profiles, names and confidence."
 )
 async def _identity_show(
 		interaction: Interaction,
 		member: Member = SlashOption(verify=False)
 ): await run_slash(bot.commands.identity_show, interaction=interaction, member=member)
+
+
+@groups.admin_identity.subcommand(
+	name='status', description='How many recent players are linked to an AoE2 profile.'
+)
+async def _identity_status(
+		interaction: Interaction,
+): await run_slash(bot.commands.identity_status, interaction=interaction)
 
 
 @groups.admin_identity.subcommand(
@@ -459,6 +478,17 @@ async def _stats_undo_match(
 
 
 # root commands
+
+@dc.slash_command(
+	name='link', description='Link your Discord account to your AoE2 profile.', **guild_kwargs
+)
+async def _link(
+		interaction: Interaction,
+		profile_id: int = SlashOption(
+			description='Your AoE2 profile id. Leave empty and I will show you how to find it.',
+			required=False, default=None)
+): await run_slash(bot.commands.link, interaction=interaction, profile_id=profile_id)
+
 
 @dc.slash_command(name='add', description='Add yourself to the channel queues.', **guild_kwargs)
 async def _add(

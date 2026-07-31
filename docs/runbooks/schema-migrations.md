@@ -89,6 +89,31 @@ SELECT COUNT(*) FROM matches;           -- expect the pre-deploy count
 SELECT COUNT(*) FROM channel_settings;  -- expect >= 1, else no queue channels load
 ```
 
+A migration that only *moves* rows is invisible to those two. Check its own
+destination as well — e.g. after `004_identity_v2`:
+
+```sql
+SELECT COUNT(*) FROM match_replays;                              -- was 0 before 004
+SELECT COUNT(*) FROM rs_matches WHERE bot_match_id IS NOT NULL;  -- the upper bound it backfills from
+```
+
+Do **not** assume the gap between those two is all one thing. 004's log line
+breaks it into four causes, and they have different fixes:
+
+```
+N of M match_replays pairing(s) verified present from R paired rs_matches row(s)
+  (skipped A with no matches row, B whose channel is not enrolled in a community,
+   C sharing a bot match id with an already-taken pairing;
+   D already linked to a different replay)
+```
+
+`A`/`B` are the ordinary skips. `C` means two `rs_matches` rows claim the same
+bot match — `match_replays` is keyed `(community_id, match_id)` so only one can
+be stored, and each collapse is also logged as its own warning naming the match.
+`D` means the live writer had already linked that match to a different replay
+and `INSERT IGNORE` correctly left it alone. `N` is read back **from the table**
+after the write, so it is what landed, not what the migration intended.
+
 And confirm the migration actually ran:
 
 ```bash

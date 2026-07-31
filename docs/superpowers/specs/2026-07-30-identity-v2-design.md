@@ -109,8 +109,9 @@ Registered as a bare top-level `/link` (repo convention: no prefixes).
      recording the attempt.
    - Valid and unclaimed → bind at `self` tier. The confirmation echoes the
      profile's current in-game name from validation — "Linked to profile
-     2593442 (*HenryTheGreat*) — https://www.aoe2insights.com/user/2593442/" —
-     so a wrong-but-existing id is caught by the player's own eyes.
+     2593442 (*HenryTheGreat*) —
+     https://www.aoe2insights.com/user/relic/2593442/" — so a
+     wrong-but-existing id is caught by the player's own eyes.
 3. **Already linked** (with or without an id) → view-only: current profile id,
    observed name, insights URL, and "only an admin can change this." A player
    can always verify who they are linked to; they can never change it.
@@ -152,16 +153,37 @@ ids with team + outcome on the other.
 - *Team + outcome*: the winning team's profiles map to the winning team's
   users, likewise losers (the winner orientation is known on both sides).
 
-**Deduction**: intersect constraints across all of the community's paired
-matches. Team shuffles and attendance differences split the candidate sets;
-this pins individuals without any anchor player — eight strangers resolve in
-roughly three or four varied games.
+**Deduction** (as built — this replaces the set-intersection design below it):
+**evidence scoring**, not set intersection. Intersection was written first and
+abandoned during implementation: a single mispaired match empties a candidate
+set permanently, so one bad pairing silently destroys every deduction that
+touched it, and the real data has 6-in-1107 unbalanced pairings plus
+out-of-band substitutions. Scoring degrades instead of collapsing. For each
+unbound profile, count the users who were on its side of the result in every
+usable paired match; the answer is the top-scoring user. Team shuffles and
+attendance differences separate the counts, so this still pins individuals
+without any anchor player.
 
-**Write rule**: bind at `learned` only when exactly one candidate remains for a
-profile **and** the deduction is supported by at least two paired matches (one
-mispaired game must never create a binding alone). An empty candidate set is a
-contradiction — evidence that a pairing is wrong: no writes from the
-contradicted subset, and a conflict row flags it for the admin.
+**Write rule** (as built): bind at `learned` only when the top candidate clears
+all three floors — `MIN_GAMES = 3` paired matches, `MIN_RATIO = 0.90` of them
+on this profile's side, and `MIN_MARGIN = 0.50` of them ahead of the runner-up.
+All three are inclusive (`>=`) and all three are measurements against the
+flagship's 1101 usable matches, not tastes; `bot/identity_solver.py`'s docstring
+carries the full distribution. Two further rules then veto:
+
+1. **Stability.** The whole scoring runs twice, with and without the per-match
+   exclusion of already-bound users. A binding lands only when both runs name
+   the same user. A disagreement means the conclusion rested on the existing
+   bindings being right — which is exactly when one wrong `manual` typo can
+   manufacture a maximally confident wrong answer.
+2. **No second profile.** A conclusion that would hand one user a *second*
+   profile is the signature of a 1-for-1 out-of-band substitution, which no
+   roster-size check can see. Genuine multi-account players are rare and
+   enumerable, so this is never auto-applied.
+
+Neither veto discards anything: both record the claim in `identity_conflicts`
+for an admin. A profile that simply fails the floors records nothing — there is
+no disagreement to report, only insufficient evidence.
 
 **Runs**: after each ingested paired match, and after every new `self`/`manual`
 link — a fresh link is a new constraint that can immediately resolve teammates.
@@ -181,6 +203,20 @@ Stateless: a pure function over stored raw data, no solver state tables.
 - Analysis output for an unlinked player reads exactly
   **"Statistics pending linking"** — scouting report, match-card attribution,
   player-quiz eligibility, web profile alike.
+
+  **NOT IMPLEMENTED IN STAGE 2.5, deliberately — it lands with the stage-5
+  consumer cutover.** The string appears nowhere in `bot/` today and that is
+  correct, not an oversight: every surface it belongs on (scouting report,
+  match-card attribution, player-quiz eligibility, web profile) still reads
+  through the pre-v2 paths and has no notion of "this player is unlinked" to
+  branch on. Stage 5 is where those consumers start resolving profile → user
+  through `identities` at refresh time, which is the first moment an unlinked
+  player is a *distinguishable case* rather than simply an absent row. Adding
+  the string earlier would mean inventing that branch in four places and then
+  rewriting all four. Stage 2.5 ships the number instead — `/identity status`
+  reports how many players in the last 90 days are unlinked, which is the
+  admin-facing half of this requirement and is implemented. The player-facing
+  half is a stage-5 acceptance criterion; do not close stage 5 without it.
 
 ## 6. Retirements pulled forward into this stage
 

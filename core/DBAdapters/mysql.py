@@ -23,7 +23,13 @@ reference_options = dict(
 	SET_DEFAULT='SET DEFAULT'
 )
 
-table_blank = dict(tname=None, columns=[], primary_keys=[], foreign_keys=[])
+# `unique_keys` is a list of (index_name, [column, ...]) — composite UNIQUE
+# indexes, which the per-column `unique` flag cannot express. Honoured by
+# create_table only, exactly like `primary_keys`: _ensure_table's job on an
+# existing table is limited to adding missing COLUMNS, and changing a key on a
+# populated table is a migration's decision (it can fail on the data), never
+# something an import-time declaration should attempt behind an operator's back.
+table_blank = dict(tname=None, columns=[], primary_keys=[], foreign_keys=[], unique_keys=[])
 column_blank = dict(cname=None, ctype=Types.str, notnull=False, unique=False, autoincrement=False, default=None)
 fkey_blank = dict(cname=None, refTable=None, refColumn=None, on_delete=None, on_update=None)
 
@@ -151,10 +157,14 @@ class Adapter:
 		columns = [self._mysql_column({**column_blank, **col}) for col in table['columns']]
 		fkeys = ["FOREIGN KEY " + self._mysql_fkey({**fkey_blank, **fkey}) for fkey in table['foreign_keys']]
 		pkeys = ", PRIMARY KEY(" + ", ".join("`{}`".format(k) for k in table['primary_keys']) + ')' if len(table['primary_keys']) else ''
+		ukeys = "".join(
+			", UNIQUE KEY `{}` ({})".format(name, ", ".join("`{}`".format(c) for c in cols))
+			for name, cols in table['unique_keys']
+		)
 
 		request = "CREATE TABLE {tname} ({tdeskr})".format(
 			tname=table['tname'],
-			tdeskr=", ".join((columns + fkeys)) + pkeys
+			tdeskr=", ".join((columns + fkeys)) + pkeys + ukeys
 		)
 
 		await self.execute(request)

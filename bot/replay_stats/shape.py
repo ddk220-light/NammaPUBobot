@@ -88,8 +88,3 @@ def apm_rows(aoe2_match_id, apm, pnum2profile):
     """Per-minute eAPM buckets -> rs_player_apm rows. The PK is
     (match, player, minute), so extract_match's already-unique buckets need no seq."""
     return _long_rows(aoe2_match_id, apm, pnum2profile, _APM_FIELDS)
-
-
-def profile_upserts(players, profmap, now):
-    return [dict(profile_id=p["profile_id"], user_id=profmap.get(p["profile_id"]),
-                 name=p.get("identity"), last_seen_at=now) for p in players]

@@ -851,7 +851,12 @@ via a new `fetch_profile` in `bot/lobby/api.py` — pin the aoe2companion
 endpoint during elaboration and verify it live before coding against it);
 admin `/identity link` gains `additional` flag and atomic-relink semantics;
 new `/identity unlink` and `/identity status`. Copy for gated analysis
-surfaces is exactly **"Statistics pending linking"**.
+surfaces is exactly **"Statistics pending linking"** — **deferred to stage 5,
+not shipped in 2.5**: no consumer resolves profile → user through `identities`
+yet, so no surface can tell an unlinked player apart from an absent row to
+branch on. See spec §5 for the full reasoning. Stage 2.5 ships the admin-facing
+half (`/identity status`'s unlinked count); the player-facing string is a
+stage-5 acceptance criterion.
 
 **Kill list (all verified live in the audit):** `bot/replay_stats/jobs.py`'s
 `_load_resolved` + the `utils/replay_quiz/extract.py` resolved-CSV plumbing it
@@ -863,13 +868,171 @@ Also ride-along audit fixes: registry `writers` for `identities`,
 `identity_conflicts`, `player_ratings`; swap `store.py`'s
 rs_profiles-write/learn ordering (moot once the write dies, verify).
 
-**Tasks:** 2.5.1 elaborate → 2.5.2 lattice + learn()/unlink/relink/link_self
-(TDD on the tightened rules) → 2.5.3 migration 004 (repair + drops) →
-2.5.4 `/link` + validation client → 2.5.5 admin commands + status →
-2.5.6 solver + wiring (delete eliminate/watcher inference) → 2.5.7 kill list +
-web cutover → 2.5.8 deploy + verify (run `/link` with a bad id, a valid id,
-and as an already-linked player against prod; confirm dropped tables gone,
-repaired names correct by SELECT, no CSV reads in `railway ssh` grep).
+## Task 2.5.1 — Elaboration (DONE; facts pinned live 2026-07-30)
+
+**API, verified by curl (do not re-derive):**
+`GET https://data.aoe2companion.com/api/profiles/{id}` — 200 →
+`{"name":"ddk220","profileId":612690,"country":"us","games":"2647",...}`
+(`name` is the REAL in-game name); 404 → `{"success":false,"error":"profile
+couldn't be found","profileId":N}`; 400 → validation error (non-numeric).
+`/link` MUST distinguish 404 (bad id → error + instructions) from
+network/timeout/5xx (transient → "try again later"), writing on neither.
+Human verify URL: `https://www.aoe2insights.com/user/relic/{profile_id}/` —
+format proven in production by `bot/civ_sync.py:295`, which parses exactly
+this shape out of LobbyBOT embeds. aoe2insights is Cloudflare-protected:
+fine for humans, unusable as an API.
+
+**Solver thresholds — CALIBRATED ON REAL DATA, do not invent new numbers:**
+`MIN_GAMES = 3`, `MIN_RATIO = 0.90`, `MIN_MARGIN = 0.50`. Prototyped over the
+1101 usable paired matches: binds 11 of 39 unlinked profiles, all with
+ratio 0.93–1.00 and margin 0.76–1.00. There is a natural gap in the real
+distribution between margin 0.76 (weakest accepted) and 0.33 (strongest
+rejected) — MIN_MARGIN=0.50 sits in that gap. Independent name-corroboration
+of the 11: ~8 show visible name overlap; the other 3 have no name
+relationship at all, which is the population this solver exists to serve.
+
+> **Superseded by measurement — `bot/identity_solver.py`'s module docstring is
+> the authority, not this paragraph.** Re-measured against the shipped module:
+> the "11 of 39 at margin 0.76–1.00" figures describe only the seeded scenario
+> (48 curated pairs already in `known`), which is the *least* interesting one.
+> From a cold start — the partner-community case this feature exists for — the
+> accepted band runs down to **0.50**, with three bindings sitting exactly ON
+> the floor. The gap is also **conditional**: "nothing rejected above 0.33"
+> holds only among profiles that already clear ratio ≥ 0.90; unconditioned, the
+> strongest rejected margin is **0.65**. The thresholds stand; the "wide clean
+> gap" framing does not.
+
+**Strict intersection was tried and REJECTED**: it produced 127 contradictions
+and 11 empty candidate sets on real data (substitutes and lobby guests mean a
+profile's owner is not on the matching side in literally every game). Scoring
+with a margin is the design; do not "simplify" it back to intersection.
+
+**Ordering constraint (binding):** migration 004's DROPs must land in commits
+AFTER the declarations/writers are removed, else `ensure_table` recreates the
+tables at import. Hence the task order below puts the kill list before the
+migration.
+
+### Task 2.5.2 — Lattice + write rules in `bot/identity.py`
+
+Files: `bot/identity.py`, `core/identity_seed.py`, `tests/test_identity.py`.
+- `CONFIDENCE_ORDER = ("seed", "learned", "self", "manual")`.
+- `learn()` tightening: equal rank + DIFFERENT user no longer overwrites —
+  keep the binding, record an `open` conflict. Equal rank + SAME user still
+  refreshes name/`last_seen_at`. Strictly-higher rank overwrites and records
+  the displaced owner as `superseded` (only when the owner actually changes).
+- New: `link_self(profile_id, user_id, observed_name) -> bool` (False + `open`
+  conflict when the profile is owned by someone else); `unlink(profile_id)`
+  (user_id→NULL, confidence→`seed`, prior claim recorded `unlinked`);
+  `relink(profile_id, user_id, additional=False)` — `manual` tier, atomic:
+  supersedes the profile's prior owner and, unless `additional`, every OTHER
+  profile currently owned by that member.
+- DELETE `set_nick`, `nick_for`, and the `identity_aliases` ensure_table
+  block. Update `identity_show` to drop its Nick field in this same commit.
+- Tests to ADD (names binding): `test_learn_equal_rank_different_user_no_longer_overwrites`,
+  `test_learn_equal_rank_same_user_still_refreshes`,
+  `test_link_self_binds_an_unowned_profile`,
+  `test_link_self_refuses_and_records_when_owned_by_another`,
+  `test_link_self_is_idempotent_for_the_same_owner`,
+  `test_unlink_clears_owner_and_records_the_removed_claim`,
+  `test_relink_supersedes_the_previous_owner_atomically`,
+  `test_relink_additional_keeps_the_members_other_profiles`,
+  `test_relink_without_additional_releases_the_members_other_profiles`.
+  DELETE the four `set_nick`/`nick_for` tests.
+- MIRROR any column change into `core/migrations.py`'s
+  `_ensure_identities_table` / `_ensure_identity_conflicts_table` (they cannot
+  import `bot.identity`).
+
+### Task 2.5.3 — Profile validation client
+
+Files: `bot/lobby/api.py` (+ `tests/test_lobby_api.py`).
+Add `async def fetch_profile(profile_id)` beside `fetch_match_by_id`, same
+lazy-aiohttp/UA/never-raises shape, but it MUST distinguish outcomes — return
+`("ok", {"profile_id": int, "name": str})` / `("not_found", None)` /
+`("unavailable", None)`. A bare `None` cannot express the difference `/link`
+needs. Pure-parser test on a captured 200 body + a captured 404 body; no
+network in tests.
+
+### Task 2.5.4 — Player `/link`
+
+Files: `bot/commands/misc.py` (or a new `bot/commands/identity.py` — add to
+`__all__`), `bot/context/slash/commands.py` (bare top-level, after the
+`# root commands` marker at ~line 461, `**guild_kwargs`, single-line
+`): await run_slash(...)` body), `tests/test_identity.py`.
+Three behaviors per spec §2: already-linked → view-only (profile id, observed
+name, insights URL, "only an admin can change this") regardless of argument;
+unlinked + no id → instructions; unlinked + id → validate, then bind via
+`link_self` or refuse. Copy for the gated case elsewhere is exactly
+**"Statistics pending linking"** — deferred to stage 5 with the consumer
+cutover; see spec §5.
+Tests drive the handler with a fake validation client: bad id → no write +
+instructions; transient → no write + retry copy; valid → `link_self` called
+with the API's `name`; already-linked → view-only, `link_self` NOT called;
+owned-by-other → refusal + conflict.
+
+### Task 2.5.5 — Admin commands + `/identity status`
+
+`/identity link` gains `additional` (keep `force` semantics folded into the
+atomic relink); new `/identity unlink <member> <profile_id>`; new
+`/identity status` (MODERATOR) reporting linked/total for players seen in the
+community in the last 90 days plus which analysis features are below floor.
+
+### Task 2.5.6 — The solver
+
+Files: create `bot/identity_solver.py` (TABS) + `tests/test_identity_solver.py`.
+Pure core, no I/O:
+```python
+def deduce(matches, known, min_games=3, min_ratio=0.90, min_margin=0.50)
+# matches: [{"profiles": {profile_id: won_bool}, "users": {user_id: won_bool}}]
+# -> {profile_id: (user_id, games, ratio, margin)}
+```
+Rules: skip a match whose two rosters differ in size (roster-divergence guard
+— fired on 6 of 1107 real matches); within a match exclude users already
+bound to another profile present in that same match; score a (profile, user)
+pair when both are on the same outcome side; bind only when
+`games >= min_games and ratio >= min_ratio and margin >= min_margin`.
+Async wrapper loads the community's paired matches (via `match_replays`,
+which 2.5.7's backfill fills) and writes each binding through
+`identity.learn(..., "learned")`, best-effort per binding. Runs after a paired
+ingest and after every self/manual link.
+Tests: unanimous evidence binds; a lone 50/50 game does not; roster-size
+mismatch is skipped; a substitute-style contradiction lowers ratio below floor
+and blocks the write; the within-match exclusion prevents double-attribution;
+multi-account users (5 exist in prod) are not broken by the exclusion.
+DELETE `profile_map.eliminate` + its watcher call site and
+`tests/test_lobby_profile_map.py`'s five eliminate tests.
+
+### Task 2.5.7 — Kill list + web cutover
+
+Delete `bot/replay_stats/jobs.py::_load_resolved` and its
+`utils/replay_quiz/extract.py` resolved-CSV plumbing (ingest names come from
+the replay itself); delete `civ_sync.load_profile_map` +
+`_auto_add_profile_mappings` and re-key `find_matching_lobby*` on time +
+player-count + map (identity-free; pair nothing when two candidates tie);
+delete `shape.profile_upserts` + the `rs_profiles` write; repoint
+`web._mapped_profiles_by_user` at `identities` and delete `_csv_profile_rows`.
+Registry entries and `writers` fixes (`identities`, `identity_conflicts`,
+`player_ratings`) land here.
+
+### Task 2.5.8 — Migration 004 (drops LAST) + repair + backfill
+
+```python
+@migration("004_identity_v2")
+async def _m004(db):
+    # (a) repair aoe2_name polluted with Discord nicks (30 of 54 rows)
+    # (b) backfill match_replays from rs_matches.bot_match_id — 1107 historical
+    #     pairings that stage 6's column drop would otherwise destroy
+    # (c) DROP rs_profiles, qc_profile_map, identity_aliases
+```
+Order inside the body matters: (b) must precede (c). All three guarded by
+`table_exists` and individually idempotent.
+
+### Task 2.5.9 — Deploy + verify
+
+Runbook backup → merge → `railway up --ci`. Verify by query, not `/health`:
+repaired names correct (spot-check profile 612690 = `ddk220`),
+`match_replays` ≈ 1107 rows, the three tables gone, ledger has
+`004_identity_v2`, solver log line shows its binding count. Live smoke:
+`/link` with a bad id, a valid id, and as an already-linked player.
 
 ---
 

@@ -14,6 +14,10 @@ export-apr10/
 # system Python 3.14 which lacks pytest).
 .pytest_cache/
 .venv-db/
+# Pre-migration mysqldump snapshots taken by scripts/backup_db.sh. Full copies
+# of the production database — Discord user ids and all match history. Never
+# check these in.
+db_backups/
 # Raw scratch capture from utils/lobby_spike.py (Phase 0) — ~1MB of ambient
 # public lobbies. The committed golden fixture is a small curated test123
 # lifecycle, added separately in Phase 1.

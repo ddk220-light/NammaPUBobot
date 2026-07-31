@@ -47,14 +47,14 @@ async def _ensure_replay(aoe2_match_id, no_download=False):
     return None, False
 
 
-def _extract_cached(path, aoe2_match_id, resolved, date_map):
+def _extract_cached(path, aoe2_match_id, date_map):
     """Parse once; cache the JSON-serializable extract output keyed by id + EXTRACT_VERSION."""
     cp = _cache_path(aoe2_match_id)
     if os.path.exists(cp):
         with open(cp, encoding="utf-8") as f:
             return json.load(f)
     from utils.replay_quiz.extract import extract_match
-    data = extract_match(path, resolved, date_map)
+    data = extract_match(path, date_map)
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(cp, "w", encoding="utf-8") as f:
         json.dump(data, f)
@@ -66,8 +66,8 @@ async def run(days, only_key=None, no_download=False):
     if pool is None:
         print("No DB pool (check config.cfg DB_URI).", file=sys.stderr)
         return 1
-    from utils.replay_quiz.extract import load_resolved, load_date_map
-    resolved, date_map = load_resolved(), load_date_map()
+    from utils.replay_quiz.extract import load_date_map
+    date_map = load_date_map()
     classifications = [c for c in REGISTRY.values()
                        if only_key is None or c.key == only_key]
 
@@ -95,7 +95,7 @@ async def run(days, only_key=None, no_download=False):
             if downloaded:
                 fetched += 1
             try:
-                game = _extract_cached(path, mid, resolved, date_map)
+                game = _extract_cached(path, mid, date_map)
             except Exception as e:                       # corrupt/unsupported replay -> skip
                 failed += 1
                 print("  parse failed {}: {}".format(mid, e))

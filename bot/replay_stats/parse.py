@@ -30,15 +30,15 @@ def _reset_pool():
     _POOL.reset()
 
 
-def _extract(path, resolved, date_map):
+def _extract(path, date_map):
     """Runs in the worker process. Imports lazily there."""
     if _ROOT not in sys.path:
         sys.path.insert(0, _ROOT)
     from utils.replay_quiz.extract import extract_match
-    return extract_match(path, resolved, date_map)
+    return extract_match(path, date_map)
 
 
-async def parse_replay(path, resolved, date_map, timeout=120):
+async def parse_replay(path, date_map, timeout=120):
     """Gate on save_version, then extract in a subprocess. Returns
     (result|None, status, save_version). status: 'ok' | 'pending_parser_update' | 'parse_failed'."""
     try:
@@ -50,7 +50,7 @@ async def parse_replay(path, resolved, date_map, timeout=120):
     loop = asyncio.get_running_loop()
     try:
         result = await asyncio.wait_for(
-            loop.run_in_executor(_get_pool(), _extract, path, resolved, date_map), timeout)
+            loop.run_in_executor(_get_pool(), _extract, path, date_map), timeout)
         return result, "ok", sv
     except TimeoutError:
         _reset_pool()   # hung parse wedged the single worker — recreate it next sweep

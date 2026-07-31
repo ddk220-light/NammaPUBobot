@@ -20,7 +20,18 @@ would reintroduce the exact reentrancy hazard this module exists to avoid.
 import csv
 import io
 
-CONFIDENCE_ORDER = ("seed", "learned", "manual")
+# The confidence lattice, weakest first — position IS the precedence, so
+# order matters and index arithmetic on it must never assume a fixed length
+# (identity v2 inserted `self` between `learned` and `manual`; more tiers may
+# follow). bot/identity.py's _rank() compares by position; core/migrations.py
+# names its tiers as literals and checks them against this tuple at import, so
+# RENAMING or REMOVING a value here is a breaking change that fails the boot
+# loudly — inserting one is not.
+#   seed    — legacy/CSV rows, and the "profile known, owner unknown" state
+#   learned — automated inference (replay ingest, the deduction solver)
+#   self    — the player's own one-time /link
+#   manual  — an admin correction; the highest authority
+CONFIDENCE_ORDER = ("seed", "learned", "self", "manual")
 
 _SEED_CSV_KINDS = ("profile_map", "resolved")
 # Both real header shapes carry the same three columns this module cares
@@ -68,6 +79,41 @@ def parse_seed_csv(text: str, kind: str) -> list:
 		aoe2_name = (r.get("aoe2_name") or "").strip() or None
 		source = (r.get("source") or "").strip() or None
 		rows.append(dict(profile_id=profile_id, user_id=user_id, aoe2_name=aoe2_name, source=source))
+	return rows
+
+
+def parse_name_repairs(text: str) -> list:
+	""" Parse data/profile_resolved.csv into a list of
+	{profile_id, nick, aoe2_name} dicts — the pair of names
+	core/migrations.py's 004_identity_v2 needs to tell a Discord nick that was
+	wrongly stored as a game name apart from a genuine game name. Pure: no
+	file I/O, no DB.
+
+	Deliberately separate from parse_seed_csv rather than an extra key on its
+	output, because the two readers disagree about what a usable row IS.
+	parse_seed_csv exists to bind profile_id -> user_id, so it drops a row
+	whose user_id is present but malformed; a name repair never looks at
+	user_id, and dropping such a row would forfeit a repair for no reason. It
+	instead requires all three of profile_id, nick and aoe2_name, since a row
+	missing either name has nothing to match against or nothing to repair to.
+	Widening parse_seed_csv to serve both would mean one function with two
+	notions of validity, and any later change to its row filter would silently
+	change which names get repaired.
+
+	Values are trimmed (the file is hand-edited) but never case-folded:
+	`guruGreatest` (a Discord nick) and `GuruGreatest` (the game name) are a
+	real row in that CSV, and the difference between them is the entire
+	signal. """
+	rows = []
+	for r in csv.DictReader(io.StringIO(text)):
+		profile_id = _to_int(r.get("profile_id"))
+		if profile_id is None:
+			continue
+		nick = (r.get("nick") or "").strip()
+		aoe2_name = (r.get("aoe2_name") or "").strip()
+		if not nick or not aoe2_name:
+			continue
+		rows.append(dict(profile_id=profile_id, nick=nick, aoe2_name=aoe2_name))
 	return rows
 
 

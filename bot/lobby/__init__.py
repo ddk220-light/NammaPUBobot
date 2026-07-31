@@ -10,11 +10,13 @@ named ``NammaNomad`` (auto-detected) or tracked via ``/lobby2`` / ``/lobby``. Ev
 entry point degrades silently if the (unofficial) lobby socket or API misbehaves.
 
 Durable store is ``lobbies`` (NOT saved_state.json) — lobbies survive a
-Railway redeploy the same way matches do, through MySQL. ``qc_profile_map`` was
-meant to be the DB-backed, self-healing Discord-user <-> AoE2-profile map that
-replaced the stale data/player_profile_map.csv, but it was never populated in
-production; bot/lobby/profile_map.py now reads/writes bot/identity.py's
-resolver instead, and this table is unused (dropped in a later stage).
+Railway redeploy the same way matches do, through MySQL. This module used to
+declare a second table here, a DB-backed Discord-user <-> AoE2-profile map
+meant to replace the hand-maintained profile-map CSV; it was never populated in
+production and its declaration is deleted, because bot/identity.py's
+``identities`` is now the single store answering that question and a later
+migration drops the empty table (an ensure_table left behind would simply
+recreate it on the next boot). bot/lobby/profile_map.py reads the resolver.
 
 Tables are declared here (ensure_table auto-creates + ALTERs at import, the
 civ_sync.py pattern). bot/__init__.py imports this module for that side effect
@@ -44,23 +46,6 @@ db.ensure_table(dict(
 		dict(cname="requested_by", ctype=db.types.int, notnull=False),
 	],
 	primary_keys=["id"],
-))
-
-# Unused since task 2.3 (see bot/lobby/profile_map.py) — kept only so a
-# pre-migration deploy doesn't error, dropped outright in a later stage.
-# Was meant to be a self-healing Discord-user <-> AoE2-profile map learned from
-# roster-confirmed lobbies, but was never populated in production; the identity
-# resolver (bot/identity.py) now owns that job.
-db.ensure_table(dict(
-	tname="qc_profile_map",
-	columns=[
-		dict(cname="user_id", ctype=db.types.int),
-		dict(cname="profile_id", ctype=db.types.int),
-		dict(cname="name", ctype=db.types.str),
-		dict(cname="linked_at", ctype=db.types.int, notnull=False),
-		dict(cname="source", ctype=db.types.str),  # 'lobby' | 'register' | 'seed'
-	],
-	primary_keys=["user_id", "profile_id"],
 ))
 
 from .jobs import jobs  # noqa: E402,F401  (LobbyJobs singleton — bot.lobby.jobs.think)

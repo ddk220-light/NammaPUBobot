@@ -299,7 +299,7 @@ async def process_elo_sync(message):
 				message.channel, parsed, message.created_at.timestamp()
 			)
 		if lobby:
-			link_and_write(match_id, parsed, lobby)
+			link_and_write(match_id, lobby)
 		else:
 			log.info(f"Civ sync: no matching LobbyBOT result found for match {match_id}")
 	except Exception as e:

@@ -22,10 +22,13 @@ REGISTRY = {
 	"match_players": dict(
 		layer="core", tenancy="channel", writers=("bot/elo_sync.py", "bot/stats/stats.py"), retention="forever"
 	),
+	# bot/stats/rating.py writes this through `self.table` (set to the literal
+	# name once, at the top of the class), which is why a grep for the table name
+	# beside a db.insert/update call does not find it.
 	"player_ratings": dict(
 		layer="core",
 		tenancy="channel",
-		writers=("bot/elo_sync.py", "bot/events.py", "bot/stats/stats.py"),
+		writers=("bot/elo_sync.py", "bot/events.py", "bot/stats/rating.py", "bot/stats/stats.py"),
 		retention="forever",
 	),
 	"rating_history": dict(
@@ -70,13 +73,19 @@ REGISTRY = {
 		writers=("bot/lobby/announce.py", "bot/lobby/completed.py", "bot/lobby/jobs.py", "bot/lobby/watcher.py"),
 		retention="forever",
 	),
-	# Never populated in production; bot/lobby/profile_map.py (its only would-be
-	# writer) now reads/writes the identity resolver's `identities` table
-	# instead (task 2.3). Dropped outright in a later stage.
-	"qc_profile_map": dict(layer="raw", tenancy="global", writers=(), retention="forever"),
-	"identities": dict(layer="raw", tenancy="global", writers=("bot/identity.py",), retention="forever"),
+	# core/migrations.py is a second writer of both: 003_seed_identities creates
+	# them with raw DDL and seeds them at boot, before `import bot` happens, so
+	# it cannot go through bot/identity.py (see that module's docstring).
+	# bot/identity_solver.py is deliberately NOT listed — it deduces bindings but
+	# writes them only through identity.learn()/record_refused_claim().
+	"identities": dict(
+		layer="raw", tenancy="global", writers=("bot/identity.py", "core/migrations.py"), retention="forever"
+	),
 	"identity_conflicts": dict(
-		layer="derived", tenancy="global", writers=("bot/identity.py",), retention="forever"
+		layer="derived",
+		tenancy="global",
+		writers=("bot/identity.py", "core/migrations.py"),
+		retention="forever",
 	),
 	"rs_config": dict(layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
 	"rs_matches": dict(layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
@@ -99,7 +108,6 @@ REGISTRY = {
 		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
 	),
 	"rs_ingest": dict(layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
-	"rs_profiles": dict(layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
 	# derived — rebuildable (legacy generation, retired across stages 3-6)
 	"rs_player_game_tags": dict(
 		layer="derived", tenancy="global", writers=("bot/replay_stats/player_tags.py",), retention="forever"
@@ -139,12 +147,12 @@ REGISTRY = {
 		layer="core", tenancy="channel", writers=("bot/community.py",), retention="forever"
 	),
 	# link — cross-tenant joins (stage 1.6)
+	# core/migrations.py is a writer too: 004_identity_v2 backfills every
+	# historical pairing out of rs_matches.bot_match_id (INSERT IGNORE, so
+	# bot/community.py's link_match_replay stays the authoritative one).
 	"match_replays": dict(
-		layer="link", tenancy="community", writers=("bot/community.py",), retention="forever"
-	),
-	# link — cross-tenant joins (stage 2.2)
-	"identity_aliases": dict(
-		layer="link", tenancy="community", writers=("bot/identity.py",), retention="forever"
+		layer="link", tenancy="community", writers=("bot/community.py", "core/migrations.py"),
+		retention="forever"
 	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
