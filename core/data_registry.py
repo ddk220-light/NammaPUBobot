@@ -104,20 +104,44 @@ REGISTRY = {
 	"replay_players": dict(
 		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"
 	),
+	# The five bulky per-match child tables, and the only rows in this database
+	# that anything ever deletes for good. `sweepable` stopped being an aspiration
+	# in task 4.6: bot/derived/sweeper.py now acts on exactly this set, and
+	# targets() there fails closed unless these five entries and its own
+	# TARGET_TABLES agree in BOTH directions — so retagging one of them here (or
+	# tagging a sixth table sweepable) turns the sweeper off rather than silently
+	# widening what it destroys. The sweeper is listed as a writer of each because
+	# it issues raw DELETE execute() calls against them, which is what `writers`
+	# records; store.py remains the only thing that puts rows IN.
 	"replay_units": dict(
-		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
+		layer="raw",
+		tenancy="global",
+		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		retention="sweepable",
 	),
 	"replay_techs": dict(
-		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
+		layer="raw",
+		tenancy="global",
+		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		retention="sweepable",
 	),
 	"replay_buildings": dict(
-		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
+		layer="raw",
+		tenancy="global",
+		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		retention="sweepable",
 	),
 	"replay_events": dict(
-		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
+		layer="raw",
+		tenancy="global",
+		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		retention="sweepable",
 	),
 	"replay_apm": dict(
-		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
+		layer="raw",
+		tenancy="global",
+		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		retention="sweepable",
 	),
 	"replay_ingest": dict(
 		layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"

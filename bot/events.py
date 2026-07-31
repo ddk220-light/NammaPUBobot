@@ -121,6 +121,12 @@ async def on_think(frame_time):
 	# the same stateless convergence: it derives its own work list on every pass rather
 	# than keeping one, so a deploy mid-pass loses nothing — see bot/derived/refresh.py.
 	await bot.derived.refresh_jobs.think(frame_time)
+	# Ages the bulky per-match replay detail out for LEAN communities once their
+	# summary provably exists — daily, off-tick, self-isolating like the two above.
+	# The only job in this bot that permanently destroys data, so it ships with
+	# DRY_RUN = True and deletes nothing until that constant is flipped in a commit
+	# of its own — see bot/derived/sweeper.py before touching it.
+	await bot.derived.sweeper_jobs.think(frame_time)
 	await bot.expire_auto_ready(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict

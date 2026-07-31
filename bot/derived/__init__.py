@@ -230,3 +230,11 @@ from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)
 # bot/__init__.py pulls in bot.replay_stats (whose store.py imports it) before
 # this package.
 from .refresh import jobs as refresh_jobs  # noqa: E402,F401  (DerivedRefresh singleton)
+
+# The retention sweeper (task 4.6) -- the counterpart to both loops above and
+# the only job in this package that DELETES rather than recomputes. It reads the
+# derived-community tables declared above as its proof that a lean community's
+# summary exists before the raw detail behind it is destroyed, so it is imported
+# last for the same reason the other two are. Ships with DRY_RUN = True; read
+# bot/derived/sweeper.py before changing that.
+from .sweeper import jobs as sweeper_jobs  # noqa: E402,F401  (RetentionSweeper singleton)
