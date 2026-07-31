@@ -66,3 +66,10 @@ db.ensure_table(dict(
 	],
 	primary_keys=["replay_match_id", "player_number", "label"],
 ))
+
+# Imported last, after both ensure_table declarations above, exactly like
+# bot/replay_stats/__init__.py's trailing `from .jobs import jobs`: backfill
+# reads and writes these two tables, so their schemas must be settled before the
+# job singleton it exposes can ever run. bot/events.py's on_think drives it as
+# `bot.derived.jobs.think(frame_time)`.
+from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)

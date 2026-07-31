@@ -112,6 +112,10 @@ async def on_think(frame_time):
 	await bot.quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
 	await bot.replay_stats.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
 	await bot.predictions.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
+	# Reconciles game_stats/game_labels against the raw rows they are derived from.
+	# think() only schedules (the batch runs off-tick) and is self-isolating; the loop
+	# converges to zero work and then stays permanently as repair — see bot/derived/backfill.py.
+	await bot.derived.jobs.think(frame_time)
 	await bot.expire_auto_ready(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict
