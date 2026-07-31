@@ -6,10 +6,9 @@ keyed on (replay_match_id, player_number), never on user_id or community_id.
 game_stats  -- medal places, avg/peak eAPM, top units. Table declared and
              written by this package (task 3.2, bot/derived/game_stats.py).
 game_labels -- strategy/spawn labels, replacing cls_results (one namespace,
-             a `kind` column instead of separate tables). Declared here so
-             its schema lands in the same deploy as game_stats, but nothing
-             in this package writes to it yet -- the allowlist and the
-             write path are task 3.3's (bot/derived/game_labels.py).
+             a `kind` column instead of separate tables). Table declared
+             here so its schema lands in the same deploy as game_stats, and
+             written by bot/derived/game_labels.py (task 3.3).
 
 Neither table carries a `user_id` column (identity v2 §5): derived-global
 keys on `profile_id` only, so a consumer resolves profile -> user through
