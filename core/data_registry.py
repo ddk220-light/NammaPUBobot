@@ -188,6 +188,12 @@ REGISTRY = {
 	"player_rollups": dict(
 		layer="derived", tenancy="community", writers=("bot/derived/rollups.py",), retention="forever"
 	),
+	"metric_boards": dict(
+		layer="derived", tenancy="community", writers=("bot/derived/boards.py",), retention="forever"
+	),
+	"civ_stats": dict(
+		layer="derived", tenancy="community", writers=("bot/derived/civ_stats.py",), retention="forever"
+	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
 	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

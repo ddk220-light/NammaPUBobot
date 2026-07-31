@@ -57,6 +57,31 @@ player_rollups -- PK (community_id, user_id). One blob per player per
              community_id, because it is the first one whose grain is a person
              in a community rather than a slot in a match.
 
+metric_boards -- PK (community_id, metric_id). One leaderboard blob per
+             metric per community: label/unit/direction plus a leaders list
+             (BOARD_MIN_GAMES-gated averages) and a top_games list (single
+             best performances, uncapped by the floor). Written by
+             bot/derived/boards.py (task 4.3), whose module docstring carries
+             the metric catalog and the retention boundary that shapes it:
+             only replay_players/game_stats fields, never a replay_techs or
+             replay_buildings field the task-4.6 sweeper can delete out from
+             under a lean community. Like player_rollups, the caller resolves
+             identity before handing rows over -- compute_board never touches
+             `identities` itself.
+
+civ_stats   -- PK (community_id, civ). Per-civ win/loss tallies for one
+             community, aggregated from `civ_picks` by
+             bot/derived/civ_stats.py (task 4.4). Unlike the two tables
+             above, this one performs its own community join (civ_picks
+             carries no community_id column; the join is a single
+             community_channels lookup, not an identities graph walk) --
+             see that module's docstring for why that asymmetry with
+             player_rollups/metric_boards is deliberate. Name deliberately
+             collides in spelling only with the pre-existing
+             `bot/civ_stats.py` (CSV-backed civ pool randomiser, retired
+             stage 5c) -- the two are unrelated and neither imports the
+             other.
+
 Imported by bot/__init__.py for the db.ensure_table side effect below, the
 same as bot/replay_stats/__init__.py: ensure_table's sync wrapper drives the
 event loop with `loop.run_until_complete(...)`, which only works from the
@@ -155,6 +180,39 @@ db.ensure_table(dict(
 		dict(cname="computed_at", ctype=db.types.int, notnull=True),
 	],
 	primary_keys=["community_id", "user_id"],
+))
+
+db.ensure_table(dict(
+	tname="metric_boards",
+	# Every non-key column is notnull for the same reason as player_rollups
+	# above: a board row exists only because a refresh pass computed one.
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="metric_id", ctype=db.types.str),
+		# The board contract in bot/derived/boards.py -- {label, unit,
+		# direction, leaders, top_games} -- JSON-encoded.
+		dict(cname="board", ctype=db.types.dict, notnull=True),
+		dict(cname="computed_at", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["community_id", "metric_id"],
+))
+
+db.ensure_table(dict(
+	tname="civ_stats",
+	# Every non-key column is notnull: a row exists only because
+	# bot/derived/civ_stats.py's write() put it there for a civ that had at
+	# least one resolved-result pick, and games/wins/losses are always
+	# knowable once that is true (unlike, say, replay_players' avg_eapm,
+	# which can genuinely be absent from a replay).
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="civ", ctype=db.types.str),
+		dict(cname="games", ctype=db.types.int, notnull=True),
+		dict(cname="wins", ctype=db.types.int, notnull=True),
+		dict(cname="losses", ctype=db.types.int, notnull=True),
+		dict(cname="computed_at", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["community_id", "civ"],
 ))
 
 # Imported last, after every ensure_table declaration above, exactly like
