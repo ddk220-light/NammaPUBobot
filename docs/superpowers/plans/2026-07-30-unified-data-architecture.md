@@ -1530,9 +1530,23 @@ Expected: FAIL — module missing
 
 - [ ] **Step 3: Implement.** Two independent drains, because their sources
 differ: `game_stats` reads `rs_player_games` + `rs_player_units` +
-`rs_player_apm`; `game_labels` reads `cls_results` + `cls_result_metrics`
-joined to `rs_matches.played_at`. Historical `game_stats` rows get
-`peak_eapm = NULL` — there are no buckets to read, per task 3.1.
+`rs_player_apm`; `game_labels` reads `cls_results` + `cls_result_metrics`,
+taking `played_at` from **`cls_results.played_at`** — a `bigint` epoch holding
+the same value the live path writes. NOT from `rs_matches.played_at`, which is
+a `varchar(191)` date string ('2024-02-11 09:57'); sourcing it there would put
+a formatted string into an epoch column. (131 of 32045 `cls_results` rows carry
+`played_at = 0`; they backfill with 0 rather than being dropped, and fall
+outside stage 4's time windows the same way a genuinely undated row would.)
+Historical `game_stats` rows get `peak_eapm = NULL` — there are no buckets to
+read, per task 3.1.
+
+The pending predicate uses `COUNT(DISTINCT player_number)` on the `game_stats`
+side: `rs_player_games`' PK is `(aoe2_match_id, profile_id)` while
+`game_stats`' is `(replay_match_id, player_number)`, so a plain `COUNT(*)`
+comparison would park a match forever if two source rows ever shared a slot.
+(Verified 0 such rows in production today — the DISTINCT is what keeps that a
+fact about today rather than a load-bearing assumption.) `game_labels` is
+genuinely one-to-one and uses plain `COUNT(*)`.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
