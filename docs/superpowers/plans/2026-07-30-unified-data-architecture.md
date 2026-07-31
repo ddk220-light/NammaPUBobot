@@ -48,7 +48,8 @@ first.
 | stage | delivers | deploy gate |
 | --- | --- | --- |
 | 1 | migration runner, data registry, core+feature renames, `communities`/`community_channels`/`match_replays`, easy retirements, `on_dublicate` fix | bot boots, queues/ratings/report all work on renamed tables |
-| 2 | `identities` + `identity_aliases`, CSV seeds, all identity readers cut over | civ matching + lobby linking work off the DB, CSVs unused at runtime |
+| 2 | `identities` + `identity_aliases`, CSV seeds, all identity readers cut over | civ matching + lobby linking work off the DB, CSVs unused at runtime *(gate met only partially — closed by 2.5)* |
+| 2.5 | identity v2 (`2026-07-30-identity-v2-design.md`): player `/link` with API validation, atomic admin relink + `/identity unlink` + `/identity status`, pairing/deduction solver, refresh-time attribution, `aoe2_name` repair, drop `rs_profiles`/`qc_profile_map`/`identity_aliases`, delete every runtime CSV read, audit fixes | `/link` works end-to-end against prod API; solver binds a synthetic 2-game fixture; no runtime CSV reads remain; audit ledger items closed |
 | 3 | `game_stats` + `game_labels` written at ingest; `rs_*` → `replay_*` renames; cards read stored medals | next parsed replay produces rows in both; cards render identically |
 | 4 | `player_rollups`, `metric_boards`, `civ_stats`, refresh job, retention sweeper | rollup rows appear after a match; sweeper dry-run logs correct candidates |
 | 5 | consumers cut over: scouting report → quiz player bank → cards/insights → web repoint; second parser + SQLite deleted | each consumer serves from derived only |
@@ -801,21 +802,100 @@ Follow the existing admin subcommand-group pattern exactly.
 
 ---
 
+# Stage 2.5 — Identity v2
+
+**Authority:** `docs/superpowers/specs/2026-07-30-identity-v2-design.md`
+(APPROVED 2026-07-30). Added after the post-stage-2 audit, whose findings are
+recorded in `.superpowers/sdd/progress.md` ("POST-STAGE-2 AUDIT") — this stage
+closes all of them. **Elaboration-first rule applies.**
+
+**Binding schema/lattice deltas:**
+
+- `identities.confidence` lattice becomes `seed < learned < self < manual`
+  (`CONFIDENCE_ORDER` in `core/identity_seed.py` gains `"self"` between
+  `learned` and `manual`).
+- `learn()` tightened: equal tier + different user no longer overwrites — it
+  records an `open` conflict and keeps the existing binding. Strictly-higher
+  tier overwrites and records the losing claim as `superseded`.
+- `identity_conflicts.status` values: `open | superseded | unlinked`.
+- Migration `004_identity_v2`: (a) repair `identities.aoe2_name` from
+  `data/profile_resolved.csv`'s `aoe2_name` column for rows whose stored name
+  matches that CSV's `nick` (the 30 polluted rows — idempotent, guarded);
+  (b) `DROP TABLE` `rs_profiles`, `qc_profile_map`, `identity_aliases`;
+  (c) registry + OLD_NAMES updated in the same commit.
+
+**Binding API deltas (`bot/identity.py`):**
+
+```python
+async def unlink(profile_id, removed_by_user_id) -> None
+    # user_id -> NULL, confidence -> 'seed', claim recorded status='unlinked'
+async def relink(profile_id, user_id, additional=False) -> None
+    # manual tier; supersedes the profile's previous owner AND (unless
+    # additional) the member's previous profiles, all recorded 'superseded'
+async def link_self(profile_id, user_id, observed_name) -> bool
+    # 'self' tier; False (no write + open conflict) if profile already owned
+```
+
+`set_nick` / `nick_for` are deleted with `identity_aliases`.
+
+**New module `bot/identity_solver.py`** — the pairing/deduction solver:
+one pure function `deduce(paired_matches, known) -> list[(user_id,
+profile_id)]` implementing participation + team/outcome constraint
+intersection with the ≥2-paired-games floor and contradiction detection
+(contradiction → conflict rows, no writes), plus an async wrapper that runs
+after each paired ingest and after every self/manual link. Replaces
+`profile_map.eliminate()` and the watcher's inference (both deleted).
+
+**Commands:** bare `/link` (three behaviors per spec §2; profile-id validation
+via a new `fetch_profile` in `bot/lobby/api.py` — pin the aoe2companion
+endpoint during elaboration and verify it live before coding against it);
+admin `/identity link` gains `additional` flag and atomic-relink semantics;
+new `/identity unlink` and `/identity status`. Copy for gated analysis
+surfaces is exactly **"Statistics pending linking"**.
+
+**Kill list (all verified live in the audit):** `bot/replay_stats/jobs.py`'s
+`_load_resolved` + the `utils/replay_quiz/extract.py` resolved-CSV plumbing it
+calls; `bot/civ_sync.py` `load_profile_map()` / `_auto_add_profile_mappings()`
+(elo-sync lobby pairing re-keyed on time + player-count + map, identity-free);
+`bot/replay_stats/store.py`'s `rs_profiles` writes (`shape.profile_upserts`);
+`bot/web.py` `_mapped_profiles_by_user()` three-store union → `identities`.
+Also ride-along audit fixes: registry `writers` for `identities`,
+`identity_conflicts`, `player_ratings`; swap `store.py`'s
+rs_profiles-write/learn ordering (moot once the write dies, verify).
+
+**Tasks:** 2.5.1 elaborate → 2.5.2 lattice + learn()/unlink/relink/link_self
+(TDD on the tightened rules) → 2.5.3 migration 004 (repair + drops) →
+2.5.4 `/link` + validation client → 2.5.5 admin commands + status →
+2.5.6 solver + wiring (delete eliminate/watcher inference) → 2.5.7 kill list +
+web cutover → 2.5.8 deploy + verify (run `/link` with a bad id, a valid id,
+and as an already-linked player against prod; confirm dropped tables gone,
+repaired names correct by SELECT, no CSV reads in `railway ssh` grep).
+
+---
+
 # Stage 3 — Derived-global + raw renames
 
 **Binding schemas:**
 
 ```
 game_stats   replay_match_id (int), player_number (int), profile_id (int, null),
-             user_id (int, null), civ (str, null), team (str, null), winner (bool, null),
+             civ (str, null), team (str, null), winner (bool, null),
              avg_eapm (int, null), peak_eapm (int, null),
              military_medal (int, null: 1|2|3), villager_medal (int, null: 1|2|3),
              top_units (dict: [{unit, category, total}] top 3 by total),
              computed_at (int), pk (replay_match_id, player_number)
 game_labels  replay_match_id (int), player_number (int), label (str),
-             kind (str: 'strategy'|'spawn'), user_id (int, null),
+             kind (str: 'strategy'|'spawn'),
              evidence (dict, null), played_at (int, null),
              pk (replay_match_id, player_number, label)
+```
+
+**No `user_id` columns** (changed by identity v2, spec §5): derived-global keys
+on `profile_id` only; every consumer resolves profile → user through
+`identities` at refresh/read time. That is what makes a late `/link` backfill
+the player's whole history with no backfill job.
+
+```
 ```
 
 **Binding decisions:**
@@ -833,7 +913,7 @@ game_labels  replay_match_id (int), player_number (int), label (str),
 - Match cards read stored medals from `game_stats` (join on
   (replay_match_id, player_number)) instead of calling `assign_medals` at
   render; the pure function remains for the ingest writer.
-- Raw renames, migration 004: `rs_matches→replay_matches`,
+- Raw renames, migration 005 (004 is identity v2): `rs_matches→replay_matches`,
   `rs_player_games→replay_players`, `rs_player_units→replay_units`,
   `rs_player_techs→replay_techs`, `rs_player_buildings→replay_buildings`,
   `rs_player_events→replay_events`, `rs_player_apm→replay_apm`,
@@ -894,6 +974,11 @@ civ_stats       community_id (int), civ (str), games (int), wins (int),
   marked by ingest/link/report hooks; `on_think` drains ≤N per tick; full
   per-user recompute (≤600 rows each) — no incremental deltas, rebuild-per-user
   is the simple correct unit. Nightly full-community pass as backstop.
+  Attribution happens HERE (identity v2 §5): the refresh resolves the user's
+  profiles via `identities` and aggregates profile-keyed `game_stats`/
+  `game_labels` rows — which is why an identity link hook marking the user
+  dirty backfills their entire history for free. Unlinked profiles simply
+  aggregate into no rollup until they resolve.
 - Sample floors (constants in `bot/derived/refresh.py`, calibrated on flagship
   data during stage 5): `SPLIT_MIN_GAMES = 5`, `BOARD_MIN_GAMES = 3`.
 - Sweeper: `bot/derived/sweeper.py`, daily on_think slot. Deletes from
@@ -945,9 +1030,10 @@ match; sweeper log lists 0 candidates — no lean communities exist yet).
 
 # Stage 6 — Final retirements
 
-- Migration 005 drops: `cls_classifications`, `cls_data_requirements`,
+- Migration 006 drops: `cls_classifications`, `cls_data_requirements`,
   `cls_results`, `cls_result_metrics`, `cls_player_totals`, `cls_match_ingest`,
-  `rs_player_game_tags`, `rs_player_personas`, `rs_profiles`, `qc_profile_map`;
+  `rs_player_game_tags`, `rs_player_personas` (`rs_profiles`, `qc_profile_map`,
+  `identity_aliases` already dropped in 2.5);
   column drop `replay_matches.bot_match_id` (link table is sole authority;
   `civ_picks.bot_match_id` STAYS — it is that table's join key to `matches`).
 - Delete modules: `bot/replay_stats/persona.py`, `persona_store.py`,

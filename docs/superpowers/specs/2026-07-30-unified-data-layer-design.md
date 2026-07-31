@@ -1,7 +1,9 @@
 # Unified data architecture — design
 
 **Date:** 2026-07-30
-**Status:** v4 — APPROVED. Implementation plan:
+**Status:** v5 — APPROVED. v5 (2026-07-30, post-stage-2 audit) replaces §3.4
+with the identity-v2 design (`2026-07-30-identity-v2-design.md`) and inserts
+stage 2.5. Implementation plan:
 `docs/superpowers/plans/2026-07-30-unified-data-architecture.md`
 
 ## Decisions taken so far
@@ -29,6 +31,9 @@
 - **Community defaults: deferred.** Assume every feature enabled for now.
 - **Everything gets renamed** (§8): the `qc_`/`rs_`/`cls_` patchwork is replaced
   by one plain-English naming scheme owned by this product.
+- **Identity is ID-only** (v5): no name inference anywhere. Bindings are born
+  from a player's one-time `/link`, admin commands, or team/outcome deduction
+  over paired matches — see `2026-07-30-identity-v2-design.md`.
 
 ---
 
@@ -191,20 +196,29 @@ One writer each: ingest writes derived-global; a per-community refresh job
 writes derived-community. Nothing else writes derived, nothing reads raw for
 analysis.
 
-### 3.4 Identity
+### 3.4 Identity (v2 — full design in `2026-07-30-identity-v2-design.md`)
 
-Global truth + community attribution, replacing five stores
-(`player_profile_map.csv`, `profile_resolved.csv`, `rs_profiles`,
-`qc_profile_map`, `replay_quiz.db players`):
+Global truth, replacing five stores (`player_profile_map.csv`,
+`profile_resolved.csv`, `rs_profiles`, `qc_profile_map`,
+`replay_quiz.db players`). **IDs bind to IDs; names are display-only
+observations, never matching inputs.**
 
 ```
-identity            (profile_id) -> user_id, confidence, learned_from
-identity_alias      (community_id, user_id) -> nick, aoe2_names
+identities          (profile_id) -> user_id (nullable), aoe2_name (observed,
+                    display-only), confidence: seed < learned < self < manual
+identity_conflicts  every losing, superseded or removed claim, kept as data —
+                    read by /identity conflicts and the future admin UI
 ```
 
-`qc_profile_map` already exists as the intended self-healing CSV replacement
-(`bot/lobby/__init__.py` docstring) — the design completes that intent rather
-than inventing a sixth store. Seeded from the CSVs once; CSVs then retired.
+Bindings are born three ways, all ID-based: a player's one-time `/link`
+(validated against the AoE2 API before writing; `self` tier; players can never
+re-link themselves), admin `/identity link|unlink` (`manual` tier, atomic
+relink), and the per-community deduction solver over paired matches
+(`learned` tier, participation + team + outcome constraints, no names).
+Unlinked players' analysis reads "Statistics pending linking"; attribution
+resolves at refresh-time, so history backfills automatically when a link
+lands. `identity_alias` is dropped from the design — Discord supplies display
+names live.
 
 ---
 
@@ -218,7 +232,7 @@ than inventing a sixth store. Seeded from the CSVs once; CSVs then retired.
 | links | match report hook (bot match side) + ingest (replay side) |
 | derived-global | ingest, immediately after raw write |
 | derived-community | one refresh job per community, triggered by ingest + nightly |
-| identity | lobby watcher + ingest learning + one admin command for corrections |
+| identity | `/link` (player) + admin link/unlink + the deduction solver — all through `bot/identity.py`'s lattice |
 | quiz player bank + schedule | per-community bot job reading `player_metric_board` |
 
 Laptop pipelines eliminated: `replay_quiz` parser + SQLite, quiz bank/schedule
@@ -239,7 +253,14 @@ Each stage deploys alone and nothing depends on a later stage.
    community #1 with `retention='full'`. `rs_matches.bot_match_id` kept in
    place until stage 5, then dropped.
 2. **Identity.** `identities` + `identity_aliases`, seeded from CSVs +
-   `rs_profiles`; all readers cut over; CSVs retired.
+   `rs_profiles`; all readers cut over; CSVs retired. *(Shipped; the audit
+   found the CSV retirement incomplete — closed by 2.5.)*
+2.5. **Identity v2** (added after the post-stage-2 audit;
+   `2026-07-30-identity-v2-design.md`): player `/link` with API validation,
+   atomic admin relink + unlink, the pairing/deduction solver, refresh-time
+   attribution with automatic backfill, the `aoe2_name` repair, and the
+   pulled-forward retirements — `rs_profiles`, `qc_profile_map`,
+   `identity_aliases` dropped; all runtime CSV reads deleted.
 3. **Derived-global.** `game_stats` + `game_labels` (one namespace, `kind`
    column) written at ingest. Populates forward only. Raw-layer renames ride
    this stage.
@@ -249,8 +270,9 @@ Each stage deploys alone and nothing depends on a later stage.
    job per community; delete `utils/replay_quiz` parser + SQLite) → match cards
    → web APIs. Old read paths deleted as each lands.
 6. **Final retirements.** `cls_*` tables, `rs_player_game_tags`,
-   `rs_player_personas`, `rs_profiles`, `qc_profile_map` (absorbed), CSV seeds,
-   remaining old names.
+   `rs_player_personas`, CSV seed *files*, remaining old names.
+   (`rs_profiles`, `qc_profile_map`, `identity_aliases` already dropped in
+   2.5.)
 
 Stage 3 forward-only means the scouting report and quiz start thin and grow.
 That is accepted (decided above: no backfill) — but note the option exists to
@@ -334,7 +356,7 @@ class. Names say *what it is*; the registry says *how it is treated*.
 | `qc_civ_reconcile` | `civ_reconcile` | |
 | `qc_lobbies` | `lobbies` | |
 | *(new link)* | `match_replays` | replaces `rs_matches.bot_match_id` |
-| `rs_profiles` + `qc_profile_map` + CSVs | `identities`, `identity_aliases` | §3.4 |
+| `rs_profiles` + `qc_profile_map` + CSVs | `identities`, `identity_conflicts` | §3.4 v2; both old tables dropped in stage 2.5. `identity_aliases` (created in stage 2) also dropped in 2.5 |
 | `cls_results` | `game_labels` | one namespace, `kind` = strategy \| spawn |
 | `cls_result_metrics` | evidence json on `game_labels` | |
 | `rs_player_game_tags` | **dropped** | behavioural tags become render-time only (§2.5) |
