@@ -570,3 +570,60 @@ def test_post_match_analysis_sends_the_file_when_it_is_accepted(monkeypatch):
 	assert len(channel.sends) == 1
 	assert channel.sends[0]["file"] is chart
 	assert cards.image_url == "attachment://apm.png"
+
+
+# ── a swept community's card ─────────────────────────────────────────────
+# bot/derived/sweeper.py deletes replay_events / replay_buildings / replay_apm
+# rows for a community that opted out of keeping raw replay detail, so
+# card_query hands the renderer empty dicts for four of its six signals. This
+# pins what the card does then: it renders the facts that survive and omits the
+# rest, rather than raising or printing a zero where a measurement used to be.
+# The sweeper still ships with DRY_RUN = True.
+
+def _replay_row(**kw):
+	"""A merged analysis row as _analysis_rows would produce it. Every field here
+	lives on replay_players or game_stats — retention="forever" — so a sweep
+	cannot touch any of it."""
+	base = dict(player_number=1, nick="Boomer", civ="Franks", bot_team=0, result="W",
+	            villagers=110, military=40, eapm=52, duration_s=1800,
+	            vil_pre_castle=40, mil_pre_castle=5)
+	base.update(kw)
+	return base
+
+
+def test_a_card_built_from_swept_signals_renders_the_surviving_facts():
+	rows = [_replay_row(), _replay_row(player_number=2, nick="Wall", bot_team=1, result="L")]
+	# Exactly what card_query returns once the raw rows are gone: the two derived
+	# signals answer, the four sweepable ones are empty.
+	signals = {"buildings": {}, "clicks": {}, "composition": {}, "peak_eapm": {},
+	           "strategies": {1: ["Knight Rush"]}, "spawn": {1: "spawned alone"}}
+
+	payloads = [pg._card_payload(r, rows, signals) for r in rows]
+	fields = pg._team_card_fields(payloads, {0: "Alpha", 1: "Beta"})
+	value = fields[0]["value"]
+
+	# Survives: the name, civ, strategy chip, spawn phrase, counts and average eAPM.
+	assert "Boomer" in value and "Franks" in value
+	assert "Knight Rush" in value and "spawned alone" in value
+	assert "110 vils" in value and "40 military" in value and "52 eAPM" in value
+	# Swept: omitted outright, never rendered as 0 and never as a placeholder.
+	assert "farms" not in value and "TC" not in value and "pk " not in value
+	assert payloads[0]["production_coverage"] is None
+	assert payloads[0]["composition"] == {} and payloads[0]["military_post_imperial"] is None
+	# And the player is not demoted to "partial replay data": has_production comes
+	# from the retained villager/military counts, not from the swept tables.
+	assert payloads[0]["has_production"] is True
+	assert "partial replay data" not in value
+
+
+def test_a_swept_card_with_no_labels_either_still_renders_rather_than_raising():
+	"""The floor: every signal empty, which is what a swept match with no stored
+	labels looks like. It must still produce a field per team."""
+	rows = [_replay_row(), _replay_row(player_number=2, nick="Wall", bot_team=1, result="L")]
+	payloads = [pg._card_payload(r, rows, {}) for r in rows]
+
+	fields = pg._team_card_fields(payloads)
+
+	assert len(fields) == 2
+	assert all(f["value"] for f in fields)
+	assert "Boomer" in fields[0]["value"]

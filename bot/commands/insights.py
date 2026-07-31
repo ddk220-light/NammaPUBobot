@@ -2,8 +2,10 @@
 """/insights <use_case> [days] [aggregate_stats] [player]: a shareable leaderboard (+ optional
 winners-vs-losers aggregate facts) for a play-style classification (e.g. archer_rush). The full
 leaderboard is one tap away via a 'Show all players' button routed through the global
-on_insights_interaction handler (redeploy-safe, like the quiz). Reads cls_* via
-bot.classifications.query; factor labels/order/formatting come from the classification's factor_specs."""
+on_insights_interaction handler (redeploy-safe, like the quiz). Player-games come from
+game_labels via bot.classifications.query; the use case's title and trigger text still come
+from cls_classifications (the registry mirror, retired in stage 6), and factor
+labels/order/formatting from the classification's factor_specs."""
 __all__ = ["insights"]
 
 import nextcord
@@ -38,6 +40,7 @@ def _full_button(use_case, days, n):
 async def insights(ctx, use_case: str = "archer_rush", days: int = 385,
                    aggregate_stats: bool = False, player: Member = None):
 	from bot.classifications import query
+	from bot.derived.game_labels import kind_for
 	from utils.classifications.registry import REGISTRY
 
 	try:
@@ -53,6 +56,16 @@ async def insights(ctx, use_case: str = "archer_rush", days: int = 385,
 	if not reg:
 		return await ctx.error("Unknown use case '{}'.".format(use_case), title="Insights")
 	title = reg.get("title") or use_case
+
+	# Registered upstream is not the same as stored per player. game_labels keeps the 17
+	# strategy and 11 spawn classifications and nothing else — luck_baseline, which fires
+	# for every player in every valid Nomad game, is deliberately stored nowhere. Saying so
+	# here rather than letting the empty result below render as "no games found in the last
+	# N days": that would be a lie about the window, when the truth is about the label.
+	if kind_for(use_case) is None:
+		return await ctx.error(
+			"{} isn't recorded per player, so it has no leaderboard.".format(title), title=title)
+
 	specs = REGISTRY[use_case].factor_specs if use_case in REGISTRY else []
 	condition = (REGISTRY[use_case].trigger_spec if use_case in REGISTRY else reg.get("trigger_spec")) or ""
 

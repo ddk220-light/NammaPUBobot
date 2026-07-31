@@ -159,16 +159,25 @@ REGISTRY = {
 	"cls_data_requirements": dict(
 		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
 	),
+	# Stage 5c dropped bot/replay_stats/classification_sync.py from both entries: it
+	# dual-wrote these two alongside game_labels while /insights and the match cards
+	# still read them, and both readers moved to game_labels. ONE writer is left, and
+	# it is load-bearing rather than vestigial — bot/derived/backfill.py reconciles
+	# game_labels against cls_results every pass, so write_extracted_match keeping
+	# these populated at ingest is what stops the reconciler from finding a new
+	# match's source set empty and "healing" it by deleting the labels. Both tables,
+	# that writer and that half of the reconciler retire together in stage 6; do not
+	# retire the writer alone.
 	"cls_results": dict(
 		layer="derived",
 		tenancy="global",
-		writers=("bot/replay_stats/classification_sync.py", "bot/replay_stats/classifications.py"),
+		writers=("bot/replay_stats/classifications.py",),
 		retention="forever",
 	),
 	"cls_result_metrics": dict(
 		layer="derived",
 		tenancy="global",
-		writers=("bot/replay_stats/classification_sync.py", "bot/replay_stats/classifications.py"),
+		writers=("bot/replay_stats/classifications.py",),
 		retention="forever",
 	),
 	"cls_player_totals": dict(

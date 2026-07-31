@@ -60,7 +60,7 @@ CI runs both on every PR via `.github/workflows/ci.yml`.
   - `slash/` — Slash command definitions in `commands.py`, autocomplete in `autocomplete.py`, command groups in `groups.py`
   - (The legacy `!command` `bot/context/message/` handler was removed in Layer 5 — every prior `!cmd` has a slash equivalent, registered under its own bare name (no `namma_` or other prefix).)
 - **`bot/stats/`** — Stats tracking, rating systems (Flat, Glicko2, TrueSkill)
-- **`bot/civ_stats.py`** — Loads `data/player_civ_stats.csv` and `data/civ_elo_stats.csv` at import time. Provides `get_player_civs()` lookup, `pick_balanced_teams()` for randomized civ pools, and `get_today_civs()` for channel history scanning
+- **`bot/civ_stats.py`** — Civ pools for randomized team balancing. Reads per-civ win-rates from the derived-community `civ_stats` table (`civ_winrates()`), feeds them to `pick_balanced_teams()`, and scans channel history via `get_today_civs()`. Its CSV seeds were deleted in stage 5c. Unrelated to `bot/derived/civ_stats.py`, which writes that table
 - **`bot/web.py`** — Web dashboard server (aiohttp). Discord OAuth2 login, session management, REST API for channel/queue config CRUD, civ stats API. Serves `bot/web_page.html`
 - **`bot/web_page.html`** — Self-contained SPA (inline CSS + JS). Two tabs: Civ Stats (public) and Dashboard (authenticated). Config forms auto-generated from CfgFactory variable types
 

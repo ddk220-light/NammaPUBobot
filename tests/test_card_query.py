@@ -12,9 +12,11 @@ class _FakeDB:
         self.responses = responses or {}
         self.fail_on = fail_on or ()
         self.seen = []
+        self.asked = []      # (sql, params) -- the params matter as much as the SQL
 
     async def fetchall(self, sql, params=None):
         self.seen.append(sql)
+        self.asked.append((sql, list(params) if params else []))
         for fragment in self.fail_on:
             if fragment in sql:
                 raise RuntimeError(f"simulated failure for {fragment}")
@@ -49,8 +51,12 @@ def test_building_query_asks_only_for_farms_and_town_centers(monkeypatch):
     assert "building IN" in sql
 
 
+_STRATEGY_SQL = "l.label AS ckey"
+_SPAWN_SQL = "label AS ckey FROM game_labels"
+
+
 def test_every_strategy_that_fired_is_returned(monkeypatch):
-    db = _FakeDB({"cls_results c": [
+    db = _FakeDB({_STRATEGY_SQL: [
         {"player_number": 1, "ckey": "knight_rush", "title": "Knight Rush"},
         {"player_number": 1, "ckey": "safe_castle", "title": "Safe Castle"},
     ]})
@@ -59,28 +65,39 @@ def test_every_strategy_that_fired_is_returned(monkeypatch):
 
 
 def test_strategy_falls_back_to_a_title_cased_key_when_the_registry_is_missing(monkeypatch):
-    db = _FakeDB({"cls_results c": [
+    db = _FakeDB({_STRATEGY_SQL: [
         {"player_number": 1, "ckey": "cav_archer_rush", "title": None},
     ]})
     out = _run(monkeypatch, db)
     assert out["strategies"][1] == ["Cav Archer Rush"]
 
 
-def test_strategy_query_constrains_by_the_key_allowlist(monkeypatch):
-    """cls_results holds luck/spawn keys in the same table with no category
-    column, so an unconstrained query would render 'All valid spawns' as a
-    strategy label."""
+def test_strategies_come_from_game_labels_constrained_by_the_stored_kind(monkeypatch):
+    """Stage 5c: the chips read the derived table, and `kind` is the allowlist.
+    game_labels holds strategy and spawn rows in one namespace, so an unconstrained
+    query would render 'spawned alone' as somebody's strategy -- and the card no
+    longer carries its own 17-key copy of the list to constrain by."""
     db = _FakeDB()
     _run(monkeypatch, db)
-    sql = next(s for s in db.seen if "cls_results c" in s)
-    assert "knight_rush" not in sql  # keys are bound as params, never inlined
-    assert "IN (%s" in sql
-    assert len(cq.STRATEGY_KEYS) == 17
-    assert "luck_baseline" not in cq.STRATEGY_KEYS
+    sql = next(s for s in db.seen if _STRATEGY_SQL in s)
+    assert "FROM game_labels" in sql
+    assert "cls_results" not in sql
+    assert "l.kind=%s" in sql
+    assert "'strategy'" not in sql        # the kind is bound as a param, never inlined
+    assert not hasattr(cq, "STRATEGY_KEYS")
+
+
+def test_the_strategy_kind_is_the_one_actually_bound(monkeypatch):
+    """The parameter, not just the placeholder: 'kind=%s' with 'spawn' bound would
+    satisfy every assertion above and render spawn phrases as strategies."""
+    db = _FakeDB()
+    _run(monkeypatch, db)
+    params = next(p for s, p in db.asked if _STRATEGY_SQL in s)
+    assert params == [1, "strategy"]
 
 
 def test_spawn_keys_map_to_phrases_with_enemy_taking_priority(monkeypatch):
-    db = _FakeDB({"`key` AS ckey FROM cls_results": [
+    db = _FakeDB({_SPAWN_SQL: [
         {"player_number": 1, "ckey": "spawn_isolated"},
         {"player_number": 2, "ckey": "spawn_near_ally"},
         {"player_number": 2, "ckey": "spawn_near_enemy"},
@@ -88,6 +105,20 @@ def test_spawn_keys_map_to_phrases_with_enemy_taking_priority(monkeypatch):
     out = _run(monkeypatch, db)
     assert out["spawn"][1] == "spawned alone"
     assert out["spawn"][2] == "spawned next to enemy"
+
+
+def test_spawn_asks_game_labels_for_the_three_sayable_keys_of_the_eleven_stored(monkeypatch):
+    """SPAWN_PHRASES stays a DISPLAY subset: kind='spawn' picks the stored category,
+    the key list narrows it to what the card can put in a sentence. Merging the two
+    concepts in either direction is the failure this pins."""
+    from bot.derived import game_labels
+
+    db = _FakeDB()
+    _run(monkeypatch, db)
+    sql, params = next((s, p) for s, p in db.asked if _SPAWN_SQL in s)
+    assert "kind=%s" in sql and "label IN (%s" in sql
+    assert params == [1, "spawn", "spawn_near_enemy", "spawn_isolated", "spawn_near_ally"]
+    assert len(game_labels.SPAWN_KEYS) == 11
 
 
 def test_a_player_with_no_spawn_key_gets_no_phrase(monkeypatch):
@@ -159,6 +190,49 @@ def test_composition_joins_on_player_number_and_filters_to_military(monkeypatch)
     assert "g.player_number=e.player_number" in sql
     assert "is_military=1" in sql
     assert "profile_id" not in sql
+
+
+# ── swept sources ────────────────────────────────────────────────────────
+# bot/derived/sweeper.py deletes replay_events / replay_buildings / replay_apm rows
+# for a lean community once its derived summaries exist. These pin what the card
+# does then: the swept signals go quiet, the retained ones (strategies and spawn,
+# now on the forever-retained game_labels) still render, and nothing raises. The
+# sweeper ships with DRY_RUN = True and this is part of what has to hold before
+# anyone flips it.
+
+_SWEPT_TABLES = ("replay_events", "replay_buildings", "replay_apm")
+
+
+def test_a_swept_community_loses_the_raw_signals_and_keeps_the_derived_ones(monkeypatch):
+    db = _FakeDB({
+        _STRATEGY_SQL: [{"player_number": 1, "ckey": "knight_rush", "title": "Knight Rush"}],
+        _SPAWN_SQL: [{"player_number": 1, "ckey": "spawn_isolated"}],
+    })
+    out = _run(monkeypatch, db)
+
+    # Swept: empty, not absent and not zero -- the caller omits each element.
+    assert out["buildings"] == {} and out["clicks"] == {} and out["composition"] == {}
+    assert out["peak_eapm"] == {}
+    # Retained: game_labels is derived-global, retention="forever".
+    assert out["strategies"][1] == ["Knight Rush"]
+    assert out["spawn"][1] == "spawned alone"
+
+
+def test_a_fully_swept_match_returns_the_whole_shape_rather_than_raising(monkeypatch):
+    out = _run(monkeypatch, _FakeDB())
+    assert set(out) == {"buildings", "clicks", "composition", "strategies", "spawn", "peak_eapm"}
+    assert all(v == {} for v in out.values())
+
+
+def test_the_strategy_and_spawn_reads_touch_no_sweepable_table(monkeypatch):
+    """The claim above, checked against the SQL rather than trusted: if either chip
+    query ever joined back to a sweepable table for a name or a count, a swept
+    community would silently lose its chips too."""
+    db = _FakeDB()
+    _run(monkeypatch, db)
+    for fragment in (_STRATEGY_SQL, _SPAWN_SQL):
+        sql = next(s for s in db.seen if fragment in s)
+        assert not any(t in sql for t in _SWEPT_TABLES), sql
 
 
 def test_clicks_are_grouped_by_player_in_time_order(monkeypatch):
