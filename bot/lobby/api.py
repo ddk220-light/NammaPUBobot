@@ -40,7 +40,65 @@ async def fetch_match_by_id(game_id):
 		return None
 
 
+async def fetch_profile(profile_id):
+	"""GET /profiles/{profile_id} -> ``(status, data)``, never raises.
+
+	``status`` is one of:
+	  "ok"          -- data is ``{"profile_id": int, "name": str}`` (name may be
+	                   "" when the API omits it)
+	  "not_found"   -- the id does not exist; data is None
+	  "unavailable" -- anything else (non-200/404 status, timeout, network
+	                   error, unreadable body); data is None
+
+	The three-way result exists for `/link` (bot/commands/identity.py): "your id
+	is wrong" and "the AoE2 service is down" must never be conflated, because
+	only the first is the player's problem to fix. A bare None return could not
+	tell them apart. Lazy aiohttp import, same as fetch_match_by_id."""
+	import aiohttp
+
+	url = f"{AOE2_API}/profiles/{profile_id}"
+	try:
+		async with aiohttp.ClientSession(headers=_UA) as session:
+			async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+				if resp.status == 404:
+					return "not_found", None
+				if resp.status != 200:
+					log.warning(f"fetch_profile({profile_id}) got HTTP {resp.status}")
+					return "unavailable", None
+				payload = await resp.json()
+	except (aiohttp.ClientError, TimeoutError, ValueError) as e:
+		log.warning(f"fetch_profile({profile_id}) failed: {e}")
+		return "unavailable", None
+
+	# A 200 we cannot read is an unexpected body, not proof the id is wrong --
+	# 404 is the only signal that means "no such profile", so never blame the
+	# player's id without it.
+	if (parsed := _parse_profile(payload)) is None:
+		log.warning(f"fetch_profile({profile_id}) got an unreadable 200 body")
+		return "unavailable", None
+	return "ok", parsed
+
+
 # ── pure parsers (no I/O) ────────────────────────────────────────────────
+
+def _parse_profile(payload):
+	"""The /profiles/{id} 200 body -> ``{"profile_id": int, "name": str}``, or
+	None for anything that is not a profile.
+
+	The 404 body echoes the requested id back (``{"success": false, "error":
+	"profile couldn't be found", "profileId": 999999999}``), so the presence of
+	``profileId`` proves nothing -- the explicit failure markers are checked
+	first. ``name`` is the real in-game name; it is display-only (identities
+	.aoe2_name) and never an input to matching."""
+	if not isinstance(payload, dict):
+		return None
+	if payload.get("success") is False or payload.get("error"):
+		return None
+	try:
+		profile_id = int(payload["profileId"])
+	except (KeyError, TypeError, ValueError):
+		return None
+	return {"profile_id": profile_id, "name": str(payload.get("name") or "")}
 
 def parse_iso(s):
 	"""ISO-8601 (optionally trailing 'Z') -> unix seconds (int), or None."""

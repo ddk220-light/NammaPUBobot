@@ -460,6 +460,17 @@ async def _stats_undo_match(
 
 # root commands
 
+@dc.slash_command(
+	name='link', description='Link your Discord account to your AoE2 profile.', **guild_kwargs
+)
+async def _link(
+		interaction: Interaction,
+		profile_id: int = SlashOption(
+			description='Your AoE2 profile id. Leave empty and I will show you how to find it.',
+			required=False, default=None)
+): await run_slash(bot.commands.link, interaction=interaction, profile_id=profile_id)
+
+
 @dc.slash_command(name='add', description='Add yourself to the channel queues.', **guild_kwargs)
 async def _add(
 	interaction: Interaction,
