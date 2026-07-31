@@ -36,6 +36,7 @@ def _card_payload(row, group, signals):
 	comp = (signals.get("composition") or {}).get(pnum) or {}
 	produced = (row.get("villagers") or 0) + (row.get("military") or 0)
 	return {
+		"player_number": pnum,
 		"nick": row.get("nick") or row.get("identity") or str(row.get("user_id") or ""),
 		"civ": row.get("civ"),
 		"team": int(row["bot_team"]) if row.get("bot_team") in (0, 1, "0", "1") else None,
@@ -71,6 +72,40 @@ async def _card_signals_for(rows):
 		return {}
 	duration = next((r.get("duration_s") for r in rows if r.get("duration_s")), None)
 	return await fetch_card_signals(aoe2_id, duration)
+
+
+async def _medals_for(rows):
+	"""player_number -> {"military_medal", "villager_medal"} for this match,
+	read from the derived-global game_stats table rather than recomputed here.
+
+	game_stats.replay_match_id is written from the same match id this file
+	calls aoe2_match_id (bot/derived/__init__.py's module doc explains why the
+	names differ; task 3.7 unifies them on the raw side, not this one).
+
+	{} when there is no known match id, or when the match has no stored rows
+	yet. The second case is not expected to happen in steady state --
+	jobs.ingest_one writes game_stats inside store.write_match strictly before
+	this renders, and bot/derived/backfill.py heals any gap within a tick --
+	but there is deliberately no live-computation fallback here (see this
+	file's module doc), so a genuinely absent row must render medal-less
+	rather than raise.
+	"""
+	from core.database import db
+
+	aoe2_id = next((r.get("aoe2_match_id") for r in rows if r.get("aoe2_match_id")), None)
+	if aoe2_id is None:
+		return {}
+	medal_rows = await db.fetchall(
+		"SELECT player_number, military_medal, villager_medal FROM game_stats "
+		"WHERE replay_match_id=%s",
+		[aoe2_id])
+	return {
+		r["player_number"]: {
+			"military_medal": r.get("military_medal"),
+			"villager_medal": r.get("villager_medal"),
+		}
+		for r in medal_rows or [] if r.get("player_number") is not None
+	}
 
 
 def _team_impact_rows(player_rows):
@@ -240,12 +275,19 @@ def _player_card_line(player, carry=False, medals=None, tags=None, with_stats=Tr
 	return "\n".join(lines)
 
 
-def _team_card_fields(player_rows, team_names=None):
-	"""One embed field per team. Medals rank match-wide, tags are team-scoped."""
+_NO_MEDALS = {"military_medal": None, "villager_medal": None}
+
+
+def _team_card_fields(player_rows, team_names=None, medals_by_player=None):
+	"""One embed field per team. Medals are read from ``medals_by_player``
+	(player_number -> {"military_medal", "villager_medal"}, see _medals_for --
+	they are match-wide facts computed once at ingest, not re-ranked here).
+	Tags are still computed here and are team-scoped."""
 	from bot.replay_stats import card_scoring
 
 	team_names = team_names or {0: "Alpha", 1: "Beta"}
-	medals = card_scoring.assign_medals(player_rows)
+	medals_by_player = medals_by_player or {}
+	medals = [medals_by_player.get(p.get("player_number")) or _NO_MEDALS for p in player_rows]
 	awards = card_scoring.assign_team_tags(player_rows)
 	# Descriptive tags are facts and come first; the team-scoped awards follow.
 	tags = [card_scoring.descriptive_tags(p) + awards[i]
@@ -343,10 +385,11 @@ async def build_match_cards_embed(channel_id, bot_match_id, rows=None, team_name
 	if not rows:
 		return None
 	signals = await _card_signals_for(rows)
+	medals_by_player = await _medals_for(rows)
 	player_rows = [_card_payload(row, rows, signals) for row in rows]
 	if team_names is None:
 		team_names = await _team_names(channel_id, bot_match_id)
-	fields = _team_card_fields(player_rows, team_names)
+	fields = _team_card_fields(player_rows, team_names, medals_by_player)
 	if not fields:
 		return None
 
