@@ -333,9 +333,10 @@ def test_every_trebuchet_variant_is_excluded_however_it_is_spelled():
 
 
 def test_the_other_siege_units_are_style_units():
-	""" The exclusion is Trebuchet specifically, not siege as a category: going
-	Scorpion or Bombard Cannon is a real choice about how somebody plays. """
-	for name in ("Mangonel", "Battering Ram", "Scorpion", "Bombard Cannon", "Organ Gun"):
+	""" The exclusion is Trebuchet and the ram line specifically, NOT siege as a
+	category: going Mangonel, Scorpion or Bombard Cannon is a real choice about
+	how somebody plays, while a treb or a ram is how a game ends. """
+	for name in ("Mangonel", "Scorpion", "Bombard Cannon", "Organ Gun", "Siege Onager"):
 		assert game_stats.is_style_unit(_unit(name, "siege", 12)), name
 
 
@@ -401,3 +402,37 @@ def test_an_undated_match_stamps_no_date_rather_than_inventing_one():
 	rows = game_stats.compute_game_stats(players, [], [], computed_at=1)
 
 	assert rows[0]["played_at"] is None
+
+
+def test_every_ram_is_excluded_however_it_is_spelled():
+	""" Same reason as the trebuchet: built by nearly everybody in small numbers
+	as a means to an end. 7th most common military unit in production, and it
+	held 9 of the 42 unit clauses on the live report. """
+	for name in ("Battering Ram", "Capped Ram", "Siege Ram", "battering ram"):
+		assert not game_stats.is_style_unit(_unit(name, "siege", 9)), name
+
+
+def test_arambai_survives_the_ram_exclusion():
+	""" MUTANT GUARD, and the reason UBIQUITOUS_UNITS is matched on word
+	boundaries rather than as a bare substring: "Arambai" contains r-a-m. A
+	substring test deletes a real unique unit -- one that currently holds a
+	wins-most clause on live data -- and looks entirely correct doing it. """
+	assert game_stats.is_style_unit(_unit("Arambai", "siege", 40))
+
+
+def test_no_other_unit_name_is_caught_by_the_word_boundary_rule():
+	""" Every military unit name in production that contains the letters of an
+	excluded token somewhere inside a word. """
+	for name in ("Arambai", "Rocket Cart", "Shrivamsha Rider", "Karambit Warrior",
+	             "Ramped Wagon", "Camel Archer"):
+		assert game_stats.is_style_unit(_unit(name, "unique_other", 20)), name
+
+
+def test_the_compute_version_is_ahead_of_what_production_holds():
+	""" The version is the ONLY thing that makes bot/derived/backfill.py rewrite
+	rows whose values changed but whose row set did not -- so a change to what
+	top_units contains that forgets to bump this converges to zero work with
+	every stored row still holding the old answer. """
+	assert game_stats.COMPUTE_VERSION >= 2, (
+		"excluding rams changed top_units for every match; COMPUTE_VERSION must move "
+		"or the reconciliation loop will never notice")

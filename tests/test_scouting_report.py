@@ -1224,10 +1224,14 @@ def test_eapm_on_a_channel_with_no_community_says_so_rather_than_showing_nothing
 	assert "community" in str(exc.value).lower()
 
 
-def test_the_empty_peak_board_explains_why_it_is_empty():
-	""" An empty peak board is not "nobody qualifies" -- the figure comes from
-	per-minute buckets that only games played from now on carry, and a bare
-	"no data" would read as a bug in a community that plays every day. """
+def test_the_empty_peak_board_explains_itself_and_names_the_board_that_works():
+	""" An empty peak board is not "nobody qualifies", and saying only that it is
+	missing reads as a flat contradiction: /rank prints an eAPM on the very same
+	screen. The two are different measurements from different sources -- one
+	figure per game vs the median busiest minute -- and a reader has no way to
+	know that, so the message has to name the one they are already looking at.
+
+	Written after exactly that question was asked of a live deploy. """
 	import pytest as _pytest
 
 	mp = _pytest.MonkeyPatch()
@@ -1237,7 +1241,10 @@ def test_the_empty_peak_board_explains_why_it_is_empty():
 	with _pytest.raises(Exception) as exc:
 		asyncio.run(stats.eapm(_ReplyCtx(), metric="peak"))
 	message = str(exc.value).lower()
-	assert "bucket" in message and "from now on" in message
+	assert "minute" in message, "it must say what a peak actually measures"
+	assert "from now on" in message, "and why no old game has one"
+	assert "/rank" in message and "different measurement" in message, (
+		"and that the eAPM already on screen is a different, working figure")
 
 
 def test_eapm_falls_back_to_the_user_id_when_no_in_game_name_is_known():

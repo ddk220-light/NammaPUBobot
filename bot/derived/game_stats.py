@@ -7,6 +7,7 @@ reconciliation loop that backfills the 1126 already-ingested historical
 matches. Neither caller teaches the function anything about where its input
 rows came from, which is what lets one implementation serve both."""
 import json
+import re
 
 from core.database import db
 
@@ -29,7 +30,7 @@ from core.database import db
 # still has to seed the column, but it no longer has to reimplement this compute
 # in SQL -- which for top_units would mean a second, silently divergent copy of
 # the style-unit rules below.
-COMPUTE_VERSION = 1
+COMPUTE_VERSION = 2
 
 # Unit lines that cost no gold -- AoE2's "trash" units. Excluded from top_units
 # because they are what a player is FORCED into (a counter, or an empty gold
@@ -45,17 +46,24 @@ COMPUTE_VERSION = 1
 # every civ-specific variant and would silently miss the next one.
 TRASH_CATEGORIES = ("scout", "skirmisher", "spearman_line")
 
-# Matched as a substring of the unit name, case-insensitively, so `Trebuchet`,
-# `Traction Trebuchet` and `Mounted Trebuchet` are all caught -- three spellings
-# exist in production today and a civ release can add a fourth.
+# Gold units excluded for the OTHER reason: they are ubiquitous. Both are
+# siege, both are built by nearly everybody in small numbers as a means to an
+# end rather than as a plan, and a unit nearly everybody builds separates
+# nobody -- it just crowds out the unit that would have. Measured on
+# production: Trebuchet is the 2nd most common military unit in the database
+# (2324 player-games, ~5 built at a time) and Battering Ram the 7th (1391),
+# and between them they took 9 of the 42 wins-most/loses-most unit clauses.
 #
-# Not a trash unit (it costs gold) and excluded for the other reason: it is
-# UBIQUITOUS. It is the second most common military unit in the whole database,
-# built in a quarter of all player-games but only ~5 at a time, because almost
-# every imperial-age game ends with somebody making a couple to knock a building
-# down. A unit nearly everybody builds separates nobody, so it crowds out the
-# unit that would have.
-UBIQUITOUS_UNITS = ("trebuchet",)
+# MATCHED ON WORD BOUNDARIES, NOT AS A BARE SUBSTRING, and that is not
+# fastidiousness: "Arambai" contains the letters r-a-m. A substring test for
+# "ram" silently deletes a real unique unit -- one that currently holds a
+# wins-most clause -- while looking entirely correct. \b also still catches
+# every multi-word spelling that matters: Traction/Mounted Trebuchet, and
+# Capped/Siege Ram.
+UBIQUITOUS_UNITS = ("trebuchet", "ram")
+
+_UBIQUITOUS_RE = re.compile(
+	r"\b(?:" + "|".join(re.escape(token) for token in UBIQUITOUS_UNITS) + r")\b", re.I)
 
 
 def is_style_unit(unit_row):
@@ -74,8 +82,7 @@ def is_style_unit(unit_row):
 		return False
 	if unit_row.get("category") in TRASH_CATEGORIES:
 		return False
-	name = str(unit_row.get("unit") or "").lower()
-	return not any(token in name for token in UBIQUITOUS_UNITS)
+	return not _UBIQUITOUS_RE.search(str(unit_row.get("unit") or ""))
 
 
 def compute_game_stats(players, units, apm, computed_at, played_at=None):

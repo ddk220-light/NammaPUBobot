@@ -376,9 +376,16 @@ _EAPM_TITLES = {
 # anybody doing anything.
 _EAPM_EMPTY = {
 	"average": "No player has {floor} games with a recorded eAPM in the last {days} days.",
-	"peak": ("No player has {floor} games with a recorded peak in the last {days} days yet — "
-	         "peak eAPM comes from per-minute buckets, which only games played from now on "
-	         "carry. It fills in as those games are played."),
+	# NAMES THE WORKING BOARD, not just the missing one. Saying only "peak is
+	# not recorded" while /rank visibly prints an eAPM reads as a contradiction
+	# -- the reader has no way to know those are two different measurements from
+	# two different sources, so the message has to say which one they are already
+	# looking at. Written after exactly that question was asked.
+	"peak": ("Peak eAPM is not recorded yet. It is the median of each game's busiest MINUTE, "
+	         "which needs per-minute detail that only games played from now on carry — it fills "
+	         "in as those are played ({floor}+ games needed, over the last {days} days).\n"
+	         "The eAPM on `/rank` is a different measurement — one figure for a whole game — "
+	         "and every game has it. `/eapm` with no metric ranks that one today."),
 }
 
 
