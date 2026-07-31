@@ -75,6 +75,26 @@ db.ensure_table(dict(
 		dict(cname="confidence", ctype=db.types.str, notnull=True),
 		dict(cname="first_seen_at", ctype=db.types.int, notnull=True),
 		dict(cname="last_seen_at", ctype=db.types.int, notnull=True),
+		# WHEN THIS PROFILE'S OWNER LAST CHANGED — deliberately NOT the same
+		# question as last_seen_at, which is bumped by every observation
+		# (an ingest re-seeing a known profile, a name-only refresh, even a
+		# REFUSED claim) and therefore moves constantly without the binding
+		# moving at all.
+		#
+		# bot/derived/refresh.py is the reader. It decides what to recompute by
+		# a stateless staleness comparison, and an identity change is the one
+		# input that comparison cannot see any other way: a `/link` makes a
+		# player's whole game_stats history attributable without touching a
+		# single game_stats row, so a comparison built on game data alone would
+		# never fire and the late-link-backfills-everything promise (identity
+		# v2 §5) would silently not happen. Every function below that MOVES a
+		# binding stamps this; the ones that merely re-observe one must not.
+		#
+		# DEFAULT 0 rather than notnull-with-no-default so the column can be
+		# added to the live table at all — see 009_identities_bound_at, which
+		# adds it under a byte-identical definition and seeds existing rows
+		# from last_seen_at.
+		dict(cname="bound_at", ctype=db.types.int, notnull=True, default=0),
 	],
 	primary_keys=["profile_id"],
 ))
@@ -337,7 +357,12 @@ async def record_refused_claim(profile_id, claimed_user_id, source) -> None:
 
 async def _insert_binding(profile_id, user_id, aoe2_name, confidence, now) -> None:
 	""" The first-ever row for `profile_id`. Nothing can be displaced, so
-	nothing is recorded in identity_conflicts. """
+	nothing is recorded in identity_conflicts.
+
+	bound_at is stamped unconditionally, including when `user_id` is None (the
+	ownerless shape 003_seed_identities can produce): a row appearing at all is
+	a change to the binding table, and starting it at the placeholder 0 would
+	claim its binding predates every derived row that reads it. """
 	await db.insert("identities", dict(
 		profile_id=profile_id,
 		user_id=user_id,
@@ -345,6 +370,7 @@ async def _insert_binding(profile_id, user_id, aoe2_name, confidence, now) -> No
 		confidence=confidence,
 		first_seen_at=now,
 		last_seen_at=now,
+		bound_at=now,
 	))
 	invalidate_cache()
 
@@ -361,17 +387,28 @@ async def _overwrite_binding(profile_id, user_id, confidence, aoe2_name, existin
 	needs to judge it.
 
 	aoe2_name=None means "not observed by this call"; the stored name is kept
-	rather than clobbered with None. """
+	rather than clobbered with None.
+
+	bound_at moves ONLY when the owner actually changes. This function is also
+	the path for two rewrites that leave the binding exactly where it was —
+	link_self refreshing a profile its caller already owns, and relink
+	re-asserting one at `manual` — and stamping those would report a binding
+	change to bot/derived/refresh.py that did not happen, costing a full
+	recompute of every rollup that user has. Confidence and aoe2_name moving
+	are deliberately NOT binding changes: no derived row reads either. """
 	if existing["user_id"] is not None and existing["user_id"] != user_id:
 		await _record_conflict(
 			profile_id, existing["user_id"], existing["confidence"], now, status="superseded")
 
-	await db.update("identities", dict(
+	fields = dict(
 		user_id=user_id,
 		aoe2_name=aoe2_name if aoe2_name is not None else existing["aoe2_name"],
 		confidence=confidence,
 		last_seen_at=now,
-	), keys=dict(profile_id=profile_id))
+	)
+	if existing["user_id"] != user_id:
+		fields["bound_at"] = now
+	await db.update("identities", fields, keys=dict(profile_id=profile_id))
 	invalidate_cache()
 
 
@@ -561,10 +598,15 @@ async def unlink(profile_id, status="unlinked") -> None:
 	# audit trail of who used to hold it.
 	await _record_conflict(profile_id, existing["user_id"], "manual", now, status=status)
 
+	# bound_at moves here: losing an owner IS a binding change, and it is the
+	# half bot/derived/refresh.py would otherwise be blindest to — the departing
+	# owner's own game_stats rows do not move, so nothing else would ever tell
+	# the refresh job to shrink their rollup.
 	await db.update("identities", dict(
 		user_id=None,
 		confidence="seed",
 		last_seen_at=now,
+		bound_at=now,
 	), keys=dict(profile_id=profile_id))
 	invalidate_cache()
 

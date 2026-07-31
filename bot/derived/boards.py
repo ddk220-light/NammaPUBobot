@@ -233,3 +233,33 @@ async def write(community_id, metric_id, board, computed_at):
 	row = dict(community_id=community_id, metric_id=metric_id,
 	           board=json.dumps(board, sort_keys=True), computed_at=computed_at)
 	await db.insert("metric_boards", {c: row[c] for c in _COLUMNS}, on_duplicate="replace")
+
+
+async def delete_uncatalogued(community_id):
+	"""Drop this community's boards for metric_ids the catalog no longer holds.
+	Returns how many rows went.
+
+	write() is a REPLACE per (community, metric), which is correct for every
+	metric that still exists and blind to every metric that stopped existing.
+	Retiring a metric_id from METRICS above -- which the module docstring
+	explicitly anticipates, since a field moving to a `sweepable` table is
+	grounds for removing its board -- would otherwise leave the last board it
+	ever computed stored forever, and stage 5 renders what it finds: a
+	leaderboard that is never refreshed again and never disappears, built on
+	data the sweeper may since have deleted.
+
+	Deliberately scoped to ONE community and driven by the refresh pass that
+	just rewrote that community's boards, rather than a global sweep at import:
+	an unknown metric_id is only safely droppable once something has
+	established that the catalog it is being judged against is the live one,
+	and a pass that has just written every catalogued metric for this community
+	has established exactly that.
+
+	Lives here, beside write(), for the same reason rollups.delete does:
+	`metric_boards` keeps exactly one writing module."""
+	rows = await db.fetchall(
+		"SELECT metric_id FROM metric_boards WHERE community_id=%s", [community_id])
+	stale = [r["metric_id"] for r in rows or [] if r["metric_id"] not in METRICS]
+	for metric_id in stale:
+		await db.delete("metric_boards", where=dict(community_id=community_id, metric_id=metric_id))
+	return len(stale)

@@ -258,3 +258,24 @@ async def write(community_id, user_id, games, rollup, computed_at):
 	row = dict(community_id=community_id, user_id=user_id, games=games,
 	           rollup=json.dumps(rollup, sort_keys=True), computed_at=computed_at)
 	await db.insert("player_rollups", {c: row[c] for c in _COLUMNS}, on_duplicate="replace")
+
+
+async def delete(community_id, user_id):
+	"""Remove one user's rollup for one community. Idempotent (a DELETE that
+	matches nothing is not an error).
+
+	THE ABSENCE IS THE SIGNAL, so removal has to be a real operation and not
+	something write() can express. An unlinked player must end up with NO row
+	rather than a row of zeros -- that is what makes stage 5a's "Statistics
+	pending linking" implementable (identity v2 §5, and this package's
+	__init__ docstring). A player who HAD a rollup and then had their profile
+	unlinked or relinked away is exactly that case arriving late: nothing
+	about their game_stats rows changes, so without a delete they would keep
+	rendering somebody else's history forever.
+
+	Lives here rather than in bot/derived/refresh.py, which is the only
+	caller, so `player_rollups` keeps exactly one writing module --
+	core/data_registry.py's stated target of one dedicated writer per table,
+	and the reason the registry does not have to grow a second entry for the
+	refresh job."""
+	await db.delete("player_rollups", where=dict(community_id=community_id, user_id=user_id))

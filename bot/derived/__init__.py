@@ -221,3 +221,12 @@ db.ensure_table(dict(
 # settled before the job singleton it exposes can ever run. bot/events.py's
 # on_think drives it as `bot.derived.jobs.think(frame_time)`.
 from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)
+
+# The derived-COMMUNITY counterpart, exported under its own name rather than
+# replacing `jobs`: the two loops are independent and bot/events.py drives both.
+# `jobs` keeps the bare name it has had since stage 3 so that call site (and the
+# tests pinning it) do not have to move for a rename that buys nothing.
+# refresh imports bot.identity, which is already imported by this point --
+# bot/__init__.py pulls in bot.replay_stats (whose store.py imports it) before
+# this package.
+from .refresh import jobs as refresh_jobs  # noqa: E402,F401  (DerivedRefresh singleton)

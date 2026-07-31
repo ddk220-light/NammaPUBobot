@@ -399,7 +399,8 @@ def test_ensure_identities_table_is_idempotent():
 		"CREATE TABLE IF NOT EXISTS identities ("
 		"`profile_id` BIGINT, `user_id` BIGINT, `aoe2_name` VARCHAR(191), "
 		"`confidence` VARCHAR(191) NOT NULL, `first_seen_at` BIGINT NOT NULL, "
-		"`last_seen_at` BIGINT NOT NULL, PRIMARY KEY(`profile_id`))"
+		"`last_seen_at` BIGINT NOT NULL, `bound_at` BIGINT NOT NULL DEFAULT '0', "
+		"PRIMARY KEY(`profile_id`))"
 	) == 2
 
 
@@ -2340,7 +2341,7 @@ def test_m008_is_registered_once_under_the_next_free_number():
 	assert names == [
 		"001_core_renames", "002_drop_retired", "003_seed_identities", "004_identity_v2",
 		"005_identity_conflict_history", "006_derived_indexes", "007_raw_renames",
-		"008_game_stats_has_production",
+		"008_game_stats_has_production", "009_identities_bound_at",
 	]
 
 
@@ -2376,3 +2377,133 @@ def test_the_has_production_ddl_matches_the_ensure_table_declaration():
 	assert bool_type, "core/DBAdapters/mysql.py no longer defines Types.bool"
 	expected = f"ALTER TABLE `game_stats` ADD COLUMN `has_production` {bool_type.group(1)} NOT NULL"
 	assert expected == mig._M008_ADD_COLUMN, "the migration's ALTER drifted from the declaration"
+
+
+# ── 009_identities_bound_at ───────────────────────────────────────────────────
+# The column bot/derived/refresh.py's staleness comparison needs in order to see
+# an identity change at all: a /link makes a player's whole history attributable
+# without touching one game_stats row, so nothing else in the database moves.
+
+_M009_SCHEMA = """
+CREATE TABLE identities (
+	profile_id INTEGER PRIMARY KEY, user_id INTEGER, aoe2_name TEXT,
+	confidence TEXT NOT NULL, first_seen_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL);
+"""
+
+
+def _m009_db(rows, schema=_M009_SCHEMA):
+	db = _SqliteMigrationDb(schema)
+	for row in rows:
+		db.add("identities", **row)
+	return db
+
+
+def _m009_identity(profile_id, user_id, last_seen_at, **extra):
+	return dict(profile_id=profile_id, user_id=user_id, aoe2_name=None, confidence="learned",
+	            first_seen_at=100, last_seen_at=last_seen_at, **extra)
+
+
+def _bound(db):
+	return {r["profile_id"]: r["bound_at"] for r in db.rows("identities")}
+
+
+def test_m009_adds_the_column_and_seeds_it_from_last_seen_at():
+	db = _m009_db([_m009_identity(11, 1, 500), _m009_identity(22, 2, 900)])
+
+	asyncio.run(mig._m009(db))
+
+	assert "bound_at" in db.columns("identities")
+	assert _bound(db) == {11: 500, 22: 900}
+
+
+def test_m009_seeds_an_unowned_row_too():
+	# 003_seed_identities and unlink() both leave rows with user_id NULL. They are
+	# still bindings-in-waiting the refresh comparison reads, and leaving them at
+	# the placeholder 0 would claim their binding predates every derived row.
+	db = _m009_db([_m009_identity(11, None, 700)])
+
+	asyncio.run(mig._m009(db))
+
+	assert _bound(db) == {11: 700}
+
+
+def test_m009_does_not_clobber_values_the_running_bot_has_since_written():
+	# MUTANT GUARD: the UPDATE dropping its `WHERE bound_at = 0`. The repair
+	# runbook is "drop the schema_migrations ledger and reboot", so this body
+	# genuinely re-runs against a database bot/identity.py has been stamping for
+	# days. An unguarded UPDATE would rewind every real bound_at to last_seen_at,
+	# which is ALWAYS >= it — silently marking every rollup stale.
+	db = _m009_db([_m009_identity(11, 1, 9000)])
+	asyncio.run(mig._m009(db))
+	db.conn.execute("UPDATE identities SET bound_at = 1234, last_seen_at = 9999")
+
+	asyncio.run(mig._m009(db))
+
+	assert _bound(db) == {11: 1234}
+
+
+def test_m009_still_seeds_when_the_column_already_exists():
+	# `import bot`'s ensure_table ADDs any declared column it does not find, so
+	# the column can exist holding the DEFAULT 0 for every row without this
+	# migration ever having run. Short-circuiting the backfill on the ADD's guard
+	# would leave that database reading "no binding has ever changed" — the
+	# direction that HIDES staleness rather than over-reporting it.
+	db = _m009_db([_m009_identity(11, 1, 500)], schema=_M009_SCHEMA.replace(
+		"last_seen_at INTEGER NOT NULL)", "last_seen_at INTEGER NOT NULL, bound_at INTEGER NOT NULL DEFAULT 0)"))
+
+	asyncio.run(mig._m009(db))
+
+	assert not any("ADD COLUMN" in sql for sql in db.executed)
+	assert _bound(db) == {11: 500}
+
+
+def test_m009_is_a_noop_on_a_fresh_install():
+	# identities is declared by bot/identity.py AND created by 003 — but a
+	# database where neither has happened must not have a table invented for it.
+	db = _SqliteMigrationDb(schema="CREATE TABLE unrelated (x INTEGER);")
+
+	asyncio.run(mig._m009(db))
+
+	assert db.executed == []
+
+
+def test_m009_is_registered_once_under_the_next_free_number():
+	names = [name for name, _fn in mig.MIGRATIONS]
+	assert names.count("009_identities_bound_at") == 1
+	assert names[-1] == "009_identities_bound_at"
+
+
+def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
+	""" bound_at is declared in THREE places — bot/identity.py's ensure_table,
+	this module's _ensure_identities_table CREATE (for a fresh install) and 009's
+	ALTER (for every database that already has the table) — because a migration
+	cannot import bot.*. Drift is not cosmetic: _ensure_table never alters an
+	existing column, so a NOT NULL or a DEFAULT that lands on only one of the
+	three is permanent.
+
+	The type and the rendered default are read from core/DBAdapters/mysql.py's
+	own Types/_mysql_column rather than hardcoded, so changing what
+	`db.types.int` means fails this test instead of silently leaving the
+	migration on the old type. """
+	import os
+
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	with open(os.path.join(root, "bot", "identity.py"), encoding="utf-8") as f:
+		block = f.read().split('tname="identities"', 1)[1].split("primary_keys=", 1)[0]
+	decl = re.search(r'dict\(cname="bound_at"[^\n]*', block)
+	assert decl, "bot/identity.py no longer declares identities.bound_at"
+	assert "ctype=db.types.int" in decl.group(0), "column type drifted"
+	assert "notnull=True" in decl.group(0), "nullability drifted"
+	assert "default=0" in decl.group(0), (
+		"the declaration lost its DEFAULT — MySQL's strict mode refuses ADD COLUMN ... NOT NULL "
+		"with no default on a table that already holds rows, and identities always does")
+
+	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+		int_type = re.search(r'^\tint = "([^"]+)"', f.read(), re.M)
+	assert int_type, "core/DBAdapters/mysql.py no longer defines Types.int"
+	column = f"`bound_at` {int_type.group(1)} NOT NULL DEFAULT '0'"
+	assert f"ALTER TABLE `identities` ADD COLUMN {column}" == mig._M009_ADD_COLUMN, (  # noqa: SIM300
+		"009's ALTER drifted from the declaration")
+	src = open(os.path.join(root, "core", "migrations.py"), encoding="utf-8").read()  # noqa: SIM115
+	assert '"`last_seen_at` BIGINT NOT NULL, `bound_at` BIGINT NOT NULL DEFAULT \'0\', "' in src, (
+		"_ensure_identities_table's CREATE drifted from the declaration")

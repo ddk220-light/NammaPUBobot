@@ -394,7 +394,13 @@ async def _ensure_identities_table(db):
 		"CREATE TABLE IF NOT EXISTS identities ("
 		"`profile_id` BIGINT, `user_id` BIGINT, `aoe2_name` VARCHAR(191), "
 		"`confidence` VARCHAR(191) NOT NULL, `first_seen_at` BIGINT NOT NULL, "
-		"`last_seen_at` BIGINT NOT NULL, PRIMARY KEY(`profile_id`))"
+		# bound_at is carried here as well as in 009's ALTER so a FRESH install
+		# creates the column rather than adding it three migrations later. 009
+		# still runs and is still needed: it is what gives the column to the
+		# databases this CREATE already ran against without it. Its UPDATE is a
+		# no-op here (a table created empty has no rows to seed).
+		"`last_seen_at` BIGINT NOT NULL, `bound_at` BIGINT NOT NULL DEFAULT '0', "
+		"PRIMARY KEY(`profile_id`))"
 	)
 
 
@@ -1374,3 +1380,101 @@ async def _m008(db):
 	await db.execute(_M008_BACKFILL)
 	log.info("migrations: 008_game_stats_has_production: backfilled game_stats.has_production from "
 	         "replay_players")
+
+
+# `identities.bound_at` — WHEN THIS PROFILE'S OWNER LAST CHANGED, as distinct
+# from `last_seen_at` ("when was this profile last observed at all"). The two
+# genuinely differ: learn() bumps last_seen_at on every replay ingest that sees
+# a linked profile, on a name-only refresh, and even on a REFUSED claim, none of
+# which move the binding. bot/derived/refresh.py's staleness comparison needs the
+# narrow question — see that module's docstring for why an observation timestamp
+# cannot answer it without recomputing every rollup on every ingest.
+#
+# DEFAULT '0' on both this ALTER and bot/identity.py's declaration, quoted
+# exactly the way core/DBAdapters/mysql.py's _mysql_column renders a default, so
+# the column a fresh install creates and the column this ALTER adds are
+# byte-identical (test_the_bound_at_ddl_matches_the_ensure_table_declaration
+# pins that). A default is required rather than optional: MySQL's strict mode
+# rejects ADD COLUMN ... NOT NULL with no default on a table that already holds
+# rows, and `identities` holds every binding in production.
+_M009_ADD_COLUMN = "ALTER TABLE `identities` ADD COLUMN `bound_at` BIGINT NOT NULL DEFAULT '0'"
+
+# Existing rows get last_seen_at, which is the tightest UPPER bound available on
+# when their binding was last touched: every path that moves a binding also
+# bumps last_seen_at, so the real bound_at is at or before it. Erring high is the
+# safe direction — a bound_at that is too NEW makes a rollup look stale and get
+# recomputed (wasted work, self-correcting on the next pass), while one that is
+# too OLD makes a stale rollup look fresh and is never revisited.
+#
+# Guarded on `bound_at = 0` so a re-run after a body that died partway through
+# (this module's docstring) cannot clobber real values the running bot has since
+# written. 0 is unambiguous as "never set": every writer stamps int(time.time()).
+_M009_BACKFILL = "UPDATE identities SET bound_at = last_seen_at WHERE bound_at = 0"
+
+
+@migration("009_identities_bound_at")
+async def _m009(db):
+	"""Give `identities` a binding-mutation timestamp, and seed it for every row
+	already there.
+
+	WHY THE COLUMN. bot/derived/refresh.py decides what to recompute by comparing
+	each stored derived row's computed_at against the newest INPUT that feeds it —
+	the same stateless, converging discipline bot/derived/backfill.py uses for the
+	derived-global layer, and for the same reasons (no marker table to leak, and a
+	pass that resumes correctly after a restart mid-run). Game data answers that
+	comparison through game_stats.computed_at. An IDENTITY change does not: a
+	`/link` makes previously-unattributable game_stats rows attributable without
+	touching a single one of them, so a comparison built only on game data would
+	never notice, and the late-link-backfills-your-whole-history promise that
+	identity v2 §5 is built on would silently not happen.
+
+	WHY NOT last_seen_at. It is an OBSERVATION timestamp, not a mutation one.
+	learn() bumps it on every replay ingest of an already-known profile, on a
+	name-only refresh, and on a claim it REFUSED — so depending on it would both
+	mark every player in every ingested match stale for no reason and, worse,
+	couple this comparison's correctness to a column whose meaning belongs to a
+	different module and could legitimately change. bound_at states the contract
+	it is actually being asked for.
+
+	WHY PURE SQL. This module runs before `import bot` (see the docstring at the
+	top of this file), so it cannot import bot.identity to reuse its declaration —
+	db.ensure_table's sync wrapper would drive loop.run_until_complete on an
+	already-running loop and crash the boot. Same constraint 003 works under, and
+	the same hand-kept duplication: _ensure_identities_table above also carries
+	this column so a fresh install creates it rather than altering it in moments.
+
+	IDEMPOTENT PER STATEMENT, not merely per migration (this module's docstring):
+	the ADD COLUMN is guarded on information_schema because MySQL has no
+	`ADD COLUMN IF NOT EXISTS`, and the UPDATE only touches rows still holding the
+	placeholder 0. The guard is check-then-act, so two containers booting at once
+	(a Railway rolling deploy) can both pass it and the loser's ALTER fails on a
+	duplicate column name — the same tolerance 005/006/008 already rely on: the
+	loser crashes, Railway restarts it, the retry finds the column present and
+	re-runs only the harmless UPDATE.
+
+	The UPDATE runs even when the column was already there, deliberately, for the
+	same reason 008's does: `import bot`'s ensure_table ADDs any declared column it
+	does not find, so the column can exist holding 0 for every row without this
+	migration ever having run. Short-circuiting the backfill on the ADD's guard
+	would leave that database reading "no binding has ever changed" — which is the
+	direction that HIDES staleness rather than the one that over-reports it.
+
+	A missing `identities` is not a state this migration invents a row for: 003
+	creates and seeds the table and runs first, so the only way to get here
+	without it is a database already loudly broken (_assert_identities_seeded
+	fails the boot before the loop even starts). Skipping is correct and is not
+	recorded — run_all only records after the body returns, and the body returning
+	early here still records, so the guard below deliberately logs rather than
+	silently passing.
+	"""
+	if not await table_exists(db, "identities"):
+		log.info("migrations: 009_identities_bound_at: identities does not exist, skipping "
+		         "(bot/identity.py creates it with bound_at already on it)")
+		return
+
+	if not await column_exists(db, "identities", "bound_at"):
+		await db.execute(_M009_ADD_COLUMN)
+		log.info("migrations: 009_identities_bound_at: added identities.bound_at")
+
+	await db.execute(_M009_BACKFILL)
+	log.info("migrations: 009_identities_bound_at: seeded identities.bound_at from last_seen_at")
