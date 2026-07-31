@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Read-only lookup of the Discord-user <-> AoE2-profile map for the lobby flow,
-backed by the identity resolver (bot/identity.py) rather than the qc_profile_map
-table this module used to wrap directly — qc_profile_map was never populated in
-production (0 rows) and is dropped in a later stage.
+backed by the identity resolver (bot/identity.py) rather than the dedicated
+lobby-side map table this module used to wrap directly — that table was never
+populated in production (0 rows), is no longer declared anywhere, and is
+dropped by a later migration.
 
 Nothing here WRITES identity any more. This module used to learn bindings from
 roster-confirmed lobbies by elimination (``eliminate`` + ``link``); both are

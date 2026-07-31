@@ -82,9 +82,8 @@ class ReplayStatsJobs:
                 return await self._mark_unavailable(aoe2_match_id, attempts, first_seen_at, now, fstatus)
 
             try:
-                resolved = await asyncio.to_thread(_load_resolved)
                 date_map = {aoe2_match_id: _date_str(played_at_epoch)} if played_at_epoch else {}
-                result, pstatus, sv = await parse_replay(path, resolved, date_map)
+                result, pstatus, sv = await parse_replay(path, date_map)
             finally:
                 _safe_unlink(path)   # remove the temp replay on every path (success or error)
 
@@ -135,15 +134,6 @@ class ReplayStatsJobs:
                                   first_seen_at=first_seen_at,
                                   next_attempt_at=now + policy.unavailable_backoff(attempts),
                                   error_reason=reason)
-
-
-def _load_resolved():
-    import sys
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    from utils.replay_quiz.extract import load_resolved
-    return load_resolved()
 
 
 def _date_str(epoch):

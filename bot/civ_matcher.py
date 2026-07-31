@@ -40,8 +40,8 @@ async def _map_players_to_profiles(players):
 	map plus the union of all mapped profile ids.
 
 	No nick fallback: the old CSV-only nick-keyed lookup never resolved anyone
-	the user_id path couldn't (every row in data/player_profile_map.csv already
-	carried a user_id), and both live callers (bot/stats/stats.py's Discord
+	the user_id path couldn't (every row in the hand-maintained profile-map CSV
+	already carried a user_id), and both live callers (bot/stats/stats.py's Discord
 	member ids, bot/civ_reconcile.py's match_players.user_id) always supply a
 	real user_id, never None.
 	"""

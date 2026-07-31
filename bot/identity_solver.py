@@ -98,7 +98,7 @@ production dump, re-measured against THIS module with both rules in place:
   ACCURACY, cold start, against the hand-curated CSVs. Of the 52 pre-rule
   bindings, 40 are profiles the humans had also mapped and ALL 40 agree, 0
   disagree. But 40 is NOT 40 independent human confirmations: 26 come from
-  data/player_profile_map.csv (hand-maintained), 6 from rows tagged `manual`,
+  the hand-maintained profile-map CSV, 6 from rows tagged `manual`,
   and 8 from rows tagged `elim` — i.e. 8 merely agree with the output of the
   very eliminate() mechanism this module replaces, which confirms nothing.
   INDEPENDENT HUMAN CONFIRMATION IS 32/32, not 40/40. Of the 45 that survive

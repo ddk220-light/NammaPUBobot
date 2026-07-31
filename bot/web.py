@@ -587,7 +587,10 @@ async def _player_has_public_stats(user_id):
 		[user_id])
 	if row:
 		return True
-	return int(user_id) in await _mapped_profiles_by_user()
+	# No reported match, but a linked AoE2 profile still gives them a page
+	# (replay-derived stats key on profile_id). One store answers that now.
+	uid = int(user_id)
+	return bool((await identity.profiles_for_users([uid])).get(uid))
 
 
 def _map_counts(rows):
@@ -600,62 +603,26 @@ def _map_counts(rows):
 	return [{"map": k, "games": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:12]]
 
 
-def _csv_profile_rows():
-	path = os.path.join(DATA_DIR, "player_profile_map.csv")
-	if not os.path.exists(path):
-		return []
-	rows = []
-	with open(path, newline="") as f:
-		for r in csv.DictReader(f):
-			uid = (r.get("user_id") or "").strip()
-			if not uid.isdigit():
-				continue
-			pids = [p.strip() for p in (r.get("profile_id") or "").split("/") if p.strip().isdigit()]
-			names = [n.strip() for n in (r.get("aoe2_name") or "").split("/") if n.strip()]
-			rows.append({
-				"user_id": int(uid),
-				"nick": r.get("nick") or "",
-				"profile_ids": [int(p) for p in pids],
-				"aoe2_names": names,
-			})
-	return rows
-
-
-async def _mapped_profiles_by_user():
-	"""Existing Discord-user -> AoE2 profile/name mapping from live DBs + CSV fallback."""
-	out = {}
-
-	def add(uid, profile_id=None, name=None, nick=None):
-		if not uid:
-			return
-		d = out.setdefault(int(uid), {"profile_ids": set(), "aoe2_names": set(), "nick": ""})
-		if profile_id:
-			d["profile_ids"].add(int(profile_id))
-		if name:
-			d["aoe2_names"].add(str(name).strip())
-		if nick and not d["nick"]:
-			d["nick"] = str(nick).strip()
-
-	for r in await db.fetchall("SELECT user_id, profile_id, name FROM qc_profile_map"):
-		add(r.get("user_id"), r.get("profile_id"), r.get("name"))
-	for r in await db.fetchall("SELECT user_id, profile_id, name FROM rs_profiles WHERE user_id IS NOT NULL"):
-		add(r.get("user_id"), r.get("profile_id"), r.get("name"))
-	for r in _csv_profile_rows():
-		for pid in r["profile_ids"]:
-			add(r["user_id"], pid, nick=r["nick"])
-		for name in r["aoe2_names"]:
-			add(r["user_id"], name=name, nick=r["nick"])
-	return out
-
-
 async def _match_stat_players():
+	"""The player directory: everyone with reported matches, plus everyone with a
+	linked AoE2 profile but no reported match yet (they still have replay-derived
+	stats, keyed on profile_id, so they must not be missing from the list).
+
+	`mapped` comes from the identity resolver alone. It used to be a union of two
+	now-retired profile tables and a hand-maintained CSV; identity v2 makes
+	`identities` the sole store, so this reads one place. The one thing that
+	union supplied and `identities` does not is a Discord nickname — see
+	identity.profiles_and_names_by_user for why that is correct rather than a
+	gap — so a player with no row in match_players is now labelled by their
+	AoE2 in-game name instead of a stale CSV nick.
+	"""
 	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM player_ratings WHERE is_hidden=1")
 	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
 	rows = await db.fetchall(
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT pm.match_id) AS games "
 		"FROM match_players pm WHERE 1=1" + _visible_user_clause("pm") +
 		" GROUP BY pm.user_id ORDER BY games DESC, nick ASC LIMIT 250")
-	mapped = await _mapped_profiles_by_user()
+	mapped = await identity.profiles_and_names_by_user()
 	players = {}
 	for r in rows or []:
 		uid = int(r["user_id"])
@@ -663,18 +630,18 @@ async def _match_stat_players():
 			continue
 		players[uid] = {
 			"user_id": str(uid),
-			"nick": r["nick"] or mapped.get(uid, {}).get("nick") or str(uid),
+			"nick": r["nick"] or next(iter(mapped.get(uid, {}).get("aoe2_names", [])), str(uid)),
 			"games": int(r["games"] or 0),
-			"profile_ids": sorted(mapped.get(uid, {}).get("profile_ids", [])),
+			"profile_ids": mapped.get(uid, {}).get("profile_ids", []),
 			"avatar": _avatar_for_user_id(uid),
 		}
 	for uid, m in mapped.items():
 		if uid not in players and uid not in hidden_users:
 			players[uid] = {
 				"user_id": str(uid),
-				"nick": m.get("nick") or next(iter(m.get("aoe2_names") or []), str(uid)),
+				"nick": next(iter(m["aoe2_names"]), str(uid)),
 				"games": 0,
-				"profile_ids": sorted(m.get("profile_ids", [])),
+				"profile_ids": m["profile_ids"],
 				"avatar": _avatar_for_user_id(uid),
 			}
 	return sorted(players.values(), key=lambda p: (-p["games"], p["nick"].lower()))[:500]
@@ -855,6 +822,18 @@ def _finish_tag_rows(rows_by_key, parsed_games):
 	return sorted(rows, key=lambda r: (-r["score"], -r["tag_games"], -(r["winrate"] or 0), r["nick"].lower()))
 
 
+def _label_for(mapped, user_id):
+	"""The resolver's stored AoE2 name for a user, or None.
+
+	Used as the leaderboard label in preference to the per-row `identity`, which
+	is whatever that one game recorded: one stable name per player beats a label
+	that changes with whichever row happened to be grouped first. Was a Discord
+	nick from the old three-store union; `identities` holds in-game names only
+	(see identity.profiles_and_names_by_user for why that is the right shape).
+	"""
+	return next(iter(mapped.get(user_id, {}).get("aoe2_names", [])), None)
+
+
 async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
 	start = _period_start(period)
 	keys = list(STRATEGY_TAG_LABELS)
@@ -883,7 +862,7 @@ async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hi
 			continue
 		row_key = (uid, key, "strategy")
 		cur = out.setdefault(row_key, _empty_tag_row(
-			uid, mapped.get(uid, {}).get("nick") or r.get("identity"), _avatar_for_user_id(uid), key, "strategy"))
+			uid, _label_for(mapped, uid) or r.get("identity"), _avatar_for_user_id(uid), key, "strategy"))
 		cur["tag_games"] += int(r.get("games") or 0)
 		cur["wins"] += int(r.get("wins") or 0)
 		cur["losses"] += int(r.get("losses") or 0)
@@ -920,7 +899,7 @@ async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidd
 			continue
 		row_key = (int(uid), key, tag_type)
 		cur = out.setdefault(row_key, _empty_tag_row(
-			int(uid), mapped.get(int(uid), {}).get("nick") or r.get("identity"),
+			int(uid), _label_for(mapped, int(uid)) or r.get("identity"),
 			_avatar_for_user_id(uid), key, tag_type))
 		cur["tag_label"] = meta["label"]
 		cur["tag_games"] += int(r.get("games") or 0)
@@ -934,7 +913,10 @@ async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidd
 
 
 async def _tag_leaderboard(period, tag_key="all"):
-	mapped = await _mapped_profiles_by_user()
+	# Same single source as the player directory: the tag leaderboards join
+	# replay-derived rows (keyed on profile_id) back to Discord users, which is
+	# the identity resolver's whole job.
+	mapped = await identity.profiles_and_names_by_user()
 	profile_to_user = {}
 	for uid, data in mapped.items():
 		for pid in data.get("profile_ids") or []:

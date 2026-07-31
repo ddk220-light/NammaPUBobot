@@ -23,25 +23,25 @@ def _cache_path(mid):
     return os.path.join(CACHE_DIR, "{}.{}.json".format(mid, EXTRACT_VERSION))
 
 
-def _extract(path, mid, resolved, date_map):
+def _extract(path, mid, date_map):
     import json
     cp = _cache_path(mid)
     if os.path.exists(cp):
         with open(cp, encoding="utf-8") as f:
             return json.load(f)
     from utils.replay_quiz.extract import extract_match
-    data = extract_match(path, resolved, date_map)
+    data = extract_match(path, date_map)
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(cp, "w", encoding="utf-8") as f:
         json.dump(data, f)
     return data
 
 
-def _ingest_one(conn, mid, resolved, date_map):
+def _ingest_one(conn, mid, date_map):
     rec, mark = _paths(mid)
     if os.path.exists(rec):
         try:
-            game = _extract(rec, mid, resolved, date_map)
+            game = _extract(rec, mid, date_map)
         except Exception as e:
             sv = None
             try:
@@ -66,8 +66,8 @@ def run(idle_exits=3, poll=10.0):
     localdb.ensure_schema(conn)
     for c in REGISTRY.values():
         localdb.upsert_classification(conn, c)
-    from utils.replay_quiz.extract import load_resolved, load_date_map
-    resolved, date_map = load_resolved(), load_date_map()
+    from utils.replay_quiz.extract import load_date_map
+    date_map = load_date_map()
     idle = 0
     done_marker = os.path.join(REPLAY_DIR, ".done")
     while True:
@@ -76,7 +76,7 @@ def run(idle_exits=3, poll=10.0):
             break
         progressed = 0
         for mid in pend:
-            r = _ingest_one(conn, mid, resolved, date_map)
+            r = _ingest_one(conn, mid, date_map)
             if r in ("ingested", "failed", "unavailable"):
                 progressed += 1
         localdb.rebuild_player_totals(conn)

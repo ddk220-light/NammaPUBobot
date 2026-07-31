@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Replay -> structured per-match records (the extraction ALGORITHM).
 
-`extract_match(path, resolved, date_map)` returns one dict per match:
+`extract_match(path, date_map)` returns one dict per match:
   {
     "match":   {aoe2_match_id, map, save_version, duration_s, date, winner_team},
     "players": [ per-player facts: identity, civ, team, winner, eapm, age clicks,
@@ -13,8 +13,20 @@
   }
 
 Counts are queue-clicks (upper bound). Age threshold = the CLICK (RESEARCH of the
-age tech); "before age X when never reached X" counts the whole game. Attribution
-via stable profile_id -> data/profile_resolved.csv. Run with PYTHONPATH=.replay_scratch.
+age tech); "before age X when never reached X" counts the whole game.
+
+`identity` is the player's OWN in-game name as recorded in the replay, and
+nothing else. This module used to take a `resolved` map (loaded from
+data/profile_resolved.csv) and prefer the mapped DISCORD NICK over the in-game
+name; that expression was the origin of the identity pollution identity v2
+exists to repair -- the nick reached the live ingest, and from there
+identities.aoe2_name, so a table whose whole job is "what is this account
+called in the game" ended up holding Discord nicknames for most of its rows.
+The replay is the only authority on an in-game name, so it is now the only
+source. A consumer that wants a Discord-facing display name resolves
+profile_id -> user through the identity resolver (bot/identity.py) or, offline,
+through its own mapping applied AFTER extraction (see
+utils/replay_quiz/build_db.py). Run with PYTHONPATH=.replay_scratch.
 """
 import csv
 import os
@@ -28,7 +40,9 @@ SIEGE = ("ram", "mangonel", "onager", "scorpion", "bombard cannon", "siege tower
 WARSHIP = ("galley", "galleon", "fire ship", "fire galley", "demolition", "longboat",
            "turtle ship", "caravel", "dromon", "cannon galleon")
 
-EXTRACT_VERSION = "v5"   # parse-cache version; bump when extract_match output changes.
+EXTRACT_VERSION = "v6"   # parse-cache version; bump when extract_match output changes.
+                         # v6: `identity` is the replay's own in-game name (was
+                         #     nick-from-CSV); `resolved` parameter removed
                          # v5: per-minute eAPM buckets (apm)
                          # v4: per-player settle_tc_xy + nearest gold/stone/food distances + vil_perim
 
@@ -121,7 +135,7 @@ def _age_of(uptime_age):
     return None
 
 
-def extract_match(path, resolved, date_map=None):
+def extract_match(path, date_map=None):
     import mgz.model
 
     m = mgz.model.parse_match(open(path, "rb"))
@@ -251,8 +265,9 @@ def extract_match(path, resolved, date_map=None):
 
     out_players, out_units, out_techs, out_buildings = [], [], [], []
     for pnum, p in players.items():
-        nick, aoe2_name, src = resolved.get(p.profile_id, ("", p.name, "unmapped"))
-        identity = nick or aoe2_name or p.name
+        # The replay's own name for this player, full stop -- see the module
+        # docstring for why nothing else may win here.
+        identity = p.name
         civ = p.civilization
         fc = age_click[pnum].get("feudal")
         cc = age_click[pnum].get("castle")
@@ -310,7 +325,12 @@ def extract_match(path, resolved, date_map=None):
         tid = p.team_id
         team = "+".join(str(x) for x in sorted(tid)) if isinstance(tid, (list, set, frozenset, tuple)) else tid
         out_players.append(dict(
-            player_number=pnum, profile_id=p.profile_id, identity=identity, attribution=src,
+            # attribution records WHERE `identity` came from, and is now always
+            # the replay itself. It is kept (rather than dropped) because it is
+            # the only thing distinguishing rows written by this clean path from
+            # the 'seed'/'resolved'/'unmapped' rows the CSV path already wrote to
+            # rs_player_games -- provenance a repair pass needs.
+            player_number=pnum, profile_id=p.profile_id, identity=identity, attribution="replay",
             civ=civ, team=team, winner=bool(p.winner) if p.winner is not None else None, eapm=p.eapm,
             feudal_s=round(fc) if fc else None, castle_s=round(cc) if cc else None,
             imperial_s=round(ic) if ic else None, first_tc_s=round(first_tc) if first_tc else None,
@@ -334,19 +354,6 @@ def extract_match(path, resolved, date_map=None):
                  date=date_map.get(aoe2_id, ""), winner_team=None)
     return dict(match=match, players=out_players, units=out_units, techs=out_techs,
                 buildings=out_buildings, events=events, apm=apm_buckets(apm_actions))
-
-
-def load_resolved():
-    m = {}
-    path = os.path.join(ROOT, "data", "profile_resolved.csv")
-    if os.path.exists(path):
-        with open(path, newline="", encoding="utf-8") as f:
-            for r in csv.DictReader(f):
-                try:
-                    m[int(r["profile_id"])] = (r.get("nick") or "", r.get("aoe2_name") or "", r.get("source") or "")
-                except ValueError:
-                    pass
-    return m
 
 
 def load_date_map():

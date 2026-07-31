@@ -77,7 +77,7 @@ sys.modules["bot"] = _fake_bot
 
 from bot.replay_stats.apm_query import apm_series          # noqa: E402
 from bot.replay_stats.chart import render_apm_curve        # noqa: E402
-from utils.replay_quiz.extract import extract_match, load_resolved   # noqa: E402
+from utils.replay_quiz.extract import extract_match   # noqa: E402
 
 
 def main():
@@ -93,13 +93,12 @@ def main():
         print("No cached replays in data/replays -- nothing to validate.")
         return 1
 
-    resolved = load_resolved()
     failures = 0
     checks_run = 0
     for path in paths:
         name = os.path.basename(path)
         try:
-            result = extract_match(path, resolved, {})
+            result = extract_match(path, {})
         except Exception as e:
             print(f"{name}: PARSE FAILED -- {e}")
             failures += 1

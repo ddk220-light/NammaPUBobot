@@ -1,14 +1,22 @@
 # -*- coding: utf-8 -*-
 """The identity resolver — the single answer to "who is this person".
 
-Today that question is answered by FIVE different stores: a hand-maintained
-CSV (data/player_profile_map.csv), a generated CSV (data/profile_resolved.csv),
-the rs_profiles table (learned during replay ingest), the qc_profile_map table
-(designed to replace the CSV but never populated), and a copy inside an
-offline SQLite quiz database. Identity is the join key for nearly every table
-in this bot, so that fragmentation blocks everything downstream. This module
-is the single resolver; a later stage re-points the four existing readers at
-it (this module does not touch them, and does not delete the CSVs or rs_profiles).
+That question used to be answered by FIVE stores: a hand-maintained CSV, a
+generated CSV, a table learned during replay ingest, a table designed to
+replace the CSV but never populated, and a copy inside an offline SQLite quiz
+database. Identity is the join key for nearly every table in this bot, so that
+fragmentation blocked everything downstream. It is over: every runtime read and
+write of a Discord-user <-> AoE2-profile binding now goes through this module,
+the legacy readers and writers are deleted, and a migration drops the retired
+tables. The offline quiz pipeline (utils/replay_quiz/) still keeps its own
+mapping, deliberately — it runs on a laptop against downloaded replays, never
+against this database, and produces a display name for quiz copy rather than a
+binding anything joins on.
+
+The one rule that makes this module worth having: an in-game name reaching
+`aoe2_name` must come from the GAME. Replay ingest used to hand it a Discord
+nickname (see utils/replay_quiz/extract.py's docstring), which is how most of
+this column's production rows came to hold something the game never said.
 
 Two tables:
 
@@ -179,6 +187,46 @@ async def names_for_profiles(profile_ids) -> dict:
 		row = await db.select_one(["aoe2_name"], "identities", where={"profile_id": pid})
 		if row and row["aoe2_name"]:
 			out[pid] = row["aoe2_name"]
+	return out
+
+
+async def profiles_and_names_by_user() -> dict:
+	""" Every owned identity in one read:
+
+	  {user_id: {"profile_ids": [int, ...], "aoe2_names": [str, ...]}}
+
+	one entry per Discord user that owns at least one profile; both lists are
+	sorted, and `aoe2_names` holds only the names actually observed (a profile
+	with no known name contributes nothing to it, never an empty string).
+	Unowned profiles — user_id NULL — are absent entirely, the same rule
+	profiles_for_users follows.
+
+	This exists for bot/web.py's player directory, which needs the whole map at
+	once rather than per user: it lists every player the community has, and
+	per-user calls would be one query per row. It lives here, not as SQL in
+	web.py, because this module owns `identities` and is the single answer to
+	"who is this person" — the directory previously built the same answer by
+	unioning two now-retired profile tables and a CSV, and reproducing that
+	fragmentation one layer up is exactly what identity v2 removes.
+
+	NOT returned: a Discord nickname. `identities` deliberately holds only the
+	AoE2 in-game name, because a Discord display name belongs to a guild member
+	and changes with it, while a profile's in-game name is a property of the
+	AoE2 account. Callers that want a Discord-facing label read it from Discord
+	(or from match_players.nick) and fall back to an aoe2_name. """
+	rows = await db.select(["user_id", "profile_id", "aoe2_name"], "identities")
+	out = {}
+	for r in rows or []:
+		uid = r["user_id"]
+		if uid is None:
+			continue
+		entry = out.setdefault(int(uid), {"profile_ids": [], "aoe2_names": []})
+		entry["profile_ids"].append(r["profile_id"])
+		if r["aoe2_name"]:
+			entry["aoe2_names"].append(r["aoe2_name"])
+	for entry in out.values():
+		entry["profile_ids"].sort()
+		entry["aoe2_names"].sort()
 	return out
 
 

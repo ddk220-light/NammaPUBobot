@@ -113,7 +113,7 @@ async def _rebuild_player_totals():
 		"FROM rs_player_games WHERE identity IS NOT NULL AND identity <> '' GROUP BY identity")
 
 
-def _extract_for_match(aoe2_match_id, played_at_epoch, resolved, date_map):
+def _extract_for_match(aoe2_match_id, played_at_epoch, date_map):
 	from utils.replay_quiz import download as dl
 	from utils.replay_quiz.extract import extract_match
 
@@ -128,7 +128,7 @@ def _extract_for_match(aoe2_match_id, played_at_epoch, resolved, date_map):
 	dates = dict(date_map)
 	if played_at_epoch:
 		dates[aoe2_match_id] = time.strftime("%Y-%m-%d %H:%M", time.gmtime(int(played_at_epoch)))
-	return extract_match(path, resolved, dates), "ok"
+	return extract_match(path, dates), "ok"
 
 
 async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
@@ -142,9 +142,8 @@ async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
 				print("{} bot_match={} at={}".format(r["aoe2_match_id"], r.get("bot_match_id"), r.get("at")))
 			return 0
 
-		from utils.replay_quiz.extract import load_date_map, load_resolved
+		from utils.replay_quiz.extract import load_date_map
 
-		resolved = load_resolved()
 		date_map = load_date_map()
 		await _upsert_registry()
 		done = failed = 0
@@ -152,7 +151,7 @@ async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
 			try:
 				mid = int(r["aoe2_match_id"])
 				extracted, status = await asyncio.to_thread(
-					_extract_for_match, mid, r.get("at"), resolved, date_map)
+					_extract_for_match, mid, r.get("at"), date_map)
 				if not extracted:
 					failed += 1
 					await _mark_unavailable(mid, status)

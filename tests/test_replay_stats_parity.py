@@ -15,8 +15,8 @@ pytestmark = pytest.mark.skipif(
 
 def test_live_extract_matches_offline_facts():
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    from utils.replay_quiz.extract import extract_match, load_resolved
-    out = extract_match(REPLAY, load_resolved(), {})
+    from utils.replay_quiz.extract import extract_match
+    out = extract_match(REPLAY, {})
     assert out["match"]["aoe2_match_id"] == int(MATCH_ID)
 
     con = sqlite3.connect(QUIZ_DB)

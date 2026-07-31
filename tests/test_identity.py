@@ -1,6 +1,6 @@
 """The identity resolver — the single answer to "who is this person" that
 later tasks re-point the four fragmented readers (player_profile_map.csv,
-profile_resolved.csv, rs_profiles, qc_profile_map) at.
+the two generated CSVs and the two retired profile tables) at.
 
 Pure-logic tests against a fake adapter, same pattern as test_community.py:
 no MySQL involved. bot.identity.db is monkeypatched per test so nothing here

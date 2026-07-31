@@ -1,21 +1,18 @@
 """Unit tests for bot/replay_stats/store.py's identity-resolver read and
 write paths.
 
-load_profile_user_map used to run a full-table
-`SELECT profile_id, user_id FROM rs_profiles WHERE user_id IS NOT NULL` on
-every match write — a read now superseded by the identity resolver
-(bot/identity.py), so task 2.3 re-points it there, scoped to just the
-profile_ids in the match being written. The rs_profiles WRITE (write_match's
-insert_many at the end of the function) is untouched — that table keeps being
-written at ingest until a later stage drops it. The one-time
-profile_resolved.csv seeder is deleted outright: migration 003_seed_identities
-now owns seeding.
+Ingest reads and writes identity in exactly one place now: the resolver
+(bot/identity.py). load_profile_user_map is the read, scoped to the profile_ids
+in the match being written; _learn_from_ingest is the write, feeding back the
+in-game name and last-seen time this replay just observed. The legacy
+replay-side profile table that ingest used to upsert alongside them is no
+longer written or declared, and the one-time CSV seeder is gone — migration
+003_seed_identities owns seeding.
 
-_learn_from_ingest (below) is the write side: replay ingest resolving a
-profile_id to a Discord user_id must feed that back into the resolver via
-identity.learn(), best-effort, so the resolver stays current with what
-ingest just observed and rs_profiles' on_duplicate='replace' write can't
-silently drift ahead of `identities`.
+The name _learn_from_ingest passes is the player's own name out of the REPLAY
+(extract_match's `identity`), never a Discord nickname; that substitution is
+what polluted the resolver's aoe2_name column in production, and
+tests/test_extract_identity.py pins the fixed expression.
 """
 import asyncio
 
@@ -59,8 +56,7 @@ def test_load_profile_user_map_empty_input_makes_no_calls(monkeypatch):
 
 def test_csv_seeder_is_gone():
     # migration 003_seed_identities now owns seeding; the one-time CSV loader
-    # into rs_profiles is retired along with the path/csv-module plumbing it
-    # alone needed.
+    # is retired along with the path/csv-module plumbing it alone needed.
     assert not hasattr(store, "seed_profiles_from_csv")
 
 

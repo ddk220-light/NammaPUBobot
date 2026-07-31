@@ -187,17 +187,6 @@ db.ensure_table(dict(
 ))
 
 db.ensure_table(dict(
-    tname="rs_profiles",
-    columns=[
-        dict(cname="profile_id", ctype=db.types.int),
-        dict(cname="user_id", ctype=db.types.int, notnull=False),
-        dict(cname="name", ctype=db.types.str, notnull=False),
-        dict(cname="last_seen_at", ctype=db.types.int, notnull=False),
-    ],
-    primary_keys=["profile_id"],
-))
-
-db.ensure_table(dict(
     tname="rs_player_game_tags",
     columns=[
         dict(cname="aoe2_match_id", ctype=db.types.int),

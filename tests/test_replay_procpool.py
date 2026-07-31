@@ -181,7 +181,7 @@ def test_parse_resets_the_pool_on_timeout(monkeypatch):
     _stub_save_version(monkeypatch)
     pool = _install_pool(monkeypatch, parse_module, _HangingExecutor())
 
-    result, status, sv = asyncio.run(parse_module.parse_replay("p.aoe2record", {}, {}, timeout=0.01))
+    result, status, sv = asyncio.run(parse_module.parse_replay("p.aoe2record", {}, timeout=0.01))
 
     assert (result, status, sv) == (None, "parse_failed", 68.0)
     assert pool.resets == 1
@@ -192,7 +192,7 @@ def test_parse_resets_the_pool_when_the_worker_dies(monkeypatch):
     pool = _install_pool(monkeypatch, parse_module,
                          _RaisingExecutor(BrokenProcessPool("worker died")))
 
-    result, status, sv = asyncio.run(parse_module.parse_replay("p.aoe2record", {}, {}))
+    result, status, sv = asyncio.run(parse_module.parse_replay("p.aoe2record", {}))
 
     assert (result, status, sv) == (None, "parse_failed", 68.0)
     assert pool.resets == 1, "a dead worker must be replaced — otherwise every match " \
@@ -203,7 +203,7 @@ def test_parse_does_not_reset_the_pool_on_an_ordinary_parse_error(monkeypatch):
     _stub_save_version(monkeypatch)
     pool = _install_pool(monkeypatch, parse_module, _RaisingExecutor(ValueError("corrupt file")))
 
-    _result, status, _sv = asyncio.run(parse_module.parse_replay("p.aoe2record", {}, {}))
+    _result, status, _sv = asyncio.run(parse_module.parse_replay("p.aoe2record", {}))
 
     assert status == "parse_failed"
     assert pool.resets == 0
@@ -215,7 +215,7 @@ def test_parse_still_gates_on_save_version_before_touching_the_pool(monkeypatch)
     _stub_save_version(monkeypatch, version=999.0)
     pool = _install_pool(monkeypatch, parse_module, _RaisingExecutor(AssertionError("submitted!")))
 
-    result, status, sv = asyncio.run(parse_module.parse_replay("p.aoe2record", {}, {}))
+    result, status, sv = asyncio.run(parse_module.parse_replay("p.aoe2record", {}))
 
     assert (result, status, sv) == (None, "pending_parser_update", 999.0)
     assert pool.resets == 0

@@ -5,13 +5,13 @@ EXTRACTED = {
     "match": {"aoe2_match_id": 999, "map": "Arabia", "save_version": 67.2,
               "duration_s": 1500, "date": "2026-06-20 10:00", "winner_team": None},
     "players": [
-        {"player_number": 1, "profile_id": 111, "identity": "Alice", "attribution": "seed",
+        {"player_number": 1, "profile_id": 111, "identity": "Alice", "attribution": "replay",
          "civ": "Mayans", "team": "1", "winner": True, "eapm": 80, "age_reliable": True,
          "tc_relocations": 0, "feudal_s": 600, "castle_s": 1200, "imperial_s": None,
          "first_tc_s": 20, "villagers": 90, "vil_pre_feudal": 20, "vil_pre_castle": 50,
          "vil_pre_imperial": 90, "military": 30, "mil_pre_feudal": 0, "mil_pre_castle": 10,
          "mil_pre_imperial": 30},
-        {"player_number": 2, "profile_id": 222, "identity": "Bob", "attribution": "unmapped",
+        {"player_number": 2, "profile_id": 222, "identity": "Bob", "attribution": "replay",
          "civ": "Franks", "team": "2", "winner": False, "eapm": 70, "age_reliable": True,
          "tc_relocations": 1, "feudal_s": 650, "castle_s": None, "imperial_s": None,
          "first_tc_s": 25, "villagers": 70, "vil_pre_feudal": 18, "vil_pre_castle": 40,
@@ -62,11 +62,12 @@ def test_unit_rows_denormalize_profile_id():
     assert rows[0]["unit"] == "Archer"
 
 
-def test_profile_upserts():
-    rows = shape.profile_upserts(EXTRACTED["players"], PROFMAP, now=555)
-    by_pid = {r["profile_id"]: r for r in rows}
-    assert by_pid[111]["user_id"] == 5001 and by_pid[111]["name"] == "Alice"
-    assert by_pid[222]["user_id"] is None and by_pid[222]["last_seen_at"] == 555
+def test_the_legacy_profile_upsert_shaper_is_gone():
+    """profile_upserts built the rows for the retired replay-side profile table,
+    the second store that answered "who is this person". Ingest no longer writes
+    it (the identity resolver is the only one), and a shaper left behind is a
+    write waiting to be re-added."""
+    assert not hasattr(shape, "profile_upserts")
 
 
 def test_apm_rows_denormalize_profile_id():

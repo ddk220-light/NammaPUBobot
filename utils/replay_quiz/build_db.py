@@ -23,7 +23,7 @@ import json
 import os
 import sqlite3
 
-from extract import extract_match, load_resolved, load_date_map
+from extract import EXTRACT_VERSION, extract_match, load_date_map
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REPLAYS = os.path.join(ROOT, "data", "replays")
@@ -56,13 +56,57 @@ UNIT_CATEGORIES = ["scout", "skirmisher", "archer_line", "spearman_line", "milit
                    "unique_other", "elephant"]
 
 
+def load_resolved():
+    """profile_id -> (nick, aoe2_name, source) from data/profile_resolved.csv.
+
+    This used to live in extract.py and be handed to extract_match, which
+    preferred the Discord `nick` over the replay's own in-game name. That
+    preference polluted the live bot's identity table (identity v2), so the
+    extractor now emits the replay name only and this quiz pipeline -- the one
+    consumer that genuinely wants Discord-facing display names, because its
+    questions read "which PLAYER..." -- applies the mapping itself, after
+    extraction (see apply_resolved_identities).
+    """
+    m = {}
+    path = os.path.join(ROOT, "data", "profile_resolved.csv")
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                try:
+                    m[int(r["profile_id"])] = (r.get("nick") or "", r.get("aoe2_name") or "", r.get("source") or "")
+                except ValueError:
+                    pass
+    return m
+
+
+def apply_resolved_identities(md, resolved):
+    """Rewrite one extracted match's `identity` fields to the quiz's display name.
+
+    extract_match sets `identity` to the replay's own in-game name on every
+    record. The long tables (units/techs/buildings) carry only player_number,
+    so the per-player mapping is built from md["players"] (which has
+    profile_id) and then applied by player_number. A profile with no resolved
+    row keeps the replay name, exactly as the old `resolved.get(pid, ...)`
+    default did.
+    """
+    display = {}
+    for p in md["players"]:
+        nick, aoe2_name, src = resolved.get(p["profile_id"], ("", "", "unmapped"))
+        display[p["player_number"]] = nick or aoe2_name or p["identity"]
+        p["identity"] = display[p["player_number"]]
+        p["attribution"] = src
+    for rec in md["units"] + md["techs"] + md["buildings"]:
+        rec["identity"] = display.get(rec["player_number"], rec["identity"])
+    return md
+
+
 def cache_key(path):
     st = os.stat(path)
-    h = hashlib.md5(f"{path}:{st.st_size}".encode()).hexdigest()
+    h = hashlib.md5(f"{path}:{st.st_size}:{EXTRACT_VERSION}".encode()).hexdigest()
     return os.path.join(CACHE, h + ".json")
 
 
-def extract_all(resolved, date_map):
+def extract_all(date_map):
     os.makedirs(CACHE, exist_ok=True)
     matches = []
     failed = 0
@@ -72,7 +116,7 @@ def extract_all(resolved, date_map):
             matches.append(json.load(open(ck, encoding="utf-8")))
             continue
         try:
-            data = extract_match(p, resolved, date_map)
+            data = extract_match(p, date_map)
             json.dump(data, open(ck, "w", encoding="utf-8"))
             matches.append(data)
         except Exception as e:
@@ -183,10 +227,12 @@ def build_metrics():
 def main():
     resolved = load_resolved()
     date_map = load_date_map()
-    matches, failed = extract_all(resolved, date_map)
+    matches, failed = extract_all(date_map)
     print(f"matches parsed: {len(matches)} ({failed} failed)")
-    # apply alt-account merges to every record's identity before anything downstream
+    # resolve the replay's in-game names to this quiz's display names, THEN apply
+    # alt-account merges, before anything downstream keys on identity
     for md in matches:
+        apply_resolved_identities(md, resolved)
         for rec in md["players"] + md["units"] + md["techs"] + md["buildings"]:
             rec["identity"] = ALIASES.get(rec["identity"], rec["identity"])
     pp = enrich(matches)

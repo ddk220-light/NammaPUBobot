@@ -36,6 +36,9 @@ db.ensure_table(dict(
 _lobby_buffer = []
 MAX_BUFFER = 20
 FULL_TEAM_OVERLAP = 8
+# How stale a LobbyBOT result may be and still be paired with a Pubobot ELO
+# result. Unchanged from when the pairing keyed on player names.
+LOBBY_MATCH_WINDOW_S = 7200
 
 
 async def persist_lobby_civs(channel_id, parsed):
@@ -351,88 +354,69 @@ def buffer_lobby_result(parsed):
 	log.info(f"Civ sync: buffered LobbyBOT match aoe2_id={parsed['aoe2_match_id']} ({len(_lobby_buffer)} in buffer)")
 
 
-def load_profile_map():
-	"""Load player_profile_map.csv. Returns dict of nick -> {aoe2_name, profile_id, user_id}."""
-	path = os.path.join(DATA_DIR, 'player_profile_map.csv')
-	mapping = {}
-	if not os.path.exists(path):
-		return mapping
-	with open(path, 'r') as f:
-		for row in csv.DictReader(f):
-			nick = row['nick']
-			aoe2_name = row.get('aoe2_name', '')
-			profile_id = row.get('profile_id', '')
-			if aoe2_name and profile_id:
-				for name, pid in zip(
-					aoe2_name.split(' / '),
-					profile_id.split(' / ')
-				):
-					mapping[nick] = {
-						'aoe2_name': name.strip(),
-						'profile_id': pid.strip(),
-						'user_id': row.get('user_id', ''),
-					}
-	return mapping
+def _team_shape(parsed):
+	"""Per-team player counts, sorted — (4, 4) for a 4v4, (1, 1) for a 1v1.
+
+	The only structural fact a Pubobot ELO result and a LobbyBOT embed can both
+	state without agreeing on who anybody is. This matcher used to translate the
+	ELO message's Discord nicks into AoE2 names through a hand-maintained CSV and
+	pair on the name overlap; identity v2 makes `identities` the sole answer to
+	"who is this person" and that table is keyed by AoE2 profile_id, which a
+	Pubobot ELO message never carries. So the pairing is now identity-free.
+	"""
+	return tuple(sorted(len(team.get('players') or []) for team in parsed.get('teams') or []))
+
+
+def _pair_lobby(lobbies, elo_parsed, elo_timestamp, source):
+	"""The ONE candidate lobby that can be paired with this ELO result, or None.
+
+	Signals: time proximity (the unchanged window) and team shape. That is
+	weaker evidence than the old name overlap, so genuine ambiguity is now
+	possible — two 4v4s reported inside the same two hours are indistinguishable
+	here. Ambiguity resolves to pairing NOTHING, deliberately: an unpaired match
+	costs one match's civ detail, while a wrong pairing writes civs and results
+	against the wrong game, and every layer downstream reads that as fact.
+	"""
+	shape = _team_shape(elo_parsed)
+	candidates = [
+		lobby for lobby in lobbies
+		if 0 <= elo_timestamp - (lobby.get('timestamp') or 0) <= LOBBY_MATCH_WINDOW_S
+		and _team_shape(lobby) == shape
+	]
+	if not candidates:
+		return None
+	if len(candidates) > 1:
+		ids = ', '.join(str(c.get('aoe2_match_id')) for c in candidates)
+		log.info(
+			f"Civ sync: {len(candidates)} LobbyBOT results in the {source} share this ELO "
+			f"result's shape {shape} inside the window ({ids}) — pairing none of them.")
+		return None
+	log.info(f"Civ sync: paired ELO result with LobbyBOT match "
+			 f"{candidates[0].get('aoe2_match_id')} from the {source} (shape {shape}).")
+	return candidates[0]
 
 
 def find_matching_lobby(elo_parsed, elo_timestamp):
-	"""Find a buffered LobbyBOT result that matches the Pubobot ELO message.
-
-	Matching: time proximity (within 2 hours) + full 8-player overlap.
-	Returns the matched lobby dict or None.
-	"""
-	profile_map = load_profile_map()
-
-	elo_nicks = set()
-	for team in elo_parsed['teams']:
-		for player in team['players']:
-			elo_nicks.add(player['nick'])
-
-	elo_aoe2_names = set()
-	for nick in elo_nicks:
-		if nick in profile_map:
-			elo_aoe2_names.add(profile_map[nick]['aoe2_name'].lower())
-
-	best_match = None
-	best_overlap = 0
-
-	for lobby in _lobby_buffer:
-		time_diff = elo_timestamp - lobby['timestamp']
-		if time_diff < 0 or time_diff > 7200:
-			continue
-
-		lobby_names = set()
-		for team in lobby['teams']:
-			for player in team['players']:
-				lobby_names.add(player['aoe2_name'].lower())
-
-		overlap = len(elo_aoe2_names & lobby_names)
-		if overlap >= FULL_TEAM_OVERLAP and overlap > best_overlap:
-			best_overlap = overlap
-			best_match = lobby
-
-	return best_match
+	"""Find the buffered LobbyBOT result that matches this Pubobot ELO message.
+	Returns the matched lobby dict, or None when there is no candidate or more
+	than one (see _pair_lobby)."""
+	return _pair_lobby(_lobby_buffer, elo_parsed, elo_timestamp, 'buffer')
 
 
 async def find_matching_lobby_from_history(channel, elo_parsed, elo_timestamp):
-	"""Fallback: scan recent channel history for a matching LobbyBOT embed."""
+	"""Fallback: scan recent channel history for a matching LobbyBOT embed.
+
+	Every candidate in the scanned window is collected before deciding, rather
+	than returning the first that fits — with the weaker signals _pair_lobby now
+	uses, "first match wins" would silently pick one of several equally good
+	candidates, which is exactly the wrong pairing that function refuses to make.
+	"""
 	from core.config import cfg
 	lobbybot_id = getattr(cfg, 'LOBBYBOT_USER_ID', None)
 	if not lobbybot_id:
 		return None
 
-	profile_map = load_profile_map()
-
-	elo_nicks = set()
-	for team in elo_parsed['teams']:
-		for player in team['players']:
-			elo_nicks.add(player['nick'])
-
-	elo_aoe2_names = set()
-	for nick in elo_nicks:
-		if nick in profile_map:
-			elo_aoe2_names.add(profile_map[nick]['aoe2_name'].lower())
-
+	found = []
 	try:
 		async for msg in channel.history(limit=50):
 			if msg.author.id != lobbybot_id:
@@ -440,48 +424,39 @@ async def find_matching_lobby_from_history(channel, elo_parsed, elo_timestamp):
 			if not msg.embeds:
 				continue
 			parsed = parse_lobby_embed(msg)
-			if parsed is None:
-				continue
-
-			lobby_names = set()
-			for team in parsed['teams']:
-				for player in team['players']:
-					lobby_names.add(player['aoe2_name'].lower())
-
-			time_diff = elo_timestamp - parsed['timestamp']
-			overlap = len(elo_aoe2_names & lobby_names)
-
-			if overlap >= FULL_TEAM_OVERLAP and 0 <= time_diff <= 7200:
-				log.info(f"Civ sync: found match in channel history (overlap={overlap})")
-				return parsed
+			if parsed is not None:
+				found.append(parsed)
 	except Exception as e:
 		log.error(f"Civ sync: error scanning channel history: {e}")
+		return None
 
-	return None
+	return _pair_lobby(found, elo_parsed, elo_timestamp, 'channel history')
 
 
-def link_and_write(bot_match_id, elo_parsed, lobby_data):
-	"""Link a Pubobot match to a LobbyBOT result and write to CSV files."""
+def link_and_write(bot_match_id, lobby_data):
+	"""Link a Pubobot match to a LobbyBOT result and append the two offline
+	analysis CSVs (data/match_id_map.csv, data/match_civ_details.csv).
+
+	The player column of match_civ_details.csv is the AoE2 in-game NAME. It
+	used to be the Discord nick, translated from the in-game name through the
+	hand-maintained profile-map CSV; that CSV is no longer read anywhere at
+	runtime (identity v2 — `identities` is the one store, and it is keyed by
+	profile_id, which the Pubobot ELO message does not carry). Team and result
+	likewise come from the LobbyBOT embed alone, which states both directly per
+	team; the ELO side was only ever consulted to cross-check them through that
+	same nick translation, so there is nothing left for it to contribute here.
+
+	Note for whoever picks this up next: these two files are the last runtime
+	CSV writes in bot/, and on Railway they live on an ephemeral filesystem, so
+	every row is lost on redeploy. The durable record of the same facts is the
+	`civ_picks` table (persist_lobby_civs + bot/civ_matcher.py). Retiring this
+	function in favour of that table is its own task, not this one.
+	"""
 	aoe2_match_id = lobby_data['aoe2_match_id']
 	now_iso = datetime.now(timezone.utc).isoformat()
 	match_date = datetime.fromtimestamp(
 		lobby_data['timestamp'], tz=timezone.utc
 	).strftime('%Y-%m-%d %H:%M')
-
-	profile_map = load_profile_map()
-	# Reverse map: aoe2_name.lower() -> nick
-	aoe2_to_nick = {}
-	for nick, info in profile_map.items():
-		aoe2_to_nick[info['aoe2_name'].lower()] = nick
-
-	# Build ELO nick -> team/result info
-	elo_players = {}
-	for team in elo_parsed['teams']:
-		for player in team['players']:
-			elo_players[player['nick']] = {
-				'team_index': team['index'],
-				'is_winner': team['index'] == 0,
-			}
 
 	# Append to match_id_map.csv
 	map_path = os.path.join(DATA_DIR, 'match_id_map.csv')
@@ -494,79 +469,10 @@ def link_and_write(bot_match_id, elo_parsed, lobby_data):
 	with open(details_path, 'a', newline='') as f:
 		writer = csv.writer(f)
 		for team in lobby_data['teams']:
+			team_idx = 0 if team['is_winner'] else 1
+			result = 'W' if team['is_winner'] else 'L'
 			for player in team['players']:
-				aoe2_name = player['aoe2_name']
-				civ = player['civ']
-
-				# Resolve nick from aoe2_name
-				nick = aoe2_to_nick.get(aoe2_name.lower(), aoe2_name)
-
-				# Determine team and result from ELO data if possible
-				if nick in elo_players:
-					team_idx = elo_players[nick]['team_index']
-					result = 'W' if elo_players[nick]['is_winner'] else 'L'
-				else:
-					team_idx = 0 if team['is_winner'] else 1
-					result = 'W' if team['is_winner'] else 'L'
-
-				writer.writerow([bot_match_id, aoe2_match_id, match_date, nick, team_idx, civ, result])
-
-	# Auto-add new profile mappings
-	_auto_add_profile_mappings(elo_parsed, lobby_data, profile_map)
+				writer.writerow([bot_match_id, aoe2_match_id, match_date,
+								 player['aoe2_name'], team_idx, player['civ'], result])
 
 	log.info(f"Civ sync: linked match {bot_match_id} -> aoe2:{aoe2_match_id}, wrote civ details")
-
-
-def _auto_add_profile_mappings(elo_parsed, lobby_data, profile_map):
-	"""Auto-add new entries to player_profile_map.csv.
-
-	For each team, if there's exactly one unmapped player on both the ELO side
-	and the LobbyBOT side, we can confidently map them.
-	"""
-	aoe2_to_nick = {}
-	for nick, info in profile_map.items():
-		aoe2_to_nick[info['aoe2_name'].lower()] = nick
-
-	new_mappings = []
-
-	for elo_team in elo_parsed['teams']:
-		elo_is_winner = (elo_team['index'] == 0)
-
-		# Find matching lobby team
-		lobby_team = None
-		for lt in lobby_data['teams']:
-			if lt['is_winner'] == elo_is_winner:
-				lobby_team = lt
-				break
-		if lobby_team is None:
-			continue
-
-		# Unmapped ELO players (nick not in profile_map)
-		unmapped_elo = [p['nick'] for p in elo_team['players'] if p['nick'] not in profile_map]
-
-		# Unmapped lobby players (aoe2_name not in reverse map)
-		unmapped_lobby = [
-			p for p in lobby_team['players']
-			if p['aoe2_name'].lower() not in aoe2_to_nick
-		]
-
-		# Confident mapping: exactly one unmapped on each side
-		if len(unmapped_elo) == 1 and len(unmapped_lobby) == 1:
-			nick = unmapped_elo[0]
-			lp = unmapped_lobby[0]
-			new_mappings.append({
-				'nick': nick,
-				'aoe2_name': lp['aoe2_name'],
-				'profile_id': str(lp['profile_id']),
-			})
-			log.info(f"Civ sync: auto-mapped '{nick}' -> '{lp['aoe2_name']}' (profile {lp['profile_id']})")
-
-	if not new_mappings:
-		return
-
-	map_path = os.path.join(DATA_DIR, 'player_profile_map.csv')
-	with open(map_path, 'a', newline='') as f:
-		writer = csv.writer(f)
-		for m in new_mappings:
-			# user_id,nick,aoe2_name,profile_id,country
-			writer.writerow(['', m['nick'], m['aoe2_name'], m['profile_id'], ''])
