@@ -1661,63 +1661,226 @@ update the registry, run `pytest tests/ -q` and `ruff check .`, commit.
 
 # Stage 4 — Derived-community + retention
 
-**Binding schemas:**
+## Task 4.1 — Elaboration (DONE; measured against live derived data 2026-07-31)
+
+Stage 3 shipped, so for the first time these numbers are measurements of the
+actual derived layer rather than projections.
+
+**Attribution is far better than feared.** 8546 of 8885 `game_stats` rows
+(96%) resolve to a linked user through `identities`. 42 users have at least
+one game. The 41 unlinked profiles are low-volume: they account for the
+remaining 4%. Rollup coverage is therefore not the bottleneck stage 2.5
+worried it might be — an unlinked player is a thin slice, not a hole.
+
+**Games per user: max 588, median 179, min 6.** Every linked user clears both
+floors comfortably, which settles the calibration the plan deferred:
+
+| floor | value | effect on real data |
+|---|---|---|
+| `SPLIT_MIN_GAMES` | **5** | 662 splits survive across 39 of 42 users (276 strategy, 386 spawn) |
+| `BOARD_MIN_GAMES` | **3** | all 42 users eligible (min games = 6) |
+
+At 3 the split count only rises to 740 and starts admitting 3-game
+"tendencies"; at 8 it falls to 568 and starts costing real users their
+strategy line. 5 is the knee, and it is where the plan already guessed —
+now confirmed rather than assumed.
+
+**`peak_eapm` is null for all 8546 attributable rows**, exactly as stage 3
+predicted. The `apm` block of the rollup must therefore report `median_peak`
+as null while `median_avg` is real, and its `games` count must reflect the
+number of rows that actually carried each value — a single shared `games`
+figure would imply a peak sample that does not exist. Split the counts.
+
+**One community exists**: `AOE2-GUYSz` (`community_id=1`, retention `full`),
+one channel. Consequences: `player_rollups` will hold ~42 rows after the
+first full pass, and **the sweeper's candidate set is empty by construction**
+— it never touches a `full` community. That is the expected first-deploy
+result, not a failure, and 4.6's DRY_RUN log should read `0 candidates`.
+
+**`civ_picks` is the `civ_stats` source and already carries what is needed**:
+16600 rows with `replay_match_id`, `civ`, `result`, `team`, `user_id`,
+`channel_id`. Community scoping goes through `community_channels`, not
+through a column on `civ_picks`.
+
+**Migration numbering:** 007 is the last applied; **008** is next free
+(stage 6's drops move to 009 if stage 4 needs one — it should not, since
+`ensure_table` creates the three new tables and nothing is being renamed).
+
+### Contract corrections this elaboration forces
+
+1. **The rollup's `apm` block carries two sample counts, not one.** Amend the
+   binding contract to `{"median_avg": 62, "median_peak": null,
+   "games_avg": 38, "games_peak": 0}`. A single `games` key beside a null
+   median is the kind of half-true number this whole redesign exists to
+   delete.
+2. **Rollups key on `user_id`, so an unlinked player has no row at all** —
+   not a row of zeros. Stage 5a renders "Statistics pending linking" from the
+   *absence* of a rollup, which is the first moment that string becomes
+   implementable (identity v2 §5 predicted exactly this).
+3. **The refresh must resolve a user's profiles as a set.** A user may own
+   more than one profile (`/identity link ... additional: True`). Aggregate
+   across every profile bound to the user, or a multi-account player's
+   history silently splits.
+
+---
+
+## Task 4.2 — `player_rollups`: table + pure aggregation + writer
+
+**Files:** Create `bot/derived/rollups.py`; modify `bot/derived/__init__.py`
+(table declaration), `core/data_registry.py`; test `tests/test_rollups.py`.
+
+**Binding schema** (unchanged from the design except the `apm` block):
 
 ```
 player_rollups  community_id (int), user_id (int), games (int),
-                rollup (dict — see contract below), computed_at (int),
+                rollup (dict), computed_at (int),
                 pk (community_id, user_id)
-metric_boards   community_id (int), metric_id (str), board (dict:
-                {label, unit, direction, leaders: [{user_id, nick, avg, n}],
-                 top_games: [{user_id, nick, value, replay_match_id}]}),
-                computed_at (int), pk (community_id, metric_id)
-civ_stats       community_id (int), civ (str), games (int), wins (int),
-                losses (int), computed_at (int), pk (community_id, civ)
 ```
-
-**Rollup dict contract (consumed by stage 5a scouting report — binding):**
 
 ```json
 {
   "medal_rates": {"military": 0.34, "villager": 0.18, "games_ranked": 41},
-  "apm": {"median_avg": 62, "median_peak": 91, "games": 38},
+  "apm": {"median_avg": 62, "median_peak": null, "games_avg": 38, "games_peak": 0},
   "strategies": [{"key": "scout_rush", "games": 12, "wins": 9}],
   "spawns":     [{"key": "spawn_near_enemy", "games": 8, "wins": 3}],
   "units":      [{"unit": "Knight", "games": 15, "wins": 10}]
 }
 ```
 
-**Binding decisions:**
-- Metrics catalog for `metric_boards`: ONLY fields that survive the sweep —
-  from `replay_players` scalars (villagers, vil_pre_* , military, mil_pre_*,
-  feudal_s/castle_s/imperial_s, first_tc_s, eapm) and `game_stats`
-  (peak_eapm, medals, top_units). Tech-timing and building-count metrics from
-  the old quiz catalog are dropped.
-- Refresh: `bot/derived/refresh.py` — dirty-set of (community_id, user_id)
-  marked by ingest/link/report hooks; `on_think` drains ≤N per tick; full
-  per-user recompute (≤600 rows each) — no incremental deltas, rebuild-per-user
-  is the simple correct unit. Nightly full-community pass as backstop.
-  Attribution happens HERE (identity v2 §5): the refresh resolves the user's
-  profiles via `identities` and aggregates profile-keyed `game_stats`/
-  `game_labels` rows — which is why an identity link hook marking the user
-  dirty backfills their entire history for free. Unlinked profiles simply
-  aggregate into no rollup until they resolve.
-- Sample floors (constants in `bot/derived/refresh.py`, calibrated on flagship
-  data during stage 5): `SPLIT_MIN_GAMES = 5`, `BOARD_MIN_GAMES = 3`.
-- Sweeper: `bot/derived/sweeper.py`, daily on_think slot. Deletes from
-  `replay_events/techs/buildings/units/apm` rows whose replay_match_id is
-  linked ONLY to lean communities, `linked_at < now - RETENTION_DAYS (30)`,
-  and whose every linked community has `rollups computed_at > linked_at`.
-  Never touches a replay linked to any `full` community. First deploy runs it
-  in `DRY_RUN = True` (logs candidate counts, deletes nothing); flipping to
-  live is a follow-up commit after the log is inspected.
+**Interfaces produced:**
+- `bot.derived.rollups.compute_rollup(stat_rows, label_rows, split_min_games) -> dict`
+  — pure, no DB. `stat_rows` are `game_stats` rows for ONE user (already
+  resolved across all their profiles); `label_rows` are the matching
+  `game_labels` rows.
+- `bot.derived.rollups.write(community_id, user_id, games, rollup, computed_at)` — async
+- `SPLIT_MIN_GAMES = 5`, `BOARD_MIN_GAMES = 3` live here as module constants.
 
-**Tasks:** 4.1 elaborate → 4.2 rollup writer (TDD: pure aggregation from fake
-game_stats/labels/links rows; floors honored; win splits correct) → 4.3
-metric boards (pure: leaders + top_games per metric) → 4.4 civ_stats (from
-civ_picks) → 4.5 refresh job wiring + dirty hooks → 4.6 sweeper with DRY_RUN →
-4.7 deploy + verify (rollup row for a flagship player appears after next
-match; sweeper log lists 0 candidates — no lean communities exist yet).
+**Binding decisions:**
+- `medal_rates` are *rates*, not counts: `military_medal IS NOT NULL` count
+  divided by `games_ranked`, where `games_ranked` counts games in which the
+  player was eligible for a medal at all (i.e. had production). Dividing by
+  total games would punish a player for games nobody was ranked in.
+- `median_avg`/`median_peak` are medians, not means — one 300-eAPM outlier
+  game should not move a season's figure. Compute over non-null values only.
+- Splits below `SPLIT_MIN_GAMES` are **omitted entirely**, never emitted with
+  a low-sample warning. A number the reader has to discount is worse than no
+  number.
+- Lists are sorted by `games` descending then key ascending, so a rollup is
+  byte-stable between recomputes of unchanged data.
+
+Steps: write failing tests (medal rate denominators; median with an even
+count; null-peak handling; floor omission; multi-profile aggregation;
+deterministic ordering) → run → implement → run → commit.
+
+---
+
+## Task 4.3 — `metric_boards`
+
+**Files:** Create `bot/derived/boards.py`; modify `bot/derived/__init__.py`,
+`core/data_registry.py`; test `tests/test_metric_boards.py`.
+
+```
+metric_boards  community_id (int), metric_id (str), board (dict),
+               computed_at (int), pk (community_id, metric_id)
+board = {label, unit, direction, leaders: [{user_id, nick, avg, n}],
+         top_games: [{user_id, nick, value, replay_match_id}]}
+```
+
+**Metric catalog — ONLY fields that survive the sweep**, drawn from
+`replay_players` scalars (villagers, `vil_pre_*`, military, `mil_pre_*`,
+`feudal_s`, `castle_s`, `imperial_s`, `first_tc_s`, `eapm`) and `game_stats`
+(`peak_eapm`, medals, `top_units`). Tech-timing and building-count metrics
+from the old quiz catalog are **dropped** — they live in `replay_techs` and
+`replay_buildings`, which the sweeper deletes for lean communities, so a
+board built on them would silently empty out.
+
+`direction` records whether high or low wins (`first_tc_s` low is good,
+`eapm` high is good); the renderer must not have to know per metric.
+`BOARD_MIN_GAMES = 3` gates the leaders list. `nick` is denormalised into the
+board at compute time for rendering, and is display-only — never a key.
+
+---
+
+## Task 4.4 — `civ_stats`
+
+**Files:** Create `bot/derived/civ_stats.py`; modify `bot/derived/__init__.py`,
+`core/data_registry.py`; test `tests/test_derived_civ_stats.py`.
+
+```
+civ_stats  community_id (int), civ (str), games (int), wins (int),
+           losses (int), computed_at (int), pk (community_id, civ)
+```
+
+Source is `civ_picks` (16600 rows), scoped to a community through
+`community_channels` on `civ_picks.channel_id`. `result` gives the outcome.
+Note the module name collides conceptually with the existing
+`bot/civ_stats.py` (which reads CSVs and is retired in stage 5c) — the new
+one lives under `bot/derived/`, and 5c is where the old one dies. Do not
+delete it here.
+
+---
+
+## Task 4.5 — the refresh job and its dirty hooks
+
+**Files:** Create `bot/derived/refresh.py`; modify `bot/events.py`,
+`bot/replay_stats/store.py`, `bot/identity.py`, `bot/stats/stats.py`;
+test `tests/test_derived_refresh.py`.
+
+- A dirty set of `(community_id, user_id)` marked by: replay ingest, a match
+  report, and **any identity link/unlink**. The identity hook is what makes a
+  late `/link` backfill a player's entire history for free — the link marks
+  them dirty, the refresh recomputes, the history lights up. There is no
+  backfill job and there must not be one.
+- `on_think` drains at most `N` per tick. Full per-user recompute (≤600 rows
+  each — the busiest real user has 588 games) rather than incremental deltas:
+  rebuild-per-user is the simple correct unit and the sizes are trivial.
+- A nightly full-community pass as backstop, so a missed hook self-heals
+  within a day rather than never.
+- Attribution happens HERE (identity v2 §5): resolve the user's profile set
+  via `identities`, then aggregate profile-keyed `game_stats`/`game_labels`.
+  Unlinked profiles aggregate into no rollup at all.
+- Same discipline as `bot/derived/backfill.py`: never raise into the tick,
+  log outcomes with real counts, and make the dirty set survive a restart
+  (an in-memory set silently loses work on every deploy — persist it, or
+  derive it from a `computed_at` comparison the way the backfill derives its
+  pending set).
+
+---
+
+## Task 4.6 — the retention sweeper (DRY_RUN)
+
+**Files:** Create `bot/derived/sweeper.py`; modify `bot/events.py`;
+test `tests/test_sweeper.py`.
+
+Deletes rows from `replay_events`/`replay_techs`/`replay_buildings`/
+`replay_units`/`replay_apm` whose `replay_match_id` is linked ONLY to lean
+communities, whose `linked_at < now - RETENTION_DAYS (30)`, and where every
+linked community's rollups have `computed_at > linked_at`. **Never touches a
+replay linked to any `full` community.**
+
+First deploy runs with `DRY_RUN = True` — logs candidate counts, deletes
+nothing. Flipping it live is a separate commit after the log is read. On
+today's data the candidate count is **0** (the only community is `full`),
+which is the expected result and confirms the guard rather than exercising
+the delete.
+
+---
+
+## Task 4.7 — Deploy + verify
+
+- [ ] back up first (`scripts/backup_db.sh`)
+- [ ] `player_rollups` reaches ~42 rows, one per linked user with games
+- [ ] a spot-checked user's `games` matches `SELECT COUNT(*)` over their
+      profiles' `game_stats` rows
+- [ ] `medal_rates` between 0 and 1; `median_peak` null everywhere (no buckets yet)
+- [ ] `metric_boards` populated for every catalog metric; no board built on
+      `replay_techs`/`replay_buildings`
+- [ ] `civ_stats` games total reconciles against `civ_picks`
+- [ ] sweeper logs `DRY_RUN … 0 candidates`
+- [ ] `/health` 200 all-true; append outcome to the ledger
+
+---
+
 
 ---
 
