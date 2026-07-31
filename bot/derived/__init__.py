@@ -83,6 +83,33 @@ db.ensure_table(dict(
 		dict(cname="peak_eapm", ctype=db.types.int, notnull=False),
 		dict(cname="military_medal", ctype=db.types.int, notnull=False),  # 1|2|3
 		dict(cname="villager_medal", ctype=db.types.int, notnull=False),  # 1|2|3
+		# Whether the parser measured this player's production at all, i.e.
+		# whether card_scoring.assign_medals RANKED them -- the two medal
+		# columns above are None both for "ranked and placed fourth" and for
+		# "never ranked", and those are different claims. Stored rather than
+		# inferred because it is the denominator of player_rollups' medal_rates
+		# (bot/derived/rollups.py), and inferring it from a medal or a non-empty
+		# top_units silently drops the player who built villagers, no military,
+		# and placed outside the top three.
+		#
+		# notnull=True, joining computed_at as the only two here, and NOT for
+		# stylistic symmetry with player_rollups below: this value is always
+		# knowable. It is a total function of the source row
+		# (COALESCE(villagers,0) + COALESCE(military,0) > 0), so there is no
+		# state in which a writer legitimately has nothing to say -- whereas
+		# civ/team/winner/eapm all genuinely can be absent from a replay, which
+		# is what every notnull=False above is recording.
+		# NULL would be a third value meaning "not backfilled", which is exactly
+		# the ambiguity this column exists to remove. Deliberately carries no
+		# DEFAULT either: the sole writer validates its whole key set (see
+		# game_stats.write), so a DEFAULT could only ever be reached by a writer
+		# that is already a bug, and it would turn that bug into a silently
+		# unranked player instead of a loud error. 008_game_stats_has_production
+		# adds this column to the live table under exactly the same definition
+		# and backfills it; _ensure_table only ever ADDs missing columns and
+		# never alters nullability, so this choice is permanent without another
+		# migration.
+		dict(cname="has_production", ctype=db.types.bool, notnull=True),
 		# [{unit, category, total}], top 3 military-only units by total, JSON-encoded.
 		dict(cname="top_units", ctype=db.types.dict, notnull=False),
 		dict(cname="computed_at", ctype=db.types.int, notnull=True),

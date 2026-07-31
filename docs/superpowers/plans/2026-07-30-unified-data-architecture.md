@@ -1117,7 +1117,9 @@ are written for all of them regardless — that is the whole point of keying on
    per-match index on `cls_results`/`cls_result_metrics` that task 3.4's
    reconciliation loop needs — added during the 3a review, since both tables
    carry only their PK in production and every per-match read was a full scan).
-   Raw renames are therefore **007**; stage 6's final drops become **008**.
+   Raw renames are therefore **007**. Stage 6's final drops were provisionally
+   **008**, and moved to **009** once stage 4 took 008 for
+   `008_game_stats_has_production` (see stage 4's numbering note below).
 5. **The label allowlist lives in `bot/derived/game_labels.py`, not
    `card_query.py`.** What to *store* and what to *say* are different
    concerns: `game_labels` stores 11 spawn keys, while `card_query`'s
@@ -1702,9 +1704,16 @@ result, not a failure, and 4.6's DRY_RUN log should read `0 candidates`.
 `channel_id`. Community scoping goes through `community_channels`, not
 through a column on `civ_picks`.
 
-**Migration numbering:** 007 is the last applied; **008** is next free
-(stage 6's drops move to 009 if stage 4 needs one — it should not, since
-`ensure_table` creates the three new tables and nothing is being renamed).
+**Migration numbering:** 007 is the last applied; **008** is next free.
+This elaboration expected stage 4 not to need one — `ensure_table` creates
+the three new tables and nothing is being renamed — but task 4.2b takes it
+anyway as **`008_game_stats_has_production`**, and stage 6's drops therefore
+move to **009**. The exception is instructive: `ensure_table` covers a new
+TABLE, but adding a COLUMN to a table that already holds rows needs a
+migration to give those rows a value, and the stage-3 reconciliation loop
+cannot substitute for one — its pending predicate compares
+`(replay_match_id, player_number)` SETS, so a new column produces no set
+difference and every match reads as already-done.
 
 ### Contract corrections this elaboration forces
 
@@ -1916,7 +1925,8 @@ the delete.
 
 # Stage 6 — Final retirements
 
-- Migration 008 drops (006 is stage 3a's derived indexes, 007 its raw renames): `cls_classifications`, `cls_data_requirements`,
+- Migration 009 drops (006 is stage 3a's derived indexes, 007 its raw renames,
+  008 stage 4's `game_stats.has_production`): `cls_classifications`, `cls_data_requirements`,
   `cls_results`, `cls_result_metrics`, `cls_player_totals`, `cls_match_ingest`,
   `rs_player_game_tags`, `rs_player_personas` (`rs_profiles`, `qc_profile_map`,
   `identity_aliases` already dropped in 2.5);

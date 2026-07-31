@@ -3,9 +3,18 @@
 Pure-logic tests against a fake adapter: the runner must apply each migration
 exactly once, record it in the ledger, and make renames idempotent via
 existence guards. No MySQL involved.
+
+Two harnesses, and which one a migration gets is decided by where its logic
+lives. Most migrations are Python deciding which DDL to issue, so FakeDb below
+records statements and answers information_schema — asserting on the SQL is
+asserting on the whole decision. 008_game_stats_has_production is not: its
+entire body is one UPDATE, and the interesting mistakes are inside that SQL, so
+it runs against in-memory sqlite3 instead (see _SqliteMigrationDb). Still never
+a real database.
 """
 import asyncio
 import re
+import sqlite3
 import types
 
 import core.migrations as mig
@@ -1959,10 +1968,21 @@ def test_m007_leaves_the_tables_stage_6_retires_alone():
 	assert db.executed == []
 
 
-def test_m007_runs_last_in_the_ledger():
+def test_m007_runs_after_006_and_before_anything_reading_the_renamed_tables():
+	""" 007 used to be last in the ledger and this test said so. It no longer is
+	— 008 backfills game_stats.has_production — so what is pinned now is the
+	property that actually mattered: every migration that names a raw table has
+	to run on the correct side of the rename. 008's backfill reads
+	`replay_players`, which is 007's rename TARGET (`rs_player_games` before
+	it), so 008 before 007 would find no such table on any database that had not
+	already been renamed. """
 	names = [name for name, _fn in mig.MIGRATIONS]
-	assert names[-1] == "007_raw_renames"
 	assert names.index("006_derived_indexes") < names.index("007_raw_renames")
+	post_rename_names = {new for _old, new in mig._STAGE3_RENAMES}
+	assert "replay_players" in post_rename_names
+	assert any(t in mig._M008_BACKFILL for t in post_rename_names), \
+		"008 no longer reads a renamed raw table; re-check what this test is guarding"
+	assert names.index("007_raw_renames") < names.index("008_game_stats_has_production")
 
 
 def test_stage3_renames_targets_are_registered_and_sources_are_not_declared():
@@ -2037,3 +2057,322 @@ def test_the_replay_ingest_switch_resolves_the_same_way_in_both_config_paths():
 	assert found["start.py"] == found["core/config.py"], (
 		"start.py reports an effective replay-ingest setting that core/config.py "
 		f"would not agree with: {found}")
+
+
+# ─── 008_game_stats_has_production ────────────────────────────────────────
+# Stage 4 stores the medal-eligibility flag compute_game_stats always computed
+# and then discarded, and backfills the 8885 rows already in game_stats.
+#
+# These run the migration's REAL SQL against in-memory sqlite3, the same
+# discipline (and for the same reason) as tests/test_derived_backfill.py: the
+# whole migration IS one UPDATE, so a fake that hand-emulated it would test the
+# emulation and leave `> 0` vs `>= 0`, and the presence of `player_number` in
+# the correlation, completely unguarded — both are the difference between a
+# correct denominator and a silently wrong one. Never a real database.
+
+# The PRE-008 shape: game_stats deliberately has no has_production column, and
+# replay_players carries the two counts the flag is derived from. Only the
+# columns this migration reads or writes are modelled; the rest are noise here.
+_M008_SCHEMA = """
+CREATE TABLE replay_players (
+	replay_match_id INTEGER, profile_id INTEGER, player_number INTEGER,
+	villagers INTEGER, military INTEGER,
+	PRIMARY KEY (replay_match_id, profile_id));
+CREATE TABLE game_stats (
+	replay_match_id INTEGER, player_number INTEGER, profile_id INTEGER,
+	military_medal INTEGER, villager_medal INTEGER, top_units TEXT, computed_at INTEGER,
+	PRIMARY KEY (replay_match_id, player_number));
+"""
+
+
+class _SqliteMigrationDb:
+	"""Stand-in for the adapter, backed by in-memory sqlite3.
+
+	Two things are translated, and nothing else — every statement the migration
+	issues is otherwise executed verbatim:
+
+	  * information_schema. sqlite has none, so table_exists/column_exists are
+	    answered from sqlite_master and PRAGMA table_info. Those two queries are
+	    the migration's only reads, and they are matched on the same substrings
+	    FakeDb above matches on.
+	  * `ADD COLUMN ... NOT NULL` with no DEFAULT. MySQL accepts it and fills
+	    every existing row with the type's implicit default (0 for TINYINT);
+	    sqlite refuses it outright. Appending `DEFAULT 0` here reproduces
+	    MySQL's actual behaviour rather than papering over a difference — and it
+	    is what makes the "existing rows start at 0, the UPDATE then gives them
+	    their real value" sequence observable at all.
+	"""
+
+	def __init__(self, schema=_M008_SCHEMA):
+		self.conn = sqlite3.connect(":memory:")
+		self.conn.row_factory = sqlite3.Row
+		self.conn.executescript(schema)
+		self.executed = []
+
+	# ── fixture helpers ───────────────────────────────────────────────────
+	def add(self, table, **row):
+		cols = ",".join(f"`{c}`" for c in row)
+		holes = ",".join(["?"] * len(row))
+		self.conn.execute(f"INSERT OR REPLACE INTO {table} ({cols}) VALUES ({holes})",
+		                  list(row.values()))
+
+	def rows(self, table):
+		return [dict(r) for r in self.conn.execute(f"SELECT * FROM {table}").fetchall()]
+
+	def flags(self):
+		"""{(replay_match_id, player_number): has_production} as stored."""
+		return {(r["replay_match_id"], r["player_number"]): r["has_production"]
+		        for r in self.rows("game_stats")}
+
+	def columns(self, table):
+		return {r["name"] for r in self.conn.execute(f"PRAGMA table_info(`{table}`)")}
+
+	# ── the adapter surface the migration calls ───────────────────────────
+	@staticmethod
+	def _sqlite(sql):
+		if sql.startswith("ALTER TABLE") and "ADD COLUMN" in sql and sql.endswith("NOT NULL"):
+			return sql + " DEFAULT 0"
+		return sql.replace("%s", "?")
+
+	async def execute(self, sql, args=None):
+		self.executed.append(sql)
+		self.conn.execute(self._sqlite(sql), list(args or []))
+
+	async def fetchone(self, sql, args=None):
+		if "information_schema.TABLES" in sql:
+			row = self.conn.execute(
+				"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", [args[0]]).fetchone()
+			return {"x": 1} if row else None
+		if "information_schema.COLUMNS" in sql:
+			return {"x": 1} if args[1] in self.columns(args[0]) else None
+		raise AssertionError(f"_SqliteMigrationDb got an unmodelled read: {sql}")
+
+
+def _m008_db(players, stats, schema=_M008_SCHEMA):
+	"""A pre-008 database holding `players` raw rows and `stats` derived rows.
+
+	`stats` are (replay_match_id, player_number) pairs — nothing else on a
+	game_stats row is an input to this migration, and seeding medals here would
+	invite a reader to think they were."""
+	db = _SqliteMigrationDb(schema)
+	for row in players:
+		db.add("replay_players", **row)
+	for mid, pn in stats:
+		db.add("game_stats", replay_match_id=mid, player_number=pn, computed_at=1000)
+	return db
+
+
+def _raw(mid, pn, villagers, military, profile_id=None):
+	return dict(replay_match_id=mid, player_number=pn, profile_id=profile_id or (pn * 10),
+	            villagers=villagers, military=military)
+
+
+def test_m008_adds_the_column_and_backfills_it_from_replay_players():
+	db = _m008_db(
+		players=[_raw(1, 1, 100, 20), _raw(1, 2, 0, 0)],
+		stats=[(1, 1), (1, 2)],
+	)
+
+	asyncio.run(mig._m008(db))
+
+	assert "has_production" in db.columns("game_stats")
+	assert db.flags() == {(1, 1): 1, (1, 2): 0}
+
+
+def test_m008_counts_either_axis_alone_as_production():
+	# Villagers-only and military-only are both "measured". A backfill reading
+	# one column and not the other passes on one of these and fails the other.
+	db = _m008_db(
+		players=[_raw(1, 1, 7, 0), _raw(1, 2, 0, 7)],
+		stats=[(1, 1), (1, 2)],
+	)
+
+	asyncio.run(mig._m008(db))
+
+	assert db.flags() == {(1, 1): 1, (1, 2): 1}
+
+
+def test_m008_zero_and_null_counts_are_both_not_measured():
+	# MUTANT GUARD (a): `> 0` becoming `>= 0` marks every row measured, which
+	# would put every unmeasured game into the medal-rate denominator and
+	# understate every player's rates. NULL is the shape an unparsed slot
+	# actually has in replay_players, and COALESCE must read it as zero rather
+	# than making the whole CASE null.
+	db = _m008_db(
+		players=[_raw(1, 1, 0, 0), _raw(1, 2, None, None), _raw(1, 3, None, 0)],
+		stats=[(1, 1), (1, 2), (1, 3)],
+	)
+
+	asyncio.run(mig._m008(db))
+
+	assert db.flags() == {(1, 1): 0, (1, 2): 0, (1, 3): 0}
+
+
+def test_m008_backfills_each_slot_from_its_own_raw_row():
+	# MUTANT GUARD (b): dropping `player_number` from the correlation makes the
+	# subquery aggregate the whole MATCH, so one measured player marks every
+	# other slot in that match measured too. Player 1 is measured, players 2
+	# and 3 are not, and they share a match.
+	db = _m008_db(
+		players=[_raw(1, 1, 90, 10), _raw(1, 2, 0, 0), _raw(1, 3, 0, 0)],
+		stats=[(1, 1), (1, 2), (1, 3)],
+	)
+
+	asyncio.run(mig._m008(db))
+
+	assert db.flags() == {(1, 1): 1, (1, 2): 0, (1, 3): 0}
+
+
+def test_m008_does_not_leak_a_flag_across_matches():
+	# The other half of the join: same player_number, different match. Dropping
+	# replay_match_id from the correlation would make match 2's unmeasured slot
+	# inherit match 1's production.
+	db = _m008_db(
+		players=[_raw(1, 1, 90, 10), _raw(2, 1, 0, 0)],
+		stats=[(1, 1), (2, 1)],
+	)
+
+	asyncio.run(mig._m008(db))
+
+	assert db.flags() == {(1, 1): 1, (2, 1): 0}
+
+
+def test_m008_is_idempotent_on_a_rerun():
+	# The ledger only records success after the whole body returns, so a body
+	# that dies partway through is re-run from the top on the next boot (see the
+	# module docstring). Re-running must converge, not flip or duplicate.
+	db = _m008_db(
+		players=[_raw(1, 1, 100, 20), _raw(1, 2, 0, 0)],
+		stats=[(1, 1), (1, 2)],
+	)
+
+	asyncio.run(mig._m008(db))
+	first = db.flags()
+	asyncio.run(mig._m008(db))
+
+	assert db.flags() == first == {(1, 1): 1, (1, 2): 0}
+	assert len([s for s in db.executed if "ADD COLUMN" in s]) == 1, \
+		"the second run must not re-issue the ALTER"
+
+
+def test_m008_still_backfills_when_the_column_already_exists():
+	# The rolled-back-deploy case, and the reason the ADD's guard must not
+	# short-circuit the UPDATE: `import bot`'s ensure_table ADDs any declared
+	# column it does not find, so the column can exist holding 0 for every row
+	# without this migration ever having run. Skipping the backfill there would
+	# leave the database reading "nobody has ever been measured" forever --
+	# every games_ranked 0, every medal rate null, and a healthy-looking bot.
+	db = _m008_db(
+		players=[_raw(1, 1, 100, 20), _raw(1, 2, 0, 0)],
+		stats=[(1, 1), (1, 2)],
+	)
+	db.conn.execute("ALTER TABLE game_stats ADD COLUMN has_production TINYINT(1) NOT NULL DEFAULT 0")
+
+	asyncio.run(mig._m008(db))
+
+	assert db.flags() == {(1, 1): 1, (1, 2): 0}
+	assert [s for s in db.executed if "ADD COLUMN" in s] == []
+
+
+def test_m008_leaves_an_orphaned_derived_row_not_measured():
+	# A game_stats row whose raw rows are gone: MAX over no rows is NULL, the
+	# column is NOT NULL, and "not measured" is the honest reading of a slot
+	# with no surviving source. (bot/derived/backfill.py's set comparison
+	# deletes the row on its next pass regardless.)
+	db = _m008_db(players=[_raw(1, 1, 100, 20)], stats=[(1, 1), (9, 9)])
+
+	asyncio.run(mig._m008(db))
+
+	assert db.flags() == {(1, 1): 1, (9, 9): 0}
+
+
+def test_m008_takes_the_measured_row_when_a_slot_has_two_raw_rows():
+	# replay_players' primary key is (replay_match_id, profile_id) and does NOT
+	# constrain player_number -- the same property bot/derived/backfill.py's
+	# DISTINCT exists for -- so two raw rows CAN share a slot. A plain scalar
+	# subquery would raise ER_SUBQUERY_NO_1_ROW on the whole statement the first
+	# time it met one; the aggregate makes the answer deterministic instead of
+	# dependent on row order.
+	db = _m008_db(
+		players=[_raw(1, 1, 0, 0, profile_id=101), _raw(1, 1, 80, 5, profile_id=202)],
+		stats=[(1, 1)],
+	)
+
+	asyncio.run(mig._m008(db))
+
+	assert db.flags() == {(1, 1): 1}
+
+
+def test_m008_is_a_noop_on_a_fresh_install():
+	# game_stats is declared by bot/derived, which is only imported AFTER
+	# migrations run -- so on a first boot the table genuinely does not exist
+	# yet and is created moments later with has_production already on it.
+	db = _SqliteMigrationDb(schema="CREATE TABLE replay_players (replay_match_id INTEGER);")
+
+	asyncio.run(mig._m008(db))
+
+	assert db.executed == []
+
+
+def test_m008_raises_rather_than_recording_a_backfill_it_could_not_do():
+	# Deliberately unlike 004's log-and-skip for a missing source table. 004's
+	# data is still in the column it reads, so a later boot can still copy it;
+	# skipping HERE would let run_all record the migration as applied while
+	# every row kept the placeholder 0, and nothing afterwards revisits it --
+	# the stage-3 reconciliation loop cannot see a column difference, so the
+	# wrong denominator would be permanent.
+	db = _SqliteMigrationDb(schema="""
+		CREATE TABLE game_stats (replay_match_id INTEGER, player_number INTEGER);
+	""")
+	db.add("game_stats", replay_match_id=1, player_number=1)
+
+	try:
+		asyncio.run(mig._m008(db))
+	except RuntimeError as e:
+		assert "replay_players" in str(e)
+	else:
+		raise AssertionError("a backfill that cannot run must not be recorded as applied")
+
+
+def test_m008_is_registered_once_under_the_next_free_number():
+	names = [name for name, _fn in mig.MIGRATIONS]
+	assert names.count("008_game_stats_has_production") == 1
+	assert names == [
+		"001_core_renames", "002_drop_retired", "003_seed_identities", "004_identity_v2",
+		"005_identity_conflict_history", "006_derived_indexes", "007_raw_renames",
+		"008_game_stats_has_production",
+	]
+
+
+def test_the_has_production_ddl_matches_the_ensure_table_declaration():
+	""" has_production is declared twice — bot/derived/__init__.py's ensure_table
+	and this module's raw ALTER (a migration cannot import bot.*) — and they are
+	kept in sync by hand, exactly like identity_conflicts above. Drift here is
+	not cosmetic: production's column comes from the ALTER and a fresh install's
+	from the declaration, and _ensure_table never alters nullability afterwards,
+	so a NOT NULL that lands on only one of the two is permanent.
+
+	The type is read from core/DBAdapters/mysql.py's own Types rather than
+	hardcoded here, so changing what `db.types.bool` means fails this test
+	instead of silently leaving the migration on the old type.
+
+	Parsed as text rather than imported: `import bot.derived` executes
+	db.ensure_table() against conftest's fake. """
+	import os
+
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	with open(os.path.join(root, "bot", "derived", "__init__.py"), encoding="utf-8") as f:
+		block = f.read().split('tname="game_stats"', 1)[1].split("primary_keys=", 1)[0]
+	decl = re.search(r'dict\(cname="has_production"[^\n]*', block)
+	assert decl, "bot/derived/__init__.py no longer declares game_stats.has_production"
+	assert "ctype=db.types.bool" in decl.group(0), "column type drifted"
+	assert "notnull=True" in decl.group(0), "nullability drifted"
+	assert "default=" not in decl.group(0), (
+		"the declaration grew a DEFAULT the migration's ALTER does not have — see the migration's "
+		"comment for why neither should carry one")
+
+	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+		bool_type = re.search(r'^\tbool = "([^"]+)"', f.read(), re.M)
+	assert bool_type, "core/DBAdapters/mysql.py no longer defines Types.bool"
+	expected = f"ALTER TABLE `game_stats` ADD COLUMN `has_production` {bool_type.group(1)} NOT NULL"
+	assert expected == mig._M008_ADD_COLUMN, "the migration's ALTER drifted from the declaration"

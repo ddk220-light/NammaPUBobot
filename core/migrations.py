@@ -1232,3 +1232,145 @@ async def _m007(db):
 		await db.execute("DROP TABLE `rs_config`")
 		log.info("migrations: 007_raw_renames: dropped rs_config — replay ingest is now gated by "
 		         "the REPLAY_INGEST_ENABLED config var")
+
+
+# 008's ADD COLUMN, kept beside the backfill it precedes. The type and the
+# NOT NULL must match bot/derived/__init__.py's `has_production` declaration
+# exactly — duplicated by hand rather than imported, for the reason in this
+# module's docstring — and no DEFAULT, for the reason given there: the sole
+# writer supplies the column on every row and validates its whole key set, so a
+# DEFAULT could only be reached by a writer that is already a bug, and it would
+# turn that bug into a silently unranked player. MySQL fills the existing rows
+# with the implicit default (0) as it adds the column; the UPDATE below then
+# gives every one of them its real value in the same body.
+# test_the_has_production_ddl_matches_the_ensure_table_declaration pins the pair.
+_M008_ADD_COLUMN = "ALTER TABLE `game_stats` ADD COLUMN `has_production` TINYINT(1) NOT NULL"
+
+# The backfill. `has_production` is true iff the parser measured this slot's
+# production at all — the same predicate bot/derived/game_stats.py's
+# compute_game_stats feeds to card_scoring.assign_medals, expressed in SQL
+# because a migration may not import bot.* (see this module's docstring).
+#
+# Correlated per (replay_match_id, player_number), never per match: the flag is
+# a fact about ONE slot, and dropping player_number from the correlation would
+# make one measured player in a match mark every other slot in it measured too.
+#
+# MAX(CASE ...) rather than a bare comparison, so the subquery returns exactly
+# one row for every driving row. replay_players' primary key is
+# (replay_match_id, profile_id) and does NOT constrain player_number — the same
+# property bot/derived/backfill.py's DISTINCT exists for — so two source rows
+# CAN share a slot, and a plain scalar subquery would raise ER_SUBQUERY_NO_1_ROW
+# on the whole 8885-row statement the first time it met one. Aggregating makes
+# the result deterministic and total instead of dependent on row order.
+#
+# COALESCE(..., 0) covers a derived row whose source rows are gone: MAX over no
+# rows is NULL, the column is NOT NULL, and "not measured" is the honest reading
+# of a slot with no surviving raw row. Such a row is already orphaned and
+# bot/derived/backfill.py's set comparison deletes it on its next pass.
+#
+# Idempotent by construction: it recomputes every row's value from the raw layer
+# rather than mutating what is there, so a re-run after a body that died partway
+# through (this module's docstring) converges on the same values, and MySQL
+# reports zero rows changed the second time.
+_M008_BACKFILL = (
+	"UPDATE game_stats SET has_production = COALESCE(("
+	"SELECT MAX(CASE WHEN COALESCE(rp.villagers, 0) + COALESCE(rp.military, 0) > 0 THEN 1 ELSE 0 END) "
+	"FROM replay_players rp "
+	"WHERE rp.replay_match_id = game_stats.replay_match_id "
+	"AND rp.player_number = game_stats.player_number), 0)"
+)
+
+
+@migration("008_game_stats_has_production")
+async def _m008(db):
+	"""Store `has_production` on game_stats, and backfill it for every row
+	already there.
+
+	WHY THE COLUMN. compute_game_stats has always computed this flag — a player
+	with no production is excluded from medal ranking entirely rather than
+	ranked last, because showing them bare reads as "played badly" when the
+	truth is "not measured" — but it computed it into the payload it hands
+	assign_medals and then threw it away. From a stored row, "no medal because
+	nobody measured me" and "no medal because I placed fourth" were
+	indistinguishable, and player_rollups' medal_rates divides by the number of
+	games the player was ELIGIBLE for a medal in. bot/derived/rollups.py used to
+	infer that from indirect evidence (a medal on either axis, or a non-empty
+	top_units) and silently missed the player who built villagers, no military,
+	and placed outside the top three. This migration makes the denominator exact.
+
+	WHY A MIGRATION AND NOT THE RECONCILIATION LOOP. bot/derived/backfill.py
+	self-heals game_stats against the raw layer on every tick, and it will NOT
+	heal this. Its pending predicate is a set comparison of
+	(replay_match_id, player_number) triples between source and derived: adding
+	a column changes neither set, so every match compares equal and the loop
+	converges to zero work with 8885 rows holding whatever the ALTER put there.
+	Teaching it about columns would mean giving it a second, column-level
+	predicate — a much worse design than one migration — so this is deliberately
+	not attempted there. A future reader wondering why the self-healing loop was
+	bypassed: it cannot see this, by construction.
+
+	WHY PURE SQL. This module runs before `import bot` (see the docstring at the
+	top of this file), so it cannot call into bot/derived/ to recompute rows —
+	db.ensure_table's sync wrapper would drive loop.run_until_complete on an
+	already-running loop and crash the boot. The predicate is duplicated into
+	SQL instead, which is safe precisely because it is trivial and total:
+	`villagers + military > 0`, NULLs read as zero.
+
+	IDEMPOTENT PER STATEMENT, not merely per migration (this module's
+	docstring): the ADD COLUMN is guarded on information_schema because MySQL
+	has no `ADD COLUMN IF NOT EXISTS`, and the UPDATE recomputes from the raw
+	layer rather than mutating in place, so a body that dies between the two is
+	safe to re-run from the top on the next boot. The guard is check-then-act,
+	so two containers booting simultaneously (a Railway rolling deploy) can both
+	pass it and the loser's ALTER fails on a duplicate column name — the same
+	tolerance 005 and 006 already rely on: the loser crashes, Railway restarts
+	it, the retry finds the column present and only re-runs the harmless UPDATE.
+
+	The UPDATE runs even when the column was already there, deliberately. The
+	one state where that matters is a rolled-back deploy: `import bot`'s
+	ensure_table ADDs any declared column it does not find, so the column can
+	exist holding 0 for every row without this migration ever having run. If
+	the ADD's guard also short-circuited the backfill, that database would read
+	"nobody has ever been measured" forever — every player's games_ranked 0 and
+	every medal rate null — with a healthy-looking bot.
+
+	A missing game_stats is the fresh install and needs nothing: bot/derived
+	declares the table and is only imported AFTER migrations run, so the table
+	is CREATEd moments later with this column already on it.
+
+	A missing replay_players while game_stats exists RAISES, and that is a
+	deliberate departure from 004's "log and skip" for a missing source table.
+	004 skips because its data is still sitting in the column it reads and a
+	later boot can still copy it; skipping HERE would let run_all record this
+	migration as applied while every row kept the placeholder 0, and nothing
+	afterwards would ever revisit it — the reconciliation loop cannot see it
+	(above), so the wrong denominator would be permanent until somebody noticed
+	that every medal rate in the product was null. The state is also not
+	reachable in normal operation: both tables are created in the same
+	`import bot` phase, and bot/derived/backfill.py queries replay_players every
+	POLL_INTERVAL seconds, so a database missing it is already loudly broken.
+	Not recording the migration means the next boot retries it; the runbook's
+	repair applies as usual.
+	"""
+	if not await table_exists(db, "game_stats"):
+		log.info("migrations: 008_game_stats_has_production: game_stats does not exist yet, skipping "
+		         "(bot/derived/__init__.py creates it with has_production already on it)")
+		return
+
+	if not await column_exists(db, "game_stats", "has_production"):
+		await db.execute(_M008_ADD_COLUMN)
+		log.info("migrations: 008_game_stats_has_production: added game_stats.has_production")
+
+	if not await table_exists(db, "replay_players"):
+		raise RuntimeError(
+			"migrations: 008_game_stats_has_production: game_stats exists but replay_players does not, "
+			"so has_production cannot be backfilled and every row would keep the placeholder 0 — i.e. "
+			"every player would look unmeasured and every medal rate would render as null. Not "
+			"recording this migration as applied so the next boot retries it. This is not a schema any "
+			"release produces (both tables are created in the same `import bot` phase); inspect the "
+			"database by hand."
+		)
+
+	await db.execute(_M008_BACKFILL)
+	log.info("migrations: 008_game_stats_has_production: backfilled game_stats.has_production from "
+	         "replay_players")

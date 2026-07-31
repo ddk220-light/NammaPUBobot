@@ -62,34 +62,37 @@ def was_medal_eligible(stat_row):
 	"""Whether this game ranked the player at all, i.e. belongs in the
 	medal-rate denominator.
 
-	KNOWN APPROXIMATION, and the one place this module cannot be exact.
-	card_scoring.assign_medals ranks only players with production
-	(`villagers + military > 0`) and awards the top three per axis, so the
-	true denominator is "games in which this player had production" --
-	including games they had production and placed fourth. game_stats does
-	not store that flag (compute_game_stats computes it for the medal payload
-	and discards it), so eligibility is inferred from the evidence the stored
-	row does carry: a medal on either axis, or any military unit in
-	top_units. Both imply the parser measured this player's production; a
-	game where NOBODY was ranked leaves every player with neither.
+	Exactly the stored flag, and nothing else on the row. game_stats.
+	has_production is written by the same compute that feeds
+	card_scoring.assign_medals -- one expression, one definition of "the parser
+	measured this player" -- so "ranked and placed fourth" and "never ranked"
+	are now distinguishable from a stored row, which is the whole reason
+	008_game_stats_has_production exists.
 
-	The residual miss is a player who built villagers, no military at all,
-	and placed outside the top three on villagers -- a player who died in the
-	first minutes. They drop out of the denominator, which nudges their own
-	rates up slightly.
+	This used to INFER eligibility from indirect evidence (a medal on either
+	axis, or a non-empty top_units). That approximation missed exactly one
+	shape: a player who built villagers, no military at all, and placed outside
+	the top three on villagers -- someone who died in the first minutes. They
+	dropped out of their own denominator, which nudged their rates up. Do not
+	reintroduce any of that as a fallback: the column is NOT NULL and 008
+	backfilled every historical row, so there is no row left for a fallback to
+	serve, and an `or`-ed inference would only ever paper over a caller that
+	stopped SELECTing the column -- turning a loud failure into every player's
+	rates being quietly slightly wrong.
 
-	What this must NOT be is "games where the player won a medal". That
+	Subscripted rather than .get()ed for that reason. A caller whose SELECT
+	omits the column raises here, and the refresh job's per-user guard turns
+	that into a logged, visible failure -- same discipline as top_units_of
+	raising on malformed JSON. .get() would default it to falsy and silently
+	empty the denominator for that user, reporting "never medals" as a fact.
+
+	What this must NOT become is "games where the player won a medal". That
 	denominator makes every rate a conditional probability, inflates it by
-	roughly the reciprocal of the medal rate, and is arithmetically
-	impossible against the binding contract's own example: military 0.34 plus
-	villager 0.18 is 0.52, and rates over a denominator where every game
-	carries at least one medal must sum to at least 1.
-
-	The exact fix, when it is worth a migration: store has_production on
-	game_stats and read it here."""
-	return (stat_row.get("military_medal") is not None
-	        or stat_row.get("villager_medal") is not None
-	        or bool(top_units_of(stat_row)))
+	roughly the reciprocal of the medal rate, and is arithmetically impossible
+	against the binding contract's own example: military 0.34 plus villager
+	0.18 is 0.52, and rates over a denominator where every game carries at
+	least one medal must sum to at least 1."""
+	return bool(stat_row["has_production"])
 
 
 def _median(values):

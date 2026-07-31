@@ -6,6 +6,9 @@ so each test below is written to fail against a specific plausible-but-wrong
 implementation, not merely to exercise the happy path:
 
   * medal rates divided by TOTAL games instead of ranked games
+  * eligibility re-inferred from a medal or a non-empty top_units instead of
+    read off the stored has_production column (what this module did before
+    008_game_stats_has_production, and what it must never drift back to)
   * a mean where the contract says median
   * one shared apm sample count instead of the two the contract carries
   * the split floor dropped, so 2-game "tendencies" reach the reader
@@ -33,12 +36,16 @@ from bot.derived.rollups import compute_rollup
 # caught by a test that removes it, not hidden by a fixture that never had it.
 
 def _stat(mid, pn=1, profile_id=11, winner=True, avg_eapm=50, peak_eapm=None,
-          military_medal=None, villager_medal=None, units=("Knight",)):
+          military_medal=None, villager_medal=None, units=("Knight",), has_production=True):
 	return dict(
 		replay_match_id=mid, player_number=pn, profile_id=profile_id,
 		civ="Franks", team="1", winner=winner,
 		avg_eapm=avg_eapm, peak_eapm=peak_eapm,
 		military_medal=military_medal, villager_medal=villager_medal,
+		# Stored by 008_game_stats_has_production onwards, and the ONLY input to
+		# medal eligibility. Defaults True because the overwhelming majority of
+		# real rows are measured games; the tests that care pass it explicitly.
+		has_production=has_production,
 		top_units=[dict(unit=u, category="cavalry", total=10) for u in units],
 		computed_at=1000,
 	)
@@ -103,9 +110,9 @@ def test_no_games_produces_the_shape_with_no_invented_numbers():
 # ── medal_rates: the denominator ─────────────────────────────────────────
 
 def test_medal_rates_divide_by_ranked_games_not_total_games():
-	# 6 games; 2 of them carry no medal AND no unit production at all, i.e.
-	# the match was never medal-scored (nobody was ranked in it). Those two
-	# are excluded from the denominator, so the rates are out of 4.
+	# 6 games; in 2 of them the parser measured no production at all, so
+	# assign_medals never ranked the player. Those two are excluded from the
+	# denominator, so the rates are out of 4.
 	#
 	# The numbers are chosen so all three candidate denominators disagree:
 	#   ranked (4)              -> military 0.25   <- correct
@@ -115,9 +122,9 @@ def test_medal_rates_divide_by_ranked_games_not_total_games():
 		_stat(1, military_medal=1),
 		_stat(2, villager_medal=2),
 		_stat(3, villager_medal=3),
-		_stat(4),                        # measured, medalled on neither axis
-		_stat(5, units=()),              # not measured
-		_stat(6, units=()),              # not measured
+		_stat(4),                                       # measured, medalled on neither axis
+		_stat(5, units=(), has_production=False),       # not measured
+		_stat(6, units=(), has_production=False),       # not measured
 	]
 	rollup = compute_rollup(stat_rows, [], 5)
 	assert rollup["medal_rates"] == dict(military=0.25, villager=0.5, games_ranked=4)
@@ -135,16 +142,87 @@ def test_a_measured_game_with_no_medal_still_counts_in_the_denominator():
 	assert rollup["medal_rates"]["military"] == 0.25
 
 
-def test_a_medal_makes_a_game_ranked_even_with_no_military_units():
-	# A player who only ever made villagers has an empty top_units, but a
-	# villager medal proves the match ranked them.
-	stat_rows = [_stat(1, units=(), villager_medal=1), _stat(2, units=())]
+def test_a_measured_game_with_no_military_units_still_counts():
+	# A player who only ever made villagers has an empty top_units. They were
+	# still measured, so the game is in the denominator.
+	stat_rows = [_stat(1, units=(), villager_medal=1),
+	             _stat(2, units=(), has_production=False)]
 	rollup = compute_rollup(stat_rows, [], 5)
 	assert rollup["medal_rates"] == dict(military=0.0, villager=1.0, games_ranked=1)
 
 
+def test_the_measured_unmedalled_unarmed_game_the_old_inference_missed_now_counts():
+	# THE case 008_game_stats_has_production exists for, and the one the
+	# pre-008 inference got wrong. This player built villagers, no military at
+	# all (so top_units is empty), and placed outside the top three on
+	# villagers (so neither medal column is set) -- a player who died in the
+	# first minutes. Every signal the old inference had says "not measured";
+	# the stored flag says otherwise, and it is right.
+	#
+	# 4 such games plus 1 medalled game. Correct: 1/5 = 0.2. The old
+	# inference saw a denominator of 1 and reported 1.0 -- a five-fold
+	# overstatement of this player's medal rate.
+	stat_rows = [_stat(1, units=(), military_medal=1)] + [
+		_stat(i, units=()) for i in range(2, 6)]
+	rollup = compute_rollup(stat_rows, [], 5)
+	assert rollup["medal_rates"] == dict(military=0.2, villager=0.0, games_ranked=5)
+
+
+def test_eligibility_reads_the_stored_flag_and_nothing_else_on_the_row():
+	# Contradictory by construction -- a medal and a full top_units cannot
+	# coexist with has_production false in real data -- and that is the point:
+	# it isolates the flag as the SOLE input. Every signal the deleted
+	# inference used to read says "eligible" here; only the stored column says
+	# otherwise, and it must win. An `or`-ed fallback reintroduced "just in
+	# case" fails this and nothing else.
+	stat_rows = [_stat(1, military_medal=1, villager_medal=1, units=("Knight",),
+	                   has_production=False)]
+	rollup = compute_rollup(stat_rows, [], 5)
+	assert rollup["medal_rates"] == dict(military=None, villager=None, games_ranked=0)
+
+
+def test_a_row_missing_the_stored_flag_raises_rather_than_silently_emptying_the_denominator():
+	# game_stats.has_production is NOT NULL and 008 backfilled every historical
+	# row, so a row without it means the caller's SELECT dropped the column.
+	# Defaulting it to falsy would report "never medals" for that whole user as
+	# though it were a measurement; the refresh job's per-user guard turns this
+	# raise into a logged, visible failure instead. Same discipline as
+	# top_units_of raising on malformed JSON.
+	row = _stat(1)
+	del row["has_production"]
+	with pytest.raises(KeyError):
+		compute_rollup([row], [], 5)
+
+
+def test_the_binding_contracts_own_example_is_reachable_with_this_denominator():
+	# The contract's worked example is military 0.34 / villager 0.18 over a
+	# 41-game player. Those sum to 0.52, which is only possible when the
+	# denominator counts games the player was ELIGIBLE in -- over a denominator
+	# of "games carrying at least one medal", every rate pair must sum to at
+	# least 1. So this reproduces the published numbers from real rows and
+	# thereby pins that the shipped denominator is the one the contract was
+	# written against.
+	#
+	# 41 games, 3 of them unmeasured -> games_ranked 38; 13 military medals and
+	# 7 villager medals among the measured 38.
+	stat_rows = (
+		[_stat(i, military_medal=1) for i in range(1, 14)]            # 13 military
+		+ [_stat(i, villager_medal=2) for i in range(14, 21)]         # 7 villager
+		+ [_stat(i) for i in range(21, 39)]                           # 18 measured, no medal
+		+ [_stat(i, units=(), has_production=False) for i in range(39, 42)]
+	)
+	assert len(stat_rows) == 41
+	rollup = compute_rollup(stat_rows, [], 5)
+	assert rollup["medal_rates"] == dict(military=0.3421, villager=0.1842, games_ranked=38)
+	rates = rollup["medal_rates"]
+	assert round(rates["military"], 2) == 0.34
+	assert round(rates["villager"], 2) == 0.18
+	assert rates["military"] + rates["villager"] < 1.0
+
+
 def test_medal_rates_are_none_when_nothing_was_ever_ranked():
-	rollup = compute_rollup([_stat(1, units=()), _stat(2, units=())], [], 5)
+	rollup = compute_rollup([_stat(1, units=(), has_production=False),
+	                         _stat(2, units=(), has_production=False)], [], 5)
 	assert rollup["medal_rates"] == dict(military=None, villager=None, games_ranked=0)
 
 
@@ -306,7 +384,9 @@ def test_top_units_is_read_from_the_json_string_the_database_returns():
 		rows.append(row)
 	rollup = compute_rollup(rows, [], 5)
 	assert rollup["units"] == [dict(unit="Knight", games=5, wins=5)]
-	assert rollup["medal_rates"]["games_ranked"] == 5     # eligibility sees it too
+	# Eligibility is unaffected by the serialisation, because it reads the
+	# stored has_production column rather than parsing top_units at all.
+	assert rollup["medal_rates"]["games_ranked"] == 5
 
 
 def test_an_empty_top_units_string_is_not_a_unit():

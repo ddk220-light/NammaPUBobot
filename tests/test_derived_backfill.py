@@ -44,7 +44,8 @@ CREATE TABLE cls_result_metrics (
 CREATE TABLE game_stats (
 	replay_match_id INTEGER, player_number INTEGER, profile_id INTEGER, civ TEXT, team TEXT,
 	winner INTEGER, avg_eapm INTEGER, peak_eapm INTEGER, military_medal INTEGER,
-	villager_medal INTEGER, top_units TEXT, computed_at INTEGER,
+	villager_medal INTEGER, has_production INTEGER NOT NULL, top_units TEXT,
+	computed_at INTEGER,
 	PRIMARY KEY (replay_match_id, player_number));
 CREATE TABLE game_labels (
 	replay_match_id INTEGER, player_number INTEGER, label TEXT, kind TEXT, evidence TEXT,
@@ -156,8 +157,8 @@ def test_pending_game_stats_lists_only_matches_missing_derived_rows(monkeypatch)
 	_match_with_players(fake, 2)          # fully derived    -> not pending
 	_match_with_players(fake, 3)          # half derived     -> pending
 	for pn in (1, 2):
-		fake.add("game_stats", replay_match_id=2, player_number=pn, computed_at=1)
-	fake.add("game_stats", replay_match_id=3, player_number=1, computed_at=1)
+		fake.add("game_stats", replay_match_id=2, player_number=pn, has_production=1, computed_at=1)
+	fake.add("game_stats", replay_match_id=3, player_number=1, has_production=1, computed_at=1)
 
 	assert asyncio.run(backfill.pending_game_stats()) == [3, 1]
 
@@ -364,7 +365,7 @@ def test_an_extra_derived_row_is_healed_rather_than_left_forever(monkeypatch):
 	_install(monkeypatch, fake)
 	_match_with_players(fake, 24, players=2)
 	asyncio.run(backfill.drain_game_stats(computed_at=1))
-	fake.add("game_stats", replay_match_id=24, player_number=9, computed_at=1)
+	fake.add("game_stats", replay_match_id=24, player_number=9, has_production=1, computed_at=1)
 
 	assert asyncio.run(backfill.pending_game_stats()) == [24]
 	asyncio.run(backfill.drain_game_stats(computed_at=2))
