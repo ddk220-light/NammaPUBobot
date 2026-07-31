@@ -7,7 +7,8 @@ win/loss every correct caller banks a point.
 
 Self-contained in the bot/quiz and bot/lobby mould: dedicated prediction_*
 tables declared here via ensure_table at import, imported by bot/__init__.py for
-that side effect and the PredictionJobs singleton.
+that side effect and the PredictionJobs singleton (see the export at the bottom
+for why the module holding it is called flow.py rather than jobs.py).
 
 Votes are never held in memory. bot.waiting_reactions is a 30-minute TTL dict
 that a redeploy wipes, and matches routinely run longer than that, so the freeze
@@ -54,4 +55,28 @@ db.ensure_table(dict(
 	primary_keys=["post_id", "user_id"],
 ))
 
-from .jobs import jobs  # noqa: E402,F401  (PredictionJobs singleton — bot.predictions.jobs.think)
+# The singleton bot/events.py drives as `bot.predictions.jobs.think(frame_time)`,
+# the same shape bot/quiz, bot/lobby and bot/replay_stats all use.
+#
+# IT COMES FROM flow.py, AND THAT MODULE IS NOT CALLED jobs.py FOR A REASON.
+# It used to be, and binding the singleton onto the package under its own
+# submodule's name shadowed the module: `from bot.predictions import jobs`
+# handed back the INSTANCE, and so did `import bot.predictions.jobs as m`
+# (since 3.7 that binds the package attribute, not sys.modules). Every call site
+# in bot/match/ did the former and then reached for a module function on it —
+#
+#     AttributeError: 'PredictionJobs' object has no attribute 'open_for_match'
+#
+# — caught by the best-effort guard each site wraps itself in, logged, and never
+# seen again. The feature was dead from the day the shadowing landed:
+# prediction_posts held ZERO rows across 3312 ranked matches, and a second bug
+# behind it (the freeze sweep calling `self._freeze` on a module function) could
+# not even be reached to be noticed.
+#
+# A distinct module name removes the ambiguity outright rather than asking every
+# future caller to remember it. tests/test_predictions_wiring.py pins both
+# halves: that these names resolve to flow.py's functions, and that no caller
+# goes back to the shape that failed.
+from .flow import (  # noqa: E402,F401
+	jobs, open_for_match, restart_for_match, resolve_for_match, void_for_match,
+)

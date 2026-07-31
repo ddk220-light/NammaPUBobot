@@ -46,10 +46,15 @@ class PredictionJobs:
 			log.error(f"Prediction think() error (ignored): {e}")
 
 	async def _run(self):
+		# _freeze is a MODULE function, not a method -- `self._freeze` raises
+		# AttributeError, which the per-post guard below would then swallow into
+		# a log line on every sweep. It never surfaced because no post ever
+		# reached "due to freeze": open_for_match was itself unreachable (see
+		# this package's __init__), so the two bugs hid each other exactly.
 		now = int(time.time())
 		for post in await store.due_to_freeze(now):
 			try:
-				await self._freeze(post, now)
+				await _freeze(post, now)
 			except Exception as e:
 				log.error(f"Prediction freeze failed (post {post.get('id')}): {e}")
 

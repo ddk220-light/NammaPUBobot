@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Slash-command handlers for audience predictions. Thin: the vote lifecycle
-lives in bot.predictions.jobs, persistence in bot.predictions.store, rendering in
+lives in bot.predictions.flow, persistence in bot.predictions.store, rendering in
 bot.predictions.embeds. All bot.predictions imports are lazy (inside the handlers)
 so this module loads during the `from . import commands` step without pulling
 nextcord-heavy modules early — the bot.commands.quiz pattern."""
