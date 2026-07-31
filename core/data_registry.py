@@ -94,27 +94,34 @@ REGISTRY = {
 		writers=("bot/identity.py", "core/migrations.py"),
 		retention="forever",
 	),
-	"rs_config": dict(layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
-	"rs_matches": dict(layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
-	"rs_player_games": dict(
+	# raw replay observations. Renamed out of their inherited `rs_` prefix by
+	# 007_raw_renames; the single-row ops table that used to sit alongside them
+	# was dropped by the same migration, its one boolean replaced by the
+	# REPLAY_INGEST_ENABLED config var.
+	"replay_matches": dict(
 		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"
 	),
-	"rs_player_units": dict(
+	"replay_players": dict(
+		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"
+	),
+	"replay_units": dict(
 		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
 	),
-	"rs_player_techs": dict(
+	"replay_techs": dict(
 		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
 	),
-	"rs_player_buildings": dict(
+	"replay_buildings": dict(
 		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
 	),
-	"rs_player_events": dict(
+	"replay_events": dict(
 		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
 	),
-	"rs_player_apm": dict(
+	"replay_apm": dict(
 		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="sweepable"
 	),
-	"rs_ingest": dict(layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"),
+	"replay_ingest": dict(
+		layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"
+	),
 	# derived — rebuildable (legacy generation, retired across stages 3-6)
 	"rs_player_game_tags": dict(
 		layer="derived", tenancy="global", writers=("bot/replay_stats/player_tags.py",), retention="forever"
@@ -155,13 +162,15 @@ REGISTRY = {
 	),
 	# link — cross-tenant joins (stage 1.6)
 	# core/migrations.py is a writer too: 004_identity_v2 backfills every
-	# historical pairing out of rs_matches.bot_match_id (INSERT IGNORE, so
-	# bot/community.py's link_match_replay stays the authoritative one).
+	# historical pairing out of replay_matches.bot_match_id (INSERT IGNORE, so
+	# bot/community.py's link_match_replay stays the authoritative one). That
+	# migration predates 007_raw_renames and still names the table by its old
+	# name, which is correct — it runs before the rename.
 	"match_replays": dict(
 		layer="link", tenancy="community", writers=("bot/community.py", "core/migrations.py"),
 		retention="forever"
 	),
-	# derived-global (stage 3) — computed once at ingest from the rs_* raw
+	# derived-global (stage 3) — computed once at ingest from the replay_* raw
 	# tables, community-independent (unlike derived-community's per-community
 	# rollups, a later stage). Neither table carries a user_id; both key on
 	# profile_id only (identity v2 §5).

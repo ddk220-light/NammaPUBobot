@@ -161,9 +161,9 @@ def test_impact_queries_select_every_scoring_column():
 	for rel in ("bot/web.py", "bot/post_game.py"):
 		src = (root / rel).read_text()
 		queries = [chunk for chunk in src.split('await db.fetchall(')
-		           if 'rs_player_games' in chunk.split('FROM')[0] + chunk[:600]
+		           if 'replay_players' in chunk.split('FROM')[0] + chunk[:600]
 		           and 'g.villagers' in chunk[:600]]
-		assert queries, f"no rs_player_games impact query found in {rel}"
+		assert queries, f"no replay_players impact query found in {rel}"
 		for q in queries:
 			head = q[:600]
 			for col in REQUIRED_COLUMNS:

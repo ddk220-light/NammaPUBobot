@@ -21,7 +21,21 @@ OLD_NAMES = [
 	# than merely stale data. core/migrations.py names it forever (the drop
 	# migration) and is allowlisted.
 	"qc_profile_map",
+	# The raw replay tables, renamed out of their inherited `rs_` prefix by
+	# 007_raw_renames (stage 3b). None of these eight collides with an ordinary
+	# identifier — in particular `rs_player_games` is NOT a substring of the
+	# still-live `rs_player_game_tags`, which needs a `_` where this needs an `s`.
+	"rs_matches", "rs_player_games", "rs_player_units", "rs_player_techs",
+	"rs_player_buildings", "rs_player_events", "rs_player_apm", "rs_ingest",
+	# Dropped outright by the same migration: its single `enabled` boolean is now
+	# the REPLAY_INGEST_ENABLED config var. Guarded here because a query against a
+	# table that no longer exists is a runtime error, not merely stale data.
+	"rs_config",
 ]
+# `rs_player_game_tags` and `rs_player_personas` deliberately keep BOTH their
+# names and their writers through 007_raw_renames — they are the legacy derived
+# generation, still have live readers, and stage 6 deletes them rather than
+# carrying them forward — so they must never be added above.
 # `rs_profiles` — the OTHER table retired by task 2.5.7 — is deliberately absent
 # for the same reason as `players` and `noadds` above: it is a substring of
 # ordinary identifiers this codebase already uses (`_match_players_profiles` in

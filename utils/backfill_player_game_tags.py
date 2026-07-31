@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Backfill rs_player_game_tags from existing replay-stats tables.
 
-No replay download or mgz parse needed; this reads rs_player_games/units/techs/events.
+No replay download or mgz parse needed; this reads replay_players/units/techs/events.
 """
 import argparse
 import asyncio
@@ -30,19 +30,19 @@ async def _match_ids(limit, all_matches):
 	if not all_matches:
 		where = (
 			"WHERE NOT EXISTS ("
-			"SELECT 1 FROM rs_player_game_tags t WHERE t.aoe2_match_id=rm.aoe2_match_id"
+			"SELECT 1 FROM rs_player_game_tags t WHERE t.aoe2_match_id=rm.replay_match_id"
 			") "
 		)
 	sql = (
-		"SELECT rm.aoe2_match_id FROM rs_matches rm " + where +
-		"ORDER BY rm.aoe2_match_id DESC"
+		"SELECT rm.replay_match_id FROM replay_matches rm " + where +
+		"ORDER BY rm.replay_match_id DESC"
 	)
 	if limit:
 		sql += " LIMIT %s"
 		rows = await db.fetchall(sql, [limit])
 	else:
 		rows = await db.fetchall(sql)
-	return [int(r["aoe2_match_id"]) for r in rows or []]
+	return [int(r["replay_match_id"]) for r in rows or []]
 
 
 async def run(limit=0, all_matches=False, dry_run=False):

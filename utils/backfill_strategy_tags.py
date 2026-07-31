@@ -26,18 +26,18 @@ async def _work_items(all_parsed, limit):
 	if not all_parsed:
 		where = (
 			"WHERE NOT EXISTS ("
-			"SELECT 1 FROM cls_results cr WHERE cr.aoe2_match_id=rm.aoe2_match_id"
+			"SELECT 1 FROM cls_results cr WHERE cr.aoe2_match_id=rm.replay_match_id"
 			") AND NOT EXISTS ("
 			"SELECT 1 FROM cls_match_ingest ci "
-			"WHERE ci.aoe2_match_id=rm.aoe2_match_id "
+			"WHERE ci.aoe2_match_id=rm.replay_match_id "
 			"AND (ci.status='done' OR ci.status LIKE 'unavailable:%%')"
 			") "
 		)
 	sql = (
-		"SELECT rm.aoe2_match_id, MAX(rm.bot_match_id) AS bot_match_id, MAX(qm.reported_at) AS at "
-		"FROM rs_matches rm LEFT JOIN matches qm ON qm.match_id=rm.bot_match_id "
+		"SELECT rm.replay_match_id, MAX(rm.bot_match_id) AS bot_match_id, MAX(qm.reported_at) AS at "
+		"FROM replay_matches rm LEFT JOIN matches qm ON qm.match_id=rm.bot_match_id "
 		+ where +
-		"GROUP BY rm.aoe2_match_id ORDER BY at DESC, rm.aoe2_match_id DESC"
+		"GROUP BY rm.replay_match_id ORDER BY at DESC, rm.replay_match_id DESC"
 	)
 	if limit:
 		sql += " LIMIT %s"
@@ -110,7 +110,7 @@ async def _rebuild_player_totals():
 	await db.execute(
 		"REPLACE INTO cls_player_totals (identity, games, wins, losses) "
 		"SELECT MIN(identity), COUNT(*), SUM(winner=1), SUM(winner=0) "
-		"FROM rs_player_games WHERE identity IS NOT NULL AND identity <> '' GROUP BY identity")
+		"FROM replay_players WHERE identity IS NOT NULL AND identity <> '' GROUP BY identity")
 
 
 def _extract_for_match(aoe2_match_id, played_at_epoch, date_map):
@@ -139,7 +139,7 @@ async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
 		print("strategy-tag backfill candidates: {}".format(len(rows)), flush=True)
 		if dry_run:
 			for r in rows[:20]:
-				print("{} bot_match={} at={}".format(r["aoe2_match_id"], r.get("bot_match_id"), r.get("at")))
+				print("{} bot_match={} at={}".format(r["replay_match_id"], r.get("bot_match_id"), r.get("at")))
 			return 0
 
 		from utils.replay_quiz.extract import load_date_map
@@ -149,7 +149,7 @@ async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
 		done = failed = 0
 		for r in rows:
 			try:
-				mid = int(r["aoe2_match_id"])
+				mid = int(r["replay_match_id"])
 				extracted, status = await asyncio.to_thread(
 					_extract_for_match, mid, r.get("at"), date_map)
 				if not extracted:
@@ -162,7 +162,7 @@ async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
 					print("classified {}: {} rows".format(mid, written), flush=True)
 			except Exception as e:
 				failed += 1
-				print("failed {}: {}".format(r["aoe2_match_id"], e), flush=True)
+				print("failed {}: {}".format(r["replay_match_id"], e), flush=True)
 			if done % 10 == 0:
 				print("processed={} failed={}".format(done, failed), flush=True)
 			if pace:
@@ -177,7 +177,7 @@ async def run(all_parsed=False, limit=0, pace=10.0, dry_run=False):
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--all-parsed", action="store_true",
-	                    help="re-ingest every parsed rs_matches row, not only matches with no cls rows")
+	                    help="re-ingest every parsed replay_matches row, not only matches with no cls rows")
 	parser.add_argument("--limit", type=int, default=0)
 	parser.add_argument("--pace", type=float, default=10.0,
 	                    help="seconds between replay fetches; keep nonzero to avoid aoe.ms 429s")

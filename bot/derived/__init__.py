@@ -18,12 +18,15 @@ a Discord user through its nullable `profile_id`, resolved via `identities` at
 read time, so a late `/link` backfills a player's whole history with no
 backfill job of its own. game_labels carries no `profile_id` either: a label is
 a fact about a slot in a match, and the profile behind that slot is already
-recorded once per match on game_stats (and on the raw rs_player_games row it is
+recorded once per match on game_stats (and on the raw replay_players row it is
 computed from) -- duplicating it here would be a second copy to keep correct
-for no read it enables. Both are named `replay_match_id`
-while the raw rs_* tables this data is computed from still call the same
-column `aoe2_match_id` -- task 3.7 renames the raw side to match, so the
-derived side is written correctly from the start and never needs a rename.
+for no read it enables. Both are named `replay_match_id`, which is also what
+the raw replay_* tables this data is computed from now call the same column:
+these two were written that way from the start and 007_raw_renames brought the
+raw side into line, so neither derived table ever needed a rename of its own.
+The legacy cls_* tables still spell it `aoe2_match_id` -- they are retired
+outright in stage 6 rather than renamed, and bot/derived/backfill.py is the one
+module that reads across both spellings.
 
 Imported by bot/__init__.py for the db.ensure_table side effect below, the
 same as bot/replay_stats/__init__.py: ensure_table's sync wrapper drives the
@@ -44,7 +47,7 @@ db.ensure_table(dict(
 		dict(cname="civ", ctype=db.types.str, notnull=False),
 		dict(cname="team", ctype=db.types.str, notnull=False),
 		dict(cname="winner", ctype=db.types.bool, notnull=False),
-		# rs_player_games.eapm passed through, never a mean of rs_player_apm's
+		# replay_players.eapm passed through, never a mean of replay_apm's
 		# buckets -- see bot/derived/game_stats.py's docstring for why the two
 		# must not be conflated.
 		dict(cname="avg_eapm", ctype=db.types.int, notnull=False),

@@ -17,7 +17,11 @@ db.ensure_table(dict(
 	columns=[
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="channel_id", ctype=db.types.int),
-		dict(cname="aoe2_match_id", ctype=db.types.int, notnull=False),
+		# The AoE2 replay this pick belongs to. Called `replay_match_id` in every
+		# table of ours that stores it (007_raw_renames); `aoe2_match_id` survives
+		# in this module only as the key parse_lobby_embed puts it under, which is
+		# an AoE2-side name for an AoE2-side value and not a column at all.
+		dict(cname="replay_match_id", ctype=db.types.int, notnull=False),
 		dict(cname="aoe2_name", ctype=db.types.str),
 		dict(cname="civ", ctype=db.types.str),
 		dict(cname="at", ctype=db.types.int),
@@ -46,7 +50,7 @@ async def persist_lobby_civs(channel_id, parsed):
 
 	Called from on_message when LobbyBOT posts a completed match, using the same
 	proven parse_lobby_embed output. Idempotent: a match already recorded (by
-	aoe2_match_id in this channel) is skipped, so redeliveries don't duplicate.
+	replay_match_id in this channel) is skipped, so redeliveries don't duplicate.
 	"""
 	if not parsed:
 		return
@@ -61,7 +65,7 @@ async def persist_lobby_civs(channel_id, parsed):
 				continue
 			rows.append(dict(
 				channel_id=channel_id,
-				aoe2_match_id=aoe2_match_id,
+				replay_match_id=aoe2_match_id,
 				aoe2_name=p.get('aoe2_name', ''),
 				civ=civ,
 				at=at,
@@ -71,7 +75,7 @@ async def persist_lobby_civs(channel_id, parsed):
 
 	if aoe2_match_id is not None:
 		exists = await db.fetchone(
-			"SELECT 1 AS x FROM civ_picks WHERE channel_id=%s AND aoe2_match_id=%s LIMIT 1",
+			"SELECT 1 AS x FROM civ_picks WHERE channel_id=%s AND replay_match_id=%s LIMIT 1",
 			[channel_id, aoe2_match_id]
 		)
 		if exists:
@@ -145,7 +149,7 @@ async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at
 		)
 		rows.append(dict(
 			channel_id=channel_id,
-			aoe2_match_id=parsed.get("aoe2_match_id"),
+			replay_match_id=parsed.get("aoe2_match_id"),
 			aoe2_name=match.get("aoe2_name", ""),
 			civ=civ,
 			at=match_at,

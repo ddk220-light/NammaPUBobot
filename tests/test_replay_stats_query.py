@@ -1,7 +1,7 @@
 """Unit tests for the pure aggregations in bot.replay_stats. build_timeline buckets upgrades into
 phases (quiz-style); build_growth_curve averages each game's cumulative villager/military count
 onto a common time grid over the games still live at each t, with a 95% CI and per-point n;
-event_rows (shape) turns the per-action timeline into rs_player_events rows with a per-player seq."""
+event_rows (shape) turns the per-action timeline into replay_events rows with a per-player seq."""
 from bot.replay_stats.query import build_growth_curve, build_timeline, phase_bucket
 from bot.replay_stats.shape import event_rows
 
@@ -127,7 +127,7 @@ def test_event_rows_assigns_per_player_seq_in_time_order():
     p1 = [r for r in rows if r["player_number"] == 1]
     assert [r["seq"] for r in p1] == [0, 1, 2]                 # seq is dense, per-player
     assert [r["t_s"] for r in p1] == [5, 20, 400]             # ordered by time
-    assert all(r["aoe2_match_id"] == 99 for r in rows)
+    assert all(r["replay_match_id"] == 99 for r in rows)
     assert {r["profile_id"] for r in p1} == {111}
     assert p1[2]["name"] == "Archer" and p1[2]["amount"] == 3
     p2 = [r for r in rows if r["player_number"] == 2][0]

@@ -67,7 +67,7 @@ async def _card_signals_for(rows):
 	"""Card-only signals for the match these rows belong to, or empty dicts."""
 	from bot.replay_stats.card_query import fetch_card_signals
 
-	aoe2_id = next((r.get("aoe2_match_id") for r in rows if r.get("aoe2_match_id")), None)
+	aoe2_id = next((r.get("replay_match_id") for r in rows if r.get("replay_match_id")), None)
 	if aoe2_id is None:
 		return {}
 	duration = next((r.get("duration_s") for r in rows if r.get("duration_s")), None)
@@ -78,9 +78,9 @@ async def _medals_for(rows):
 	"""player_number -> {"military_medal", "villager_medal"} for this match,
 	read from the derived-global game_stats table rather than recomputed here.
 
-	game_stats.replay_match_id is written from the same match id this file
-	calls aoe2_match_id (bot/derived/__init__.py's module doc explains why the
-	names differ; task 3.7 unifies them on the raw side, not this one).
+	game_stats.replay_match_id and the raw replay_players.replay_match_id it is
+	computed from are the same value under the same name — 007_raw_renames
+	unified the two spellings.
 
 	{} when there is no known match id, or when the match has no stored rows
 	yet. The second case is not expected to happen in steady state --
@@ -92,7 +92,7 @@ async def _medals_for(rows):
 	"""
 	from core.database import db
 
-	aoe2_id = next((r.get("aoe2_match_id") for r in rows if r.get("aoe2_match_id")), None)
+	aoe2_id = next((r.get("replay_match_id") for r in rows if r.get("replay_match_id")), None)
 	if aoe2_id is None:
 		return {}
 	medal_rows = await db.fetchall(
@@ -241,7 +241,7 @@ def _stats_text(player):
 		bits.append(f"{player['farms']} farms")
 	if player.get("tcs") is not None:
 		bits.append(f"{player['tcs']} TC")
-	# Average is the stored rs_player_games.eapm, never derived from the APM
+	# Average is the stored replay_players.eapm, never derived from the APM
 	# buckets (those are sparse, so any mean over them divides by active
 	# minutes). Peak is forward-only, so it is simply absent on older matches.
 	if player.get("eapm") is not None:
@@ -356,22 +356,22 @@ async def _analysis_rows(bot_match_id):
 		"WHERE bot_match_id=%s AND team IN (0, 1) AND result IN ('W', 'L') "
 		"ORDER BY team, nick",
 		[bot_match_id])
-	# aoe2_match_id + player_number are the join key for every card-only signal
-	# (buildings, events, cls_results, rs_player_apm) — profile_id is a nullable
+	# replay_match_id + player_number are the join key for every card-only signal
+	# (buildings, events, cls_results, replay_apm) — profile_id is a nullable
 	# denormalisation on those tables and would silently drop players.
 	# age_reliable and eapm are read by card_scoring / the stats line.
 	# feudal_s and castle_s are NOT read by anything in this file any more — the
 	# embed that scored timing was deleted with the replay-derived Tale of the
 	# Tape. They stay because test_replay_scoring.py::
-	# test_impact_queries_select_every_scoring_column checks every rs_player_games
+	# test_impact_queries_select_every_scoring_column checks every replay_players
 	# query here against scoring.REQUIRED_COLUMNS, which folds in TIMING_MIX.
 	replay_rows = await db.fetchall(
 		"SELECT g.user_id, g.identity, g.civ, g.team AS replay_team, g.winner, "
-		"g.aoe2_match_id, g.player_number, g.age_reliable, g.eapm, "
+		"g.replay_match_id, g.player_number, g.age_reliable, g.eapm, "
 		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, g.military, g.mil_pre_castle, g.mil_pre_imperial, "
 		"g.feudal_s, g.castle_s, g.imperial_s, rm.duration_s "
-		"FROM rs_matches rm "
-		"JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
+		"FROM replay_matches rm "
+		"JOIN replay_players g ON g.replay_match_id=rm.replay_match_id "
 		"WHERE rm.bot_match_id=%s "
 		"ORDER BY g.team, g.identity",
 		[bot_match_id])
@@ -418,15 +418,15 @@ async def _apm_chart_file(bot_match_id):
 		from bot.replay_stats.apm_query import apm_series, fetch_match_apm
 
 		row = await db.fetchone(
-			"SELECT aoe2_match_id FROM rs_matches WHERE bot_match_id=%s", [bot_match_id])
+			"SELECT replay_match_id FROM replay_matches WHERE bot_match_id=%s", [bot_match_id])
 		if not row:
 			return None
-		aoe2_id = row["aoe2_match_id"]
+		aoe2_id = row["replay_match_id"]
 		rows = await fetch_match_apm(aoe2_id)
 		if not rows:
 			return None
 		meta = await db.fetchall(
-			"SELECT player_number, identity, team FROM rs_player_games WHERE aoe2_match_id=%s",
+			"SELECT player_number, identity, team FROM replay_players WHERE replay_match_id=%s",
 			[aoe2_id])
 		names = {m["player_number"]: m.get("identity") for m in meta or []}
 		sides = sorted({m.get("team") for m in meta or [] if m.get("team") is not None})

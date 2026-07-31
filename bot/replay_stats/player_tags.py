@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Derived per-player match tags from replay-stats rows.
 
-These tags are facts from rs_* tables: age timing, eco/army profile, unit comp, and tech path.
+These tags are facts from replay_* tables: age timing, eco/army profile, unit comp, and tech path.
 They are persisted so leaderboards and post-game summaries read stable evidence instead of
 recomputing broad labels only.
 """
@@ -163,18 +163,18 @@ async def _ensure_index(name, columns):
 	await db.execute("CREATE INDEX `{}` ON rs_player_game_tags ({})".format(name, columns))
 
 
-async def write_match_tags(aoe2_match_id):
+async def write_match_tags(replay_match_id):
 	await ensure_table()
 	players = await db.fetchall(
 		"SELECT g.*, m.reported_at AS played_at "
-		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
 		"LEFT JOIN matches m ON m.match_id=rm.bot_match_id "
-		"WHERE g.aoe2_match_id=%s",
-		[aoe2_match_id])
+		"WHERE g.replay_match_id=%s",
+		[replay_match_id])
 	if not players:
 		return 0
-	units = await db.fetchall("SELECT * FROM rs_player_units WHERE aoe2_match_id=%s", [aoe2_match_id])
-	techs = await db.fetchall("SELECT * FROM rs_player_techs WHERE aoe2_match_id=%s", [aoe2_match_id])
+	units = await db.fetchall("SELECT * FROM replay_units WHERE replay_match_id=%s", [replay_match_id])
+	techs = await db.fetchall("SELECT * FROM replay_techs WHERE replay_match_id=%s", [replay_match_id])
 	units_by_player = defaultdict(list)
 	techs_by_player = defaultdict(list)
 	for row in units or []:
@@ -187,7 +187,11 @@ async def write_match_tags(aoe2_match_id):
 		pnum = int(player["player_number"])
 		for tag in derive_tags(player, players, units_by_player[pnum], techs_by_player[pnum]):
 			rows.append({
-				"aoe2_match_id": int(aoe2_match_id),
+				# rs_player_game_tags kept its name AND its column names through
+				# 007_raw_renames — stage 6 retires the table outright rather than
+				# renaming it — so this one row dict spells the id the old way
+				# while everything it was read from spells it the new way.
+				"aoe2_match_id": int(replay_match_id),
 				"player_number": pnum,
 				"tag": tag["tag"],
 				"tag_label": tag["label"],
@@ -203,7 +207,7 @@ async def write_match_tags(aoe2_match_id):
 				"team": player.get("team"),
 				"winner": player.get("winner"),
 			})
-	await db.execute("DELETE FROM rs_player_game_tags WHERE aoe2_match_id=%s", [aoe2_match_id])
+	await db.execute("DELETE FROM rs_player_game_tags WHERE aoe2_match_id=%s", [replay_match_id])
 	if rows:
 		await db.insert_many("rs_player_game_tags", rows, on_duplicate="replace")
 	return len(rows)

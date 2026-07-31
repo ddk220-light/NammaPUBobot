@@ -20,6 +20,7 @@ FLAGSHIP_GUILD_IDS = [{flagship_guild_ids}]
 
 PUBOBOT_USER_ID = {pubobot_user_id}
 LOBBYBOT_USER_ID = {lobbybot_user_id}
+REPLAY_INGEST_ENABLED = "{replay_ingest_enabled}"
 
 DB_URI = "{db_uri}"
 LOG_LEVEL = "{log_level}"
@@ -95,6 +96,18 @@ def main():
         flagship_guild_ids=os.environ.get("FLAGSHIP_GUILD_IDS", ""),
         pubobot_user_id=pubobot_user_id,
         lobbybot_user_id=lobbybot_user_id,
+        # Defaults to True: 007_raw_renames dropped the single-row ops table whose
+        # one row had this switch ON in production, so an unset env var must keep
+        # ingestion running rather than silently stopping it.
+        #
+        # Emitted QUOTED, unlike the older {ws_enable} above it. config.cfg is
+        # loaded as Python source, so an unquoted `REPLAY_INGEST_ENABLED=false`
+        # (a perfectly ordinary thing to type into Railway) would render as the
+        # bare name `false` and raise NameError at import — taking the whole boot
+        # down over a config value. Quoted, it is always a valid string literal
+        # and core/config.py's bool coercion ('1'/'true'/'yes'/'on', anything
+        # else False) decides what it means.
+        replay_ingest_enabled=os.environ.get("REPLAY_INGEST_ENABLED", "True"),
         db_uri=db_uri,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
         commands_url=os.environ.get("COMMANDS_URL",

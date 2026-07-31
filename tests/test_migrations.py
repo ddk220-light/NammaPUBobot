@@ -98,10 +98,19 @@ class FakeDb:
 			# `DROP TABLE `name``
 			self.tables.discard(sql.split("`")[1])
 		if sql.startswith("RENAME TABLE"):
-			# `RENAME TABLE `old` TO `new``
+			# `RENAME TABLE `old` TO `new`` — the columns, indexes and rows move
+			# with the table, exactly as MySQL does it. Modelling that is not
+			# cosmetic: 007 renames tables and THEN renames a column on the new
+			# names, so a fake that dropped the column set on rename would make
+			# every one of those column renames silently a no-op and the test
+			# suite would pass against a migration that does nothing.
 			parts = sql.split("`")
-			self.tables.discard(parts[1])
-			self.tables.add(parts[3])
+			old, new = parts[1], parts[3]
+			self.tables.discard(old)
+			self.tables.add(new)
+			for store in (self.columns, self.indexes, self.rows):
+				if old in store:
+					store[new] = store.pop(old)
 		if sql.startswith("ALTER TABLE") and "RENAME COLUMN" in sql:
 			# `ALTER TABLE `table` RENAME COLUMN `old` TO `new``
 			parts = sql.split("`")
@@ -934,7 +943,7 @@ def test_run_all_raises_when_identities_seed_did_not_survive_a_restored_backup()
 	docstring describes: the ledger says every migration (including
 	003_seed_identities) already ran, but the restored backup did not bring
 	`identities` back with it. No old-named table is involved, so
-	_assert_stage1_renames_landed alone would not catch this. Uses the repo's
+	_assert_renames_landed alone would not catch this. Uses the repo's
 	real _ROOT, hence the real data/profile_resolved.csv — the same file a
 	production image ships."""
 	db = FakeDb(
@@ -1703,7 +1712,6 @@ def test_m006_skips_tables_that_do_not_exist_yet():
 
 def test_m006_runs_in_the_ledger_after_005(monkeypatch):
 	names = [name for name, _fn in mig.MIGRATIONS]
-	assert names[-1] == "006_derived_indexes"
 	assert names.index("005_identity_conflict_history") < names.index("006_derived_indexes")
 
 
@@ -1729,3 +1737,178 @@ def test_the_index_names_match_the_ensure_table_declaration():
 	for _table, index, column in mig._DERIVED_MATCH_INDEXES:
 		assert declared.get(index) == column, f"{index} drifted from the ensure_table declaration"
 		assert f"INDEX {index} ({column})" in offline, f"{index} drifted from the offline DDL"
+
+
+# ─── 007_raw_renames ──────────────────────────────────────────────────────
+# Stage 3b: the raw replay tables shed their inherited `rs_` prefix, their
+# match-id column is unified with the derived layer's `replay_match_id`, and
+# rs_config is dropped in favour of the REPLAY_INGEST_ENABLED config var.
+
+def _m007_db(**kwargs):
+	""" A database in the pre-007 shape: every source table present, each with
+	the `aoe2_match_id` column 007 renames, plus civ_picks (renamed by 001, but
+	its match-id column is only renamed here). """
+	tables = {old for old, _new in mig._STAGE3_RENAMES} | {"civ_picks", "rs_config"}
+	columns = {t: {"aoe2_match_id"} for t in tables if t != "rs_config"}
+	return FakeDb(tables=tables, columns=columns, **kwargs)
+
+
+def test_m007_renames_every_raw_table():
+	db = _m007_db()
+	asyncio.run(mig._m007(db))
+
+	for old, new in mig._STAGE3_RENAMES:
+		assert new in db.tables, f"{old} was not renamed to {new}"
+		assert old not in db.tables, f"{old} survived its own rename"
+
+
+def test_m007_renames_the_match_id_column_on_every_table_including_civ_picks():
+	db = _m007_db()
+	asyncio.run(mig._m007(db))
+
+	for table in mig._STAGE3_MATCH_ID_TABLES:
+		assert db.columns[table] == {"replay_match_id"}, table
+	assert "civ_picks" in mig._STAGE3_MATCH_ID_TABLES, \
+		"civ_picks carries the same id under the same old name and must be renamed too"
+
+
+def test_m007_drops_rs_config():
+	db = _m007_db()
+	asyncio.run(mig._m007(db))
+
+	assert "rs_config" not in db.tables
+	assert sum(1 for s in db.executed if s.startswith("DROP TABLE")) == 1
+
+
+def test_m007_is_idempotent():
+	""" A body that dies partway through re-runs from the top on the next boot
+	(see the module docstring), so a second pass must issue no DDL at all. """
+	db = _m007_db()
+	asyncio.run(mig._m007(db))
+	before = list(db.executed)
+	asyncio.run(mig._m007(db))
+
+	assert db.executed == before, "a second run must be a complete no-op"
+
+
+def test_m007_is_a_noop_on_a_fresh_install():
+	""" Migrations run before `import bot`, so on a first-ever boot none of
+	these tables exists yet — bot/replay_stats and bot/civ_sync create them,
+	already correctly named, moments later. """
+	db = FakeDb()
+	asyncio.run(mig._m007(db))
+
+	assert db.executed == []
+	assert db.tables == set()
+
+
+def test_m007_renames_tables_before_columns():
+	""" Order inside the body is load-bearing: the column renames name the NEW
+	table names, so running them first would find nothing to rename on a
+	database that has not been renamed yet. """
+	db = _m007_db()
+	asyncio.run(mig._m007(db))
+
+	kinds = [s.split()[0] for s in db.executed if s.startswith(("RENAME TABLE", "ALTER TABLE"))]
+	assert kinds == ["RENAME"] * len(mig._STAGE3_RENAMES) + ["ALTER"] * len(mig._STAGE3_MATCH_ID_TABLES)
+
+
+def test_m007_refuses_to_guess_when_a_rename_target_already_exists():
+	""" ensure_table CREATEs any declared name it cannot find, so a boot that
+	somehow reached `import bot` against a half-renamed schema leaves the
+	populated old table beside an empty new one. Guessing there would silently
+	serve the empty one. """
+	db = _m007_db()
+	db.tables.add("replay_matches")
+
+	try:
+		asyncio.run(mig._m007(db))
+	except RuntimeError as e:
+		assert "both exist" in str(e)
+	else:
+		raise AssertionError("a both-exist table collision must raise, not guess")
+
+
+def test_m007_refuses_to_guess_when_both_match_id_columns_exist():
+	""" The column-level twin of the case above, and the more dangerous one:
+	ensure_table CAN add a missing column (it cannot rename a table), so this is
+	reachable on any rollback. Skipping quietly would leave every read of
+	`replay_match_id` returning NULL, forever, on a healthy-looking bot. """
+	db = _m007_db()
+	db.columns["rs_player_games"].add("replay_match_id")
+
+	try:
+		asyncio.run(mig._m007(db))
+	except RuntimeError as e:
+		assert "both exist" in str(e)
+	else:
+		raise AssertionError("a both-exist column collision must raise, not guess")
+
+
+def test_m007_leaves_the_tables_stage_6_retires_alone():
+	""" rs_player_game_tags and rs_player_personas keep their names AND their
+	`aoe2_match_id` columns: stage 6 deletes them rather than carrying them
+	forward, and renaming them now would churn tables that are about to go. """
+	survivors = {"rs_player_game_tags", "rs_player_personas", "cls_results", "cls_result_metrics"}
+	db = FakeDb(tables=survivors, columns={t: {"aoe2_match_id"} for t in survivors})
+
+	asyncio.run(mig._m007(db))
+
+	assert db.tables == survivors
+	for t in survivors:
+		assert db.columns[t] == {"aoe2_match_id"}, t
+	assert db.executed == []
+
+
+def test_m007_runs_last_in_the_ledger():
+	names = [name for name, _fn in mig.MIGRATIONS]
+	assert names[-1] == "007_raw_renames"
+	assert names.index("006_derived_indexes") < names.index("007_raw_renames")
+
+
+def test_stage3_renames_targets_are_registered_and_sources_are_not_declared():
+	""" The 001 counterpart of this check, for 007's pairs: a typo in a rename
+	target is invisible to every other test here (they treat table names as
+	opaque strings) but would rename a production table out from under its
+	declaration, and ensure_table would then create the right name empty. """
+	from core.data_registry import REGISTRY
+	from tests.test_data_registry import _declared_tables
+
+	declared = _declared_tables()
+	for old, new in mig._STAGE3_RENAMES:
+		assert new in REGISTRY, f"rename target {new!r} has no core.data_registry entry"
+		assert old not in declared, f"rename source {old!r} is still declared by an ensure_table call"
+	assert "rs_config" not in declared, "007 drops rs_config; its declaration must be gone too"
+	assert "rs_config" not in REGISTRY, "007 drops rs_config; its registry entry must be gone too"
+
+
+def test_run_all_raises_when_a_raw_rename_source_survives_the_ledger():
+	""" The 007 half of the restored-backup post-condition: the ledger says the
+	raw renames ran, but rs_matches is still there, so `import bot` would CREATE
+	eight empty replay_* tables and the bot would serve no replay history at all
+	while looking perfectly healthy. """
+	db = FakeDb(
+		tables={new for _old, new in mig._STAGE1_RENAMES} | {"rs_matches", "identities"},
+		applied=[name for name, _fn in mig.MIGRATIONS],
+		rows={"identities": [_seeded()]},
+	)
+	try:
+		asyncio.run(mig.run_all(db))
+	except RuntimeError as e:
+		assert "rs_matches" in str(e) and "007_raw_renames" in str(e)
+	else:
+		raise AssertionError("run_all must crash when a raw rename source survives the ledger")
+
+
+def test_the_replay_ingest_switch_has_a_home_in_both_config_paths():
+	""" 007 drops the table that held this flag, so REPLAY_INGEST_ENABLED is the
+	only thing left that can turn ingestion on. It has to exist in BOTH places
+	or production loses the switch: start.py generates config.cfg from env vars
+	on Railway, so a var missing there is missing in production no matter what
+	config.example.cfg says. """
+	import os
+
+	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+	for relpath in ("start.py", "config.example.cfg", "core/config.py"):
+		with open(os.path.join(root, relpath), encoding="utf-8") as f:
+			assert "REPLAY_INGEST_ENABLED" in f.read(), f"{relpath} does not carry REPLAY_INGEST_ENABLED"

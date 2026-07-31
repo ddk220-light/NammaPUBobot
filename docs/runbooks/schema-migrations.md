@@ -93,9 +93,14 @@ A migration that only *moves* rows is invisible to those two. Check its own
 destination as well — e.g. after `004_identity_v2`:
 
 ```sql
-SELECT COUNT(*) FROM match_replays;                              -- was 0 before 004
-SELECT COUNT(*) FROM rs_matches WHERE bot_match_id IS NOT NULL;  -- the upper bound it backfills from
+SELECT COUNT(*) FROM match_replays;                                  -- was 0 before 004
+SELECT COUNT(*) FROM replay_matches WHERE bot_match_id IS NOT NULL;  -- the upper bound it backfills from
 ```
+
+(That table is `rs_matches` in 004's own SQL and log lines, and everywhere below.
+It is called `replay_matches` from `007_raw_renames` on — 004 runs first and can
+only ever see the old name, so both are correct in their own place. Use
+`replay_matches` when querying the database by hand today.)
 
 Do **not** assume the gap between those two is all one thing. 004's log line
 breaks it into four causes, and they have different fixes:
@@ -119,6 +124,27 @@ And confirm the migration actually ran:
 ```bash
 railway logs -n 60 | grep migrations:
 ```
+
+## After `007_raw_renames` (stage 3b)
+
+007 renames the eight raw replay tables, renames their match-id column (plus
+`civ_picks`'), and DROPS `rs_config`. Verify with:
+
+```sql
+SELECT COUNT(*) FROM replay_matches;   -- expect the pre-deploy rs_matches count
+SELECT COUNT(*) FROM replay_players;   -- expect the pre-deploy rs_player_games count
+SHOW COLUMNS FROM replay_players LIKE 'replay_match_id';  -- expect one row
+SHOW COLUMNS FROM civ_picks      LIKE 'replay_match_id';  -- expect one row
+SHOW TABLES LIKE 'rs_%';   -- expect ONLY rs_player_game_tags and rs_player_personas
+```
+
+`rs_config` held the replay-ingest on/off switch. It is now the
+`REPLAY_INGEST_ENABLED` config var (Railway env var → `start.py` →
+`config.cfg`), defaulting to enabled. `/replaystats status` reports its current
+value; the old `/replaystats enable|disable` subcommands are gone, because a
+deployment-wide switch is configuration, not state a command can flip. If
+ingestion needs turning off, set `REPLAY_INGEST_ENABLED=false` in Railway and
+redeploy.
 
 ## Adding a migration
 

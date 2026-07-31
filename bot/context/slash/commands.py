@@ -1103,18 +1103,6 @@ async def _replaystats_status(
 ): await run_slash(bot.commands.replaystats_status, interaction=interaction)
 
 
-@groups.admin_replaystats.subcommand(name='enable', description='Enable replay-stats ingestion (admin).')
-async def _replaystats_enable(
-		interaction: Interaction,
-): await run_slash(bot.commands.replaystats_enable, interaction=interaction)
-
-
-@groups.admin_replaystats.subcommand(name='disable', description='Disable replay-stats ingestion (admin).')
-async def _replaystats_disable(
-		interaction: Interaction,
-): await run_slash(bot.commands.replaystats_disable, interaction=interaction)
-
-
 @groups.admin_replaystats.subcommand(name='backfill', description='Backfill recent replays, newest-first (admin).')
 async def _replaystats_backfill(
 		interaction: Interaction,

@@ -223,8 +223,8 @@ def test_write_match_survives_a_game_stats_write_failure(monkeypatch):
 
     # The raw parse still landed and write_match still reported its player count.
     assert written == 2
-    assert "rs_matches" in fake_db.inserted
-    assert "rs_player_games" in fake_db.inserted
+    assert "replay_matches" in fake_db.inserted
+    assert "replay_players" in fake_db.inserted
     # ...and the failure was reported rather than swallowed silently.
     assert any("game_stats write failed" in m for m in fake_log.error_calls)
 

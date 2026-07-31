@@ -766,8 +766,8 @@ def _tag_meta(key, tag_type):
 async def _parsed_games_by_user(period, profile_to_user):
 	at_clause, params = _period_filter(period)
 	rows = await db.fetchall(
-		"SELECT g.user_id, g.profile_id, COUNT(DISTINCT g.aoe2_match_id) AS games "
-		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"SELECT g.user_id, g.profile_id, COUNT(DISTINCT g.replay_match_id) AS games "
+		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
 		"JOIN matches m ON m.match_id=rm.bot_match_id "
 		"WHERE 1=1" + at_clause +
 		" GROUP BY g.user_id, g.profile_id",
@@ -1014,12 +1014,12 @@ async def _player_strategy_profile(user_id, profile_ids, period):
 	identity_clause, identity_args = _identity_clause(user_id, profile_ids)
 	args = [*identity_args, *at_params]
 	base_join = (
-		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
 		"JOIN matches m ON m.match_id=rm.bot_match_id "
 		"WHERE " + identity_clause + at_clause
 	)
 	summary = await db.fetchone(
-		"SELECT COUNT(DISTINCT g.aoe2_match_id) AS games, "
+		"SELECT COUNT(DISTINCT g.replay_match_id) AS games, "
 		"AVG(g.villagers) AS avg_villagers, AVG(g.vil_pre_castle) AS avg_vil_pre_castle, "
 		"AVG(g.military) AS avg_military, AVG(g.mil_pre_castle) AS avg_mil_pre_castle, "
 		"AVG(g.castle_s) AS avg_castle_s, AVG(g.imperial_s) AS avg_imperial_s, "
@@ -1029,31 +1029,31 @@ async def _player_strategy_profile(user_id, profile_ids, period):
 	if not summary or not summary.get("games"):
 		return {"games": 0, "summary": "No parsed strategy sample yet.", "army_mix": [], "top_units": [], "eco_techs": [], "army_techs": []}
 	unit_join = (
-		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
 		"JOIN matches m ON m.match_id=rm.bot_match_id "
-		"JOIN rs_player_units u ON u.aoe2_match_id=g.aoe2_match_id AND u.player_number=g.player_number "
+		"JOIN replay_units u ON u.replay_match_id=g.replay_match_id AND u.player_number=g.player_number "
 		"WHERE " + identity_clause + at_clause + " AND u.is_military=1 AND u.total>0 "
 	)
 	army_mix = await db.fetchall(
-		"SELECT u.category, COUNT(DISTINCT u.aoe2_match_id) AS games, SUM(u.total) AS total, "
+		"SELECT u.category, COUNT(DISTINCT u.replay_match_id) AS games, SUM(u.total) AS total, "
 		"SUM(u.pre_castle) AS pre_castle "
 		+ unit_join +
 		"GROUP BY u.category ORDER BY total DESC LIMIT 8",
 		args)
 	top_units = await db.fetchall(
-		"SELECT u.unit, u.category, COUNT(DISTINCT u.aoe2_match_id) AS games, SUM(u.total) AS total, "
+		"SELECT u.unit, u.category, COUNT(DISTINCT u.replay_match_id) AS games, SUM(u.total) AS total, "
 		"SUM(u.pre_castle) AS pre_castle "
 		+ unit_join +
 		"GROUP BY u.unit, u.category ORDER BY total DESC LIMIT 8",
 		args)
 	tech_join = (
-		"FROM rs_player_games g JOIN rs_matches rm ON rm.aoe2_match_id=g.aoe2_match_id "
+		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
 		"JOIN matches m ON m.match_id=rm.bot_match_id "
-		"JOIN rs_player_techs t ON t.aoe2_match_id=g.aoe2_match_id AND t.player_number=g.player_number "
+		"JOIN replay_techs t ON t.replay_match_id=g.replay_match_id AND t.player_number=g.player_number "
 		"WHERE " + identity_clause + at_clause + " "
 	)
 	techs = await db.fetchall(
-		"SELECT t.tech, t.phase, COUNT(DISTINCT t.aoe2_match_id) AS games, AVG(t.click_s) AS avg_click_s "
+		"SELECT t.tech, t.phase, COUNT(DISTINCT t.replay_match_id) AS games, AVG(t.click_s) AS avg_click_s "
 		+ tech_join +
 		"GROUP BY t.tech, t.phase ORDER BY games DESC LIMIT 120",
 		args)
@@ -1197,7 +1197,7 @@ async def _classification_tags_for_bot_matches(match_ids):
 		return {}, {}
 	rows = await db.fetchall(
 		"SELECT rm.bot_match_id, r.profile_id, r.identity, r.`key`, c.title "
-		"FROM rs_matches rm JOIN cls_results r ON r.aoe2_match_id=rm.aoe2_match_id "
+		"FROM replay_matches rm JOIN cls_results r ON r.aoe2_match_id=rm.replay_match_id "
 		"LEFT JOIN cls_classifications c ON c.`key`=r.`key` "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ") "
 		"AND r.`key` IN (" + ",".join(["%s"] * len(STRATEGY_TAG_LABELS)) + ")",
@@ -1212,7 +1212,7 @@ async def _classification_tags_for_bot_matches(match_ids):
 			by_name.setdefault((row["bot_match_id"], str(row["identity"]).lower()), []).append(tag)
 	stored_rows = await db.fetchall(
 		"SELECT rm.bot_match_id, t.profile_id, t.identity, t.tag, t.tag_label "
-		"FROM rs_matches rm JOIN rs_player_game_tags t ON t.aoe2_match_id=rm.aoe2_match_id "
+		"FROM replay_matches rm JOIN rs_player_game_tags t ON t.aoe2_match_id=rm.replay_match_id "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
 	for row in stored_rows or []:
@@ -1450,7 +1450,7 @@ async def player_overview_snapshot(user_id):
 	impact_match_rows = await db.fetchall(
 		"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
 		"WHERE pm.user_id=%s",
 		[user_id])
 	impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
@@ -1472,7 +1472,7 @@ async def player_overview_snapshot(user_id):
 		"SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
 		"WHERE pm.user_id=%s AND m.ranked=1 AND rm.duration_s IS NOT NULL "
 		"GROUP BY bucket",
 		[user_id])
@@ -1524,7 +1524,7 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.civ, g.team, "
 		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, "
 		"g.military, g.mil_pre_castle, g.mil_pre_imperial, g.feudal_s, g.castle_s, g.imperial_s "
-		"FROM rs_matches rm JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
+		"FROM replay_matches rm JOIN replay_players g ON g.replay_match_id=rm.replay_match_id "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
 	strategy_by_profile, strategy_by_name = await _classification_tags_for_bot_matches(match_ids)
@@ -1580,7 +1580,7 @@ async def _match_player_impacts(match_ids):
 		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.civ, g.team, "
 		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, g.military, g.mil_pre_castle, g.mil_pre_imperial, "
 		"g.feudal_s, g.castle_s, g.imperial_s "
-		"FROM rs_matches rm JOIN rs_player_games g ON g.aoe2_match_id=rm.aoe2_match_id "
+		"FROM replay_matches rm JOIN replay_players g ON g.replay_match_id=rm.replay_match_id "
 		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
 	strategy_by_profile, strategy_by_name = await _classification_tags_for_bot_matches(match_ids)
@@ -1719,7 +1719,7 @@ async def _match_stats_overall(period):
 		params)
 	recent = await db.fetchall(
 		"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, m.winner, m.maps, rm.duration_s "
-		"FROM matches m LEFT JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"FROM matches m LEFT JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
 		"WHERE 1=1" + at_clause +
 		" ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
 		params)
@@ -1857,7 +1857,7 @@ async def _match_stats_player(user_id, period):
 	impact_match_rows = await db.fetchall(
 		"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
 		"WHERE pm.user_id=%s" + at_clause,
 		[user_id, *params])
 	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
@@ -2109,7 +2109,7 @@ async def handle_player_stats(request):
 		"SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
 		"WHERE pm.user_id=%s AND m.ranked=1 AND rm.duration_s IS NOT NULL" + at_clause +
 		" GROUP BY bucket, ord ORDER BY ord",
 		base_args)
@@ -2134,14 +2134,14 @@ async def handle_player_stats(request):
 		"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, m.winner, m.maps, pm.team, rm.duration_s "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"LEFT JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"LEFT JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
 		"WHERE pm.user_id=%s" + at_clause +
 		" ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
 		base_args)
 	impact_match_rows = await db.fetchall(
 		"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN rs_matches rm ON rm.bot_match_id=m.match_id "
+		"JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
 		"WHERE pm.user_id=%s" + at_clause,
 		base_args)
 	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)

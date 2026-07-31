@@ -111,11 +111,11 @@ async def main(limit, bot_match):
 
         if bot_match:
             metas = await db.fetchall(
-                "SELECT bot_match_id, map, duration_s FROM rs_matches "
+                "SELECT bot_match_id, map, duration_s FROM replay_matches "
                 "WHERE bot_match_id=%s", [bot_match])
         else:
             metas = await db.fetchall(
-                "SELECT bot_match_id, map, duration_s FROM rs_matches "
+                "SELECT bot_match_id, map, duration_s FROM replay_matches "
                 "WHERE bot_match_id IS NOT NULL ORDER BY parsed_at DESC LIMIT %s",
                 [limit])
         for meta in metas or []:

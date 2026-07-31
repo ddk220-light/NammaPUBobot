@@ -23,18 +23,18 @@ import bot.derived.game_labels as game_labels
 import bot.derived.game_stats as game_stats
 
 _SCHEMA = """
-CREATE TABLE rs_matches (aoe2_match_id INTEGER PRIMARY KEY, played_at TEXT);
-CREATE TABLE rs_player_games (
-	aoe2_match_id INTEGER, profile_id INTEGER, player_number INTEGER, civ TEXT, team TEXT,
+CREATE TABLE replay_matches (replay_match_id INTEGER PRIMARY KEY, played_at TEXT);
+CREATE TABLE replay_players (
+	replay_match_id INTEGER, profile_id INTEGER, player_number INTEGER, civ TEXT, team TEXT,
 	winner INTEGER, eapm INTEGER, villagers INTEGER, military INTEGER,
-	PRIMARY KEY (aoe2_match_id, profile_id));
-CREATE TABLE rs_player_units (
-	aoe2_match_id INTEGER, player_number INTEGER, unit TEXT, category TEXT,
+	PRIMARY KEY (replay_match_id, profile_id));
+CREATE TABLE replay_units (
+	replay_match_id INTEGER, player_number INTEGER, unit TEXT, category TEXT,
 	is_military INTEGER, total INTEGER,
-	PRIMARY KEY (aoe2_match_id, player_number, unit));
-CREATE TABLE rs_player_apm (
-	aoe2_match_id INTEGER, player_number INTEGER, minute INTEGER, actions INTEGER,
-	PRIMARY KEY (aoe2_match_id, player_number, minute));
+	PRIMARY KEY (replay_match_id, player_number, unit));
+CREATE TABLE replay_apm (
+	replay_match_id INTEGER, player_number INTEGER, minute INTEGER, actions INTEGER,
+	PRIMARY KEY (replay_match_id, player_number, minute));
 CREATE TABLE cls_results (
 	`key` TEXT, aoe2_match_id INTEGER, player_number INTEGER, played_at INTEGER,
 	PRIMARY KEY (`key`, aoe2_match_id, player_number));
@@ -133,15 +133,15 @@ def _install(monkeypatch, fake):
 
 
 def _match_with_players(fake, mid, players=2):
-	fake.add("rs_matches", aoe2_match_id=mid, played_at="2024-05-01 13:22")
+	fake.add("replay_matches", replay_match_id=mid, played_at="2024-05-01 13:22")
 	for i in range(1, players + 1):
-		fake.add("rs_player_games", aoe2_match_id=mid, profile_id=1000 * mid + i,
+		fake.add("replay_players", replay_match_id=mid, profile_id=1000 * mid + i,
 		         player_number=i, civ="Franks", team=str(i), winner=i % 2,
 		         eapm=40 + i, villagers=100 - i, military=10 * i)
 
 
 def _match_with_labels(fake, mid, keys, played_at=1700000000, player_number=1):
-	fake.add("rs_matches", aoe2_match_id=mid, played_at="2024-05-01 13:22")
+	fake.add("replay_matches", replay_match_id=mid, played_at="2024-05-01 13:22")
 	for key in keys:
 		fake.add("cls_results", key=key, aoe2_match_id=mid,
 		         player_number=player_number, played_at=played_at)
@@ -179,7 +179,7 @@ def test_match_with_no_source_rows_at_all_is_never_pending(monkeypatch):
 	# must not appear in the pending set even once, or the loop never terminates.
 	fake = _SqliteDB()
 	_install(monkeypatch, fake)
-	fake.add("rs_matches", aoe2_match_id=99, played_at="2024-05-01 13:22")
+	fake.add("replay_matches", replay_match_id=99, played_at="2024-05-01 13:22")
 
 	assert asyncio.run(backfill.pending_game_stats()) == []
 	assert asyncio.run(backfill.pending_game_labels()) == []
@@ -230,16 +230,16 @@ def test_zero_row_matches_never_re_enter_the_pending_set(monkeypatch):
 
 
 def test_duplicate_player_number_still_converges(monkeypatch):
-	# rs_player_games' PK is (aoe2_match_id, profile_id), so two rows can share a
+	# replay_players' PK is (replay_match_id, profile_id), so two rows can share a
 	# player_number; game_stats' PK is (replay_match_id, player_number), so they
 	# store as one. A plain COUNT(*) would leave 2 > 1 forever. COUNT(DISTINCT
 	# player_number) is the number of rows the write can persist, so it converges.
 	fake = _SqliteDB()
 	_install(monkeypatch, fake)
-	fake.add("rs_matches", aoe2_match_id=7, played_at="2024-05-01 13:22")
-	fake.add("rs_player_games", aoe2_match_id=7, profile_id=100, player_number=1,
+	fake.add("replay_matches", replay_match_id=7, played_at="2024-05-01 13:22")
+	fake.add("replay_players", replay_match_id=7, profile_id=100, player_number=1,
 	         eapm=40, villagers=90, military=10)
-	fake.add("rs_player_games", aoe2_match_id=7, profile_id=200, player_number=1,
+	fake.add("replay_players", replay_match_id=7, profile_id=200, player_number=1,
 	         eapm=50, villagers=80, military=20)
 
 	assert asyncio.run(backfill.drain_game_stats(computed_at=1)) == 1
@@ -350,7 +350,7 @@ def test_orphaned_game_stats_rows_are_cleaned_when_the_raw_rows_go(monkeypatch):
 	_install(monkeypatch, fake)
 	_match_with_players(fake, 23, players=2)
 	asyncio.run(backfill.drain_game_stats(computed_at=1))
-	fake.conn.execute("DELETE FROM rs_player_games WHERE aoe2_match_id=23")
+	fake.conn.execute("DELETE FROM replay_players WHERE replay_match_id=23")
 
 	assert asyncio.run(backfill.pending_game_stats()) == [23]
 	asyncio.run(backfill.drain_game_stats(computed_at=2))
@@ -442,7 +442,7 @@ def test_labels_drain_isolates_a_failing_match_too(monkeypatch):
 # ── row content ──────────────────────────────────────────────────────────
 
 def test_peak_eapm_is_null_when_the_match_has_no_apm_buckets(monkeypatch):
-	# rs_player_apm is empty for every pre-backfill match; NULL peak_eapm is the
+	# replay_apm is empty for every pre-backfill match; NULL peak_eapm is the
 	# correct historical value, and avg_eapm must still come through.
 	fake = _SqliteDB()
 	_install(monkeypatch, fake)
@@ -459,7 +459,7 @@ def test_peak_eapm_is_the_bucket_max_when_buckets_do_exist(monkeypatch):
 	_install(monkeypatch, fake)
 	_match_with_players(fake, 1, players=1)
 	for minute, actions in enumerate((12, 55, 31)):
-		fake.add("rs_player_apm", aoe2_match_id=1, player_number=1,
+		fake.add("replay_apm", replay_match_id=1, player_number=1,
 		         minute=minute, actions=actions)
 	asyncio.run(backfill.drain_game_stats(computed_at=1))
 
@@ -470,9 +470,9 @@ def test_stats_rows_carry_the_match_id_and_serialised_top_units(monkeypatch):
 	fake = _SqliteDB()
 	_install(monkeypatch, fake)
 	_match_with_players(fake, 1, players=1)
-	fake.add("rs_player_units", aoe2_match_id=1, player_number=1, unit="Knight",
+	fake.add("replay_units", replay_match_id=1, player_number=1, unit="Knight",
 	         category="cavalry", is_military=1, total=30)
-	fake.add("rs_player_units", aoe2_match_id=1, player_number=1, unit="Villager",
+	fake.add("replay_units", replay_match_id=1, player_number=1, unit="Villager",
 	         category="economy", is_military=0, total=99)
 	asyncio.run(backfill.drain_game_stats(computed_at=4242))
 
@@ -482,7 +482,7 @@ def test_stats_rows_carry_the_match_id_and_serialised_top_units(monkeypatch):
 
 
 def test_label_rows_take_played_at_from_their_own_match_not_a_shared_value(monkeypatch):
-	# rs_matches.played_at holds a DATE STRING; game_labels.played_at is an epoch
+	# replay_matches.played_at holds a DATE STRING; game_labels.played_at is an epoch
 	# BIGINT. The epoch must come from the match's own cls_results rows, so the
 	# two matches below — drained in one batch — must keep different epochs.
 	fake = _SqliteDB()

@@ -2,7 +2,7 @@
 """User-facing /player_details: a player's averaged production-timeline graph over the last N days.
 Thin handler — the data + rendering live in bot.replay_stats (query.gather_growth_curve +
 chart.render_growth_curve), lazily imported so this module loads cheap. The growth curve is drawn
-from the per-event rs_player_events series, so it covers each linked player's standard-map games
+from the per-event replay_events series, so it covers each linked player's standard-map games
 whose replays have been parsed for per-event data."""
 __all__ = ["player_details"]
 

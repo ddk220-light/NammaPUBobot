@@ -4,9 +4,14 @@
 Every fetch is independently guarded, so a missing table or a failing query
 degrades that one signal to empty rather than costing the whole card.
 
-All joins key on (aoe2_match_id, player_number). profile_id is a nullable
-denormalisation on every long-form rs_*/cls_* table, and NULL never matches in
-a join, so joining on it silently drops players.
+All joins key on (match id, player_number). profile_id is a nullable
+denormalisation on every long-form replay_*/cls_* table, and NULL never matches
+in a join, so joining on it silently drops players.
+
+That match-id column is spelled `replay_match_id` on the raw replay_* tables and
+still `aoe2_match_id` on the legacy cls_* ones: 007_raw_renames renamed the
+former and deliberately left the latter alone, because stage 6 retires cls_*
+wholesale rather than carrying it forward under a new name.
 """
 
 from core.database import db
@@ -44,11 +49,11 @@ async def _safe(coro, default, what):
 		return default
 
 
-async def _buildings(aoe2_match_id):
+async def _buildings(replay_match_id):
 	rows = await db.fetchall(
-		"SELECT player_number, building, count FROM rs_player_buildings "
-		"WHERE aoe2_match_id=%s AND building IN (%s, %s)",
-		[aoe2_match_id, FARM_BUILDING, TC_BUILDING])
+		"SELECT player_number, building, count FROM replay_buildings "
+		"WHERE replay_match_id=%s AND building IN (%s, %s)",
+		[replay_match_id, FARM_BUILDING, TC_BUILDING])
 	out = {}
 	for r in rows or []:
 		entry = out.setdefault(r["player_number"], {"farms": 0, "tcs": 0})
@@ -57,12 +62,12 @@ async def _buildings(aoe2_match_id):
 	return out
 
 
-async def _clicks(aoe2_match_id):
+async def _clicks(replay_match_id):
 	rows = await db.fetchall(
-		"SELECT player_number, t_s FROM rs_player_events "
-		"WHERE aoe2_match_id=%s AND t_s IS NOT NULL "
+		"SELECT player_number, t_s FROM replay_events "
+		"WHERE replay_match_id=%s AND t_s IS NOT NULL "
 		"ORDER BY player_number, t_s",
-		[aoe2_match_id])
+		[replay_match_id])
 	out = {}
 	for r in rows or []:
 		out.setdefault(r["player_number"], []).append(int(r["t_s"]))
@@ -71,7 +76,7 @@ async def _clicks(aoe2_match_id):
 	return out
 
 
-async def _composition(aoe2_match_id):
+async def _composition(replay_match_id):
 	"""Military production per unit category, and how much of it came after the
 	Imperial click.
 
@@ -83,12 +88,12 @@ async def _composition(aoe2_match_id):
 		"SELECT e.player_number, e.category, e.name, SUM(e.amount) AS total, "
 		"SUM(CASE WHEN g.imperial_s IS NOT NULL AND e.t_s >= g.imperial_s "
 		"         THEN e.amount ELSE 0 END) AS post_imp "
-		"FROM rs_player_events e "
-		"JOIN rs_player_games g ON g.aoe2_match_id=e.aoe2_match_id "
+		"FROM replay_events e "
+		"JOIN replay_players g ON g.replay_match_id=e.replay_match_id "
 		"                      AND g.player_number=e.player_number "
-		"WHERE e.aoe2_match_id=%s AND e.is_military=1 "
+		"WHERE e.replay_match_id=%s AND e.is_military=1 "
 		"GROUP BY e.player_number, e.category, e.name",
-		[aoe2_match_id])
+		[replay_match_id])
 	out = {}
 	for r in rows or []:
 		entry = out.setdefault(r["player_number"], {
@@ -109,7 +114,7 @@ async def _composition(aoe2_match_id):
 	return out
 
 
-async def _strategies(aoe2_match_id):
+async def _strategies(replay_match_id):
 	"""Every strategy classification that fired, per player, as display labels.
 
 	Labels come from cls_classifications.title — the same source /insights uses.
@@ -121,7 +126,7 @@ async def _strategies(aoe2_match_id):
 		"LEFT JOIN cls_classifications r ON r.`key`=c.`key` "
 		f"WHERE c.aoe2_match_id=%s AND c.`key` IN ({placeholders}) "
 		"ORDER BY c.player_number, c.`key`",
-		[aoe2_match_id, *STRATEGY_KEYS])
+		[replay_match_id, *STRATEGY_KEYS])
 	out = {}
 	for r in rows or []:
 		label = r.get("title") or str(r.get("ckey") or "").replace("_", " ").title()
@@ -130,13 +135,13 @@ async def _strategies(aoe2_match_id):
 	return out
 
 
-async def _spawn(aoe2_match_id):
+async def _spawn(replay_match_id):
 	keys = [k for k, _ in SPAWN_PHRASES]
 	placeholders = ",".join(["%s"] * len(keys))
 	rows = await db.fetchall(
 		"SELECT player_number, `key` AS ckey FROM cls_results "
 		f"WHERE aoe2_match_id=%s AND `key` IN ({placeholders})",
-		[aoe2_match_id, *keys])
+		[replay_match_id, *keys])
 	found = {}
 	for r in rows or []:
 		found.setdefault(r["player_number"], set()).add(r.get("ckey"))
@@ -149,34 +154,34 @@ async def _spawn(aoe2_match_id):
 	return out
 
 
-async def _peak_eapm(aoe2_match_id):
+async def _peak_eapm(replay_match_id):
 	"""Max per-minute bucket per player. Peak is not stored — it is derived.
 
-	rs_player_apm is forward-only, so this is empty for every match ingested
+	replay_apm is forward-only, so this is empty for every match ingested
 	before the eAPM pipeline deployed. Callers must omit the figure rather than
 	render a zero. Never average these buckets: rows are absent for zero-action
 	minutes, so any mean over them divides by active minutes instead of whole
-	game minutes — the parity-preserving average is rs_player_games.eapm.
+	game minutes — the parity-preserving average is replay_players.eapm.
 	"""
 	rows = await db.fetchall(
-		"SELECT player_number, MAX(actions) AS peak FROM rs_player_apm "
-		"WHERE aoe2_match_id=%s GROUP BY player_number",
-		[aoe2_match_id])
+		"SELECT player_number, MAX(actions) AS peak FROM replay_apm "
+		"WHERE replay_match_id=%s GROUP BY player_number",
+		[replay_match_id])
 	return {r["player_number"]: int(r["peak"]) for r in rows or []
 	        if r.get("peak") is not None}
 
 
-async def fetch_card_signals(aoe2_match_id, match_end_s=None):
-	"""Every Match Card signal outside rs_player_games, keyed by player_number.
+async def fetch_card_signals(replay_match_id, match_end_s=None):
+	"""Every Match Card signal outside replay_players, keyed by player_number.
 
 	``match_end_s`` is accepted so callers can pass the match duration alongside;
 	bucketing itself happens in card_scoring.production_coverage.
 	"""
 	return {
-		"buildings": await _safe(_buildings(aoe2_match_id), {}, "buildings"),
-		"clicks": await _safe(_clicks(aoe2_match_id), {}, "events"),
-		"composition": await _safe(_composition(aoe2_match_id), {}, "composition"),
-		"strategies": await _safe(_strategies(aoe2_match_id), {}, "strategies"),
-		"spawn": await _safe(_spawn(aoe2_match_id), {}, "spawn"),
-		"peak_eapm": await _safe(_peak_eapm(aoe2_match_id), {}, "peak eapm"),
+		"buildings": await _safe(_buildings(replay_match_id), {}, "buildings"),
+		"clicks": await _safe(_clicks(replay_match_id), {}, "events"),
+		"composition": await _safe(_composition(replay_match_id), {}, "composition"),
+		"strategies": await _safe(_strategies(replay_match_id), {}, "strategies"),
+		"spawn": await _safe(_spawn(replay_match_id), {}, "spawn"),
+		"peak_eapm": await _safe(_peak_eapm(replay_match_id), {}, "peak eapm"),
 	}

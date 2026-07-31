@@ -7,6 +7,7 @@ store answering "who is this person"."""
 import time
 
 from bot import identity
+from core.config import cfg
 from core.console import log
 from core.database import db
 
@@ -14,38 +15,43 @@ from . import shape
 
 
 # ── enable flag ──────────────────────────────────────────────────────────
-async def is_enabled():
-    row = await db.select_one(["*"], "rs_config", {"id": 1})
-    return bool(row and row.get("enabled"))
+def is_enabled():
+    """Whether this deployment ingests replays at all.
 
-
-async def set_enabled(on):
-    await db.insert("rs_config", dict(id=1, enabled=1 if on else 0), on_duplicate="replace")
+    Deployment configuration, not state: it used to be a single-row ops table
+    with one boolean in it, toggled by an admin slash command and read from the
+    database on every sweep. 007_raw_renames drops that table in favour of the
+    REPLAY_INGEST_ENABLED config var — one switch per deployment, set the same
+    way every other deployment-wide switch is (env var on Railway, config.cfg
+    locally), and readable without a round trip. Deliberately synchronous for
+    the same reason: there is nothing left to await.
+    """
+    return bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True))
 
 
 # ── find work ────────────────────────────────────────────────────────────
 async def find_new_match(max_age_days=None):
-    """Newest aoe2_match_id (deduped) present in civ_picks but absent from rs_ingest.
+    """Newest replay_match_id (deduped) present in civ_picks but absent from replay_ingest.
     civ_picks has ~8 rows per match, so GROUP BY; join matches for the timestamp.
-    Returns dict(aoe2_match_id, bot_match_id, at) or None."""
+    Returns dict(replay_match_id, bot_match_id, at) or None."""
     age_clause = ""
     args = []
     if max_age_days is not None:
         age_clause = "AND m.reported_at >= %s "
         args.append(int(time.time()) - max_age_days * 86400)
     rows = await db.fetchall(
-        "SELECT mc.aoe2_match_id AS aoe2_match_id, MAX(mc.bot_match_id) AS bot_match_id, "
+        "SELECT mc.replay_match_id AS replay_match_id, MAX(mc.bot_match_id) AS bot_match_id, "
         "MAX(m.reported_at) AS at FROM civ_picks mc JOIN matches m ON m.match_id = mc.bot_match_id "
-        "WHERE mc.aoe2_match_id IS NOT NULL " + age_clause +
-        "AND mc.aoe2_match_id NOT IN (SELECT aoe2_match_id FROM rs_ingest) "
-        "GROUP BY mc.aoe2_match_id ORDER BY MAX(m.reported_at) DESC LIMIT 1", args)
+        "WHERE mc.replay_match_id IS NOT NULL " + age_clause +
+        "AND mc.replay_match_id NOT IN (SELECT replay_match_id FROM replay_ingest) "
+        "GROUP BY mc.replay_match_id ORDER BY MAX(m.reported_at) DESC LIMIT 1", args)
     return rows[0] if rows else None
 
 
 async def find_due_retry(now):
     """Oldest ingest row eligible for another attempt (404/parse_failed, due, under cap)."""
     rows = await db.fetchall(
-        "SELECT * FROM rs_ingest WHERE status IN ('unavailable','parse_failed') "
+        "SELECT * FROM replay_ingest WHERE status IN ('unavailable','parse_failed') "
         "AND (next_attempt_at IS NULL OR next_attempt_at <= %s) "
         "ORDER BY next_attempt_at ASC LIMIT 1", [now])
     return rows[0] if rows else None
@@ -54,7 +60,7 @@ async def find_due_retry(now):
 async def reopen_pending_parser_update(current_parser_version):
     """A deploy with a newer parser reopens games shelved on an old parser version."""
     await db.execute(
-        "UPDATE rs_ingest SET status='unavailable', next_attempt_at=0 "
+        "UPDATE replay_ingest SET status='unavailable', next_attempt_at=0 "
         "WHERE status='pending_parser_update' AND (parser_version IS NULL OR parser_version <> %s)",
         [current_parser_version])
 
@@ -64,20 +70,20 @@ async def reset_stale_processing(now):
     the retryable 'unavailable' status. Run once per process at first sweep — this process has
     not written any 'processing' row yet, so every existing one is from a dead process."""
     await db.execute(
-        "UPDATE rs_ingest SET status='unavailable', next_attempt_at=%s WHERE status='processing'",
+        "UPDATE replay_ingest SET status='unavailable', next_attempt_at=%s WHERE status='processing'",
         [now])
 
 
 # ── ingest status ────────────────────────────────────────────────────────
-async def get_ingest(aoe2_match_id):
-    return await db.select_one(["*"], "rs_ingest", {"aoe2_match_id": aoe2_match_id})
+async def get_ingest(replay_match_id):
+    return await db.select_one(["*"], "replay_ingest", {"replay_match_id": replay_match_id})
 
 
-async def upsert_ingest(aoe2_match_id, **fields):
-    cur = await get_ingest(aoe2_match_id) or dict(aoe2_match_id=aoe2_match_id, attempts=0,
-                                                  first_seen_at=int(time.time()))
+async def upsert_ingest(replay_match_id, **fields):
+    cur = await get_ingest(replay_match_id) or dict(replay_match_id=replay_match_id, attempts=0,
+                                                    first_seen_at=int(time.time()))
     cur.update(fields)
-    await db.insert("rs_ingest", cur, on_duplicate="replace")
+    await db.insert("replay_ingest", cur, on_duplicate="replace")
 
 
 # ── per-match write (idempotent) ─────────────────────────────────────────
@@ -135,15 +141,15 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     p2p = shape.pnum_to_profile(extracted["players"])
 
     # clear any prior rows for this match (idempotent re-ingest)
-    for t in ("rs_player_games", "rs_player_units", "rs_player_techs", "rs_player_buildings",
-              "rs_player_events", "rs_player_apm"):
-        await db.execute(f"DELETE FROM {t} WHERE aoe2_match_id=%s", [aoe2_id])
+    for t in ("replay_players", "replay_units", "replay_techs", "replay_buildings",
+              "replay_events", "replay_apm"):
+        await db.execute(f"DELETE FROM {t} WHERE replay_match_id=%s", [aoe2_id])
 
-    await db.insert("rs_matches",
+    await db.insert("replay_matches",
                     shape.match_row(extracted["match"], bot_match_id, parsed_at, parser_version),
                     on_duplicate="replace")
-    # Dual-write the community-owned link table alongside rs_matches.bot_match_id
-    # (stage 1.6). rs_matches.bot_match_id keeps being written above exactly as
+    # Dual-write the community-owned link table alongside replay_matches.bot_match_id
+    # (stage 1.6). replay_matches.bot_match_id keeps being written above exactly as
     # before — this is a deliberate parallel write, not a replacement, until
     # match_replays becomes authoritative in stage 5. A link failure must never
     # break replay ingestion: replays 404 upstream once they expire, so the raw
@@ -158,22 +164,22 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
                       f"(aoe2 match {aoe2_id}): {e}")
     pg = shape.player_game_rows(aoe2_id, extracted["players"], profmap)
     if pg:
-        await db.insert_many("rs_player_games", pg, on_duplicate="replace")
+        await db.insert_many("replay_players", pg, on_duplicate="replace")
     units = shape.unit_rows(aoe2_id, extracted["units"], p2p)
     if units:
-        await db.insert_many("rs_player_units", units, on_duplicate="replace")
+        await db.insert_many("replay_units", units, on_duplicate="replace")
     techs = shape.tech_rows(aoe2_id, extracted["techs"], p2p)
     if techs:
-        await db.insert_many("rs_player_techs", techs, on_duplicate="replace")
+        await db.insert_many("replay_techs", techs, on_duplicate="replace")
     builds = shape.building_rows(aoe2_id, extracted["buildings"], p2p)
     if builds:
-        await db.insert_many("rs_player_buildings", builds, on_duplicate="replace")
+        await db.insert_many("replay_buildings", builds, on_duplicate="replace")
     events = shape.event_rows(aoe2_id, extracted.get("events", []), p2p)
     if events:
-        await db.insert_many("rs_player_events", events, on_duplicate="replace")
+        await db.insert_many("replay_events", events, on_duplicate="replace")
     apm = shape.apm_rows(aoe2_id, extracted.get("apm", []), p2p)
     if apm:
-        await db.insert_many("rs_player_apm", apm, on_duplicate="replace")
+        await db.insert_many("replay_apm", apm, on_duplicate="replace")
     await _learn_from_ingest(extracted["players"], profmap)
     try:
         from . import classifications

@@ -32,6 +32,10 @@ _SCHEMA = {
 	'FLAGSHIP_GUILD_IDS': (list, []),
 	'PUBOBOT_USER_ID': (int, 0),
 	'LOBBYBOT_USER_ID': (int, 0),
+	# Replay ingestion on/off for this deployment. Replaces the single-row ops
+	# table dropped by 007_raw_renames; defaults to True to match the production
+	# row that drop removed.
+	'REPLAY_INGEST_ENABLED': (bool, True),
 	'DB_URI': (str, ""),
 	'LOG_LEVEL': (str, "INFO"),
 	'COMMANDS_URL': (str, ""),

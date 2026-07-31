@@ -37,7 +37,7 @@ TIMING_MIX = (("feudal_s", 0.30), ("castle_s", 0.40), ("imperial_s", 0.30))  # i
 # Impact = weighted mix of the three component scores. Reboom intentionally absent.
 IMPACT_WEIGHTS = (("army", 0.45), ("eco", 0.32), ("timing", 0.23))
 
-# Every rs_player_games column the mixes read. Callers that SELECT explicit
+# Every replay_players column the mixes read. Callers that SELECT explicit
 # column lists (bot/web.py, bot/post_game.py) must include all of these —
 # _z() silently scores a missing column as match-average, which flattens the
 # component for every player (tests/test_replay_scoring.py enforces this).
@@ -130,7 +130,7 @@ def _score_component(value):
 
 
 def impact_scores(row, group):
-	"""0-100 component + impact scores for one rs_player_games row, relative to
+	"""0-100 component + impact scores for one replay_players row, relative to
 	``group`` (all players in the same match)."""
 	eco_z = sum(w * _z(row, group, k) for k, w in ECO_MIX)
 	army_z = sum(w * _z(row, group, k) for k, w in ARMY_MIX)

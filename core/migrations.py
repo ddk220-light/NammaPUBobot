@@ -82,9 +82,27 @@ async def rename_table(db, old, new):
 
 
 async def rename_column(db, table, old, new):
+	"""Rename one column, idempotently — and refuse, loudly, when BOTH names are
+	present.
+
+	The both-exist case is the column-level twin of rename_table's, and it is
+	reachable the same way: ensure_table's _ensure_table() ADDs any declared
+	column it does not find (unlike a table rename, which it cannot do at all),
+	so a code rollback — or a boot that somehow reaches `import bot` against a
+	half-renamed table — leaves the old column holding every row's value beside
+	a brand-new empty one. Skipping quietly there (what this used to do) would
+	make the new column read NULL forever, silently, with a healthy-looking
+	bot; raising hands the operator a schema they can still repair by hand."""
 	if not await table_exists(db, table):
 		return
-	if await column_exists(db, table, old) and not await column_exists(db, table, new):
+	old_there = await column_exists(db, table, old)
+	new_there = await column_exists(db, table, new)
+	if old_there and new_there:
+		raise RuntimeError(
+			f"rename column {table}.{old} -> {new}: both exist; resolve manually before deploying "
+			f"(the data is in `{old}`; `{new}` was almost certainly added empty by an ensure_table "
+			"declaration on a rolled-back deploy)")
+	if old_there:
 		await db.execute(f"ALTER TABLE `{table}` RENAME COLUMN `{old}` TO `{new}`")
 		log.info(f"migrations: renamed column {table}.{old} -> {new}")
 
@@ -151,17 +169,24 @@ async def _assert_boot_post_conditions(db):
 	both before and after the migration loop — see run_all for why "before"
 	is the half that matters. Each one is individually ledger-gated and is a
 	pure read, so running them twice a boot costs two trivial queries."""
-	await _assert_stage1_renames_landed(db)
+	await _assert_renames_landed(db, _CORE_RENAMES_LEDGER_NAME, _STAGE1_RENAMES)
+	await _assert_renames_landed(db, _RAW_RENAMES_LEDGER_NAME, _STAGE3_RENAMES)
 	await _assert_identities_seeded(db)
 
 
-_RENAMES_LEDGER_NAME = "001_core_renames"
+_CORE_RENAMES_LEDGER_NAME = "001_core_renames"
+_RAW_RENAMES_LEDGER_NAME = "007_raw_renames"
 
 
-async def _assert_stage1_renames_landed(db):
+async def _assert_renames_landed(db, ledger_name, renames):
 	"""Post-condition, checked on every boot regardless of what the loop above
-	did: if the ledger says 001_core_renames ran, none of the _STAGE1_RENAMES
-	*source* tables may still exist.
+	did: if the ledger says `ledger_name` ran, none of its *source* tables may
+	still exist.
+
+	Applied to every rename migration (001_core_renames and 007_raw_renames
+	today), because the failure it catches is a property of renaming tables at
+	all, not of any one stage: a source table that outlives its own rename
+	migration is a database that will boot healthy and serve nothing.
 
 	run_all() decides what to run solely from the schema_migrations ledger.
 	If an operator restores a pre-deploy database backup, the ledger table
@@ -186,17 +211,17 @@ async def _assert_stage1_renames_landed(db):
 	well as after it (see run_all): on a database that simply has not been
 	migrated yet, the pre-rename tables existing is the ordinary state and not
 	a disagreement with anything. It costs nothing after the loop either — the
-	only case it excludes is one where 001 has not run, in which case the loop
-	either just renamed them (and recorded it) or died trying.
+	only case it excludes is one where the migration has not run, in which case
+	the loop either just renamed them (and recorded it) or died trying.
 	"""
-	applied = await db.fetchone(f"SELECT 1 AS x FROM {LEDGER} WHERE name = %s", [_RENAMES_LEDGER_NAME])
+	applied = await db.fetchone(f"SELECT 1 AS x FROM {LEDGER} WHERE name = %s", [ledger_name])
 	if applied is None:
 		return  # nothing has claimed to have renamed yet; the loop owns that
-	offenders = [old for old, _new in _STAGE1_RENAMES if await table_exists(db, old)]
+	offenders = [old for old, _new in renames if await table_exists(db, old)]
 	if offenders:
 		raise RuntimeError(
 			"migrations: schema/ledger disagreement — these pre-rename tables still "
-			f"exist even though the ledger says the rename already ran: {', '.join(offenders)}. "
+			f"exist even though the ledger says {ledger_name} already ran: {', '.join(offenders)}. "
 			"This almost always means a pre-deploy database backup was restored (mysqldump "
 			"keeps schema_migrations but not the renamed tables) or a code-only rollback "
 			"happened. Fix: drop the `schema_migrations` table and reboot."
@@ -252,7 +277,7 @@ async def _assert_identities_seeded(db):
 	rollback runbook: restoring a database backup taken after
 	003_seed_identities was recorded in schema_migrations but before (or
 	without) `identities` restores the ledger row without restoring the
-	table's data — and unlike _assert_stage1_renames_landed's renames, no
+	table's data — and unlike _assert_renames_landed's renames, no
 	old-named table is left behind for that check to catch, because
 	`identities` was never renamed from anything. The loop above sees
 	003_seed_identities already applied and skips it; `import bot`'s
@@ -264,7 +289,7 @@ async def _assert_identities_seeded(db):
 	no retry, no log line, and /health stays 200.
 
 	Crashing here is the intended behaviour, for the same reason as
-	_assert_stage1_renames_landed: a loud crash beats a silently empty bot.
+	_assert_renames_landed: a loud crash beats a silently empty bot.
 
 	Why it is anchored HERE and not on a table (task 2.5.8): this check used
 	to key off `rs_profiles` holding rows. 004_identity_v2 drops rs_profiles,
@@ -1057,3 +1082,79 @@ async def _m006(db):
 			continue
 		await db.execute(f"CREATE INDEX `{index}` ON `{table}` (`{column}`)")
 		log.info(f"migrations: 006_derived_indexes: created index {index} on {table}({column})")
+
+
+# Stage 3b's raw renames. The replay tables were inherited under an `rs_`
+# prefix that says nothing about what they hold; `replay_*` is the project's
+# own vocabulary for the same data, and matches what the derived-global layer
+# (game_stats, game_labels) and the link table (match_replays) already use.
+#
+# NOT renamed here, deliberately: rs_player_game_tags and rs_player_personas.
+# Both are the legacy derived generation, both still have live consumers, and
+# both are retired wholesale in stage 6 rather than carried forward under a new
+# name — renaming them now would be churn on tables that are about to be
+# deleted.
+_STAGE3_RENAMES = [
+	("rs_matches", "replay_matches"),
+	("rs_player_games", "replay_players"),
+	("rs_player_units", "replay_units"),
+	("rs_player_techs", "replay_techs"),
+	("rs_player_buildings", "replay_buildings"),
+	("rs_player_events", "replay_events"),
+	("rs_player_apm", "replay_apm"),
+	("rs_ingest", "replay_ingest"),
+]
+
+# Tables whose `aoe2_match_id` column becomes `replay_match_id`: every table
+# _STAGE3_RENAMES renames, plus `civ_picks`, which carries the very same value
+# under the very same old name. After this the join column is spelled
+# identically across raw, link and derived — match_replays, game_stats and
+# game_labels were all written as `replay_match_id` from the start precisely so
+# this stage would never have to touch them.
+#
+# NOT included, for the same reason the two tables above are not renamed:
+# cls_results, cls_result_metrics, cls_match_ingest and rs_player_game_tags
+# keep `aoe2_match_id`. They are stage 6's problem, and their offline
+# producers (utils/classifications/, utils/replay_quiz/) keep their own
+# schemas in step with them.
+_STAGE3_MATCH_ID_TABLES = [new for _old, new in _STAGE3_RENAMES] + ["civ_picks"]
+
+
+@migration("007_raw_renames")
+async def _m007(db):
+	"""Rename the raw replay tables and their match-id column, and drop
+	rs_config.
+
+	Same job 001_core_renames did for the core tables, and it follows that
+	migration's shape exactly: rename_table/rename_column carry their own
+	existence guards, so every statement here is individually idempotent and a
+	body that dies partway through is safe to re-run from the top on the next
+	boot (see this module's docstring).
+
+	ORDER MATTERS in two directions. Within the body, tables are renamed before
+	columns, because the column renames name the NEW table names — running them
+	first would find nothing on a database that has not been renamed yet, and
+	the migration would record itself having renamed no columns at all. Across
+	the boot, this whole migration runs before `import bot` for the reason the
+	module docstring gives: bot/replay_stats/__init__.py now declares
+	`replay_matches` and friends, and ensure_table CREATEs any declared name it
+	does not find — so renaming after the import would leave the populated
+	rs_* tables stranded beside eight empty replay_* ones.
+
+	`rs_config` is dropped, not renamed. It held exactly one row with exactly
+	one boolean (`enabled`), toggled by an admin command — a deployment-wide
+	on/off switch that has no business being a table, and which every read had
+	to go to the database for. It is now the REPLAY_INGEST_ENABLED config var
+	(core/config.py, config.example.cfg, start.py's generated template),
+	defaulting to enabled to match the production row this drop removes. The
+	drop is guarded, so re-running finds nothing to do; it is also the one
+	irreversible statement here, which is why it goes last.
+	"""
+	for old, new in _STAGE3_RENAMES:
+		await rename_table(db, old, new)
+	for table in _STAGE3_MATCH_ID_TABLES:
+		await rename_column(db, table, "aoe2_match_id", "replay_match_id")
+	if await table_exists(db, "rs_config"):
+		await db.execute("DROP TABLE `rs_config`")
+		log.info("migrations: 007_raw_renames: dropped rs_config — replay ingest is now gated by "
+		         "the REPLAY_INGEST_ENABLED config var")

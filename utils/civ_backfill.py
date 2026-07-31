@@ -103,7 +103,7 @@ def main():
 	existing = {(str(r["bot_match_id"]), r["user_id"]) for r in
 	            q("SELECT bot_match_id, user_id FROM civ_picks WHERE bot_match_id IS NOT NULL")}
 	print(f"existing civ_picks (bot_match_id,user_id) keys: {len(existing)}")
-	sample_existing = q("SELECT channel_id, aoe2_match_id, aoe2_name, civ, `at`, bot_match_id, user_id, nick, team, result "
+	sample_existing = q("SELECT channel_id, replay_match_id, aoe2_name, civ, `at`, bot_match_id, user_id, nick, team, result "
 	                    "FROM civ_picks WHERE bot_match_id IS NOT NULL LIMIT 3")
 	print("sample EXISTING civ_picks rows:")
 	for r in sample_existing:
@@ -155,7 +155,7 @@ def main():
 		return
 
 	# APPLY
-	cols = "channel_id, aoe2_match_id, aoe2_name, civ, `at`, bot_match_id, user_id, nick, team, result"
+	cols = "channel_id, replay_match_id, aoe2_name, civ, `at`, bot_match_id, user_id, nick, team, result"
 	cur.executemany(f"INSERT INTO civ_picks ({cols}) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", to_insert)
 	conn.commit()
 	print(f"\nAPPLIED: inserted {cur.rowcount} rows. New total = "
