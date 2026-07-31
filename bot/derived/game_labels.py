@@ -12,12 +12,16 @@ import json
 
 from core.database import db
 
-# cls_results mixes strategy rows and luck/spawn rows in one table with no
-# category column, so what to STORE has to be stated explicitly. The two tuples
-# below have different provenance, and conflating them silently drops labels:
+# The classifier emits strategy rows and luck/spawn rows in one undifferentiated
+# stream (cls_results mixed them in one table with no category column), so what
+# to STORE has to be stated explicitly. The two tuples below have different
+# provenance, and conflating them silently drops labels:
 #
-#   STRATEGY_KEYS is the same 17 keys as bot/replay_stats/card_query.py's
-#   STRATEGY_KEYS, and is expected to stay identical to it.
+#   STRATEGY_KEYS is the 17 strategy classifications. It is the ONLY copy of that
+#   list now: bot/replay_stats/card_query.py used to keep an identical one to
+#   constrain its own cls_results query, and stage 5c deleted it when the cards
+#   moved to this table -- a reader asks for `kind`, which is this allowlist's
+#   answer, already stored.
 #
 #   SPAWN_KEYS is NOT card_query's SPAWN_PHRASES. SPAWN_PHRASES holds only the 3
 #   spawn facts worth rendering as a sentence on a card; these 11 are every luck
@@ -118,8 +122,9 @@ async def write(replay_match_id, rows, db_adapter=None):
 
 	`db_adapter` overrides the module-global adapter for callers that write a
 	whole match through one specific connection --
-	bot/replay_stats/classification_sync.py's sync_match takes one and must not
-	split its cls_* writes and this write across two different databases.
+	bot/replay_stats/classification_sync.py's sync_match takes one and passes it
+	straight down, so a caller that owns a connection has this match's labels
+	written through it rather than through the bot's global adapter.
 
 	ACCEPTED TRADEOFF, deliberate: the DELETE and the INSERT are not one
 	transaction, because the adapter runs in autocommit (see

@@ -8,14 +8,15 @@ database. Identity is the join key for nearly every table in this bot, so that
 fragmentation blocked everything downstream. It is over: every runtime read and
 write of a Discord-user <-> AoE2-profile binding now goes through this module,
 the legacy readers and writers are deleted, and a migration drops the retired
-tables. The offline quiz pipeline (utils/replay_quiz/) still keeps its own
-mapping, deliberately — it runs on a laptop against downloaded replays, never
-against this database, and produces a display name for quiz copy rather than a
-binding anything joins on.
+tables. The fifth store — the offline quiz pipeline's own copy, which ran on a
+laptop against downloaded replays and produced a display name for quiz copy
+rather than a binding anything joins on — went with the pipeline itself in
+stage 5b (`bot/quiz/player_bank.py` builds the player questions live from
+`metric_boards` now). This module is the only mapping left.
 
 The one rule that makes this module worth having: an in-game name reaching
 `aoe2_name` must come from the GAME. Replay ingest used to hand it a Discord
-nickname (see utils/replay_quiz/extract.py's docstring), which is how most of
+nickname (see utils/replay/extract.py's docstring), which is how most of
 this column's production rows came to hold something the game never said.
 
 Two tables:
@@ -757,6 +758,22 @@ _WINDOW_PLAYERS_SQL = (
 )
 
 
+async def window_player_ids(community_id, days=COVERAGE_WINDOW_DAYS) -> set:
+	""" The distinct Discord users who played a reported match in `community_id`
+	within the last `days` — the population every coverage and gating figure on
+	`/identity status` is measured against.
+
+	Split out of coverage_for_community rather than duplicated because the
+	gated-features half of that command (stage 5a) needs the ids themselves,
+	not just how many there are: "how many of these players have no
+	player_rollups row" is a set intersection, and the two halves of one embed
+	disagreeing about who counts as a player here would be worse than either
+	number being absent. One query, one definition of the window. """
+	cutoff = int(time.time()) - days * 86400
+	rows = await db.fetchall(_WINDOW_PLAYERS_SQL, [community_id, cutoff]) or []
+	return {row["user_id"] for row in rows if row["user_id"] is not None}
+
+
 async def coverage_for_community(community_id, days=COVERAGE_WINDOW_DAYS) -> dict:
 	""" How much of a community is actually linked:
 
@@ -788,9 +805,7 @@ async def coverage_for_community(community_id, days=COVERAGE_WINDOW_DAYS) -> dic
 	Read-only, and used by `/identity status` today and the web UI later — which
 	is the whole reason the query lives in this module rather than inline in a
 	command handler. """
-	cutoff = int(time.time()) - days * 86400
-	rows = await db.fetchall(_WINDOW_PLAYERS_SQL, [community_id, cutoff]) or []
-	user_ids = {row["user_id"] for row in rows if row["user_id"] is not None}
+	user_ids = await window_player_ids(community_id, days)
 
 	# profiles_for_users OMITS users who own nothing (never maps them to []), so
 	# its size IS the linked count — no filtering of empty lists needed here.

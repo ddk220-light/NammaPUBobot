@@ -27,7 +27,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from bot.replay_stats import store
-from utils.replay_quiz.extract import extract_match
+from utils.replay.extract import extract_match
 
 REPLAY_NAME = "TheInGameName"
 DISCORD_NICK = "SomeDiscordNick"     # must never appear in any output below
@@ -99,8 +99,8 @@ def test_extract_takes_no_identity_map_at_all(monkeypatch, replay_path):
 def test_no_extractor_side_loader_survives():
 	"""load_resolved() opened the generated CSV. It is gone from the extractor;
 	the offline quiz pipeline that still wants display nicknames owns its own
-	copy and applies it AFTER extraction (utils/replay_quiz/build_db.py)."""
-	import utils.replay_quiz.extract as extract_mod
+	copy and applies it AFTER extraction (utils/replay/build_db.py)."""
+	import utils.replay.extract as extract_mod
 	assert not hasattr(extract_mod, "load_resolved")
 
 

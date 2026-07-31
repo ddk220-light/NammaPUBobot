@@ -5,28 +5,39 @@ Every fetch is independently guarded, so a missing table or a failing query
 degrades that one signal to empty rather than costing the whole card.
 
 All joins key on (match id, player_number). profile_id is a nullable
-denormalisation on every long-form replay_*/cls_* table, and NULL never matches
-in a join, so joining on it silently drops players.
+denormalisation on every long-form replay_* table, and NULL never matches in a
+join, so joining on it silently drops players.
 
-That match-id column is spelled `replay_match_id` on the raw replay_* tables and
-still `aoe2_match_id` on the legacy cls_* ones: 007_raw_renames renamed the
-former and deliberately left the latter alone, because stage 6 retires cls_*
-wholesale rather than carrying it forward under a new name.
+FOUR OF THE SIX SIGNALS BELOW READ A SWEEPABLE TABLE, and that is an accepted,
+deliberate trade rather than an oversight. replay_events, replay_buildings and
+replay_apm are all retention="sweepable" (core/data_registry.py):
+bot/derived/sweeper.py deletes their rows for a community that opted out of
+keeping raw replay detail, once the derived summaries that stand in for them
+have been computed. When that happens these queries return no rows and the
+card renders WITHOUT those elements — _stats_text omits each one silently
+rather than printing a zero, so the card degrades to the facts that survive
+(civ, strategy, spawn, villager/military counts, medals) instead of erroring or
+claiming a measurement of 0. tests/test_card_query.py pins the empty-source
+behaviour; the sweeper still ships with DRY_RUN = True, and this note is part
+of what has to be true before anyone flips it. Do NOT add a fallback that
+recomputes a swept signal from somewhere else — the whole point of the sweep is
+that those rows are gone.
+
+The two signals that are NOT affected are the two this file no longer derives:
+strategies and spawn now come from game_labels, which is derived-global and kept
+forever, so a lean community keeps its strategy chips after its raw events are
+gone.
 """
 
 from core.database import db
 
-# cls_results mixes strategy rows and luck/spawn rows in one table with no
-# category column — luck_baseline alone fires for every player in every valid
-# Nomad game — so the card must constrain by an explicit allowlist or it will
-# render "All valid spawns (baseline)" as somebody's strategy.
-STRATEGY_KEYS = (
-	"archer_rush", "scout_rush", "maa_rush", "knight_rush", "crossbow_rush",
-	"cav_archer_rush", "camel_rush", "ram_push", "forward_castle", "safe_castle",
-	"late_knight", "late_crossbow", "late_cav_archer", "late_camel",
-	"late_unique", "late_ram", "boom_to_imp",
-)
-
+# The 3 spawn facts worth rendering as a sentence on a card — a DISPLAY subset,
+# and emphatically not a copy of what game_labels stores. bot/derived/
+# game_labels.py's SPAWN_KEYS holds all 11 spawn classifications, because what to
+# STORE and what to SAY are different questions; "re-syncing" the two would throw
+# 8 stored labels away in one direction or put 8 unsayable ones on the card in the
+# other. tests/test_game_labels.py guards the distinction in both directions.
+#
 # Ordered by how much the phrase is worth saying: a nearby enemy is the most
 # consequential spawn fact, so it wins when several fire for one player
 # (near_ally and near_enemy are not mutually exclusive).
@@ -50,6 +61,8 @@ async def _safe(coro, default, what):
 
 
 async def _buildings(replay_match_id):
+	# SWEPT SOURCE (replay_buildings): empty for a lean community whose raw rows
+	# have aged out — the card then omits the farm/TC figures. See the module note.
 	rows = await db.fetchall(
 		"SELECT player_number, building, count FROM replay_buildings "
 		"WHERE replay_match_id=%s AND building IN (%s, %s)",
@@ -63,6 +76,9 @@ async def _buildings(replay_match_id):
 
 
 async def _clicks(replay_match_id):
+	# SWEPT SOURCE (replay_events): empty for a lean community whose raw rows have
+	# aged out — card_scoring.production_coverage then has no series to bucket and
+	# the coverage bar is omitted. See the module note.
 	rows = await db.fetchall(
 		"SELECT player_number, t_s FROM replay_events "
 		"WHERE replay_match_id=%s AND t_s IS NOT NULL "
@@ -83,6 +99,10 @@ async def _composition(replay_match_id):
 	The Imperial split matters because no classification covers post-Imperial
 	play, so a player whose whole army arrived in Imperial Age otherwise shows no
 	strategy at all. imperial_s is per player, hence the join.
+
+	SWEPT SOURCE (replay_events): empty for a lean community whose raw rows have
+	aged out — the army-composition line disappears from the card. See the module
+	note. replay_players, the other side of the join, is retained forever.
 	"""
 	rows = await db.fetchall(
 		"SELECT e.player_number, e.category, e.name, SUM(e.amount) AS total, "
@@ -115,18 +135,26 @@ async def _composition(replay_match_id):
 
 
 async def _strategies(replay_match_id):
-	"""Every strategy classification that fired, per player, as display labels.
+	"""Every strategy label the player earned, per player, as display labels.
+
+	Read from game_labels, whose `kind` column IS the strategy allowlist: the 17
+	keys were decided once, at ingest, by bot/derived/game_labels.py's
+	STRATEGY_KEYS, so asking for kind='strategy' asks that same question back
+	instead of restating the list here. This file used to carry a verbatim copy of
+	those 17 keys to constrain the old cls_results read (that table mixed strategy
+	and luck rows with no category column); the copy is gone with the read.
 
 	Labels come from cls_classifications.title — the same source /insights uses.
-	Four competing label maps already exist in this codebase; this adds none.
+	Four competing label maps already exist in this codebase; this adds none. The
+	join is on `key` alone, so it is unaffected by cls_results still spelling the
+	match id `aoe2_match_id` while everything else now says `replay_match_id`.
 	"""
-	placeholders = ",".join(["%s"] * len(STRATEGY_KEYS))
 	rows = await db.fetchall(
-		"SELECT c.player_number, c.`key` AS ckey, r.title FROM cls_results c "
-		"LEFT JOIN cls_classifications r ON r.`key`=c.`key` "
-		f"WHERE c.aoe2_match_id=%s AND c.`key` IN ({placeholders}) "
-		"ORDER BY c.player_number, c.`key`",
-		[replay_match_id, *STRATEGY_KEYS])
+		"SELECT l.player_number, l.label AS ckey, r.title FROM game_labels l "
+		"LEFT JOIN cls_classifications r ON r.`key`=l.label "
+		"WHERE l.replay_match_id=%s AND l.kind=%s "
+		"ORDER BY l.player_number, l.label",
+		[replay_match_id, "strategy"])
 	out = {}
 	for r in rows or []:
 		label = r.get("title") or str(r.get("ckey") or "").replace("_", " ").title()
@@ -136,12 +164,16 @@ async def _strategies(replay_match_id):
 
 
 async def _spawn(replay_match_id):
+	# kind='spawn' AND an explicit key list, not one or the other: the kind picks
+	# the stored category, the list narrows it to the 3 facts SPAWN_PHRASES can
+	# actually say. The other 8 stored spawn labels are real and are simply not
+	# rendered here.
 	keys = [k for k, _ in SPAWN_PHRASES]
 	placeholders = ",".join(["%s"] * len(keys))
 	rows = await db.fetchall(
-		"SELECT player_number, `key` AS ckey FROM cls_results "
-		f"WHERE aoe2_match_id=%s AND `key` IN ({placeholders})",
-		[replay_match_id, *keys])
+		"SELECT player_number, label AS ckey FROM game_labels "
+		f"WHERE replay_match_id=%s AND kind=%s AND label IN ({placeholders})",
+		[replay_match_id, "spawn", *keys])
 	found = {}
 	for r in rows or []:
 		found.setdefault(r["player_number"], set()).add(r.get("ckey"))
@@ -159,7 +191,10 @@ async def _peak_eapm(replay_match_id):
 
 	replay_apm is forward-only, so this is empty for every match ingested
 	before the eAPM pipeline deployed. Callers must omit the figure rather than
-	render a zero. Never average these buckets: rows are absent for zero-action
+	render a zero. It is also a SWEPT SOURCE, which reaches the same place from
+	the other end of time: a lean community's aged-out matches lose their buckets
+	and their peak with them (the average survives — it is replay_players.eapm).
+	See the module note. Never average these buckets: rows are absent for zero-action
 	minutes, so any mean over them divides by active minutes instead of whole
 	game minutes — the parity-preserving average is replay_players.eapm.
 	"""

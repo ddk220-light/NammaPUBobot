@@ -86,3 +86,24 @@ async def upsert_results(pool, key, aoe2_match_id, result_rows, metric_rows):
             "INSERT INTO cls_result_metrics ({}) VALUES ({})".format(
                 ", ".join("`{}`".format(c) for c in cols), ", ".join(["%s"] * len(cols))),
             [row[c] for c in cols])
+
+
+async def mark_match_classified(pool, aoe2_match_id, result_rows):
+    """Stamp cls_match_ingest for one fully-classified match.
+
+    NOT bookkeeping. bot/derived/backfill.py's reconciler treats an empty
+    cls_results set for a match as authoritative -- and therefore deletes that
+    match's game_labels -- ONLY when this row exists and says the classifier
+    produced zero results. Without it, an empty cls_results is indistinguishable
+    from a write that failed, and the reconciler refuses to act on it (see
+    backfill._source_is_trustworthy). So every writer of cls_results has to
+    write this too, including a match that matched nothing: that is precisely
+    the case the row exists to certify.
+
+    `result_rows` counts EVERY classifier hit for the match, luck_baseline
+    included -- the same figure bot/replay_stats/classifications.py records --
+    not just the ones game_labels allowlists.
+    """
+    await _exec(pool,
+        "REPLACE INTO cls_match_ingest (aoe2_match_id, classified_at, result_rows, status) "
+        "VALUES (%s,%s,%s,%s)", [aoe2_match_id, int(time.time()), result_rows, "done"])

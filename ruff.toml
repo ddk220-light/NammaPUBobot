@@ -33,14 +33,14 @@ exclude = [
     "__pycache__",
     "data",
     "export-apr10",
-    # Vendored from the approved `feat/replay-quizzes` workstream — it has its
-    # own (semicolon-heavy, 4-space) style and is offline tooling, not bot
-    # runtime code. Lint it on its own terms, not this repo's ruleset. The
-    # bot never imports it; the unified pipeline consumes only its JSON output.
-    "utils/replay_quiz",
+    # `utils/replay_quiz` used to be excluded here, on the grounds that it was
+    # vendored offline tooling the bot never imported. That was already only
+    # half true — bot/replay_stats/{fetch,parse}.py have imported its
+    # download/extract modules for as long as live ingest has existed — and the
+    # offline half is now deleted. What survived is utils/replay/, live ingest
+    # code, and it is linted with everything else rather than exempted.
 ]
-# Honor `exclude` even when a path is passed explicitly (e.g. `ruff check utils`),
-# so the vendored subtree above is never linted by accident.
+# Honor `exclude` even when a path is passed explicitly (e.g. `ruff check utils`).
 force-exclude = true
 
 [lint]

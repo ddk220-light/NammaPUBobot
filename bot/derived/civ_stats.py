@@ -3,13 +3,14 @@
 aggregated once by a refresh pass over `civ_picks` instead of scanned live
 every time stage-5's civ-stats page renders.
 
-NAME COLLISION, DELIBERATE AND NOT A BUG: `bot/civ_stats.py` already exists
-and reads `data/civ_elo_stats.csv` plus a live `civ_picks` GROUP BY for a
-completely different purpose (civ pools for randomised team balancing). That
-module is retired in stage 5c; this one is its derived-community
-replacement, keeps its own name under `bot/derived/`, and is not imported by
-or coupled to the old one in any way. Do not delete, modify, or import
-`bot/civ_stats.py` from here.
+NAME COLLISION, DELIBERATE AND NOT A BUG: `bot/civ_stats.py` also exists, for
+a completely different purpose (civ pools for randomised team balancing). It
+is NOT retired — stage 5c repointed it at the table this module writes,
+deleting the two sources it used to rank on (a frozen `data/civ_elo_stats.csv`
+snapshot and a live cross-community `civ_picks` GROUP BY). So the two are a
+writer/reader pair now, not an old and a new: this one aggregates `civ_picks`
+into `civ_stats` on the refresh pass, that one reads `civ_stats` at pick time.
+Neither imports the other, and neither should.
 
 compute_civ_stats is pure -- no DB, no I/O -- exactly like its sibling
 modules in this package. It differs from them in one respect worth stating

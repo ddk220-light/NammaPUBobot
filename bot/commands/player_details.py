@@ -3,7 +3,17 @@
 Thin handler — the data + rendering live in bot.replay_stats (query.gather_growth_curve +
 chart.render_growth_curve), lazily imported so this module loads cheap. The growth curve is drawn
 from the per-event replay_events series, so it covers each linked player's standard-map games
-whose replays have been parsed for per-event data."""
+whose replays have been parsed for per-event data.
+
+SWEPT SOURCE, accepted trade: replay_events and replay_techs (the curve's series and its
+upgrade annotations) are both retention="sweepable" — bot/derived/sweeper.py deletes their
+rows for a community that opted out of keeping raw replay detail once the derived summaries
+have been computed, and no summary reconstructs a per-second series. For such a community
+gather_growth_curve finds no series to anchor, returns None, and this command answers with
+the "No replay stats" message below rather than an empty or misleading chart. That is the
+designed outcome, not a bug to fix with a fallback: this chart is one of the things a lean
+community gives up. tests/test_replay_stats_query.py pins the None. The sweeper still ships
+with DRY_RUN = True."""
 __all__ = ["player_details"]
 
 import asyncio

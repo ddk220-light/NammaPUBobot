@@ -41,6 +41,8 @@ CREATE TABLE cls_results (
 CREATE TABLE cls_result_metrics (
 	`key` TEXT, aoe2_match_id INTEGER, player_number INTEGER, metric TEXT, value REAL,
 	PRIMARY KEY (`key`, aoe2_match_id, player_number, metric));
+CREATE TABLE cls_match_ingest (
+	aoe2_match_id INTEGER PRIMARY KEY, classified_at INTEGER, result_rows INTEGER, status TEXT);
 CREATE TABLE game_stats (
 	replay_match_id INTEGER, player_number INTEGER, profile_id INTEGER, civ TEXT, team TEXT,
 	winner INTEGER, avg_eapm INTEGER, peak_eapm INTEGER, military_medal INTEGER,
@@ -146,6 +148,17 @@ def _match_with_labels(fake, mid, keys, played_at=1700000000, player_number=1):
 	for key in keys:
 		fake.add("cls_results", key=key, aoe2_match_id=mid,
 		         player_number=player_number, played_at=played_at)
+	# The provenance row every cls_results writer stamps once the classifier has
+	# finished a match (bot/replay_stats/classifications.write_extracted_match,
+	# utils/classifications/dbio.mark_match_classified). Set up here rather than
+	# per-test because production has no cls_results without it, and the
+	# reconciler's empty-source rule is only meaningful against that reality.
+	_mark_classified(fake, mid, len(keys))
+
+
+def _mark_classified(fake, mid, result_rows):
+	fake.add("cls_match_ingest", aoe2_match_id=mid, classified_at=1700000000,
+	         result_rows=result_rows, status="done")
 
 
 # ── pending detection ────────────────────────────────────────────────────
@@ -337,12 +350,108 @@ def test_a_source_dropping_to_zero_still_cleans_the_orphaned_rows(monkeypatch):
 	asyncio.run(backfill.drain_game_labels())
 	assert len(fake.rows("game_labels", replay_match_id=22)) == 1
 
+	# A retune: the classifier re-ran over this match and matched nothing. Both
+	# halves of that are written, because both halves are what the real writers
+	# write — the rows go, and the provenance row records a completed run with
+	# zero results. THAT is what makes the empty source believable; the test
+	# below covers an empty source with no such certificate.
 	fake.conn.execute("DELETE FROM cls_results WHERE aoe2_match_id=22")
+	_mark_classified(fake, 22, 0)
 
 	assert asyncio.run(backfill.pending_game_labels()) == [22]
 	asyncio.run(backfill.drain_game_labels())
 	assert fake.rows("game_labels", replay_match_id=22) == []
 	# ...and having cleaned them it converges: an all-zero match is not pending.
+	assert asyncio.run(backfill.pending_game_labels()) == []
+
+
+# ── the empty source that must NOT be believed ───────────────────────────
+# cls_results has exactly one live writer, and store.write_match calls it inside
+# a catch-and-log guard. When that call fails on a fresh match the ingest
+# carries on, sync_match writes the match's game_labels from the same extract,
+# and this loop then finds a full derived side facing an empty source. Writing
+# what that source implies means DELETING the labels — permanently, on a table
+# nothing else rebuilds, leaving one log line. These pin that it cannot.
+
+def test_an_empty_source_with_no_provenance_row_never_deletes_the_labels(monkeypatch):
+	fake = _SqliteDB()
+	log = _RecordingLog()
+	_install(monkeypatch, fake)
+	monkeypatch.setattr(backfill, "log", log)
+
+	# The exact production shape: labels written by the live sync, cls_results
+	# never written because write_extracted_match threw, so no provenance row.
+	fake.add("replay_matches", replay_match_id=31, played_at="2024-05-01 13:22")
+	fake.add("game_labels", replay_match_id=31, player_number=1, label="archer_rush",
+	         kind="strategy", evidence="{}", played_at=1700000000)
+
+	assert asyncio.run(backfill.pending_game_labels()) == [31]
+	asyncio.run(backfill.drain_game_labels())
+
+	assert [r["label"] for r in fake.rows("game_labels", replay_match_id=31)] == ["archer_rush"]
+	assert any("refusing to delete" in line for line in log.error_lines), \
+		"the refusal must be loud — a silent skip is a permanent invisible hole"
+
+
+def test_an_empty_source_whose_provenance_row_claims_rows_is_refused_too(monkeypatch):
+	""" The half-written re-ingest: write_extracted_match DELETEs a match's
+	cls_results before it re-INSERTs them, so a failure in between leaves zero
+	rows beside a stale certificate that says N. A certificate that disagrees
+	with the table is not evidence about it. """
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	_match_with_labels(fake, 32, ["archer_rush", "spawn_isolated"])
+	asyncio.run(backfill.drain_game_labels())
+	assert len(fake.rows("game_labels", replay_match_id=32)) == 2
+
+	fake.conn.execute("DELETE FROM cls_results WHERE aoe2_match_id=32")   # marker still says 2
+
+	assert asyncio.run(backfill.pending_game_labels()) == [32]
+	asyncio.run(backfill.drain_game_labels())
+	assert len(fake.rows("game_labels", replay_match_id=32)) == 2
+
+
+def test_a_refused_match_is_quarantined_rather_than_retried_forever(monkeypatch):
+	""" Termination is the property this whole module exists for, so the refusal
+	routes into the machinery that already bounds an undigestible match instead
+	of inventing a second one: MAX_ATTEMPTS tries, then out of the batch query
+	and counted in the drain line as quarantined. """
+	fake = _SqliteDB()
+	log = _RecordingLog()
+	_install(monkeypatch, fake)
+	monkeypatch.setattr(backfill, "log", log)
+	fake.add("game_labels", replay_match_id=33, player_number=1, label="archer_rush",
+	         kind="strategy", evidence="{}", played_at=1700000000)
+
+	for _ in range(backfill.MAX_ATTEMPTS):
+		asyncio.run(backfill.drain_game_labels())
+
+	assert backfill._labels_attempts[33] == backfill.MAX_ATTEMPTS
+	assert asyncio.run(backfill.pending_game_labels()) == [], "quarantined out of the batch query"
+	asyncio.run(backfill.drain_game_labels())
+	# ...but still reported: the backlog figure is the honest one, and the
+	# quarantined count is what separates "converged" from "permanently stuck".
+	assert any("1 still pending (1 of those quarantined" in line for line in log.info_lines)
+	assert len(fake.rows("game_labels", replay_match_id=33)) == 1
+
+
+def test_a_match_whose_only_hits_are_outside_the_allowlist_still_converges_to_zero(monkeypatch):
+	""" The legitimate zero-label match, and the reason the empty-source check
+	reads the UNFILTERED cls_results: luck_baseline fires for every player in
+	every valid Nomad game and is stored in no table by design, so this match's
+	source projection is empty while cls_results is not. It derives zero labels,
+	cleans a stale one, and needs no certificate to do it. """
+	fake = _SqliteDB()
+	_install(monkeypatch, fake)
+	fake.add("replay_matches", replay_match_id=34, played_at="2024-05-01 13:22")
+	fake.add("cls_results", key="luck_baseline", aoe2_match_id=34, player_number=1,
+	         played_at=1700000000)
+	fake.add("game_labels", replay_match_id=34, player_number=1, label="archer_rush",
+	         kind="strategy", evidence="{}", played_at=1700000000)
+
+	assert asyncio.run(backfill.pending_game_labels()) == [34]
+	asyncio.run(backfill.drain_game_labels())
+	assert fake.rows("game_labels", replay_match_id=34) == []
 	assert asyncio.run(backfill.pending_game_labels()) == []
 
 

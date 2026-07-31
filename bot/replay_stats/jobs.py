@@ -105,10 +105,10 @@ class ReplayStatsJobs:
                                     played_at_epoch=played_at_epoch)
             try:
                 from .classification_sync import sync_match
-                cls_rows, cls_metrics = await sync_match(result, played_at_epoch or now)
+                labels = await sync_match(result, played_at_epoch or now)
                 log.info(
                     f"Replay-stats classified aoe2 match {replay_match_id} "
-                    f"({cls_rows} tags, {cls_metrics} metrics).")
+                    f"({labels} game_labels rows).")
             except Exception as e:
                 log.error(f"Replay-stats classification sync failed ({replay_match_id}): {e}")
             await store.upsert_ingest(replay_match_id, status="done", save_version=sv,

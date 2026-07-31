@@ -179,7 +179,15 @@ def build_growth_curve(games, grid_step=30, cap_s=None, max_cap_s=3600):   # har
 async def gather_growth_curve(profile_ids, days=90):
     """DB layer for build_growth_curve(): age-reliable standard-map games in the window that HAVE
     per-event data, each player's villager/military queue series, plus eco/military upgrade
-    annotations (avg first-click, from replay_techs). Returns the curve dict or None."""
+    annotations (avg first-click, from replay_techs). Returns the curve dict or None.
+
+    SWEPT SOURCES: replay_events and replay_techs are both retention="sweepable"
+    (core/data_registry.py). For a lean community whose raw rows bot/derived/sweeper.py has
+    deleted, the events query below returns nothing, every game is skipped for want of a
+    villager series, and this returns None — which bot/commands/player_details.py renders as
+    "No replay stats", the intended degradation. Returning None rather than a curve built on
+    the surviving replay_players rows is the point: a growth CURVE with no series behind it
+    would be a shape drawn from age timings alone, presented as if it were measured."""
     if not profile_ids:
         return None
     cutoff = (datetime.date.fromtimestamp(time.time()) - datetime.timedelta(days=days)).isoformat()

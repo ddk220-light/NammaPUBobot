@@ -1,6 +1,14 @@
 # -*- coding: utf-8 -*-
 """Read side for /insights. Pure roster() + winners_vs_losers() over matched player-games;
-fetch_results() pulls them (with their full metrics dict) from cls_results + cls_result_metrics."""
+fetch_results() pulls them (with their full metrics dict) from the derived-global
+game_labels table.
+
+Stage 5c moved this read off cls_results/cls_result_metrics. The two tables held the same
+facts in a shape this command had to re-derive on every call: one row per matched trigger
+plus a second table of loose (metric, value) rows to re-associate with it. game_labels
+stores one row per (game, player, label) with its evidence already gathered, so the metrics
+dict is a column rather than a second query and a join in Python."""
+import json
 import time
 
 from core.database import db
@@ -42,31 +50,73 @@ def winners_vs_losers(results, factor_specs):
 	return {"n_winners": len(W), "n_losers": len(L), "factors": factors}
 
 
+def metrics_of(label_row):
+	"""One label row's evidence as a dict, whether it arrived as the MEDIUMTEXT JSON string a
+	SELECT returns or as the dict label_rows built.
+
+	A malformed blob RAISES rather than degrading to {}, the same call as
+	bot/derived/rollups.py's _decode and for a sharper reason here: this dict feeds the
+	winners-vs-losers averages, and a row that quietly contributes no metric is not a
+	missing row — it is a row silently dropped from a denominator nobody was told about."""
+	raw = label_row.get("evidence")
+	if isinstance(raw, str):
+		raw = json.loads(raw)
+	return raw or {}
+
+
 async def fetch_results(use_case, days, profile_ids=None):
-	"""Matched player-games for `use_case` in the window, each with its full metrics dict."""
+	"""Matched player-games for `use_case` in the window, each with its full metrics dict.
+
+	`use_case` is a game_labels label. Its KIND is looked up rather than trusted: a key
+	outside both of game_labels' allowlists was never stored (luck_baseline is the live
+	example — it fires for every player in every valid Nomad game and is deliberately
+	stored nowhere), so there is nothing to select and no query worth issuing. The kind is
+	then constrained in the SQL as well, so this read can only ever return the category the
+	allowlist assigned to the key it was asked for.
+
+	Three tables, each for exactly one thing it alone can answer:
+	  game_labels    — which (game, player) earned this label, when, and its evidence.
+	  game_stats     — the profile behind that slot and whether it won. game_labels
+	                   deliberately stores neither (see bot/derived/__init__.py), and this
+	                   is the join that gets them: its PK is (replay_match_id,
+	                   player_number), exactly game_labels' grain minus the label, so the
+	                   join can neither drop nor duplicate a row.
+	  replay_players — the in-game name to print. Joined on (match, profile_id), its own
+	                   PK. Same source and same reason as bot/derived/refresh.py's board
+	                   queries: the name on a leaderboard row has to describe the account
+	                   that played the game, not a Discord nickname that moves with a guild
+	                   membership."""
+	from bot.derived.game_labels import kind_for
+
+	kind = kind_for(use_case)
+	if kind is None:
+		return []
 	since = int(time.time()) - days * 86400
-	args = [use_case, since]
+	args = [use_case, kind, since]
 	pid_clause = ""
 	if profile_ids:
-		pid_clause = " AND profile_id IN ({})".format(", ".join(["%s"] * len(profile_ids)))
+		pid_clause = " AND gs.profile_id IN ({})".format(", ".join(["%s"] * len(profile_ids)))
 		args.extend(profile_ids)
 	res = await db.fetchall(
-		"SELECT aoe2_match_id, player_number, profile_id, identity, winner FROM cls_results "
-		"WHERE `key`=%s AND played_at >= %s" + pid_clause, args)
-	res = [dict(r) for r in (res or [])]
-	if not res:
-		return []
-	mids = sorted({r["aoe2_match_id"] for r in res})
-	mets = await db.fetchall(
-		"SELECT aoe2_match_id, player_number, metric, value FROM cls_result_metrics "
-		"WHERE `key`=%s AND aoe2_match_id IN ({})".format(", ".join(["%s"] * len(mids))),
-		[use_case] + mids)
-	mmap = {}
-	for m in (mets or []):
-		mmap.setdefault((m["aoe2_match_id"], m["player_number"]), {})[m["metric"]] = m["value"]
-	for r in res:
-		r["metrics"] = mmap.get((r["aoe2_match_id"], r["player_number"]), {})
-	return res
+		"SELECT gl.replay_match_id, gl.player_number, gl.evidence, "
+		"gs.profile_id, gs.winner, rp.identity "
+		"FROM game_labels gl "
+		"JOIN game_stats gs ON gs.replay_match_id=gl.replay_match_id "
+		"AND gs.player_number=gl.player_number "
+		"LEFT JOIN replay_players rp ON rp.replay_match_id=gs.replay_match_id "
+		"AND rp.profile_id=gs.profile_id "
+		"WHERE gl.label=%s AND gl.kind=%s AND gl.played_at >= %s" + pid_clause, args)
+	return [
+		{
+			"replay_match_id": r["replay_match_id"],
+			"player_number": r["player_number"],
+			"profile_id": r["profile_id"],
+			"identity": r.get("identity"),
+			"winner": r["winner"],
+			"metrics": metrics_of(r),
+		}
+		for r in (res or [])
+	]
 
 
 async def resolve_profile_ids(user_id):

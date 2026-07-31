@@ -127,11 +127,15 @@ def test_spawn_keys_are_the_luck_definitions_minus_the_baseline():
 	assert set(game_labels.SPAWN_KEYS) == {c.key for c in luck.CLASSIFICATIONS} - _DOCUMENTED_EXCLUSIONS
 
 
-def test_strategy_keys_still_match_card_querys_copy():
-	# STRATEGY_KEYS *is* card_query's list verbatim, and is meant to stay so.
+def test_strategy_keys_is_the_only_copy_of_the_list():
+	# card_query used to keep a verbatim copy to constrain its own cls_results
+	# query, and this test used to assert the two stayed identical. Stage 5c moved
+	# the cards onto game_labels, where `kind` already answers "is this a strategy?"
+	# -- so the copy went, and what is worth pinning now is that it stays gone. A
+	# reader re-introducing a key list is re-introducing the drift.
 	from bot.replay_stats import card_query
 
-	assert game_labels.STRATEGY_KEYS == card_query.STRATEGY_KEYS
+	assert not hasattr(card_query, "STRATEGY_KEYS")
 
 
 def test_spawn_keys_are_deliberately_wider_than_card_querys_display_subset():

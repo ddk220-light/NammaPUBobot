@@ -123,11 +123,29 @@ def test_the_guard_covers_the_files_outside_the_package_directories():
 	""" The walk above only descends into bot/, core/, utils/ and tests/, so the
 	two root-level Python files and the dashboard SPA are reachable only because
 	they are named or matched explicitly. A regression there is invisible — the
-	guard would still pass, on fewer files. """
+	guard would still pass, on fewer files.
+
+	This recomputes the walk AND applies _ALLOW, because the guard skips
+	allowlisted files before reading them: checking the walk alone left the
+	allowlist as an unguarded back door, so adding bot/web_page.html to _ALLOW
+	removed 200KB of coverage and passed green. Both halves of "is this file
+	actually checked" are asserted. """
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	scanned = {rel for _path, rel in _scanned_files(root)}
+	checked = {rel for _path, rel in _scanned_files(root) if rel not in _ALLOW}
 	for rel in ("start.py", "PUBobot2.py", os.path.join("bot", "web_page.html")):
-		assert rel in scanned, f"{rel} is not covered by the stale-name guard"
+		assert rel in checked, f"{rel} is not covered by the stale-name guard"
+
+
+def test_the_allowlist_holds_only_the_files_that_must_name_old_tables():
+	""" _ALLOW is a whole-file exemption — the one mechanism here that can
+	silently remove coverage from anything. It is pinned to its exact contents
+	so growing it is a deliberate edit to this test, with a reason, rather than
+	a one-line way to make the guard stop complaining. """
+	assert set(_ALLOW) == {
+		"core/migrations.py",      # names every renamed table forever, by design
+		"tests/test_naming.py",    # this file lists them as literals
+		"tests/test_migrations.py",  # exercises the rename map itself
+	}
 
 
 def test_the_csv_scrub_does_not_blind_the_guard():

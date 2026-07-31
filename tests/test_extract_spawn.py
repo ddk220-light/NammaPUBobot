@@ -1,4 +1,4 @@
-from utils.replay_quiz.extract import _nearest, _perimeter
+from utils.replay.extract import _nearest, _perimeter
 
 
 def test_nearest_returns_min_distance():

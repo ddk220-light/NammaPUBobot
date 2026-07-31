@@ -7,7 +7,7 @@ import os
 import time
 
 from utils.classifications.pipeline import localdb
-from utils.replay_quiz import download as dl
+from utils.replay import download as dl
 
 REPLAY_DIR = os.path.join(os.path.dirname(localdb.DEFAULT_DB), "replays")
 

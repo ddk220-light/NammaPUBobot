@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(_ROOT, ".replay_scratch"))   # vendored mgz fork
 from utils.db_helpers import create_pool                      # noqa: E402
 from utils.classifications import dbio, shape                 # noqa: E402
 from utils.classifications.registry import REGISTRY           # noqa: E402
-from utils.replay_quiz.extract import EXTRACT_VERSION   # noqa: E402  (single source of cache version)
+from utils.replay.extract import EXTRACT_VERSION   # noqa: E402  (single source of cache version)
 
 CACHE_DIR = os.path.join(_ROOT, "data", ".replay_extract_cache")
 REPLAY_DIR = os.path.join(_ROOT, "data", "replays")
@@ -38,10 +38,13 @@ async def _ensure_replay(aoe2_match_id, no_download=False):
         return path, False
     if no_download:
         return None, False
-    from utils.replay_quiz import download as dl
-    pids = await dl.resolve_profile_ids(aoe2_match_id)
+    # Both are plain `def` (utils/replay/download.py does its HTTP with the
+    # blocking `requests`), so they are CALLED, not awaited. Awaiting them
+    # raised TypeError on the first match of every run.
+    from utils.replay import download as dl
+    pids = dl.resolve_profile_ids(aoe2_match_id)
     for pid in pids:
-        got, status = await dl.download_replay(aoe2_match_id, pid)
+        got, status = dl.download_replay(aoe2_match_id, pid)
         if got and os.path.exists(got):
             return got, True
     return None, False
@@ -53,7 +56,7 @@ def _extract_cached(path, aoe2_match_id, date_map):
     if os.path.exists(cp):
         with open(cp, encoding="utf-8") as f:
             return json.load(f)
-    from utils.replay_quiz.extract import extract_match
+    from utils.replay.extract import extract_match
     data = extract_match(path, date_map)
     os.makedirs(CACHE_DIR, exist_ok=True)
     with open(cp, "w", encoding="utf-8") as f:
@@ -66,7 +69,7 @@ async def run(days, only_key=None, no_download=False):
     if pool is None:
         print("No DB pool (check config.cfg DB_URI).", file=sys.stderr)
         return 1
-    from utils.replay_quiz.extract import load_date_map
+    from utils.replay.extract import load_date_map
     date_map = load_date_map()
     classifications = [c for c in REGISTRY.values()
                        if only_key is None or c.key == only_key]
@@ -101,6 +104,7 @@ async def run(days, only_key=None, no_download=False):
                 print("  parse failed {}: {}".format(mid, e))
                 continue
             scanned += 1
+            match_result_rows = 0
             for p in game.get("players", []):
                 ident = p.get("identity") or "?"
                 t = player_totals.setdefault(ident, [0, 0, 0])
@@ -120,6 +124,16 @@ async def run(days, only_key=None, no_download=False):
                 if result_rows:
                     await dbio.upsert_results(pool, c.key, mid, result_rows, metric_rows)
                     stats[c.key] += len(result_rows)
+                    match_result_rows += len(result_rows)
+            # Provenance for the match as a whole, written even when it matched
+            # nothing: bot/derived/backfill.py may only believe an empty
+            # cls_results (and so delete a match's game_labels) when this row
+            # certifies the classifier completed with zero results. Writing it
+            # only for matches that produced rows would leave every zero-row
+            # match permanently unverifiable. Full-run only: a --key run
+            # classifies one classification, so its count is not the match's.
+            if only_key is None:
+                await dbio.mark_match_classified(pool, mid, match_result_rows)
 
         if only_key is None:   # full run -> rebuild the per-player corpus totals
             await dbio.write_player_totals(pool, {k: tuple(v) for k, v in player_totals.items()})

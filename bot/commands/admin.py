@@ -409,6 +409,15 @@ async def identity_status(ctx):
 	silence with a figure an admin can act on, plus the two things they can do
 	about it (tell players to run `/link`, or resolve a contested profile).
 
+	Spec section 3 asks for coverage "plus which analysis features are gated
+	below their thresholds", and until stage 5a only the coverage half shipped
+	-- deliberately, because no feature actually gated on identity yet and any
+	list would have been fiction. `/rank`'s scouting report is the first one
+	that does, so the second half arrives with it and is COUNTED off this
+	community's own rollups (bot/scouting_report.gaps), never asserted: a
+	community where nothing is gated must be told so, and a hardcoded list
+	would name the same features everywhere.
+
 	A channel that was never enrolled in a community has nothing to measure.
 	That is the ordinary state for most channels, so it is answered plainly
 	rather than raised as an error. """
@@ -460,6 +469,48 @@ async def identity_status(ctx):
 				value=ctx.qc.gt("Nobody — every player seen in the window is linked."),
 				inline=False
 			)
+
+		# The gated half. Measured over the SAME population as the coverage
+		# line above -- players seen in the window -- so the two can be read
+		# against each other. Not wrapped in a try/except: this command is the
+		# visibility surface, and a gating read that failed silently would put
+		# it back to reporting a half-truth without saying so.
+		from bot import scouting_report
+		from bot.derived import rollups
+
+		gaps = scouting_report.gaps(
+			await rollups.fetch_community(community_id),
+			await bot.identity.window_player_ids(community_id),
+		)
+		lines = []
+		for gap in gaps:
+			if gap["feature"] == "report":
+				lines.append(ctx.qc.gt(
+					"`/rank` scouting report: **{gated} of {of}** have no stored stats, so their "
+					"report reads \"{pending}\"."
+				).format(gated=gap["gated"], of=gap["of"], pending=scouting_report.PENDING))
+			elif gap["feature"] == "strategy":
+				lines.append(ctx.qc.gt(
+					"Top-strategy line: **{gated} of {of}** scouted players have no strategy with "
+					"{min_games} decided games."
+				).format(gated=gap["gated"], of=gap["of"], min_games=rollups.SPLIT_MIN_GAMES))
+			elif gap["feature"] == "spawn":
+				lines.append(ctx.qc.gt(
+					"Top-spawn line: **{gated} of {of}** scouted players have no spawn with "
+					"{min_games} decided games."
+				).format(gated=gap["gated"], of=gap["of"], min_games=rollups.SPLIT_MIN_GAMES))
+			elif gap["feature"] == "unit":
+				lines.append(ctx.qc.gt(
+					"Top-unit line: **{gated} of {of}** scouted players have no unit with "
+					"{min_games} decided games."
+				).format(gated=gap["gated"], of=gap["of"], min_games=rollups.SPLIT_MIN_GAMES))
+		embed.add_field(
+			name=ctx.qc.gt("Gated features"),
+			value="\n".join(lines) if lines else ctx.qc.gt(
+				"None — every player seen in the window has a full scouting report."
+			),
+			inline=False
+		)
 
 	# Omitted entirely at zero: "0 open conflicts" is noise on the one surface
 	# that exists to make a real number stand out.

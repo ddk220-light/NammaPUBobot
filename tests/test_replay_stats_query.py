@@ -2,6 +2,9 @@
 phases (quiz-style); build_growth_curve averages each game's cumulative villager/military count
 onto a common time grid over the games still live at each t, with a 95% CI and per-point n;
 event_rows (shape) turns the per-action timeline into replay_events rows with a per-player seq."""
+import asyncio
+
+import bot.replay_stats.query as rsq
 from bot.replay_stats.query import build_growth_curve, build_timeline, phase_bucket
 from bot.replay_stats.shape import event_rows
 
@@ -132,3 +135,59 @@ def test_event_rows_assigns_per_player_seq_in_time_order():
     assert p1[2]["name"] == "Archer" and p1[2]["amount"] == 3
     p2 = [r for r in rows if r["player_number"] == 2][0]
     assert p2["seq"] == 0 and p2["profile_id"] == 222          # seq resets per player
+
+
+# ── the growth curve's swept sources ─────────────────────────────────────
+# replay_events and replay_techs are retention="sweepable": bot/derived/sweeper.py
+# deletes their rows for a lean community once its derived summaries exist, and no
+# summary reconstructs a per-second series. These pin what /player_details does
+# then -- returns None, which the command renders as "No replay stats" -- rather
+# than drawing a curve out of the replay_players rows that survive. The sweeper
+# ships with DRY_RUN = True and this is part of what has to hold before it flips.
+#
+# asyncio.run() from a sync test on purpose: there is no pytest-asyncio here, so an
+# `async def test_...` would be silently skipped and falsely report as passing.
+
+class _SweptDB:
+    """replay_players/replay_matches answer (retained forever); every sweepable
+    table answers empty."""
+
+    def __init__(self, events=(), techs=()):
+        self.events = list(events)
+        self.techs = list(techs)
+        self.asked = []
+
+    async def fetchall(self, sql, params=None):
+        self.asked.append(sql)
+        if "FROM replay_events" in sql:
+            return list(self.events)
+        if "FROM replay_techs" in sql:
+            return list(self.techs)
+        return [{"replay_match_id": 1, "profile_id": 7, "duration_s": 1800,
+                 "feudal_s": 600, "castle_s": 1200, "imperial_s": 2400}]
+
+
+def _curve(db):
+    original = rsq.db
+    rsq.db = db
+    try:
+        return asyncio.run(rsq.gather_growth_curve([7], days=90))
+    finally:
+        rsq.db = original
+
+
+def test_a_swept_community_gets_no_curve_rather_than_one_drawn_from_nothing():
+    db = _SweptDB()
+    assert _curve(db) is None
+    # It really did look: the games query ran and found a game, and only the
+    # per-event series was missing.
+    assert any("FROM replay_events" in s for s in db.asked)
+
+
+def test_the_same_games_with_their_events_intact_do_produce_a_curve():
+    """The control. Without it the assertion above passes just as well against a
+    function that always returns None."""
+    events = [{"replay_match_id": 1, "profile_id": 7, "t_s": t, "amount": 1,
+               "is_military": 0, "category": "villager"} for t in (60, 120, 180)]
+    curve = _curve(_SweptDB(events=events))
+    assert curve is not None and curve["n"] == 1

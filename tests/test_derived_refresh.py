@@ -26,6 +26,8 @@ import inspect
 import json
 import sqlite3
 
+import pytest
+
 import bot.identity as identity
 import bot.derived.boards as boards
 import bot.derived.civ_stats as civ_stats
@@ -197,12 +199,42 @@ class _Clock:
 		return self.now
 
 
+_PATCHED_MODULES = (refresh, rollups, boards, civ_stats, identity)
+
+
+@pytest.fixture(autouse=True)
+def _restore_module_adapters():
+	"""Put every module's `db` back after each test.
+
+	_install below rebinds a module-level attribute on five shipped modules and
+	used to leave them rebound: after this file ran, bot/derived/rollups.py's
+	`db` was still this file's sqlite double for the rest of the session, so a
+	later file patching only the shared adapter would silently miss it. That is
+	the kind of leak that makes a suite pass in one order and fail in another,
+	and it cost tests/test_web_repoint.py's install_db an extra patching pass to
+	work around. Snapshot-and-restore is not a workaround: it is what
+	monkeypatch would have done had _install taken one, and it works for the
+	reload test too, which rebinds the same names on a freshly imported module.
+	"""
+	saved = [(mod, getattr(mod, "db", None), getattr(mod, "log", None)) for mod in _PATCHED_MODULES]
+	try:
+		yield
+	finally:
+		for mod, db, log in saved:
+			if db is not None:
+				mod.db = db
+			if log is not None:
+				mod.log = log
+		identity.invalidate_cache()
+
+
 def _install(db, log, module=refresh):
 	"""Point every module in the refresh path at the fakes.
 
 	Each of them did `from core.database import db` at import time and holds its
 	own reference, so patching core.database alone would miss them -- which is
-	exactly what the restart test needs to be able to redo after a reload."""
+	exactly what the restart test needs to be able to redo after a reload.
+	_restore_module_adapters above undoes this at the end of every test."""
 	for mod in (module, rollups, boards, civ_stats, identity):
 		mod.db = db
 	module.log = log

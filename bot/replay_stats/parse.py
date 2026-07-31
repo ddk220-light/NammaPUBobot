@@ -34,7 +34,7 @@ def _extract(path, date_map):
     """Runs in the worker process. Imports lazily there."""
     if _ROOT not in sys.path:
         sys.path.insert(0, _ROOT)
-    from utils.replay_quiz.extract import extract_match
+    from utils.replay.extract import extract_match
     return extract_match(path, date_map)
 
 

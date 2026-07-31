@@ -112,7 +112,7 @@ async def _learn_from_ingest(players, profmap):
     supposed to be what this account is called IN THE GAME, and this ingest
     holds the freshest possible answer, straight out of the replay
     (extract_match sets `identity` from the parsed player's own name and
-    nothing else -- see utils/replay_quiz/extract.py's docstring for why a
+    nothing else -- see utils/replay/extract.py's docstring for why a
     Discord nick may never appear here again). last_seen_at then records that
     the profile was genuinely seen playing just now, which is what
     /identity status' coverage window is measured against.
@@ -197,11 +197,14 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
         await player_tags.write_match_tags(aoe2_id)
     except Exception as e:
         log.error(f"Replay-stats player tag write failed for aoe2 match {aoe2_id}: {e}")
-    try:
-        from . import persona_store
-        await persona_store.refresh_match_users(aoe2_id)
-    except Exception as e:
-        log.error(f"Replay-stats persona refresh failed for aoe2 match {aoe2_id}: {e}")
+    # NOT a persona refresh. Stage 5a retired the generated persona from every
+    # surface that read it (`/rank` now renders measured facts out of
+    # player_rollups instead), so rs_player_personas stops being written here;
+    # migration 009 drops the table in stage 6, which is also when
+    # persona.py/persona_store.py go, after that stage verifies no consumer is
+    # left. Recomputing a persona nothing reads would only cost every ingest a
+    # write and leave a table that looks maintained.
+    #
     # A newly paired match is new evidence for the identity deduction solver
     # (bot/identity_solver.py) -- it is what links players in a community with
     # no seed CSVs and no admin willing to curate one. Run it last, after the

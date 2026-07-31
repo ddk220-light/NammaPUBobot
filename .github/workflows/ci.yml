@@ -39,6 +39,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        # tests/test_web_page_scouting.py executes bot/web_page.html's real
+        # render functions — the SPA is inline JS, and three of stage 5's four
+        # honest-number rules have no other executable coverage. That file
+        # FAILS rather than skips without a JS runtime, deliberately, so this
+        # step is required rather than a nicety.
+        with:
+          node-version: "20"
       - name: Install test deps
         # We don't pip-install the full requirements.txt here because
         # it pulls nextcord (+ its native deps) which aren't needed for
