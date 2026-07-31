@@ -1895,33 +1895,124 @@ the delete.
 
 # Stage 5 — Consumers cut over (one deploy per substage)
 
-- **5a Scouting report:** `/rank` + `/rank_detailed` scouting section reads
-  `player_rollups` (via `community_for_channel(ctx.channel.id)`). Renders:
-  medal rates line, APM medians line, top strategy/spawn/unit each with its
-  win split (floors honored — below floor, the split line is omitted, never
-  shown with a warning). Persona line + generated scout read DELETED;
-  `web.player_overview_snapshot` deleted; persona refresh calls removed from
-  ingest (`persona_store.refresh_match_users`). `rs_player_personas` stops
-  being written; dropped in 6.
-- **5b Quiz:** `bot/quiz/player_bank.py` generates player-source questions
-  live from `metric_boards` at post time (day-parity source alternation keeps
-  today's player/game rhythm; game days keep reading the committed
-  `data/quiz_bank.json` schedule). DELETE `utils/replay_quiz/` (parser,
-  SQLite, build_questions, weekly), `utils/quiz_gen/convert_player_bank.py`,
-  `data/replay_quiz.db`, `data/question_bank.json`, `data/quiz_bank_player.json`,
-  `data/replay_manifest.csv`, `data/profile_resolved.csv` (identity owns it
-  since stage 2), and the player-source branches of
-  `utils/quiz_gen/build_schedule.py`.
-- **5c Cards + insights + civ stats:** `/insights` reads `game_labels`;
-  classification dual-write to `cls_*` STOPS; `bot/civ_stats.py` reads
-  `civ_stats` table (CSV seed fallback deleted); card strategy chips read
-  `game_labels`.
-- **5d Web repoint (minimal):** player API → `player_rollups` + `game_labels`;
-  strategies page → `game_labels`; civ-stats API → `civ_stats`; luck page and
-  any cls_-backed endpoint removed. Viewing-layer breakage beyond these
-  repoints is accepted per the design; the community-first web redesign is a
-  separate future project.
-- Each substage: elaborate → TDD → deploy → verify checklist → progress note.
+## Task 5.0 — Elaboration (2026-07-31)
+
+Stage 4 is built and deploying. The consumers can now be cut over. Facts that
+bind the substages:
+
+- `player_rollups` will hold ~42 rows (one per linked user with a reachable
+  game). `metric_boards` ~17 rows for community 1. `civ_stats` one row per
+  civ with at least one recorded pick.
+- **`peak_eapm` is NULL on all 8885 rows**, so the rollup's `apm` block is
+  `{"median_avg": N, "median_peak": null, "games_avg": N, "games_peak": 0}`.
+  The APM line must render only what exists and must not print a peak, an
+  em-dash, or a zero standing in for one.
+- A split's `games` may be **smaller** than the rollup's top-level `games`,
+  because unresolved outcomes are excluded from splits but still counted as
+  games played. The renderer must not treat that as an inconsistency.
+- **An unlinked player has NO `player_rollups` row at all** — not a row of
+  zeros. This is the first moment `"Statistics pending linking"` is
+  implementable, exactly as identity v2 §5 predicted, and 5a is where the
+  string finally appears.
+
+### Two debts this stage must clear
+
+1. **`/identity status` is missing half its spec.** Identity v2 §3 requires it
+   to report coverage *"plus which analysis features are gated below their
+   thresholds"*. It ships only the coverage counts, because until now no
+   feature actually gated on identity — any list would have been fiction.
+   From 5a it is real: a player without a rollup loses the scouting report,
+   and below `SPLIT_MIN_GAMES` they lose individual split lines. **5a is not
+   complete until `/identity status` names the gated features.**
+2. **The design's "Statistics pending linking" acceptance criterion.**
+   Identity v2 §5 explicitly defers it to stage 5 and says: *do not close
+   stage 5 without it.* It must appear on the scouting report, and the same
+   absence-of-rollup rule governs the other surfaces as they cut over.
+
+---
+
+## Task 5a — the scouting report
+
+**Files:** modify `bot/commands/stats.py` (the `/rank` + `/rank_detailed`
+scouting section, currently `bot/commands/stats.py:234-251`),
+`bot/commands/admin.py` (`/identity status`), `bot/web.py` (delete
+`player_overview_snapshot`), `bot/replay_stats/jobs.py` and/or
+`store.py` (stop calling `persona_store.refresh_match_users`); test
+`tests/test_stats_rank.py` (or the existing rank tests).
+
+**What goes.** The persona line (`snapshot["persona"]` — name, epithet,
+tagline) and the generated scout read (`snapshot["scout_report"]["description"]`,
+complete with its `re.sub` stripping "Recurring tags:" back out of prose that
+should never have contained it). `rs_player_personas` stops being written
+here; it is dropped in stage 6.
+
+**What arrives**, read from `player_rollups` for
+`community_for_channel(ctx.channel.id)`:
+- a **medal-rate** line — military and villager rates with the ranked-games
+  denominator
+- an **APM** line — median average, with its sample count; the peak is
+  omitted entirely while `games_peak` is 0, not rendered as a blank
+- the **top strategy, spawn and unit**, each with its win-loss split, and
+  each omitted individually when below `SPLIT_MIN_GAMES` — never shown with a
+  low-sample warning
+- for a user with **no rollup row**: exactly `"Statistics pending linking"`,
+  and nothing else in that field
+
+**Binding copy rule:** every number rendered must carry the sample it rests
+on. The whole point of retiring the persona stack is that it asserted
+personality where it had arithmetic; the replacement must not assert
+arithmetic where it has a sample of three.
+
+---
+
+## Task 5b — the quiz player bank
+
+`bot/quiz/player_bank.py` generates player-source questions live from
+`metric_boards` at post time. Day-parity source alternation is preserved:
+game days keep reading the committed `data/quiz_bank.json` schedule.
+
+DELETE: `utils/replay_quiz/` (parser, SQLite build, `build_questions`,
+weekly), `utils/quiz_gen/convert_player_bank.py`, `data/replay_quiz.db`,
+`data/question_bank.json`, `data/quiz_bank_player.json`,
+`data/replay_manifest.csv`, `data/profile_resolved.csv`, and the
+player-source branches of `utils/quiz_gen/build_schedule.py`.
+
+Note `tests/test_replay_stats_parity.py` is env-gated on `data/replay_quiz.db`
+and has been skipping all along; it goes with the database it guards.
+
+---
+
+## Task 5c — cards, insights, civ stats
+
+`/insights` reads `game_labels`; the `cls_*` dual-write in
+`bot/replay_stats/classification_sync.py` **stops**; `bot/civ_stats.py` reads
+the `civ_stats` table and its CSV seed fallback is deleted; card strategy
+chips read `game_labels`.
+
+Watch: `bot/replay_stats/card_query.py` keeps `SPAWN_PHRASES` (its 3-key
+display subset) — that is deliberate and separate from `game_labels`'
+11-key storage allowlist. Do not merge them.
+
+Also close here (flagged during stage 4): `bot/replay_stats/card_query.py`
+and `bot/commands/player_details.py` read `replay_events`/`replay_techs`
+directly. For a swept lean community those return empty and charts render as
+"no data" — the intended trade, but nothing says so and no test pins it. Add
+the note and the test before the sweeper's `DRY_RUN` is ever flipped.
+
+---
+
+## Task 5d — web repoint (minimal)
+
+Player API → `player_rollups` + `game_labels`; strategies page →
+`game_labels`; civ-stats API → `civ_stats`; luck page and any `cls_`-backed
+endpoint removed. Viewing-layer breakage beyond these repoints is accepted
+per the design; the community-first web redesign is a separate future
+project.
+
+Each substage: elaborate → TDD → deploy → verify checklist → progress note.
+
+---
+
 
 # Stage 6 — Final retirements
 
