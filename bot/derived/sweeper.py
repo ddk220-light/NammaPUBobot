@@ -66,7 +66,11 @@ written so that missing or unexpected data fails CLOSED (keeps the rows):
   2. The NEWEST link is older than RETENTION_DAYS. MAX(linked_at), not MIN: a
      replay re-linked yesterday is fresh even if its first link was a year ago.
      A NULL linked_at disqualifies the replay outright rather than being treated
-     as epoch 0, because "unknown" is not "old".
+     as epoch 0, because "unknown" is not "old" -- and it does so whether the
+     NULL sits beside another community's link or beside a second link inside
+     the SAME community, which is why the check is applied twice: once in
+     _LINKS_SQL's per-community collapse, where MAX() would otherwise skip the
+     NULL and hide it, and once in the HAVING over the collapsed set.
 
   3. Every linked community's derived-community rows were computed AFTER that
      community's newest link -- the summary that replaces this detail
@@ -213,8 +217,23 @@ _SUMMARY_SQL = (
 # replay_match_id -- two bot matches in one community can point at the same
 # replay (a re-report, a corrected pairing) -- so without this collapse a replay
 # would be judged once per bot match and the oldest of those links would decide.
+#
+# THE NULL CHECK LIVES HERE, INSIDE THE COLLAPSE, and not only in the HAVING that
+# reads this. SQL's MAX() SKIPS nulls, so a group holding one NULL link and one
+# 60-day-old link would emit a perfectly ordinary-looking `linked_at = OLD` and
+# arrive at the outer query having forgotten the NULL entirely -- the exact
+# re-report shape the paragraph above exists for, judged on the strength of a
+# link that says nothing about the unstamped one. The CASE makes an unknown
+# ANYWHERE in the group poison the whole group's answer, which is what "unknown
+# is not old" has to mean per community as well as across communities.
+#
+# bot/community.py declares linked_at notnull=True, so this can only bite a
+# database whose column predates that declaration -- _ensure_table never alters
+# an existing column's nullability, so production's stays nullable permanently
+# and this guard stays load-bearing rather than belt-and-braces.
 _LINKS_SQL = (
-	"SELECT replay_match_id, community_id, MAX(linked_at) AS linked_at "
+	"SELECT replay_match_id, community_id, "
+	"CASE WHEN COUNT(*) > COUNT(linked_at) THEN NULL ELSE MAX(linked_at) END AS linked_at "
 	"FROM match_replays GROUP BY replay_match_id, community_id"
 )
 
@@ -247,9 +266,11 @@ def _candidates_sql(tables):
 		# retention (no communities row) counts as non-lean and vetoes too.
 		"HAVING SUM(CASE WHEN c.retention = 'lean' THEN 0 ELSE 1 END) = 0 "
 		# (2) the window, measured from the newest link. An unknown linked_at vetoes
-		# outright, because SQL's MAX() SKIPS nulls: one NULL link beside one ancient
-		# link produces a perfectly ordinary-looking MAX and would pass the window on
-		# the strength of a link that says nothing about the NULL one.
+		# outright, ACROSS communities: one community with no stamped link beside
+		# another with an ancient one says nothing about the first. The mirror of
+		# this test WITHIN one community lives in _LINKS_SQL, because by the time a
+		# group reaches here it has already been collapsed and a plain MAX() would
+		# have skipped the NULL out of existence -- read that comment for the shape.
 		#
 		# This clause is REDUNDANT TODAY and kept deliberately. Condition (3) below
 		# already vetoes the same rows for free -- `summary.at > NULL` is NULL, so a
@@ -259,7 +280,9 @@ def _candidates_sql(tables):
 		# a hole. It stays because the two clauses assert different things: "unknown
 		# is not old" is a claim about the WINDOW and must not depend for its truth on
 		# the NULL semantics of a comparison in another condition, which a later
-		# COALESCE(summary.at, 0) would quietly take away.
+		# COALESCE(summary.at, 0) would quietly take away. (_LINKS_SQL's half is NOT
+		# redundant in that way -- a real test kills it: see tests/test_sweeper.py's
+		# test_a_null_linked_at_beside_an_ancient_one_in_the_SAME_community_is_kept.)
 		"AND SUM(CASE WHEN link.linked_at IS NULL THEN 1 ELSE 0 END) = 0 "
 		"AND MAX(link.linked_at) < %s "
 		# (3) every linked community's summary exists and post-dates that link.

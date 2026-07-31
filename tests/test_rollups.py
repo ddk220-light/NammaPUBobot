@@ -11,6 +11,8 @@ implementation, not merely to exercise the happy path:
     008_game_stats_has_production, and what it must never drift back to)
   * a mean where the contract says median
   * one shared apm sample count instead of the two the contract carries
+  * a game whose `winner` is NULL read through bool(), which scores an
+    unresolved outcome as a LOSS in every split it touches
   * the split floor dropped, so 2-game "tendencies" reach the reader
   * list ordering left to dict insertion order, so identical data rewrites
     a different blob every refresh
@@ -312,6 +314,54 @@ def test_a_label_row_with_no_matching_stat_row_is_ignored():
 	              + [_label(99, "scout_rush", "strategy")])          # unknown match
 	rollup = compute_rollup(stat_rows, label_rows, 5)
 	assert rollup["strategies"] == [dict(key="scout_rush", games=5, wins=5)]
+
+
+def test_a_game_whose_winner_is_unknown_is_dropped_from_every_split():
+	"""game_stats.winner is NULLABLE and mgz genuinely fails to resolve a winner
+	on some replays. Read through bool(), NULL is False -- so an unresolved game
+	scores as a LOSS in every strategy, spawn and unit split it touches, and the
+	player renders as 4-8 when they are 4-5 with 3 unknowns.
+
+	9 resolved games (4 won, 5 lost) plus 3 unresolved. `games` must be 9 in
+	every split, never 12: `games` and `wins` have to describe the same set or
+	their quotient is not a win rate."""
+	stat_rows = (
+		[_stat(i, winner=True) for i in range(1, 5)]
+		+ [_stat(i, winner=False) for i in range(5, 10)]
+		+ [_stat(i, winner=None) for i in range(10, 13)]
+	)
+	label_rows = ([_label(i, "scout_rush", "strategy") for i in range(1, 13)]
+	              + [_label(i, "spawn_isolated", "spawn") for i in range(1, 13)])
+	rollup = compute_rollup(stat_rows, label_rows, 5)
+	assert rollup["strategies"] == [dict(key="scout_rush", games=9, wins=4)]
+	assert rollup["spawns"] == [dict(key="spawn_isolated", games=9, wins=4)]
+	assert rollup["units"] == [dict(unit="Knight", games=9, wins=4)]
+
+
+def test_a_split_of_only_unresolved_games_is_omitted_rather_than_reading_as_all_losses():
+	# The starkest shape: five games of one strategy, none of them called. The
+	# honest answer is that there is nothing to say about it, not "0 wins in 5".
+	stat_rows = [_stat(i, winner=None) for i in range(1, 6)]
+	label_rows = [_label(i, "scout_rush", "strategy") for i in range(1, 6)]
+	rollup = compute_rollup(stat_rows, label_rows, 5)
+	assert rollup["strategies"] == []
+	assert rollup["units"] == []
+	assert rollup["medal_rates"]["games_ranked"] == 5, "the games themselves are not discarded"
+
+
+def test_an_unresolved_outcome_still_counts_toward_medal_rates_and_apm():
+	# The rule is scoped to the win/loss splits and nowhere else. medal_rates'
+	# denominator is has_production and apm's is the presence of an eAPM figure;
+	# neither claims anything about winning, so dropping the row from those too
+	# would throw away measurements that are perfectly good.
+	stat_rows = [
+		_stat(1, winner=None, avg_eapm=40, military_medal=1),
+		_stat(2, winner=None, avg_eapm=60),
+		_stat(3, winner=True, avg_eapm=80),
+	]
+	rollup = compute_rollup(stat_rows, [], 5)
+	assert rollup["medal_rates"] == dict(military=0.3333, villager=0.0, games_ranked=3)
+	assert rollup["apm"] == dict(median_avg=60, median_peak=None, games_avg=3, games_peak=0)
 
 
 def test_a_label_row_whose_kind_is_neither_is_dropped():

@@ -2495,8 +2495,10 @@ def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
 	assert "ctype=db.types.int" in decl.group(0), "column type drifted"
 	assert "notnull=True" in decl.group(0), "nullability drifted"
 	assert "default=0" in decl.group(0), (
-		"the declaration lost its DEFAULT — MySQL's strict mode refuses ADD COLUMN ... NOT NULL "
-		"with no default on a table that already holds rows, and identities always does")
+		"the declaration lost its DEFAULT — 009's DEFAULT '0' is what keeps a pre-009 container's "
+		"identities INSERTs (which omit bound_at) working through a rolling deploy, since MySQL's "
+		"strict mode rejects an INSERT that omits a NOT NULL column with no default. See the comment "
+		"above _M009_ADD_COLUMN, including why 008 deliberately does the opposite")
 
 	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
 		int_type = re.search(r'^\tint = "([^"]+)"', f.read(), re.M)

@@ -639,8 +639,21 @@ class DerivedRefresh:
 		timer, and why it is gated on "processed nothing" rather than "nothing is
 		pending".
 
-		Both drains are wrapped separately so a dead database on one cannot stop
-		the other from being attempted at all."""
+		THE TWO DRAINS ARE WRAPPED SO NEITHER CAN RAISE INTO think()'s TASK, and
+		that is ALL the wrapping does -- it is deliberately not failure isolation
+		between them. A rollup drain that raised RETURNS, and the community layer
+		is skipped for this whole pass.
+
+		That is the conservative reading and it is the intended one. The debounce
+		is "the rollup drain PROCESSED nothing", and a drain that died has no
+		answer to that question: `processed` is 0 because the count never
+		finished, not because there was no work. Running the community layer on
+		that 0 would rebuild every board in a community from inputs the per-user
+		layer is demonstrably still behind on -- precisely the guaranteed-wasted
+		scan the debounce exists to prevent -- and it would attempt that whole-
+		community scan on a pass where the database has already failed once.
+		Skipping costs one POLL_INTERVAL and nothing else, because this job holds
+		no state: the next pass re-derives both pending sets from scratch."""
 		now = int(time.time()) if now is None else now
 		processed = 0
 		try:

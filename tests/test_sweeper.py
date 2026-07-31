@@ -398,6 +398,48 @@ def test_a_null_linked_at_is_kept():
 		assert _detail_counts(db) == dict.fromkeys(sweeper.TARGET_TABLES, 1)
 
 
+def test_a_null_linked_at_beside_an_ancient_one_in_the_SAME_community_is_kept():
+	"""The half the two-community case above cannot reach. _LINKS_SQL collapses
+	per (replay, community) and MAX() SKIPS nulls, so a replay linked TWICE inside
+	one community -- the documented re-report / corrected-pairing shape -- with one
+	NULL stamp and one 60-day-old stamp presents a single perfectly ordinary
+	`linked_at = OLD` to the outer query. The HAVING's NULL check then has nothing
+	left to see, and the replay is swept on the strength of a link that says
+	nothing about the unstamped one.
+
+	Guarded inside the collapse itself, so an unknown anywhere in the group
+	poisons the group's answer.
+
+	Positive control below: the same fixture with both stamps present IS swept, so
+	this cannot pass by the sweeper simply having stopped working."""
+	db, _log = _fresh(dry_run=False)
+	_community(db, 1, boards_at=NOW, rollups_at=NOW, civ_at=NOW)
+	_link(db, 1, community_id=1, match_id=500, linked_at=None)
+	_link(db, 1, community_id=1, match_id=501, linked_at=OLD_LINK)
+	_detail(db, 1)
+
+	considered, _counts, deleted = _sweep()
+
+	assert considered == 0, "an unstamped link inside the group must veto the group"
+	assert deleted is False
+	assert _detail_counts(db) == dict.fromkeys(sweeper.TARGET_TABLES, 1)
+
+
+def test_two_stamped_links_in_the_same_community_still_sweep():
+	"""The positive control for the pair above: two links inside one community are
+	not themselves disqualifying, only an unstamped one is."""
+	db, _log = _fresh(dry_run=False)
+	_community(db, 1, boards_at=NOW, rollups_at=NOW, civ_at=NOW)
+	_link(db, 1, community_id=1, match_id=500, linked_at=OLD_LINK - DAY)
+	_link(db, 1, community_id=1, match_id=501, linked_at=OLD_LINK)
+	_detail(db, 1)
+
+	considered, _counts, _deleted = _sweep()
+
+	assert considered == 1
+	assert _detail_counts(db) == dict.fromkeys(sweeper.TARGET_TABLES, 0)
+
+
 # ── (3) the summary must demonstrably exist ───────────────────────────────────
 
 def test_a_community_with_no_summary_at_all_is_kept():

@@ -107,6 +107,33 @@ def _median(values):
 	return statistics.median(values) if values else None
 
 
+def has_known_outcome(stat_row):
+	"""Whether this game's result is resolved, i.e. belongs in a win/loss split.
+
+	game_stats.winner is NULLABLE (bot/derived/__init__.py), passed straight
+	through from replay_players.winner, which is itself nullable because mgz
+	genuinely cannot determine a winner on some replays. NULL means "nobody
+	knows", and this is the one place that distinction has to be honoured:
+	`bool(None)` is False, so an unresolved game read as a plain boolean is
+	scored as a LOSS -- silently, in every split it touches.
+
+	The rule is therefore the same one four sibling modules already take
+	(bot/civ_matcher.py, bot/civ_sync.py, bot/lobby/completed.py and this
+	package's civ_stats.py, all spelled `winner is not None`): an unresolved
+	outcome is DROPPED from the split rather than scored into it. civ_stats'
+	docstring argues the case in full -- counting an unknown into `games` alone
+	breaks the ratio `games`/`wins` is read as, and a player who is 4-5 with 3
+	unknowns would render as 4 wins from 12 games. Stage 5a prints that as a
+	record.
+
+	.get()ed rather than subscripted, unlike was_medal_eligible above, and the
+	asymmetry is deliberate: has_production is NOT NULL, so its absence can only
+	mean a caller's SELECT dropped the column and must raise. `winner` is
+	legitimately absent from a row, so there is nothing here to fail loudly
+	about."""
+	return stat_row.get("winner") is not None
+
+
 def _ranked_list(counts, key_name, split_min_games):
 	"""counts -> the contract's [{key_name, games, wins}] list.
 
@@ -151,6 +178,21 @@ def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES):
 	not been derived yet; counting it would let a split's `games` exceed the
 	user's own game count and its outcome could never be known.
 
+	THE THREE SPLITS COUNT ONLY GAMES WITH A RESOLVED OUTCOME. `games` and
+	`wins` inside strategies/spawns/units always describe the same set, so
+	their quotient is a real win rate rather than one deflated by every game
+	mgz could not call (see has_known_outcome). A row whose `winner` is NULL is
+	therefore absent from the join map entirely, which also drops that slot's
+	label rows -- the third reason a label row can join to nothing, alongside
+	the two above.
+
+	Deliberately NOT applied to the other two blocks. medal_rates' denominator
+	is has_production and apm's is the presence of an eAPM figure; neither
+	claims anything about winning, so an unresolved game is a perfectly good
+	sample for both. The top-level `games` column stays len(stat_rows) for the
+	same reason -- it is the user's game count, not a split's denominator -- so
+	a split's `games` can legitimately be smaller than it.
+
 	`split_min_games` defaults to this module's SPLIT_MIN_GAMES so the
 	default and the constant cannot drift, and stays an argument so tests can
 	pin the floor's behaviour rather than the value.
@@ -173,9 +215,11 @@ def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES):
 	avgs = [r["avg_eapm"] for r in stat_rows if r.get("avg_eapm") is not None]
 	peaks = [r["peak_eapm"] for r in stat_rows if r.get("peak_eapm") is not None]
 
+	# Resolved rows only, so membership doubles as "this slot is the user's AND
+	# its outcome is known" -- the single test the label join below needs.
 	winner_by_slot = {
 		(r.get("replay_match_id"), r.get("player_number")): bool(r.get("winner"))
-		for r in stat_rows
+		for r in stat_rows if has_known_outcome(r)
 	}
 
 	splits = dict(strategy={}, spawn={})
@@ -194,6 +238,8 @@ def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES):
 
 	units = {}
 	for r in stat_rows:
+		if not has_known_outcome(r):
+			continue
 		won = bool(r.get("winner"))
 		# Deduped per game: top_units should never repeat a unit, but if it
 		# ever did, one game would count twice and a unit could show more

@@ -1250,6 +1250,11 @@ async def _m007(db):
 # with the implicit default (0) as it adds the column; the UPDATE below then
 # gives every one of them its real value in the same body.
 # test_the_has_production_ddl_matches_the_ensure_table_declaration pins the pair.
+#
+# 009's ALTER below DOES carry a DEFAULT. Neither of the two is a mistake and
+# they do not disagree about what MySQL accepts — the asymmetry is about rollback
+# safety across a rolling deploy and is argued out in full in the comment above
+# _M009_ADD_COLUMN. This one is knowingly forward-only.
 _M008_ADD_COLUMN = "ALTER TABLE `game_stats` ADD COLUMN `has_production` TINYINT(1) NOT NULL"
 
 # The backfill. `has_production` is true iff the parser measured this slot's
@@ -1394,9 +1399,33 @@ async def _m008(db):
 # exactly the way core/DBAdapters/mysql.py's _mysql_column renders a default, so
 # the column a fresh install creates and the column this ALTER adds are
 # byte-identical (test_the_bound_at_ddl_matches_the_ensure_table_declaration
-# pins that). A default is required rather than optional: MySQL's strict mode
-# rejects ADD COLUMN ... NOT NULL with no default on a table that already holds
-# rows, and `identities` holds every binding in production.
+# pins that).
+#
+# WHY THE DEFAULT IS HERE, and it is NOT that the ALTER needs one. MySQL accepts
+# ADD COLUMN ... NOT NULL with no DEFAULT on a table that already holds rows — it
+# fills them with the type's implicit default as it adds the column, which is
+# exactly what 008 above relies on. (The engine that REFUSES that statement is
+# PostgreSQL, not MySQL; do not "restore" that reading here.) What MySQL's strict
+# mode does reject is a later INSERT that OMITS a NOT NULL column with no
+# default, and that is the real reason: this is a ROLLING deploy. Migrations run
+# on the new container while the OLD one is still serving, and its pre-009
+# bot/identity.py inserts `identities` rows with no `bound_at` in the column
+# list. Without a DEFAULT every one of those — every `/link`, every learn()
+# insert — fails for the length of the overlap. With it they land the placeholder
+# 0, which is the same value _M009_BACKFILL reads as "never set" and which errs
+# in the safe direction: 0 means "this binding predates every derived row", and
+# the first real binding move stamps it forward.
+#
+# THE ASYMMETRY WITH 008 IS DELIBERATE, so a future reader does not conclude 008
+# is broken. 008 ships NO default on purpose: `has_production`'s sole writer
+# validates its whole key set on every row, so a DEFAULT there could only ever be
+# reached by a writer that is already a bug, and it would turn that bug into a
+# silently unranked player instead of a loud error — reintroducing the exact
+# third-value ambiguity the column exists to remove. That makes 008 forward-only
+# and knowingly not rollback-safe: an old container's game_stats inserts DO fail
+# during its overlap window, which is why that deploy is timed for a quiet
+# moment. 009 buys rollback safety because it can, at no cost to meaning; 008
+# declines it because it cannot, without giving the column back its ambiguity.
 _M009_ADD_COLUMN = "ALTER TABLE `identities` ADD COLUMN `bound_at` BIGINT NOT NULL DEFAULT '0'"
 
 # Existing rows get last_seen_at, which is the tightest UPPER bound available on

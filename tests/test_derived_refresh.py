@@ -301,6 +301,29 @@ def test_both_profiles_feed_one_split_rather_than_two_halves():
 	assert strategies == [{"key": "archer_rush", "games": 5, "wins": 5}]
 
 
+def test_a_game_mgz_could_not_call_leaves_the_splits_alone_but_stays_the_players_game():
+	"""game_stats.winner is nullable all the way down from replay_players, and a
+	SELECT hands compute_rollup a real None for it. Scored through bool() that is
+	a LOSS in every split -- so this drives the whole path, storage included,
+	rather than trusting the pure unit tests to have covered the column's type."""
+	db, _log = _fresh()
+	_community(db)
+	_link(db, 11, 1)
+	for mid in range(1, 6):
+		_game(db, mid, 1, 11, winner=1)
+		_label(db, mid, 1, "archer_rush")
+	for mid in range(6, 9):
+		_game(db, mid, 1, 11, winner=None)
+		_label(db, mid, 1, "archer_rush")
+
+	asyncio.run(refresh.drain_rollups(T0 + 10))
+
+	row = _rollup_of(db, 1, 1)
+	assert row["games"] == 8, "every game the player played is still one of their games"
+	assert json.loads(row["rollup"])["strategies"] == [
+		dict(key="archer_rush", games=5, wins=5)], "only the resolved five are a win rate"
+
+
 def test_an_unlinked_player_gets_no_row_at_all():
 	"""The absence IS the signal stage 5a renders "Statistics pending linking"
 	from (identity v2 SS5), so an unlinked player must not produce a row of
@@ -441,6 +464,46 @@ def test_a_relink_moves_the_history_to_the_new_owner(monkeypatch):
 	assert _rollup_of(db, 1, 2) is None
 
 
+def test_a_linked_user_with_no_game_in_this_community_loses_the_row_rather_than_getting_zeros(
+		monkeypatch):
+	"""MUTANT GUARD: replacing refresh_user's "no stat rows -> delete" with a
+	write of an empty rollup.
+
+	The shape the `not profiles` branch cannot reach, and the one
+	test_a_relink_moves_the_history_to_the_new_owner does NOT cover: the user is
+	still linked -- they own another profile -- but nothing that profile played
+	belongs to THIS community. `not profiles` is False, so only the second guard
+	stands between them and a stored row of zeros.
+
+	A zeros row is not merely cosmetically wrong. It is stored while the data
+	does not imply it, which is pending case (2), so it is rewritten on every
+	pass forever; and because _run returns whenever the rollup drain processed
+	anything, the community layer behind it is starved permanently. All three
+	consequences are asserted below."""
+	db, _log = _fresh()
+	_community(db, 1, 900)
+	_community(db, 2, 901)
+	_link(db, 11, 1)
+	_link(db, 22, 1)
+	_game(db, 1, 1, 11, community_id=1)      # user 1's only game in community 1
+	_game(db, 2, 1, 22, community_id=2)      # profile 22 has only ever played in 2
+	asyncio.run(refresh.drain_rollups(T0 + 10))
+	assert _rollup_of(db, 1, 1)["games"] == 1
+
+	# An admin decides profile 11 was user 2's all along. User 1 keeps profile 22.
+	monkeypatch.setattr(identity, "time", _Clock(T0 + 150))
+	asyncio.run(identity.relink(11, 2, additional=True))
+
+	asyncio.run(refresh.jobs._run(now=T0 + 200))
+
+	assert _rollup_of(db, 1, 1) is None, "a user with no game here must have NO row, not zeros"
+	assert asyncio.run(refresh.pending_rollups(T0 + 300)) == [], (
+		"a stored row the data does not imply is pending forever")
+	asyncio.run(refresh.jobs._run(now=T0 + 230))
+	assert db.rows("metric_boards"), (
+		"a row rewritten on every pass would starve the community layer permanently")
+
+
 def test_a_name_only_observation_does_not_mark_anyone_stale(monkeypatch):
 	# learn() bumps last_seen_at on every replay ingest of a known profile and
 	# even on a refused claim. Keying staleness on that instead of on bound_at
@@ -458,6 +521,72 @@ def test_a_name_only_observation_does_not_mark_anyone_stale(monkeypatch):
 	assert asyncio.run(refresh.pending_rollups(T0 + 200)) == []
 	assert db.rows("identities", profile_id=11)[0]["last_seen_at"] == T0 + 150
 	assert db.rows("identities", profile_id=11)[0]["bound_at"] == T0
+
+
+def test_reasserting_a_binding_the_owner_already_holds_does_not_mark_them_stale(monkeypatch):
+	"""MUTANT GUARD: _overwrite_binding stamping bound_at unconditionally instead
+	of only when the owner actually changes.
+
+	_overwrite_binding is ALSO the path for two rewrites that move nothing --
+	`/link` re-run on a profile the caller already owns (it is documented as
+	idempotent and re-runnable) and an admin relink re-asserting one at `manual`
+	-- and both are ordinary things for a real user to do. Stamping them reports a
+	binding change that did not happen, and this comparison believes it: the whole
+	of that user's history is recomputed for nothing, every time. Confidence and
+	aoe2_name moving are deliberately not binding changes either, and the relink
+	half below moves the confidence tier to prove it.
+
+	test_a_name_only_observation_does_not_mark_anyone_stale covers learn()'s
+	refresh branch, which never reaches _overwrite_binding at all."""
+	db, _log = _fresh()
+	_community(db)
+	_link(db, 11, 1, bound_at=T0)          # stored at confidence `learned`
+	_game(db, 1, 1, 11, computed_at=T0)
+	asyncio.run(refresh.drain_rollups(T0 + 100))
+	assert asyncio.run(refresh.pending_rollups(T0 + 200)) == []
+
+	monkeypatch.setattr(identity, "time", _Clock(T0 + 150))
+	assert asyncio.run(identity.link_self(11, 1, "name11")) is True   # `/link` re-run
+
+	assert db.rows("identities", profile_id=11)[0]["confidence"] == "self", "the rewrite happened"
+	assert db.rows("identities", profile_id=11)[0]["bound_at"] == T0
+	assert asyncio.run(refresh.pending_rollups(T0 + 200)) == []
+
+	monkeypatch.setattr(identity, "time", _Clock(T0 + 160))
+	asyncio.run(identity.relink(11, 1, additional=True))              # admin re-asserts it
+
+	assert db.rows("identities", profile_id=11)[0]["confidence"] == "manual", "and so did this one"
+	assert db.rows("identities", profile_id=11)[0]["bound_at"] == T0
+	assert asyncio.run(refresh.pending_rollups(T0 + 200)) == []
+
+
+def test_a_refused_claim_does_not_mark_the_stored_owner_stale(monkeypatch):
+	"""MUTANT GUARD: stamping bound_at on learn()'s REFUSED branch.
+
+	That branch fires on every ingest where a lower-tier source disagrees with the
+	stored owner -- an alias the deduction solver keeps re-proposing, say -- and
+	nothing about the binding moves: the claim is recorded as a conflict and the
+	stored owner stands. Stamping it would mark the profile's owner stale on every
+	single ingest, which is the precise failure bound_at exists to avoid and the
+	reason last_seen_at was rejected for this job.
+
+	The claimant is marked stale too, through the conflicts half of the watermark
+	union, so this one mutation reaches both users at once."""
+	db, _log = _fresh()
+	_community(db)
+	_link(db, 11, 1, bound_at=T0)          # user 1 owns it at `learned`
+	_game(db, 1, 1, 11, computed_at=T0)
+	asyncio.run(refresh.drain_rollups(T0 + 100))
+	assert asyncio.run(refresh.pending_rollups(T0 + 200)) == []
+
+	monkeypatch.setattr(identity, "time", _Clock(T0 + 150))
+	assert asyncio.run(identity.learn(11, 2, "seed")) is False, "a weaker source must not win"
+
+	assert db.rows("identity_conflicts")[0]["claimed_user_id"] == 2, "the claim was recorded"
+	assert db.rows("identities", profile_id=11)[0]["user_id"] == 1, "the owner stands"
+	assert db.rows("identities", profile_id=11)[0]["last_seen_at"] == T0 + 150
+	assert db.rows("identities", profile_id=11)[0]["bound_at"] == T0
+	assert asyncio.run(refresh.pending_rollups(T0 + 200)) == []
 
 
 # ── staleness, convergence and the backstop ──────────────────────────────────
@@ -559,6 +688,14 @@ def test_one_user_failing_does_not_abort_the_batch():
 
 
 def test_a_permanently_failing_user_is_quarantined_and_stops_blocking_the_batch():
+	"""MUTANT GUARD: _quarantined() returning an empty set.
+
+	The two obvious assertions -- the attempt counter, and every other user
+	eventually getting a rollup -- both hold WITHOUT quarantining, because the
+	broken user is only one of BATCH slots and the rest drain anyway. So does
+	greping the log for "quarantined in this process": that phrase is emitted
+	unconditionally, whatever the count. The two that actually bite are the COUNT
+	in the log line, and the number of times the broken user was retried."""
 	db, log = _fresh()
 	_community(db)
 	for user_id in range(1, refresh.BATCH + 3):
@@ -573,7 +710,12 @@ def test_a_permanently_failing_user_is_quarantined_and_stops_blocking_the_batch(
 
 	assert refresh._rollup_attempts[(1, 1)] >= refresh.MAX_ATTEMPTS
 	assert {r["user_id"] for r in db.rows("player_rollups")} == set(range(2, refresh.BATCH + 3))
-	assert "quarantined in this process" in log.info_lines[-1]
+	assert "1 of those quarantined in this process, 0 attemptable" in log.info_lines[-1], (
+		"the log line has to say how many of the stale rows this process has given up on -- "
+		"the phrase alone is printed whether the count is 0 or not")
+	attempts = [line for line in log.error_lines if "user 1 (attempt" in line]
+	assert len(attempts) == refresh.MAX_ATTEMPTS, (
+		"a quarantined row must stop being attempted, not merely be counted")
 
 
 def test_the_log_line_reports_real_counts():
@@ -847,6 +989,10 @@ def test_think_survives_a_broken_frame_time():
 
 
 def test_a_pass_that_cannot_read_the_database_still_attempts_nothing_worse():
+	"""A dead database is caught and logged rather than crashing the pass -- and
+	the community layer is NOT attempted afterwards. With _ExplodingDB a reached
+	drain_communities would raise and log its own line, so the absence of that
+	line is the proof."""
 	db, log = _fresh()
 	_install(_ExplodingDB(), log)
 	try:
@@ -855,6 +1001,46 @@ def test_a_pass_that_cannot_read_the_database_still_attempts_nothing_worse():
 		_install(db, log)
 
 	assert any("rollup drain error (ignored)" in line for line in log.error_lines)
+	assert not any("community drain error" in line for line in log.error_lines), (
+		"a failed rollup drain must end the pass, not fall through to the community layer")
+
+
+def test_a_failed_rollup_drain_skips_the_community_layer_for_that_pass(monkeypatch):
+	"""The debounce is "the rollup drain PROCESSED nothing", and a drain that
+	raised cannot answer that: `processed` is 0 because the count never finished,
+	not because there was no work. Running the community layer on that 0 would
+	rebuild every board from inputs the per-user layer is still behind on -- the
+	exact wasted whole-community scan the debounce exists to prevent -- on a pass
+	where the database has already failed once.
+
+	Pinned with stubs rather than a broken fixture so the drains are isolated
+	from each other: the community drain here would succeed if it were reached."""
+	db, log = _fresh()
+	_community(db)
+	_link(db, 11, 1)
+	_game(db, 1, 1, 11)
+	reached = []
+
+	async def _boom(_now):
+		raise RuntimeError("database is down")
+
+	async def _record(now):
+		reached.append(now)
+		return 0
+
+	monkeypatch.setattr(refresh, "drain_rollups", _boom)
+	monkeypatch.setattr(refresh, "drain_communities", _record)
+	asyncio.run(refresh.jobs._run(now=T0 + 10))
+
+	assert reached == [], "the community drain must not run on a pass whose rollup drain died"
+	assert any("rollup drain error (ignored)" in line for line in log.error_lines)
+
+	# ...and the very next pass, with the database back, reaches it -- so the
+	# skip is one pass long, not a state the job can get stuck in.
+	monkeypatch.undo()
+	asyncio.run(refresh.jobs._run(now=T0 + 40))     # drains the one pending rollup
+	asyncio.run(refresh.jobs._run(now=T0 + 70))
+	assert len(db.rows("metric_boards")) == len(boards.METRICS)
 
 
 async def _think_and_settle(job, frame_time):
