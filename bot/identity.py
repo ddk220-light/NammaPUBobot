@@ -231,6 +231,31 @@ async def _record_conflict(profile_id, claimed_user_id, source, noticed_at, stat
 	), on_duplicate="ignore")
 
 
+async def record_refused_claim(profile_id, claimed_user_id, source) -> None:
+	""" Record a binding an automated source COULD have written and deliberately
+	did not — the public door onto identity_conflicts for a writer that stopped
+	itself, as opposed to learn()/link_self() being stopped by the lattice.
+
+	bot/identity_solver.py is the caller: it refuses to auto-apply a conclusion
+	that depended on the existing bindings being correct, and one that would
+	hand a user a second profile (see that module's docstring, rules 1 and 2).
+	Those are exactly the cases a human has to settle, and identity_conflicts is
+	where this bot puts claims a human has to settle. The row lands `open`, at
+	`source`'s own tier, so `/identity conflicts` shows it beside every claim
+	that lost a lattice comparison; INSERT IGNORE on the primary key means
+	re-running the solver on every trigger never accumulates duplicates.
+
+	Both ids are required. identity_conflicts' primary key is
+	(profile_id, claimed_user_id), so a NULL in either would be a write error
+	surfacing far from whatever produced the None — refused here instead. """
+	if profile_id is None or claimed_user_id is None:
+		raise ValueError(
+			f"record_refused_claim needs both ids, got profile_id={profile_id!r} "
+			f"claimed_user_id={claimed_user_id!r}")
+	_rank(source)  # same fail-fast as learn(); an out-of-lattice tier is unreadable
+	await _record_conflict(profile_id, claimed_user_id, source, int(time.time()))
+
+
 async def _insert_binding(profile_id, user_id, aoe2_name, confidence, now) -> None:
 	""" The first-ever row for `profile_id`. Nothing can be displaced, so
 	nothing is recorded in identity_conflicts. """
@@ -271,10 +296,18 @@ async def _overwrite_binding(profile_id, user_id, confidence, aoe2_name, existin
 	invalidate_cache()
 
 
-async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
+async def learn(profile_id, user_id, source, aoe2_name=None) -> bool:
 	""" Record that `profile_id` belongs to `user_id`, as observed by the
 	automated `source` (one of CONFIDENCE_ORDER). This is the path every
 	automated writer takes, and it can never clobber a human's correction.
+
+	Returns whether the binding IS now (profile_id -> user_id) — the same
+	question link_self() answers, and for the same reason: this function can
+	refuse, so a caller that reports or counts what it did cannot assume a
+	call was a write. True covers all three accepting branches below (inserted,
+	moved, or already this user); False is the refusal, where the stored owner
+	stands and the incoming claim was recorded as a conflict instead. Callers
+	that only want the write are free to ignore it.
 
 	The precedence rule, by the rank of `source` against the stored row's
 	confidence:
@@ -337,7 +370,7 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 
 	if existing is None:
 		await _insert_binding(profile_id, user_id, aoe2_name, source, now)
-		return
+		return True
 
 	new_rank, stored_rank = _rank(source), _rank(existing["confidence"])
 
@@ -345,7 +378,7 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 	# unowned row, which has no claim to lose.
 	if new_rank > stored_rank or (new_rank == stored_rank and existing["user_id"] is None):
 		await _overwrite_binding(profile_id, user_id, source, aoe2_name, existing, now)
-		return
+		return True
 
 	if existing["user_id"] == user_id:
 		# Same owner at the same or a lower tier: refresh the observation, not
@@ -356,7 +389,7 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 			last_seen_at=now,
 		), keys=dict(profile_id=profile_id))
 		invalidate_cache()
-		return
+		return True
 
 	# Refused: a same-or-lower-tier claim that disagrees with the stored owner.
 	# Recorded whatever tier that stored row holds (see the docstring), unless
@@ -366,6 +399,7 @@ async def learn(profile_id, user_id, source, aoe2_name=None) -> None:
 		await _record_conflict(profile_id, user_id, source, now)
 	await db.update("identities", dict(last_seen_at=now), keys=dict(profile_id=profile_id))
 	invalidate_cache()
+	return False
 
 
 async def link_self(profile_id, user_id, observed_name) -> bool:

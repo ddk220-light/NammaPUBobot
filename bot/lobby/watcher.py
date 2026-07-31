@@ -10,8 +10,9 @@ appears — confirms the LINK: captures the gameId + slot profileIds and persist
 stops; the captain-confirmed result loop is Phase 3.
 
 It no longer infers identity. The by-elimination heal that used to run in
-``_confirm`` had no roster guard and could write a wrong global binding; the
-paired-match deduction solver (bot/identity_solver.py) replaces it.
+``_confirm`` is replaced by the paired-match deduction solver
+(bot/identity_solver.py), whose docstring holds the one canonical explanation of
+why elimination was unsafe ("WHAT THIS MODULE REPLACED").
 
 Strictly best-effort + isolated: the whole run loop is wrapped, every Discord/DB
 call is guarded, and match.py creates/destroys watchers inside try/except. Nothing
@@ -151,13 +152,8 @@ class LobbyWatcher:
 		self.linked = True
 		self.game_id = mid
 		pids = sorted(reducer.profile_ids(entry))
-		# No identity inference happens here any more. This used to pin the lone
-		# leftover (user, profile) pair by elimination, which had no roster guard
-		# at all: one outsider in the lobby plus one absent match player made the
-		# two leftovers a WRONG pair, written as a global binding. Identity is
-		# now deduced by bot/identity_solver.py from the paired match's two
-		# rosters, scored across every paired game, with a roster-size guard and
-		# a margin threshold — see spec section 4.
+		# No identity inference happens here any more; bot/identity_solver.py
+		# deduces it from the paired match instead (see this module's docstring).
 		await self._persist("filling")
 		await self._safe_edit(embeds.lobby_embed(
 			entry, mid,

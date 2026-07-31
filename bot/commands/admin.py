@@ -400,12 +400,16 @@ async def identity_status(ctx):
 
 
 async def identity_conflicts(ctx):
-	""" Read-only lookup: every open profile_id<->user_id disagreement that
-	learn() or migration 003_seed_identities recorded instead of silently
-	discarding a losing claim (see bot/identity.py's identity_conflicts
-	declaration and open_conflicts()). There is no resolution UI yet -- this
-	just surfaces what open_conflicts() already tracks so a moderator isn't
-	blind to it in the meantime; nothing here changes `status`. """
+	""" Read-only lookup: every open profile_id<->user_id claim that was not
+	applied -- recorded instead of silently discarded by learn()/link_self()
+	losing a lattice comparison, by migration 003_seed_identities, or by
+	bot/identity_solver.py refusing to auto-apply its own conclusion (an unstable
+	one, or one that would hand a member a second profile; those two show with no
+	current owner, and `identity link ... additional: True` is how a genuine
+	second account is granted). See bot/identity.py's identity_conflicts
+	declaration and open_conflicts(). There is no resolution UI yet -- this just
+	surfaces what open_conflicts() already tracks so a moderator isn't blind to
+	it in the meantime; nothing here changes `status`. """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 
 	conflicts = await bot.identity.open_conflicts()

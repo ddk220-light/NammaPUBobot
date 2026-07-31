@@ -522,6 +522,98 @@ def test_learn_blocked_conflict_is_not_duplicated_on_a_repeat_observation(monkey
 	assert len(fake.identity_conflicts) == 1
 
 
+# ─── learn: what it reports back ─────────────────────────────────────────
+#
+# learn() can refuse, so a caller that counts or reports what it did (the
+# deduction solver's run_for_community does both) cannot assume a call was a
+# write. Every branch's answer is pinned here.
+
+def test_learn_reports_true_when_it_inserts_a_new_binding(monkeypatch):
+	_setup(monkeypatch)
+
+	assert asyncio.run(identity.learn(111, 222, "learned")) is True
+
+
+def test_learn_reports_true_when_a_higher_tier_moves_the_binding(monkeypatch):
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "seed"))
+
+	assert asyncio.run(identity.learn(111, 999, "manual")) is True
+
+
+def test_learn_reports_true_when_the_binding_is_already_that_user(monkeypatch):
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
+
+	# Refused as a WRITE (lower tier), but the binding IS this user, which is
+	# what the return value answers.
+	assert asyncio.run(identity.learn(111, 222, "learned")) is True
+
+
+def test_learn_reports_false_when_it_is_refused(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+
+	# Equal tier, different user: the v2 tie rule refuses, records a conflict,
+	# and the caller must be able to tell that nothing was bound.
+	assert asyncio.run(identity.learn(111, 999, "learned")) is False
+	assert fake.identities[0]["user_id"] == 222
+	assert len(fake.identity_conflicts) == 1
+
+
+# ─── record_refused_claim ────────────────────────────────────────────────
+
+def test_record_refused_claim_opens_a_conflict(monkeypatch):
+	""" The deduction solver's door onto identity_conflicts for the conclusions
+	it stops itself from writing (bot/identity_solver.py rules 1 and 2). """
+	fake = _setup(monkeypatch)
+
+	asyncio.run(identity.record_refused_claim(111, 222, "learned"))
+
+	assert fake.identity_conflicts == [dict(
+		profile_id=111, claimed_user_id=222, source="learned",
+		noticed_at=fake.identity_conflicts[0]["noticed_at"], status="open")]
+	# It records only; the binding table is not touched.
+	assert fake.identities == []
+
+
+def test_record_refused_claim_does_not_duplicate_on_a_repeat_run(monkeypatch):
+	""" The solver re-derives everything on every trigger (after each replay
+	ingest, each /link), so the same refusal is re-observed constantly. """
+	fake = _setup(monkeypatch)
+
+	asyncio.run(identity.record_refused_claim(111, 222, "learned"))
+	asyncio.run(identity.record_refused_claim(111, 222, "learned"))
+
+	assert len(fake.identity_conflicts) == 1
+
+
+def test_record_refused_claim_refuses_a_null_id(monkeypatch):
+	""" identity_conflicts' primary key is (profile_id, claimed_user_id): a NULL
+	in either would be a write error surfacing far from whatever produced the
+	None. """
+	fake = _setup(monkeypatch)
+
+	for profile_id, user_id in ((None, 222), (111, None), (None, None)):
+		try:
+			asyncio.run(identity.record_refused_claim(profile_id, user_id, "learned"))
+		except ValueError:
+			continue
+		raise AssertionError(f"record_refused_claim({profile_id}, {user_id}) must raise ValueError")
+	assert fake.identity_conflicts == []
+
+
+def test_record_refused_claim_rejects_an_unknown_source(monkeypatch):
+	fake = _setup(monkeypatch)
+
+	try:
+		asyncio.run(identity.record_refused_claim(111, 222, "trusted"))
+	except ValueError:
+		assert fake.identity_conflicts == []
+		return
+	raise AssertionError("record_refused_claim with an unknown confidence source must raise ValueError")
+
+
 # ─── open_conflicts ──────────────────────────────────────────────────────
 
 def test_open_conflicts_returns_empty_list_when_none_open(monkeypatch):

@@ -6,12 +6,9 @@ production (0 rows) and is dropped in a later stage.
 
 Nothing here WRITES identity any more. This module used to learn bindings from
 roster-confirmed lobbies by elimination (``eliminate`` + ``link``); both are
-deleted in identity v2 (spec section 4). Elimination pinned a pair on counts
-alone with no roster guard, so one outsider in the lobby plus one absent match
-player left two leftovers that were not each other — written as a global
-binding. bot/identity_solver.py deduces the same thing from the paired match's
-two rosters, scored across every paired game, with a roster-size guard and a
-margin threshold.
+deleted in identity v2 (spec section 4) and replaced by bot/identity_solver.py.
+Why elimination was unsafe is stated once, in that module's docstring ("WHAT
+THIS MODULE REPLACED"); do not restate it here.
 
 What survives is the read: ``known_for`` powers the optional winner-name hint
 and per-player civ attribution in bot/lobby/completed.py, both best-effort. The

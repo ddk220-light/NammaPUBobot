@@ -886,6 +886,17 @@ rejected) — MIN_MARGIN=0.50 sits in that gap. Independent name-corroboration
 of the 11: ~8 show visible name overlap; the other 3 have no name
 relationship at all, which is the population this solver exists to serve.
 
+> **Superseded by measurement — `bot/identity_solver.py`'s module docstring is
+> the authority, not this paragraph.** Re-measured against the shipped module:
+> the "11 of 39 at margin 0.76–1.00" figures describe only the seeded scenario
+> (48 curated pairs already in `known`), which is the *least* interesting one.
+> From a cold start — the partner-community case this feature exists for — the
+> accepted band runs down to **0.50**, with three bindings sitting exactly ON
+> the floor. The gap is also **conditional**: "nothing rejected above 0.33"
+> holds only among profiles that already clear ratio ≥ 0.90; unconditioned, the
+> strongest rejected margin is **0.65**. The thresholds stand; the "wide clean
+> gap" framing does not.
+
 **Strict intersection was tried and REJECTED**: it produced 127 contradictions
 and 11 empty candidate sets on real data (substitutes and lobby guests mean a
 profile's owner is not on the matching side in literally every game). Scoring
