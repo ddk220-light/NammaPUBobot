@@ -182,6 +182,24 @@ async def names_for_profiles(profile_ids) -> dict:
 	return out
 
 
+async def confidence_for_profiles(profile_ids) -> dict:
+	""" {profile_id: confidence} for every profile_id in `profile_ids` that has
+	a stored row. Unknown profile ids are simply absent.
+
+	The tier is what separates a guess from a decision — `learned` is the
+	deduction solver's arithmetic, `manual` is a human's instruction — so an
+	admin reading a member's profiles needs it to know whether a wrong-looking
+	link is something to correct or something somebody already chose. Kept here
+	beside names_for_profiles rather than read from `identities` at the call
+	site: this module owns the table, and every reader goes through it. """
+	out = {}
+	for pid in profile_ids:
+		row = await db.select_one(["confidence"], "identities", where={"profile_id": pid})
+		if row and row["confidence"]:
+			out[pid] = row["confidence"]
+	return out
+
+
 def _rank(confidence):
 	if confidence not in CONFIDENCE_ORDER:
 		raise ValueError(f"_rank: unknown confidence {confidence!r}, expected one of {CONFIDENCE_ORDER}")
@@ -541,6 +559,85 @@ async def open_conflicts() -> list[dict]:
 		if live:
 			out.append(dict(profile_id=profile_id, current_owner=current_owner, claims=live))
 	return out
+
+
+# The window coverage is measured over. 90 days is "who plays here now": long
+# enough that a fortnight off does not drop somebody out of the count, short
+# enough that the number stays actionable. A lifetime count would include
+# players who left years ago and read as a permanent failure no amount of
+# linking could fix. Command copy quotes this constant rather than restating
+# the number, so the figure and its caption can never disagree.
+COVERAGE_WINDOW_DAYS = 90
+
+# Every distinct Discord player a community has seen in a recent window, from
+# the bot's OWN match records (not the replay side): match_players is written
+# for every reported match, so this is the full population that identity
+# coverage is measured against.
+#
+# Scoped through community_channels, so the number a moderator is shown
+# describes their community and not the whole database. The join to `matches`
+# carries both keys (match_id AND channel_id), matching identity_solver's
+# _DISCORD_ROSTERS_SQL — match_players stores channel_id denormalised and its
+# primary key is (match_id, user_id).
+#
+# `matches` / `match_players` are bot/stats/stats.py's tables and
+# `community_channels` is bot/community.py's; this module only ever READS
+# them. Keeping the read here rather than in the command handler is the point
+# of the function (see coverage_for_community).
+_WINDOW_PLAYERS_SQL = (
+	"SELECT DISTINCT mp.user_id AS user_id "
+	"FROM match_players mp "
+	"JOIN matches m ON m.match_id = mp.match_id AND m.channel_id = mp.channel_id "
+	"JOIN community_channels cc ON cc.channel_id = m.channel_id "
+	"WHERE cc.community_id = %s AND m.reported_at > %s AND mp.user_id IS NOT NULL"
+)
+
+
+async def coverage_for_community(community_id, days=COVERAGE_WINDOW_DAYS) -> dict:
+	""" How much of a community is actually linked:
+
+	  {"players": int, "linked": int, "unlinked": int, "conflicts": int}
+
+	`players` is the distinct Discord users who appeared in a reported match in
+	this community in the last `days`; `linked` is how many of those own at
+	least one AoE2 profile. That ratio is the one number that says whether the
+	analysis features work here at all — every one of them resolves a player
+	through `identities`, and an unlinked player is silently missing from all of
+	them. Spec §3: silent feature-failure is replaced by a number an admin can
+	act on.
+
+	Counted per PERSON, not per row and not per profile: a player who appeared
+	in forty matches is one player, and one of the five production users who own
+	three profiles each is one linked player, not three.
+
+	The window matters as much as the ratio. Someone who last played two years
+	ago is not a coverage gap anybody can chase, so a lifetime count would read
+	as a permanent failure that no amount of linking could ever fix.
+
+	`conflicts` is deliberately NOT community-scoped: identity_conflicts has no
+	community column, because a profile_id<->user_id claim is global truth (see
+	this module's docstring). With one community in production that distinction
+	is invisible; a second one would see the first's conflict count here. Fixing
+	that means giving identity_conflicts a community — a schema change, not a
+	filter — and `/identity conflicts` has the same global scope today.
+
+	Read-only, and used by `/identity status` today and the web UI later — which
+	is the whole reason the query lives in this module rather than inline in a
+	command handler. """
+	cutoff = int(time.time()) - days * 86400
+	rows = await db.fetchall(_WINDOW_PLAYERS_SQL, [community_id, cutoff]) or []
+	user_ids = {row["user_id"] for row in rows if row["user_id"] is not None}
+
+	# profiles_for_users OMITS users who own nothing (never maps them to []), so
+	# its size IS the linked count — no filtering of empty lists needed here.
+	linked = len(await profiles_for_users(user_ids))
+
+	return dict(
+		players=len(user_ids),
+		linked=linked,
+		unlinked=len(user_ids) - linked,
+		conflicts=len(await open_conflicts()),
+	)
 
 
 def invalidate_cache() -> None:

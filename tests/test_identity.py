@@ -9,7 +9,9 @@ test file.
 """
 import asyncio
 import importlib.util
+import sqlite3
 import sys
+import time
 import types
 from enum import IntEnum
 from pathlib import Path
@@ -1062,6 +1064,133 @@ def test_link_self_unlink_and_relink_each_invalidate_the_cache(monkeypatch):
 	assert identity._cache_generation > after_relink
 
 
+# ─── coverage_for_community ─────────────────────────────────────────────
+# The number `/identity status` exists to show. It lives here, not inline in
+# the command handler, so the future web UI reports the same figure from the
+# same query rather than a second one that drifts.
+
+
+class _CoverageFakeDb(FakeDb):
+	""" FakeDb (identities/identity_conflicts as in-memory lists, so the tests
+	below can set links up through the real learn()/link_self()) plus a genuine
+	sqlite3 database holding the three tables the coverage query joins over.
+
+	fetchall() runs the module's ACTUAL SQL string, swapping only MySQL's %s
+	placeholder for sqlite's ? — so a wrong join key or a mistyped column fails
+	here instead of in production. A Python re-implementation of the join would
+	have agreed with whatever the query happened to say, which is exactly the
+	bug class this query can have. """
+
+	def __init__(self):
+		super().__init__()
+		self.sqlite = sqlite3.connect(":memory:")
+		self.sqlite.row_factory = sqlite3.Row
+		self.sqlite.executescript(
+			"CREATE TABLE matches (match_id INT, channel_id INT, reported_at INT);"
+			"CREATE TABLE match_players (match_id INT, channel_id INT, user_id INT);"
+			"CREATE TABLE community_channels (channel_id INT, community_id INT);"
+		)
+
+	def enroll(self, channel_id, community_id):
+		self.sqlite.execute("INSERT INTO community_channels VALUES (?, ?)", (channel_id, community_id))
+
+	def played(self, match_id, channel_id, reported_at, user_ids):
+		self.sqlite.execute("INSERT INTO matches VALUES (?, ?, ?)", (match_id, channel_id, reported_at))
+		for user_id in user_ids:
+			self.sqlite.execute("INSERT INTO match_players VALUES (?, ?, ?)", (match_id, channel_id, user_id))
+
+	async def fetchall(self, sql, params=None):
+		self.select_calls += 1
+		return [dict(row) for row in self.sqlite.execute(sql.replace("%s", "?"), list(params or []))]
+
+
+def _coverage_setup(monkeypatch):
+	fake = _CoverageFakeDb()
+	monkeypatch.setattr(identity, "db", fake)
+	identity.invalidate_cache()
+	return fake
+
+
+def test_coverage_for_community_counts_distinct_players_in_the_window(monkeypatch):
+	""" The shape of the live figure: 49 distinct users played in the last 90
+	days, 35 of them linked. A player who appears in several matches is one
+	player, not one per match. """
+	fake = _coverage_setup(monkeypatch)
+	now = int(time.time())
+	fake.enroll(channel_id=10, community_id=7)
+	fake.played(1, 10, now - 86400, [111, 222, 333])
+	fake.played(2, 10, now - 2 * 86400, [111, 222])  # the same people again
+	asyncio.run(identity.learn(9001, 111, "self"))
+
+	assert asyncio.run(identity.coverage_for_community(7)) == dict(
+		players=3, linked=1, unlinked=2, conflicts=0)
+
+
+def test_coverage_for_community_excludes_players_outside_the_window(monkeypatch):
+	""" "Players seen in the last 90 days" is the number an admin can act on —
+	somebody who last played two years ago is not a coverage gap to chase. """
+	fake = _coverage_setup(monkeypatch)
+	now = int(time.time())
+	fake.enroll(channel_id=10, community_id=7)
+	fake.played(1, 10, now - 10 * 86400, [111])
+	fake.played(2, 10, now - 200 * 86400, [222])
+
+	result = asyncio.run(identity.coverage_for_community(7))
+
+	assert result["players"] == 1
+	assert result["unlinked"] == 1
+
+
+def test_coverage_for_community_ignores_another_communitys_channels(monkeypatch):
+	""" Multi-tenancy: the count a moderator is shown must describe THEIR
+	community, so the window is scoped through community_channels. """
+	fake = _coverage_setup(monkeypatch)
+	now = int(time.time())
+	fake.enroll(channel_id=10, community_id=7)
+	fake.enroll(channel_id=20, community_id=8)
+	fake.played(1, 10, now - 86400, [111])
+	fake.played(2, 20, now - 86400, [222, 333])
+
+	assert asyncio.run(identity.coverage_for_community(7))["players"] == 1
+	assert asyncio.run(identity.coverage_for_community(8))["players"] == 2
+
+
+def test_coverage_for_community_counts_a_multi_profile_owner_once(monkeypatch):
+	""" 5 production users own several profiles (up to 3). "linked" counts
+	PEOPLE, so owning three profiles must not report three linked players out
+	of a community of one. """
+	fake = _coverage_setup(monkeypatch)
+	now = int(time.time())
+	fake.enroll(channel_id=10, community_id=7)
+	fake.played(1, 10, now - 86400, [111])
+	asyncio.run(identity.learn(9001, 111, "self"))
+	asyncio.run(identity.learn(9002, 111, "manual"))
+
+	assert asyncio.run(identity.coverage_for_community(7)) == dict(
+		players=1, linked=1, unlinked=0, conflicts=0)
+
+
+def test_coverage_for_community_reports_open_conflicts(monkeypatch):
+	fake = _coverage_setup(monkeypatch)
+	now = int(time.time())
+	fake.enroll(channel_id=10, community_id=7)
+	fake.played(1, 10, now - 86400, [111])
+	asyncio.run(identity.learn(9001, 111, "learned"))
+	asyncio.run(identity.learn(9001, 222, "learned"))  # refused -> one open conflict
+
+	assert asyncio.run(identity.coverage_for_community(7))["conflicts"] == 1
+
+
+def test_coverage_for_community_reports_zeros_for_a_silent_community(monkeypatch):
+	""" A community with no matches in the window must answer 0/0, not crash on
+	an empty result set. """
+	fake = _coverage_setup(monkeypatch)
+	fake.enroll(channel_id=10, community_id=7)
+
+	assert asyncio.run(identity.coverage_for_community(7)) == dict(
+		players=0, linked=0, unlinked=0, conflicts=0)
+
+
 # ─── admin identity commands (bot/commands/admin.py) ────────────────────
 # bot/commands/admin.py does `from nextcord import Member, Embed, Colour`,
 # `from core.utils import seconds_to_str, get_nick` and `import bot`. Under
@@ -1174,7 +1303,7 @@ def _load_link_module(monkeypatch):
 def test_identity_link_requires_admin_permission(monkeypatch):
 	admin = _load_admin_module(monkeypatch)
 	calls = []
-	monkeypatch.setattr(identity, "learn", lambda *a, **k: calls.append((a, k)))
+	monkeypatch.setattr(identity, "relink", lambda *a, **k: calls.append((a, k)))
 	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
 
 	try:
@@ -1189,23 +1318,14 @@ def test_identity_link_requires_admin_permission(monkeypatch):
 
 def test_identity_link_records_a_brand_new_mapping(monkeypatch):
 	admin = _load_admin_module(monkeypatch)
-
-	async def _user_for_profile(profile_id):
-		return None
-
-	learn_calls = []
-
-	async def _learn(profile_id, user_id, source, aoe2_name=None):
-		learn_calls.append((profile_id, user_id, source))
-
-	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
-	monkeypatch.setattr(identity, "learn", _learn)
+	fake = _setup(monkeypatch)
 	ctx = _FakeCtx()
 	member = _FakeMember(222, name="Fenrir")
 
 	asyncio.run(admin.identity_link(ctx, member, 111))
 
-	assert learn_calls == [(111, 222, "manual")]
+	row = fake.identities[0]
+	assert (row["profile_id"], row["user_id"], row["confidence"]) == (111, 222, "manual")
 	assert len(ctx.successes) == 1
 	assert "111" in ctx.successes[0] and "Fenrir" in ctx.successes[0]
 
@@ -1217,15 +1337,7 @@ def test_identity_link_triggers_the_deduction_solver(monkeypatch):
 	import bot.identity_solver as identity_solver
 
 	admin = _load_admin_module(monkeypatch)
-
-	async def _user_for_profile(profile_id):
-		return None
-
-	async def _learn(profile_id, user_id, source, aoe2_name=None):
-		return None
-
-	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
-	monkeypatch.setattr(identity, "learn", _learn)
+	_setup(monkeypatch)
 	ran = []
 
 	async def _run_for_channel(channel_id):
@@ -1253,120 +1365,165 @@ def test_identity_link_triggers_the_deduction_solver(monkeypatch):
 	assert len(ctx.successes) == 1, "the link still reports success"
 
 
-def test_identity_link_relinking_the_same_owner_needs_no_force(monkeypatch):
+def test_identity_link_relinking_the_members_own_profile_releases_nothing(monkeypatch):
+	""" Re-running the same link is not a correction of anything: the member
+	already owns exactly this profile, so nothing is released and the reply must
+	not invent a release. """
 	admin = _load_admin_module(monkeypatch)
-
-	async def _user_for_profile(profile_id):
-		return 222  # already owned by the same member we're linking
-
-	learn_calls = []
-
-	async def _learn(profile_id, user_id, source, aoe2_name=None):
-		learn_calls.append((profile_id, user_id, source))
-
-	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
-	monkeypatch.setattr(identity, "learn", _learn)
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual"))
 	ctx = _FakeCtx()
-	member = _FakeMember(222)
 
-	asyncio.run(admin.identity_link(ctx, member, 111, force=False))
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222), 111))
 
-	assert learn_calls == [(111, 222, "manual")]
-
-
-def test_identity_link_refuses_to_steal_a_different_owner_without_force(monkeypatch):
-	admin = _load_admin_module(monkeypatch)
-
-	async def _user_for_profile(profile_id):
-		return 999  # owned by someone else
-
-	learn_calls = []
-
-	async def _learn(*a, **k):
-		learn_calls.append((a, k))
-
-	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
-	monkeypatch.setattr(identity, "learn", _learn)
-	ctx = _FakeCtx()
-	member = _FakeMember(222)
-
-	try:
-		asyncio.run(admin.identity_link(ctx, member, 111, force=False))
-	except admin.bot.Exc.ValueError as e:
-		assert "999" in str(e)
-	else:
-		raise AssertionError("identity_link must refuse to reassign a profile without force")
-
-	assert learn_calls == []
-
-
-def test_identity_link_force_routes_to_relink_not_learn(monkeypatch):
-	""" learn() refuses an equal-tier write to a different user, so forcing
-	through it would refuse the reassignment, record an `open` conflict, and
-	still reply "Linked". relink() is the only writer allowed to move a
-	`manual` binding. """
-	admin = _load_admin_module(monkeypatch)
-
-	async def _user_for_profile(profile_id):
-		return 999
-
-	learn_calls, relink_calls = [], []
-
-	async def _learn(profile_id, user_id, source, aoe2_name=None):
-		learn_calls.append((profile_id, user_id, source))
-
-	async def _relink(profile_id, user_id, additional=False):
-		relink_calls.append((profile_id, user_id, additional))
-
-	monkeypatch.setattr(identity, "user_for_profile", _user_for_profile)
-	monkeypatch.setattr(identity, "learn", _learn)
-	monkeypatch.setattr(identity, "relink", _relink)
-	ctx = _FakeCtx()
-	member = _FakeMember(222)
-
-	asyncio.run(admin.identity_link(ctx, member, 111, force=True))
-
-	assert relink_calls == [(111, 222, False)]
-	assert learn_calls == []
+	assert asyncio.run(identity.profiles_for_users([222])) == {222: [111]}
+	assert fake.identity_conflicts == []
 	assert len(ctx.successes) == 1
 
 
-def test_identity_link_force_actually_reassigns_a_manual_owner(monkeypatch):
-	""" End to end against the real resolver, no stubbed writer: the case the
-	command's own docstring has always promised and, until this fix, silently
-	failed at -- a profile a *different* member owns at `manual`. The reply
-	said "Linked" while the binding never moved and an `open` conflict was
-	filed against the admin's own instruction. """
+def test_identity_link_additional_keeps_the_members_other_profiles(monkeypatch):
+	""" The multi-account case: 5 production users own several profiles (up to
+	3), and before `additional` there was NO command that could give a member a
+	second one -- the only reassignment path released their others. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "self", aoe2_name="Main"))
+	ctx = _FakeCtx()
+
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222, name="Fenrir"), 112, additional=True))
+
+	assert sorted(asyncio.run(identity.profiles_for_users([222]))[222]) == [111, 112]
+	assert fake.identity_conflicts == [], "nothing was released, so nothing is superseded"
+	assert len(ctx.successes) == 1
+	assert "112" in ctx.successes[0]
+
+
+def test_identity_link_default_releases_the_members_other_profiles(monkeypatch):
+	""" The "fix a wrong link" case, and the default: the member ends up owning
+	exactly the profile just assigned, because every consumer resolves profile
+	-> user through this table and owning two would double-attribute their
+	statistics. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))  # the wrong profile
+	ctx = _FakeCtx()
+
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222), 112))
+
+	assert asyncio.run(identity.profiles_for_users([222])) == {222: [112]}
+	assert [(c["profile_id"], c["status"]) for c in fake.identity_conflicts] == [(111, "superseded")]
+
+
+def test_identity_link_reply_names_the_released_profiles(monkeypatch):
+	""" A release is destructive and invisible -- an admin who meant
+	`additional: true` has no way back unless the reply says which ids it just
+	took away. """
+	admin = _load_admin_module(monkeypatch)
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+	asyncio.run(identity.learn(113, 222, "learned"))
+	ctx = _FakeCtx()
+
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222), 112))
+
+	msg = ctx.successes[0]
+	assert "112" in msg
+	assert "111" in msg and "113" in msg, "name every id that was released"
+	assert "additional" in msg.lower(), "and how to put one back"
+
+
+def test_identity_link_reassigns_a_profile_owned_by_another_member(monkeypatch):
+	""" An admin correction of an earlier admin's mistake IS a profile that
+	belongs to somebody else -- so it must simply work, with no confirmation
+	flag. learn() would refuse this (equal-tier, different user), record an
+	`open` conflict against the admin's own instruction, and still reply
+	"Linked"; relink() is the one writer allowed to move a `manual` binding. """
 	admin = _load_admin_module(monkeypatch)
 	fake = _setup(monkeypatch)
 	asyncio.run(identity.learn(111, 999, "manual", aoe2_name="WrongPerson"))
 	ctx = _FakeCtx()
-	member = _FakeMember(222, name="Fenrir")
 
-	asyncio.run(admin.identity_link(ctx, member, 111, force=True))
+	asyncio.run(admin.identity_link(ctx, _FakeMember(222, name="Fenrir"), 111))
 
 	row = fake.identities[0]
-	assert row["user_id"] == 222, "force must actually move the binding, not just claim it did"
+	assert row["user_id"] == 222
 	assert row["confidence"] == "manual"
-	assert len(ctx.successes) == 1
 	assert [(c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts] == [(999, "superseded")]
+	assert len(ctx.successes) == 1
+	assert "999" in ctx.successes[0], "say whose link was superseded"
 
 
-def test_identity_link_without_force_still_writes_through_learn(monkeypatch):
-	""" Only the force path is a relink. An unowned profile is an ordinary
-	`manual` observation, and routing it through relink() would additionally
-	release every other profile the member owns -- a side effect nobody asked
-	for when there was nothing to correct. """
+# ─── identity unlink ─────────────────────────────────────────────────────
+
+def test_identity_unlink_requires_admin_permission(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+	calls = []
+	monkeypatch.setattr(identity, "unlink", lambda *a, **k: calls.append((a, k)))
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	try:
+		asyncio.run(admin.identity_unlink(ctx, _FakeMember(222), 111))
+	except _PermsDenied:
+		pass
+	else:
+		raise AssertionError("identity_unlink must require ADMIN permission")
+
+	assert calls == []
+
+
+def test_identity_unlink_clears_the_binding(monkeypatch):
 	admin = _load_admin_module(monkeypatch)
 	fake = _setup(monkeypatch)
-	asyncio.run(identity.learn(112, 222, "manual"))  # the member's existing profile
+	asyncio.run(identity.learn(111, 222, "manual", aoe2_name="Fenrir"))
 	ctx = _FakeCtx()
-	member = _FakeMember(222)
 
-	asyncio.run(admin.identity_link(ctx, member, 111))
+	asyncio.run(admin.identity_unlink(ctx, _FakeMember(222, name="Fenrir"), 111))
 
-	assert sorted(asyncio.run(identity.profiles_for_users([222]))[222]) == [111, 112]
+	assert fake.identities[0]["user_id"] is None
+	assert asyncio.run(identity.profiles_for_users([222])) == {}
+	assert [(c["claimed_user_id"], c["status"]) for c in fake.identity_conflicts] == [(222, "unlinked")]
+	assert len(ctx.successes) == 1
+	msg = ctx.successes[0]
+	assert "111" in msg
+	assert "/link" in msg, "say it can be claimed again"
+
+
+def test_identity_unlink_refuses_when_the_profile_belongs_to_someone_else(monkeypatch):
+	""" A mistyped id must never silently unlink a third party. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 999, "manual"))
+	ctx = _FakeCtx()
+
+	try:
+		asyncio.run(admin.identity_unlink(ctx, _FakeMember(222), 111))
+	except admin.bot.Exc.ValueError as e:
+		assert "999" in str(e), "name who actually owns it"
+		assert "111" in str(e)
+	else:
+		raise AssertionError("identity_unlink must refuse to remove another member's link")
+
+	assert fake.identities[0]["user_id"] == 999
 	assert fake.identity_conflicts == []
+	assert ctx.successes == []
+
+
+def test_identity_unlink_refuses_an_unowned_profile(monkeypatch):
+	""" Nothing to remove is not success -- replying "unlinked" would tell an
+	admin their typo had taken effect. """
+	admin = _load_admin_module(monkeypatch)
+	fake = _setup(monkeypatch)
+	ctx = _FakeCtx()
+
+	try:
+		asyncio.run(admin.identity_unlink(ctx, _FakeMember(222), 111))
+	except admin.bot.Exc.ValueError as e:
+		assert "111" in str(e)
+	else:
+		raise AssertionError("identity_unlink must refuse a profile nobody owns")
+
+	assert fake.identities == []
+	assert ctx.successes == []
 
 
 # ─── identity show ───────────────────────────────────────────────────────
@@ -1389,6 +1546,7 @@ def test_identity_show_requires_moderator_permission(monkeypatch):
 
 def test_identity_show_lists_known_profiles(monkeypatch):
 	admin = _load_admin_module(monkeypatch)
+	_setup(monkeypatch)  # the name/confidence lookups are real reads
 
 	async def _profiles_for_users(user_ids):
 		return {222: [111, 222]}
@@ -1431,6 +1589,7 @@ def test_identity_show_no_longer_resolves_a_community(monkeypatch):
 	weight — and it made a moderator-visible read fail differently in a
 	channel that was never enrolled. """
 	admin = _load_admin_module(monkeypatch)
+	_setup(monkeypatch)
 
 	async def _profiles_for_users(user_ids):
 		return {222: [111]}
@@ -1450,6 +1609,141 @@ def test_identity_show_no_longer_resolves_a_community(monkeypatch):
 
 	assert community_calls == []
 	assert len(ctx.replies) == 1
+
+
+def test_identity_show_lists_names_and_confidence_per_profile(monkeypatch):
+	""" The ids alone cannot be checked by a human. The observed in-game name is
+	what an admin recognises the account by, and the confidence tier is what
+	tells them whether they are looking at an automated deduction or somebody's
+	deliberate decision -- the difference between "fix this" and "leave it". """
+	admin = _load_admin_module(monkeypatch)
+	_setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "manual", aoe2_name="Fenrir"))
+	asyncio.run(identity.learn(112, 222, "learned"))  # deduced, name never observed
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_show(ctx, _FakeMember(222, name="Fenrir")))
+
+	text = "\n".join(f["value"] for f in ctx.replies[0].embed.fields)
+	assert "111" in text and "Fenrir" in text and "manual" in text
+	assert "112" in text and "learned" in text
+	assert not any("Nick" in (f["name"] or "") for f in ctx.replies[0].embed.fields)
+
+
+# ─── identity status ──────────────────────────────────────────────────────
+# Spec section 3: the visibility surface. Silent feature-failure is replaced by
+# a number an admin can act on.
+
+def test_identity_status_requires_moderator_permission(monkeypatch):
+	admin = _load_admin_module(monkeypatch)
+	calls = []
+	monkeypatch.setattr(identity, "coverage_for_community", lambda *a, **k: calls.append((a, k)))
+	ctx = _FakeCtx(access_level=_Perms.MEMBER)
+
+	try:
+		asyncio.run(admin.identity_status(ctx))
+	except _PermsDenied:
+		pass
+	else:
+		raise AssertionError("identity_status must require MODERATOR permission")
+
+	assert calls == []
+
+
+def test_identity_status_reports_linked_and_unlinked_counts(monkeypatch):
+	""" The live figures at the time of writing: 49 players in the window, 35
+	linked, 1 open conflict. """
+	admin = _load_admin_module(monkeypatch)
+	asked = []
+
+	async def _community_for_channel(channel_id):
+		asked.append(channel_id)
+		return 7
+
+	async def _coverage_for_community(community_id, days=90):
+		assert (community_id, days) == (7, 90)
+		return dict(players=49, linked=35, unlinked=14, conflicts=1)
+
+	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
+	monkeypatch.setattr(identity, "coverage_for_community", _coverage_for_community)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR, channel_id=4242)
+
+	asyncio.run(admin.identity_status(ctx))
+
+	assert asked == [4242]
+	assert len(ctx.replies) == 1
+	text = _embed_text(ctx.replies[0].embed)
+	assert "35" in text and "49" in text, "N of M, the headline number"
+	assert "14" in text, "and how many are still missing"
+	assert "90" in text, "state the window, or the number means nothing"
+	assert "/link" in text, "tell the admin what the unlinked players can do"
+	conflict_fields = [f for f in ctx.replies[0].embed.fields if "conflict" in (f["name"] or "").lower()]
+	assert len(conflict_fields) == 1 and "1" in conflict_fields[0]["value"]
+
+
+def test_identity_status_omits_conflicts_when_there_are_none(monkeypatch):
+	""" "0 open conflicts" is noise on the one surface that exists to make a
+	real number stand out. """
+	admin = _load_admin_module(monkeypatch)
+
+	async def _community_for_channel(channel_id):
+		return 7
+
+	async def _coverage_for_community(community_id, days=90):
+		return dict(players=49, linked=49, unlinked=0, conflicts=0)
+
+	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
+	monkeypatch.setattr(identity, "coverage_for_community", _coverage_for_community)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_status(ctx))
+
+	assert not any("conflict" in (f["name"] or "").lower() for f in ctx.replies[0].embed.fields)
+
+
+def test_identity_status_reports_a_community_with_no_recent_matches(monkeypatch):
+	""" 0 of 0 read as a coverage failure would send an admin hunting for
+	players who do not exist. """
+	admin = _load_admin_module(monkeypatch)
+
+	async def _community_for_channel(channel_id):
+		return 7
+
+	async def _coverage_for_community(community_id, days=90):
+		return dict(players=0, linked=0, unlinked=0, conflicts=0)
+
+	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
+	monkeypatch.setattr(identity, "coverage_for_community", _coverage_for_community)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_status(ctx))  # must not raise
+
+	assert _embed_text(ctx.replies[0].embed).strip(), "some readable answer, not a blank embed"
+
+
+def test_identity_status_reports_an_unenrolled_channel_without_erroring(monkeypatch):
+	""" A channel that was never enrolled has no community to measure. That is
+	an ordinary state (most channels), so it is an answer, not an error -- and
+	the coverage query must not run at all. """
+	admin = _load_admin_module(monkeypatch)
+	coverage_calls = []
+
+	async def _community_for_channel(channel_id):
+		return None
+
+	async def _coverage_for_community(*a, **k):
+		coverage_calls.append((a, k))
+		return {}
+
+	monkeypatch.setattr(community, "community_for_channel", _community_for_channel)
+	monkeypatch.setattr(identity, "coverage_for_community", _coverage_for_community)
+	ctx = _FakeCtx(access_level=_Perms.MODERATOR)
+
+	asyncio.run(admin.identity_status(ctx))  # must not raise
+
+	assert coverage_calls == []
+	assert len(ctx.replies) == 1
+	assert "enrolled" in (ctx.replies[0].content or "").lower()
 
 
 # ─── identity conflicts ───────────────────────────────────────────────────
