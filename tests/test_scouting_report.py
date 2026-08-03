@@ -342,6 +342,22 @@ def test_only_the_three_position_spawns_can_ever_reach_the_sentence():
 	assert "gold" not in (scouting_report.render(rollup) or "").lower()
 
 
+def test_a_support_unit_built_beside_the_mass_never_reaches_the_sentence():
+	""" 30 Knights and 5 Monks is a Knight game, not a Monk game. Support
+	units are built in small numbers mostly in games already being won, so
+	counting the whole stored top three would hand Monk an inflated record
+	and print "massing Monk" for a knight player. """
+	stats = []
+	for i in range(1, 9):
+		row = _stat(i, winner=(i % 2 == 1), units=("Knight", "Monk"))
+		row["top_units"][0]["total"], row["top_units"][1]["total"] = 30, 5
+		stats.append(row)
+	rendered = scouting_report.render(compute_rollup(stats, []))
+
+	assert "massing **Knight**" in rendered
+	assert "Monk" not in rendered
+
+
 def test_the_loses_most_sentence_never_repeats_the_wins_most_pick():
 	""" "This is both what they are best and what they are worst at" is not a
 	fact about a player. """

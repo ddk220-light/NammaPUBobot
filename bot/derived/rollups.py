@@ -310,12 +310,27 @@ def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES,
 		if not has_known_outcome(r):
 			continue
 		won = bool(r.get("winner"))
-		# Deduped per game: top_units should never repeat a unit, but if it
-		# ever did, one game would count twice and a unit could show more
-		# games than the player has played.
-		for name in dict.fromkeys(u.get("unit") for u in top_units_of(r)):
-			if name is not None:
-				_bump(units, name, won)
+		# Only the unit the player built MOST earns the tally, never the whole
+		# stored top three. "Wins most massing X" claims X was the plan that
+		# game, and five Monks beside thirty Knights were not the plan. Those
+		# support units are built in small numbers mostly in games the player
+		# is already winning, so tallying every entry hands them an inflated
+		# rate no renderer-side shrinkage corrects: the real mass unit appears
+		# in the losses too and sits at baseline. Restricting the tally to the
+		# most-built unit is also what keeps Monks and siege out of the clause
+		# WITHOUT naming them -- a player who genuinely masses Monks still
+		# gets Monk.
+		#
+		# The ordering key is compute_game_stats' own ((-total, name) --
+		# hardest to have been an accident, cheapest to have been a tie),
+		# re-applied here rather than trusting the stored list's order: a
+		# caller handing the same units in another order must tally the same.
+		tops = top_units_of(r)
+		if not tops:
+			continue
+		name = min(tops, key=lambda u: (-(u.get("total") or 0), str(u.get("unit") or ""))).get("unit")
+		if name is not None:
+			_bump(units, name, won)
 
 	return dict(
 		medal_rates=dict(

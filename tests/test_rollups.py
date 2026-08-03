@@ -13,6 +13,8 @@ implementation, not merely to exercise the happy path:
   * one shared apm sample count instead of the two the contract carries
   * a game whose `winner` is NULL read through bool(), which scores an
     unresolved outcome as a LOSS in every split it touches
+  * every unit in a game's stored top three tallied, so a support unit
+    built in small numbers beside the real mass collects an inflated record
   * the split floor dropped, so 2-game "tendencies" reach the reader
   * list ordering left to dict insertion order, so identical data rewrites
     a different blob every refresh
@@ -38,7 +40,8 @@ from bot.derived.rollups import compute_rollup
 # caught by a test that removes it, not hidden by a fixture that never had it.
 
 def _stat(mid, pn=1, profile_id=11, winner=True, avg_eapm=50, peak_eapm=None,
-          military_medal=None, villager_medal=None, units=("Knight",), has_production=True):
+          military_medal=None, villager_medal=None, units=("Knight",), has_production=True,
+          totals=None):
 	return dict(
 		replay_match_id=mid, player_number=pn, profile_id=profile_id,
 		civ="Franks", team="1", winner=winner,
@@ -48,7 +51,8 @@ def _stat(mid, pn=1, profile_id=11, winner=True, avg_eapm=50, peak_eapm=None,
 		# medal eligibility. Defaults True because the overwhelming majority of
 		# real rows are measured games; the tests that care pass it explicitly.
 		has_production=has_production,
-		top_units=[dict(unit=u, category="cavalry", total=10) for u in units],
+		top_units=[dict(unit=u, category="cavalry", total=t)
+		           for u, t in zip(units, totals or [10] * len(units))],
 		computed_at=1000,
 	)
 
@@ -401,33 +405,42 @@ def test_the_floor_is_the_argument_not_a_hardcoded_constant():
 
 
 def test_the_floor_applies_to_spawns_and_units_too():
-	stat_rows = [_stat(i, units=("Knight",) if i <= 4 else ("Knight", "Archer"))
-	             for i in range(1, 10)]           # Knight 9 games, Archer 5
+	stat_rows = [_stat(i, units=("Knight",) if i <= 4 else ("Archer",))
+	             for i in range(1, 10)]           # Knight 4 games, Archer 5
 	label_rows = [_label(i, "spawn_isolated", "spawn") for i in range(1, 5)]
 	rollup = compute_rollup(stat_rows, label_rows, 5)
 	assert rollup["spawns"] == []
-	assert rollup["units"] == [dict(unit="Knight", games=9, wins=9),
-	                           dict(unit="Archer", games=5, wins=5)]
-	assert compute_rollup(stat_rows, label_rows, 6)["units"] == [
-		dict(unit="Knight", games=9, wins=9)]
+	assert rollup["units"] == [dict(unit="Archer", games=5, wins=5)]
+	assert compute_rollup(stat_rows, label_rows, 6)["units"] == []
 
 
 # ── units ────────────────────────────────────────────────────────────────
 
-def test_a_game_counts_for_every_unit_in_its_top_units():
-	stat_rows = [_stat(i, units=("Knight", "Archer", "Skirmisher"), winner=(i % 2 == 1))
+def test_a_game_counts_toward_only_the_unit_the_player_built_most():
+	# "Wins most massing X" claims X was the plan that game, and 5 Monks
+	# beside 30 Knights were not the plan. Counting every entry of the stored
+	# top three would call this a Monk game too, and support units -- built
+	# in small numbers, mostly in games already being won -- would collect
+	# an inflated rate no renderer-side shrinkage corrects.
+	stat_rows = [_stat(i, units=("Knight", "Monk"), totals=(30, 5), winner=(i % 2 == 1))
 	             for i in range(1, 6)]
 	rollup = compute_rollup(stat_rows, [], 5)
-	assert rollup["units"] == [
-		dict(unit="Archer", games=5, wins=3),
-		dict(unit="Knight", games=5, wins=3),
-		dict(unit="Skirmisher", games=5, wins=3),
-	]
+	assert rollup["units"] == [dict(unit="Knight", games=5, wins=3)]
 
 
-def test_a_unit_repeated_inside_one_game_counts_that_game_once():
-	stat_rows = [_stat(i, units=("Knight", "Knight")) for i in range(1, 6)]
+def test_the_most_built_unit_is_read_off_the_totals_not_the_list_order():
+	# compute_game_stats stores top_units pre-sorted, but the tally must not
+	# depend on that: the same units handed over in another order must tally
+	# the same game.
+	stat_rows = [_stat(i, units=("Monk", "Knight"), totals=(5, 30)) for i in range(1, 6)]
 	assert compute_rollup(stat_rows, [], 5)["units"] == [dict(unit="Knight", games=5, wins=5)]
+
+
+def test_an_equal_production_tie_breaks_on_the_unit_name():
+	# The same tie-break compute_game_stats sorts by, so a genuinely equal
+	# game tallies one deterministic unit rather than whichever is listed first.
+	stat_rows = [_stat(i, units=("Knight", "Archer")) for i in range(1, 6)]
+	assert compute_rollup(stat_rows, [], 5)["units"] == [dict(unit="Archer", games=5, wins=5)]
 
 
 def test_top_units_is_read_from_the_json_string_the_database_returns():
