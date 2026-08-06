@@ -231,6 +231,8 @@ async def on_interaction(interaction):
 	await quiz_interactions.on_quiz_interaction(interaction)
 	from bot.classifications import interactions as cls_interactions
 	await cls_interactions.on_insights_interaction(interaction)
+	from bot.predictions import interactions as bet_interactions
+	await bet_interactions.on_bet_interaction(interaction)
 
 
 @dc.event
