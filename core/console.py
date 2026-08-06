@@ -72,6 +72,21 @@ class Log:
 		if self.loglevel <= 3:
 			self.log(data, 'INFO')
 
+	def warning(self, data):
+		# Callers have been writing log.warning(...) for a long time — bot/lobby,
+		# bot/predictions — and every one of them raised AttributeError from
+		# inside an `except` block, so the failure they were reporting was
+		# replaced by a failure to report it.
+		#
+		# There is deliberately no 'WARNING' key in LogLevelToInt. That table is
+		# the set of THRESHOLDS an operator may put in config.cfg, not the set of
+		# severities the bot can emit, and the five existing values already
+		# express every threshold anyone would want. A warning is more severe
+		# than info and less severe than an error, so it prints wherever info
+		# prints and goes quiet when the operator has asked for errors only.
+		if self.loglevel <= 3:
+			self.log(data, 'WARNING')
+
 	def error(self, data):
 		if self.loglevel <= 4:
 			self.log(data, 'ERROR')
