@@ -29,9 +29,6 @@ class CheckIn:
 		# without touching the match lifetime, which keys off m.start_time.
 		self.start_time = self.m.start_time
 
-		for p in (p for p in self.m.players if p.id in bot.auto_ready.keys()):
-			self.ready_players.add(p)
-
 		if len(self.m.cfg['maps']) > 1 and self.m.cfg['vote_maps']:
 			self.maps = self.m.random_maps(self.m.cfg['maps'], self.m.cfg['vote_maps'], self.m.queue.last_maps)
 			self.map_votes = [set() for i in self.maps]
@@ -72,8 +69,17 @@ class CheckIn:
 		try:
 			for emoji in emojis:
 				await self.message.add_reaction(emoji)
-		except DiscordException:
-			pass
+		except DiscordException as e:
+			# LOUD, not silent. These reactions are now the ONLY way to check in
+			# -- /ready and /notready were the typed fallback and they are gone.
+			# If the bot has lost Add Reactions it will post a check-in card that
+			# nobody can answer and every match will die at the timeout, so this
+			# must be diagnosable from the logs rather than inferred from a
+			# channel full of aborted matches.
+			log.error(
+				f"Check-in for match {self.m.id} could not add its reactions ({e}). "
+				"Nobody can check in — verify the bot's Add Reactions permission."
+			)
 		bot.waiting_reactions[self.message.id] = self.process_reaction
 		await self.refresh(ctx)
 
@@ -96,10 +102,6 @@ class CheckIn:
 			order.sort(key=lambda n: len(self.map_votes[n]), reverse=True)
 			self.m.maps = [self.maps[n] for n in order[:self.m.cfg['map_count']]]
 		await self.message.delete()
-
-		for p in (p for p in self.m.players if p.id in bot.auto_ready.keys()):
-			bot.auto_ready.pop(p.id)
-
 		await self.m.next_state(ctx)
 
 	async def process_reaction(self, reaction, user, remove=False):
@@ -144,7 +146,7 @@ class CheckIn:
 
 		Returns the swapped-in member, or None when no queued player is
 		available (the caller decides what to do with None). The new player
-		must check in themselves unless they have an active /auto_ready.
+		must check in themselves.
 		"""
 		busy_ids = {p.id for m in bot.active_matches for p in m.players}
 		candidate = pick_available(self.m.queue.queue, busy_ids)
@@ -154,8 +156,6 @@ class CheckIn:
 		self.m.players.remove(out_member)
 		self.m.players.append(candidate)
 		self.ready_players.discard(out_member)
-		if candidate.id in bot.auto_ready.keys():
-			self.ready_players.add(candidate)
 
 		await self.m.qc.remove_members(candidate, ctx=ctx)
 		await bot.remove_players(candidate, reason="pickup started")

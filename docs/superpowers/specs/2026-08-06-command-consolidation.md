@@ -1,6 +1,9 @@
 # Command consolidation — decisions and cleanup ledger
 
-_Agreed 2026-08-06. Not yet implemented._
+_Agreed 2026-08-06. **Implemented** on `refactor/command-consolidation`:
+stage one (command surface) and stage two (the machinery behind it). See
+"Stage two — what the cleanup actually found" at the foot of this document for
+the four places where executing it changed the plan._
 
 The bot exposes **101 slash commands** (46 top-level + 55 subcommands across 12
 groups), plus four text commands nobody documented. This records what survives,
@@ -374,3 +377,70 @@ own change — not part of this one.
 `/predictions leaderboard` `/quiz_leaderboard`
 
 (`/quiz disable` is admin-gated and does not appear.)
+
+---
+
+## Stage two — what the cleanup actually found
+
+Four things the plan above got wrong or missed. Recorded because each one
+would have been a live defect.
+
+### `draft` was still selectable, and was the default
+
+Removing `/capfor`, `/capme` and `/pick` without touching config would have left
+a trap, not just dead code. `pick_teams` still offered `"draft"` **and defaulted
+to it**, so any newly created queue would have entered the DRAFT state with both
+teams empty, every player in the unpicked list, and no command in existence able
+to move anyone out of it. The match would have hung until its lifetime expired.
+
+`"draft"` is now removed from the options, the default moved to
+`"captain based matchmaking"`, and `init_teams` lost its draft branch. Only then
+were the three `Draft` methods safe to delete.
+
+`Embeds.draft()` also read `draft.pick_order` to render "whose turn to pick" —
+an `AttributeError` waiting for the first `/match put` after the field was gone.
+
+### The phrase feature died with `/phrases`
+
+`player_phrases` had no reader other than `noadds.get_user`, which returned
+`[ban_left, phrase]` up a three-level chain to `add()`, which replied with it.
+With no way left to create a phrase the value was permanently `None`, so the
+whole chain collapsed to `ban_left`.
+
+### Three stage-1 rename pairs pointed at tables being dropped
+
+`core/migrations.py`'s `_STAGE1_RENAMES` carried `players -> player_prefs`,
+`qc_phrases -> player_phrases` and `qc_douche -> douche_log`. Dropping the
+declarations without the pairs fails `test_migrations.py`, which asserts every
+rename target is registered — a check that exists to catch typos. Removing the
+pairs is a no-op on both paths: an existing database has already recorded
+`001_core_renames` as applied, and a fresh one has no legacy table to rename.
+
+### The dead quiz columns had a dead function behind them
+
+`leaderboard_dow` and `leaderboard_hour` were not merely unread — the function
+built to read them, `scoring.leaderboard_due`, had **no production caller
+either**, only tests. The weekly board has always keyed on completed schedule
+weeks. `last_leaderboard_ymd` went with it.
+
+### Orphan cascade
+
+Removing commands orphaned helpers that nothing else called:
+`scouting_report.gaps`, `scouting_report.EAPM_METRICS`,
+`identity.confidence_for_profiles`, `identity.coverage_for_community`,
+`identity.window_player_ids`, and 22 tests covering them.
+
+**Worth knowing:** `coverage_for_community` and `gaps` were the only
+implementation of "how well is this community linked, and which report lines
+can its data not fill yet" — the substance behind `/identity status`. That
+analysis now exists only in git history. If it is wanted on the web dashboard
+later, it is recoverable from this branch's parent commit rather than
+re-derivable from anything still in the tree.
+
+### Not done, deliberately
+
+The three now-undeclared tables (`player_prefs`, `player_phrases`,
+`douche_log`) still **exist in production** holding zero rows. Dropping them is
+a destructive migration and a separate decision. `ensure_table` only ever adds
+columns, so the five removed `quiz_settings` columns likewise remain in place,
+undeclared and unread.

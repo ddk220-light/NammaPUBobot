@@ -276,24 +276,6 @@ async def profiles_and_names_by_user() -> dict:
 	return out
 
 
-async def confidence_for_profiles(profile_ids) -> dict:
-	""" {profile_id: confidence} for every profile_id in `profile_ids` that has
-	a stored row. Unknown profile ids are simply absent.
-
-	The tier is what separates a guess from a decision — `learned` is the
-	deduction solver's arithmetic, `manual` is a human's instruction — so an
-	admin reading a member's profiles needs it to know whether a wrong-looking
-	link is something to correct or something somebody already chose. Kept here
-	beside names_for_profiles rather than read from `identities` at the call
-	site: this module owns the table, and every reader goes through it. """
-	out = {}
-	for pid in profile_ids:
-		row = await db.select_one(["confidence"], "identities", where={"profile_id": pid})
-		if row and row["confidence"]:
-			out[pid] = row["confidence"]
-	return out
-
-
 def _rank(confidence):
 	if confidence not in CONFIDENCE_ORDER:
 		raise ValueError(f"_rank: unknown confidence {confidence!r}, expected one of {CONFIDENCE_ORDER}")
@@ -756,67 +738,6 @@ _WINDOW_PLAYERS_SQL = (
 	"JOIN community_channels cc ON cc.channel_id = m.channel_id "
 	"WHERE cc.community_id = %s AND m.reported_at > %s AND mp.user_id IS NOT NULL"
 )
-
-
-async def window_player_ids(community_id, days=COVERAGE_WINDOW_DAYS) -> set:
-	""" The distinct Discord users who played a reported match in `community_id`
-	within the last `days` — the population every coverage and gating figure on
-	`/identity status` is measured against.
-
-	Split out of coverage_for_community rather than duplicated because the
-	gated-features half of that command (stage 5a) needs the ids themselves,
-	not just how many there are: "how many of these players have no
-	player_rollups row" is a set intersection, and the two halves of one embed
-	disagreeing about who counts as a player here would be worse than either
-	number being absent. One query, one definition of the window. """
-	cutoff = int(time.time()) - days * 86400
-	rows = await db.fetchall(_WINDOW_PLAYERS_SQL, [community_id, cutoff]) or []
-	return {row["user_id"] for row in rows if row["user_id"] is not None}
-
-
-async def coverage_for_community(community_id, days=COVERAGE_WINDOW_DAYS) -> dict:
-	""" How much of a community is actually linked:
-
-	  {"players": int, "linked": int, "unlinked": int, "conflicts": int}
-
-	`players` is the distinct Discord users who appeared in a reported match in
-	this community in the last `days`; `linked` is how many of those own at
-	least one AoE2 profile. That ratio is the one number that says whether the
-	analysis features work here at all — every one of them resolves a player
-	through `identities`, and an unlinked player is silently missing from all of
-	them. Spec §3: silent feature-failure is replaced by a number an admin can
-	act on.
-
-	Counted per PERSON, not per row and not per profile: a player who appeared
-	in forty matches is one player, and one of the five production users who own
-	three profiles each is one linked player, not three.
-
-	The window matters as much as the ratio. Someone who last played two years
-	ago is not a coverage gap anybody can chase, so a lifetime count would read
-	as a permanent failure that no amount of linking could ever fix.
-
-	`conflicts` is deliberately NOT community-scoped: identity_conflicts has no
-	community column, because a profile_id<->user_id claim is global truth (see
-	this module's docstring). With one community in production that distinction
-	is invisible; a second one would see the first's conflict count here. Fixing
-	that means giving identity_conflicts a community — a schema change, not a
-	filter — and `/identity conflicts` has the same global scope today.
-
-	Read-only, and used by `/identity status` today and the web UI later — which
-	is the whole reason the query lives in this module rather than inline in a
-	command handler. """
-	user_ids = await window_player_ids(community_id, days)
-
-	# profiles_for_users OMITS users who own nothing (never maps them to []), so
-	# its size IS the linked count — no filtering of empty lists needed here.
-	linked = len(await profiles_for_users(user_ids))
-
-	return dict(
-		players=len(user_ids),
-		linked=linked,
-		unlinked=len(user_ids) - linked,
-		conflicts=len(await open_conflicts()),
-	)
 
 
 def invalidate_cache() -> None:

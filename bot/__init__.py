@@ -4,7 +4,7 @@ import time
 
 from .main import update_qc_lang, update_rating_system, save_state, save_state_db
 from .main import load_state
-from .main import remove_players, expire_auto_ready
+from .main import remove_players
 
 from .queue_channel import QueueChannel
 from .queues.pickup_queue import PickupQueue
@@ -19,7 +19,6 @@ from . import commands
 
 from . import events
 from . import utils
-from . import douche  # noqa: F401  (imported for its db.ensure_table side effect)
 from . import civ_reconcile  # noqa: F401  (ensure_table side effect + the reconcile job instance)
 from . import lobby  # noqa: F401  (lobbies ensure_table + the LobbyJobs instance)
 from . import quiz  # noqa: F401  (quiz_* ensure_table + the QuizJobs instance)
@@ -86,8 +85,6 @@ queue_channels = dict()  # {channel.id: QueueChannel()}
 active_queues = []
 active_matches = []
 waiting_reactions = _TTLReactionDict()  # {message.id: function}
-allow_offline = []  # [user_id]
-auto_ready = dict()  # {user.id: timestamp}
 
 
 def background_context(coro):

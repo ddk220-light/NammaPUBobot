@@ -7,7 +7,7 @@ import bot
 
 async def add(ctx, queues: str = None):
 	""" add author to channel queues """
-	phrase = await ctx.qc.check_allowed_to_add(ctx, ctx.author)
+	await ctx.qc.check_allowed_to_add(ctx, ctx.author)
 
 	targets = queues.lower().split(" ") if queues else []
 	# select the only one queue on the channel
@@ -40,8 +40,6 @@ async def add(ctx, queues: str = None):
 
 	if bot.Qr.Success in qr.values():
 		await ctx.qc.update_expire(ctx.author)
-		if phrase:
-			await ctx.reply(phrase)
 		await ctx.notice(ctx.qc.topic)
 	else:  # have to give some response for slash commands
 		await ctx.ignore(content=ctx.qc.topic, embed=error_embed(ctx.qc.gt("Action had no effect."), title=None))

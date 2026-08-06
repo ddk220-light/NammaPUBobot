@@ -8,17 +8,6 @@ from core.database import db
 from core.utils import iter_to_dict, find, get_nick  # noqa: F401
 
 db.ensure_table(dict(
-	tname="player_prefs",
-	columns=[
-		dict(cname="user_id", ctype=db.types.int),
-		dict(cname="name", ctype=db.types.str),
-		dict(cname="allow_dm", ctype=db.types.bool),
-		dict(cname="expire", ctype=db.types.int)
-	],
-	primary_keys=["user_id"]
-))
-
-db.ensure_table(dict(
 	tname="player_ratings",
 	columns=[
 		dict(cname="channel_id", ctype=db.types.int),

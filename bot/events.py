@@ -128,7 +128,6 @@ async def on_think(frame_time):
 	# DRY_RUN = True and deletes nothing until that constant is flipped in a commit
 	# of its own — see bot/derived/sweeper.py before touching it.
 	await bot.derived.sweeper_jobs.think(frame_time)
-	await bot.expire_auto_ready(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict
 	# docstring in bot/__init__.py — entries older than 30 minutes are
@@ -349,9 +348,6 @@ async def on_resumed():
 async def on_presence_update(before, after):
 	if after.raw_status not in ['idle', 'offline']:
 		return
-	if after.id in bot.allow_offline:
-		return
-
 	for qc in filter(lambda i: i.guild_id == after.guild.id, bot.queue_channels.values()):
 		if after.raw_status == "offline" and qc.cfg.remove_offline:
 			await qc.remove_members(after, reason="offline")

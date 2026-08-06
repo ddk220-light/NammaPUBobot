@@ -58,14 +58,15 @@ db.ensure_table(dict(
 	columns=[
 		dict(cname="channel_id", ctype=db.types.int),
 		dict(cname="enabled", ctype=db.types.bool),
+		# answer_window, leaderboard_dow, leaderboard_hour, min_difficulty and
+		# last_leaderboard_ymd are gone: nothing read them. The weekly board is
+		# keyed to completed SCHEDULE weeks (jobs._maybe_week_leaderboard), never
+		# to a day-of-week and hour, so those two dials were never wired to
+		# anything an admin could observe. ensure_table only ever ADDs columns,
+		# so the existing rows keep theirs; they are simply undeclared now.
 		dict(cname="quiz_hour", ctype=db.types.int, notnull=False),
-		dict(cname="answer_window", ctype=db.types.int, notnull=False),  # dead since the poll era — column kept, never read
 		dict(cname="open_window", ctype=db.types.int, notnull=False),
-		dict(cname="leaderboard_dow", ctype=db.types.int, notnull=False),
-		dict(cname="leaderboard_hour", ctype=db.types.int, notnull=False),
-		dict(cname="min_difficulty", ctype=db.types.str, notnull=False),
 		dict(cname="last_post_ymd", ctype=db.types.str, notnull=False),
-		dict(cname="last_leaderboard_ymd", ctype=db.types.str, notnull=False),
 		dict(cname="last_leaderboard_week", ctype=db.types.int, notnull=False),
 		dict(cname="test_interval", ctype=db.types.int, notnull=False),   # seconds; set => fast test cadence
 		dict(cname="last_post_at", ctype=db.types.int, notnull=False),    # epoch of last post (test cadence)

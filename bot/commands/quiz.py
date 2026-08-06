@@ -6,8 +6,6 @@ bot.quiz imports are lazy (inside the handlers) so this module loads during the
 
 __all__ = ['quiz_leaderboard', 'quiz_disable']
 
-_INT_FIELDS = ("quiz_hour", "open_window", "leaderboard_dow", "leaderboard_hour", "test_interval")
-
 
 async def quiz_leaderboard(ctx):
 	from bot.quiz import embeds, schedule, scoring, store
@@ -24,8 +22,19 @@ async def quiz_leaderboard(ctx):
 
 
 async def quiz_disable(ctx):
+	"""Stop the daily quiz. ONE-WAY: nothing re-enables it.
+
+	/quiz enable went with the rest of the quiz config commands, and no env var
+	or web page sets enabled=1 -- bot/web.py has no quiz surface at all. Pulling
+	this leaves the quiz off until that page exists or someone runs SQL against
+	quiz_settings. That is the intended shape of an emergency stop, but it is
+	worth knowing before you press it rather than after.
+	"""
 	ctx.check_perms(ctx.Perms.ADMIN)
 	from bot.quiz import store
 	await store.disable_all()
-	await ctx.success("Daily quiz disabled. Any open quiz will still resolve.", title="Quiz disabled")
+	await ctx.success(
+		"Daily quiz disabled. Any open quiz will still resolve.\n"
+		"**Nothing in the bot re-enables it** — that needs the web dashboard or a DB change.",
+		title="Quiz disabled")
 

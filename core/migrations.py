@@ -351,8 +351,14 @@ _STAGE1_RENAMES = [
 	("qc_players", "player_ratings"), ("qc_rating_history", "rating_history"),
 	("qc_match_id_counter", "match_counter"), ("qc_configs", "channel_settings"),
 	("pq_configs", "queue_settings"), ("qc_saved_state", "bot_state"),
-	("players", "player_prefs"), ("noadds", "queue_bans"),
-	("qc_phrases", "player_phrases"), ("qc_douche", "douche_log"),
+	("noadds", "queue_bans"),
+	# players->player_prefs, qc_phrases->player_phrases and qc_douche->douche_log
+	# were dropped with the commands that wrote them (/expire_default, /phrases,
+	# /douche). All three tables held zero rows across 3,338 matches and are no
+	# longer declared, so a rename into them would land data nowhere. Removing
+	# the pairs is a no-op on both paths: an existing database has already
+	# recorded 001_core_renames as applied, and a fresh one has no legacy source
+	# table to rename.
 	("qc_match_civs", "civ_picks"), ("qc_civ_reconcile", "civ_reconcile"),
 	("qc_lobbies", "lobbies"), ("qc_quiz_posts", "quiz_posts"),
 	("qc_quiz_answers", "quiz_answers"), ("qc_quiz_config", "quiz_settings"),

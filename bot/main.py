@@ -41,7 +41,7 @@ def _serialize_state():
 			if q.length > 0:
 				queues.append(q.serialize())
 	matches = [match.serialize() for match in bot.active_matches]
-	return dict(queues=queues, matches=matches, allow_offline=bot.allow_offline, expire=bot.expire.serialize())
+	return dict(queues=queues, matches=matches, expire=bot.expire.serialize())
 
 
 def save_state():
@@ -87,7 +87,6 @@ async def load_state():
 
 	log.info("Loading state...")
 
-	bot.allow_offline = list(data['allow_offline'])
 
 	for qd in data['queues']:
 		if qd.get('queue_type') in ['PickupQueue', None]:
@@ -112,8 +111,3 @@ async def remove_players(*users, reason=None):
 	for qc in set((q.qc for q in bot.active_queues)):
 		await qc.remove_members(*users, reason=reason)
 
-
-async def expire_auto_ready(frame_time):
-	for user_id, at in list(bot.auto_ready.items()):
-		if at < frame_time:
-			bot.auto_ready.pop(user_id)
