@@ -10,36 +10,13 @@ silently dropped the declaration those installs would get no per-match index at
 all and bot/derived/backfill.py would full-scan forever, with nothing anywhere
 saying so.
 
-Both DB drivers are stubbed unconditionally: CI installs pytest ONLY (see
+The adapter module arrives through the `adapter_module` fixture in conftest.py,
+which stubs both DB drivers unconditionally: CI installs pytest ONLY (see
 .github/workflows/ci.yml), so importing the adapter for real is not an option,
 and stubbing conditionally would mean the test exercised different code on a
 developer machine than in CI.
 """
 import asyncio
-import sys
-import types
-
-import pytest
-
-
-@pytest.fixture
-def adapter_module(monkeypatch):
-	fake_aiomysql = types.ModuleType("aiomysql")
-	fake_aiomysql.Pool = object
-	fake_aiomysql.cursors = types.SimpleNamespace(DictCursor=object)
-	fake_aiomysql.create_pool = None
-	monkeypatch.setitem(sys.modules, "aiomysql", fake_aiomysql)
-
-	fake_pymysql = types.ModuleType("pymysql")
-	fake_pymysql.err = types.SimpleNamespace(
-		Error=Exception, InternalError=Exception, OperationalError=Exception, DataError=Exception)
-	monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
-	monkeypatch.setitem(sys.modules, "pymysql.err", fake_pymysql.err)
-
-	monkeypatch.delitem(sys.modules, "core.DBAdapters.mysql", raising=False)
-	import core.DBAdapters.mysql as mysql
-	monkeypatch.delitem(sys.modules, "core.DBAdapters.mysql", raising=False)
-	return mysql
 
 
 def _ddl(adapter_module, table):

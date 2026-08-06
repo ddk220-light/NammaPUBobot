@@ -26,6 +26,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 # Make the repo root importable so ``from bot.elo_sync import ...``
 # works regardless of which directory pytest was invoked from.
@@ -384,3 +386,37 @@ sys.modules['core.client'] = _fake_core_client
 _fake_bot = types.ModuleType('bot')
 _fake_bot.__path__ = [str(_REPO_ROOT / 'bot')]
 sys.modules['bot'] = _fake_bot
+
+
+# ─── core.DBAdapters.mysql (real module, stubbed drivers) ────────────
+# Unlike everything above, this hands back the REAL adapter module — the
+# thing under test — with only its two driver imports faked. It is a
+# fixture rather than a module-level stub because the fake drivers must
+# not sit in sys.modules for the rest of the run.
+#
+# Both drivers are stubbed unconditionally: CI installs pytest ONLY (see
+# .github/workflows/ci.yml), so importing the adapter for real is not an
+# option, and stubbing conditionally would mean the adapter tests
+# exercised different code on a developer machine than in CI.
+#
+# It lives here, not in a test file, because "which DB drivers are absent"
+# is a fact about the environment rather than about any one test — the
+# duplicate-fixture alternative grows another copy with every adapter test.
+@pytest.fixture
+def adapter_module(monkeypatch):
+	fake_aiomysql = types.ModuleType("aiomysql")
+	fake_aiomysql.Pool = object
+	fake_aiomysql.cursors = types.SimpleNamespace(DictCursor=object)
+	fake_aiomysql.create_pool = None
+	monkeypatch.setitem(sys.modules, "aiomysql", fake_aiomysql)
+
+	fake_pymysql = types.ModuleType("pymysql")
+	fake_pymysql.err = types.SimpleNamespace(
+		Error=Exception, InternalError=Exception, OperationalError=Exception, DataError=Exception)
+	monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
+	monkeypatch.setitem(sys.modules, "pymysql.err", fake_pymysql.err)
+
+	monkeypatch.delitem(sys.modules, "core.DBAdapters.mysql", raising=False)
+	import core.DBAdapters.mysql as mysql
+	monkeypatch.delitem(sys.modules, "core.DBAdapters.mysql", raising=False)
+	return mysql
