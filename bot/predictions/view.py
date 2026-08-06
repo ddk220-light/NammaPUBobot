@@ -38,7 +38,12 @@ def open_lines(team0, team1, minutes, match_id, pool0=0, pool1=0):
 		_side_line(TEAM_EMOJIS[1], team1, pool1, pool0),
 		"",
 		f"Stake your gold with the buttons. Betting closes in {minutes} minutes.",
-		"_Spectators only — players in this match cannot bet. Winners split the whole pot._",
+		# THE RULE, as Amendment 1 §A actually left it. This line said
+		# "Spectators only — players in this match cannot bet" long after the
+		# router stopped enforcing anything of the kind, on every ranked match
+		# and re-rendered on every press: for most people the card IS the
+		# rulebook, and it was telling half the channel they were barred.
+		"_Playing? Back your own team. Watching? Either side. Winners split the whole pot._",
 	]
 
 

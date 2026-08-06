@@ -141,6 +141,19 @@ class TestOpenLines:
 		assert "200" in text and "100" in text
 		assert "React" not in text          # the reaction era is over
 
+	def test_the_card_states_the_rule_amendment_1_actually_left_behind(self):
+		""" The card carried "_Spectators only — players in this match cannot
+		bet._" on every ranked match, re-rendered on every press, long after
+		Amendment 1 §A superseded it and the router started welcoming
+		participants onto their own side. For almost everyone in the channel
+		the card IS the rulebook, and it was barring half of them. """
+		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33))
+		assert "Spectators only" not in text
+		assert "cannot bet" not in text
+		assert "own team" in text, "a player has to be told what they MAY do"
+		assert "Either side" in text, "and a spectator that they are unrestricted"
+		assert "whole pot" in text, "the pari-mutuel rule survives both amendments"
+
 	def test_fresh_card_has_zero_pools_and_no_multiplier(self):
 		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33))
 		assert "×" not in text
