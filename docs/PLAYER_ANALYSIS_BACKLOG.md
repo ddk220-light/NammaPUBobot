@@ -1,3 +1,9 @@
+> **`/player_details` was removed on 2026-08-06** (command consolidation).
+> The replay data it drew on is untouched — `replay_events` still feeds the
+> post-game match cards — but the build-timeline chart itself has no surface
+> any more and no web equivalent. Items below that assume the command exists
+> would need it rebuilt, most sensibly on the web dashboard.
+
 # Player-Analysis Feature Backlog
 
 Living backlog for the replay-stats / `/player_details` line of work. Captured 2026-06-23 from

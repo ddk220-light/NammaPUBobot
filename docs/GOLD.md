@@ -91,16 +91,23 @@ something.
 
 ## Checking your balance
 
-- `/gold` — your balance and your last few movements, labelled by kind (Starting
-  gold, Match played, Bet placed, Bet cancelled, Refund, Winnings, Quiz). Only
-  you see it.
-- `/gold_top` — the richest bettors in the community.
-- `/predictions leaderboard` — prediction accuracy, blending the old free-vote
-  era with graded bets.
-- `/predictions me` — your own prediction record.
+- `/predictions me` — your prediction record, your balance, and your last few
+  movements labelled by kind (Starting gold, Match played, Bet placed, Bet
+  cancelled, Refund, Winnings, Quiz). Pass a `player` to look up someone else's
+  record and balance; the movement list is only ever your own.
+- `/predictions leaderboard` — accuracy standings with gold held, blending the
+  old free-vote era with graded bets.
+
+There were once four commands here — `/gold` and `/gold_top` alongside these
+two — which was a 2×2 of {yours, everyone's} × {gold, accuracy} over a single
+activity. The two that survived absorbed the other two.
 
 Because players may now back themselves, the accuracy board mixes reading
 matches with winning them.
+
+Players hidden from the rating leaderboard are hidden from this one too, as are
+players below the channel's minimum-games and recent-activity thresholds — one
+definition of who appears on a board, applied everywhere.
 
 ## Fine print
 

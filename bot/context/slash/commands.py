@@ -479,7 +479,10 @@ async def _report(
 async def _rank(
 		interaction: Interaction,
 		player: Member = SlashOption(required=False, verify=False),
-): await run_slash(bot.commands.rank, interaction=interaction, player=player)
+		detailed: bool = SlashOption(
+			required=False, default=False,
+			description='Also show streak, peak, civs, duos & rivals and recent rating changes.'),
+): await run_slash(bot.commands.rank, interaction=interaction, player=player, detailed=detailed)
 
 
 @dc.slash_command(name='leaderboard', description='Show rating leaderboard.', **guild_kwargs)

@@ -14,9 +14,15 @@ from core.config import cfg
 import bot
 
 
-async def rank(ctx, player: Member = None):
-	""" Slim rating profile: headline, record, recent form, scouting report and the ELO chart. """
-	await _rank_profile(ctx, player, detailed=False)
+async def rank(ctx, player: Member = None, detailed: bool = False):
+	"""Rating profile. Slim by default: headline, record, recent form, scouting
+	report and the ELO chart. `detailed` adds streak, peak, civs, duos & rivals
+	and recent rating changes.
+
+	`detailed` was /rank_detailed, a separate command that called this same
+	function with the flag flipped. That is an argument, not a command.
+	"""
+	await _rank_profile(ctx, player, detailed=bool(detailed))
 
 
 async def _scouting_report(ctx, user_id):

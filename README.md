@@ -9,13 +9,18 @@ upstream's own README and remain accurate for setup, credits and licensing.
 
 - **Replay ingest and scouting reports** — matches are linked to their recorded
   games, so `/rank` reports what a player actually does: opening tendencies, the
-  units they mass, eAPM (`/eapm`), and who they beat and lose to.
+  units they mass, eAPM, and who they beat and lose to.
 - **Gold, betting and a daily quiz** — play-money betting on live matches
   (pari-mutuel, 10-minute window, players may back only their own team) and a
   public daily AoE2 poll that pays gold for taking part. Full rules in
   [docs/GOLD.md](docs/GOLD.md).
-- **Civ statistics and balanced random draws**, a public web dashboard with
-  leaderboards and player pages, and `/changelog` for what shipped recently.
+- **Civ statistics and balanced random draws**, and a public web dashboard with
+  leaderboards, player pages, civ stats and play-style breakdowns.
+- **A much smaller command surface than upstream.** 44 commands, 14 of them
+  player-facing; the admin groups declare `default_member_permissions` so
+  Discord hides them from everyone else. See
+  [COMMANDS.md](COMMANDS.md) and the reasoning in
+  [docs/superpowers/specs/2026-08-06-command-consolidation.md](docs/superpowers/specs/2026-08-06-command-consolidation.md).
 
 For the complete command list see [COMMANDS.md](COMMANDS.md). Contributor and
 architecture notes live in [CLAUDE.md](CLAUDE.md). This fork deploys to Railway

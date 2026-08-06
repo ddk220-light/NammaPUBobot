@@ -1,3 +1,6 @@
+> **Note (2026-08-06):** `/player_details` referenced below was removed in the
+> command consolidation. Its data sources are unaffected.
+
 # Match Cards revamp — readiness and considerations
 
 **Written:** 2026-07-29

@@ -1,3 +1,11 @@
+> **`/insights` was removed on 2026-08-06** (command consolidation). Everything
+> below about the classification *pipeline* — the registry, `cls_results`,
+> `game_labels`, the factor specs, the troubleshooting — is still accurate and
+> still live: the post-game match cards read `cls_classifications` for their
+> labels, and the web dashboard's **Strategies** page serves what `/insights`
+> used to. Only the slash command and `bot/commands/insights.py` are gone;
+> read every `/insights` reference below as "the Strategies page".
+
 # Player Classification Framework
 
 A reusable, **offline-first** system for classifying *how a player played* a given AoE2 game

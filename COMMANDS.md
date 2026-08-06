@@ -1,132 +1,148 @@
 # Available Commands
 
-#### Queues
-| command               | description                                             |
-|-----------------------|---------------------------------------------------------|
-| /add                  | Join queues                                             |
-| /remove               | Leave queues                                            |
-| /who                  | List queue players                                      |
-| /promote              | Promote a queue                                         |
-| /server               | Show queue server setting                               |
-| /maps                 | Show queue map list                                     |
-| /map                  | Show random map from a queue map list                   |
-| /auto_ready           | Confirm check-in automatically on next queue start      |
-| /expire               | Show or set your current expire timer                   |
+**44 commands. 14 of them are yours** — the rest are admin, and Discord hides
+those from you unless you have Manage Messages.
 
-#### Matches
-| command               | description                                             |
-|-----------------------|---------------------------------------------------------|
-| /ready                | Confirm check-in                                        |
-| /notready             | Decline check-in                                        |
-| /capfor               | Become a captain                                        |
-| /pick                 | Pick a player                                           |
-| /subme                | Request a substitute                                    |
-| /subauto              | Replace yourself with the next queued player, rebalance |
-| /subfor               | Become a substitute                                     |
-| /teams                | Show current teams                                      |
-| /report               | Report match result                                     |
+If you only ever learn four: `/add`, `/lobby`, `/report`, `/rank`.
 
-#### Personal settings
-| command               | description                                             |
-|-----------------------|---------------------------------------------------------|
-| /expire_default       | Configure your default auto-remove behaviour            |
-| /subscribe            | Subscribe to queue or channel promotion roles           |
-| /unsubscribe          | Unsubscribe from queue or channel promotion roles       |
-| /nick                 | Change your nick with rating prefix included            |
+## Playing
 
-#### Stats
-| command               | description                                             |
-|-----------------------|---------------------------------------------------------|
-| /leaderboard          | Show rating leaderboard                                 |
-| /rank                 | Show your or another player's rating stats              |
-| /lastgame             | Show last played match                                  |
-| /top                  | Show top active players on the channel                  |
-| /stats show           | Show overall channel stats                              |
+| command | description |
+|---|---|
+| `/add` | Join the queue |
+| `/remove` | Leave the queue |
+| `/teams` | Show the teams for your current match |
+| `/report` | Report your match result |
 
-#### Gold and match betting
-Gold is play money. Everyone starts with 500. When a ranked match's teams are
-settled the bot posts a betting card with six buttons — 10/50/100 on each team —
-open for 10 minutes. All stakes go into one pot and the winning side splits the
-whole thing in proportion to what each backed, so the odds come from the pools,
-not from a bookmaker. Players in the match may bet **only on their own team**;
-spectators may take either side. You can cancel your whole bet until the freeze
-via the button on your private confirmation. A one-sided book pays no one and
-refunds everyone.
+`++` and `--` are shorthand for `/add` and `/remove` — just type them as a
+message. When the queue fills, react ☑ on the check-in card within the
+check-in window or you'll be replaced by the next player waiting.
 
-Playing a ranked match pays up to 100 gold, but the match and quiz faucets only
-top a balance back up toward 500 and never above it — at 500 they pay nothing.
-Only winning a bet takes you past 500. Full rules: [docs/GOLD.md](docs/GOLD.md).
+### Substitutions
 
-| command               | description                                             |
-|-----------------------|---------------------------------------------------------|
-| /gold                 | Your balance and recent movements (only you see it)     |
-| /gold_top             | The richest bettors in the community                    |
-| /predictions leaderboard | Prediction accuracy standings                        |
-| /predictions me       | Your (or another player's) prediction record            |
+| command | description |
+|---|---|
+| `/subme` | Ask for a substitute (toggles off if you change your mind) |
+| `/subfor` | Take someone's place who asked for one |
+| `/subauto` | Replace yourself with the next player in the queue and rebalance the teams |
 
-#### Daily AoE2 quiz (opt-in)
-One question a day, posted as a public poll that stays open for `open_window`
-(24h by default). Vote with the buttons on the card — you can change your vote
-until it locks, and the card shows a live tally with voter names. When it locks,
-every vote is graded and paid: 50 gold for a correct answer, 10 for playing,
-never lifting a balance above 500.
+A substitution under a live betting book voids it and refunds every stake, then
+re-opens betting on the new teams — see [docs/GOLD.md](docs/GOLD.md).
 
-| command               | description                                             |
-|-----------------------|---------------------------------------------------------|
-| /quiz_leaderboard     | Show this week's quiz leaderboard                       |
-| /quiz enable          | (admin) Enable the daily quiz in a channel at a UTC hour|
-| /quiz disable         | (admin) Disable the daily quiz                          |
-| /quiz config          | (admin) Set a quiz setting (quiz_hour, open_window, leaderboard_dow, leaderboard_hour, test_interval, min_difficulty) |
-| /quiz post_now        | (admin) Post a quiz immediately                         |
-| /quiz status          | (admin) Show the quiz schedule status and next question |
-| /quiz skip            | (admin) Skip the next scheduled question                |
-| /quiz reveal_now      | (admin) Lock and reveal the currently open question now |
+## Linking your games
 
-#### Miscellaneous
-| command               | description                                             |
-|-----------------------|---------------------------------------------------------|
-| /cointoss             | Flip a coin                                             |
-| /help                 | Show channel or queue help                              |
+| command | description |
+|---|---|
+| `/profile_link` | Link your Discord account to your AoE2 profile — run it with no argument and it explains where to find your id |
+| `/lobby` | Post a live lobby card for a game id, and link that game to your ranked match so the result posts itself |
 
-#### Administration and Moderation
-| command               | description                                             |
-|-----------------------|---------------------------------------------------------|
-| /channel enable       | Enable the bot this channel                             |
-| /channel disable      | Disable the bot this channel                            |
-| /channel show         | Show channel configuration                              |
-| /channel set          | Configure a channel variable                            |
-|-                      |                                                         |
-| /queue create_pickup  | Create a new pickup queue                               |
-| /queue list           | List all queues on the channel                          |
-| /queue show           | Show queue configuration                                |
-| /queue set            | Configure a queue variable                              |
-| /queue delete         | Delete a queue                                          |
-| /queue add_player     | Add a player to queue                                   |
-| /queue remove_player  | Remove a player from all or selected queue              |
-| /queue clear          | Remove all players from all or selected queue           |
-| /queue start          | Manually start a queue                                  |
-| /queue split          | Split queue into multiple matches                       |
-|-                      |                                                         |
-| /match report         | Report an ongoing match result as a moderator           |
-| /match create         | Manually create a rating match result                   |
-| /match sub_player     | Forcefully swap one player with another                 |
-| /match put            | Forcefully put a player in a team or unpicked list      |
-|-                      |                                                         |
-| /noadds list          | List banned players                                     |
-| /noadds add           | Add a player to the ban list                            |
-| /noadds remove        | Remove a player from the ban list                       |
-|-                      |                                                         |
-| /phrases add          | Add a player phrase on an add command                   |
-| /phrases clear        | Clear player's phrases list                             |
-|-                      |                                                         |
-| /rating seed          | Set player rating and deviation                         |
-| /rating penality      | Substract points from a player rating                   |
-| /rating hide          | Hide a player from the leaderboard                      |
-| /rating unhide        | Unhide a player from the leaderboard                    |
-| /rating reset         | Reset channels rating data                              |
-| /rating snap          | Snap players ratings to their rank minimum value        |
-|-                      |                                                         |
-| /stats show           | Show channel statistics                                 |
-| /stats reset          | Reset all channel data except configs                   |
-| /stats reset_player   | Reset a player statistics (including rating)            |
-| /stats replace_player | Replace player1 with player2 in the database            |
+**These two are what make everything else work.** Without `/profile_link` your
+`/rank` says "Statistics pending linking" and you appear on no board. `/lobby`
+is how 79% of games get connected to their replay.
+
+## Stats
+
+| command | description |
+|---|---|
+| `/rank [player] [detailed]` | Rating profile, recent form, eAPM and your scouting report. `detailed:true` adds streak, peak, civs, duos & rivals and recent rating changes |
+| `/leaderboard [page]` | Rating leaderboard |
+
+The web dashboard carries more than these do — leaderboards, match stats,
+player pages, civ stats and play-style breakdowns.
+
+## Gold, betting and the quiz
+
+| command | description |
+|---|---|
+| `/predictions me [player]` | Your prediction record, gold balance and recent gold movements |
+| `/predictions leaderboard [page]` | Prediction accuracy standings, with gold held |
+| `/quiz_leaderboard` | This week's quiz standings |
+
+Gold is play money. Everyone starts with 500. Ranked matches and the daily quiz
+top you back up toward 500 but never above it — **only winning a bet takes you
+past it**, which is why a full balance shows no reward. Betting cards post
+themselves when a match's teams are settled; the quiz posts itself daily and you
+vote with the buttons on the card. Full rules: [docs/GOLD.md](docs/GOLD.md).
+
+---
+
+# Admin
+
+Hidden from players who lack Manage Messages. Individual commands still check
+their own permission when run.
+
+### `/channel`
+
+| command | description |
+|---|---|
+| `/channel enable` | Enable the bot on this channel |
+| `/channel disable` | Disable the bot on this channel |
+| `/channel delete` | Delete stats/configs and disable the bot here |
+| `/channel show` | List channel configuration |
+| `/channel set` | Configure a channel variable |
+
+### `/queue`
+
+| command | description |
+|---|---|
+| `/queue create_pickup` | Create a new pickup queue |
+| `/queue list` | List the channel's queues |
+| `/queue show` | Show a queue's configuration |
+| `/queue set` | Configure a queue variable |
+| `/queue delete` | Delete a queue |
+| `/queue add_player` | Add a player to a queue |
+| `/queue remove_player` | Remove a player from queues |
+| `/queue clear` | Remove all players from a queue |
+| `/queue start` | Start a queue manually |
+| `/queue split` | Split a queue into N separate matches |
+
+`show` and `set` for both groups are also on the web dashboard, with forms
+generated from the config definitions.
+
+### `/match`
+
+| command | description |
+|---|---|
+| `/match report` | Report an ongoing match's result as a moderator |
+| `/match create` | Record a rating match manually |
+| `/match sub_player` | Force-swap one player for another |
+| `/match put` | Force a player into a team or the unpicked list |
+| `/match undo` | Undo a finished match, reverting its rating changes |
+
+### `/rating`
+
+| command | description |
+|---|---|
+| `/rating seed` | Set a player's rating and deviation |
+| `/rating hide_player` | Hide a player from the leaderboards |
+| `/rating unhide_player` | Unhide a player |
+
+Hiding covers every public board — rating, gold and predictions alike.
+
+### `/noadds`
+
+| command | description |
+|---|---|
+| `/noadds list` | List banned players |
+| `/noadds add` | Ban a player from the queues |
+| `/noadds remove` | Lift a ban |
+
+### `/profile_identity`
+
+| command | description |
+|---|---|
+| `/profile_identity link` | Link a member to an AoE2 profile id |
+| `/profile_identity unlink` | Remove a member's link |
+| `/profile_identity conflicts` | List open profile/Discord disagreements awaiting resolution |
+
+The moderator counterpart to `/profile_link`.
+
+### `/quiz`
+
+| command | description |
+|---|---|
+| `/quiz disable` | Stop the daily quiz |
+
+**One-way.** Nothing in the bot re-enables it — quiz settings are moving to the
+web dashboard, and until that ships, turning it back on means a database change.
+Treat this as an emergency stop.
