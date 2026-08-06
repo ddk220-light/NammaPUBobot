@@ -27,7 +27,7 @@ import types
 
 import nextcord
 
-from bot.predictions import interactions
+from bot.predictions import interactions, view
 
 ALL_SENDS = math.inf            # every send fails, for as long as the test runs
 
@@ -573,8 +573,13 @@ class TestCancelRoute:
 		bank = wire(monkeypatch, cancel_bet=("ok", 60))
 		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
 		run(i)
-		assert bank.cancelled, "the bank was never asked to cancel"
-		assert "60" in i.reply and "cancel" in i.reply.lower()
+		# Identity: it is THIS user's bet on THIS post that got cancelled — not
+		# the (post_id, user_id) pair transposed into the bank's call.
+		assert bank.cancelled == [dict(user_id=99, post_id=12)]
+		# The refund figure and the balance must land in their own slots — a
+		# transposition (999 returned, 60 balance) reads as plausible prose and
+		# was surviving on "60" in i.reply alone.
+		assert i.reply == "\n".join(view.bet_cancelled_lines(60, 999))
 
 	def test_cancelling_after_the_freeze_is_refused(self, monkeypatch):
 		bank = wire(monkeypatch, cancel_bet=("ok", 60), post_frozen=True)
