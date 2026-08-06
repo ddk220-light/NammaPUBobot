@@ -610,3 +610,23 @@ class TestCancelRoute:
 		i = FakeInteraction(user_id=99, custom_id="quiz:12:reveal")
 		run(i)
 		assert not bank.cancelled and not bank.placed
+
+	def test_the_bank_closing_the_book_under_the_press_is_refused_not_refunded(self, monkeypatch):
+		""" The fast-path status/deadline check above can pass on a stale read —
+		status still 'open', now still before freezes_at — while gold.cancel_bet's
+		own FOR UPDATE read inside its transaction sees the freeze sweep already
+		won the race. Its ('closed', 0) answer is authoritative: no bet row was
+		deleted, no ledger row written, no gold moved. The handler must tell the
+		user the book is closed, NOT run bet_cancelled_lines and claim a refund of
+		zero gold. bets_raise proves the handler actually stops here instead of
+		falling through to the balance/bets_for/_refresh_card tail — if the
+		'closed' branch were ever deleted, that tail would run and either raise
+		(logged) or, worse, report success. """
+		bank = wire(monkeypatch, cancel_bet=("closed", 0),
+					bets_raise=AssertionError("kept processing after a closed cancel"))
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		run(i)
+		assert bank.cancelled, "gold.cancel_bet was never called"
+		assert "closed" in i.reply.lower()
+		assert "returned" not in i.reply.lower(), "the 0-gold refund message must not be used"
+		assert bank.errors == []
