@@ -17,8 +17,10 @@ as long as the fakes here land in ``sys.modules`` before
 of the real module is short-circuited and gets the fake back.
 
 This file intentionally does NOT import from the real ``core`` package
-— doing so would defeat the whole point (it would trigger the same
-config-and-db chain we're trying to avoid).
+at module level — doing so would defeat the whole point (it would
+trigger the same config-and-db chain we're trying to avoid). The one
+real-``core`` import lives inside the ``adapter_module`` fixture at the
+bottom, which runs per-test and only after its own stubs are in place.
 """
 from __future__ import annotations
 
