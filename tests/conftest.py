@@ -384,16 +384,48 @@ class _ButtonStyleStub:
 		return name
 
 
+class _FakeSelectOption:
+	""" nextcord.SelectOption, one per lettered choice on a multi-answer quiz
+	vote. `label` is the thing a test can actually see ("A. Knight"); kept
+	faithful for the same reason _FakeButton is — bot/quiz/embeds.vote_view's
+	StringSelect IS its options, so a stub that swallowed them would make the
+	multi-answer path untestable rather than merely unasserted. """
+
+	def __init__(self, *, label=None, value=None, description=None, emoji=None, default=False, **_kw):
+		self.label = label
+		self.value = value
+		self.description = description
+		self.emoji = emoji
+		self.default = default
+
+
+class _FakeStringSelect:
+	""" nextcord.ui.StringSelect — the multi-answer quiz vote control
+	(bot/quiz/embeds.vote_view, multi=True). `custom_id` is the wire protocol
+	back to the router exactly as it is for _FakeButton, and `max_values` is
+	what proves "select ALL that apply" actually allows more than one pick. """
+
+	def __init__(self, *, custom_id=None, placeholder=None, min_values=1, max_values=1,
+			options=None, row=None, **_kw):
+		self.custom_id = custom_id
+		self.placeholder = placeholder
+		self.min_values = min_values
+		self.max_values = max_values
+		self.options = list(options or [])
+		self.row = row
+
+
 class _UiStub:
 	""" `nextcord.ui`, reached because bot/predictions/embeds.py and
-	bot/quiz/embeds.py import it at module level to build their views. View and
-	Button are real enough to assert on (see above) so bet_view() can be DRIVEN
-	rather than merely imported — the card shipping with no buttons at all was
-	invisible to the suite while this was a rubber stamp. Everything else stays
-	permissive. """
+	bot/quiz/embeds.py import it at module level to build their views. View,
+	Button and StringSelect are real enough to assert on (see above) so
+	bet_view()/vote_view() can be DRIVEN rather than merely imported — the card
+	shipping with no buttons at all was invisible to the suite while this was a
+	rubber stamp. Everything else stays permissive. """
 
 	View = _FakeView
 	Button = _FakeButton
+	StringSelect = _FakeStringSelect
 
 	def __getattr__(self, _name):
 		return _NextcordStub
@@ -437,13 +469,45 @@ def _get(iterable, **attrs):
 	return _find(_matches, iterable)
 
 
+class _FakeColour:
+	""" nextcord.Colour, in BOTH calling conventions this repo actually uses:
+	`Colour(0xRRGGBB)` directly (bot/predictions/embeds.py) and the named
+	classmethods — `.blurple()` / `.gold()` / `.green()` / `.purple()` —
+	bot/quiz/embeds.py calls to pick each embed kind's colour. The plain
+	`lambda value=0: value` this used to be answered `Colour(x)` fine but had
+	no `.blurple` etc., so the first test to actually drive a quiz embed
+	(rather than merely import the module) AttributeError'd before Embed() was
+	ever reached — nothing about vote_view/poll_embed's own logic was wrong,
+	the stub just never had to support this half of the real API before. """
+
+	def __init__(self, value=0):
+		self.value = value
+
+	@classmethod
+	def blurple(cls):
+		return cls(0x5865F2)
+
+	@classmethod
+	def gold(cls):
+		return cls(0xF1C40F)
+
+	@classmethod
+	def green(cls):
+		return cls(0x2ECC71)
+
+	@classmethod
+	def purple(cls):
+		return cls(0x9B59B6)
+
+
 _fake_nextcord = types.ModuleType('nextcord')
 for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents'):
 	setattr(_fake_nextcord, _name, _NextcordStub)
 _fake_nextcord.DiscordException = _FakeDiscordException
 _fake_nextcord.Embed = FakeEmbed
-_fake_nextcord.Colour = lambda value=0: value
+_fake_nextcord.Colour = _FakeColour
 _fake_nextcord.Color = _fake_nextcord.Colour
+_fake_nextcord.SelectOption = _FakeSelectOption
 _fake_nextcord.InteractionType = _InteractionType
 _fake_nextcord.ui = _UiStub()
 _fake_nextcord.ButtonStyle = _ButtonStyleStub()
