@@ -225,3 +225,105 @@ Same pytest style as the existing suite; payout math is pure functions:
 - Admin grant/adjust command.
 - Cross-community gold; balances are per-community by design.
 - Any change to prediction timing (`VOTE_WINDOW`, freeze rules).
+
+---
+
+## Amendment 1 — players back themselves, and bets can be cancelled
+
+**Date:** 2026-08-05, after the original ten tasks shipped.
+**Status:** Approved (Deepak, same session).
+
+Two additions requested once the feature was working end to end. Both are
+additive; nothing already built is thrown away.
+
+### A. Match participants may bet — on their own team only
+
+**Supersedes the "Who can bet: Spectators only" row in the Decisions table
+above, and the "Spectators only" bullet in §1.**
+
+- A player in the match **may** bet, but **only on their own team**. A press on
+  the opposing side is refused with an ephemeral "You can only bet on
+  yourself." A player is never permitted to hold a position against themselves.
+- Spectators are unchanged — either side.
+- Self-bets go into the **same pool**. No separate pot, no adjusted odds. A
+  player backing themselves is ordinary money in the tote, and that is exactly
+  the point: when the audience piles onto one team, the other team can answer
+  with their own gold instead of watching the book run one-sided.
+- **Incentive safety is preserved and is the reason this is acceptable at
+  all:** because a participant can never take the opposing side, no participant
+  can ever profit by losing. This is strictly safer than "anyone, any side",
+  which was rejected during the original brainstorm for exactly that reason.
+
+**The roster must be captured at bet time, not recomputed at report time.**
+`flow._player_ids()` reads `bot.active_matches`, which is in-memory, and the
+match is gone from it by the time the result is reported. So `prediction_bets`
+gains an `is_player` column, written when the bet is placed. This is not an
+optimisation — without it the report below is impossible to render at all.
+
+**Trap for the implementer:** `Match.teams` has **three** entries —
+`teams[0]`, `teams[1]`, and `teams[2]`, a pseudo-team named `"unpicked"` with
+`idx=-1`. The own-team check must index `teams[0]` and `teams[1]` explicitly
+and must never iterate `match.teams`, or unpicked players become a third side.
+
+**Report.** The post-match betting report annotates self-bettors inline in the
+winner and loser lists it already builds. Those lists are already split by
+outcome, so the annotation directly answers "who backed themselves and won"
+and "who backed themselves and lost" without a second pass or a separate
+section.
+
+**Accepted consequence:** participants now appear on the prediction accuracy
+leaderboard, so that board begins to blend reading matches with winning them.
+Judged acceptable; noted here so it is not later mistaken for a bug.
+
+### B. Cancelling a bet
+
+- A bettor may cancel while the post is still `open` and `now < freezes_at` —
+  **the same ten-minute window, unchanged**. After the freeze there are no
+  cancels, because the book is settled against locked pools.
+- Cancel returns the bettor's **entire** stake for that match (every
+  accumulated press), deletes the `prediction_bets` row, and thereby releases
+  the side lock — after cancelling they may bet again, either side (subject to
+  the own-team rule if they are playing). Partial cancel and undo-last-press
+  are explicitly out of scope: they need a per-press history the schema does
+  not keep, and "back out" means out.
+- The affordance is a **Cancel my bet** button on the ephemeral confirmation
+  that every successful press already returns. Pressing it rewrites that same
+  private message into "Bet cancelled — N gold returned" and strips the button.
+- **Known wart, accepted:** N presses leave N private confirmations, each
+  carrying a button. After one cancel the others report "you have no bet on
+  this match to cancel." Correct behaviour; tidying it would mean tracking and
+  editing every prior ephemeral message, which is not worth the machinery.
+
+**Idempotency without an idem_key — the load-bearing design decision.**
+Every other credit in this system (seed, match_reward, refund, payout) is made
+exactly-once by a UNIQUE `idem_key`. That mechanism **cannot** be used here: a
+user may bet → cancel → bet → cancel on a single post, so
+`cancel:{post_id}:{user_id}` is not unique and the second cancel would be
+silently swallowed as "already applied".
+
+Instead **the `prediction_bets` row itself is the refund token.** In one
+transaction:
+
+1. `DELETE FROM prediction_bets WHERE post_id=%s AND user_id=%s`
+2. if the delete affected **0 rows** → there is nothing to refund; return
+   without touching gold
+3. otherwise credit `gold_balances` by the deleted row's stake and append a
+   `cancel` ledger row (positive amount, `idem_key = NULL`)
+
+The DELETE's rowcount is the exactly-once guard: a double press finds no row
+and refunds nothing. This is the same discipline `place_bet` already uses for
+its conditional balance decrement — the conditional write IS the guard — and
+it needs no new key scheme.
+
+**New ledger `entry_type`:** `cancel`. The set becomes
+`seed | match_reward | bet | cancel | refund | payout | admin_adjust`.
+
+### Schema delta
+
+| table | change |
+|---|---|
+| `prediction_bets` | **+ `is_player`** TINYINT(1), default 0, written at press time |
+| `gold_ledger` | no schema change; `entry_type` gains the value `cancel` |
+
+`ensure_table` adds missing columns to existing tables, so the new column
+needs no migration.
