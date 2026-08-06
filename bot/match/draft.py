@@ -144,6 +144,23 @@ class Draft:
 		await self.m.qc.remove_members(player2, ctx=ctx)
 		await bot.remove_players(player2, reason="pickup started")
 
+		# A ROSTER CHANGE UNDER A LIVE BOOK IS A CHANGE TO THE SIDES PEOPLE
+		# STAKED ON — the same reason /subauto refunds and re-opens, and no
+		# weaker for swapping one player instead of rebalancing both teams.
+		# The book is open for ten minutes and this command is permitted in
+		# CHECK_IN, DRAFT and WAITING_REPORT, so it is ordinary operation, not
+		# a race. Without this, a spectator who staked on Alpha can be
+		# substituted onto Bravo and now profits by LOSING — precisely the
+		# position the own-team rule exists to make impossible — and cannot
+		# even correct it, because the composite-PK side lock refuses the
+		# other side. `is_player` would stay stale at 0 as well, so the
+		# post-match report would not name them either.
+		# Best-effort, like every other prediction call site: restart_for_match
+		# swallows its own failures so a book can never break a match.
+		if self.m.ranked:
+			from bot.predictions import restart_for_match
+			await restart_for_match(self.m)
+
 		if self.m.state == self.m.CHECK_IN:
 			await self.m.check_in.refresh()
 		elif self.m.state == self.m.WAITING_REPORT:

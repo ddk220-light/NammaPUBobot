@@ -399,9 +399,48 @@ class _UiStub:
 		return _NextcordStub
 
 
+class _FakeDiscordException(Exception):
+	""" nextcord.DiscordException, the base of every error the library raises.
+	bot/match/draft.py imports it at module load to swallow a failed embed
+	send, so without it that module — and everything reachable through it —
+	cannot be imported by a test at all. """
+
+
+def _find(predicate, seq):
+	""" The REAL nextcord.utils.find, not a rubber stamp.
+
+	`lambda *_a, **_k: None` was cheap while nothing under test called it, but
+	bot/match/draft.py resolves a player's team with it on every /subfor
+	(`find(lambda t: player1 in t, self.m.teams)`), and a version that always
+	answers None turns "which team is this player on" into an unconditional
+	crash — which would make the sub paths untestable rather than merely
+	unasserted. Six lines of real behaviour costs nothing and invents no API:
+	this is what the library does. """
+	for element in seq:
+		if predicate(element):
+			return element
+	return None
+
+
+def _get(iterable, **attrs):
+	""" The real nextcord.utils.get: first element whose attributes all match.
+	Nested lookups (`channel__name=...`) use the library's double-underscore
+	spelling. """
+	def _matches(element):
+		for key, expected in attrs.items():
+			value = element
+			for part in key.split('__'):
+				value = getattr(value, part, None)
+			if value != expected:
+				return False
+		return True
+	return _find(_matches, iterable)
+
+
 _fake_nextcord = types.ModuleType('nextcord')
 for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents'):
 	setattr(_fake_nextcord, _name, _NextcordStub)
+_fake_nextcord.DiscordException = _FakeDiscordException
 _fake_nextcord.Embed = FakeEmbed
 _fake_nextcord.Colour = lambda value=0: value
 _fake_nextcord.Color = _fake_nextcord.Colour
@@ -409,8 +448,8 @@ _fake_nextcord.InteractionType = _InteractionType
 _fake_nextcord.ui = _UiStub()
 _fake_nextcord.ButtonStyle = _ButtonStyleStub()
 _fake_nextcord_utils = types.ModuleType('nextcord.utils')
-_fake_nextcord_utils.get = lambda *_a, **_k: None
-_fake_nextcord_utils.find = lambda *_a, **_k: None
+_fake_nextcord_utils.get = _get
+_fake_nextcord_utils.find = _find
 _fake_nextcord_utils.escape_markdown = lambda s: s
 
 
