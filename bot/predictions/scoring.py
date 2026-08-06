@@ -84,12 +84,3 @@ def multiplier(pool_side, pool_other):
 	if not pool_side:
 		return None
 	return (pool_side + pool_other) / pool_side
-
-
-def split_pct(votes0, votes1):
-	"""(v0, v1) -> (pct0, pct1) rounded to whole numbers, (0, 0) when nobody voted."""
-	total = votes0 + votes1
-	if not total:
-		return 0, 0
-	pct0 = round(100 * votes0 / total)
-	return pct0, 100 - pct0

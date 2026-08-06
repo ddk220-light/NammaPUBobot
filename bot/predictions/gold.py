@@ -189,7 +189,19 @@ async def cancel_bet(community_id, user_id, post_id, now):
 	ledger and the balance cache would agree perfectly, so reconcile() would
 	never see it. FOR UPDATE on prediction_posts serialises the two, and the
 	'closed' verdict is therefore decided HERE, under the lock, never by the
-	caller's earlier read."""
+	caller's earlier read.
+
+	THE SECOND `FOR UPDATE`, on the bets row, IS BELT AND BRACES — recorded
+	here rather than left as an unexplained line. What actually makes the
+	read-then-delete safe is the POST row lock taken one statement above:
+	prediction_bets has exactly two writers, this function and place_bet, and
+	both take that lock first, so while it is held no other transaction can
+	touch this post's bet rows at all. The DELETE's rowcount is the
+	exactly-once guard on top of that. The row lock is therefore unobservable
+	today — removing it cannot change any single-transaction outcome — and it
+	is kept only so that a future third writer which forgets the post lock
+	still cannot interleave here. The invariant it leans on is the pinnable
+	one, and tests/test_predictions_gold.py pins it on both writers."""
 	async with db.transaction() as tx:
 		book = await tx.fetchone(
 			"SELECT status, freezes_at FROM prediction_posts WHERE id=%s FOR UPDATE",

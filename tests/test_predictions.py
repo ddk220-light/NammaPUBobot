@@ -119,20 +119,6 @@ class TestMultiplier:
 		assert scoring.multiplier(0, 100) is None
 
 
-class TestSplitPct:
-	def test_splits_to_a_hundred(self):
-		pct0, pct1 = scoring.split_pct(3, 1)
-		assert (pct0, pct1) == (75, 25)
-
-	def test_rounding_never_overshoots_a_hundred(self):
-		# 1/3 rounds to 33; the remainder is derived so the pair always sums to 100.
-		pct0, pct1 = scoring.split_pct(1, 2)
-		assert pct0 + pct1 == 100
-
-	def test_no_votes_is_zero_zero(self):
-		assert scoring.split_pct(0, 0) == (0, 0)
-
-
 class TestOpenLines:
 	def test_shows_both_pools_and_the_buttons_copy(self):
 		lines = view.open_lines("Alpha", "Beta", 10, 33, pool0=200, pool1=100)

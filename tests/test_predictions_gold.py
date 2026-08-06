@@ -227,6 +227,22 @@ class TestTheBookIsCheckedInsideTheTransaction:
 		spend = fake.sql("gold_balances SET balance=balance-")
 		assert fake.calls.index(locks[0]) < fake.calls.index(spend[0])
 
+	def test_the_book_lock_comes_before_every_bets_row_write(self, monkeypatch):
+		""" THE INVARIANT cancel_bet's docstring leans on when it calls its own
+		second row lock belt-and-braces: prediction_bets has exactly two
+		writers, and BOTH take the post row lock before touching it. That is
+		what makes a bet row unable to change under either of them — and a
+		third writer added without it would silently undo the reasoning. """
+		fake = use_fake(monkeypatch)
+		fake.rowcounts = [1, 1, 1]
+		asyncio.run(gold.place_bet(5, 42, 12, 0, 50, "nick", 1000))
+
+		lock_at = fake.calls.index(fake.sql("FOR UPDATE")[0])
+		touches = [n for n, c in enumerate(fake.calls)
+				   if "prediction_bets" in (c[1] or "")]
+		assert touches, "place_bet did not touch prediction_bets at all"
+		assert min(touches) > lock_at
+
 
 class TestTheMoneyPredicates:
 	""" The four SQL fragments the economy actually rests on. Each was mutated
@@ -404,7 +420,17 @@ class TestCancelBet:
 		assert asyncio.run(gold.cancel_bet(5, 42, 12, 1000)) == ("closed", 0)
 
 	def test_the_book_is_locked_before_the_bet_row_is_read(self, monkeypatch):
-		""" Ordering is the guarantee: lock the post, THEN touch the money. """
+		""" Ordering is the guarantee: lock the post, THEN touch the money.
+
+		This is also the whole of why cancel_bet's SECOND `FOR UPDATE` — the
+		one on the bets row — is belt and braces rather than load-bearing.
+		prediction_bets has exactly two writers, this function and place_bet,
+		and both reach it only after the post row is locked (see
+		TestPlaceBet.test_the_book_lock_comes_before_every_bets_row_write), so
+		no other transaction can change a bet row between the read and the
+		DELETE. The DELETE's rowcount is the exactly-once guard on top of
+		that. Pinning THIS ordering is worth doing; a test asserting the
+		redundant lock's presence would only assert that a line exists. """
 		fake = use_fake(monkeypatch)
 		fake.answer(status="open", freezes_at=9999, stake=60)
 		fake.rowcounts = [1, 1, 1]
@@ -414,6 +440,10 @@ class TestCancelBet:
 		assert "prediction_bets" in reads[1]
 		delete = fake.sql("DELETE FROM prediction_bets")
 		assert len(delete) == 1 and delete[0][2] == [12, 42]
+		# Every prediction_bets statement, not merely the first read.
+		lock_at = fake.calls.index(fake.sql("prediction_posts")[0])
+		touches = [n for n, c in enumerate(fake.calls) if "prediction_bets" in (c[1] or "")]
+		assert len(touches) == 2 and min(touches) > lock_at
 
 	def test_a_missing_balance_row_rolls_the_refund_back(self, monkeypatch):
 		fake = use_fake(monkeypatch)

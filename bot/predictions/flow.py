@@ -253,21 +253,6 @@ async def _freeze(post, now):
 	log.info(f"Bets locked for match {post['match_id']}: {pool0}-{pool1} gold.")
 
 
-def _player_ids(match_id):
-	"""Ids of everyone playing the match — both sides and the unpicked.
-
-	Reads the live match when it is still active; an already-finished match has
-	nobody left to name (the book froze long before that). This is the right
-	shape for callers that only need "is this person in the match at all";
-	callers deciding WHICH side someone may back want _team_ids below.
-	"""
-	import bot
-	for m in bot.active_matches:
-		if m.id == match_id:
-			return {p.id for p in m.players}
-	return set()
-
-
 def _team_ids(match_id):
 	"""(team0_ids, team1_ids) for a live match, or two empty sets.
 

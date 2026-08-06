@@ -204,6 +204,44 @@ class TestMatchPlayerIds:
 		assert fake.calls[0][2] == [77]
 
 
+class TestBetsFor:
+	""" The snapshot every refund, payout and report is built from. """
+
+	def test_the_snapshot_carries_the_self_bet_flag(self, monkeypatch):
+		""" `is_player` can be deleted from this SELECT with the whole suite
+		green, and Amendment 1's "(backed themselves)" annotation simply stops
+		appearing in production.
+
+		It cannot be recomputed to make up for it: the roster lives in
+		bot.active_matches, in memory, and the match has left it by the time
+		the result is reported — which is the entire reason the column exists
+		rather than being derived at read time. """
+		from bot.predictions import view
+
+		fake = use_fake(monkeypatch, rows=[
+			dict(user_id=1, nick="anu", side=0, stake=150, is_player=1)])
+		rows = asyncio.run(store.bets_for(12))
+
+		_kind, sql, args = fake.calls[0]
+		assert "is_player" in sql, "a column dropped from this SELECT is gone for good"
+		assert args == [12]
+		# And "carried" means as far as the report. view.report_lines reads the
+		# flag with `.get`, so a missing key is not an error ANYWHERE — the
+		# annotation just disappears, which is exactly why nothing failed.
+		assert "backed themselves" in "\n".join(
+			view.report_lines("Alpha", "Bravo", 0, rows, {1: 150}))
+		without = [{k: v for k, v in rows[0].items() if k != "is_player"}]
+		assert "backed themselves" not in "\n".join(
+			view.report_lines("Alpha", "Bravo", 0, without, {1: 150}))
+
+	def test_the_snapshot_is_biggest_stake_first(self, monkeypatch):
+		""" The order every report and payout roll-call presents, and the
+		reason no caller sorts it again. """
+		fake = use_fake(monkeypatch, rows=[])
+		asyncio.run(store.bets_for(12))
+		assert "ORDER BY stake DESC, user_id ASC" in fake.calls[0][1]
+
+
 class TestLeaderboard:
 	def test_gold_bets_count_toward_prediction_accuracy(self, monkeypatch):
 		""" Placing a bet IS the user's prediction — the design's reason the
