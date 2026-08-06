@@ -61,6 +61,7 @@ async def create_post(channel_id, q, opened_at, closes_at):
 	"""Insert an open post. q is a schedule entry (carries seq/week/day/correct_indices)."""
 	return await db.insert("quiz_posts", dict(
 		channel_id=channel_id, message_id=None, question_id=q["id"], category=q["category"],
+		difficulty=q.get("difficulty"),
 		prompt=q["prompt"], options_json=json.dumps(q["options"]),
 		correct_index=q.get("correct_index"),
 		correct_indices=json.dumps(q["correct_indices"]),

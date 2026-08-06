@@ -19,6 +19,7 @@ db.ensure_table(dict(
 		dict(cname="message_id", ctype=db.types.int, notnull=False),
 		dict(cname="question_id", ctype=db.types.str),
 		dict(cname="category", ctype=db.types.str),
+		dict(cname="difficulty", ctype=db.types.str, notnull=False),
 		dict(cname="prompt", ctype=db.types.text),
 		dict(cname="options_json", ctype=db.types.text),
 		dict(cname="correct_index", ctype=db.types.int, notnull=False),
