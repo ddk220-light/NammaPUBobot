@@ -88,10 +88,17 @@ def _named(rows, max_named, fmt):
 	return lines
 
 
+def _backed_note(bet):
+	"""Annotation for a participant who staked on their own team. `.get` because
+	posts made before the is_player column exists carry no flag at all."""
+	return " *(backed themselves)*" if bet.get("is_player") else ""
+
+
 def report_lines(team0, team1, winner_idx, bets, paid, max_named=25):
 	"""The post-match betting report: the pot, every winner's stake -> payout
-	(net gain shown), every loser's stake. bets come from store.bets_for()
-	(already biggest-stake-first); paid from scoring.payouts()."""
+	(net gain shown), every loser's stake — annotating participants who backed
+	their own team. bets come from store.bets_for() (already biggest-stake-first);
+	paid from scoring.payouts()."""
 	winner_name = team0 if winner_idx == 0 else team1
 	lines = [f"**{winner_name}** won it."]
 	if not bets:
@@ -104,12 +111,12 @@ def report_lines(team0, team1, winner_idx, bets, paid, max_named=25):
 	if winners:
 		lines.append("")
 		lines.extend(_named(winners, max_named, lambda b: (
-			f"\U0001F3C6 **{b['nick']}** staked {b['stake']} → "
+			f"\U0001F3C6 **{b['nick']}**{_backed_note(b)} staked {b['stake']} → "
 			f"**{paid.get(b['user_id'], 0)}** {GOLD} (+{paid.get(b['user_id'], 0) - b['stake']})")))
 	if losers:
 		lines.append("")
 		lines.extend(_named(losers, max_named, lambda b: (
-			f"\U0001F4B8 {b['nick']} staked {b['stake']} on "
+			f"\U0001F4B8 {b['nick']}{_backed_note(b)} staked {b['stake']} on "
 			f"{team0 if b['side'] == 0 else team1} — gone")))
 	return lines
 

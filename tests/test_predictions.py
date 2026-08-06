@@ -177,6 +177,32 @@ class TestReportLines:
 		text = "\n".join(lines)
 		assert "+5 more" in text
 
+	SELF_BETS = [
+		dict(user_id=1, nick="anu", side=0, stake=150, is_player=1),
+		dict(user_id=2, nick="bala", side=0, stake=50, is_player=0),
+		dict(user_id=3, nick="chetan", side=1, stake=100, is_player=1),
+	]
+
+	def test_a_player_who_backed_themselves_and_won_is_named_as_such(self):
+		text = "\n".join(view.report_lines("Alpha", "Beta", 0, self.SELF_BETS, {1: 225, 2: 75}))
+		anu = next(ln for ln in text.split("\n") if "anu" in ln)
+		assert "backed themselves" in anu
+
+	def test_a_player_who_backed_themselves_and_lost_is_named_as_such(self):
+		text = "\n".join(view.report_lines("Alpha", "Beta", 0, self.SELF_BETS, {1: 225, 2: 75}))
+		chetan = next(ln for ln in text.split("\n") if "chetan" in ln)
+		assert "backed themselves" in chetan
+
+	def test_a_spectator_is_not_annotated(self):
+		text = "\n".join(view.report_lines("Alpha", "Beta", 0, self.SELF_BETS, {1: 225, 2: 75}))
+		bala = next(ln for ln in text.split("\n") if "bala" in ln)
+		assert "backed themselves" not in bala
+
+	def test_rows_without_the_flag_still_render(self):
+		# Historical posts predate the column; they must not crash the report.
+		text = "\n".join(view.report_lines("Alpha", "Beta", 0, self.BETS, {1: 225, 2: 75}))
+		assert "anu" in text and "backed themselves" not in text
+
 
 class TestBetConfirmLines:
 	def test_states_stake_side_pools_and_balance(self):
