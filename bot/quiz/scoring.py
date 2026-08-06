@@ -86,11 +86,3 @@ def daily_due(now_ts, hour, last_post_ymd):
 		return False
 	return _ymd(now_ts) != (last_post_ymd or "")
 
-
-def leaderboard_due(now_ts, dow, hour, last_leaderboard_ymd):
-	"""True iff today is the configured ISO weekday (1=Mon..7=Sun), the UTC hour is
-	reached, and the leaderboard was not already posted today."""
-	d = datetime.datetime.fromtimestamp(int(now_ts), datetime.timezone.utc)
-	if d.isoweekday() != int(dow) or d.hour < int(hour):
-		return False
-	return _ymd(now_ts) != (last_leaderboard_ymd or "")

@@ -6,11 +6,9 @@ from nextcord import Interaction  # noqa: F401
 
 from core.console import log
 from core.database import db
-from core.config import cfg
 from core.utils import error_embed, ok_embed, get  # noqa: F401
 
 import bot
-from bot.community import enroll_channel
 
 # Durable snapshot of in-flight state (queues + active matches + expire timers)
 # in MySQL. The bot service disk is ephemeral (only MySQL has a volume), so
@@ -28,43 +26,6 @@ db.ensure_table(dict(
 ))
 
 
-async def enable_channel(message):
-	if not (message.author.id == cfg.DC_OWNER_ID or message.channel.permissions_for(message.author).administrator):
-		await message.channel.send(embed=error_embed(
-			"One must posses the guild administrator permissions in order to use this command."
-		))
-		return
-	if message.channel.id not in bot.queue_channels.keys():
-		bot.queue_channels[message.channel.id] = await bot.QueueChannel.create(message.channel)
-		# Enroll into a community right away — on_ready's enrollment loop only
-		# runs once at boot, so without this a channel enabled at runtime has
-		# no community_id (community_for_channel() returns None) until the
-		# next full restart. See bot/community.py.
-		await enroll_channel(message.channel)
-		await message.channel.send(embed=ok_embed("The bot has been enabled."))
-	else:
-		await message.channel.send(
-			embed=error_embed("The bot is already enabled on this channel.")
-		)
-
-
-async def disable_channel(message):
-	if not (message.author.id == cfg.DC_OWNER_ID or message.channel.permissions_for(message.author).administrator):
-		await message.channel.send(embed=error_embed(
-			"One must posses the guild administrator permissions in order to use this command."
-		))
-		return
-	qc = bot.queue_channels.get(message.channel.id)
-	if qc:
-		for queue in qc.queues:
-			await queue.cfg.delete()
-		await qc.cfg.delete()
-		bot.queue_channels.pop(message.channel.id)
-		await message.channel.send(embed=ok_embed("The bot has been disabled."))
-	else:
-		await message.channel.send(embed=error_embed("The bot is not enabled on this channel."))
-
-
 def update_qc_lang(qc_cfg):
 	bot.queue_channels[qc_cfg.p_key].update_lang()
 
@@ -80,7 +41,7 @@ def _serialize_state():
 			if q.length > 0:
 				queues.append(q.serialize())
 	matches = [match.serialize() for match in bot.active_matches]
-	return dict(queues=queues, matches=matches, allow_offline=bot.allow_offline, expire=bot.expire.serialize())
+	return dict(queues=queues, matches=matches, expire=bot.expire.serialize())
 
 
 def save_state():
@@ -126,7 +87,6 @@ async def load_state():
 
 	log.info("Loading state...")
 
-	bot.allow_offline = list(data['allow_offline'])
 
 	for qd in data['queues']:
 		if qd.get('queue_type') in ['PickupQueue', None]:
@@ -151,8 +111,3 @@ async def remove_players(*users, reason=None):
 	for qc in set((q.qc for q in bot.active_queues)):
 		await qc.remove_members(*users, reason=reason)
 
-
-async def expire_auto_ready(frame_time):
-	for user_id, at in list(bot.auto_ready.items()):
-		if at < frame_time:
-			bot.auto_ready.pop(user_id)

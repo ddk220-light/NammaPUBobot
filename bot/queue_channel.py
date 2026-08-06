@@ -116,15 +116,6 @@ class QueueChannel:
 				section="General",
 				description="If set, only players with this role will be able to add to queues."
 			),
-			Variables.DurationVar(
-				"max_auto_ready",
-				display="Auto ready limit",
-				section="General",
-				description="Set limit on how long !auto_ready duration can be. Disable to prohibit the command.",
-				default=15*60,
-				verify=lambda d: 0 < d < 86401,
-				verify_message="Auto ready limit must be 24 hours or less."
-			),
 			Variables.TextVar(
 				"description",
 				display="Description",
@@ -480,12 +471,15 @@ class QueueChannel:
 		asyncio.create_task(self._update_rating_roles(*members))
 
 	async def update_expire(self, member):
-		""" update expire timer on !add command """
-		personal_expire = await db.select_one(['expire'], 'player_prefs', where={'user_id': member.id})
-		personal_expire = personal_expire.get('expire') if personal_expire else None
-		if personal_expire not in [0, None]:
-			bot.expire.set(self, member, personal_expire)
-		elif self.cfg.expire_time and personal_expire is None:
+		"""Start this member's auto-remove timer on /add, if the channel sets one.
+
+		The per-player override that used to take precedence here is gone with
+		/expire and /expire_default: it read player_prefs, a table that held zero
+		rows across 3,338 matches and has been dropped. expire_time is still a
+		live channel setting, reachable from the web dashboard — the commands
+		went, the feature did not.
+		"""
+		if self.cfg.expire_time:
 			bot.expire.set(self, member, self.cfg.expire_time)
 
 	async def _update_rating_roles(self, *members):
@@ -514,21 +508,17 @@ class QueueChannel:
 
 	async def queue_started(self, ctx, members):
 		await self.remove_members(*members, ctx=ctx)
-
-		for m in filter(lambda m: m.id in bot.allow_offline, members):
-			bot.allow_offline.remove(m.id)
-
 		await bot.remove_players(*members, reason="pickup started")
 
 	async def check_allowed_to_add(self, ctx, member, queue=None):
-		""" raises exception if not allowed, returns phrase string or None if allowed """
+		""" raises if this member may not add; returns nothing """
 
 		if self.cfg.blacklist_role and self.cfg.blacklist_role in member.roles:
 			raise bot.Exc.PermissionError(self.gt("You are not allowed to add to queues on this channel."))
 		if self.cfg.whitelist_role and self.cfg.whitelist_role not in member.roles:
 			raise bot.Exc.PermissionError(self.gt("You are not allowed to add to queues on this channel."))
 
-		ban_left, phrase = await bot.noadds.get_user(ctx, member)
+		ban_left = await bot.noadds.get_user(ctx, member)
 		if ban_left:
 			raise bot.Exc.PermissionError(self.gt("You have been banned, `{duration}` left.").format(
 				duration=seconds_to_str(ban_left)
@@ -539,4 +529,3 @@ class QueueChannel:
 
 		if queue:
 			await queue.check_allowed_to_add(member)
-		return phrase

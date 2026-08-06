@@ -108,18 +108,9 @@ class Embeds:
 				inline=False
 			)
 
-			if len(self.m.teams[0]) and len(self.m.teams[1]):
-				msg = self.m.gt("Pick players with `/pick @player` command.")
-				pick_step = len(self.m.teams[0]) + len(self.m.teams[1]) - 2
-				picker_team = self.m.teams[self.m.draft.pick_order[pick_step]] if pick_step < len(self.m.draft.pick_order)-1 else None
-				if picker_team:
-					msg += "\n" + self.m.gt("{member}'s turn to pick!").format(member=f"<@{picker_team[0].id}>")
-			else:
-				msg = self.m.gt("Type {cmd} to become a captain and start picking teams.").format(
-					cmd=f"`{self.m.qc.cfg.prefix}capfor {'/'.join((team.name.lower() for team in self.m.teams[:2]))}`"
-				)
-
-			embed.add_field(name="—", value=msg + "\n\u200b", inline=False)
+			# No 'whose turn to pick' line: there is no draft to take a turn in.
+			# It read draft.pick_order, which went with the pick commands, and
+			# the other branch told players to type /capfor.
 
 		embed.set_footer(**self.footer)
 

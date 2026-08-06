@@ -96,15 +96,20 @@ class PickupQueue:
 				description="Force a maximum amount of players per team.",
 				verify=lambda i: 0 < i < 101
 			),
+			# "draft" is deliberately NOT an option any more. It put the match in
+			# the DRAFT state with both teams empty and everyone in the unpicked
+			# list, waiting for /capfor and /pick to empty it -- and those
+			# commands are gone. A queue set to draft would have hung forever
+			# with no way for anyone to advance it, so the option had to go with
+			# them. It was also the default, which is why the default moved.
 			Variables.OptionVar(
 				"pick_teams",
 				display="Pick teams",
 				section="Teams",
-				options=["draft", "matchmaking", "captain based matchmaking", "random teams", "no teams"],
-				default="draft",
+				options=["matchmaking", "captain based matchmaking", "random teams", "no teams"],
+				default="captain based matchmaking",
 				description="\n".join([
 					"Set how teams should be picked:",
-					"  draft - host a draft stage where captains will have to pick players",
 					"  matchmaking - form teams automatically based on players ratings",
 					"  captain based matchmaking - top 2 rated players become captains, remaining players split to minimize elo difference with weaker captain getting stronger teammates",
 					"  random teams - form teams randomly",
@@ -119,7 +124,7 @@ class PickupQueue:
 				options=["by role and rating", "fair pairs", "random with role preference", "random", "no captains"],
 				default="by role and rating",
 				description="\n".join([
-					"Set how captains should be picked (for 'draft' or 'no teams' above):",
+					"Set how captains should be picked (for 'no teams' above):",
 					"  by role and rating - sort by captain role and rating and pick the best",
 					"  fair pairs - pick random pair of players with closest ratings to each other",
 					"  random with role preference - pick captains randomly with preference of the captain role",
@@ -127,15 +132,6 @@ class PickupQueue:
 					"  no captains - do not pick captains automatically"
 				]),
 				notnull=True
-			),
-			Variables.StrVar(
-				"pick_order",
-				display="Teams picking order",
-				section="Teams",
-				verify=lambda s: set(s) == set("ab"),
-				default="abababba",
-				verify_message="Pick order can only contain a and b characters.",
-				description="a - 1st team picks, b - 2nd team picks, example: ababba"
 			),
 			Variables.StrVar(
 				"team_names",
@@ -329,7 +325,7 @@ class PickupQueue:
 			team_emojis=self.cfg.team_emojis.split(" ") if self.cfg.team_emojis else None,
 			ranked=self.cfg.ranked, pick_captains=self.cfg.pick_captains,
 			captains_role_id=self.cfg.captains_role.id if self.cfg.captains_role else None,
-			pick_teams=self.cfg.pick_teams, pick_order=self.cfg.pick_order,
+			pick_teams=self.cfg.pick_teams,
 			maps=[i['name'] for i in self.cfg.maps], vote_maps=self.cfg.vote_maps,
 			map_count=self.cfg.map_count, check_in_timeout=self.cfg.check_in_timeout,
 			check_in_discard=self.cfg.check_in_discard,

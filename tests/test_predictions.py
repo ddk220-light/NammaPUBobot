@@ -255,30 +255,41 @@ class TestBetConfirmLines:
 		assert "230" in text and "180" in text and "430" in text
 
 
-class TestGoldLines:
-	def test_balance_and_entries(self):
+class TestMeLines:
+	""" /predictions me absorbed /gold: record, balance and movements on one card. """
+
+	def test_record_balance_and_entries(self):
 		entries = [
 			dict(entry_type="payout", amount=225, match_id=None, post_id=12, created_at=0),
 			dict(entry_type="bet", amount=-50, match_id=None, post_id=12, created_at=0),
 			dict(entry_type="seed", amount=500, match_id=None, post_id=None, created_at=0),
 		]
-		text = "\n".join(view.gold_lines(430, entries))
+		text = "\n".join(view.me_lines("anu", 3, 4, 430, entries))
+		assert "anu" in text and "3/4" in text
 		assert "430" in text and "Winnings" in text and "+225" in text
 		assert "Bet placed" in text and "-50" in text and "Starting gold" in text
 
-	def test_no_entries(self):
-		text = "\n".join(view.gold_lines(500, []))
+	def test_balance_without_entries(self):
+		text = "\n".join(view.me_lines("anu", 1, 2, 500, []))
 		assert "500" in text
 
+	def test_seeded_now_greets_instead_of_reporting(self):
+		text = "\n".join(view.me_lines("anu", 0, 0, 500, [], seeded_now=True))
+		assert "start with 500" in text
+		assert "Holding" not in text
 
-class TestGoldTopLines:
-	def test_ranks_with_places(self):
-		rows = [dict(nick="anu", balance=900), dict(nick="bala", balance=500)]
-		text = "\n".join(view.gold_top_lines(rows))
-		assert "1." in text and "anu" in text and "900" in text
+	def test_balance_shows_even_with_no_prediction_record(self):
+		# The two halves are independent — someone who only wanted their gold
+		# should not be told "no record" instead of being given it.
+		text = "\n".join(view.me_lines("anu", 0, 0, 500, []))
+		assert "No matches predicted yet." in text
+		assert "500" in text
 
-	def test_empty(self):
-		assert view.gold_top_lines([]) == ["Nobody holds any gold yet."]
+	def test_absent_community_omits_gold_entirely(self):
+		# balance=None means "this channel has no gold", not "you hold zero".
+		text = "\n".join(view.me_lines("anu", 2, 3, None, []))
+		assert "2/3" in text
+		assert "Holding" not in text and "0 " not in text
 
 
 class TestViewBuilders:

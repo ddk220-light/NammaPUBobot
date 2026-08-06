@@ -5,9 +5,5 @@ from .stats import *
 from .admin import *
 from .misc import *
 from .quiz import *
-from .replay_stats import *
-from .player_details import *
-from .insights import *
 from .predictions import *
-from .changelog import *
 from .identity import *

@@ -1,7 +1,4 @@
-__all__ = [
-	'show_matches', 'show_teams', 'set_ready', 'sub_me', 'sub_auto', 'sub_for', 'put',
-	'sub_force', 'cap_me', 'cap_for', 'pick', 'report_admin', 'report', 'report_manual', 'lobby2'
-]
+__all__ = ['show_teams', 'sub_me', 'sub_auto', 'sub_for', 'put', 'sub_force', 'report_admin', 'report', 'report_manual', 'lobby2']
 
 from nextcord import Member
 from typing import List  # noqa: UP035
@@ -21,24 +18,11 @@ def author_match(coro):
 	return wrapper
 
 
-async def show_matches(ctx):
-	matches = [m for m in bot.active_matches if m.qc.id == ctx.qc.id]
-	if len(matches):
-		await ctx.reply("\n".join((m.print() for m in matches)))
-	else:
-		await ctx.reply(ctx.qc.gt("> no active matches"))
-
-
 @author_match
 async def show_teams(ctx, match: bot.Match):
 	if match.state not in [bot.Match.DRAFT, bot.Match.WAITING_REPORT]:
 		raise bot.Exc.MatchStateError('Match must be on draft or waiting report state.')
 	await match.draft.print(ctx)
-
-
-@author_match
-async def set_ready(ctx, match: bot.Match, is_ready=True):
-	await match.check_in.set_ready(ctx, ctx.author, is_ready)
 
 
 @author_match
@@ -77,21 +61,6 @@ async def sub_force(ctx, player1: Member, player2: Member):
 		raise bot.Exc.InMatchError(ctx.qc.gt("Specified user is in an active match."))
 
 	await match.draft.sub_for(ctx, player1, player2, force=True)
-
-
-@author_match
-async def cap_me(ctx, match: bot.Match):
-	await match.draft.cap_me(ctx, ctx.author)
-
-
-@author_match
-async def cap_for(ctx, match: bot.Match, team_name: str):
-	await match.draft.cap_for(ctx, ctx.author, team_name)
-
-
-@author_match
-async def pick(ctx, match: bot.Match, players: List[Member]):  # noqa: UP006
-	await match.draft.pick(ctx, ctx.author, players)
 
 
 async def put(ctx, match_id: int, player: Member, team_name: str):

@@ -7,20 +7,19 @@ from .subbing import pick_available
 
 
 class Draft:
+	"""Substitutions and roster edits for a live match.
 
-	pick_steps = {
-		"a": 0,
-		"b": 1
-	}
+	Named for the captain draft it used to host. That stage is gone: "draft" is
+	no longer a selectable pick_teams value, so DRAFT is never appended to a
+	match's states and cap_me/cap_for/pick had no reachable caller. What is left
+	is substitution -- sub_me, sub_for, sub_auto -- plus put. The DRAFT constant
+	and the state checks below stay as defensive guards; they simply never match.
+	"""
 
-	def __init__(self, match, pick_order, captains_role_id):
+	def __init__(self, match, captains_role_id):
 		self.m = match
-		self.pick_order = [self.pick_steps[i] for i in pick_order] if pick_order else []
 		self.captains_role_id = captains_role_id
 		self.sub_queue = []
-
-		if self.m.cfg['pick_teams'] == "draft":
-			self.m.states.append(self.m.DRAFT)
 
 	async def start(self, ctx):
 		await self.refresh(ctx)
@@ -38,64 +37,6 @@ class Draft:
 			await self.print(ctx)
 		else:
 			await self.m.next_state(ctx)
-
-	async def cap_me(self, ctx, author):
-		if self.m.state != self.m.DRAFT:
-			raise bot.Exc.MatchStateError(self.m.gt("The match is not on the draft stage."))
-
-		team = find(lambda t: author in t, self.m.teams)
-		if team.idx == 2 or team.index(author) != 0:
-			raise bot.Exc.PermissionError(self.m.gt("You are not a captain."))
-		if len(team) > 1:
-			raise bot.Exc.PermissionError(self.m.gt("Can't do that after you've started picking."))
-
-		team.remove(author)
-		self.m.teams[2].add(author)
-		await self.print(ctx)
-
-	async def cap_for(self, ctx, author, team_name):
-		if self.m.state != self.m.DRAFT:
-			raise bot.Exc.MatchStateError(self.m.gt("The match is not on the draft stage."))
-		elif self.captains_role_id and self.captains_role_id not in (r.id for r in author.roles):
-			raise bot.Exc.PermissionError(self.m.gt("You must possess the captain's role."))
-		elif (team := find(lambda t: t.name.lower() == team_name.lower(), self.m.teams[:2])) is None:
-			raise bot.Exc.SyntaxError(self.m.gt("Specified team name not found."))
-		elif len(team):
-			raise bot.Exc.PermissionError(
-				self.m.gt(f"Team **{team.name}** already have a captain. The captain must type **/capme** first.")
-			)
-
-		find(lambda t: author in t, self.m.teams).remove(author)
-		team.insert(0, author)
-		await self.print(ctx)
-
-	async def pick(self, ctx, author, players):
-		for player in players:
-			pick_step = max(0, (len(self.m.teams[0]) + len(self.m.teams[1]) - 2))
-			picker_team = self.m.teams[self.pick_order[pick_step]] if pick_step < len(self.pick_order) - 1 else None
-
-			if self.m.state != self.m.DRAFT:
-				raise bot.Exc.MatchStateError(self.m.gt("The match is not on the draft stage."))
-			elif (team := find(lambda t: author in t[:1], self.m.teams[:2])) is None:
-				raise bot.Exc.PermissionError(self.m.gt("You are not a captain."))
-			elif picker_team is not None and picker_team is not team:
-				raise bot.Exc.PermissionError(self.m.gt("Not your turn to pick."))
-			elif player not in self.m.teams[2]:
-				raise bot.Exc.NotFoundError(self.m.gt("Specified player not in the unpicked list."))
-
-			self.m.teams[2].remove(player)
-			team.append(player)
-
-			# auto last-pick rest of the players if possible
-			# if rest of pick_order covers the unpicked list
-			if len(self.m.teams[2]) and len(self.pick_order[pick_step+1:]) >= len(self.m.teams[2]):  # noqa: SIM102
-				# if rest of pick_order is a single team
-				if len(set(self.pick_order[pick_step+1:])) == 1:
-					picker_team = self.m.teams[self.pick_order[pick_step+1]]
-					picker_team.extend(self.m.teams[2])
-					self.m.teams[2].clear()
-
-		await self.refresh(ctx)
 
 	async def put(self, ctx, player, team_name):
 		if (team := find(lambda t: t.name.lower() == team_name.lower(), self.m.teams)) is None:

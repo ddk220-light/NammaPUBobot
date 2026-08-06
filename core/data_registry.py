@@ -50,10 +50,7 @@ REGISTRY = {
 	"channel_settings": dict(layer="core", tenancy="channel", writers=("core/cfg_factory.py",), retention="forever"),
 	"queue_settings": dict(layer="core", tenancy="channel", writers=("core/cfg_factory.py",), retention="forever"),
 	"bot_state": dict(layer="core", tenancy="global", writers=("bot/main.py",), retention="forever"),
-	"player_prefs": dict(layer="core", tenancy="global", writers=("bot/commands/misc.py",), retention="forever"),
 	"queue_bans": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
-	"player_phrases": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
-	"douche_log": dict(layer="core", tenancy="channel", writers=("bot/douche.py",), retention="forever"),
 	# feature state (core contract)
 	"quiz_posts": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
 	"quiz_answers": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),

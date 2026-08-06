@@ -52,15 +52,6 @@ def test_daily_due_fires_once_per_day_at_hour():
 	assert s.daily_due(now_ts=at, hour=10, last_post_ymd="2024-06-12") is False  # before hour
 
 
-def test_leaderboard_due_gates_on_weekday_hour_and_dedup():
-	# 2024-06-13 is a Thursday -> isoweekday 4
-	at = 1718269200   # 09:00 UTC Thursday
-	assert s.leaderboard_due(now_ts=at, dow=4, hour=9, last_leaderboard_ymd="2024-06-06") is True
-	assert s.leaderboard_due(now_ts=at, dow=4, hour=9, last_leaderboard_ymd="2024-06-13") is False
-	assert s.leaderboard_due(now_ts=at, dow=7, hour=9, last_leaderboard_ymd="") is False  # wrong dow
-	assert s.leaderboard_due(now_ts=at, dow=4, hour=10, last_leaderboard_ymd="") is False  # before hour
-
-
 from bot.quiz.scoring import grade_multi, parse_custom_id
 
 

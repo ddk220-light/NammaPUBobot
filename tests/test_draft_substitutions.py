@@ -148,7 +148,7 @@ def wire_bot_only(monkeypatch):
 
 
 def draft_for(match):
-	return Draft(match, pick_order=None, captains_role_id=None)
+	return Draft(match, captains_role_id=None)
 
 
 # ── /subfor and /subforce ────────────────────────────────────────────────

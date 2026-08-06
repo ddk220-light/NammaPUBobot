@@ -28,8 +28,9 @@ class Match:
 
 	default_cfg = dict(
 		teams=None, team_names=['Alpha', 'Beta'], team_emojis=None, ranked=False,
-		team_size=1, pick_captains="no captains", captains_role_id=None, pick_teams="draft",
-		pick_order=None, maps=[], vote_maps=0, map_count=0, check_in_timeout=0,
+		team_size=1, pick_captains="no captains", captains_role_id=None,
+		pick_teams="captain based matchmaking",
+		maps=[], vote_maps=0, map_count=0, check_in_timeout=0,
 		check_in_discard=True, match_lifetime=3*60*60, start_msg=None, server=None,
 		show_streamers=True, predictions_enabled=True
 	)
@@ -174,7 +175,7 @@ class Match:
 
 		# Init self sections
 		self.check_in = CheckIn(self, self.cfg['check_in_timeout'])
-		self.draft = Draft(self, self.cfg['pick_order'], self.cfg['captains_role_id'])
+		self.draft = Draft(self, self.cfg['captains_role_id'])
 		self.embeds = Embeds(self)
 
 	@staticmethod
@@ -209,11 +210,11 @@ class Match:
 			)[:2]
 
 	def init_teams(self, pick_teams):
-		if pick_teams == "draft":
-			self.teams[0].set(self.captains[:1])
-			self.teams[1].set(self.captains[1:])
-			self.teams[2].set([p for p in self.players if p not in self.captains])
-		elif pick_teams == "matchmaking":
+		# No "draft" branch: seeding two captains and leaving everyone else in
+		# teams[2] only made sense while /capfor and /pick existed to empty that
+		# list. Without them a draft match hangs with six players unpicked, so
+		# "draft" was removed from the pick_teams options entirely.
+		if pick_teams == "matchmaking":
 			team_len = min(self.cfg['team_size'], int(len(self.players)/2))
 			best_rating = sum(self.ratings.values())/2
 			best_team = min(

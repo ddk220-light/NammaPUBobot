@@ -73,17 +73,11 @@ def report_embed(team0, team1, winner_idx, bets, paid):
 		colour=Colour(_RESULT))
 
 
-def gold_embed(balance_amount, entries, seeded_now=False):
-	desc = view.gold_lines(balance_amount, entries)
-	if seeded_now:
-		desc.insert(0, f"Welcome to the betting floor — you start with {balance_amount} {view.GOLD}.")
-	return Embed(title=f"{view.GOLD} Your gold", description="\n".join(desc), colour=Colour(_RESULT))
-
-
-def gold_top_embed(rows, page=1):
+def me_embed(display_name, correct, total, balance_amount, entries, seeded_now=False):
 	return Embed(
-		title=f"{view.GOLD} Gold leaderboard",
-		description="\n".join(view.gold_top_lines(rows, page=page)),
+		title="\U0001F52E Prediction record",
+		description="\n".join(
+			view.me_lines(display_name, correct, total, balance_amount, entries, seeded_now)),
 		colour=Colour(_RESULT))
 
 

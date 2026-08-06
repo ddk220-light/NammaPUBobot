@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import time
-from random import choice
 from core.database import db
 from core.utils import get_nick
 
@@ -21,15 +20,6 @@ db.ensure_table(dict(
 	primary_keys=["id"]
 ))
 
-db.ensure_table(dict(
-	tname="player_phrases",
-	columns=[
-		dict(cname="channel_id", ctype=db.types.int),
-		dict(cname="user_id", ctype=db.types.int),
-		dict(cname="phrase", ctype=db.types.text),
-	]
-))
-
 
 class NoAdds:
 
@@ -38,26 +28,12 @@ class NoAdds:
 
 	@staticmethod
 	async def get_user(ctx, member):
-		""" returns [ban_left, phrase]"""
+		""" seconds left on this member's queue ban, 0 if not banned """
 
 		m_noadd = await db.select_one(
 			['duration', 'at'], 'queue_bans', where=dict(guild_id=ctx.channel.guild.id, user_id=member.id, is_active=1)
 		)
-		ban_left = max(0, (m_noadd['duration']+m_noadd['at'])-int(time.time())) if m_noadd else 0
-		phrases = await db.select(['phrase'], 'player_phrases', where=dict(channel_id=ctx.channel.id, user_id=member.id))
-
-		return [ban_left, choice(phrases)['phrase'] if len(phrases) else None]
-
-	@staticmethod
-	async def phrases_add(ctx, member, phrase):
-		await db.insert('player_phrases', dict(channel_id=ctx.channel.id, user_id=member.id, phrase=phrase))
-
-	@staticmethod
-	async def phrases_clear(ctx, member=None):
-		if member:
-			await db.delete('player_phrases', where=dict(channel_id=ctx.channel.id, user_id=member.id))
-		else:
-			await db.delete('player_phrases', where=dict(channel_id=ctx.channel.id))
+		return max(0, (m_noadd['duration']+m_noadd['at'])-int(time.time())) if m_noadd else 0
 
 	@staticmethod
 	async def noadd(ctx, member, duration, moderator, reason=None):
