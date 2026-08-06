@@ -43,11 +43,33 @@
 | /top                  | Show top active players on the channel                  |
 | /stats show           | Show overall channel stats                              |
 
+#### Gold and match betting
+Gold is play money. Everyone starts with 500. When a ranked match's teams are
+settled the bot posts a betting card with six buttons — 10/50/100 on each team —
+open for 10 minutes. All stakes go into one pot and the winning side splits the
+whole thing in proportion to what each backed, so the odds come from the pools,
+not from a bookmaker. Players in the match may bet **only on their own team**;
+spectators may take either side. You can cancel your whole bet until the freeze
+via the button on your private confirmation. A one-sided book pays no one and
+refunds everyone.
+
+Playing a ranked match pays up to 100 gold, but the match and quiz faucets only
+top a balance back up toward 500 and never above it — at 500 they pay nothing.
+Only winning a bet takes you past 500. Full rules: [docs/GOLD.md](docs/GOLD.md).
+
+| command               | description                                             |
+|-----------------------|---------------------------------------------------------|
+| /gold                 | Your balance and recent movements (only you see it)     |
+| /gold_top             | The richest bettors in the community                    |
+| /predictions leaderboard | Prediction accuracy standings                        |
+| /predictions me       | Your (or another player's) prediction record            |
+
 #### Daily AoE2 quiz (opt-in)
 One question a day, posted as a public poll that stays open for `open_window`
 (24h by default). Vote with the buttons on the card — you can change your vote
-until it locks. When it locks, every vote is graded and paid: 50 gold for a
-correct answer, 10 for playing, never lifting a balance above 500.
+until it locks, and the card shows a live tally with voter names. When it locks,
+every vote is graded and paid: 50 gold for a correct answer, 10 for playing,
+never lifting a balance above 500.
 
 | command               | description                                             |
 |-----------------------|---------------------------------------------------------|

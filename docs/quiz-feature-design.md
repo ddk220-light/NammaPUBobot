@@ -1,6 +1,27 @@
 # AoE2 Unit Quiz — Design Spec
 
-_Status: approved design, 2026-06-17. Implementation pending._
+> **SUPERSEDED — historical record, do not implement from this document.**
+>
+> This design shipped in June 2026 and was replaced on 2026-08-06 by
+> [`superpowers/specs/2026-08-06-quiz-poll-gold-design.md`](superpowers/specs/2026-08-06-quiz-poll-gold-design.md),
+> which is the operative spec.
+>
+> What changed, and why the difference matters when reading below: the quiz is
+> no longer private, timed, or one-shot. There is no **Reveal & start** button,
+> no ephemeral question, no personal 3-minute deadline (`answer_window` is a dead
+> column), and no `response_ms` — speed is not scored. The question is public on
+> the card, votes are cast with buttons and **can be changed** for a full 24
+> hours, the card carries a live tally with voter names, and locking the poll
+> grades every vote and pays gold (50 correct / 10 played, capped so no grant
+> lifts a balance above 500). §5 (Lifecycle) and §7 (Edge cases) below describe
+> the retired flow and are wrong about today's behaviour in every particular.
+>
+> Still accurate and still worth reading: §2 (non-goals — the isolation and
+> opt-in guarantees still hold), §3 (data source), and the question-generation
+> design. The table names in §2 are aspirational; the shipped tables are
+> `quiz_posts`, `quiz_answers`, `quiz_settings`.
+
+_Status: superseded 2026-08-06. Originally approved 2026-06-17._
 
 ## 1. Goal
 
