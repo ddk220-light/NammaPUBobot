@@ -25,6 +25,10 @@ class _SideLocked(Exception):
 	pass
 
 
+class _Closed(Exception):
+	pass
+
+
 async def balance(community_id, user_id):
 	"""Spendable gold; 0 for a user who has never been seeded."""
 	row = await db.fetchone(
@@ -75,16 +79,43 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now):
 	"""One press of a bet button, atomically.
 
 	-> ('ok', new_balance) | ('insufficient', balance) | ('side_locked', locked_side)
+	   | ('closed', None)
 
-	Inside one transaction: conditional balance decrement (matching zero rows
-	means not enough gold), the prediction_bets upsert whose composite PK IS
-	the side lock (same-side UPDATE, else INSERT; a duplicate-key error means
-	the user is on the other side), and the ledger row. Any rejection raises,
-	so the stake deduction can never survive a refused bet."""
+	Inside one transaction: the book re-read and row-locked (see below), the
+	conditional balance decrement (matching zero rows means not enough gold),
+	the prediction_bets upsert whose composite PK IS the side lock (same-side
+	UPDATE, else INSERT; a duplicate-key error means the user is on the other
+	side), and the ledger row. Any rejection raises, so the stake deduction can
+	never survive a refused bet."""
 	if stake not in scoring.STAKES:
 		raise ValueError(f"stake {stake} is not one of {scoring.STAKES}")
 	try:
 		async with db.transaction() as tx:
+			# THE BOOK, RE-READ AND LOCKED — not a courtesy re-check of what the
+			# handler already read.
+			#
+			# The handler's status/freezes_at check ran against a row it read at
+			# the top of its own invocation, and a freeze / void / restart /
+			# settle sweep can flip that row at any moment in between. Those
+			# sweeps snapshot the book (store.bets_for) and then refund or pay
+			# what they found. A press that commits AFTER the snapshot but while
+			# the post is still 'open' is refunded by nobody and paid by nobody:
+			# refund_post/pay_post are only ever called from those sweeps, the
+			# post never returns to live_for_match once it is terminal, and
+			# reconcile() cannot see the loss either because the ledger and the
+			# balance cache agree perfectly — the gold is simply gone from
+			# circulation.
+			#
+			# FOR UPDATE closes it by serialising the press against
+			# store.close_betting's compare-and-set on the same row: either this
+			# transaction commits first and the sweep's snapshot contains the
+			# bet, or the sweep's flip to 'frozen' commits first and this read
+			# sees it and refuses. No third outcome.
+			book = await tx.fetchone(
+				"SELECT status, freezes_at FROM prediction_posts WHERE id=%s FOR UPDATE",
+				[post_id])
+			if book is None or book["status"] != "open" or now >= int(book["freezes_at"]):
+				raise _Closed()
 			spent = await tx.execute(
 				"UPDATE gold_balances SET balance=balance-%s, updated_at=%s "
 				"WHERE community_id=%s AND user_id=%s AND balance>=%s",
@@ -109,6 +140,8 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now):
 				"SELECT balance FROM gold_balances WHERE community_id=%s AND user_id=%s",
 				[community_id, user_id])
 			return "ok", int(row["balance"])
+	except _Closed:
+		return "closed", None
 	except _Insufficient:
 		return "insufficient", await balance(community_id, user_id)
 	except _SideLocked:

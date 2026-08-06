@@ -237,6 +237,30 @@ class TestBookIsClosed:
 		assert run(FakeInteraction()).reply == self.CLOSED
 		assert log.errors == []
 
+	def test_the_bank_closing_the_book_under_the_press_is_the_same_refusal(self, monkeypatch):
+		""" The gate above reads the post ONCE, at the top of this handler; a
+		freeze / void / settle sweep can flip it a moment later, while the press
+		is still in flight. place_bet re-reads that row FOR UPDATE inside the
+		transaction and answers ('closed', None) when it lost the race — the
+		whole transaction rolls back, nothing is charged, and the user has to be
+		told the same thing the early gate tells them rather than seeing a
+		crash notice for a bet that was correctly refused. """
+		log = wire(monkeypatch, place_bet=("closed", None),
+				   bets_raise=AssertionError("kept processing after a refused bet"))
+		i = run(FakeInteraction())
+		assert i.reply == self.CLOSED
+		assert i.all_ephemeral
+		assert log.errors == []
+
+	def test_a_press_the_bank_closed_is_not_treated_as_charged(self, monkeypatch):
+		""" Nothing moved, so a failure to deliver that refusal is back to
+		"nothing was charged" — the notice that invites a retry, correctly. """
+		wire(monkeypatch, place_bet=("closed", None))
+		i = FakeInteraction()
+		i.response.fail_sends = 1
+		run(i)
+		assert i.reply == interactions.BET_FAILED_NOTICE
+
 
 # ── spectators only ──────────────────────────────────────────────────────
 class TestSpectatorsOnly:

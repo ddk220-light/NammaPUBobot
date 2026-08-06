@@ -11,6 +11,19 @@ press is committed to the DB inside the same transaction that moves the money.
 The database is therefore the source of truth for a book, which keeps the whole
 flow restart-safe — a redeploy mid-window costs nothing and a deleted card costs
 only the card.
+
+Two rules run through every path below, and both are about gold going missing
+rather than about tidiness:
+
+1. CLOSE THE BOOK BEFORE READING IT. store.bets_for is a snapshot; a press that
+   commits after the snapshot and before the post leaves 'open' is refunded by
+   nobody and paid by nobody, and reconcile() cannot see the loss because the
+   ledger and the balance cache still agree perfectly. _close_book is the one
+   door, and gold.place_bet's FOR UPDATE re-read is its other half.
+2. MONEY FIRST, TERMINAL STATUS LAST. void / no_action / resolved are what put
+   a post beyond every retry there is, so nothing writes one until the gold it
+   owed has been applied — and settlement that CANNOT apply it writes nothing
+   at all, leaving the book frozen for the resume sweep in _run.
 """
 import asyncio
 import time
@@ -20,6 +33,21 @@ from core.console import log
 from . import gold, scoring, store
 
 VOTE_WINDOW = 10 * 60      # seconds of open betting after teams are formed
+
+# How long after a match reports a book may still legitimately be settling.
+# resolve_for_match runs within seconds of the `matches` row being written, so
+# anything still 'frozen' this much later did not finish — and the resume sweep
+# below picks it up. Generous on purpose: the cost of waiting is a late payout,
+# the cost of racing the live settlement is a duplicated betting report.
+RESUME_AFTER = 10 * 60
+
+# How long a book may sit frozen with its match having reported NOTHING before
+# the stakes are handed back. A pickup match is long over by then; a match that
+# is not is one nobody can report any more (its Match object died with a process
+# that never wrote saved_state.json). Refunding is the only safe answer either
+# way — there is no result to settle against, and a void post is simply not live
+# for a report that arrives afterwards.
+ABANDON_AFTER = 12 * 60 * 60
 
 _pending = set()           # keep create_task'd jobs from being GC'd mid-run
 
@@ -63,6 +91,35 @@ class PredictionJobs:
 				await _freeze(post, now)
 			except Exception as e:
 				log.error(f"Prediction freeze failed (post {post.get('id')}): {e}")
+
+		# THE OTHER HALF OF CRASH SAFETY. Idempotent ledger inserts make
+		# re-running a half-finished sweep safe; they do not make it HAPPEN.
+		# resolve_for_match is called from exactly one place — finish_match —
+		# which has already dropped the Match from bot.active_matches, so a
+		# process that dies mid-payout takes the only caller with it and the
+		# book stays 'frozen' with some winners paid and the rest owed. Nothing
+		# above sees it: due_to_freeze only looks at 'open'. This loop is the
+		# re-runner, and it is the only reason the spec's "a crash mid-sweep
+		# resumes where it stopped" is true of the code rather than of the
+		# inserts alone.
+		for post in await store.unsettled_books(now - RESUME_AFTER):
+			try:
+				await _resume(post, now)
+			except Exception as e:
+				log.error(f"Prediction resume failed (post {post.get('id')}): {e}")
+
+		# And the other way a stake gets stranded: a match that never reported
+		# anything at all, so nothing ever called settlement for it. Every other
+		# exit from a live book is driven by the match — report, cancel,
+		# rebalance — which leaves a match that simply disappears holding
+		# everybody's gold with no event left to give it back.
+		for post in await store.abandoned_books(now - ABANDON_AFTER):
+			try:
+				await _void_with_refunds(
+					post, "The match never reported a result — all bets refunded.", now)
+				log.info(f"Refunded an abandoned book for match {post['match_id']} (post {post['id']}).")
+			except Exception as e:
+				log.error(f"Prediction abandon-refund failed (post {post.get('id')}): {e}")
 
 
 # ── open ─────────────────────────────────────────────────────────────────
@@ -109,12 +166,39 @@ async def restart_for_match(match):
 		log.error(f"Prediction restart failed (match {getattr(match, 'id', '?')}): {e}")
 
 
+# ── closing the book ─────────────────────────────────────────────────────
+async def _close_book(post):
+	"""Stop the book taking money, and hand back the post as it now is — or
+	None when somebody else owns it.
+
+	EVERY path that reads the book to refund or pay it goes through here
+	first, and that ordering is load-bearing rather than tidy. store.bets_for
+	is a snapshot; a press that commits after the snapshot but before the post
+	leaves 'open' is refunded by nobody and paid by nobody, and the gold it
+	took is gone with the ledger and the balance cache still in perfect
+	agreement. Closing first means the snapshot is taken from a book that can
+	no longer grow (see store.close_betting and gold.place_bet's FOR UPDATE).
+
+	The returned dict carries status='frozen' so the callers below — which
+	hand it on to _void_with_refunds — do not try to close it a second time
+	and mistake their own success for someone else's."""
+	if post["status"] == "open" and not await store.close_betting(post["id"]):
+		return None                  # another sweep flipped it out from under us
+	if post["status"] not in ("open", "frozen"):
+		return None                  # already terminal: void / no_action / resolved
+	return dict(post, status="frozen")
+
+
 # ── freeze ───────────────────────────────────────────────────────────────
 async def _freeze(post, now):
 	"""Lock the book. One-sided (either pool empty) -> no_action: every stake
 	back immediately, because a book with no opposing gold has no odds to
 	settle. Otherwise the pots lock and the card shows the final multipliers."""
 	from . import embeds
+
+	post = await _close_book(post)
+	if post is None:
+		return
 
 	bets = await store.bets_for(post["id"])
 	pool0, pool1 = scoring.pools(bets)
@@ -124,6 +208,8 @@ async def _freeze(post, now):
 			await gold.refund_post(community_id, bets, post["id"], now)
 		elif bets:
 			log.error(f"Prediction post {post['id']} has bets but no community — refunds skipped!")
+		# Money first, terminal status last: a crash between the two leaves the
+		# post retryable rather than closed over an unpaid book.
 		await store.no_action(post["id"], now)
 		await _edit_message(post, embeds.no_action_embed(post["team0_name"], post["team1_name"]))
 		log.info(f"Bets refunded for match {post['match_id']}: one-sided book ({pool0}-{pool1}).")
@@ -156,11 +242,6 @@ async def _community_for_post(post):
 
 
 # ── resolve ──────────────────────────────────────────────────────────────
-# Settlement runs once, at report time, like the votes era. If the process
-# dies mid-settlement the post stays 'frozen'; every movement below is an
-# idempotent ledger insert, so re-running settlement for a post is always
-# safe — a future sweep (or a manual call) can finish a half-settled book
-# without double-paying anyone.
 async def resolve_for_match(match):
 	"""Settle a finished ranked match: pay the playing faucet, then the book.
 	A match that never reported a clean win/loss (draw, cancelled report) is
@@ -174,45 +255,118 @@ async def resolve_for_match(match):
 		if winner_idx is not None:
 			from bot import community
 			community_id = await community.community_for_channel(match.qc.id)
-			if community_id is not None:
-				for p in match.players:
-					try:
-						await gold.ensure_seeded(community_id, p.id, now)
-						await gold.grant_match_reward(community_id, p.id, match.id, now)
-					except Exception as e:
-						log.error(f"Match reward failed ({match.id}/{p.id}): {e}")
+			await _pay_faucet(community_id, match.id, [p.id for p in match.players], now)
 
 		post = await store.live_for_match(match.id)
 		if post is None:
 			return
-		if winner_idx is None:
-			await _void_with_refunds(post, "No win/loss reported — all bets refunded.", now)
-			return
-
-		bets = await store.bets_for(post["id"])
-		paid, burned = scoring.payouts(bets, winner_idx)
-		if bets and not paid:
-			# Defensive: a one-sided book that somehow reached resolve. The
-			# freeze rule makes this unreachable; refund rather than settle.
-			await _void_with_refunds(post, "One-sided book — all bets refunded.", now)
-			return
-		community_id = await _community_for_post(post)
-		if paid and community_id is not None:
-			await gold.pay_post(community_id, paid, post["id"], now)
-		elif paid:
-			log.error(f"Prediction post {post['id']} has winners but no community — payouts skipped!")
-		await store.resolve(post["id"], winner_idx, now)
-		await _announce_report(post, winner_idx, bets, paid)
-		if burned:
-			log.info(f"Match {match.id} betting settled: {sum(paid.values())} paid, {burned} burned.")
+		await _settle(post, winner_idx, now)
 	except Exception as e:
 		log.error(f"Prediction resolve failed (match {getattr(match, 'id', '?')}): {e}")
 
 
-async def _void_with_refunds(post, reason, now):
-	"""Terminal no-settle: refund every stake exactly once, then mark void."""
+async def _resume(post, now):
+	"""Finish a settlement that started and stopped (see store.unsettled_books).
+
+	Everything it needs comes out of the database, because the Match object
+	this would otherwise read is gone: finish_match removes it from
+	bot.active_matches before it ever reaches settlement, and a redeploy takes
+	the process with it. The faucet is repeated too — it is an idempotent grant
+	keyed by (match, user), and a crash between the faucet and the payout
+	sweep leaves it half-applied exactly like the payouts."""
+	winner = post.get("match_winner")
+	log.info(f"Resuming unfinished settlement for match {post['match_id']} (post {post['id']}).")
+	if winner is not None:
+		community_id = await _community_for_post(post)
+		await _pay_faucet(community_id, post["match_id"],
+						  await store.match_player_ids(post["match_id"]), now)
+	await _settle(post, None if winner is None else int(winner), now)
+
+
+async def _settle(post, winner_idx, now):
+	"""Close the book if it is still open, then settle it: pay the winners,
+	mark the post resolved, retire the card, post the report.
+
+	Safe to run twice, and that is the design rather than a happy accident —
+	every gold movement is an idempotent insert keyed by idem_key, and the post
+	only leaves 'frozen' once the money it owed has been applied. An
+	interrupted run is therefore finished by the next sweep instead of being
+	stranded, and a run that cannot apply the money writes nothing at all."""
 	from . import embeds
 
+	post = await _close_book(post)
+	if post is None:
+		return
+	if winner_idx is None:
+		await _void_with_refunds(post, "No win/loss reported — all bets refunded.", now)
+		return
+
+	bets = await store.bets_for(post["id"])
+	paid, burned = scoring.payouts(bets, winner_idx)
+	if bets and not paid:
+		# Defensive: a one-sided book that somehow reached resolve. The
+		# freeze rule makes this unreachable; refund rather than settle.
+		await _void_with_refunds(post, "One-sided book — all bets refunded.", now)
+		return
+
+	community_id = await _community_for_post(post)
+	if paid and community_id is None:
+		# NOTHING is written here — not the payouts, not 'resolved', not the
+		# report. A betting report is a public statement that named people were
+		# paid named amounts; posting one over a payout that never happened
+		# tells the channel a lie it has no way to check. And 'resolved' would
+		# put the post beyond store.unsettled_books forever, so the debt could
+		# never be settled by anything. Frozen, silent and owed is the only
+		# recoverable state.
+		log.error(f"Prediction post {post['id']} has winners but no community — payout skipped, "
+				  f"post left frozen for the resume sweep.")
+		return
+
+	if paid:
+		await gold.pay_post(community_id, paid, post["id"], now)
+	# votes0/votes1 stay unwritten on a book that never passed through _freeze
+	# (a match reported inside the betting window). They are write-only columns
+	# — the bettor counts every embed shows are counted from prediction_bets at
+	# read time — and writing them here would mean an UPDATE that sets
+	# status='frozen' one statement before this one sets 'resolved'.
+	await store.resolve(post["id"], winner_idx, now)
+	# The card, retired. Reached with the buttons still live whenever the match
+	# reported inside the betting window (report before freezes_at): _freeze
+	# never ran for this post, so nothing else has ever taken the view off it,
+	# and a settled match advertising "🔵 10/50/100" is an invitation the
+	# router can only answer with a refusal.
+	pool0, pool1 = scoring.pools(bets)
+	bettors0 = sum(1 for b in bets if b["side"] == 0)
+	await _edit_message(post, embeds.frozen_embed(
+		post["team0_name"], post["team1_name"], pool0, pool1, bettors0, len(bets) - bettors0))
+	await _announce_report(post, winner_idx, bets, paid)
+	if burned:
+		log.info(f"Match {post['match_id']} betting settled: {sum(paid.values())} paid, {burned} burned.")
+
+
+async def _pay_faucet(community_id, match_id, user_ids, now):
+	"""Playing regenerates gold toward the ceiling. Idempotent per (match,
+	user), so a resumed settlement repeats it at no cost."""
+	if community_id is None:
+		return
+	for user_id in user_ids:
+		try:
+			await gold.ensure_seeded(community_id, user_id, now)
+			await gold.grant_match_reward(community_id, user_id, match_id, now)
+		except Exception as e:
+			log.error(f"Match reward failed ({match_id}/{user_id}): {e}")
+
+
+async def _void_with_refunds(post, reason, now):
+	"""Terminal no-settle: close the book, refund every stake exactly once,
+	then mark void. The closing comes first for the reason spelled out in
+	_close_book — a snapshot of a book that can still grow is a refund list
+	that can still be wrong."""
+	from . import embeds
+
+	post = await _close_book(post)
+	if post is None:
+		return
 	bets = await store.bets_for(post["id"])
 	community_id = await _community_for_post(post)
 	if bets and community_id is not None:

@@ -345,12 +345,55 @@ class _InteractionType:
 	modal_submit = 5
 
 
+class _FakeButton:
+	""" The three attributes a bet button IS: which side and stake it stakes
+	(carried in `custom_id`, the only thing that survives a redeploy), which row
+	it sits on, and what it says. Kept faithful because `custom_id` is the wire
+	protocol between bot/predictions/embeds.bet_view and the router that parses
+	it back — a stub that swallowed it would let the two drift apart. """
+
+	def __init__(self, *, style=None, row=None, label=None, emoji=None, custom_id=None, **_kw):
+		self.style = style
+		self.row = row
+		self.label = label
+		self.emoji = emoji
+		self.custom_id = custom_id
+
+
+class _FakeView:
+	""" `timeout` and `auto_defer` are recorded rather than swallowed for the
+	same reason bot/predictions/embeds.py sets them explicitly: timeout=None is
+	what makes the buttons outlive the process, and auto_defer=False is what
+	stops nextcord acking a press before the global router sees it. """
+
+	def __init__(self, timeout=None, auto_defer=True, **_kw):
+		self.timeout = timeout
+		self.auto_defer = auto_defer
+		self.children = []
+
+	def add_item(self, item):
+		self.children.append(item)
+		return item
+
+
+class _ButtonStyleStub:
+	""" nextcord's ButtonStyle is an enum; every member answers to its own name
+	here, which is enough to tell blue from red without inventing values. """
+
+	def __getattr__(self, name):
+		return name
+
+
 class _UiStub:
-	""" `nextcord.ui` / `ButtonStyle`, reached only because
-	bot/predictions/embeds.py imports them at module level to build the six-button
-	view. Nothing under test CALLS bet_view() — a View is a live Discord object
-	and faking one would be inventing an API this repo does not own — so this
-	exists purely so `from nextcord import ui, ButtonStyle` resolves. """
+	""" `nextcord.ui`, reached because bot/predictions/embeds.py and
+	bot/quiz/embeds.py import it at module level to build their views. View and
+	Button are real enough to assert on (see above) so bet_view() can be DRIVEN
+	rather than merely imported — the card shipping with no buttons at all was
+	invisible to the suite while this was a rubber stamp. Everything else stays
+	permissive. """
+
+	View = _FakeView
+	Button = _FakeButton
 
 	def __getattr__(self, _name):
 		return _NextcordStub
@@ -364,7 +407,7 @@ _fake_nextcord.Colour = lambda value=0: value
 _fake_nextcord.Color = _fake_nextcord.Colour
 _fake_nextcord.InteractionType = _InteractionType
 _fake_nextcord.ui = _UiStub()
-_fake_nextcord.ButtonStyle = _UiStub()
+_fake_nextcord.ButtonStyle = _ButtonStyleStub()
 _fake_nextcord_utils = types.ModuleType('nextcord.utils')
 _fake_nextcord_utils.get = lambda *_a, **_k: None
 _fake_nextcord_utils.find = lambda *_a, **_k: None
@@ -450,9 +493,23 @@ def adapter_module(monkeypatch):
 	fake_aiomysql.create_pool = None
 	monkeypatch.setitem(sys.modules, "aiomysql", fake_aiomysql)
 
+	# DISTINCT classes, not five aliases of Exception. Adapter.wrap_exc is a
+	# chain of `e.__class__ == mysqlErr.X` tests whose whole job is to map one
+	# driver error to one of the adapter's own types — and bot/predictions/gold.py
+	# catches exactly one of them (IntegrityError) to implement the side lock, so
+	# "which branch fired" is a money question. Aliased to Exception, every
+	# branch matched every error and the mapping was unassertable; two of the
+	# names (IntegrityError, ProgrammingError) were missing outright, so touching
+	# those branches raised AttributeError out of the error handler itself.
+	class _PyMysqlError(Exception):
+		pass
+
 	fake_pymysql = types.ModuleType("pymysql")
 	fake_pymysql.err = types.SimpleNamespace(
-		Error=Exception, InternalError=Exception, OperationalError=Exception, DataError=Exception)
+		Error=_PyMysqlError,
+		**{name: type(name, (_PyMysqlError,), {}) for name in (
+			"InternalError", "OperationalError", "DataError",
+			"IntegrityError", "ProgrammingError")})
 	monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
 	monkeypatch.setitem(sys.modules, "pymysql.err", fake_pymysql.err)
 

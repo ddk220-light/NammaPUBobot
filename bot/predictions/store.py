@@ -38,6 +38,90 @@ async def live_for_match(match_id):
 	return rows[0] if rows else None
 
 
+async def unsettled_books(reported_before):
+	"""Books that locked but never finished settling — the resume queue.
+
+	THE JOIN IS THE CONDITION. A post sitting at 'frozen' is the normal state
+	for as long as the match is being played, so "stale" can never be a clock
+	reading on the post alone. What makes one unsettled is `matches` already
+	holding a row for it — bot/stats/stats.py writes that row inside
+	finish_match, BEFORE the match flow calls resolve_for_match — while the
+	post has still not left 'frozen'. That combination means settlement started
+	and did not finish (a redeploy mid-sweep, a process kill, a payout that
+	could not resolve its community), and every movement in it is idempotent,
+	so re-running it is always safe.
+
+	`m.winner` rides along because the live Match object is long gone by then:
+	bot.active_matches dropped it at the top of finish_match, so the recorded
+	result is the only surviving answer to "who won". NULL means the match
+	reported no clean win/loss, which the caller voids rather than settles.
+
+	Read-only across the boundary — this module writes nothing outside
+	prediction_*. LIMIT keeps one pathological backlog from monopolising a
+	sweep; the next sweep takes the next batch."""
+	return await db.fetchall(
+		"SELECT p.*, m.winner AS match_winner FROM prediction_posts p "
+		"JOIN matches m ON m.match_id = p.match_id "
+		"WHERE p.status='frozen' AND m.reported_at<=%s "
+		"ORDER BY p.id ASC LIMIT 50", [reported_before]) or []
+
+
+async def abandoned_books(frozen_before):
+	"""Books whose match never reported ANYTHING — no `matches` row at all.
+
+	The sibling of unsettled_books, for the other way a stake gets stranded:
+	the settlement path is driven entirely by the match reporting, and a match
+	that disappears (a hard kill before saved_state.json is written, so nothing
+	restores it and nobody can /report it) takes the book's only caller with it.
+	The stakes are debited and there is no event left that would ever hand them
+	back. The caller voids these, refunding every stake — which is also the
+	right answer if such a match somehow does report later, because a void post
+	is simply not live for it any more.
+
+	`frozen_before` is therefore deliberately generous: a pickup match is never
+	still being played hours after its book locked, and the cost of being wrong
+	is a refund, never a wrong payout."""
+	return await db.fetchall(
+		"SELECT p.* FROM prediction_posts p "
+		"LEFT JOIN matches m ON m.match_id = p.match_id "
+		"WHERE p.status='frozen' AND p.freezes_at<=%s AND m.match_id IS NULL "
+		"ORDER BY p.id ASC LIMIT 50", [frozen_before]) or []
+
+
+async def match_player_ids(match_id):
+	"""Everyone who played, for the faucet a resumed settlement still owes.
+	Read-only across the boundary, like unsettled_books above."""
+	rows = await db.fetchall(
+		"SELECT user_id FROM match_players WHERE match_id=%s", [match_id])
+	return [r["user_id"] for r in rows or []]
+
+
+async def close_betting(post_id):
+	"""End the betting window: the ONE write that stops a book taking money.
+	True when this call is what closed it.
+
+	Two properties make it that, and both matter:
+
+	* It is a COMPARE-AND-SET (`AND status='open'`), so two sweeps racing — or
+	  a freeze sweep racing a match report — agree on exactly one winner
+	  instead of both proceeding to settle the same book.
+	* Its partner is gold.place_bet, which re-reads this row `FOR UPDATE`
+	  inside the transaction that moves the stake. The two serialise on the row
+	  lock: either the press commits first and every later snapshot of the book
+	  contains it, or this flip commits first and the press sees 'frozen' and
+	  is refused. There is no third outcome — which is what stops a stake being
+	  taken by a book that has already been snapshotted for refund or payout,
+	  the one failure mode that destroys gold silently (the ledger and the
+	  balance cache agree perfectly, so reconcile() cannot see it either).
+
+	It runs in a transaction purely for the ROWCOUNT: the autocommit adapter's
+	execute() answers lastrowid, which says nothing about an UPDATE."""
+	async with db.transaction() as tx:
+		return bool(await tx.execute(
+			"UPDATE prediction_posts SET status='frozen' WHERE id=%s AND status='open'",
+			[post_id]))
+
+
 async def freeze(post_id, votes0, votes1):
 	await db.update("prediction_posts",
 					{"status": "frozen", "votes0": votes0, "votes1": votes1}, {"id": post_id})

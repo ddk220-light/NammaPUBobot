@@ -59,6 +59,13 @@ async def on_bet_interaction(interaction):
 		seeded_now = await gold.ensure_seeded(community_id, interaction.user.id, now)
 		status, value = await gold.place_bet(
 			community_id, interaction.user.id, post_id, side, stake, _nick(interaction.user), now)
+		if status == "closed":
+			# The gate at the top of this handler read the post row before any
+			# of the above; place_bet re-read it FOR UPDATE inside the
+			# transaction, which is the only place the answer is authoritative.
+			# A sweep that closed the book in between wins, and nothing was
+			# charged — the whole transaction rolled back.
+			return await _eph(interaction, "Betting on this match is closed.")
 		if status == "insufficient":
 			return await _eph(interaction,
 				f"Not enough gold — you hold **{value}** {view.GOLD}. "

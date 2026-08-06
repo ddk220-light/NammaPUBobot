@@ -155,6 +155,9 @@ def test_the_sweep_freezes_every_due_post_and_survives_one_that_fails():
 	async def _due_to_freeze(_now):
 		return [{"id": 1}, {"id": 2}, {"id": 3}]
 
+	async def _empty(_before):
+		return []
+
 	async def _fake_freeze(post, now):
 		calls["n"] += 1
 		if post["id"] == 2:
@@ -162,7 +165,8 @@ def test_the_sweep_freezes_every_due_post_and_survives_one_that_fails():
 		frozen.append(post["id"])
 
 	original_store, original_freeze = jobs_module.store, jobs_module._freeze
-	jobs_module.store = types.SimpleNamespace(due_to_freeze=_due_to_freeze)
+	jobs_module.store = types.SimpleNamespace(
+		due_to_freeze=_due_to_freeze, unsettled_books=_empty, abandoned_books=_empty)
 	jobs_module._freeze = _fake_freeze
 	try:
 		asyncio.run(jobs_module.PredictionJobs()._run())
