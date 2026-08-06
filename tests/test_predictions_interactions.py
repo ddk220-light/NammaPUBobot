@@ -21,10 +21,13 @@ No pytest-asyncio in this repo: every coroutine is driven with asyncio.run().
 from __future__ import annotations
 
 import asyncio
+import math
 import sys
 import types
 
 from bot.predictions import interactions
+
+ALL_SENDS = math.inf            # every send fails, for as long as the test runs
 
 
 # ── the fake Discord side ────────────────────────────────────────────────
@@ -33,18 +36,25 @@ class FakeResponse:
 	on: not-yet-answered (send_message) and already-answered (followup). The
 	one-shot rule is real — Discord rejects a second response to the same
 	interaction — so `is_done()` flips on the first send and the handler's
-	`if not interaction.response.is_done()` has something true to test. """
+	`if not interaction.response.is_done()` has something true to test.
+
+	`fail_sends` counts down the sends that raise instead of landing, because
+	the interesting failures are the PARTIAL ones. Failing everything hides the
+	answer: to see which notice the catch-all picked, the delivery that drives
+	the handler into the catch-all has to fail while the catch-all's own reply
+	is allowed through. Set it to ALL_SENDS for the nothing-gets-out case. """
 
 	def __init__(self):
 		self.sent = []          # (text, ephemeral)
 		self._done = False
-		self.send_fails = False
+		self.fail_sends = 0
 
 	def is_done(self):
 		return self._done
 
 	async def send_message(self, content=None, ephemeral=False, **_kw):
-		if self.send_fails:
+		if self.fail_sends > 0:
+			self.fail_sends -= 1
 			raise RuntimeError("Discord 503 — interaction response failed")
 		self._done = True
 		self.sent.append((content, ephemeral))
@@ -106,6 +116,7 @@ OPEN_POST = dict(
 	opened_at=1_000, freezes_at=9_999_999_999, status="open")
 
 EXPLODE = object()              # "this collaborator must not be reached"
+_DEFAULT_POST = object()        # distinct from `the_post=None`, which means "deleted"
 
 
 def post(**overrides):
@@ -114,10 +125,13 @@ def post(**overrides):
 	return p
 
 
-def wire(monkeypatch, *, the_post=None, players=(), community_id=5,
+def wire(monkeypatch, *, the_post=_DEFAULT_POST, players=(), community_id=5,
 		 place_bet=("ok", 440), seeded=False, bets=(), get_post_raises=None,
 		 bets_raise=None, bank=None):
 	"""Stand the handler's collaborators up. Returns the recording log.
+
+	`the_post=None` is a real value here — store.get_post answers None, i.e. the
+	post is gone — which is why the default is a sentinel and not None.
 
 	`bank=EXPLODE` makes both gold entry points raise: a guard that is supposed
 	to reject a press before any money moves has to prove it never reached the
@@ -126,7 +140,7 @@ def wire(monkeypatch, *, the_post=None, players=(), community_id=5,
 	"""
 	log = RecordingLog()
 	monkeypatch.setattr(interactions, "log", log)
-	the_post = post() if the_post is None else the_post
+	the_post = post() if the_post is _DEFAULT_POST else the_post
 
 	async def _get_post(_post_id):
 		if get_post_raises is not None:
@@ -166,11 +180,11 @@ def wire(monkeypatch, *, the_post=None, players=(), community_id=5,
 						types.SimpleNamespace(community_for_channel=_community_for_channel),
 						raising=False)
 	# What flow._player_ids actually walks. Real function, real shape.
-	monkeypatch.setattr(sys.modules["bot"], "active_matches", [
+	matches = [] if the_post is None else [
 		types.SimpleNamespace(
 			id=the_post["match_id"],
-			players=[types.SimpleNamespace(id=uid) for uid in players])],
-		raising=False)
+			players=[types.SimpleNamespace(id=uid) for uid in players])]
+	monkeypatch.setattr(sys.modules["bot"], "active_matches", matches, raising=False)
 	return log
 
 
@@ -220,14 +234,8 @@ class TestBookIsClosed:
 
 	def test_a_post_that_no_longer_exists_is_refused(self, monkeypatch):
 		log = wire(monkeypatch, the_post=None, bank=EXPLODE)
-		monkeypatch.setattr(interactions, "store", types.SimpleNamespace(
-			get_post=_none, bets_for=_none))
 		assert run(FakeInteraction()).reply == self.CLOSED
 		assert log.errors == []
-
-
-async def _none(*_a, **_k):
-	return None
 
 
 # ── spectators only ──────────────────────────────────────────────────────
@@ -349,11 +357,15 @@ class TestFailureAfterTheCharge:
 		assert len(log.errors) == 1
 
 	def test_a_failure_after_the_charge_says_the_bet_landed(self, monkeypatch):
+		""" The mirror of the rejection tests below: place_bet answered 'ok', so
+		the money HAS moved and the notice must be the one that says so. Pinned
+		against the module's own constants — a `charged` flag stuck on False
+		would deliver the other one and fail here. """
 		log = wire(monkeypatch, place_bet=("ok", 440),
 				   bets_raise=RuntimeError("db blip reading the pools back"))
 		i = run(FakeInteraction())
-		assert "Your bet went through" in i.reply
-		assert "the gold is staked" in i.reply
+		assert i.reply == interactions.BET_LANDED_NOTICE
+		assert i.reply != interactions.BET_FAILED_NOTICE
 		assert i.all_ephemeral
 		assert len(log.errors) == 1, "the underlying failure is still reported to the log"
 
@@ -378,13 +390,31 @@ class TestFailureAfterTheCharge:
 	def test_a_rejected_bet_is_not_treated_as_charged(self, monkeypatch):
 		""" The flag must follow the transaction, not the attempt. place_bet
 		rolls the deduction back on 'insufficient', so a later failure on that
-		path is back to "nothing was charged". """
+		path is back to "nothing was charged".
+
+		Only the FIRST send fails — the refusal, which is what drops the handler
+		into the catch-all — and the catch-all's own reply lands, so the notice
+		it chose is visible. Failing every send would hide it and the test would
+		pass with `charged` hardwired True. """
 		wire(monkeypatch, place_bet=("insufficient", 30))
 		i = FakeInteraction()
-		i.response.send_fails = True            # the refusal itself cannot be delivered
+		i.response.fail_sends = 1               # the refusal itself cannot be delivered
 		run(i)
-		i.response.send_fails = False
-		assert i.replies == [], "nothing got through, and nothing was retried into a charge"
+		assert i.reply == interactions.BET_FAILED_NOTICE
+		assert i.reply != interactions.BET_LANDED_NOTICE
+		assert i.all_ephemeral
+
+	def test_a_side_locked_press_is_not_treated_as_charged(self, monkeypatch):
+		""" The other rolled-back path. place_bet undoes the deduction here too,
+		so a press refused for being on the locked side and then failing to
+		deliver that refusal is still an uncharged user. """
+		wire(monkeypatch, place_bet=("side_locked", 0))
+		i = FakeInteraction(custom_id="bet:12:1:50")
+		i.response.fail_sends = 1
+		run(i)
+		assert i.reply == interactions.BET_FAILED_NOTICE
+		assert i.reply != interactions.BET_LANDED_NOTICE
+		assert i.all_ephemeral
 
 	def test_the_handler_never_raises_even_when_it_cannot_speak(self, monkeypatch):
 		""" Self-isolating: this runs inside bot/events.py's on_interaction, ahead
@@ -393,7 +423,7 @@ class TestFailureAfterTheCharge:
 		log = wire(monkeypatch, place_bet=("ok", 440),
 				   bets_raise=RuntimeError("db blip"))
 		i = FakeInteraction()
-		i.response.send_fails = True
+		i.response.fail_sends = ALL_SENDS
 		run(i)                                   # must not raise
 		assert i.replies == []
 		assert len(log.errors) == 1
