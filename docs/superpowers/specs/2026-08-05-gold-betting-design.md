@@ -54,6 +54,11 @@ continues, fed by bets (historical votes still count).
 - **Voids** (roster change, match cancelled, no win/loss reported, draw):
   full refund of each bettor's total stake, exactly once. The roster-change
   flow refunds the old post before re-opening a fresh one.
+- **Post-match betting report** (added mid-brainstorm): when the match
+  resolves, the result embed is a full report — the pot and per-side pools,
+  every winner with their stake and payout (net gain shown), and every loser
+  with their stake and side. Both lists capped at `MAX_NAMED_WINNERS` with a
+  "+N more" overflow line, so the embed cannot blow past Discord's limits.
 
 ## 2. Economy
 
