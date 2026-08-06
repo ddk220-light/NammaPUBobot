@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 import asyncio
+from contextlib import asynccontextmanager
+
 import aiomysql
 from pymysql import err as mysqlErr
 from .common import *
@@ -42,6 +44,44 @@ reference_options = dict(
 table_blank = dict(tname=None, columns=[], primary_keys=[], foreign_keys=[], unique_keys=[], indexes=[])
 column_blank = dict(cname=None, ctype=Types.str, notnull=False, unique=False, autoincrement=False, default=None)
 fkey_blank = dict(cname=None, refTable=None, refColumn=None, on_delete=None, on_update=None)
+
+
+class Transaction:
+	"""Connection-bound handle yielded by Adapter.transaction(). Same query
+	surface as the adapter, with ONE deliberate difference: execute()/insert()
+	return the affected-row COUNT, not lastrowid — inside a transaction the
+	caller's question is almost always "did that row apply?" (a conditional
+	UPDATE that matched nothing, an INSERT IGNORE that hit its idem key), and
+	rowcount is the only honest answer to it."""
+
+	def __init__(self, adapter, cur):
+		self._adapter = adapter
+		self._cur = cur
+
+	async def execute(self, *args):
+		try:
+			await self._cur.execute(*args)
+		except mysqlErr.Error as e:
+			self._adapter.wrap_exc(e)
+		return self._cur.rowcount
+
+	async def fetchone(self, *args):
+		try:
+			await self._cur.execute(*args)
+			return await self._cur.fetchone()
+		except mysqlErr.Error as e:
+			self._adapter.wrap_exc(e)
+
+	async def fetchall(self, *args):
+		try:
+			await self._cur.execute(*args)
+			return await self._cur.fetchall()
+		except mysqlErr.Error as e:
+			self._adapter.wrap_exc(e)
+
+	async def insert(self, table, d, on_duplicate=None):
+		request = self._adapter._mysql_insert(d.keys(), table, on_duplicate)
+		return await self.execute(request, list(d.values()))
 
 
 class Adapter:
@@ -120,6 +160,23 @@ class Adapter:
 					return await cur.fetchall()
 				except mysqlErr.Error as e:
 					self.wrap_exc(e)
+
+	@asynccontextmanager
+	async def transaction(self):
+		"""One pooled connection, BEGIN .. COMMIT, ROLLBACK on any exception
+		(which propagates). The pool runs autocommit=True; conn.begin() opens an
+		explicit transaction that suspends autocommit until commit/rollback, so
+		nothing else on this connection leaks in."""
+		async with self.pool.acquire() as conn:
+			await conn.begin()
+			try:
+				async with conn.cursor() as cur:
+					yield Transaction(self, cur)
+			except BaseException:
+				await conn.rollback()
+				raise
+			else:
+				await conn.commit()
 
 	@staticmethod
 	def _mysql_column(kwargs):
