@@ -47,7 +47,8 @@ class FakeResponse:
 	is allowed through. Set it to ALL_SENDS for the nothing-gets-out case. """
 
 	def __init__(self):
-		self.sent = []          # (text, ephemeral, view)
+		self.sent = []          # (text, ephemeral, view) — NEW ephemerals
+		self.edits = []         # (text, view) — rewrites of the pressed message
 		self._done = False
 		self.fail_sends = 0
 
@@ -61,6 +62,26 @@ class FakeResponse:
 		_check_view(view)
 		self._done = True
 		self.sent.append((content, ephemeral, view))
+
+	async def edit_message(self, content=None, view=nextcord.utils.MISSING, **_kw):
+		""" nextcord 2.6.0's InteractionResponse.edit_message — the
+		component-interaction UPDATE_MESSAGE response, which rewrites the
+		message the pressed component lives on.
+
+		Recorded in its OWN list, because "rewrote the confirmation" and "sent
+		a second ephemeral next to it" are the two behaviours Amendment 1 §B
+		distinguishes, and a fake that merged them could not tell a test which
+		one happened.
+
+		`view=None` is accepted rather than dereferenced — the opposite of
+		send_message above, and faithful: edit_message declares
+		`view: Optional[View]` and maps None to `payload["components"] = []`,
+		which is how the button is stripped. """
+		if self.fail_sends > 0:
+			self.fail_sends -= 1
+			raise RuntimeError("Discord 503 — interaction response failed")
+		self._done = True
+		self.edits.append((content, view))
 
 
 class FakeFollowup:
@@ -112,6 +133,18 @@ class FakeInteraction:
 	@property
 	def all_ephemeral(self):
 		return all(ephemeral for _text, ephemeral, _view in self.response.sent)
+
+	@property
+	def edit(self):
+		""" The text the pressed message was rewritten to — and there must be
+		exactly one rewrite, because edit_message is a RESPONSE. """
+		assert len(self.response.edits) == 1, f"expected exactly one rewrite, got {self.response.edits}"
+		return self.response.edits[0][0]
+
+	@property
+	def edit_view(self):
+		assert len(self.response.edits) == 1, f"expected exactly one rewrite, got {self.response.edits}"
+		return self.response.edits[0][1]
 
 
 class RecordingLog:
@@ -578,20 +611,49 @@ class TestCancelRoute:
 		assert bank.cancelled == [dict(user_id=99, post_id=12)]
 		# The refund figure and the balance must land in their own slots — a
 		# transposition (999 returned, 60 balance) reads as plausible prose and
-		# was surviving on "60" in i.reply alone.
-		assert i.reply == "\n".join(view.bet_cancelled_lines(60, 999))
+		# was surviving on "60" in the reply alone.
+		assert i.edit == "\n".join(view.bet_cancelled_lines(60, 999))
+
+	def test_the_press_rewrites_its_own_confirmation_and_strips_the_button(self, monkeypatch):
+		""" Amendment 1 §B, literally: "Pressing it rewrites that same private
+		message into 'Bet cancelled — N gold returned' and strips the button."
+		A NEW ephemeral instead leaves the original confirmation sitting on
+		screen still advertising a live Cancel for a bet that no longer exists
+		— and the next press of it answers "you have no bet on this match to
+		cancel", which reads as a failure rather than as history. """
+		wire(monkeypatch, cancel_bet=("ok", 60))
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		run(i)
+		assert i.response.sent == [], "a second ephemeral is not a rewrite"
+		assert "cancelled" in i.edit.lower()
+		assert i.edit_view is None, "the button is stripped, not left live"
 
 	def test_cancelling_after_the_freeze_is_refused(self, monkeypatch):
 		bank = wire(monkeypatch, cancel_bet=("ok", 60), post_frozen=True)
 		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
 		run(i)
 		assert not bank.cancelled, "gold was returned after the book locked"
+		# AND THE USER IS ANSWERED. Without this the test passed for a guard
+		# that simply returned, leaving the press hanging with no response of
+		# any kind — Discord shows "This interaction failed" and the bettor is
+		# left believing their gold is still staked.
+		assert "closed" in i.edit.lower()
+		assert i.edit_view is None, "a dead button comes off with the refusal"
+		assert bank.errors == []
 
 	def test_cancelling_with_no_bet_says_so_and_moves_no_gold(self, monkeypatch):
 		wire(monkeypatch, cancel_bet=("nothing", 0))
 		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
 		run(i)
-		assert "no bet" in i.reply.lower()
+		assert "no bet" in i.edit.lower()
+		assert i.edit_view is None
+
+	def test_a_channel_with_no_community_is_answered_too(self, monkeypatch):
+		log = wire(monkeypatch, community_id=None, bank=EXPLODE)
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		run(i)
+		assert i.edit == "This channel keeps no stats — there is no gold here."
+		assert log.errors == []
 
 	def test_cancelling_refreshes_the_public_card(self, monkeypatch):
 		""" The pools shown on the open card change the instant a bet is
@@ -608,7 +670,8 @@ class TestCancelRoute:
 		assert "bets_for reached after cancel" in log.errors[0]
 		# The refresh is best-effort and must not cost the user their reply —
 		# the cancellation confirmation itself still has to have gone out.
-		assert "cancel" in i.reply.lower()
+		assert "cancel" in i.edit.lower()
+		assert i.response.sent == [], "and no crash notice on top of a delivered reply"
 
 	def test_a_foreign_custom_id_is_ignored(self, monkeypatch):
 		bank = wire(monkeypatch)
@@ -632,6 +695,81 @@ class TestCancelRoute:
 		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
 		run(i)
 		assert bank.cancelled, "gold.cancel_bet was never called"
-		assert "closed" in i.reply.lower()
-		assert "returned" not in i.reply.lower(), "the 0-gold refund message must not be used"
+		assert "closed" in i.edit.lower()
+		assert "returned" not in i.edit.lower(), "the 0-gold refund message must not be used"
 		assert bank.errors == []
+
+
+# ── the point of no return, on the cancel side ───────────────────────────
+class TestFailureAfterTheRefund:
+	""" gold.cancel_bet commits the row delete, the ledger row and the balance
+	credit together, so once it answers 'ok' the gold IS back. The catch-all
+	the cancel route used to fall into was the BET path's, whose `charged`
+	flag is False for every cancel — so a failure on this side of that commit
+	told the user "nothing was charged... Try again": false in both halves,
+	and it leaves them believing a stake is still riding on the match. """
+
+	def test_a_failure_before_the_refund_still_reassures(self, monkeypatch):
+		log = wire(monkeypatch, get_post_raises=RuntimeError("db blip"), bank=EXPLODE)
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		run(i)
+		assert i.reply == interactions.CANCEL_FAILED_NOTICE
+		assert i.all_ephemeral
+		assert len(log.errors) == 1
+
+	def test_a_failure_after_the_refund_says_the_gold_is_back(self, monkeypatch):
+		""" Only the FIRST delivery fails — the rewrite, which is what drops the
+		handler into the catch-all — so the catch-all's own reply lands and the
+		notice it chose is visible. Failing every send would hide it and this
+		would pass with `refunded` hardwired either way. """
+		log = wire(monkeypatch, cancel_bet=("ok", 60))
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		i.response.fail_sends = 1
+		run(i)
+		assert i.reply == interactions.CANCEL_LANDED_NOTICE
+		assert i.reply != interactions.CANCEL_FAILED_NOTICE
+		assert i.reply != interactions.BET_FAILED_NOTICE, "the bet path's notice is about a charge"
+		assert len(log.errors) == 1
+
+	def test_a_failure_after_the_refund_never_claims_nothing_moved(self, monkeypatch):
+		""" THE REGRESSION. A bettor told "nothing was charged" over a refund
+		that already landed believes their stake is still on the match. """
+		wire(monkeypatch, cancel_bet=("ok", 60))
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		i.response.fail_sends = 1
+		run(i)
+		reply = i.reply.lower()
+		assert "nothing was charged" not in reply
+		assert "untouched" not in reply
+		assert "try again" not in reply
+
+	def test_a_refused_cancel_is_not_treated_as_refunded(self, monkeypatch):
+		""" The flag follows the transaction, not the attempt: 'nothing' and
+		'closed' both move no gold at all. """
+		for answer in (("nothing", 0), ("closed", 0)):
+			wire(monkeypatch, cancel_bet=answer)
+			i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+			i.response.fail_sends = 1
+			run(i)
+			assert i.reply == interactions.CANCEL_FAILED_NOTICE, answer
+
+	def test_the_two_cancel_notices_disagree_about_the_only_thing_that_matters(self):
+		""" Pins the pair rather than one string: whatever the copy becomes, the
+		before-notice may promise the stake is untouched and the after-notice
+		may not, and only the before-notice may invite a retry. """
+		assert "untouched" in interactions.CANCEL_FAILED_NOTICE
+		assert "untouched" not in interactions.CANCEL_LANDED_NOTICE
+		assert "Try again" in interactions.CANCEL_FAILED_NOTICE
+		assert "try again" not in interactions.CANCEL_LANDED_NOTICE.lower()
+		assert "already back" in interactions.CANCEL_LANDED_NOTICE
+
+	def test_the_cancel_route_never_raises_even_when_it_cannot_speak(self, monkeypatch):
+		""" Self-isolating, like the bet route: this runs inside bot/events.py's
+		on_interaction, and an exception escaping is a traceback in the event
+		loop for a button press. """
+		log = wire(monkeypatch, cancel_bet=("ok", 60))
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		i.response.fail_sends = ALL_SENDS
+		run(i)                                   # must not raise
+		assert i.replies == []
+		assert len(log.errors) == 1

@@ -25,6 +25,16 @@ BET_LANDED_NOTICE = ("Your bet went through — the gold is staked and your side
 					 "in. Only the confirmation failed, so **don't press again** unless you "
 					 "mean to stake more.")
 
+# The same pair for the cancel route, and it needs its own because the bet
+# route's `charged` flag is False for every cancel — so a failure AFTER
+# gold.cancel_bet committed used to deliver BET_FAILED_NOTICE, which is false
+# in both halves: gold DID move (a refund landed), and there is nothing to
+# retry.
+CANCEL_FAILED_NOTICE = ("Something went wrong cancelling that bet — your stake is untouched "
+						"if you didn't get a confirmation. Try again.")
+CANCEL_LANDED_NOTICE = ("Your bet was cancelled — the gold is already back in your balance. "
+						"Only the confirmation failed, so nothing is left to do.")
+
 
 async def on_bet_interaction(interaction):
 	# THE POINT-OF-NO-RETURN FLAG. gold.place_bet() commits the balance
@@ -100,45 +110,76 @@ async def on_bet_interaction(interaction):
 		await _eph(interaction, "\n".join(lines), component_view=embeds.cancel_view(post_id))
 		await _refresh_card(post, pool0, pool1, now)
 	except Exception as e:
-		log.error(f"bet interaction error: {e}\n{traceback.format_exc()}")
-		try:
-			# Silence is right when we have already responded: the user is
-			# holding their confirmation and a second ephemeral would only
-			# muddy it. It is only the no-response-yet case that needs a word,
-			# and which word depends entirely on `charged`.
-			if not interaction.response.is_done():
-				await interaction.response.send_message(
-					BET_LANDED_NOTICE if charged else BET_FAILED_NOTICE, ephemeral=True)
-		except Exception:
-			pass
+		await _last_resort(interaction, BET_LANDED_NOTICE if charged else BET_FAILED_NOTICE, e)
+
+
+CANCEL_CLOSED_NOTICE = "Betting on this match is closed — bets can no longer be cancelled."
 
 
 async def _handle_cancel(interaction, post_id, now):
-	"""Back out before the freeze.
+	"""Back out before the freeze, by REWRITING the private confirmation that
+	carried the button rather than stacking a second ephemeral beside it.
 
 	The status/deadline check below is a fast path for a friendly message on a
 	stale button — it is NOT the guard. gold.cancel_bet re-reads and row-locks
 	the post inside its own transaction and is the only authority on whether
 	the book is still open; a status read out here is stale the moment it
 	returns.
-	"""
-	post = await store.get_post(post_id)
-	if not post or post["status"] != "open" or now >= post["freezes_at"]:
-		return await _eph(interaction, "Betting on this match is closed — bets can no longer be cancelled.")
-	from bot import community
-	community_id = await community.community_for_channel(post["channel_id"])
-	if community_id is None:
-		return await _eph(interaction, "This channel keeps no stats — there is no gold here.")
-	status, amount = await gold.cancel_bet(community_id, interaction.user.id, post_id, now)
-	if status == "closed":
-		return await _eph(interaction, "Betting on this match is closed — bets can no longer be cancelled.")
-	if status == "nothing":
-		return await _eph(interaction, view.NOTHING_TO_CANCEL_NOTICE)
-	balance = await gold.balance(community_id, interaction.user.id)
-	await _eph(interaction, "\n".join(view.bet_cancelled_lines(amount, balance)))
-	bets = await store.bets_for(post_id)
-	pool0, pool1 = pools(bets)
-	await _refresh_card(post, pool0, pool1, now)
+
+	THE POINT-OF-NO-RETURN FLAG, exactly as on the bet path above and for the
+	same reason with the sign flipped. gold.cancel_bet commits the row delete,
+	the ledger row and the balance credit together, so the instant it answers
+	'ok' the gold is back. Everything after that — the balance read, the
+	rewrite, the Discord round-trip — can still fail, and until now the
+	catch-all it fell into was the BET path's, whose `charged` is False for
+	every cancel: the user was told "nothing was charged... Try again" over a
+	refund that had already landed.
+
+	This handler owns its own catch-all rather than sharing the bet path's, so
+	the notice can be about cancelling. It swallows what it catches, which is
+	why on_bet_interaction's `return await` above never sees an exception from
+	here."""
+	refunded = False
+	try:
+		post = await store.get_post(post_id)
+		if not post or post["status"] != "open" or now >= post["freezes_at"]:
+			return await _rewrite(interaction, CANCEL_CLOSED_NOTICE)
+		from bot import community
+		community_id = await community.community_for_channel(post["channel_id"])
+		if community_id is None:
+			return await _rewrite(interaction, "This channel keeps no stats — there is no gold here.")
+		status, amount = await gold.cancel_bet(community_id, interaction.user.id, post_id, now)
+		if status == "closed":
+			return await _rewrite(interaction, CANCEL_CLOSED_NOTICE)
+		if status == "nothing":
+			return await _rewrite(interaction, view.NOTHING_TO_CANCEL_NOTICE)
+
+		# Committed: the bet row is gone and the stake is back in the balance.
+		refunded = True
+
+		balance = await gold.balance(community_id, interaction.user.id)
+		await _rewrite(interaction, "\n".join(view.bet_cancelled_lines(amount, balance)))
+		bets = await store.bets_for(post_id)
+		pool0, pool1 = pools(bets)
+		await _refresh_card(post, pool0, pool1, now)
+	except Exception as e:
+		await _last_resort(
+			interaction, CANCEL_LANDED_NOTICE if refunded else CANCEL_FAILED_NOTICE, e)
+
+
+async def _last_resort(interaction, text, error):
+	"""The only thing the user ever hears from when a handler falls over.
+
+	Silence is right when we have already responded: the user is holding their
+	confirmation and a second ephemeral would only muddy it. It is the
+	no-response-yet case that needs a word, and which word depends entirely on
+	whether the caller's transaction committed."""
+	log.error(f"bet interaction error: {error}\n{traceback.format_exc()}")
+	try:
+		if not interaction.response.is_done():
+			await interaction.response.send_message(text, ephemeral=True)
+	except Exception:
+		pass
 
 
 async def _refresh_card(post, pool0, pool1, now):
@@ -159,6 +200,31 @@ async def _refresh_card(post, pool0, pool1, now):
 
 def _nick(user):
 	return getattr(user, "display_name", None) or getattr(user, "name", None) or str(user.id)
+
+
+async def _rewrite(interaction, text):
+	"""Rewrite the private confirmation this button is attached to, and take
+	the button off it. Amendment 1 §B's affordance is "rewrites that same
+	private message ... and strips the button", not a second ephemeral stacked
+	underneath the first — which would leave the original confirmation on
+	screen still advertising a live Cancel for a bet that no longer exists.
+
+	edit_message is the component-interaction response that updates the message
+	the component lives on (nextcord 2.6.0's InteractionResponse.edit_message,
+	`view: Optional[View]`), and `view=None` is its documented way to clear
+	every component: it maps to `payload["components"] = []`. That is the exact
+	opposite of send_message/followup.send, where `view=None` is dereferenced
+	rather than treated as "none" — see _eph below, which is why the two
+	helpers cannot be one.
+
+	EVERY branch of the cancel route ends here, refusals included: a button
+	that can no longer do anything should not survive the press that proved
+	it. A press whose interaction has somehow already been answered falls back
+	to a followup, because edit_message is a RESPONSE and there is only one."""
+	if not interaction.response.is_done():
+		await interaction.response.edit_message(content=text, view=None)
+	else:
+		await interaction.followup.send(text, ephemeral=True)
 
 
 async def _eph(interaction, text, component_view=nextcord.utils.MISSING):
