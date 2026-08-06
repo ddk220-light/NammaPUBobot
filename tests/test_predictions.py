@@ -94,20 +94,32 @@ class TestPayouts:
 
 
 class TestRewardAmount:
+	def test_zero_balance_gets_the_full_reward(self):
+		assert scoring.reward_amount(0) == 100
+
+	def test_low_balance_gets_the_full_reward(self):
+		assert scoring.reward_amount(399) == 100
+
+	def test_balance_at_400_gets_the_full_reward(self):
+		assert scoring.reward_amount(400) == 100
+
+	def test_balance_at_401_gets_partial(self):
+		assert scoring.reward_amount(401) == 99
+
 	def test_full_reward_below_the_ceiling(self):
-		assert scoring.reward_amount(480) == 10
+		assert scoring.reward_amount(480) == 20
 
 	def test_partial_reward_tops_up_to_exactly_500(self):
 		assert scoring.reward_amount(496) == 4
+
+	def test_balance_at_499_gets_one(self):
+		assert scoring.reward_amount(499) == 1
 
 	def test_nothing_at_the_ceiling(self):
 		assert scoring.reward_amount(500) == 0
 
 	def test_nothing_above_the_ceiling(self):
 		assert scoring.reward_amount(620) == 0
-
-	def test_zero_balance_gets_the_full_reward(self):
-		assert scoring.reward_amount(0) == 10
 
 
 class TestMultiplier:

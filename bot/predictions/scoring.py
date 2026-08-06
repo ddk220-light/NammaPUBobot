@@ -12,7 +12,7 @@ database.
 # tuple is a forgery, not a feature request.
 STAKES = (10, 50, 100)
 SEED_AMOUNT = 500
-MATCH_REWARD = 10
+MATCH_REWARD = 100
 REWARD_CEILING = 500
 
 
