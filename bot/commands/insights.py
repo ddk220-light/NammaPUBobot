@@ -29,7 +29,7 @@ def _fmt(kind, v):
 
 def _full_button(use_case, days, n):
 	# auto_defer=False + custom_id routed via bot.events -> on_insights_interaction (redeploy-safe,
-	# never relies on a live View object). See bot/quiz/embeds.py card_view for the same pattern.
+	# never relies on a live View object). See bot/quiz/embeds.py vote_view for the same pattern.
 	v = nextcord.ui.View(timeout=None, auto_defer=False)
 	v.add_item(nextcord.ui.Button(
 		style=nextcord.ButtonStyle.secondary, label="Show all {} players".format(n),

@@ -123,10 +123,10 @@ class QuizJobs:
 			log.error(f"Quiz channel {channel_id} not found.")
 			return None
 		post_id = await store.create_post(channel_id, q, now, now + open_window)
+		post = await store.get_post(post_id)
 		msg = await channel.send(
-			embed=embeds.card_embed(q["category"], q["difficulty"], q["seq"], q["week"],
-									q["day"], open_window / 3600, source=q.get("source")),
-			view=embeds.card_view(post_id))
+			embed=embeds.poll_embed(post, []),
+			view=embeds.vote_view(post_id, q["options"], scoring.is_multi_category(q["category"])))
 		await store.set_message_id(post_id, msg.id)
 		await store.upsert_config(channel_id, last_post_ymd=scoring._ymd(now), last_post_at=now)
 		log.info(f"Quiz posted #{q['seq']} ({q['id']}) in channel {channel_id}.")
@@ -146,30 +146,70 @@ class QuizJobs:
 		return await self._post_question(channel_id, open_window, int(time.time()))
 
 	async def _reveal(self, post, fresh):
-		"""Resolve one post: edit its original card into the result, and — when `fresh` —
-		ALSO send a new 'Yesterday's answer' message so the answer shows in the channel
-		feed right before the next question. Marks the post closed. Bulletproof."""
+		"""Resolve one poll: grade every cast vote, pay gold, edit the card
+		into the final tally, optionally announce, and only THEN mark the post
+		closed — money first, terminal status last. A crash (or a payment
+		failure, which raises) anywhere before the close leaves the post
+		'open' past closes_at, and _close_due re-enters here next tick:
+		grading is deterministic, every payment idem-keyed, the card edit
+		harmless to repeat."""
 		import nextcord
 		from core.client import dc
+		from bot import community
+		from bot.predictions import gold as gold_bank
 		from . import embeds
-		ans = await store.answers_for_post(post["id"])
-		winners = [a["nick"] for a in ans if int(a.get("is_correct") or 0)]
+		votes = await store.answers_for_post(post["id"])       # cast votes only (answered_at filter)
 		options = json.loads(post["options_json"])
 		correct = json.loads(post["correct_indices"])
+		multi = scoring.is_multi_category(post["category"])
+		# 1. Grade.
+		graded = []
+		for v in votes:
+			if multi:
+				ok = scoring.grade_multi(json.loads(v["choice_indices"] or "[]"), correct)
+			else:
+				ok = v.get("choice_index") is not None and scoring.grade(v["choice_index"], post["correct_index"])
+			await store.write_grade(post["id"], v["user_id"], ok)
+			graded.append(dict(v, is_correct=ok))
+		# 2. Pay. If ANY payment fails, raise after the loop — closing past an
+		# unpaid voter would put their gold beyond the retry loop forever.
+		gold_note = None
+		community_id = await community.community_for_channel(post["channel_id"])
+		if community_id is None:
+			if graded:
+				log.info(f"Quiz {post['id']}: channel {post['channel_id']} has no community — no gold.")
+		else:
+			now = int(time.time())
+			failures = 0
+			for v in graded:
+				try:
+					await gold_bank.ensure_seeded(community_id, v["user_id"], now)
+					await gold_bank.grant_quiz_reward(
+						community_id, v["user_id"], post["id"], v["is_correct"], now)
+				except Exception as e:
+					failures += 1
+					log.error(f"Quiz gold for {v['user_id']} on post {post['id']} failed: {e}")
+			if failures:
+				raise RuntimeError(
+					f"{failures} quiz payment(s) failed on post {post['id']} — left open to retry")
+			total = await gold_bank.quiz_paid_total(post["id"])
+			if total:
+				gold_note = f"\U0001FA99 {total} gold paid out — 50 correct, 10 played, never past 500."
+		winners = [v["nick"] for v in graded if v["is_correct"]]
+		# 3. Results.
 		channel = dc.get_channel(post["channel_id"])
 		if channel:
 			if post.get("message_id"):
 				try:
 					msg = await channel.fetch_message(post["message_id"])
-					await msg.edit(embed=embeds.result_embed(
-						post["prompt"], options, correct,
-						post["explanation"], winners), view=None)
+					await msg.edit(embed=embeds.final_card_embed(post, graded), view=None)
 				except nextcord.NotFound:
 					pass
 			if fresh:
 				await channel.send(embed=embeds.result_embed(
-					post["prompt"], options, correct, post["explanation"],
-					winners, title="Yesterday's answer"))
+					post["prompt"], options, correct, post["explanation"], winners,
+					title="Yesterday's answer", gold_note=gold_note))
+		# 4. Close — last.
 		await store.close_post(post["id"])
 
 	async def _reveal_previous(self, channel_id):
@@ -206,7 +246,14 @@ class QuizJobs:
 	async def _close_due(self, now):
 		"""Fallback resolver: any still-open post past its closes_at gets an in-place
 		edit (no fresh message — these are stale leftovers, e.g. the quiz was disabled).
-		The normal daily path reveals the previous question via _reveal_previous."""
+		The normal daily path reveals the previous question via _reveal_previous.
+
+		THIS IS ALSO THE ONLY RETRY the resolve has. `status='open'` past
+		closes_at IS the retry ticket, which is why _reveal closes last and not
+		at all on a payment failure: the raise below is logged and the post is
+		picked up again on the next pass. Close first and a voter's unpaid gold
+		is out of this query forever, with the ledger and the balance cache
+		still agreeing, so nothing downstream could detect the loss either."""
 		for post in await store.due_to_close(now):
 			try:
 				await self._reveal(post, fresh=False)

@@ -59,7 +59,7 @@ db.ensure_table(dict(
 		dict(cname="channel_id", ctype=db.types.int),
 		dict(cname="enabled", ctype=db.types.bool),
 		dict(cname="quiz_hour", ctype=db.types.int, notnull=False),
-		dict(cname="answer_window", ctype=db.types.int, notnull=False),
+		dict(cname="answer_window", ctype=db.types.int, notnull=False),  # dead since the poll era — column kept, never read
 		dict(cname="open_window", ctype=db.types.int, notnull=False),
 		dict(cname="leaderboard_dow", ctype=db.types.int, notnull=False),
 		dict(cname="leaderboard_hour", ctype=db.types.int, notnull=False),

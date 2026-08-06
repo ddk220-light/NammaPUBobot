@@ -8,7 +8,7 @@ import time
 __all__ = ["quiz_leaderboard", "quiz_enable", "quiz_disable", "quiz_config", "quiz_post_now",
 		   "quiz_status", "quiz_skip", "quiz_reveal_now"]
 
-_INT_FIELDS = ("quiz_hour", "answer_window", "open_window", "leaderboard_dow", "leaderboard_hour", "test_interval")
+_INT_FIELDS = ("quiz_hour", "open_window", "leaderboard_dow", "leaderboard_hour", "test_interval")
 
 
 async def quiz_leaderboard(ctx):
@@ -32,7 +32,7 @@ async def quiz_enable(ctx, channel, hour=9):
 		return await ctx.error("Hour must be 0-23 (UTC).")
 	await store.disable_all()
 	await store.upsert_config(
-		channel.id, enabled=1, quiz_hour=int(hour), answer_window=180, open_window=86400,
+		channel.id, enabled=1, quiz_hour=int(hour), open_window=86400,
 		leaderboard_dow=7, leaderboard_hour=18, last_post_ymd="", last_leaderboard_ymd="")
 	await ctx.success(
 		f"Daily quiz enabled in {channel.mention} at {int(hour):02d}:00 UTC. "

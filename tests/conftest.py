@@ -438,6 +438,22 @@ class _FakeDiscordException(Exception):
 	cannot be imported by a test at all. """
 
 
+class _FakeNotFound(_FakeDiscordException):
+	""" nextcord.NotFound — a 404 from the API, and the ONE exception the quiz
+	resolve names by hand: `except nextcord.NotFound` around the fetch of the
+	poll card it is about to edit, because a deleted card must not stop the
+	grading, the payout or the close that follow it. A permissive stub in its
+	place turned that except clause into an AttributeError the moment a test
+	drove the branch, so the "someone deleted the card" path was untestable
+	rather than merely unasserted. The real signature takes (response,
+	message); nothing here reads either, so both stay optional. """
+
+	def __init__(self, response=None, message=None):
+		super().__init__(message or "Not Found")
+		self.response = response
+		self.status = 404
+
+
 def _find(predicate, seq):
 	""" The REAL nextcord.utils.find, not a rubber stamp.
 
@@ -504,6 +520,7 @@ _fake_nextcord = types.ModuleType('nextcord')
 for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents'):
 	setattr(_fake_nextcord, _name, _NextcordStub)
 _fake_nextcord.DiscordException = _FakeDiscordException
+_fake_nextcord.NotFound = _FakeNotFound
 _fake_nextcord.Embed = FakeEmbed
 _fake_nextcord.Colour = _FakeColour
 _fake_nextcord.Color = _fake_nextcord.Colour

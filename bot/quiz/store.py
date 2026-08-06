@@ -111,46 +111,11 @@ async def close_post(post_id):
 
 
 # ── answers ──────────────────────────────────────────────────────────────
-async def get_answer(post_id, user_id):
-	return await db.select_one(["*"], "quiz_answers", {"post_id": post_id, "user_id": user_id})
-
-
-async def record_reveal(post_id, user_id, nick, revealed_at, deadline_at):
-	"""Create the answer row at reveal if absent (race-safe via INSERT IGNORE — a
-	double-click never resets the deadline). Returns (row, created)."""
-	existing = await get_answer(post_id, user_id)
-	if existing:
-		return existing, False
-	await db.insert("quiz_answers", dict(
-		post_id=post_id, user_id=user_id, nick=nick, revealed_at=revealed_at,
-		deadline_at=deadline_at, choice_index=None, is_correct=None,
-		answered_at=None, response_ms=None), on_duplicate="ignore")
-	return await get_answer(post_id, user_id), True
-
-
-async def record_answer(post_id, user_id, choice_index, is_correct, answered_at, response_ms):
-	"""Atomically record the answer ONLY if the user has not already answered. The
-	`answered_at IS NULL` guard closes the read-then-write TOCTOU race: nextcord
-	dispatches each click as its own task, so two near-simultaneous taps both pass the
-	in-handler `answered_at is None` check; the DB row lock then serialises these
-	UPDATEs and the second matches 0 rows, so the first answer wins and is never
-	overwritten. (db.update can't express the conditional WHERE, hence raw execute.)"""
-	await db.execute(
-		"UPDATE quiz_answers SET choice_index=%s, is_correct=%s, answered_at=%s, response_ms=%s "
-		"WHERE post_id=%s AND user_id=%s AND answered_at IS NULL",
-		[choice_index, (1 if is_correct else 0), answered_at, response_ms, post_id, user_id])
-
-
-async def record_answer_multi(post_id, user_id, choice_indices, is_correct, answered_at, response_ms):
-	"""Record a multi-select answer once (same answered_at IS NULL TOCTOU guard as
-	record_answer). Stores the chosen set as JSON in choice_indices."""
-	await db.execute(
-		"UPDATE quiz_answers SET choice_indices=%s, is_correct=%s, answered_at=%s, response_ms=%s "
-		"WHERE post_id=%s AND user_id=%s AND answered_at IS NULL",
-		[json.dumps(sorted(int(i) for i in choice_indices)), (1 if is_correct else 0),
-		 answered_at, response_ms, post_id, user_id])
-
-
+# The reveal era's writers (record_reveal / record_answer / record_answer_multi
+# and the get_answer they were built on) are gone with it: an answer is no
+# longer a private, timed, one-shot lock-in but a public vote a user may change
+# until the poll closes, and correctness is no longer decided at press time but
+# at lock time by write_grade below.
 async def record_vote(post_id, user_id, nick, choice_index, now):
 	"""UPSERT the user's vote — the PK (post_id, user_id) IS the one-vote
 	rule, and REPLACE makes a changed mind overwrite the row (also wiping any

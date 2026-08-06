@@ -16,20 +16,9 @@ def letter_options(options):
 _SOURCE_TAG = {"game": "\U0001F3AE Game knowledge", "player": "\U0001F464 Player trivia"}
 
 
-def card_lines(category, difficulty, seq, week, day, closes_in_h, source=None):
-	lines = [f"**Daily AoE2 quiz · Week {week} · Day {day} · #{seq}**"]
-	tag = _SOURCE_TAG.get(source)
-	lines.append(f"{tag} · Category: {category} · {difficulty}" if tag
-				 else f"Category: {category} · {difficulty}")
-	lines += [
-		"Tap **Reveal & start** — a private 3:00 timer starts, then lock your answer.",
-		f"Closes in ~{int(closes_in_h)}h · weekly leaderboard at the end of each week.",
-	]
-	return lines
-
-
-def question_lines(prompt, options):
-	return [f"**{prompt}**", ""] + letter_options(options)
+# card_lines (the reveal-era teaser) and question_lines (the ephemeral question
+# that followed it) are deleted — poll_card_lines below renders the question on
+# the public card instead, so there is no second, private copy of it to build.
 
 
 def leaderboard_lines(tallied):
@@ -44,12 +33,10 @@ def closed_notice():
 	return "This quiz has closed — check the channel for the answer."
 
 
-def already_answered_notice():
-	return "You already locked in an answer for this quiz."
-
-
-def too_late_notice():
-	return "Your 3-minute window has passed — no answer recorded."
+# already_answered_notice / too_late_notice went with the reveal era: a vote can
+# now be changed until the poll locks, so there is no "you already answered" to
+# refuse and no private 3-minute window to run out of. closed_notice survives —
+# the clock gate in bot/quiz/interactions.py still needs it.
 
 
 def result_lines(prompt, options, correct_indices, explanation, winners, gold_note=None):

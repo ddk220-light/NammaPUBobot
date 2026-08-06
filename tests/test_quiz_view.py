@@ -9,18 +9,6 @@ def test_letter_options():
 	assert v.letter_options(["Ram", "Scorpion"]) == ["A. Ram", "B. Scorpion"]
 
 
-def test_card_lines_hides_answer():
-	lines = v.card_lines(category="armor", difficulty="medium", seq=42, week=1, day=1, closes_in_h=24)
-	text = "\n".join(lines)
-	assert "armor" in text and "#42" in text and "Scorpion" not in text
-
-
-def test_question_lines_letters_every_option():
-	lines = v.question_lines("Q?", ["a", "b", "c", "d"])
-	assert lines[0] == "**Q?**"
-	assert any(line.startswith("D. ") for line in lines)
-
-
 def test_leaderboard_lines_ranks_and_accuracy():
 	tallied = [
 		{"user_id": 1, "nick": "Gaj", "correct": 6, "answered": 6},
@@ -42,17 +30,16 @@ def test_result_lines():
 	assert "C" in joined and "because" in joined and "x, y" in joined
 
 
-def test_notices_are_strings():
+def test_closed_notice_is_the_one_surviving_notice():
+	# already_answered_notice / too_late_notice went with the reveal era —
+	# a vote is changeable and there is no private timer to run out of.
 	assert "closed" in v.closed_notice().lower()
-	assert isinstance(v.already_answered_notice(), str)
-	assert isinstance(v.too_late_notice(), str)
+	assert not hasattr(v, "already_answered_notice")
+	assert not hasattr(v, "too_late_notice")
 
 
-from bot.quiz.view import card_lines, result_lines
+from bot.quiz.view import result_lines
 
-def test_card_lines_show_question_number_and_week_day():
-	out = "\n".join(card_lines("combat", "hard", seq=17, week=3, day=3, closes_in_h=24))
-	assert "#17" in out and "Week 3" in out and "Day 3" in out
 
 def test_result_lines_render_multiple_correct_letters():
 	out = "\n".join(result_lines("Q?", ["a", "b", "c", "d"], [0, 2], "because", ["Ann"]))
@@ -60,16 +47,19 @@ def test_result_lines_render_multiple_correct_letters():
 	assert "because" in out and "Ann" in out
 
 
-def test_card_lines_shows_source_tag():
-	game = "\n".join(card_lines("combat", "hard", 1, 1, 2, 24, source="game"))
-	player = "\n".join(card_lines("Villagers", "medium", 2, 1, 1, 24, source="player"))
+def test_poll_card_shows_the_source_tag():
+	# The tag moved from the deleted card_lines onto the poll card, which is
+	# the only card there is now.
+	game = "\n".join(view.poll_card_lines("combat", "hard", 1, 1, 2, 24, "Q?", ["a", "b"], [],
+			source="game"))
+	player = "\n".join(view.poll_card_lines("Villagers", "medium", 2, 1, 1, 24, "Q?", ["a", "b"], [],
+			source="player"))
 	assert "Game" in game and "combat" in game
 	assert "Player" in player and "Villagers" in player
 
 
-def test_card_lines_without_source_is_backcompat():
-	# omitting source (existing callers) must still render, with no tag
-	out = "\n".join(card_lines("combat", "hard", 5, 1, 1, 24))
+def test_poll_card_without_source_is_backcompat():
+	out = "\n".join(view.poll_card_lines("combat", "hard", 5, 1, 1, 24, "Q?", ["a", "b"], []))
 	assert "#5" in out and "Game" not in out and "Player" not in out
 
 

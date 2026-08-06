@@ -12,51 +12,10 @@ import nextcord
 from . import view as _v
 
 
-def card_embed(category, difficulty, seq, week, day, closes_in_h, source=None):
-	return nextcord.Embed(
-		title="Daily AoE2 quiz",
-		description="\n".join(_v.card_lines(category, difficulty, seq, week, day, closes_in_h, source)),
-		colour=nextcord.Colour.blurple())
-
-
-def card_view(post_id):
-	# auto_defer=False is REQUIRED: these buttons carry no per-View callback (we route
-	# every click through the global on_interaction handler in bot.events so it works
-	# across a Railway redeploy). With nextcord's default auto_defer=True, the View's
-	# dispatch would silently ACK (type-6 deferred update) the click after the no-op
-	# callback, and our handler's response.send_message would then raise
-	# InteractionResponded — i.e. the button would appear to do nothing.
-	v = nextcord.ui.View(timeout=None, auto_defer=False)
-	v.add_item(nextcord.ui.Button(
-		style=nextcord.ButtonStyle.primary, label="Reveal & start",
-		custom_id=f"quiz:{post_id}:reveal"))
-	return v
-
-
-def question_embed(prompt, options, seconds_left):
-	e = nextcord.Embed(
-		description="\n".join(_v.question_lines(prompt, options)),
-		colour=nextcord.Colour.gold())
-	e.set_footer(text=f"{seconds_left // 60}:{seconds_left % 60:02d} left · one answer, no changes")
-	return e
-
-
-def answer_view(post_id, options, multi):
-	# Routed via the global on_interaction handler (redeploy-safe), so auto_defer=False
-	# and the components carry DB-resolvable custom_ids. See card_view's note.
-	v = nextcord.ui.View(timeout=None, auto_defer=False)
-	if multi:
-		v.add_item(nextcord.ui.StringSelect(
-			custom_id=f"quiz:{post_id}:msel", placeholder="Select ALL that apply, then click away",
-			min_values=1, max_values=len(options),
-			options=[nextcord.SelectOption(label=f"{chr(65 + i)}. {o[:90]}", value=str(i))
-					 for i, o in enumerate(options)]))
-	else:
-		for i in range(len(options)):
-			v.add_item(nextcord.ui.Button(
-				style=nextcord.ButtonStyle.secondary, label=chr(65 + i),
-				custom_id=f"quiz:{post_id}:ans:{i}"))
-	return v
+# The reveal era's four builders — card_embed / card_view (the teaser card and
+# its "Reveal & start" button) and question_embed / answer_view (the ephemeral,
+# privately-timed question that followed it) — are deleted. The poll card below
+# IS the question, publicly, and vote_view is the only control it ships with.
 
 
 def result_embed(prompt, options, correct_indices, explanation, winners, title="Quiz result", gold_note=None):
@@ -89,8 +48,13 @@ def poll_embed(post, votes):
 
 
 def vote_view(post_id, options, multi):
-	# auto_defer=False is REQUIRED — clicks route through the global
-	# on_interaction handler (redeploy-safe); see card_view's original note.
+	# auto_defer=False is REQUIRED: these components carry no per-View callback
+	# (every press routes through the global on_interaction handler in
+	# bot.events, so the buttons keep working across a Railway redeploy). With
+	# nextcord's default auto_defer=True, the View's dispatch would silently ACK
+	# (type-6 deferred update) the press after the no-op callback, and our
+	# handler's response.edit_message/send_message would then raise
+	# InteractionResponded — i.e. the button would appear to do nothing.
 	v = nextcord.ui.View(timeout=None, auto_defer=False)
 	if multi:
 		v.add_item(nextcord.ui.StringSelect(

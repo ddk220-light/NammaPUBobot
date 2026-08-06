@@ -15,7 +15,7 @@ _RESULT = 0xF1C40F   # gold — payout, matches the results card
 
 
 def bet_view(post_id):
-	# auto_defer=False is REQUIRED — same rule as bot/quiz/embeds.card_view:
+	# auto_defer=False is REQUIRED — same rule as bot/quiz/embeds.vote_view:
 	# these buttons carry no per-View callback (clicks route through the global
 	# on_interaction handler so they work across a Railway redeploy), and
 	# nextcord's default auto_defer would silently ack the click first.

@@ -1099,7 +1099,7 @@ async def _quiz_config(
 		interaction: Interaction,
 		field: str = SlashOption(
 			name="field",
-			description="quiz_hour|answer_window|open_window|leaderboard_dow|leaderboard_hour|test_interval|min_difficulty"),
+			description="quiz_hour|open_window|leaderboard_dow|leaderboard_hour|test_interval|min_difficulty"),
 		value: str = SlashOption(name="value", description="New value.")
 ): await run_slash(bot.commands.quiz_config, interaction=interaction, field=field, value=value)
 
