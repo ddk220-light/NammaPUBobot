@@ -2,57 +2,138 @@
 """Pure text builders for prediction messages. No nextcord here — embeds.py
 wraps these into Embed objects. Keeping the formatting pure makes it
 unit-testable (the bot/quiz/view.py pattern)."""
-from .scoring import split_pct
+from .scoring import multiplier, pools
 
 # Team 0 / team 1 vote emoji. Blue and red mirror the in-game player colours, and
 # both are single codepoints so `str(reaction)` compares cleanly.
 TEAM_EMOJIS = ("\U0001F535", "\U0001F534")  # 🔵 🔴
 
+GOLD = "\U0001FA99"  # 🪙
 
-def open_lines(team0, team1, minutes, match_id):
+_ENTRY_LABELS = {
+	"seed": "Starting gold",
+	"match_reward": "Match played",
+	"bet": "Bet placed",
+	"refund": "Refund",
+	"payout": "Winnings",
+	"admin_adjust": "Adjustment",
+}
+
+
+def _mult_note(pool_side, pool_other):
+	m = multiplier(pool_side, pool_other)
+	return f" · pays ×{m:g}" if m and m > 1 else ""
+
+
+def _side_line(emoji, team, pool_side, pool_other):
+	return f"{emoji}  **{team}** — pool **{pool_side}** {GOLD}{_mult_note(pool_side, pool_other)}"
+
+
+def open_lines(team0, team1, minutes, match_id, pool0=0, pool1=0):
 	return [
 		f"**Who takes match #{match_id}?**",
 		"",
-		f"{TEAM_EMOJIS[0]}  **{team0}**",
-		f"{TEAM_EMOJIS[1]}  **{team1}**",
+		_side_line(TEAM_EMOJIS[0], team0, pool0, pool1),
+		_side_line(TEAM_EMOJIS[1], team1, pool1, pool0),
 		"",
-		f"React to call it. Voting closes in {minutes} minutes.",
-		"_Spectators only — players in this match are not counted._",
+		f"Stake your gold with the buttons. Betting closes in {minutes} minutes.",
+		"_Spectators only — players in this match cannot bet. Winners split the whole pot._",
 	]
 
 
-def frozen_lines(team0, team1, votes0, votes1):
-	pct0, pct1 = split_pct(votes0, votes1)
-	total = votes0 + votes1
+def frozen_lines(team0, team1, pool0, pool1, bettors0, bettors1):
+	total = pool0 + pool1
 	if not total:
-		return [f"**Voting closed — no predictions for {team0} vs {team1}.**"]
+		return [f"**Betting closed — no bets on {team0} vs {team1}.**"]
 	lines = [
-		"**Voting closed. The audience says:**",
+		"**Betting closed. The pots are locked:**",
 		"",
-		f"{TEAM_EMOJIS[0]}  **{team0}** — {votes0} ({pct0}%)",
-		f"{TEAM_EMOJIS[1]}  **{team1}** — {votes1} ({pct1}%)",
+		f"{TEAM_EMOJIS[0]}  **{team0}** — **{pool0}** {GOLD} from {bettors0} bettor(s)"
+		f"{_mult_note(pool0, pool1)}",
+		f"{TEAM_EMOJIS[1]}  **{team1}** — **{pool1}** {GOLD} from {bettors1} bettor(s)"
+		f"{_mult_note(pool1, pool0)}",
 		"",
 	]
-	if votes0 == votes1:
-		lines.append(f"Dead split across {total} voter(s).")
+	if pool0 == pool1:
+		lines.append(f"Dead even at {total} {GOLD}.")
 	else:
-		favourite = team0 if votes0 > votes1 else team1
-		lines.append(f"**{favourite}** favoured by {total} voter(s).")
+		favourite = team0 if pool0 > pool1 else team1
+		lines.append(f"The gold says **{favourite}**.")
 	return lines
 
 
-def result_lines(winner_name, correct_nicks, total_voters):
-	"""Post-match payout. correct_nicks is already ordered and capped by the caller."""
+def no_action_lines(team0, team1):
+	return [
+		f"**Betting closed — one-sided book on {team0} vs {team1}.**",
+		"Nobody took the other side, so there are no odds to settle. "
+		"All stakes have been refunded.",
+	]
+
+
+def voided_lines(reason):
+	return [reason, "All stakes have been refunded."]
+
+
+def bet_confirm_lines(team_name, stake, total_stake, pool0, pool1, balance_after):
+	total_note = f" (your total: {total_stake})" if total_stake != stake else ""
+	lines = [f"Bet **{stake}** {GOLD} on **{team_name}**{total_note}."]
+	lines.append(f"Pools: {pool0} vs {pool1}. Your balance: **{balance_after}** {GOLD}.")
+	return lines
+
+
+def _named(rows, max_named, fmt):
+	lines = [fmt(r) for r in rows[:max_named]]
+	if len(rows) > max_named:
+		lines.append(f"+{len(rows) - max_named} more")
+	return lines
+
+
+def report_lines(team0, team1, winner_idx, bets, paid, max_named=25):
+	"""The post-match betting report: the pot, every winner's stake -> payout
+	(net gain shown), every loser's stake. bets come from store.bets_for()
+	(already biggest-stake-first); paid from scoring.payouts()."""
+	winner_name = team0 if winner_idx == 0 else team1
 	lines = [f"**{winner_name}** won it."]
-	if not total_voters:
-		lines.append("Nobody predicted this one.")
+	if not bets:
+		lines.append("Nobody bet on this one.")
 		return lines
-	if not correct_nicks:
-		lines.append(f"All {total_voters} voter(s) called it wrong. Brutal.")
-		return lines
-	lines.append(f"{len(correct_nicks)}/{total_voters} called it — +1 point each:")
-	lines.append(", ".join(correct_nicks))
+	pool0, pool1 = pools(bets)
+	lines.append(f"Pot: **{pool0 + pool1}** {GOLD} — {pool0} on {team0}, {pool1} on {team1}.")
+	winners = [b for b in bets if b["side"] == winner_idx]
+	losers = [b for b in bets if b["side"] != winner_idx]
+	if winners:
+		lines.append("")
+		lines.extend(_named(winners, max_named, lambda b: (
+			f"\U0001F3C6 **{b['nick']}** staked {b['stake']} → "
+			f"**{paid.get(b['user_id'], 0)}** {GOLD} (+{paid.get(b['user_id'], 0) - b['stake']})")))
+	if losers:
+		lines.append("")
+		lines.extend(_named(losers, max_named, lambda b: (
+			f"\U0001F4B8 {b['nick']} staked {b['stake']} on "
+			f"{team0 if b['side'] == 0 else team1} — gone")))
 	return lines
+
+
+def gold_lines(balance_amount, entries):
+	lines = [f"You hold **{balance_amount}** {GOLD}."]
+	if entries:
+		lines.append("")
+		for e in entries:
+			sign = "+" if e["amount"] >= 0 else ""
+			lines.append(f"`{sign}{e['amount']}` {_ENTRY_LABELS.get(e['entry_type'], e['entry_type'])}")
+	return lines
+
+
+def gold_top_lines(rows, page=1, per_page=10):
+	"""rows: [{nick, balance}] already sorted richest-first."""
+	if not rows:
+		return ["Nobody holds any gold yet."]
+	start = (page - 1) * per_page
+	page_rows = rows[start:start + per_page]
+	if not page_rows:
+		return [f"No entries on page {page}."]
+	return [f"`{start + n + 1:>2}.` **{r['nick']}** — {r['balance']} {GOLD}"
+			for n, r in enumerate(page_rows)]
 
 
 def leaderboard_lines(rows, page=1, per_page=10):
