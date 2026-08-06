@@ -64,6 +64,23 @@ REGISTRY = {
 	"prediction_votes": dict(
 		layer="core", tenancy="channel", writers=("bot/predictions/store.py",), retention="forever"
 	),
+	# prediction_votes stopped being written when gold betting replaced free
+	# votes (gold-betting spec, 2026-08-05); rows stay for leaderboard history.
+	# bot/predictions/gold.py does not exist yet — task 4 of the gold-betting
+	# spec adds it as the sole writer of this table and the two below.
+	"prediction_bets": dict(
+		layer="core", tenancy="channel", writers=("bot/predictions/gold.py",), retention="forever"
+	),
+	# Append-only money trail — the ONLY module allowed to write gold is
+	# bot/predictions/gold.py, and gold_ledger rows are never updated/deleted.
+	# That module does not exist yet — task 4 of the gold-betting spec adds it.
+	"gold_ledger": dict(
+		layer="core", tenancy="community", writers=("bot/predictions/gold.py",), retention="forever"
+	),
+	# Same writer, same not-yet-landed caveat as gold_ledger above.
+	"gold_balances": dict(
+		layer="core", tenancy="community", writers=("bot/predictions/gold.py",), retention="forever"
+	),
 	# raw — append-only observations
 	"civ_picks": dict(
 		layer="raw",
