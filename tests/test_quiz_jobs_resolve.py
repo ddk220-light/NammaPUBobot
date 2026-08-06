@@ -124,12 +124,22 @@ class FakeStore:
 
 	# — the vote half (drives bot.quiz.interactions against the same rows) —
 	async def record_vote(self, post_id, user_id, nick, choice_index, now):
+		"""The real one re-reads the post row FOR UPDATE inside its own
+		transaction and writes only if the poll is still open, returning whether
+		the vote landed. Reproduced here rather than assumed: the whole point of
+		the clamp is that the STORED row is what decides, so a fake that wrote
+		unconditionally would let a press slip past the very gate this file
+		exists to test."""
 		self.calls.append("record_vote:{}".format(user_id))
+		post = self.posts.get(post_id)
+		if post is None or post["status"] != "open" or now >= int(post["closes_at"]):
+			return False
 		self.rows = [r for r in self.rows
 				if not (r["post_id"] == post_id and r["user_id"] == user_id)]
 		self.rows.append(dict(post_id=post_id, user_id=user_id, nick=nick,
 				choice_index=int(choice_index), choice_indices=None,
 				is_correct=None, answered_at=now))
+		return True
 
 	def vote_of(self, post_id, user_id):
 		for r in self.rows:

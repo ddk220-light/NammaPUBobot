@@ -129,25 +129,48 @@ class _FakeStore:
 	"""Stands in for bot.quiz.store: an in-memory posts dict and a votes dict
 	keyed (post_id, user_id) — the shape the real (post_id, user_id) PRIMARY
 	KEY enforces. record_vote/record_vote_multi overwrite the whole row, same
-	as the real REPLACE upsert; answers_for_post returns only cast votes."""
+	as the real REPLACE upsert; answers_for_post returns only cast votes.
+
+	The two writers reproduce the real ones' TRANSACTIONAL CONTRACT, not just
+	their storage: they re-check open/deadline for themselves and return True
+	only when the vote landed (bot/quiz/store.py takes that re-check under a
+	`SELECT ... FOR UPDATE` on the post row). `race` is the knob that makes the
+	residual race expressible here — a callable that fires between the router's
+	pre-read and the write, standing in for the resolve's clamp committing in
+	that gap. Without it the fake could only ever agree with the pre-read, and
+	a router that ignored the refusal would look correct."""
 
 	def __init__(self):
 		self.posts = {}
 		self.votes = {}
+		self.race = None            # fires once, between the pre-read and the write
 
 	async def get_post(self, post_id):
 		return self.posts.get(post_id)
 
+	def _still_open(self, post_id, now):
+		if self.race is not None:
+			hook, self.race = self.race, None
+			hook(self.posts)
+		post = self.posts.get(post_id)
+		return post is not None and post["status"] == "open" and now < int(post["closes_at"])
+
 	async def record_vote(self, post_id, user_id, nick, choice_index, now):
+		if not self._still_open(post_id, now):
+			return False
 		self.votes[(post_id, user_id)] = dict(
 				post_id=post_id, user_id=user_id, nick=nick,
 				choice_index=int(choice_index), choice_indices=None, answered_at=now)
+		return True
 
 	async def record_vote_multi(self, post_id, user_id, nick, choice_indices, now):
+		if not self._still_open(post_id, now):
+			return False
 		self.votes[(post_id, user_id)] = dict(
 				post_id=post_id, user_id=user_id, nick=nick, choice_index=None,
 				choice_indices=json.dumps(sorted(int(i) for i in choice_indices)),
 				answered_at=now)
+		return True
 
 	async def answers_for_post(self, post_id):
 		return [v for (pid, _uid), v in self.votes.items() if pid == post_id]
@@ -260,6 +283,61 @@ def test_press_on_closed_status_is_refused(quiz_env):
 	i = FakeInteraction(cid="quiz:9:ans:0", user_id=42, nick="Ann", message_id=111, now=2000)
 	_run(i)
 	assert (9, 42) not in quiz_env.votes
+
+
+# ── a write refused under the row lock ──────────────────────────────────
+# The pre-read gate above is a fast path, not the authority: the row it reads
+# can be flipped a millisecond later by bot/quiz/jobs.py::_reveal's clamp, and
+# the write is a separate round-trip. store.record_vote redoes the check inside
+# its own transaction under a FOR UPDATE lock on the post row and returns False
+# when the vote did not land. The router has to BELIEVE that — a re-render over
+# a refused write tells the user their vote counted when no row exists, and the
+# card it paints is the tally without them in it.
+def test_a_vote_refused_under_the_row_lock_gets_the_closed_notice(quiz_env):
+	quiz_env.posts[9] = _post(closes_at=9_000)
+	# The resolve clamps the deadline after the pre-read, before the write.
+	quiz_env.race = lambda posts: posts[9].update(closes_at=2_000)
+	i = FakeInteraction(cid="quiz:9:ans:1", user_id=42, nick="Ann", message_id=111, now=2_000)
+	_run(i)
+	assert (9, 42) not in quiz_env.votes, "the store refused it"
+	assert i.response.edited is None, "no card re-render over a write the DB refused"
+	assert i.response.sent is not None and "closed" in i.response.sent["content"].lower()
+
+
+def test_a_multi_vote_refused_under_the_row_lock_gets_the_closed_notice(quiz_env):
+	quiz_env.posts[9] = _post(category="techgaps", correct_indices="[0, 2]",
+			options_json='["a", "b", "c"]', closes_at=9_000)
+	quiz_env.race = lambda posts: posts[9].update(closes_at=2_000)
+	i = FakeInteraction(cid="quiz:9:msel", values=["0", "2"], user_id=42, nick="Ann",
+			message_id=111, now=2_000)
+	_run(i)
+	assert (9, 42) not in quiz_env.votes
+	assert i.response.edited is None
+	assert i.response.sent is not None and "closed" in i.response.sent["content"].lower()
+
+
+def test_a_vote_refused_because_the_post_closed_gets_the_closed_notice(quiz_env):
+	# The other flavour of the same gap: the resolve's close_post lands between
+	# the pre-read and the write.
+	quiz_env.posts[9] = _post(closes_at=9_000)
+	quiz_env.race = lambda posts: posts[9].update(status="closed")
+	i = FakeInteraction(cid="quiz:9:ans:1", user_id=42, nick="Ann", message_id=111, now=2_000)
+	_run(i)
+	assert (9, 42) not in quiz_env.votes
+	assert i.response.edited is None
+	assert i.response.sent is not None
+
+
+def test_a_vote_that_lands_is_still_re_rendered(quiz_env):
+	# The other side of the boolean: nothing raced, the write landed, and the
+	# card edit is still the feedback. A router that treated every return as a
+	# refusal would break every honest press.
+	quiz_env.posts[9] = _post(closes_at=9_000)
+	i = FakeInteraction(cid="quiz:9:ans:1", user_id=42, nick="Ann", message_id=111, now=2_000)
+	_run(i)
+	assert quiz_env.votes[(9, 42)]["choice_index"] == 1
+	assert i.response.edited is not None
+	assert i.response.sent is None
 
 
 def test_press_from_an_old_ephemeral_confirms_without_editing(quiz_env):

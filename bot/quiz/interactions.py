@@ -32,17 +32,25 @@ async def on_quiz_interaction(interaction):
 		if not post:
 			return await _eph(interaction, closed_notice())
 		now = int(time.time())
-		# The gate is the CLOCK as well as the status flag, and the clock half
-		# is the load-bearing one: the status flip is the LAST thing the
-		# resolve does (money first, terminal status last — see
-		# bot/quiz/jobs.py::_reveal), so between the vote snapshot and the
-		# close the row still reads status='open'. What closes that window is
-		# store.clamp_closes_at: _reveal pulls closes_at back to `now` BEFORE
-		# it snapshots the votes, so from the instant a resolve begins every
-		# press lands here and is refused, and the snapshot the grader and the
-		# payroll work from is final. Refusing on the status alone would let a
-		# press slip in mid-resolve, be written after the snapshot, and then be
-		# shut out by the close: never graded, never paid, and undetectable.
+		# A CHEAP FAST PATH, NOT THE AUTHORITY. The gate is the clock as well as
+		# the status flag, and the clock half is the load-bearing one: the
+		# status flip is the LAST thing the resolve does (money first, terminal
+		# status last — see bot/quiz/jobs.py::_reveal), so between the vote
+		# snapshot and the close the row still reads status='open'. What shuts
+		# the door is store.clamp_closes_at, which _reveal calls before it
+		# snapshots the votes.
+		#
+		# But this check reads a row that a resolve can flip a millisecond
+		# later, so PASSING IT PROVES NOTHING — the press and the write are two
+		# round-trips, and a clamp landing between them used to leave the vote
+		# written after the snapshot: never graded, never paid, and undetectable
+		# (the ledger and the balance cache still agree). The authority is
+		# store.record_vote / record_vote_multi, which re-check status and
+		# closes_at inside their own transaction against the post row locked FOR
+		# UPDATE — the same lock the clamp takes — so the two serialise and the
+		# snapshot is genuinely final. This check survives only to spare the
+		# common case (a press on a long-closed card) a transaction it does not
+		# need; the refusal that matters is the one honoured below.
 		if post["status"] != "open" or now >= int(post["closes_at"]):
 			return await _eph(interaction, closed_notice())
 		if kind == "reveal":
@@ -56,9 +64,15 @@ async def on_quiz_interaction(interaction):
 			values = [int(v) for v in (interaction.data or {}).get("values", [])]
 			if not values:
 				return await _eph(interaction, "Pick at least one option.")
-			await store.record_vote_multi(post["id"], interaction.user.id, nick, values, now)
+			landed = await store.record_vote_multi(post["id"], interaction.user.id, nick, values, now)
 		else:
-			await store.record_vote(post["id"], interaction.user.id, nick, choice, now)
+			landed = await store.record_vote(post["id"], interaction.user.id, nick, choice, now)
+		if not landed:
+			# The write was refused under the row lock: the poll shut between
+			# the read above and this transaction. There is no row, so the card
+			# has nothing new to show and "vote counted" would be a lie — the
+			# user gets the same closed notice a late press gets.
+			return await _eph(interaction, closed_notice())
 		await _rerender(interaction, post)
 	except Exception as e:
 		log.error(f"quiz interaction error: {e}\n{traceback.format_exc()}")

@@ -111,21 +111,43 @@ async def clamp_closes_at(post_id, now):
 	assignment, so a re-entered resolve cannot un-close an already-past poll).
 
 	This is the FIRST thing bot/quiz/jobs.py::_reveal does, and it has to be:
-	the vote gate in bot/quiz/interactions.py refuses a press from closes_at
-	onward, so clamping BEFORE the snapshot is what makes the snapshot final.
-	Without it, a resolve started while the poll is still nominally open
-	(/quiz reveal_now, or the daily cadence firing before closes_at) reads its
-	votes, spends several Discord round-trips, and closes — while every press
-	landing in that window is accepted and written AFTER the snapshot, then
-	shut out by the close forever: never graded, never paid, and undetectable,
-	because the ledger and the balance cache still agree.
+	a vote may only be written while `now < closes_at`, so clamping BEFORE the
+	snapshot is what makes the snapshot final. Without it, a resolve started
+	while the poll is still nominally open (/quiz reveal_now, or the daily
+	cadence firing before closes_at) reads its votes, spends several Discord
+	round-trips, and closes — while every press landing in that window is
+	accepted and written AFTER the snapshot, then shut out by the close
+	forever: never graded, never paid, and undetectable, because the ledger and
+	the balance cache still agree.
+
+	THE ROW LOCK IS WHAT MAKES THAT TRUE, not the ordering on its own. Clamping
+	first only helps if a press cannot straddle the clamp, and a press IS two
+	round-trips (the router's read, then the write) with unbounded time in
+	between. record_vote / record_vote_multi close that by writing only inside a
+	transaction that has taken THIS SAME row lock and re-read status/closes_at
+	under it, so this statement and any concurrent press are strictly ordered:
+	a press already holding the row commits before this returns — and is
+	therefore in the snapshot that follows — while a press arriving after it
+	blocks here, then reads the clamped deadline and refuses. There is no third
+	outcome, which is the property `_reveal` needs and could not have before.
+
+	The SELECT ... FOR UPDATE is written out rather than left implicit in the
+	UPDATE's own exclusive row lock. The two are equivalent today; spelling it
+	out makes the serialisation a stated property of this function instead of a
+	side effect of how one statement happens to be phrased, and keeps it true if
+	the clamp is ever re-expressed (a read-then-write clamp computing LEAST in
+	Python would silently lose it). Same belt-and-braces reasoning recorded on
+	bot/predictions/gold.py::cancel_bet's second row lock.
 
 	The post stays status='open'. That is deliberate — `status='open' AND
 	closes_at<=now` (due_to_close) IS the retry ticket, and this clamp does not
 	spend it; it guarantees it, since a resolve that dies after the clamp now
 	matches that query for certain."""
-	await db.execute(
-		"UPDATE quiz_posts SET closes_at=LEAST(closes_at, %s) WHERE id=%s", [now, post_id])
+	async with db.transaction() as tx:
+		await tx.fetchone(
+			"SELECT closes_at FROM quiz_posts WHERE id=%s FOR UPDATE", [post_id])
+		await tx.execute(
+			"UPDATE quiz_posts SET closes_at=LEAST(closes_at, %s) WHERE id=%s", [now, post_id])
 
 
 async def close_post(post_id):
@@ -138,30 +160,77 @@ async def close_post(post_id):
 # longer a private, timed, one-shot lock-in but a public vote a user may change
 # until the poll closes, and correctness is no longer decided at press time but
 # at lock time by write_grade below.
+
+
+async def _open_for_voting(tx, post_id, now):
+	"""Row-lock the post and answer, UNDER THAT LOCK, whether a vote may still
+	be written to it. This is THE authority on the question; the identical-
+	looking check in bot/quiz/interactions.py is a cheap fast path that proves
+	nothing, because the row it read can be flipped a millisecond later.
+
+	`FOR UPDATE` takes the same exclusive row lock clamp_closes_at takes, and
+	that is the entire mechanism — see the two callers below and the clamp's
+	own docstring for why the ordering guarantee is what the resolve needs."""
+	row = await tx.fetchone(
+		"SELECT status, closes_at FROM quiz_posts WHERE id=%s FOR UPDATE", [post_id])
+	return row is not None and row["status"] == "open" and int(now) < int(row["closes_at"])
+
+
 async def record_vote(post_id, user_id, nick, choice_index, now):
 	"""UPSERT the user's vote — the PK (post_id, user_id) IS the one-vote
 	rule, and REPLACE makes a changed mind overwrite the row (also wiping any
 	old-era timing fields, which is correct: this row now means a poll vote).
 	is_correct stays NULL until the post locks; answered_at is the latest
-	change, which keeps answers_for_post's cast-a-vote filter true."""
-	await db.insert("quiz_answers", dict(
-		post_id=post_id, user_id=user_id, nick=nick,
-		revealed_at=None, deadline_at=None,
-		choice_index=int(choice_index), choice_indices=None,
-		is_correct=None, answered_at=now, response_ms=None),
-		on_duplicate="replace")
+	change, which keeps answers_for_post's cast-a-vote filter true.
+
+	-> True when the vote landed, False when the poll was already shut. The
+	caller MUST honour False: a re-render over a refused write tells the user
+	their vote counted when no row exists.
+
+	GATE AND WRITE ARE ONE STEP, under the post's row lock. They used to be two
+	independent round-trips — the router read the post, checked it, and wrote
+	later — and a press whose read completed microseconds before
+	bot/quiz/jobs.py::_reveal clamped the deadline passed that check and
+	committed AFTER _reveal's vote snapshot. Such a vote is never graded
+	(is_correct stays NULL), never paid its 10-or-50 gold, and the close then
+	puts the post beyond due_to_close forever; nothing downstream can even
+	notice, because the ledger and the balance cache still agree. A vote CHANGE
+	in that window is worse still: this REPLACE resets is_correct to NULL after
+	write_grade ran and after gold was paid on that verdict, so scoring.tally
+	scores the user differently from what the payout assumed.
+
+	With the lock there are exactly two orders and no third: this transaction
+	takes the row first, so the clamp waits on it and the snapshot that follows
+	the clamp contains this vote — or the clamp takes it first, and the re-read
+	sees the pulled-back closes_at and refuses. Same discipline, and the same
+	class of silently-destroyed money, as bot/predictions/gold.py::place_bet."""
+	async with db.transaction() as tx:
+		if not await _open_for_voting(tx, post_id, now):
+			return False
+		await tx.insert("quiz_answers", dict(
+			post_id=post_id, user_id=user_id, nick=nick,
+			revealed_at=None, deadline_at=None,
+			choice_index=int(choice_index), choice_indices=None,
+			is_correct=None, answered_at=now, response_ms=None),
+			on_duplicate="replace")
+		return True
 
 
 async def record_vote_multi(post_id, user_id, nick, choice_indices, now):
 	"""The multi-answer variant: the submitted set replaces the previous one
-	wholesale (JSON-sorted, the grade_multi convention)."""
-	await db.insert("quiz_answers", dict(
-		post_id=post_id, user_id=user_id, nick=nick,
-		revealed_at=None, deadline_at=None,
-		choice_index=None,
-		choice_indices=json.dumps(sorted(int(i) for i in choice_indices)),
-		is_correct=None, answered_at=now, response_ms=None),
-		on_duplicate="replace")
+	wholesale (JSON-sorted, the grade_multi convention). Same transactional
+	gate, same True/False contract, same reasons — see record_vote."""
+	async with db.transaction() as tx:
+		if not await _open_for_voting(tx, post_id, now):
+			return False
+		await tx.insert("quiz_answers", dict(
+			post_id=post_id, user_id=user_id, nick=nick,
+			revealed_at=None, deadline_at=None,
+			choice_index=None,
+			choice_indices=json.dumps(sorted(int(i) for i in choice_indices)),
+			is_correct=None, answered_at=now, response_ms=None),
+			on_duplicate="replace")
+		return True
 
 
 async def write_grade(post_id, user_id, is_correct):
