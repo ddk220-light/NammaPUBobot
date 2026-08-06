@@ -303,6 +303,48 @@ async def grant_match_reward(community_id, user_id, match_id, now):
 		return amount
 
 
+async def grant_quiz_reward(community_id, user_id, quiz_post_id, correct, now):
+	"""The quiz faucet: 50 for a correct answer, 10 for a cast vote, same
+	ceiling as the match faucet. ONE ledger row per (quiz post, user) — the
+	amount depends on correctness, so the idem key is per post+user, not per
+	entry type. gold_ledger.post_id stays NULL: that column references
+	prediction_posts, and a quiz post id in it would be a foreign lie — the
+	quiz post id travels in the idem key. Caller must ensure_seeded first.
+	Returns the gold granted (0 when capped out or already paid)."""
+	async with db.transaction() as tx:
+		row = await tx.fetchone(
+			"SELECT balance FROM gold_balances "
+			"WHERE community_id=%s AND user_id=%s FOR UPDATE",
+			[community_id, user_id])
+		amount = scoring.quiz_reward_amount(int(row["balance"]) if row else 0, correct)
+		if not amount:
+			return 0
+		applied = await tx.insert("gold_ledger", dict(
+			community_id=community_id, user_id=user_id,
+			entry_type="quiz_correct" if correct else "quiz_played",
+			amount=amount, created_at=now,
+			idem_key=f"quiz:{quiz_post_id}:{user_id}"), on_duplicate="ignore")
+		if not applied:
+			return 0
+		bumped = await tx.execute(
+			"UPDATE gold_balances SET balance=balance+%s, updated_at=%s "
+			"WHERE community_id=%s AND user_id=%s",
+			[amount, now, community_id, user_id])
+		if not bumped:
+			raise RuntimeError(f"gold_balances row missing for {community_id}/{user_id} (quiz)")
+		return amount
+
+
+async def quiz_paid_total(quiz_post_id):
+	"""What this quiz post actually paid, read back from the ledger — the
+	honest figure even on a resolve retried after a partial crash, where a
+	loop accumulator would count only the newly applied grants."""
+	rows = await db.fetchall(
+		"SELECT COALESCE(SUM(amount), 0) s FROM gold_ledger "
+		"WHERE idem_key LIKE %s", [f"quiz:{quiz_post_id}:%"])
+	return int(rows[0]["s"]) if rows else 0
+
+
 async def top_balances(community_id, limit=200):
 	return await db.fetchall(
 		"SELECT user_id, balance FROM gold_balances "

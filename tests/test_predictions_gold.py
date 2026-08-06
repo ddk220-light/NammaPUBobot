@@ -61,6 +61,7 @@ class FakeDb:
 		self.rowcounts = []          # consumed left-to-right by execute/insert
 		self.fetchone_result = dict(ROW)
 		self.fetchone_queue = []     # consumed left-to-right by fetchone, if set
+		self.fetchall_result = []    # answered verbatim by db.fetchall
 		self.raise_integrity_on = None
 		self.errors = _Errors
 		self.rolled_back = False
@@ -106,7 +107,7 @@ class FakeDb:
 
 	async def fetchall(self, sql, args=None):
 		self.calls.append(("db.fetchall", sql, list(args or [])))
-		return []
+		return self.fetchall_result
 
 
 def use_fake(monkeypatch):
@@ -506,3 +507,79 @@ class TestGrantMatchReward:
 		fake.fetchone_result = {"balance": 100}
 		fake.rowcounts = [0]           # idem key already there
 		assert asyncio.run(gold.grant_match_reward(5, 42, 900, 1000)) == 0
+
+
+class TestGrantQuizReward:
+	""" Mirrors TestGrantMatchReward exactly: same shape, same ceiling, same
+	idempotency mechanism — the only differences are the amount (correctness-
+	dependent) and the idem_key, which is keyed on (quiz post, user) rather
+	than entry_type so a correct-then-replayed grant can't double-pay. """
+
+	def test_correct_pays_50_with_entry_type(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.fetchone_result = {"balance": 100}
+		fake.rowcounts = [1, 1]
+		assert asyncio.run(gold.grant_quiz_reward(5, 42, 77, True, 1000)) == 50
+		ledger = next(c[2] for c in fake.calls if c[0] == "insert")
+		assert ledger["entry_type"] == "quiz_correct"
+		assert ledger["idem_key"] == "quiz:77:42"
+		# post_id references prediction_posts, not quiz posts — a quiz post id
+		# in it would be a foreign lie, so both stay unset (NULL).
+		assert ledger.get("post_id") is None and ledger.get("match_id") is None
+
+	def test_played_pays_10(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.fetchone_result = {"balance": 100}
+		fake.rowcounts = [1, 1]
+		assert asyncio.run(gold.grant_quiz_reward(5, 42, 77, False, 1000)) == 10
+		ledger = next(c[2] for c in fake.calls if c[0] == "insert")
+		assert ledger["entry_type"] == "quiz_played"
+		assert ledger["idem_key"] == "quiz:77:42"
+
+	def test_at_ceiling_grants_nothing_and_writes_nothing(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.fetchone_result = {"balance": 500}
+		assert asyncio.run(gold.grant_quiz_reward(5, 42, 77, True, 1000)) == 0
+		assert not [c for c in fake.calls if c[0] == "insert"]
+
+	def test_ceiling_clamps_a_partial_topup(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.fetchone_result = {"balance": 460}
+		fake.rowcounts = [1, 1]
+		assert asyncio.run(gold.grant_quiz_reward(5, 42, 78, True, 1000)) == 40
+
+	def test_already_granted_is_zero(self, monkeypatch):
+		""" THE ONE THAT MATTERS: if grant_quiz_reward stopped consulting the
+		INSERT IGNORE's rowcount, this would fall through to the balance
+		UPDATE — and the fake's rowcounts queue is empty by then, so a plain
+		`return 1` default would silently bump the balance a second time. """
+		fake = use_fake(monkeypatch)
+		fake.fetchone_result = {"balance": 100}
+		fake.rowcounts = [0]           # idem key already there
+		assert asyncio.run(gold.grant_quiz_reward(5, 42, 77, True, 1000)) == 0
+		assert not [c for c in fake.calls if c[0] == "execute" and "gold_balances" in c[1]]
+
+	def test_missing_balance_row_raises(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.fetchone_result = None    # no gold_balances row for this user
+		fake.rowcounts = [1, 0]        # ledger applies, balance UPDATE matches nothing
+		try:
+			asyncio.run(gold.grant_quiz_reward(5, 999999, 77, True, 1000))
+			assert False, "should have raised"
+		except RuntimeError:
+			pass
+
+
+class TestQuizPaidTotal:
+	def test_reads_the_ledger_sum_for_this_post_only(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.fetchall_result = [{"s": 60}]
+		assert asyncio.run(gold.quiz_paid_total(77)) == 60
+		call = next(c for c in fake.calls if c[0] == "db.fetchall")
+		assert "idem_key LIKE" in call[1]
+		assert call[2] == ["quiz:77:%"]
+
+	def test_no_rows_is_zero(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.fetchall_result = []
+		assert asyncio.run(gold.quiz_paid_total(77)) == 0

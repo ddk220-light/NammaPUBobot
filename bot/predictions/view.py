@@ -17,6 +17,8 @@ _ENTRY_LABELS = {
 	"cancel": "Bet cancelled",
 	"refund": "Refund",
 	"payout": "Winnings",
+	"quiz_correct": "Quiz — correct answer",
+	"quiz_played": "Quiz — played",
 	"admin_adjust": "Adjustment",
 }
 
