@@ -52,8 +52,18 @@ Card content while open:
 ### Voting
 
 - `custom_id`s: `quiz:{post_id}:ans:{index}` (button) and
-  `quiz:{post_id}:msel` (multi select) — the **same routes that exist today**;
-  `quiz:{post_id}:reveal` is removed from `parse_custom_id` and the view.
+  `quiz:{post_id}:msel` (multi select) — the **same routes that exist today**.
+  `quiz:{post_id}:reveal` disappears from the view but **stays in
+  `parse_custom_id`, repurposed as the transition converter**: the one post
+  open at deploy time still shows the old Reveal button, and pressing it
+  re-renders that card in place into the poll format (idempotent, and the
+  only way anyone can vote on it).
+- **Message-id guard on the card edit**: old-era ephemeral answer views carry
+  these same `ans:`/`msel:` routes but live on a different message — blindly
+  `edit_message` would paint the shared card over someone's private
+  ephemeral. A press whose `interaction.message.id` is not the post's
+  `message_id` records the vote and answers with a plain ephemeral
+  confirmation instead of the card edit.
 - A press while `status == 'open'` **and** `now < closes_at` UPSERTs the
   user's vote row: PK `(post_id, user_id)` means one vote per user; pressing a
   different option **replaces** it. `answered_at` = time of the latest change.
@@ -86,7 +96,14 @@ Card content while open:
    None: skip payment entirely, log, and omit gold lines from the results.
    Otherwise, per voter: `gold.ensure_seeded(...)` (a voter may never have
    touched gold), then `gold.grant_quiz_reward(...)` — see §3. Every payment
-   is idem-keyed, so re-running pays nobody twice.
+   is idem-keyed, so re-running pays nobody twice. **If any payment errors,
+   the resolve raises after finishing the loop** — the post stays `open`
+   and `_close_due` retries next tick, where the already-paid voters
+   idem-key to no-ops. Closing past an unpaid voter would put their gold
+   beyond the retry loop forever, the same debt-beyond-the-sweep mistake
+   the betting spec forbids. The announced gold total is read back from the
+   ledger (`SUM` over this post's `quiz:` idem keys), not accumulated in the
+   loop, so a retry-after-partial-crash still announces the true figure.
 3. **Results**: edit the original card — final tally, correct answer marked,
    components stripped. When `fresh` (the daily path), also send the
    "Yesterday's answer" message: correct answer, explanation, who got it
@@ -124,8 +141,11 @@ and pays immediately. `force_post` unchanged.
   `_maybe_week_leaderboard`, verbatim.
 - `daily_due`/`leaderboard_due`, `/quiz enable|disable|config|status`,
   `/quiz_leaderboard`.
-- `quiz_posts` schema — no new columns; `closes_at = opened_at + open_window`
-  already is the 24-hour window.
+- `closes_at = opened_at + open_window` already is the 24-hour window.
+- `quiz_posts` gains ONE column: **`difficulty`** (nullable str). The card
+  now re-renders from the post row on every vote, and difficulty was the
+  only displayed field not stored (it rode in from the bank entry at post
+  time). `create_post` writes it; old rows stay NULL and render without it.
 
 ## 3. Gold integration
 
