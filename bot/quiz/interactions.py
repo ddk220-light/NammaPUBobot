@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Global component-interaction router for the quiz. Registered as an additional
-on_interaction listener (the bot's client supports multiple handlers per event).
-DB-driven: it never relies on a live View object, so reveal/answer buttons keep
-working across a Railway redeploy. Foreign interactions (slash commands, other
-features) fall straight through — we only act on custom_ids starting with 'quiz:'.
+"""Global component-interaction router for the quiz poll. Registered as an
+additional on_interaction listener (the bot's client supports multiple
+handlers per event). DB-driven: it never relies on a live View object, so
+vote buttons keep working across a Railway redeploy. Foreign interactions
+(slash commands, other features) fall straight through — we only act on
+custom_ids starting with 'quiz:'.
 Only imported at runtime (by bot.events), never during unit tests."""
 import json
 import time
@@ -14,9 +15,8 @@ import nextcord
 from core.console import log
 
 from . import store
-from .embeds import answer_view, question_embed
-from .scoring import grade, grade_multi, parse_custom_id
-from .view import already_answered_notice, closed_notice, too_late_notice
+from .scoring import is_multi_category, parse_custom_id
+from .view import closed_notice
 
 
 async def on_quiz_interaction(interaction):
@@ -27,23 +27,32 @@ async def on_quiz_interaction(interaction):
 		route = parse_custom_id(cid)
 		if route is None:
 			return
-		# Respond DIRECTLY with an ephemeral message — the canonical pattern for a
-		# button click. Do NOT defer here: on a COMPONENT interaction
-		# response.defer() (without with_message) is a DEFERRED_UPDATE that silently
-		# acks the click and shows the user nothing, which made the reveal look like it
-		# "did nothing". The few PK-keyed MySQL round-trips below are single-digit-ms
-		# on Railway, comfortably inside the 3-second interaction window.
 		kind, post_id, choice = route
 		post = await store.get_post(post_id)
 		if not post:
 			return await _eph(interaction, closed_notice())
 		now = int(time.time())
+		# The gate is the CLOCK, not the status flag: grading (a later task)
+		# runs strictly after closes_at, so refusing presses from closes_at
+		# onward — not only status != 'open' — leaves no window where a
+		# press and a grade can race each other.
+		if post["status"] != "open" or now >= int(post["closes_at"]):
+			return await _eph(interaction, closed_notice())
 		if kind == "reveal":
-			return await _handle_reveal(interaction, post, now)
+			# Transition-era card: the one post already open when this deploys
+			# still shows the old "Reveal & start" button. Pressing it converts
+			# that card in place into the poll format (idempotent) — it does
+			# NOT record a vote.
+			return await _rerender(interaction, post)
+		nick = _nick(interaction.user)
 		if kind == "mselect":
 			values = [int(v) for v in (interaction.data or {}).get("values", [])]
-			return await _handle_answer(interaction, post, values, now, multi=True)
-		return await _handle_answer(interaction, post, choice, now, multi=False)
+			if not values:
+				return await _eph(interaction, "Pick at least one option.")
+			await store.record_vote_multi(post["id"], interaction.user.id, nick, values, now)
+		else:
+			await store.record_vote(post["id"], interaction.user.id, nick, choice, now)
+		await _rerender(interaction, post)
 	except Exception as e:
 		log.error(f"quiz interaction error: {e}\n{traceback.format_exc()}")
 		# Never fail silently — give the user a hint if we have not responded yet.
@@ -55,49 +64,22 @@ async def on_quiz_interaction(interaction):
 			pass
 
 
-async def _handle_reveal(interaction, post, now):
-	if post["status"] != "open" or now > post["closes_at"]:
-		return await _eph(interaction, closed_notice())
+async def _rerender(interaction, post):
+	"""Answer the press by re-rendering the shared card with the fresh tally —
+	the card edit IS the feedback. Old-era EPHEMERAL answer views carry the
+	same ans:/msel: custom_ids but live on a DIFFERENT message; blindly
+	calling edit_message would paint the shared public card over someone's
+	private ephemeral message, so those presses get a plain confirmation
+	instead (the vote, if any, is already recorded either way)."""
+	from . import embeds
+	votes = await store.answers_for_post(post["id"])
 	options = json.loads(post["options_json"])
-	cfg = await store.get_config(post["channel_id"])
-	window = int((cfg or {}).get("answer_window") or 180)
-	deadline = now + window
-	row, _created = await store.record_reveal(
-		post["id"], interaction.user.id, _nick(interaction.user), now, deadline)
-	if row is None:  # insert race lost and re-select failed; treat as transient
-		return await _eph(interaction, "Try tapping reveal again.")
-	if row.get("answered_at") is not None:
-		return await _eph(interaction, already_answered_notice())
-	seconds_left = max(0, int(row.get("deadline_at") or deadline) - now)
-	if seconds_left == 0:
-		return await _eph(interaction, too_late_notice())
-	# Only game "techgaps" questions are multi-answer; every other category — including
-	# all player-quiz categories (Villagers, Age speed, Buildings, Military*, Tech timing)
-	# — is single-answer. Keep in sync if a future multi-answer category is added.
-	multi = post["category"] == "techgaps"
-	view = answer_view(post["id"], options, multi)
-	await interaction.response.send_message(
-		embed=question_embed(post["prompt"], options, seconds_left),
-		view=view, ephemeral=True)
-
-
-async def _handle_answer(interaction, post, choice, now, multi):
-	row = await store.get_answer(post["id"], interaction.user.id)
-	if not row:
-		return await _eph(interaction, "Tap **Reveal & start** first.")
-	if row.get("answered_at") is not None:
-		return await _eph(interaction, already_answered_notice())
-	if post["status"] != "open" or now > int(row["deadline_at"]):
-		return await _eph(interaction, too_late_notice())
-	response_ms = max(0, (now - int(row["revealed_at"])) * 1000)
-	if multi:
-		correct_set = json.loads(post["correct_indices"])
-		is_correct = grade_multi(choice, correct_set)
-		await store.record_answer_multi(post["id"], interaction.user.id, choice, is_correct, now, response_ms)
-	else:
-		is_correct = grade(choice, post["correct_index"])
-		await store.record_answer(post["id"], interaction.user.id, choice, is_correct, now, response_ms)
-	await _eph(interaction, "Locked in. The answer is revealed when the next quiz posts.")
+	msg = getattr(interaction, "message", None)
+	if msg is not None and post.get("message_id") and msg.id == post["message_id"]:
+		return await interaction.response.edit_message(
+			embed=embeds.poll_embed(post, votes),
+			view=embeds.vote_view(post["id"], options, is_multi_category(post["category"])))
+	return await _eph(interaction, "Vote counted — see the quiz card for the tally.")
 
 
 def _nick(user):
