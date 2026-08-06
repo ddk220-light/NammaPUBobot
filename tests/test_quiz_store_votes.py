@@ -132,3 +132,12 @@ def test_write_grade(fake_db):
 	asyncio.run(store.record_vote(9, 1, "Ann", 0, 1000))
 	asyncio.run(store.write_grade(9, 1, True))
 	assert fake_db.row("quiz_answers", post_id=9, user_id=1)["is_correct"] == 1
+
+
+def test_write_grade_records_a_wrong_answer_as_wrong(fake_db):
+	# Both verdicts, because write_grade decides the 50-vs-10 gold split: a
+	# version that hardcoded "correct" passed the entire suite until this test
+	# existed, and would have paid every voter the winning rate.
+	asyncio.run(store.record_vote(9, 2, "Bob", 1, 1000))
+	asyncio.run(store.write_grade(9, 2, False))
+	assert fake_db.row("quiz_answers", post_id=9, user_id=2)["is_correct"] == 0
