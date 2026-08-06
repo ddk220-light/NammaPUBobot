@@ -20,10 +20,18 @@ rather than about tidiness:
    nobody and paid by nobody, and reconcile() cannot see the loss because the
    ledger and the balance cache still agree perfectly. _close_book is the one
    door, and gold.place_bet's FOR UPDATE re-read is its other half.
-2. MONEY FIRST, TERMINAL STATUS LAST. void / no_action / resolved are what put
-   a post beyond every retry there is, so nothing writes one until the gold it
-   owed has been applied — and settlement that CANNOT apply it writes nothing
-   at all, leaving the book frozen for the resume sweep in _run.
+2. STAKE THE BRANCH BEFORE THE MONEY, AND WRITE THE TERMINAL STATUS AFTER IT.
+   `terminal_intent` says which way a post ends and is claimed in the same
+   statement that closes the book (store.claim_terminal), before a coin moves.
+   `status` still comes last, so a crash leaves the post retryable — but every
+   resume now DISPATCHES ON THE STORED INTENT rather than re-deriving one from
+   `matches.winner`. Without that, a two-sided book that was refunded and then
+   died before `status='void'` landed was still 'frozen' when its match
+   reported, and settlement paid out the very stakes that had just gone back:
+   refund:{post}:{user} and payout:{post}:{user} are different idem_keys, so
+   nothing collided and nothing self-healed. A settlement that CANNOT apply
+   its payouts still writes nothing at all, leaving the book frozen (and
+   staked 'settle') for the resume sweep in _run.
 """
 import asyncio
 import time
@@ -48,6 +56,16 @@ RESUME_AFTER = 10 * 60
 # way — there is no result to settle against, and a void post is simply not live
 # for a report that arrives afterwards.
 ABANDON_AFTER = 12 * 60 * 60
+
+ABANDONED_REASON = "The match never reported a result — all bets refunded."
+
+# What the card says when a void is FINISHED by a later sweep rather than by
+# the caller that staked it. The original reason ("Teams changed", "Match
+# cancelled") lived only in that caller's arguments, and storing a
+# presentation string in the posts table to survive a crash window measured in
+# microseconds is not worth the column. Everything that matters — the branch
+# and the money — is recorded; only the phrasing generalises.
+VOID_RESUMED_REASON = "This book was voided before the match settled."
 
 _pending = set()           # keep create_task'd jobs from being GC'd mid-run
 
@@ -115,8 +133,14 @@ class PredictionJobs:
 		# everybody's gold with no event left to give it back.
 		for post in await store.abandoned_books(now - ABANDON_AFTER):
 			try:
-				await _void_with_refunds(
-					post, "The match never reported a result — all bets refunded.", now)
+				# Same dispatch rule as _resume: a post that already staked a
+				# refund branch is FINISHED on that branch, never re-decided.
+				# This sweep is the only thing that ever looks at these posts
+				# (their match wrote no row at all), so a book that died between
+				# claiming 'no_action' at freeze and writing it would otherwise
+				# sit frozen forever — refunded, but never closed out.
+				if not await _finish_staked_branch(post, now):
+					await _void_with_refunds(post, ABANDONED_REASON, now)
 				log.info(f"Refunded an abandoned book for match {post['match_id']} (post {post['id']}).")
 			except Exception as e:
 				log.error(f"Prediction abandon-refund failed (post {post.get('id')}): {e}")
@@ -167,51 +191,57 @@ async def restart_for_match(match):
 
 
 # ── closing the book ─────────────────────────────────────────────────────
-async def _close_book(post):
-	"""Stop the book taking money, and hand back the post as it now is — or
-	None when somebody else owns it.
+async def _close_book(post, intent):
+	"""Stop the book taking money, stake the terminal branch, and hand back the
+	post as it now is — or None when this post is not ours to finish.
 
 	EVERY path that reads the book to refund or pay it goes through here
-	first, and that ordering is load-bearing rather than tidy. store.bets_for
-	is a snapshot; a press that commits after the snapshot but before the post
-	leaves 'open' is refunded by nobody and paid by nobody, and the gold it
-	took is gone with the ledger and the balance cache still in perfect
-	agreement. Closing first means the snapshot is taken from a book that can
-	no longer grow (see store.close_betting and gold.place_bet's FOR UPDATE).
+	first, and both halves of what it does are load-bearing rather than tidy.
 
-	The returned dict carries status='frozen' so the callers below — which
-	hand it on to _void_with_refunds — do not try to close it a second time
-	and mistake their own success for someone else's."""
-	if post["status"] == "open" and not await store.close_betting(post["id"]):
-		return None                  # another sweep flipped it out from under us
-	if post["status"] not in ("open", "frozen"):
-		return None                  # already terminal: void / no_action / resolved
-	return dict(post, status="frozen")
+	CLOSING FIRST. store.bets_for is a snapshot; a press that commits after
+	the snapshot but before the post leaves 'open' is refunded by nobody and
+	paid by nobody, and the gold it took is gone with the ledger and the
+	balance cache still in perfect agreement. Closing first means the snapshot
+	is taken from a book that can no longer grow (see store.claim_terminal and
+	gold.place_bet's FOR UPDATE).
+
+	STAKING THE BRANCH FIRST. `intent` is recorded in the same statement,
+	before a coin moves, so a run that dies part-way through a refund cannot
+	be finished as a PAYOUT by whoever picks the post up next. None here means
+	somebody else staked a different branch (or the post is already terminal),
+	and the only correct answer to that is to leave it entirely alone.
+
+	The returned dict carries status='frozen' and the staked intent, so the
+	callers below do not try to close it a second time and mistake their own
+	success for someone else's."""
+	if await store.claim_terminal(post["id"], intent) != intent:
+		return None
+	return dict(post, status="frozen", terminal_intent=intent)
 
 
 # ── freeze ───────────────────────────────────────────────────────────────
 async def _freeze(post, now):
 	"""Lock the book. One-sided (either pool empty) -> no_action: every stake
 	back immediately, because a book with no opposing gold has no odds to
-	settle. Otherwise the pots lock and the card shows the final multipliers."""
+	settle. Otherwise the pots lock and the card shows the final multipliers.
+
+	The close here is deliberately NOT a terminal claim: a two-sided book
+	leaves this function alive, frozen and waiting for its match, so there is
+	no branch to stake. Only the one-sided arm is terminal, and it claims
+	'no_action' below — after bets_for has said which arm this is, and still
+	before any gold moves."""
 	from . import embeds
 
-	post = await _close_book(post)
-	if post is None:
-		return
+	if not await store.close_betting(post["id"]):
+		return                       # another sweep flipped it out from under us
+	post = dict(post, status="frozen")
 
 	bets = await store.bets_for(post["id"])
 	pool0, pool1 = scoring.pools(bets)
 	if not pool0 or not pool1:
-		community_id = await _community_for_post(post)
-		if bets and community_id is not None:
-			await gold.refund_post(community_id, bets, post["id"], now)
-		elif bets:
-			log.error(f"Prediction post {post['id']} has bets but no community — refunds skipped!")
-		# Money first, terminal status last: a crash between the two leaves the
-		# post retryable rather than closed over an unpaid book.
-		await store.no_action(post["id"], now)
-		await _edit_message(post, embeds.no_action_embed(post["team0_name"], post["team1_name"]))
+		if await store.claim_terminal(post["id"], "no_action") != "no_action":
+			return                   # a settlement or a void owns this post now
+		await _apply_no_action(post, now, bets=bets)
 		log.info(f"Bets refunded for match {post['match_id']}: one-sided book ({pool0}-{pool1}).")
 		return
 
@@ -289,14 +319,45 @@ async def _resume(post, now):
 	bot.active_matches before it ever reaches settlement, and a redeploy takes
 	the process with it. The faucet is repeated too — it is an idempotent grant
 	keyed by (match, user), and a crash between the faucet and the payout
-	sweep leaves it half-applied exactly like the payouts."""
+	sweep leaves it half-applied exactly like the payouts.
+
+	`matches.winner` decides only the branch nobody has staked yet. A post
+	that already committed to a refund is FINISHED as a refund, whatever the
+	match went on to report — see _finish_staked_branch."""
 	winner = post.get("match_winner")
 	log.info(f"Resuming unfinished settlement for match {post['match_id']} (post {post['id']}).")
 	if winner is not None:
+		# Independent of the book, exactly as in resolve_for_match: playing a
+		# ranked match tops the players up whether or not anybody bet on it, so
+		# this runs on the refund branches too.
 		community_id = await _community_for_post(post)
 		await _pay_faucet(community_id, post["match_id"],
 						  await store.match_player_ids(post["match_id"]), now)
+	if await _finish_staked_branch(post, now):
+		return
 	await _settle(post, None if winner is None else int(winner), now)
+
+
+async def _finish_staked_branch(post, now):
+	"""Finish the refund branch this post already committed to, if any.
+	True when it handled the post; False when nothing is staked yet, or when
+	the staked branch is 'settle' and the caller's own settlement is what
+	finishes it.
+
+	THE DOUBLE-PAYOUT FIX, on the reading side. `terminal_intent` is written
+	before the gold moves (store.claim_terminal); this is the half that makes
+	it worth writing. A resume that re-derived the branch from
+	`matches.winner` instead paid out a book whose stakes had already gone
+	back — the refund and the payout carry different idem_keys, so the bank
+	applied both and reconcile() saw nothing wrong."""
+	intent = post.get("terminal_intent")
+	if intent == "void":
+		await _apply_void(post, VOID_RESUMED_REASON, now)
+		return True
+	if intent == "no_action":
+		await _apply_no_action(post, now)
+		return True
+	return False
 
 
 async def _settle(post, winner_idx, now):
@@ -310,19 +371,27 @@ async def _settle(post, winner_idx, now):
 	stranded, and a run that cannot apply the money writes nothing at all."""
 	from . import embeds
 
-	post = await _close_book(post)
-	if post is None:
-		return
 	if winner_idx is None:
+		# Not a settlement at all. Route it through the void path so the branch
+		# staked on the row is 'void' — claiming 'settle' here and refunding
+		# under it would tell every later resume the opposite of the truth.
 		await _void_with_refunds(post, "No win/loss reported — all bets refunded.", now)
+		return
+
+	post = await _close_book(post, "settle")
+	if post is None:
 		return
 
 	bets = await store.bets_for(post["id"])
 	paid, burned = scoring.payouts(bets, winner_idx)
 	if bets and not paid:
-		# Defensive: a one-sided book that somehow reached resolve. The
-		# freeze rule makes this unreachable; refund rather than settle.
-		await _void_with_refunds(post, "One-sided book — all bets refunded.", now)
+		# Defensive: a one-sided book that somehow reached resolve. The freeze
+		# rule makes this unreachable; refund rather than settle. _apply_void
+		# directly rather than _void_with_refunds, because 'settle' is already
+		# staked on this row: re-staking is impossible AND unnecessary —
+		# payouts() paid nobody, so no gold has moved on the settle branch, and
+		# a resume re-derives this same refund from the same one-sided book.
+		await _apply_void(post, "One-sided book — all bets refunded.", now)
 		return
 
 	community_id = await _community_for_post(post)
@@ -374,23 +443,51 @@ async def _pay_faucet(community_id, match_id, user_ids, now):
 
 
 async def _void_with_refunds(post, reason, now):
-	"""Terminal no-settle: close the book, refund every stake exactly once,
-	then mark void. The closing comes first for the reason spelled out in
-	_close_book — a snapshot of a book that can still grow is a refund list
-	that can still be wrong."""
-	from . import embeds
-
-	post = await _close_book(post)
+	"""Terminal no-settle: close the book and stake the void branch, refund
+	every stake exactly once, then mark void. The closing comes first for the
+	reason spelled out in _close_book — a snapshot of a book that can still
+	grow is a refund list that can still be wrong."""
+	post = await _close_book(post, "void")
 	if post is None:
 		return
+	await _apply_void(post, reason, now)
+
+
+async def _apply_void(post, reason, now):
+	"""The money and the status half of a void, for a post whose 'void' (or
+	'settle'-then-refund) branch is ALREADY staked. Refunds are idempotent per
+	(post, user), so a resume that repeats this costs nothing and finishes
+	whatever the first run left owing."""
+	from . import embeds
+
 	bets = await store.bets_for(post["id"])
+	await _refund(post, bets, now)
+	await store.void(post["id"], now)
+	await _edit_message(post, embeds.voided_embed(reason))
+
+
+async def _apply_no_action(post, now, bets=None):
+	"""The money and the status half of a one-sided book's refund, for a post
+	whose 'no_action' branch is already staked. `bets` is passed in by _freeze,
+	which has just read them; a resume reads them itself."""
+	from . import embeds
+
+	if bets is None:
+		bets = await store.bets_for(post["id"])
+	await _refund(post, bets, now)
+	await store.no_action(post["id"], now)
+	await _edit_message(post, embeds.no_action_embed(post["team0_name"], post["team1_name"]))
+
+
+async def _refund(post, bets, now):
+	"""Hand every stake back, exactly once each. A book with real stakes and
+	no community to apply them in is the one outcome that must never pass
+	unnoticed — it is gold owed to named people that nothing else will find."""
 	community_id = await _community_for_post(post)
 	if bets and community_id is not None:
 		await gold.refund_post(community_id, bets, post["id"], now)
 	elif bets:
 		log.error(f"Prediction post {post['id']} has bets but no community — refunds skipped!")
-	await store.void(post["id"], now)
-	await _edit_message(post, embeds.voided_embed(reason))
 
 
 async def void_for_match(match_id, reason="Match cancelled — all bets refunded."):

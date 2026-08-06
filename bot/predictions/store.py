@@ -115,11 +115,72 @@ async def close_betting(post_id):
 	  balance cache agree perfectly, so reconcile() cannot see it either).
 
 	It runs in a transaction purely for the ROWCOUNT: the autocommit adapter's
-	execute() answers lastrowid, which says nothing about an UPDATE."""
+	execute() answers lastrowid, which says nothing about an UPDATE.
+
+	This one is the NON-terminal close, and _freeze is its only caller: a
+	two-sided book leaves that sweep alive, frozen and waiting for its match,
+	so there is no branch to stake yet. Every path that is about to move gold
+	for the last time goes through claim_terminal below instead."""
 	async with db.transaction() as tx:
 		return bool(await tx.execute(
 			"UPDATE prediction_posts SET status='frozen' WHERE id=%s AND status='open'",
 			[post_id]))
+
+
+# The three ways a book ends. 'settle' pays the winners out of the pot; 'void'
+# and 'no_action' both hand every stake back and differ only in what the card
+# and the audit trail say happened.
+TERMINAL_INTENTS = ("settle", "void", "no_action")
+
+
+async def claim_terminal(post_id, intent):
+	"""Stop the book taking money AND stake the terminal branch it will take,
+	in ONE compare-and-set.
+
+	-> the intent now recorded on the row: `intent` when this call is what
+	   staked it, ANOTHER actor's intent when they got there first, or None
+	   when the post has already gone terminal.
+
+	THIS IS WHAT STOPS A REFUNDED BOOK ALSO BEING PAID OUT. Refunds and
+	payouts move gold under different idem_keys — `refund:{post}:{user}` and
+	`payout:{post}:{user}` — so nothing at the ledger level makes them
+	mutually exclusive, and reconcile() cannot see the damage either because
+	the ledger and the balance cache move together. The only thing that can
+	make them exclusive is agreement about which branch the post is on.
+
+	"Money first, terminal status last" was the old rule, and it is sound
+	only if a crash between the two leaves the post retryable ON THE SAME
+	BRANCH. It did not. A two-sided book voided by /subauto — refunds
+	applied, then a failure before `status='void'` landed — was still
+	'frozen', so live_for_match handed it straight to the settlement its
+	match report triggered moments later, and scoring.payouts() paid out the
+	very stakes that had just gone back. Gold minted, silently.
+
+	The single UPDATE below is the compare-and-set. `terminal_intent IS NULL`
+	makes it a claim only one caller can win; `status IN ('open','frozen')`
+	makes that same statement the CLOSE, so an open book stops taking money
+	in the very statement that decides how it ends and no press can land
+	between the two (gold.place_bet's FOR UPDATE is the other half). A
+	matched row always changes — NULL to a value — so the affected-row count
+	is a true answer rather than MySQL's "did anything differ"."""
+	if intent not in TERMINAL_INTENTS:
+		raise ValueError(f"{intent!r} is not one of {TERMINAL_INTENTS}")
+	async with db.transaction() as tx:
+		if await tx.execute(
+				"UPDATE prediction_posts SET status='frozen', terminal_intent=%s "
+				"WHERE id=%s AND status IN ('open','frozen') AND terminal_intent IS NULL",
+				[intent, post_id]):
+			return intent
+		# We lost the claim. FOR UPDATE rather than a plain read: this has to
+		# be the CURRENT row, not this transaction's snapshot of it, or a
+		# caller that lost by microseconds reads NULL back and both branches
+		# proceed — which is the whole failure this function exists to close.
+		row = await tx.fetchone(
+			"SELECT status, terminal_intent FROM prediction_posts WHERE id=%s FOR UPDATE",
+			[post_id])
+		if row is None or row["status"] not in ("open", "frozen"):
+			return None                  # already void / no_action / resolved
+		return row["terminal_intent"]
 
 
 async def freeze(post_id, votes0, votes1):

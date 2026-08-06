@@ -37,6 +37,14 @@ db.ensure_table(dict(
 		# stake refunded); or void at any point (match cancelled, roster changed
 		# under the book, or the match never reported a win/loss).
 		dict(cname="status", ctype=db.types.str),
+		# THE TERMINAL BRANCH THIS POST WILL TAKE — 'settle' | 'void' |
+		# 'no_action' — staked before a single coin moves along it, and NULL
+		# for as long as the book is live. `status` alone cannot carry this:
+		# it only changes once the money is already applied, so a crash in
+		# between left a refunded book sitting at 'frozen' and the settlement
+		# the match report triggered moments later paid out the very stakes
+		# that had just gone back. See store.claim_terminal.
+		dict(cname="terminal_intent", ctype=db.types.str, notnull=False),
 		# Bettors per side, written at freeze. They counted reactions in the
 		# votes era; the gold on each side lives in prediction_bets, not here.
 		dict(cname="votes0", ctype=db.types.int, notnull=False),

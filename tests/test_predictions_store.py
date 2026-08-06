@@ -35,6 +35,10 @@ class FakeTx:
 		self.db.calls.append(("execute", sql, list(args or [])))
 		return self.db.rowcount
 
+	async def fetchone(self, sql, args=None):
+		self.db.calls.append(("fetchone", sql, list(args or [])))
+		return self.db.rows[0] if self.db.rows else None
+
 
 class FakeDb:
 	def __init__(self, rows=(), rowcount=1):
@@ -99,6 +103,64 @@ class TestCloseBetting:
 		asyncio.run(store.close_betting(12))
 		assert [c[0] for c in fake.calls] == ["execute"], "no autocommit path"
 		assert fake.committed
+
+
+class TestClaimTerminal:
+	""" The statement that stops a refunded book being paid out as well.
+
+	It has to do BOTH things at once — close the book and stake the branch —
+	because either half alone is the bug: a close without a claim is what
+	shipped (and paid the pot twice), and a claim without the close would let
+	a press land on a book already snapshotted for refund. """
+
+	def test_the_claim_and_the_close_are_one_compare_and_set(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		assert asyncio.run(store.claim_terminal(12, "void")) == "void"
+
+		assert len(fake.calls) == 1, "a second statement is a second chance to lose the race"
+		kind, sql, args = fake.calls[0]
+		assert kind == "execute"
+		assert "status='frozen'" in sql, "the claim is also the close"
+		assert "terminal_intent=%s" in sql
+		assert "terminal_intent IS NULL" in sql, (
+			"without this the second actor overwrites the first actor's branch")
+		assert "status IN ('open','frozen')" in sql, (
+			"a post that already went terminal must not be re-claimed")
+		assert args == ["void", 12]
+		assert fake.committed
+
+	def test_losing_the_claim_answers_the_branch_that_won(self, monkeypatch):
+		""" Zero rows matched: somebody else staked this post. The caller
+		compares that answer with its own intent and stands down — which is the
+		entire fix for the double payout. """
+		fake = use_fake(monkeypatch, rowcount=0,
+						rows=[{"status": "frozen", "terminal_intent": "void"}])
+		assert asyncio.run(store.claim_terminal(12, "settle")) == "void"
+
+		_kind, sql, args = fake.calls[1]
+		assert "FOR UPDATE" in sql, (
+			"a snapshot read here can still say NULL, and then both branches proceed")
+		assert args == [12]
+
+	def test_a_post_already_past_terminal_answers_nothing(self, monkeypatch):
+		use_fake(monkeypatch, rowcount=0, rows=[{"status": "resolved", "terminal_intent": "settle"}])
+		assert asyncio.run(store.claim_terminal(12, "void")) is None
+
+	def test_a_deleted_post_answers_nothing(self, monkeypatch):
+		use_fake(monkeypatch, rowcount=0, rows=[])
+		assert asyncio.run(store.claim_terminal(12, "void")) is None
+
+	def test_only_the_three_real_branches_can_be_staked(self, monkeypatch):
+		""" The value is dispatched on by every resume path, so a typo'd intent
+		would silently become "nothing is staked" and re-open the hole. """
+		use_fake(monkeypatch)
+		for bad in ("resolved", "voided", "", None):
+			try:
+				asyncio.run(store.claim_terminal(12, bad))
+			except ValueError:
+				continue
+			raise AssertionError(f"{bad!r} was accepted as a terminal branch")
+		assert set(store.TERMINAL_INTENTS) == {"settle", "void", "no_action"}
 
 
 class TestUnsettledBooks:

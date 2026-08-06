@@ -80,12 +80,18 @@ class FakeBank:
 
 class FakeStore:
 	"""`calls` records the ORDER of the store operations, which is half the
-	contract: a book has to stop taking money (close_betting) before it is
-	snapshotted for refund or payout (bets_for), or a press that lands between
-	the two is owed gold by nobody."""
+	contract: a book has to stop taking money (close_betting / claim_terminal)
+	before it is snapshotted for refund or payout (bets_for), or a press that
+	lands between the two is owed gold by nobody.
+
+	`terminal_intent` is modelled properly rather than ignored, because it is
+	the whole of the double-payout fix: claim_terminal stakes a branch exactly
+	once per post, later claimers are told which branch is already staked, and
+	live_for_match hands the post back CARRYING it — which is precisely what a
+	settlement arriving after an interrupted void reads."""
 
 	def __init__(self, bets=(), post=None, unsettled=(), players=(), closes=True, due=(),
-				 abandoned=()):
+				 abandoned=(), preclaimed=None):
 		self._bets = list(bets)
 		self._post = post
 		self._due = list(due)
@@ -93,8 +99,11 @@ class FakeStore:
 		self._abandoned = list(abandoned)
 		self._players = list(players)
 		self._closes = closes       # False = another sweep got there first
+		self._claimed = dict(preclaimed or {})   # post_id -> staked intent
 		self.calls = []
 		self.closed = []            # post_ids whose betting window we ended
+		self.claims = []            # (post_id, intent) every claim ATTEMPTED
+		self.staked = []            # (post_id, intent) the claims that won
 		self.frozen = []            # (post_id, bettors0, bettors1)
 		self.no_actioned = []
 		self.voided = []
@@ -117,7 +126,16 @@ class FakeStore:
 
 	async def live_for_match(self, _match_id):
 		self.calls.append("live_for_match")
-		return self._post
+		if self._post is None:
+			return None
+		# What the real query returns: the ROW, including whatever branch a
+		# previous (possibly interrupted) actor staked on it. A fake that kept
+		# handing back the pristine fixture would hide exactly the state the
+		# double-payout lives in.
+		staked = self._claimed.get(self._post["id"])
+		if staked is None:
+			return dict(self._post)
+		return dict(self._post, status="frozen", terminal_intent=staked)
 
 	async def due_to_freeze(self, _now):
 		self.calls.append("due_to_freeze")
@@ -135,12 +153,29 @@ class FakeStore:
 		self.calls.append("match_player_ids")
 		return list(self._players)
 
+	def _record_close(self, post_id):
+		# The real close is idempotent on an already-frozen row, so a post that
+		# is closed and then has a branch staked on it appears here ONCE.
+		if post_id not in self.closed:
+			self.closed.append(post_id)
+
 	async def close_betting(self, post_id):
 		self.calls.append("close_betting")
 		if not self._closes:
 			return False
-		self.closed.append(post_id)
+		self._record_close(post_id)
 		return True
+
+	async def claim_terminal(self, post_id, intent):
+		self.calls.append("claim_terminal")
+		self.claims.append((post_id, intent))
+		if not self._closes:
+			return None             # the post went terminal under us
+		if post_id not in self._claimed:
+			self._claimed[post_id] = intent
+			self._record_close(post_id)
+			self.staked.append((post_id, intent))
+		return self._claimed[post_id]
 
 	async def freeze(self, post_id, votes0, votes1):
 		self.calls.append("freeze")
@@ -197,13 +232,16 @@ def post(**overrides):
 
 
 def wire(monkeypatch, *, bets=(), the_post=None, community_id=5,
-		 unsettled=(), players=(), closes=True, due=(), abandoned=()):
+		 unsettled=(), players=(), closes=True, due=(), abandoned=(), preclaimed=None):
 	"""Stand up store, the bank, the channel and the community lookup.
+
+	`preclaimed` is {post_id: intent} — a branch some other actor staked
+	before this test's flow ever ran.
 
 	Returns (store, bank, channel, log).
 	"""
 	store = FakeStore(bets=bets, post=the_post, unsettled=unsettled, players=players,
-					  closes=closes, due=due, abandoned=abandoned)
+					  closes=closes, due=due, abandoned=abandoned, preclaimed=preclaimed)
 	bank = FakeBank()
 	channel = FakeChannel()
 	log = RecordingLog()
@@ -475,7 +513,8 @@ class TestResolve:
 		asyncio.run(flow.resolve_for_match(self.match(winner=0)))
 
 		assert store.closed == [12]
-		assert store.calls.index("close_betting") < store.calls.index("bets_for")
+		assert store.staked == [(12, "settle")], "the branch is staked in the same breath"
+		assert store.calls.index("claim_terminal") < store.calls.index("bets_for")
 		assert bank.payouts == [(5, {1: 225, 2: 75}, 12)]
 		assert store.resolved == [(12, 0)]
 		assert log.errors == []
@@ -546,9 +585,13 @@ class TestVoid:
 		asyncio.run(flow.void_for_match(77))
 
 		assert store.closed == [12]
-		assert store.calls.index("close_betting") < store.calls.index("bets_for")
+		assert store.calls.index("claim_terminal") < store.calls.index("bets_for")
 		assert store.calls.index("bets_for") < store.calls.index("void"), (
 			"the terminal status comes after the money, so a crash leaves it retryable")
+		# ...and the BRANCH comes before the money, which is what makes that
+		# retry take the same road rather than a settlement (see TestTerminalIntent).
+		assert store.staked == [(12, "void")]
+		assert store.calls.index("claim_terminal") < store.calls.index("bets_for")
 
 	def test_a_rebalance_refunds_the_old_book_before_opening_the_new_one(self, monkeypatch):
 		""" /subauto rewrites both teams, so the sides people staked on stop
@@ -567,6 +610,142 @@ class TestVoid:
 		assert store.voided == [12]
 		assert opened == [77]
 		assert log.errors == []
+
+
+# ── the branch a post is committed to ────────────────────────────────────
+class TestTerminalIntent:
+	""" THE DOUBLE PAYOUT, and the mechanism that closes it.
+
+	"Money first, terminal status last" is sound only if a crash between the
+	two leaves the post retryable ON THE SAME BRANCH. For a two-sided book
+	whose match later reports a winner it did not: store.live_for_match
+	returns posts with status IN ('open','frozen'), so a void that refunded
+	every stake and then died before `status='void'` landed was handed
+	straight back to settlement, which paid scoring.payouts() over the very
+	bets it had just refunded. refund:{post}:{user} and payout:{post}:{user}
+	are different idem_keys, so nothing collided, nothing self-healed, and
+	reconcile() could not see it — the ledger and the balance cache moved
+	together. Gold minted.
+
+	The fix is `terminal_intent`, staked in the same compare-and-set that
+	closes the book and therefore BEFORE any money moves, with every resume
+	path dispatching on it instead of re-deriving a branch from
+	`matches.winner`. """
+
+	def match(self, winner=0, players=(1, 2)):
+		return types.SimpleNamespace(
+			id=77, winner=winner, qc=types.SimpleNamespace(id=900),
+			players=[types.SimpleNamespace(id=uid) for uid in players])
+
+	def flaky_void(self, monkeypatch, store):
+		"""store.void raises until the returned switch is turned off."""
+		real_void, crash = store.void, {"on": True}
+
+		async def _void(post_id, now):
+			store.calls.append("void")
+			if crash["on"]:
+				raise RuntimeError("database down")
+			return await real_void(post_id, now)
+
+		monkeypatch.setattr(store, "void", _void)
+		return crash
+
+	def test_a_void_that_died_before_its_status_write_is_never_settled(self, monkeypatch):
+		""" THE REPRODUCTION, end to end: /subauto voids a live two-sided book,
+		the refunds land, the status write dies, and the match then reports a
+		winner. Before the fix this paid the 300 pot out a second time. """
+		store, bank, _channel, log = wire(monkeypatch, bets=TWO_SIDED, the_post=post())
+		self.flaky_void(monkeypatch, store)
+
+		asyncio.run(flow.void_for_match(77))
+		assert bank.refunds == [(5, [1, 2, 3], 12)], "the stakes went back"
+		assert store.voided == [], "and the status write did not land"
+		assert store.staked == [(12, "void")], "but the BRANCH was recorded before the money"
+		assert len(log.errors) == 1 and "database down" in log.errors[0]
+
+		# The match reports Alpha. live_for_match still hands the post over —
+		# it is 'frozen', which is indistinguishable from a book waiting on its
+		# match — and only the staked branch can tell settlement to stand down.
+		asyncio.run(flow.resolve_for_match(self.match(winner=0)))
+		assert bank.payouts == [], "a refunded book must never also be paid out"
+		assert store.resolved == []
+		assert len(log.errors) == 1, "and settlement standing down is a decision, not a crash"
+
+	def test_the_resume_finishes_the_void_instead_of_deriving_a_settlement(self, monkeypatch):
+		""" And the stranded post is not left stranded: the sweep that picks it
+		up re-takes the void, refunds idempotently, and closes it out. """
+		store, bank, channel, log = wire(monkeypatch, bets=TWO_SIDED, the_post=post())
+		crash = self.flaky_void(monkeypatch, store)
+
+		asyncio.run(flow.void_for_match(77))
+		assert len(log.errors) == 1 and "database down" in log.errors[0]
+		crash["on"] = False
+		log.errors.clear()
+		stranded = asyncio.run(store.live_for_match(77))
+		assert stranded["terminal_intent"] == "void", "the row carries the branch"
+		store._unsettled = [dict(stranded, match_winner=0)]
+		asyncio.run(flow.PredictionJobs()._run())
+
+		assert bank.payouts == [], "the winner in `matches` must not re-decide a voided book"
+		assert store.resolved == []
+		assert store.voided == [12], "the void is finished, not abandoned"
+		assert bank.refunds == [(5, [1, 2, 3], 12), (5, [1, 2, 3], 12)], (
+			"refund_post is idempotent per (post, user), so repeating it costs nothing")
+		assert "refunded" in text(channel.message.edits[-1][0]).lower()
+		assert log.errors == []
+
+	def test_the_faucet_is_still_paid_on_a_resumed_void(self, monkeypatch):
+		""" Playing a ranked match tops the players up whether or not anyone
+		bet, so the refund branch must not swallow the faucet with it. """
+		store, bank, _channel, log = wire(
+			monkeypatch, bets=TWO_SIDED, players=(1, 2),
+			unsettled=[post(status="frozen", terminal_intent="void", match_winner=0)])
+		asyncio.run(flow.PredictionJobs()._run())
+
+		assert bank.rewards == [(5, 1, 77), (5, 2, 77)]
+		assert bank.payouts == []
+		assert store.voided == [12]
+		assert log.errors == []
+
+	def test_a_one_sided_freeze_that_died_mid_refund_resumes_as_no_action(self, monkeypatch):
+		""" The other refund branch. Its posts have no `matches` row at all, so
+		the abandoned sweep is the ONLY thing that will ever look at them — a
+		branch it re-decided as 'void' would relabel the card, and one it
+		refused to touch would leave the post frozen forever. """
+		store, bank, channel, log = wire(
+			monkeypatch, bets=ONE_SIDED,
+			abandoned=[post(status="frozen", terminal_intent="no_action")])
+		asyncio.run(flow.PredictionJobs()._run())
+
+		assert store.no_actioned == [12] and store.voided == []
+		assert bank.refunds == [(5, [1, 2], 12)]
+		assert "one-sided" in text(channel.message.edits[-1][0]).lower()
+		assert log.errors == []
+
+	def test_a_settlement_that_got_there_first_stops_the_void(self, monkeypatch):
+		""" The race the other way round, and the reason the claim is a
+		compare-and-set rather than a plain write: whichever actor stakes the
+		branch owns the post, and the loser must not move a coin. """
+		store, bank, _channel, log = wire(
+			monkeypatch, bets=TWO_SIDED, the_post=post(status="frozen"),
+			preclaimed={12: "settle"})
+		asyncio.run(flow.void_for_match(77))
+
+		assert bank.refunds == [], "the losing actor must not refund a book being settled"
+		assert store.voided == []
+		assert store.claims == [(12, "void")], "it tried, and was told no"
+		assert log.errors == []
+
+	def test_the_branch_is_staked_before_a_single_coin_moves(self, monkeypatch):
+		""" Ordering, on every path that ends a book. A claim written after the
+		refund is a claim that a crash can lose, which is the original bug with
+		one more column. """
+		for the_post, run_it in (
+				(post(), lambda: flow.void_for_match(77)),
+				(post(status="frozen"), lambda: flow.resolve_for_match(self.match(winner=0)))):
+			store, _bank, _channel, _log = wire(monkeypatch, bets=TWO_SIDED, the_post=the_post)
+			asyncio.run(run_it())
+			assert store.calls.index("claim_terminal") < store.calls.index("bets_for"), store.calls
 
 
 # ── the resume sweep ─────────────────────────────────────────────────────
