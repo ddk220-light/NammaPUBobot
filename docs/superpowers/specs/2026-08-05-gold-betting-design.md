@@ -202,6 +202,22 @@ Same pytest style as the existing suite; payout math is pure functions:
 - Registry: new tables declared + registered (existing
   `tests/test_data_registry.py` enforces the two-way set match).
 
+## Implementation deviations
+
+- **§5 button wiring.** The spec called for a persistent nextcord `View` with
+  per-button callbacks, re-registered for every still-`open` post in
+  `on_ready` so presses survive a restart. The implementation instead follows
+  the existing quiz pattern: `bet_view()` builds a `ui.View(timeout=None,
+  auto_defer=False)` whose buttons carry no per-View callback at all, and
+  every press routes through one global `on_bet_interaction` handler hung off
+  `bot/events.py`'s `on_interaction` (`bot/predictions/interactions.py`),
+  keyed entirely on `custom_id` and DB state (`prediction_bets`,
+  `prediction_posts.status`/`freezes_at`). There is nothing to re-register on
+  `on_ready` — no in-memory View survives or needs to survive a redeploy — so
+  that step of §5 does not exist in the code. Chosen for consistency with
+  `bot/quiz/`'s already-proven redeploy-safe router rather than maintaining
+  two different button-wiring styles in the same codebase.
+
 ## Out of scope (v1)
 
 - Gold sinks, cosmetics, or anything to spend gold on besides betting.
