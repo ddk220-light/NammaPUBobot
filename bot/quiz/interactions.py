@@ -32,10 +32,17 @@ async def on_quiz_interaction(interaction):
 		if not post:
 			return await _eph(interaction, closed_notice())
 		now = int(time.time())
-		# The gate is the CLOCK, not the status flag: grading (a later task)
-		# runs strictly after closes_at, so refusing presses from closes_at
-		# onward — not only status != 'open' — leaves no window where a
-		# press and a grade can race each other.
+		# The gate is the CLOCK as well as the status flag, and the clock half
+		# is the load-bearing one: the status flip is the LAST thing the
+		# resolve does (money first, terminal status last — see
+		# bot/quiz/jobs.py::_reveal), so between the vote snapshot and the
+		# close the row still reads status='open'. What closes that window is
+		# store.clamp_closes_at: _reveal pulls closes_at back to `now` BEFORE
+		# it snapshots the votes, so from the instant a resolve begins every
+		# press lands here and is refused, and the snapshot the grader and the
+		# payroll work from is final. Refusing on the status alone would let a
+		# press slip in mid-resolve, be written after the snapshot, and then be
+		# shut out by the close: never graded, never paid, and undetectable.
 		if post["status"] != "open" or now >= int(post["closes_at"]):
 			return await _eph(interaction, closed_notice())
 		if kind == "reveal":

@@ -43,14 +43,22 @@
 | /top                  | Show top active players on the channel                  |
 | /stats show           | Show overall channel stats                              |
 
-#### AoE2 unit quiz (opt-in)
+#### Daily AoE2 quiz (opt-in)
+One question a day, posted as a public poll that stays open for `open_window`
+(24h by default). Vote with the buttons on the card — you can change your vote
+until it locks. When it locks, every vote is graded and paid: 50 gold for a
+correct answer, 10 for playing, never lifting a balance above 500.
+
 | command               | description                                             |
 |-----------------------|---------------------------------------------------------|
 | /quiz_leaderboard     | Show this week's quiz leaderboard                       |
 | /quiz enable          | (admin) Enable the daily quiz in a channel at a UTC hour|
 | /quiz disable         | (admin) Disable the daily quiz                          |
-| /quiz config          | (admin) Set a quiz setting (answer_window, open_window, leaderboard day/hour, …) |
+| /quiz config          | (admin) Set a quiz setting (quiz_hour, open_window, leaderboard_dow, leaderboard_hour, test_interval, min_difficulty) |
 | /quiz post_now        | (admin) Post a quiz immediately                         |
+| /quiz status          | (admin) Show the quiz schedule status and next question |
+| /quiz skip            | (admin) Skip the next scheduled question                |
+| /quiz reveal_now      | (admin) Lock and reveal the currently open question now |
 
 #### Miscellaneous
 | command               | description                                             |

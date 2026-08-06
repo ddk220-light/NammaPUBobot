@@ -106,6 +106,28 @@ async def latest_open_post(channel_id):
 	return rows[0] if rows else None
 
 
+async def clamp_closes_at(post_id, now):
+	"""Pull a post's deadline back to `now` (never forward — LEAST, not an
+	assignment, so a re-entered resolve cannot un-close an already-past poll).
+
+	This is the FIRST thing bot/quiz/jobs.py::_reveal does, and it has to be:
+	the vote gate in bot/quiz/interactions.py refuses a press from closes_at
+	onward, so clamping BEFORE the snapshot is what makes the snapshot final.
+	Without it, a resolve started while the poll is still nominally open
+	(/quiz reveal_now, or the daily cadence firing before closes_at) reads its
+	votes, spends several Discord round-trips, and closes — while every press
+	landing in that window is accepted and written AFTER the snapshot, then
+	shut out by the close forever: never graded, never paid, and undetectable,
+	because the ledger and the balance cache still agree.
+
+	The post stays status='open'. That is deliberate — `status='open' AND
+	closes_at<=now` (due_to_close) IS the retry ticket, and this clamp does not
+	spend it; it guarantees it, since a resolve that dies after the clamp now
+	matches that query for certain."""
+	await db.execute(
+		"UPDATE quiz_posts SET closes_at=LEAST(closes_at, %s) WHERE id=%s", [now, post_id])
+
+
 async def close_post(post_id):
 	await db.update("quiz_posts", {"status": "closed"}, {"id": post_id})
 

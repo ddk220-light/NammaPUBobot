@@ -153,6 +153,20 @@ class QuizJobs:
 		'open' past closes_at, and _close_due re-enters here next tick:
 		grading is deterministic, every payment idem-keyed, the card edit
 		harmless to repeat."""
+		# 0. Shut the door FIRST — before the snapshot, before anything that can
+		# await. The vote gate in interactions.py refuses a press from closes_at
+		# onward, so pulling closes_at back to now is what makes the snapshot
+		# below FINAL. _close_due only ever feeds this method posts already past
+		# their deadline, but _reveal_previous does not: /quiz reveal_now and the
+		# daily cadence both reach here while the poll is still nominally open,
+		# and a press in that window would be accepted, written after the
+		# snapshot, and then closed past forever — ungraded, unpaid, and
+		# invisible (the ledger and the balance cache still agree). This does NOT
+		# spend the retry ticket: the post stays status='open', so a crash
+		# anywhere below leaves it matching due_to_close for certain.
+		now = int(time.time())
+		await store.clamp_closes_at(post["id"], now)
+		post["closes_at"] = min(int(post["closes_at"]), now)   # keep later renders honest
 		import nextcord
 		from core.client import dc
 		from bot import community
@@ -179,7 +193,6 @@ class QuizJobs:
 			if graded:
 				log.info(f"Quiz {post['id']}: channel {post['channel_id']} has no community — no gold.")
 		else:
-			now = int(time.time())
 			failures = 0
 			for v in graded:
 				try:

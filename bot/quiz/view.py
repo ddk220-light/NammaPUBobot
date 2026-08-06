@@ -8,17 +8,15 @@ import json
 
 _LETTERS = ["A", "B", "C", "D"]
 
-
-def letter_options(options):
-	return [f"{_LETTERS[i]}. {opt}" for i, opt in enumerate(options)]
-
-
 _SOURCE_TAG = {"game": "\U0001F3AE Game knowledge", "player": "\U0001F464 Player trivia"}
 
 
 # card_lines (the reveal-era teaser) and question_lines (the ephemeral question
 # that followed it) are deleted — poll_card_lines below renders the question on
 # the public card instead, so there is no second, private copy of it to build.
+# letter_options went with question_lines, its only caller: tally_lines is the
+# one place a lettered option list is built now, and it builds a richer line
+# (mark, count, voter names) that never shared the plain "A. Knight" form.
 
 
 def leaderboard_lines(tallied):

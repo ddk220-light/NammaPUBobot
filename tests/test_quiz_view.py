@@ -5,10 +5,6 @@ import bot.quiz.view as v
 import bot.quiz.view as view
 
 
-def test_letter_options():
-	assert v.letter_options(["Ram", "Scorpion"]) == ["A. Ram", "B. Scorpion"]
-
-
 def test_leaderboard_lines_ranks_and_accuracy():
 	tallied = [
 		{"user_id": 1, "nick": "Gaj", "correct": 6, "answered": 6},

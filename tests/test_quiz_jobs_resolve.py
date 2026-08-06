@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import time
 import types
 
 import pytest
@@ -79,6 +80,7 @@ class FakeStore:
 		self.posts = {}
 		self.grades = []            # (post_id, user_id, is_correct)
 		self.closed = []
+		self.clamped = []           # (post_id, now) — the deadline pull-backs
 		self.created = []           # (channel_id, q, opened_at, closes_at)
 		self.message_ids = []
 		self.configs = []
@@ -86,6 +88,16 @@ class FakeStore:
 		self._next_post_id = 41
 
 	# — the resolve half —
+	async def clamp_closes_at(self, post_id, now):
+		"""LEAST(closes_at, now), same as the real UPDATE — never forward. The
+		stored row is what the interaction router reads back, which is how the
+		clamp actually shuts the vote gate."""
+		self.calls.append("clamp_closes_at")
+		self.clamped.append((post_id, now))
+		row = self.posts.get(post_id)
+		if row is not None:
+			row["closes_at"] = min(int(row["closes_at"]), int(now))
+
 	async def answers_for_post(self, post_id):
 		self.calls.append("answers_for_post")
 		return [dict(r) for r in self.rows
@@ -98,6 +110,32 @@ class FakeStore:
 	async def close_post(self, post_id):
 		self.calls.append("close_post")
 		self.closed.append(post_id)
+		row = self.posts.get(post_id)
+		if row is not None:
+			row["status"] = "closed"
+
+	async def due_to_close(self, now_ts):
+		"""The retry query, reproduced exactly: status='open' AND closes_at<=now.
+		Hands back COPIES — the sweep must re-read the row, not hold a reference
+		to the one it is about to mutate."""
+		self.calls.append("due_to_close")
+		return [dict(p) for p in self.posts.values()
+				if p["status"] == "open" and int(p["closes_at"]) <= now_ts]
+
+	# — the vote half (drives bot.quiz.interactions against the same rows) —
+	async def record_vote(self, post_id, user_id, nick, choice_index, now):
+		self.calls.append("record_vote:{}".format(user_id))
+		self.rows = [r for r in self.rows
+				if not (r["post_id"] == post_id and r["user_id"] == user_id)]
+		self.rows.append(dict(post_id=post_id, user_id=user_id, nick=nick,
+				choice_index=int(choice_index), choice_indices=None,
+				is_correct=None, answered_at=now))
+
+	def vote_of(self, post_id, user_id):
+		for r in self.rows:
+			if r["post_id"] == post_id and r["user_id"] == user_id:
+				return r
+		return None
 
 	# — the post half —
 	async def next_seq(self, _channel_id):
@@ -271,8 +309,9 @@ def test_resolve_grades_pays_then_closes_in_order(env):
 	assert e.calls.index("close_post") > e.calls.index("card_edit")
 	assert e.calls.index("close_post") > e.calls.index("channel_send")
 
-	# ...and the whole trace, spelled out: grade → pay → results → close.
+	# ...and the whole trace, spelled out: clamp → grade → pay → results → close.
 	assert phases(e.calls) == [
+		"clamp_closes_at",
 		"answers_for_post",
 		"write_grade", "write_grade",
 		"community_for_channel",
@@ -280,6 +319,93 @@ def test_resolve_grades_pays_then_closes_in_order(env):
 		"fetch_message", "card_edit", "channel_send",
 		"close_post",
 	]
+
+
+# ── the clamp: the snapshot has to be final before it is taken ───────────
+# _close_due only ever feeds _reveal posts already past closes_at, so that path
+# was never racy. _reveal_previous is the hole: /quiz reveal_now and the daily
+# cadence both reach _reveal while `now < closes_at`, and the vote gate in
+# bot/quiz/interactions.py refuses a press only when `status != 'open' or now >=
+# closes_at`. Mid-resolve the row still says open on BOTH counts — status flips
+# last by design (money first, terminal status last) — so a press in that window
+# was accepted and written AFTER the snapshot, then shut out by the close
+# forever: never graded, never paid, and undetectable, because the ledger and
+# the balance cache still agree. store.clamp_closes_at, called before the
+# snapshot, is what makes the gate honest.
+def test_reveal_clamps_the_deadline_before_it_snapshots_the_votes(env, monkeypatch):
+	# The /quiz reveal_now case: the poll is still nominally open — the clock
+	# is frozen at 50_000 and the post does not close until 99_000.
+	monkeypatch.setattr(time, "time", lambda: 50_000)
+	e = env(votes=[VOTE_RIGHT])
+	e.store.posts[41] = dict(POST, closes_at=99_000)
+	asyncio.run(e.job._reveal(dict(e.store.posts[41]), fresh=True))
+
+	# THE assertion: the door shuts before the votes are read, not after.
+	assert "clamp_closes_at" in e.calls, "the resolve never clamped the deadline"
+	assert e.calls.index("clamp_closes_at") < e.calls.index("answers_for_post")
+	assert e.calls[0] == "clamp_closes_at", "nothing may await ahead of the clamp"
+
+	# ...and it clamped to NOW, on the stored row the vote gate reads back.
+	assert e.store.clamped == [(41, 50_000)]
+	assert e.store.posts[41]["closes_at"] == 50_000
+
+
+def test_the_clamp_never_pushes_a_deadline_forward(env, monkeypatch):
+	# LEAST(closes_at, now), not an assignment. _close_due re-enters _reveal for
+	# posts that are ALREADY past their deadline, sometimes days later; moving
+	# closes_at up to now would re-open a poll that has been shut for a week.
+	monkeypatch.setattr(time, "time", lambda: 50_000)
+	e = env(votes=[VOTE_RIGHT])
+	e.store.posts[41] = dict(POST, closes_at=1_000)
+	asyncio.run(e.job._reveal(dict(e.store.posts[41]), fresh=False))
+	assert e.store.posts[41]["closes_at"] == 1_000
+
+
+def test_a_press_during_the_resolve_is_refused(env, monkeypatch):
+	"""The race itself, driven end to end against the real router.
+
+	The press is fired from inside the card edit — i.e. after the vote
+	snapshot and after the payments, while the post is still status='open'
+	because the close is deliberately last. That is precisely the window the
+	clamp exists to close, and it is the only place a press can do the damage:
+	the row the router reads back is the one the clamp left."""
+	from bot.quiz import interactions
+	from tests.test_quiz_interactions import FakeInteraction
+
+	# One frozen clock for both halves: bot.quiz.jobs and bot.quiz.interactions
+	# both read `time.time` off the stdlib module, which is the point — the
+	# press and the resolve happen at the same instant.
+	monkeypatch.setattr(time, "time", lambda: 50_000)
+	e = env(votes=[VOTE_RIGHT])
+	e.store.posts[41] = dict(POST, closes_at=99_000)
+	monkeypatch.setattr(interactions, "store", e.store)
+
+	latecomer = FakeInteraction(cid="quiz:41:ans:0", user_id=88, nick="Late",
+			message_id=4242, now=50_000)
+	real_edit = e.channel.message.edit
+
+	async def _edit_and_race(embed=None, view="<untouched>", **kw):
+		await interactions.on_quiz_interaction(latecomer)
+		await real_edit(embed=embed, view=view, **kw)
+
+	e.channel.message.edit = _edit_and_race
+	asyncio.run(e.job._reveal(dict(e.store.posts[41]), fresh=True))
+
+	# 50_000 is well inside the post's original 99_000 window, so without the
+	# clamp this press is accepted and lands after the snapshot.
+	assert e.store.vote_of(41, 88) is None, "a vote was recorded after the snapshot"
+	assert "record_vote:88" not in e.calls
+	assert latecomer.response.sent is not None
+	assert "closed" in latecomer.response.sent["content"].lower()
+	assert latecomer.response.edited is None
+
+	# The consequence the clamp actually prevents, asserted directly: no cast
+	# vote may survive the close ungraded — an ungraded row is never paid, and
+	# nothing downstream can tell it apart from a row that was.
+	graded = {uid for _pid, uid, _ok in e.store.grades}
+	voters = {r["user_id"] for r in e.store.rows if r.get("answered_at") is not None}
+	assert voters <= graded, "a vote survived the close ungraded — it will never be paid"
+	assert e.store.closed == [41]
 
 
 def test_resolve_reruns_idempotently(env):
@@ -330,6 +456,44 @@ def test_payment_failure_leaves_the_post_open(env):
 	assert e.bank.ledger.get((41, 1)) is None
 	# Grading already happened and is safe to redo on the retry.
 	assert e.store.grades == [(41, 1, True), (41, 2, False)]
+
+
+def test_close_due_is_the_retry_and_it_pays_the_missed_voter(env):
+	"""The retry mechanism itself, end to end — not by proxy.
+
+	Every other test here asserts a HALF of the rule: the post is left open on
+	a failure, or the sweep query says status='open'. Neither one drives the
+	loop that turns "still open" into "paid on the next pass", and that loop is
+	the entire reason _reveal closes last. This test fails a payment, sweeps,
+	clears the failure, sweeps again with the SAME query at the SAME clock, and
+	checks the gold actually landed."""
+	e = env(votes=[VOTE_RIGHT, VOTE_WRONG], fail_for=(1,))
+	e.store.posts[41] = dict(POST, closes_at=1_000)        # already past its deadline
+
+	# Sweep 1 — Ann's grant blows up. _close_due logs and moves on; nothing closes.
+	asyncio.run(e.job._close_due(9_000))
+	assert e.bank.ledger.get((41, 2)) == 10, "Bob was paid before the failure"
+	assert e.bank.ledger.get((41, 1)) is None, "Ann was not"
+	assert e.store.closed == []
+	assert e.store.posts[41]["status"] == "open", "the retry ticket must survive the failure"
+	assert [p["id"] for p in asyncio.run(e.store.due_to_close(9_000))] == [41]
+
+	# Sweep 2 — the transient failure has cleared. The post is still in the
+	# query (unchanged clock), so the same sweep re-enters _reveal.
+	e.bank.fail_for = set()
+	e.calls.clear()
+	asyncio.run(e.job._close_due(9_000))
+
+	assert "due_to_close" in e.calls and "answers_for_post" in e.calls, "the sweep re-entered _reveal"
+	assert e.bank.ledger[(41, 1)] == 50, "the previously-unpaid voter is paid on the retry"
+	assert e.bank.ledger[(41, 2)] == 10, "and the already-paid one is not paid twice"
+	assert e.store.closed == [41]
+	assert e.store.posts[41]["status"] == "closed"
+	assert e.calls[-1] == "close_post"
+	# The ticket is spent exactly once: the post is out of the query now.
+	assert asyncio.run(e.store.due_to_close(9_000)) == []
+	# Re-grading on the retry is safe and produced the same verdicts.
+	assert e.store.grades == [(41, 1, True), (41, 2, False)] * 2
 
 
 def test_payment_failure_skips_the_results_too(env):
@@ -579,5 +743,8 @@ def test_the_deleted_builders_are_actually_gone():
 	for gone in ("record_reveal", "record_answer", "record_answer_multi", "get_answer"):
 		assert not hasattr(quiz_store, gone), "bot.quiz.store still exports {}".format(gone)
 	from bot.quiz import view as quiz_view
-	for gone in ("card_lines", "question_lines", "too_late_notice", "already_answered_notice"):
+	# letter_options went with question_lines, its only caller — tally_lines
+	# builds the (richer) lettered line the poll card actually renders.
+	for gone in ("card_lines", "question_lines", "too_late_notice",
+			"already_answered_notice", "letter_options"):
 		assert not hasattr(quiz_view, gone), "bot.quiz.view still exports {}".format(gone)
