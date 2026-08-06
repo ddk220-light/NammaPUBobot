@@ -32,6 +32,22 @@ class TestParseBetCustomId:
 		assert scoring.parse_bet_custom_id("") is None
 
 
+class TestParseCancelCustomId:
+	def test_parses_a_cancel(self):
+		assert scoring.parse_cancel_custom_id("betcancel:12") == 12
+
+	def test_a_bet_custom_id_is_not_a_cancel(self):
+		# 'bet:' is a prefix of 'betcancel:' only in the other direction, but be sure.
+		assert scoring.parse_cancel_custom_id("bet:12:0:50") is None
+
+	def test_a_cancel_custom_id_is_not_a_bet(self):
+		assert scoring.parse_bet_custom_id("betcancel:12") is None
+
+	def test_garbage_is_none(self):
+		assert scoring.parse_cancel_custom_id("betcancel:x") is None
+		assert scoring.parse_cancel_custom_id("") is None
+
+
 class TestPools:
 	def test_sums_each_side(self):
 		bets = [dict(user_id=1, side=0, stake=150), dict(user_id=2, side=0, stake=50),

@@ -34,6 +34,19 @@ def parse_bet_custom_id(cid):
 	return post_id, side, stake
 
 
+def parse_cancel_custom_id(cid):
+	"""'betcancel:{post_id}' -> post_id; anything else -> None."""
+	if not cid or not cid.startswith("betcancel:"):
+		return None
+	parts = cid.split(":")
+	if len(parts) != 2:
+		return None
+	try:
+		return int(parts[1])
+	except ValueError:
+		return None
+
+
 def pools(bets):
 	"""[{side, stake}, ...] -> (pool0, pool1)."""
 	pool0 = sum(b["stake"] for b in bets if b["side"] == 0)

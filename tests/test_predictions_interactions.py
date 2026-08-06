@@ -120,6 +120,7 @@ class Wiring:
 	def __init__(self, log):
 		self.log = log
 		self.placed = []            # one dict per gold.place_bet call
+		self.cancelled = []         # one dict per gold.cancel_bet call
 
 	@property
 	def errors(self):
@@ -152,7 +153,8 @@ def post(**overrides):
 
 def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=(),
 		 community_id=5, place_bet=("ok", 440), seeded=False, bets=(),
-		 get_post_raises=None, bets_raise=None, bank=None):
+		 get_post_raises=None, bets_raise=None, bank=None,
+		 cancel_bet=("nothing", 0), post_frozen=False):
 	"""Stand the handler's collaborators up. Returns the Wiring record.
 
 	`the_post=None` is a real value here — store.get_post answers None, i.e. the
@@ -171,6 +173,11 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 	wiring = Wiring(log)
 	monkeypatch.setattr(interactions, "log", log)
 	the_post = post() if the_post is _DEFAULT_POST else the_post
+	if post_frozen and the_post is not None:
+		# status stays 'open' — the sweep hasn't run yet — but the deadline has
+		# passed, exercising the `now >= freezes_at` clause specifically rather
+		# than the `status != 'open'` one right next to it.
+		the_post = dict(the_post, freezes_at=1)
 
 	async def _get_post(_post_id):
 		if get_post_raises is not None:
@@ -199,8 +206,22 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 			raise place_bet
 		return place_bet
 
+	async def _cancel_bet(_community_id, user_id, post_id, _now):
+		if bank is EXPLODE:
+			raise AssertionError("cancel_bet reached on a press that must be refused")
+		wiring.cancelled.append(dict(user_id=user_id, post_id=post_id))
+		if isinstance(cancel_bet, Exception):
+			raise cancel_bet
+		return cancel_bet
+
+	async def _balance(_community_id, _user_id):
+		if bank is EXPLODE:
+			raise AssertionError("balance reached on a press that must be refused")
+		return 999
+
 	monkeypatch.setattr(interactions, "gold", types.SimpleNamespace(
-		ensure_seeded=_ensure_seeded, place_bet=_place_bet))
+		ensure_seeded=_ensure_seeded, place_bet=_place_bet,
+		cancel_bet=_cancel_bet, balance=_balance))
 
 	async def _community_for_channel(_channel_id):
 		return community_id
@@ -514,3 +535,31 @@ class TestFailureAfterTheCharge:
 		run(i)                                   # must not raise
 		assert i.replies == []
 		assert len(log.errors) == 1
+
+
+# ── the cancel button ────────────────────────────────────────────────────
+class TestCancelRoute:
+	def test_cancelling_refunds_and_rewrites_the_private_message(self, monkeypatch):
+		bank = wire(monkeypatch, cancel_bet=("ok", 60))
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		run(i)
+		assert bank.cancelled, "the bank was never asked to cancel"
+		assert "60" in i.reply and "cancel" in i.reply.lower()
+
+	def test_cancelling_after_the_freeze_is_refused(self, monkeypatch):
+		bank = wire(monkeypatch, cancel_bet=("ok", 60), post_frozen=True)
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		run(i)
+		assert not bank.cancelled, "gold was returned after the book locked"
+
+	def test_cancelling_with_no_bet_says_so_and_moves_no_gold(self, monkeypatch):
+		wire(monkeypatch, cancel_bet=("nothing", 0))
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		run(i)
+		assert "no bet" in i.reply.lower()
+
+	def test_a_foreign_custom_id_is_ignored(self, monkeypatch):
+		bank = wire(monkeypatch)
+		i = FakeInteraction(user_id=99, custom_id="quiz:12:reveal")
+		run(i)
+		assert not bank.cancelled and not bank.placed

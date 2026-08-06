@@ -82,6 +82,14 @@ def bet_confirm_lines(team_name, stake, total_stake, pool0, pool1, balance_after
 	return lines
 
 
+def bet_cancelled_lines(amount, balance_after):
+	return [f"Bet cancelled — **{amount}** {GOLD} returned.",
+			f"Your balance: **{balance_after}** {GOLD}. You can bet again while the book is open."]
+
+
+NOTHING_TO_CANCEL_NOTICE = "You have no bet on this match to cancel."
+
+
 def _named(rows, max_named, fmt):
 	lines = [fmt(r) for r in rows[:max_named]]
 	if len(rows) > max_named:

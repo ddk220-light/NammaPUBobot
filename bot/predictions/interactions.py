@@ -14,7 +14,7 @@ import nextcord
 from core.console import log
 
 from . import embeds, flow, gold, store, view
-from .scoring import SEED_AMOUNT, parse_bet_custom_id, pools
+from .scoring import SEED_AMOUNT, parse_bet_custom_id, parse_cancel_custom_id, pools
 
 # The two things the last-resort handler can truthfully say, kept side by side
 # because the difference between them is the difference between one charge and
@@ -40,7 +40,11 @@ async def on_bet_interaction(interaction):
 	try:
 		if interaction.type != nextcord.InteractionType.component:
 			return
-		route = parse_bet_custom_id((interaction.data or {}).get("custom_id", ""))
+		custom_id = (interaction.data or {}).get("custom_id", "")
+		cancel_post_id = parse_cancel_custom_id(custom_id)
+		if cancel_post_id is not None:
+			return await _handle_cancel(interaction, cancel_post_id, int(time.time()))
+		route = parse_bet_custom_id(custom_id)
 		if route is None:
 			return
 		post_id, side, stake = route
@@ -93,7 +97,7 @@ async def on_bet_interaction(interaction):
 									   pool0, pool1, value)
 		if seeded_now:
 			lines.insert(0, f"Welcome to the betting floor — you started with {SEED_AMOUNT} {view.GOLD}.")
-		await _eph(interaction, "\n".join(lines))
+		await _eph(interaction, "\n".join(lines), view=embeds.cancel_view(post_id))
 		await _refresh_card(post, pool0, pool1, now)
 	except Exception as e:
 		log.error(f"bet interaction error: {e}\n{traceback.format_exc()}")
@@ -107,6 +111,34 @@ async def on_bet_interaction(interaction):
 					BET_LANDED_NOTICE if charged else BET_FAILED_NOTICE, ephemeral=True)
 		except Exception:
 			pass
+
+
+async def _handle_cancel(interaction, post_id, now):
+	"""Back out before the freeze.
+
+	The status/deadline check below is a fast path for a friendly message on a
+	stale button — it is NOT the guard. gold.cancel_bet re-reads and row-locks
+	the post inside its own transaction and is the only authority on whether
+	the book is still open; a status read out here is stale the moment it
+	returns.
+	"""
+	post = await store.get_post(post_id)
+	if not post or post["status"] != "open" or now >= post["freezes_at"]:
+		return await _eph(interaction, "Betting on this match is closed — bets can no longer be cancelled.")
+	from bot import community
+	community_id = await community.community_for_channel(post["channel_id"])
+	if community_id is None:
+		return await _eph(interaction, "This channel keeps no stats — there is no gold here.")
+	status, amount = await gold.cancel_bet(community_id, interaction.user.id, post_id, now)
+	if status == "closed":
+		return await _eph(interaction, "Betting on this match is closed — bets can no longer be cancelled.")
+	if status == "nothing":
+		return await _eph(interaction, view.NOTHING_TO_CANCEL_NOTICE)
+	balance = await gold.balance(community_id, interaction.user.id)
+	await _eph(interaction, "\n".join(view.bet_cancelled_lines(amount, balance)))
+	bets = await store.bets_for(post_id)
+	pool0, pool1 = pools(bets)
+	await _refresh_card(post, pool0, pool1, now)
 
 
 async def _refresh_card(post, pool0, pool1, now):
@@ -129,8 +161,8 @@ def _nick(user):
 	return getattr(user, "display_name", None) or getattr(user, "name", None) or str(user.id)
 
 
-async def _eph(interaction, text):
+async def _eph(interaction, text, view=None):
 	if not interaction.response.is_done():
-		await interaction.response.send_message(text, ephemeral=True)
+		await interaction.response.send_message(text, ephemeral=True, view=view)
 	else:
-		await interaction.followup.send(text, ephemeral=True)
+		await interaction.followup.send(text, ephemeral=True, view=view)

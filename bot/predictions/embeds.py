@@ -28,6 +28,16 @@ def bet_view(post_id):
 	return v
 
 
+def cancel_view(post_id):
+	# Same rules as bet_view: routed by the global on_interaction handler, so
+	# timeout=None and auto_defer=False.
+	v = ui.View(timeout=None, auto_defer=False)
+	v.add_item(ui.Button(
+		style=ButtonStyle.secondary, label="Cancel my bet",
+		custom_id=f"betcancel:{post_id}"))
+	return v
+
+
 def open_embed(team0, team1, minutes, match_id, pool0=0, pool1=0):
 	return Embed(
 		title="\U0001F52E Match betting",
