@@ -123,14 +123,22 @@ class FakeStore:
 				if p["status"] == "open" and int(p["closes_at"]) <= now_ts]
 
 	# — the vote half (drives bot.quiz.interactions against the same rows) —
-	async def record_vote(self, post_id, user_id, nick, choice_index, now):
+	async def record_vote(self, post_id, user_id, nick, choice_index):
 		"""The real one re-reads the post row FOR UPDATE inside its own
-		transaction and writes only if the poll is still open, returning whether
-		the vote landed. Reproduced here rather than assumed: the whole point of
-		the clamp is that the STORED row is what decides, so a fake that wrote
-		unconditionally would let a press slip past the very gate this file
-		exists to test."""
+		transaction, reads the clock UNDER THAT LOCK, and writes only if the
+		poll is still open — returning whether the vote landed. Reproduced here
+		rather than assumed, both halves: the clamp's whole point is that the
+		STORED row is what decides, so a fake that wrote unconditionally would
+		let a press slip past the very gate this file exists to test, and a fake
+		that judged that row against the ROUTER's press timestamp would let it
+		slip past for the subtler reason — an arrival earlier than the clamp is
+		still earlier than the clamped deadline.
+
+		It takes no `now`, exactly as the real one does not. `time.time()` here
+		is the same global clock `_reveal` reads, and the tests move it forward
+		between the press's arrival and this call."""
 		self.calls.append("record_vote:{}".format(user_id))
+		now = int(time.time())
 		post = self.posts.get(post_id)
 		if post is None or post["status"] != "open" or now >= int(post["closes_at"]):
 			return False
@@ -371,6 +379,23 @@ def test_the_clamp_never_pushes_a_deadline_forward(env, monkeypatch):
 	assert e.store.posts[41]["closes_at"] == 1_000
 
 
+class _Clock:
+	"""An advancing fake wall clock. `_reveal` reads it, and so does the
+	store's own vote gate; the ROUTER reads its own frozen reading (the instant
+	the button was pressed) instead, which is what lets a press ARRIVE before
+	the clamp and reach the DB after it — the shape of the real failure."""
+
+	def __init__(self, t):
+		self.t = int(t)
+
+	def __call__(self):
+		return self.t
+
+	def at(self, t):
+		self.t = int(t)
+		return self.t
+
+
 def test_a_press_during_the_resolve_is_refused(env, monkeypatch):
 	"""The race itself, driven end to end against the real router.
 
@@ -378,33 +403,48 @@ def test_a_press_during_the_resolve_is_refused(env, monkeypatch):
 	snapshot and after the payments, while the post is still status='open'
 	because the close is deliberately last. That is precisely the window the
 	clamp exists to close, and it is the only place a press can do the damage:
-	the row the router reads back is the one the clamp left."""
+	the row the router reads back is the one the clamp left.
+
+	THREE DISTINCT INSTANTS, and they have to be distinct or the test proves
+	nothing. The press ARRIVES at 49_999, strictly before the resolve — so its
+	own fast-path check is honest and PASSES, which is what puts the whole
+	burden on the store. The resolve runs at 50_000 and clamps the deadline
+	there. The press's write reaches the store at 50_002, having spent the gap
+	queued behind the resolve. A single frozen clock (which this test used to
+	use) collapses all three into one instant, where `now >= closes_at` is true
+	by equality and the ROUTER refuses the press before the store is ever
+	asked — green, and blind to a gate that judges a clamped deadline against
+	the caller's older reading."""
 	from bot.quiz import interactions
 	from tests.test_quiz_interactions import FakeInteraction
 
-	# One frozen clock for both halves: bot.quiz.jobs and bot.quiz.interactions
-	# both read `time.time` off the stdlib module, which is the point — the
-	# press and the resolve happen at the same instant.
-	monkeypatch.setattr(time, "time", lambda: 50_000)
+	clock = _Clock(50_000)
+	monkeypatch.setattr(time, "time", clock)
 	e = env(votes=[VOTE_RIGHT])
 	e.store.posts[41] = dict(POST, closes_at=99_000)
 	monkeypatch.setattr(interactions, "store", e.store)
+	# The router's clock is its OWN — frozen at the press's arrival, which is
+	# before the clamp. Swapping the module attribute (not `time.time`) is what
+	# keeps the two clocks apart.
+	monkeypatch.setattr(interactions, "time", types.SimpleNamespace(time=lambda: 49_999))
 
 	latecomer = FakeInteraction(cid="quiz:41:ans:0", user_id=88, nick="Late",
-			message_id=4242, now=50_000)
+			message_id=4242, now=49_999)
 	real_edit = e.channel.message.edit
 
 	async def _edit_and_race(embed=None, view="<untouched>", **kw):
+		clock.at(50_002)               # the press's transaction finally gets the row
 		await interactions.on_quiz_interaction(latecomer)
 		await real_edit(embed=embed, view=view, **kw)
 
 	e.channel.message.edit = _edit_and_race
 	asyncio.run(e.job._reveal(dict(e.store.posts[41]), fresh=True))
 
-	# 50_000 is well inside the post's original 99_000 window, so without the
-	# clamp this press is accepted and lands after the snapshot.
+	# 49_999 is well inside the post's original 99_000 window AND inside the
+	# clamped 50_000 one, so the router's fast path passes and the store is the
+	# only thing that can refuse this press.
+	assert "record_vote:88" in e.calls, "the press got past the fast path, as it must"
 	assert e.store.vote_of(41, 88) is None, "a vote was recorded after the snapshot"
-	assert "record_vote:88" not in e.calls
 	assert latecomer.response.sent is not None
 	assert "closed" in latecomer.response.sent["content"].lower()
 	assert latecomer.response.edited is None
@@ -648,6 +688,44 @@ def test_a_deleted_card_does_not_block_the_close(env):
 	assert e.channel.sent, "the announcement still goes out"
 	assert e.store.closed == [41]
 	assert e.calls[-1] == "close_post"
+
+
+def test_a_forbidden_card_edit_does_not_block_the_close_either(env):
+	""" THE ONE THAT USED TO WEDGE THE POLL. Only `NotFound` was caught, and a
+	404 is self-healing — the card is gone and stays gone. A 403 is not: the
+	bot lost Manage Messages (a permission edit, a channel lockdown) and EVERY
+	retry fails identically. By this line the grades are written and the gold
+	is paid, so the raise did not protect anything; it aborted _reveal before
+	`close_post`, leaving the post open past closes_at, which is _close_due's
+	retry ticket — so the sweep re-entered it every 30 seconds, forever,
+	re-fetching and re-editing a card it can never edit and never closing the
+	poll. A cosmetic failure must not outrank a committed payment. """
+	import nextcord
+	e = env(votes=[VOTE_RIGHT], fetch_raises=nextcord.Forbidden())
+	asyncio.run(e.job._reveal(e.post, fresh=True))
+	assert e.bank.grants == [(7, 1, 41, True)]
+	assert e.channel.sent, "the announcement still goes out"
+	assert e.store.closed == [41]
+	assert e.calls[-1] == "close_post"
+
+
+def test_a_failed_card_edit_still_never_covers_a_payment_failure(env):
+	""" The widened `except` around the card edit sits BELOW the payment loop
+	and must stay there. A version that wrapped the payments in it — or that
+	caught broadly around the whole results block and swallowed the
+	RuntimeError on its way out — would close a post over unpaid gold, which is
+	the one thing this whole ordering exists to prevent. Both failures at once,
+	so a catch wide enough to cover the payment gets caught here. """
+	import nextcord
+	e = env(votes=[VOTE_RIGHT], fail_for=(1,), fetch_raises=nextcord.Forbidden())
+	raised = None
+	try:
+		asyncio.run(e.job._reveal(e.post, fresh=True))
+	except Exception as exc:                                    # noqa: BLE001
+		raised = exc
+	assert "close_post" not in e.calls
+	assert e.store.closed == []
+	assert isinstance(raised, RuntimeError)
 
 
 def test_a_missing_channel_still_grades_pays_and_closes(env):

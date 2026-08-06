@@ -213,11 +213,26 @@ class QuizJobs:
 		channel = dc.get_channel(post["channel_id"])
 		if channel:
 			if post.get("message_id"):
+				# THE CARD EDIT IS COSMETIC, AND BY HERE THE MONEY IS ALREADY
+				# COMMITTED. Every Discord-side failure of it is swallowed, not
+				# just the 404: a Forbidden (someone revoked Manage Messages, the
+				# channel was locked down) is PERSISTENT, and a persistent raise
+				# here would abort the resolve before the close — leaving the post
+				# open past closes_at, so _close_due re-enters it every 30 seconds
+				# forever, re-fetching and re-editing and never closing, while the
+				# grades and the payouts it already wrote are re-applied as
+				# idempotent no-ops. A stale card is a cosmetic defect; a poll that
+				# can never close is not.
+				#
+				# This is NOT the payment failure's `except`. That one lives above,
+				# raises out of _reveal on purpose, and must keep blocking the
+				# close — 'still open past closes_at' is the only retry ticket
+				# unpaid gold has. Nothing below this line may widen to cover it.
 				try:
 					msg = await channel.fetch_message(post["message_id"])
 					await msg.edit(embed=embeds.final_card_embed(post, graded), view=None)
-				except nextcord.NotFound:
-					pass
+				except nextcord.HTTPException as e:
+					log.error(f"Quiz {post['id']}: card edit failed ({e}) — closing anyway.")
 			if fresh:
 				await channel.send(embed=embeds.result_embed(
 					post["prompt"], options, correct, post["explanation"], winners,

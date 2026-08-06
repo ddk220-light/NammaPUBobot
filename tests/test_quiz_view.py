@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import bot.quiz.view as v
-import bot.quiz.view as view
 
 
 def test_leaderboard_lines_ranks_and_accuracy():
@@ -46,22 +45,22 @@ def test_result_lines_render_multiple_correct_letters():
 def test_poll_card_shows_the_source_tag():
 	# The tag moved from the deleted card_lines onto the poll card, which is
 	# the only card there is now.
-	game = "\n".join(view.poll_card_lines("combat", "hard", 1, 1, 2, 24, "Q?", ["a", "b"], [],
+	game = "\n".join(v.poll_card_lines("combat", "hard", 1, 1, 2, 24, "Q?", ["a", "b"], [],
 			source="game"))
-	player = "\n".join(view.poll_card_lines("Villagers", "medium", 2, 1, 1, 24, "Q?", ["a", "b"], [],
+	player = "\n".join(v.poll_card_lines("Villagers", "medium", 2, 1, 1, 24, "Q?", ["a", "b"], [],
 			source="player"))
 	assert "Game" in game and "combat" in game
 	assert "Player" in player and "Villagers" in player
 
 
 def test_poll_card_without_source_is_backcompat():
-	out = "\n".join(view.poll_card_lines("combat", "hard", 5, 1, 1, 24, "Q?", ["a", "b"], []))
+	out = "\n".join(v.poll_card_lines("combat", "hard", 5, 1, 1, 24, "Q?", ["a", "b"], []))
 	assert "#5" in out and "Game" not in out and "Player" not in out
 
 
 def test_poll_card_shows_question_and_options_but_never_the_answer():
 	votes = [dict(user_id=1, nick="Ann", choice_index=0, choice_indices=None)]
-	lines = view.poll_card_lines("combat", "medium", 5, 2, 3, 23.5,
+	lines = v.poll_card_lines("combat", "medium", 5, 2, 3, 23.5,
 			"Which unit wins?", ["Knight", "Pikeman"], votes, source="game")
 	text = "\n".join(lines)
 	assert "Which unit wins?" in text
@@ -73,7 +72,7 @@ def test_poll_card_shows_question_and_options_but_never_the_answer():
 
 
 def test_poll_card_without_difficulty_renders():
-	lines = view.poll_card_lines("combat", None, 5, 2, 3, 23.5, "Q?", ["a", "b"], [])
+	lines = v.poll_card_lines("combat", None, 5, 2, 3, 23.5, "Q?", ["a", "b"], [])
 	assert not any("None" in ln for ln in lines)
 
 
@@ -83,21 +82,21 @@ def test_tally_counts_and_names():
 		dict(user_id=2, nick="Bob", choice_index=0, choice_indices=None),
 		dict(user_id=3, nick="Cy", choice_index=1, choice_indices=None),
 	]
-	lines = view.tally_lines(["Knight", "Pikeman"], votes)
+	lines = v.tally_lines(["Knight", "Pikeman"], votes)
 	assert "**2** vote(s)" in lines[0] and "Ann" in lines[0] and "Bob" in lines[0]
 	assert "**1** vote(s)" in lines[1] and "Cy" in lines[1]
 
 
 def test_tally_multi_voter_appears_under_each_pick():
 	votes = [dict(user_id=1, nick="Ann", choice_index=None, choice_indices="[0, 2]")]
-	lines = view.tally_lines(["a", "b", "c"], votes)
+	lines = v.tally_lines(["a", "b", "c"], votes)
 	assert "Ann" in lines[0] and "Ann" not in lines[1] and "Ann" in lines[2]
 
 
 def test_tally_caps_names_at_12():
 	votes = [dict(user_id=i, nick=f"P{i}", choice_index=0, choice_indices=None)
 			for i in range(15)]
-	line = view.tally_lines(["a", "b"], votes)[0]
+	line = v.tally_lines(["a", "b"], votes)[0]
 	assert "**15** vote(s)" in line
 	assert "+3 more" in line
 	assert "P11" in line and "P12" not in line
@@ -105,19 +104,19 @@ def test_tally_caps_names_at_12():
 
 def test_tally_ignores_choiceless_rows():
 	votes = [dict(user_id=1, nick="Ghost", choice_index=None, choice_indices=None)]
-	lines = view.tally_lines(["a", "b"], votes)
+	lines = v.tally_lines(["a", "b"], votes)
 	assert "Ghost" not in "\n".join(lines)
 	assert "**0** vote(s)" in lines[0]
 
 
 def test_tally_marks_correct_options_when_told():
-	lines = view.tally_lines(["a", "b"], [], correct_indices={1})
+	lines = v.tally_lines(["a", "b"], [], correct_indices={1})
 	assert "✅" not in lines[0] and "✅" in lines[1]
 
 
 def test_result_lines_gold_note_appended_only_when_given():
-	base = view.result_lines("Q?", ["a", "b"], [0], "because", ["Ann"])
-	with_gold = view.result_lines("Q?", ["a", "b"], [0], "because", ["Ann"],
+	base = v.result_lines("Q?", ["a", "b"], [0], "because", ["Ann"])
+	with_gold = v.result_lines("Q?", ["a", "b"], [0], "because", ["Ann"],
 			gold_note="🪙 60 gold paid out")
 	assert "🪙 60 gold paid out" not in "\n".join(base)
 	assert with_gold[-1] == "🪙 60 gold paid out"

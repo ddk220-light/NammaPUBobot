@@ -124,8 +124,10 @@ and pays immediately. `force_post` unchanged.
 
 ### What dies
 
-- The Reveal button and `_handle_reveal`; `record_reveal`; the reveal route
-  in `parse_custom_id`.
+- The Reveal button and `_handle_reveal`; `record_reveal`. The reveal ROUTE in
+  `parse_custom_id` stays — see §Voting: it is repurposed as the transition
+  converter for the one card already open at deploy time, and is the only way
+  anyone can vote on that card. Only the button that produced it is gone.
 - The per-user 180-second deadline and every notice about it
   (`too_late_notice`, the "3:00 timer" card copy).
 - `already_answered_notice` — changing your vote is the point now.
@@ -216,7 +218,9 @@ Same standard as the betting branch — pure functions and fakes, mutation-aware
 - Resolve: grade→pay→close ordering pinned (a crash between pay and close
   leaves the post resumable; re-run pays nobody twice); no-community skips
   payment but still grades and closes.
-- `parse_custom_id`: reveal route gone, ans/msel intact.
+- `parse_custom_id`: ans/msel intact, and the reveal route still parsed (the
+  transition converter of §Voting) — a press on it re-renders the card and
+  records no vote.
 - Weekly tally: unchanged behaviour pinned across the transition (old rows
   with timing fields + new rows without, one board).
 

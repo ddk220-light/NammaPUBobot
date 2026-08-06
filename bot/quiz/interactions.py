@@ -45,10 +45,13 @@ async def on_quiz_interaction(interaction):
 		# round-trips, and a clamp landing between them used to leave the vote
 		# written after the snapshot: never graded, never paid, and undetectable
 		# (the ledger and the balance cache still agree). The authority is
-		# store.record_vote / record_vote_multi, which re-check status and
-		# closes_at inside their own transaction against the post row locked FOR
-		# UPDATE — the same lock the clamp takes — so the two serialise and the
-		# snapshot is genuinely final. This check survives only to spare the
+		# store.record_vote / record_vote_multi, which re-evaluate the gate
+		# inside their own transaction against the post row locked FOR UPDATE —
+		# the same lock the clamp takes — AND against a clock they read
+		# themselves under that lock. `now` below is NOT handed to them, on
+		# purpose: it is this instant's reading, and by the time the write's
+		# transaction gets the row it can be seconds old and older than the
+		# clamp it is supposed to lose to. This check survives only to spare the
 		# common case (a press on a long-closed card) a transaction it does not
 		# need; the refusal that matters is the one honoured below.
 		if post["status"] != "open" or now >= int(post["closes_at"]):
@@ -58,15 +61,15 @@ async def on_quiz_interaction(interaction):
 			# still shows the old "Reveal & start" button. Pressing it converts
 			# that card in place into the poll format (idempotent) — it does
 			# NOT record a vote.
-			return await _rerender(interaction, post)
+			return await _rerender(interaction, post, voted=False)
 		nick = _nick(interaction.user)
 		if kind == "mselect":
 			values = [int(v) for v in (interaction.data or {}).get("values", [])]
 			if not values:
 				return await _eph(interaction, "Pick at least one option.")
-			landed = await store.record_vote_multi(post["id"], interaction.user.id, nick, values, now)
+			landed = await store.record_vote_multi(post["id"], interaction.user.id, nick, values)
 		else:
-			landed = await store.record_vote(post["id"], interaction.user.id, nick, choice, now)
+			landed = await store.record_vote(post["id"], interaction.user.id, nick, choice)
 		if not landed:
 			# The write was refused under the row lock: the poll shut between
 			# the read above and this transaction. There is no row, so the card
@@ -85,13 +88,19 @@ async def on_quiz_interaction(interaction):
 			pass
 
 
-async def _rerender(interaction, post):
+async def _rerender(interaction, post, voted=True):
 	"""Answer the press by re-rendering the shared card with the fresh tally —
 	the card edit IS the feedback. Old-era EPHEMERAL answer views carry the
 	same ans:/msel: custom_ids but live on a DIFFERENT message; blindly
 	calling edit_message would paint the shared public card over someone's
 	private ephemeral message, so those presses get a plain confirmation
-	instead (the vote, if any, is already recorded either way)."""
+	instead (the vote, if any, is already recorded either way).
+
+	`voted` says whether this press actually wrote a vote, and the fallback
+	line has to know: the transition-era 'reveal' press records nothing at
+	all, so telling that user "Vote counted" would be a plain untruth about
+	their own row. It is a narrow path — reachable only when the post has no
+	message_id yet — but a message that lies is worse than no message."""
 	from . import embeds
 	votes = await store.answers_for_post(post["id"])
 	options = json.loads(post["options_json"])
@@ -100,7 +109,12 @@ async def _rerender(interaction, post):
 		return await interaction.response.edit_message(
 			embed=embeds.poll_embed(post, votes),
 			view=embeds.vote_view(post["id"], options, is_multi_category(post["category"])))
-	return await _eph(interaction, "Vote counted — see the quiz card for the tally.")
+	if voted:
+		return await _eph(interaction, "Vote counted — see the quiz card for the tally.")
+	return await _eph(
+		interaction,
+		"No vote recorded — this button only converts the card. "
+		"Use the option buttons on the quiz card in the channel to vote.")
 
 
 def _nick(user):

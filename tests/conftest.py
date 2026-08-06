@@ -438,20 +438,44 @@ class _FakeDiscordException(Exception):
 	cannot be imported by a test at all. """
 
 
-class _FakeNotFound(_FakeDiscordException):
-	""" nextcord.NotFound — a 404 from the API, and the ONE exception the quiz
-	resolve names by hand: `except nextcord.NotFound` around the fetch of the
-	poll card it is about to edit, because a deleted card must not stop the
-	grading, the payout or the close that follow it. A permissive stub in its
-	place turned that except clause into an AttributeError the moment a test
+class _FakeHTTPError(_FakeDiscordException):
+	""" nextcord.HTTPException — the base of every FAILED API call, and the
+	class the quiz resolve names by hand around the fetch-and-edit of the poll
+	card it is about to lock. The real hierarchy is
+	DiscordException -> HTTPException -> {NotFound, Forbidden,
+	DiscordServerError}, and it is reproduced rather than flattened because the
+	whole point of that except clause is the SET of failures it covers: a 404
+	(card deleted) and a 403 (permissions revoked) both have to reach it, and a
+	stub where Forbidden was not an HTTPException would make the persistent-
+	failure case look handled when it was not. """
+
+	def __init__(self, response=None, message=None):
+		super().__init__(message or "HTTP error")
+		self.response = response
+		self.status = None
+
+
+class _FakeNotFound(_FakeHTTPError):
+	""" nextcord.NotFound — a 404 from the API. A permissive stub in its place
+	turned the resolve's except clause into an AttributeError the moment a test
 	drove the branch, so the "someone deleted the card" path was untestable
 	rather than merely unasserted. The real signature takes (response,
 	message); nothing here reads either, so both stay optional. """
 
 	def __init__(self, response=None, message=None):
-		super().__init__(message or "Not Found")
-		self.response = response
+		super().__init__(response, message or "Not Found")
 		self.status = 404
+
+
+class _FakeForbidden(_FakeHTTPError):
+	""" nextcord.Forbidden — a 403. Unlike a 404 this is PERSISTENT: the bot
+	lost Manage Messages / Read Message History and every retry will fail the
+	same way, which is exactly why the resolve may not let it block the close.
+	"""
+
+	def __init__(self, response=None, message=None):
+		super().__init__(response, message or "Forbidden")
+		self.status = 403
 
 
 def _find(predicate, seq):
@@ -520,7 +544,9 @@ _fake_nextcord = types.ModuleType('nextcord')
 for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents'):
 	setattr(_fake_nextcord, _name, _NextcordStub)
 _fake_nextcord.DiscordException = _FakeDiscordException
+_fake_nextcord.HTTPException = _FakeHTTPError
 _fake_nextcord.NotFound = _FakeNotFound
+_fake_nextcord.Forbidden = _FakeForbidden
 _fake_nextcord.Embed = FakeEmbed
 _fake_nextcord.Colour = _FakeColour
 _fake_nextcord.Color = _fake_nextcord.Colour

@@ -64,8 +64,14 @@ def test_poll_embed_reads_the_post_row():
 
 
 def test_poll_embed_title_and_colour():
+	# BOTH, because the name says both and the colour is the only thing telling
+	# the three quiz embeds apart at a glance: blurple = the live poll, green =
+	# the result announcement, gold = the weekly leaderboard. A poll card that
+	# came back green reads as an already-answered question.
 	e = embeds.poll_embed(_post(), [])
 	assert e.title == "Daily AoE2 quiz"
+	assert e.colour.value == nextcord.Colour.blurple().value
+	assert e.colour.value != nextcord.Colour.green().value
 
 
 def test_poll_embed_never_marks_the_answer():
@@ -132,44 +138,51 @@ class _FakeStore:
 	as the real REPLACE upsert; answers_for_post returns only cast votes.
 
 	The two writers reproduce the real ones' TRANSACTIONAL CONTRACT, not just
-	their storage: they re-check open/deadline for themselves and return True
+	their storage: they re-evaluate the gate for themselves and return True
 	only when the vote landed (bot/quiz/store.py takes that re-check under a
-	`SELECT ... FOR UPDATE` on the post row). `race` is the knob that makes the
-	residual race expressible here — a callable that fires between the router's
-	pre-read and the write, standing in for the resolve's clamp committing in
-	that gap. Without it the fake could only ever agree with the pre-read, and
-	a router that ignored the refusal would look correct."""
+	`SELECT ... FOR UPDATE` on the post row).
+
+	THEY ALSO OWN THEIR OWN CLOCK — `self.now`, the reading the real gate takes
+	AFTER its `FOR UPDATE` returns — and take no timestamp from the router,
+	because the real ones do not either. That separation is the point: the
+	router's clock is the instant the button was pressed, the store's is the
+	instant its transaction got the row, and the two can be seconds apart with a
+	resolve's clamp in between. A fake that shared one clock with the router
+	could not express the race at all, which is how it stayed open. `race` fires
+	once, between the router's pre-read and the write, standing in for the
+	resolve's clamp committing in that gap."""
 
 	def __init__(self):
 		self.posts = {}
 		self.votes = {}
 		self.race = None            # fires once, between the pre-read and the write
+		self.now = 2_000            # the store's OWN clock, read under its row lock
 
 	async def get_post(self, post_id):
 		return self.posts.get(post_id)
 
-	def _still_open(self, post_id, now):
+	def _still_open(self, post_id):
 		if self.race is not None:
 			hook, self.race = self.race, None
 			hook(self.posts)
 		post = self.posts.get(post_id)
-		return post is not None and post["status"] == "open" and now < int(post["closes_at"])
+		return post is not None and post["status"] == "open" and self.now < int(post["closes_at"])
 
-	async def record_vote(self, post_id, user_id, nick, choice_index, now):
-		if not self._still_open(post_id, now):
+	async def record_vote(self, post_id, user_id, nick, choice_index):
+		if not self._still_open(post_id):
 			return False
 		self.votes[(post_id, user_id)] = dict(
 				post_id=post_id, user_id=user_id, nick=nick,
-				choice_index=int(choice_index), choice_indices=None, answered_at=now)
+				choice_index=int(choice_index), choice_indices=None, answered_at=self.now)
 		return True
 
-	async def record_vote_multi(self, post_id, user_id, nick, choice_indices, now):
-		if not self._still_open(post_id, now):
+	async def record_vote_multi(self, post_id, user_id, nick, choice_indices):
+		if not self._still_open(post_id):
 			return False
 		self.votes[(post_id, user_id)] = dict(
 				post_id=post_id, user_id=user_id, nick=nick, choice_index=None,
 				choice_indices=json.dumps(sorted(int(i) for i in choice_indices)),
-				answered_at=now)
+				answered_at=self.now)
 		return True
 
 	async def answers_for_post(self, post_id):
@@ -233,15 +246,22 @@ class FakeInteraction:
 
 
 def _run(interaction):
-	"""Drives on_quiz_interaction for real, freezing time.time() to the
+	"""Drives on_quiz_interaction for real, freezing THE ROUTER'S clock to the
 	interaction's own `now` for the call's duration — what a live press sees:
-	the clock reading at the moment the button was pressed."""
-	real_time = interactions.time.time
-	interactions.time.time = lambda: interaction.now
+	the clock reading at the moment the button was pressed.
+
+	It swaps the module ATTRIBUTE `interactions.time`, not `time.time` on the
+	stdlib module. The old version assigned through to the real `time` module
+	and so froze the clock globally — which silently gave the router and the
+	store the same clock, and a shared clock is precisely what makes the vote
+	race invisible (the press cannot arrive earlier than the clamp if there is
+	only one instant). `_FakeStore` keeps its own `now`."""
+	real_time = interactions.time
+	interactions.time = types.SimpleNamespace(time=lambda: interaction.now)
 	try:
 		asyncio.run(interactions.on_quiz_interaction(interaction))
 	finally:
-		interactions.time.time = real_time
+		interactions.time = real_time
 	return interaction
 
 
@@ -289,14 +309,22 @@ def test_press_on_closed_status_is_refused(quiz_env):
 # The pre-read gate above is a fast path, not the authority: the row it reads
 # can be flipped a millisecond later by bot/quiz/jobs.py::_reveal's clamp, and
 # the write is a separate round-trip. store.record_vote redoes the check inside
-# its own transaction under a FOR UPDATE lock on the post row and returns False
-# when the vote did not land. The router has to BELIEVE that — a re-render over
-# a refused write tells the user their vote counted when no row exists, and the
-# card it paints is the tally without them in it.
+# its own transaction, under a FOR UPDATE lock on the post row and against a
+# clock it reads itself once it has that lock, and returns False when the vote
+# did not land. The router has to BELIEVE that — a re-render over a refused
+# write tells the user their vote counted when no row exists, and the card it
+# paints is the tally without them in it.
+#
+# THE PRESS ARRIVES BEFORE THE CLAMP in both tests below (2_000 vs 2_001), which
+# is the only arrangement that puts the refusal where it belongs. When the press
+# time equals the clamp time the ROUTER's own `now >= closes_at` already refuses
+# it, and the store is never even asked.
 def test_a_vote_refused_under_the_row_lock_gets_the_closed_notice(quiz_env):
 	quiz_env.posts[9] = _post(closes_at=9_000)
-	# The resolve clamps the deadline after the pre-read, before the write.
-	quiz_env.race = lambda posts: posts[9].update(closes_at=2_000)
+	# The resolve clamps the deadline after the pre-read, before the write; the
+	# store's transaction gets the row at 2_002, after both.
+	quiz_env.race = lambda posts: posts[9].update(closes_at=2_001)
+	quiz_env.now = 2_002
 	i = FakeInteraction(cid="quiz:9:ans:1", user_id=42, nick="Ann", message_id=111, now=2_000)
 	_run(i)
 	assert (9, 42) not in quiz_env.votes, "the store refused it"
@@ -307,13 +335,37 @@ def test_a_vote_refused_under_the_row_lock_gets_the_closed_notice(quiz_env):
 def test_a_multi_vote_refused_under_the_row_lock_gets_the_closed_notice(quiz_env):
 	quiz_env.posts[9] = _post(category="techgaps", correct_indices="[0, 2]",
 			options_json='["a", "b", "c"]', closes_at=9_000)
-	quiz_env.race = lambda posts: posts[9].update(closes_at=2_000)
+	quiz_env.race = lambda posts: posts[9].update(closes_at=2_001)
+	quiz_env.now = 2_002
 	i = FakeInteraction(cid="quiz:9:msel", values=["0", "2"], user_id=42, nick="Ann",
 			message_id=111, now=2_000)
 	_run(i)
 	assert (9, 42) not in quiz_env.votes
 	assert i.response.edited is None
 	assert i.response.sent is not None and "closed" in i.response.sent["content"].lower()
+
+
+def test_the_router_hands_the_store_no_timestamp(quiz_env):
+	""" The router's `now` is the instant the button was pressed and it is used
+	for the fast path ONLY. Passing it down would put the authority's verdict
+	back in the hands of a stale reading: the store would compare a deadline
+	clamped at 12:00:05 against a press captured at 12:00:04, find it open, and
+	write the vote after the resolve's snapshot — never graded, never paid, and
+	invisible to reconcile(). Pinned by calling the router with a store whose
+	writers accept NO timestamp at all: a router that still passed one would
+	TypeError here rather than fail some assertion later. """
+	import inspect
+
+	for name in ("record_vote", "record_vote_multi"):
+		params = list(inspect.signature(getattr(quiz_env, name)).parameters)
+		assert "now" not in params, f"the router's fake still takes a caller clock on {name}"
+
+	quiz_env.posts[9] = _post(closes_at=9_000)
+	quiz_env.now = 5_000                       # the store's clock, far from the press's
+	i = FakeInteraction(cid="quiz:9:ans:1", user_id=42, nick="Ann", message_id=111, now=2_000)
+	_run(i)
+	assert quiz_env.votes[(9, 42)]["answered_at"] == 5_000, \
+		"answered_at must be the store's under-lock reading, not the press's"
 
 
 def test_a_vote_refused_because_the_post_closed_gets_the_closed_notice(quiz_env):
@@ -359,6 +411,33 @@ def test_reveal_press_converts_the_old_card(quiz_env):
 	assert (9, 42) not in quiz_env.votes                  # converting is not voting
 	assert i.response.edited is not None                  # card now shows the poll
 	assert i.response.edited["view"] is not None
+
+
+def test_the_reveal_fallback_does_not_claim_a_vote_was_counted(quiz_env):
+	""" The card has no message_id yet (the send landed, set_message_id did
+	not), so _rerender cannot edit it and answers ephemerally instead. On the
+	VOTE paths that fallback says "Vote counted" and it is true. On the reveal
+	route it would be a flat lie: converting the transition-era card records
+	nothing, and a user told their vote counted has no reason to press again —
+	they would sit out the poll believing they were in it. """
+	quiz_env.posts[9] = _post(message_id=None)
+	i = FakeInteraction(cid="quiz:9:reveal", user_id=42, nick="Ann", message_id=111, now=2000)
+	_run(i)
+	assert (9, 42) not in quiz_env.votes
+	assert i.response.edited is None
+	body = i.response.sent["content"].lower()
+	assert "vote counted" not in body
+	assert "no vote" in body
+
+
+def test_the_vote_fallback_still_confirms_the_vote(quiz_env):
+	# The other side of the same branch: a real vote on a card that cannot be
+	# edited is still recorded, and the user is still told so.
+	quiz_env.posts[9] = _post(message_id=None)
+	i = FakeInteraction(cid="quiz:9:ans:1", user_id=42, nick="Ann", message_id=111, now=2000)
+	_run(i)
+	assert quiz_env.votes[(9, 42)]["choice_index"] == 1
+	assert "vote counted" in i.response.sent["content"].lower()
 
 
 def test_foreign_custom_ids_fall_through(quiz_env):

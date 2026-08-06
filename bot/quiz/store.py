@@ -3,7 +3,7 @@
 all aggregation logic lives in bot.quiz.scoring (pure, tested). No nextcord import
 here so importing bot.quiz stays test-safe."""
 import json
-import time  # noqa: F401  (kept for callers that pass explicit timestamps)
+import time
 
 from core.database import db
 
@@ -120,16 +120,28 @@ async def clamp_closes_at(post_id, now):
 	forever: never graded, never paid, and undetectable, because the ledger and
 	the balance cache still agree.
 
-	THE ROW LOCK IS WHAT MAKES THAT TRUE, not the ordering on its own. Clamping
-	first only helps if a press cannot straddle the clamp, and a press IS two
+	THE ROW LOCK AND THE STORE'S OWN CLOCK ARE WHAT MAKE THAT TRUE, not the
+	ordering on its own, and not the lock on its own either. Clamping first
+	only helps if a press cannot straddle the clamp, and a press IS two
 	round-trips (the router's read, then the write) with unbounded time in
 	between. record_vote / record_vote_multi close that by writing only inside a
-	transaction that has taken THIS SAME row lock and re-read status/closes_at
+	transaction that has taken THIS SAME row lock and re-evaluated the gate
 	under it, so this statement and any concurrent press are strictly ordered:
 	a press already holding the row commits before this returns — and is
 	therefore in the snapshot that follows — while a press arriving after it
-	blocks here, then reads the clamped deadline and refuses. There is no third
-	outcome, which is the property `_reveal` needs and could not have before.
+	blocks here, and then refuses.
+
+	The second half is why that refusal actually happens. Serialisation alone
+	does not refuse anything: a waiting press re-reads the freshly-clamped
+	closes_at, and if it compares that against a clock its CALLER read before
+	the wait began, `now < closes_at` is still true and the write lands anyway
+	— exactly the outcome the lock was taken to prevent. So `_open_for_voting`
+	reads the clock ITSELF, after its `FOR UPDATE` returns; that reading cannot
+	predate the lock, hence cannot predate this clamp's commit, so a press that
+	waited here always compares a later clock against the pulled-back deadline
+	and always refuses. Lock plus store-owned clock leave exactly two outcomes
+	and no third, which is the property `_reveal` needs and could not have
+	before.
 
 	The SELECT ... FOR UPDATE is written out rather than left implicit in the
 	UPDATE's own exclusive row lock. The two are equivalent today; spelling it
@@ -162,26 +174,48 @@ async def close_post(post_id):
 # at lock time by write_grade below.
 
 
-async def _open_for_voting(tx, post_id, now):
+async def _open_for_voting(tx, post_id):
 	"""Row-lock the post and answer, UNDER THAT LOCK, whether a vote may still
-	be written to it. This is THE authority on the question; the identical-
-	looking check in bot/quiz/interactions.py is a cheap fast path that proves
-	nothing, because the row it read can be flipped a millisecond later.
+	be written to it — as the timestamp the vote must be stamped with, or None
+	when the poll is shut. This is THE authority on the question; the
+	identical-looking check in bot/quiz/interactions.py is a cheap fast path
+	that proves nothing, because the row it read can be flipped a millisecond
+	later.
 
-	`FOR UPDATE` takes the same exclusive row lock clamp_closes_at takes, and
-	that is the entire mechanism — see the two callers below and the clamp's
-	own docstring for why the ordering guarantee is what the resolve needs."""
+	THE CLOCK IS READ HERE, AFTER THE LOCK, AND THAT IS THE POINT. `FOR UPDATE`
+	takes the same exclusive row lock clamp_closes_at takes, so a press racing a
+	resolve waits here until the clamp commits — but waiting only helps if what
+	it compares the pulled-back deadline against is a reading it could not have
+	taken before the wait. A `now` handed in by the router was read at the top
+	of the interaction, seconds and several round-trips ago; against a deadline
+	clamped to a moment AFTER that reading, `now < closes_at` still holds and
+	the write lands anyway. Serialising the two and then judging with a stale
+	clock refuses nothing. So this function takes no timestamp: the clock
+	reading below cannot predate the lock, hence cannot predate the clamp that
+	held it, and the refusal is real. It is also the value written to
+	answered_at, so the row records when the vote was ACCEPTED — the instant
+	the gate opened for it — not when the button happened to be pressed.
+
+	No advisory `now` parameter survives for a caller to get wrong: that is
+	precisely how the race stayed open through its first fix. See the two
+	callers below and clamp_closes_at's docstring for the ordering half."""
 	row = await tx.fetchone(
 		"SELECT status, closes_at FROM quiz_posts WHERE id=%s FOR UPDATE", [post_id])
-	return row is not None and row["status"] == "open" and int(now) < int(row["closes_at"])
+	now = int(time.time())
+	if row is None or row["status"] != "open" or now >= int(row["closes_at"]):
+		return None
+	return now
 
 
-async def record_vote(post_id, user_id, nick, choice_index, now):
+async def record_vote(post_id, user_id, nick, choice_index):
 	"""UPSERT the user's vote — the PK (post_id, user_id) IS the one-vote
 	rule, and REPLACE makes a changed mind overwrite the row (also wiping any
 	old-era timing fields, which is correct: this row now means a poll vote).
 	is_correct stays NULL until the post locks; answered_at is the latest
 	change, which keeps answers_for_post's cast-a-vote filter true.
+
+	NO `now` PARAMETER, deliberately: the timestamp comes back from the gate,
+	which reads the clock under the post's row lock. See _open_for_voting.
 
 	-> True when the vote landed, False when the poll was already shut. The
 	caller MUST honour False: a re-render over a refused write tells the user
@@ -199,13 +233,16 @@ async def record_vote(post_id, user_id, nick, choice_index, now):
 	write_grade ran and after gold was paid on that verdict, so scoring.tally
 	scores the user differently from what the payout assumed.
 
-	With the lock there are exactly two orders and no third: this transaction
-	takes the row first, so the clamp waits on it and the snapshot that follows
-	the clamp contains this vote — or the clamp takes it first, and the re-read
-	sees the pulled-back closes_at and refuses. Same discipline, and the same
-	class of silently-destroyed money, as bot/predictions/gold.py::place_bet."""
+	With the lock — and with the gate reading the clock under it — there are
+	exactly two orders and no third: this transaction takes the row first, so
+	the clamp waits on it and the snapshot that follows the clamp contains this
+	vote — or the clamp takes it first, and the gate, whose clock reading is
+	necessarily later than that commit, sees the pulled-back closes_at and
+	refuses. Same discipline, and the same class of silently-destroyed money,
+	as bot/predictions/gold.py::place_bet."""
 	async with db.transaction() as tx:
-		if not await _open_for_voting(tx, post_id, now):
+		now = await _open_for_voting(tx, post_id)
+		if now is None:
 			return False
 		await tx.insert("quiz_answers", dict(
 			post_id=post_id, user_id=user_id, nick=nick,
@@ -216,12 +253,14 @@ async def record_vote(post_id, user_id, nick, choice_index, now):
 		return True
 
 
-async def record_vote_multi(post_id, user_id, nick, choice_indices, now):
+async def record_vote_multi(post_id, user_id, nick, choice_indices):
 	"""The multi-answer variant: the submitted set replaces the previous one
 	wholesale (JSON-sorted, the grade_multi convention). Same transactional
-	gate, same True/False contract, same reasons — see record_vote."""
+	gate, same store-owned clock, same True/False contract, same reasons — see
+	record_vote."""
 	async with db.transaction() as tx:
-		if not await _open_for_voting(tx, post_id, now):
+		now = await _open_for_voting(tx, post_id)
+		if now is None:
 			return False
 		await tx.insert("quiz_answers", dict(
 			post_id=post_id, user_id=user_id, nick=nick,

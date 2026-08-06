@@ -310,7 +310,21 @@ async def grant_quiz_reward(community_id, user_id, quiz_post_id, correct, now):
 	entry type. gold_ledger.post_id stays NULL: that column references
 	prediction_posts, and a quiz post id in it would be a foreign lie — the
 	quiz post id travels in the idem key. Caller must ensure_seeded first.
-	Returns the gold granted (0 when capped out or already paid)."""
+	Returns the gold granted (0 when capped out or already paid).
+
+	THE AMOUNT IS DECIDED AT APPLY TIME, SO A RETRY CAN PAY A VOTER THE CEILING
+	DENIED THEM ON THE FIRST ATTEMPT. The room is read off the balance inside
+	this transaction: a voter sitting at 500 is granted 0 and NO ledger row is
+	written, so no idem key is claimed. If the resolve then fails on some other
+	voter and bot/quiz/jobs.py::_close_due re-enters it — a tick or a day
+	later, by which time this voter has staked gold on a prediction and dropped
+	to 300 — the retry finds room and pays the full 50. Never a double-pay (a
+	grant that DID apply owns its idem key, and a second application is a
+	no-op), but the payout for one quiz post genuinely depends on when the
+	resolve managed to complete. Deliberate: the alternative is writing a
+	0-amount row purely to burn the key, which would permanently deny the gold
+	to everyone whose one failed resolve happened to catch them at the
+	ceiling."""
 	async with db.transaction() as tx:
 		row = await tx.fetchone(
 			"SELECT balance FROM gold_balances "
