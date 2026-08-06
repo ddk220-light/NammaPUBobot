@@ -412,6 +412,27 @@ _fake_nextcord_utils = types.ModuleType('nextcord.utils')
 _fake_nextcord_utils.get = lambda *_a, **_k: None
 _fake_nextcord_utils.find = lambda *_a, **_k: None
 _fake_nextcord_utils.escape_markdown = lambda s: s
+
+
+class _MissingSentinel:
+	""" Stands in for nextcord.utils.MISSING — the "argument not supplied at
+	all" sentinel real nextcord tests with `is not MISSING` before touching an
+	optional kwarg like `view`. `None` is a real, different value to that
+	check, which is exactly the distinction bot/predictions/interactions.py's
+	`_eph` depends on: a caller that means "no view" must pass this sentinel
+	(the default), because passing `None` crashes in production the same way
+	FakeResponse/FakeFollowup below are written to crash on it too. """
+
+	__slots__ = ()
+
+	def __repr__(self):
+		return "..."
+
+	def __bool__(self):
+		return False
+
+
+_fake_nextcord_utils.MISSING = _MissingSentinel()
 _fake_nextcord.utils = _fake_nextcord_utils
 sys.modules['nextcord'] = _fake_nextcord
 sys.modules['nextcord.utils'] = _fake_nextcord_utils

@@ -97,7 +97,7 @@ async def on_bet_interaction(interaction):
 									   pool0, pool1, value)
 		if seeded_now:
 			lines.insert(0, f"Welcome to the betting floor — you started with {SEED_AMOUNT} {view.GOLD}.")
-		await _eph(interaction, "\n".join(lines), view=embeds.cancel_view(post_id))
+		await _eph(interaction, "\n".join(lines), component_view=embeds.cancel_view(post_id))
 		await _refresh_card(post, pool0, pool1, now)
 	except Exception as e:
 		log.error(f"bet interaction error: {e}\n{traceback.format_exc()}")
@@ -161,8 +161,13 @@ def _nick(user):
 	return getattr(user, "display_name", None) or getattr(user, "name", None) or str(user.id)
 
 
-async def _eph(interaction, text, view=None):
+async def _eph(interaction, text, component_view=nextcord.utils.MISSING):
+	# nextcord 2.6.0's send_message/followup.send treat `view=None` as a real
+	# view and dereference it (`view.to_components()` / `view.timeout`) — the
+	# sentinel default lets callers omit the view entirely. Named
+	# `component_view`, not `view`: this module imports `. import view` and a
+	# same-named parameter would shadow that module inside this function.
 	if not interaction.response.is_done():
-		await interaction.response.send_message(text, ephemeral=True, view=view)
+		await interaction.response.send_message(text, ephemeral=True, view=component_view)
 	else:
-		await interaction.followup.send(text, ephemeral=True, view=view)
+		await interaction.followup.send(text, ephemeral=True, view=component_view)

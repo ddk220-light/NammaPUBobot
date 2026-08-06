@@ -25,6 +25,8 @@ import math
 import sys
 import types
 
+import nextcord
+
 from bot.predictions import interactions
 
 ALL_SENDS = math.inf            # every send fails, for as long as the test runs
@@ -45,27 +47,41 @@ class FakeResponse:
 	is allowed through. Set it to ALL_SENDS for the nothing-gets-out case. """
 
 	def __init__(self):
-		self.sent = []          # (text, ephemeral)
+		self.sent = []          # (text, ephemeral, view)
 		self._done = False
 		self.fail_sends = 0
 
 	def is_done(self):
 		return self._done
 
-	async def send_message(self, content=None, ephemeral=False, **_kw):
+	async def send_message(self, content=None, ephemeral=False, view=nextcord.utils.MISSING, **_kw):
 		if self.fail_sends > 0:
 			self.fail_sends -= 1
 			raise RuntimeError("Discord 503 — interaction response failed")
+		_check_view(view)
 		self._done = True
-		self.sent.append((content, ephemeral))
+		self.sent.append((content, ephemeral, view))
 
 
 class FakeFollowup:
 	def __init__(self, response):
 		self._response = response
 
-	async def send(self, content=None, ephemeral=False, **_kw):
-		self._response.sent.append((content, ephemeral))
+	async def send(self, content=None, ephemeral=False, view=nextcord.utils.MISSING, **_kw):
+		_check_view(view)
+		self._response.sent.append((content, ephemeral, view))
+
+
+def _check_view(view):
+	""" Faithful to nextcord 2.6.0's InteractionResponse.send_message /
+	Webhook.send: both do `if view is not MISSING: view.to_components()` (or
+	`view.timeout`), so an explicit `view=None` — a real, different value from
+	"omitted" — dereferences None. A fake that swallowed `view` through
+	`**_kw` would never notice a caller doing that; this is what caught task
+	14's regression (_eph defaulting to `view=None` broke every ephemeral in
+	the module that didn't pass a view). """
+	if view is None:
+		raise AttributeError("'NoneType' object has no attribute 'to_components'")
 
 
 class FakeInteraction:
@@ -80,7 +96,7 @@ class FakeInteraction:
 
 	@property
 	def replies(self):
-		return [text for text, _ephemeral in self.response.sent]
+		return [text for text, _ephemeral, _view in self.response.sent]
 
 	@property
 	def reply(self):
@@ -88,8 +104,14 @@ class FakeInteraction:
 		return self.response.sent[0][0]
 
 	@property
+	def reply_view(self):
+		""" The view attached to the single reply, or MISSING if none was. """
+		assert len(self.response.sent) == 1, f"expected exactly one reply, got {self.response.sent}"
+		return self.response.sent[0][2]
+
+	@property
 	def all_ephemeral(self):
-		return all(ephemeral for _text, ephemeral in self.response.sent)
+		return all(ephemeral for _text, ephemeral, _view in self.response.sent)
 
 
 class RecordingLog:
@@ -423,6 +445,14 @@ class TestConfirmation:
 		assert "Your balance: **440**" in i.reply
 		assert i.all_ephemeral, "a bet confirmation is private"
 		assert log.errors == []
+		# The confirmation carries a live Cancel button — task 14's whole
+		# user-facing point — routable back through the real parser, not a
+		# custom_id that merely looks right.
+		from bot.predictions.scoring import parse_cancel_custom_id
+		assert i.reply_view is not None and i.reply_view is not interactions.nextcord.utils.MISSING
+		assert [b.custom_id for b in i.reply_view.children] == ["betcancel:12"]
+		assert [parse_cancel_custom_id(b.custom_id) for b in i.reply_view.children] == [12]
+		assert i.reply_view.timeout is None and i.reply_view.auto_defer is False
 
 	def test_an_added_stake_shows_the_running_total(self, monkeypatch):
 		""" Presses are additive: this one staked 50 on top of an earlier 10. """
@@ -557,6 +587,23 @@ class TestCancelRoute:
 		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
 		run(i)
 		assert "no bet" in i.reply.lower()
+
+	def test_cancelling_refreshes_the_public_card(self, monkeypatch):
+		""" The pools shown on the open card change the instant a bet is
+		cancelled, so a successful cancel must still read them back with
+		store.bets_for. Proven by making bets_for raise: if the post-cancel
+		`bets_for`/`pools`/`_refresh_card` block were ever deleted (as the
+		brief explicitly warns against), this exception would never fire and
+		the log would stay clean instead. """
+		log = wire(monkeypatch, cancel_bet=("ok", 60),
+				   bets_raise=RuntimeError("bets_for reached after cancel"))
+		i = FakeInteraction(user_id=99, custom_id="betcancel:12")
+		run(i)
+		assert len(log.errors) == 1
+		assert "bets_for reached after cancel" in log.errors[0]
+		# The refresh is best-effort and must not cost the user their reply —
+		# the cancellation confirmation itself still has to have gone out.
+		assert "cancel" in i.reply.lower()
 
 	def test_a_foreign_custom_id_is_ignored(self, monkeypatch):
 		bank = wire(monkeypatch)
