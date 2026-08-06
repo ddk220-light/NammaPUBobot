@@ -1,0 +1,399 @@
+"""The bet button handler — the guard chain in front of the gold.
+
+This is the money entry point: every press that ever moves a coin arrives
+through `on_bet_interaction`, and until now it had no test at all. The reason
+was mechanical rather than deliberate — the module does `import nextcord` at
+load, nextcord is not installed in CI, and conftest's nextcord fake was missing
+`InteractionType`, which is the very first thing the handler touches. So the
+whole file was unreachable from pytest. conftest now stubs those five wire
+constants (and `ui`/`ButtonStyle`, which bot/predictions/embeds.py imports at
+module level), which unblocks `bot/quiz/interactions.py` too.
+
+Nothing here mocks the function under test. The handler runs for real against a
+fake interaction and fake collaborators; every assertion is on what the user is
+told, which side of the transaction the failure landed on, and whether the bank
+was touched at all. `flow._player_ids` in particular is NOT stubbed — the
+spectators-only rule is binding, so the tests drive the real lookup against a
+real-shaped `bot.active_matches`.
+
+No pytest-asyncio in this repo: every coroutine is driven with asyncio.run().
+"""
+from __future__ import annotations
+
+import asyncio
+import sys
+import types
+
+from bot.predictions import interactions
+
+
+# ── the fake Discord side ────────────────────────────────────────────────
+class FakeResponse:
+	""" nextcord's InteractionResponse, in the two states the handler branches
+	on: not-yet-answered (send_message) and already-answered (followup). The
+	one-shot rule is real — Discord rejects a second response to the same
+	interaction — so `is_done()` flips on the first send and the handler's
+	`if not interaction.response.is_done()` has something true to test. """
+
+	def __init__(self):
+		self.sent = []          # (text, ephemeral)
+		self._done = False
+		self.send_fails = False
+
+	def is_done(self):
+		return self._done
+
+	async def send_message(self, content=None, ephemeral=False, **_kw):
+		if self.send_fails:
+			raise RuntimeError("Discord 503 — interaction response failed")
+		self._done = True
+		self.sent.append((content, ephemeral))
+
+
+class FakeFollowup:
+	def __init__(self, response):
+		self._response = response
+
+	async def send(self, content=None, ephemeral=False, **_kw):
+		self._response.sent.append((content, ephemeral))
+
+
+class FakeInteraction:
+	COMPONENT = 3               # Discord's own wire value; see conftest
+
+	def __init__(self, custom_id="bet:12:0:50", user_id=7, itype=COMPONENT):
+		self.type = itype
+		self.data = {"custom_id": custom_id}
+		self.user = types.SimpleNamespace(id=user_id, display_name="Zed", name="zed")
+		self.response = FakeResponse()
+		self.followup = FakeFollowup(self.response)
+
+	@property
+	def replies(self):
+		return [text for text, _ephemeral in self.response.sent]
+
+	@property
+	def reply(self):
+		assert len(self.response.sent) == 1, f"expected exactly one reply, got {self.response.sent}"
+		return self.response.sent[0][0]
+
+	@property
+	def all_ephemeral(self):
+		return all(ephemeral for _text, ephemeral in self.response.sent)
+
+
+class RecordingLog:
+	""" Real assertions need to know whether the handler took a branch or CRASHED
+	into one. Every guard below is expected to log nothing at all. """
+
+	def __init__(self):
+		self.errors, self.warnings, self.infos = [], [], []
+
+	def error(self, data):
+		self.errors.append(str(data))
+
+	def warning(self, data):
+		self.warnings.append(str(data))
+
+	def info(self, data):
+		self.infos.append(str(data))
+
+
+# ── the fixtures the handler reads ───────────────────────────────────────
+OPEN_POST = dict(
+	id=12, channel_id=900, match_id=77, message_id=None,
+	team0_name="Alpha", team1_name="Bravo",
+	opened_at=1_000, freezes_at=9_999_999_999, status="open")
+
+EXPLODE = object()              # "this collaborator must not be reached"
+
+
+def post(**overrides):
+	p = dict(OPEN_POST)
+	p.update(overrides)
+	return p
+
+
+def wire(monkeypatch, *, the_post=None, players=(), community_id=5,
+		 place_bet=("ok", 440), seeded=False, bets=(), get_post_raises=None,
+		 bets_raise=None, bank=None):
+	"""Stand the handler's collaborators up. Returns the recording log.
+
+	`bank=EXPLODE` makes both gold entry points raise: a guard that is supposed
+	to reject a press before any money moves has to prove it never reached the
+	bank, and an AssertionError from there surfaces as BOTH a logged error and
+	the wrong message to the user, so no guard test can pass through it.
+	"""
+	log = RecordingLog()
+	monkeypatch.setattr(interactions, "log", log)
+	the_post = post() if the_post is None else the_post
+
+	async def _get_post(_post_id):
+		if get_post_raises is not None:
+			raise get_post_raises
+		return the_post
+
+	async def _bets_for(_post_id):
+		if bets_raise is not None:
+			raise bets_raise
+		return list(bets)
+
+	monkeypatch.setattr(interactions, "store", types.SimpleNamespace(
+		get_post=_get_post, bets_for=_bets_for))
+
+	async def _ensure_seeded(_community_id, _user_id, _now):
+		if bank is EXPLODE:
+			raise AssertionError("ensure_seeded reached on a press that must be refused")
+		return seeded
+
+	async def _place_bet(_community_id, _user_id, _post_id, _side, _stake, _nick, _now):
+		if bank is EXPLODE:
+			raise AssertionError("place_bet reached on a press that must be refused")
+		if isinstance(place_bet, Exception):
+			raise place_bet
+		return place_bet
+
+	monkeypatch.setattr(interactions, "gold", types.SimpleNamespace(
+		ensure_seeded=_ensure_seeded, place_bet=_place_bet))
+
+	async def _community_for_channel(_channel_id):
+		return community_id
+
+	# `from bot import community` resolves the package attribute before it tries
+	# to import the submodule, so setting it here keeps the real community
+	# module (and its DB access) out of the way.
+	monkeypatch.setattr(sys.modules["bot"], "community",
+						types.SimpleNamespace(community_for_channel=_community_for_channel),
+						raising=False)
+	# What flow._player_ids actually walks. Real function, real shape.
+	monkeypatch.setattr(sys.modules["bot"], "active_matches", [
+		types.SimpleNamespace(
+			id=the_post["match_id"],
+			players=[types.SimpleNamespace(id=uid) for uid in players])],
+		raising=False)
+	return log
+
+
+def run(interaction):
+	asyncio.run(interactions.on_bet_interaction(interaction))
+	return interaction
+
+
+# ── foreign interactions fall straight through ───────────────────────────
+class TestRouting:
+	def test_a_non_component_interaction_is_ignored(self, monkeypatch):
+		wire(monkeypatch, bank=EXPLODE)
+		i = run(FakeInteraction(itype=2))       # application command
+		assert i.replies == []
+
+	def test_a_foreign_custom_id_is_ignored(self, monkeypatch):
+		""" The quiz router and the insights router run off the same event. A bet
+		handler that answered their clicks would double-respond. """
+		wire(monkeypatch, bank=EXPLODE)
+		assert run(FakeInteraction(custom_id="quiz:88:reveal")).replies == []
+
+	def test_a_forged_stake_never_reaches_the_bank(self, monkeypatch):
+		""" custom_ids come from the client. 250 is not a tier, so the route does
+		not parse and the press is not even acknowledged. """
+		log = wire(monkeypatch, bank=EXPLODE)
+		assert run(FakeInteraction(custom_id="bet:12:0:250")).replies == []
+		assert log.errors == []
+
+
+# ── the closed book ──────────────────────────────────────────────────────
+class TestBookIsClosed:
+	CLOSED = "Betting on this match is closed."
+
+	def test_a_frozen_post_is_refused(self, monkeypatch):
+		log = wire(monkeypatch, the_post=post(status="frozen"), bank=EXPLODE)
+		i = run(FakeInteraction())
+		assert i.reply == self.CLOSED
+		assert i.all_ephemeral
+		assert log.errors == []
+
+	def test_a_post_past_its_freeze_time_is_refused(self, monkeypatch):
+		""" status is still 'open' here — the freeze sweep runs every 15s, so a
+		press in that window has to be caught by the clock, not the status. """
+		log = wire(monkeypatch, the_post=post(freezes_at=1_000), bank=EXPLODE)
+		assert run(FakeInteraction()).reply == self.CLOSED
+		assert log.errors == []
+
+	def test_a_post_that_no_longer_exists_is_refused(self, monkeypatch):
+		log = wire(monkeypatch, the_post=None, bank=EXPLODE)
+		monkeypatch.setattr(interactions, "store", types.SimpleNamespace(
+			get_post=_none, bets_for=_none))
+		assert run(FakeInteraction()).reply == self.CLOSED
+		assert log.errors == []
+
+
+async def _none(*_a, **_k):
+	return None
+
+
+# ── spectators only ──────────────────────────────────────────────────────
+class TestSpectatorsOnly:
+	""" Binding rule from the design: "A press by anyone on either team roster is
+	rejected". Driven through the real flow._player_ids. """
+
+	REFUSED = "Players can't bet on their own match."
+
+	def test_a_match_participant_is_refused_and_no_gold_moves(self, monkeypatch):
+		log = wire(monkeypatch, players=(7, 8, 9), bank=EXPLODE)
+		i = run(FakeInteraction(user_id=7))
+		assert i.reply == self.REFUSED
+		assert i.all_ephemeral
+		assert log.errors == [], "the refusal must be a decision, not a crash"
+
+	def test_a_participant_is_refused_on_the_other_side_too(self, monkeypatch):
+		""" Either side: a player cannot bet against themselves either. """
+		wire(monkeypatch, players=(7, 8), bank=EXPLODE)
+		assert run(FakeInteraction(custom_id="bet:12:1:100", user_id=8)).reply == self.REFUSED
+
+	def test_a_spectator_gets_through(self, monkeypatch):
+		""" The other half of the rule — without this the guard could reject
+		everyone and still look correct. """
+		wire(monkeypatch, players=(1, 2), bets=[dict(user_id=7, nick="Zed", side=0, stake=50)])
+		assert self.REFUSED not in run(FakeInteraction(user_id=7)).reply
+
+
+# ── the community gate ───────────────────────────────────────────────────
+def test_a_channel_with_no_community_has_no_gold(monkeypatch):
+	log = wire(monkeypatch, community_id=None, bank=EXPLODE)
+	i = run(FakeInteraction())
+	assert i.reply == "This channel keeps no stats — there is no gold here."
+	assert log.errors == []
+
+
+# ── what the bank answers ────────────────────────────────────────────────
+class TestBankRejections:
+	def test_insufficient_gold_reports_the_balance_and_stops(self, monkeypatch):
+		""" `bets_raise` proves the stop: a handler that carried on to build a
+		confirmation would hit it, and both assertions below would fail. """
+		log = wire(monkeypatch, place_bet=("insufficient", 30),
+				   bets_raise=AssertionError("kept processing after a refused bet"))
+		i = run(FakeInteraction())
+		assert "Not enough gold" in i.reply and "**30**" in i.reply
+		assert "Playing matches tops you back up." in i.reply
+		assert i.all_ephemeral
+		assert log.errors == []
+
+	def test_the_other_side_press_names_the_side_already_locked(self, monkeypatch):
+		""" place_bet answers ('side_locked', <locked side index>), and the
+		message has to name the team the user is ON, not the one they pressed.
+		The press here is side 1 (Bravo) while the lock is side 0 (Alpha). """
+		log = wire(monkeypatch, place_bet=("side_locked", 0),
+				   bets_raise=AssertionError("kept processing after a refused bet"))
+		i = run(FakeInteraction(custom_id="bet:12:1:50"))
+		assert "You're on **Alpha** this match" in i.reply
+		assert "Bravo" not in i.reply
+		assert log.errors == []
+
+	def test_a_lock_on_the_second_team_names_that_one(self, monkeypatch):
+		wire(monkeypatch, place_bet=("side_locked", 1),
+			 bets_raise=AssertionError("kept processing after a refused bet"))
+		assert "You're on **Bravo** this match" in run(FakeInteraction()).reply
+
+
+# ── the happy path ───────────────────────────────────────────────────────
+class TestConfirmation:
+	def test_a_placed_bet_confirms_side_stake_pools_and_balance(self, monkeypatch):
+		log = wire(monkeypatch, place_bet=("ok", 440), bets=[
+			dict(user_id=7, nick="Zed", side=0, stake=50),
+			dict(user_id=8, nick="Ada", side=1, stake=100)])
+		i = run(FakeInteraction(custom_id="bet:12:0:50", user_id=7))
+		assert "Bet **50**" in i.reply
+		assert "on **Alpha**" in i.reply
+		assert "Pools: 50 vs 100" in i.reply
+		assert "Your balance: **440**" in i.reply
+		assert i.all_ephemeral, "a bet confirmation is private"
+		assert log.errors == []
+
+	def test_an_added_stake_shows_the_running_total(self, monkeypatch):
+		""" Presses are additive: this one staked 50 on top of an earlier 10. """
+		wire(monkeypatch, place_bet=("ok", 380), bets=[
+			dict(user_id=7, nick="Zed", side=0, stake=60)])
+		assert "(your total: 60)" in run(FakeInteraction(custom_id="bet:12:0:50")).reply
+
+	def test_a_first_time_bettor_is_welcomed_before_the_confirmation(self, monkeypatch):
+		wire(monkeypatch, seeded=True, place_bet=("ok", 450), bets=[
+			dict(user_id=7, nick="Zed", side=0, stake=50)])
+		lines = run(FakeInteraction()).reply.split("\n")
+		assert lines[0].startswith("Welcome to the betting floor")
+		assert "500" in lines[0]
+		assert "Bet **50**" in lines[1]
+
+	def test_a_returning_bettor_is_not_welcomed_again(self, monkeypatch):
+		wire(monkeypatch, seeded=False, place_bet=("ok", 450), bets=[
+			dict(user_id=7, nick="Zed", side=0, stake=50)])
+		assert "Welcome to the betting floor" not in run(FakeInteraction()).reply
+
+
+# ── the point of no return ───────────────────────────────────────────────
+class TestFailureAfterTheCharge:
+	""" gold.place_bet commits the deduction, the bet row and the ledger row
+	together, so once it answers 'ok' the money HAS moved. Everything after it —
+	re-reading the pools, rendering the confirmation, the Discord round-trip —
+	can still fail, and the outer except is the only thing the user hears from.
+
+	It used to say "nothing was charged if you didn't get a confirmation. Try
+	again." on both sides of that commit. On this side the sentence is false and
+	the instruction bills the user twice. """
+
+	def test_a_failure_before_the_charge_still_reassures(self, monkeypatch):
+		""" The message that was always right, on the path where it is right. """
+		log = wire(monkeypatch, get_post_raises=RuntimeError("db blip"), bank=EXPLODE)
+		i = run(FakeInteraction())
+		assert "nothing was charged" in i.reply
+		assert "Try again." in i.reply
+		assert i.all_ephemeral
+		assert len(log.errors) == 1
+
+	def test_a_failure_after_the_charge_says_the_bet_landed(self, monkeypatch):
+		log = wire(monkeypatch, place_bet=("ok", 440),
+				   bets_raise=RuntimeError("db blip reading the pools back"))
+		i = run(FakeInteraction())
+		assert "Your bet went through" in i.reply
+		assert "the gold is staked" in i.reply
+		assert i.all_ephemeral
+		assert len(log.errors) == 1, "the underlying failure is still reported to the log"
+
+	def test_a_failure_after_the_charge_never_invites_a_retry(self, monkeypatch):
+		""" THE REGRESSION. A user who follows "try again" after a committed bet
+		is charged a second time — no refund path, no cancel, tote rules. """
+		wire(monkeypatch, place_bet=("ok", 440),
+			 bets_raise=RuntimeError("db blip reading the pools back"))
+		reply = run(FakeInteraction()).reply.lower()
+		assert "nothing was charged" not in reply
+		assert "try again" not in reply
+		assert "don't press again" in reply
+
+	def test_the_two_notices_disagree_about_the_only_thing_that_matters(self):
+		""" Pins the pair rather than one string: whatever the copy becomes, the
+		before-notice may promise no charge and the after-notice may not. """
+		assert "nothing was charged" in interactions.BET_FAILED_NOTICE
+		assert "nothing was charged" not in interactions.BET_LANDED_NOTICE
+		assert "Try again" in interactions.BET_FAILED_NOTICE
+		assert "try again" not in interactions.BET_LANDED_NOTICE.lower()
+
+	def test_a_rejected_bet_is_not_treated_as_charged(self, monkeypatch):
+		""" The flag must follow the transaction, not the attempt. place_bet
+		rolls the deduction back on 'insufficient', so a later failure on that
+		path is back to "nothing was charged". """
+		wire(monkeypatch, place_bet=("insufficient", 30))
+		i = FakeInteraction()
+		i.response.send_fails = True            # the refusal itself cannot be delivered
+		run(i)
+		i.response.send_fails = False
+		assert i.replies == [], "nothing got through, and nothing was retried into a charge"
+
+	def test_the_handler_never_raises_even_when_it_cannot_speak(self, monkeypatch):
+		""" Self-isolating: this runs inside bot/events.py's on_interaction, ahead
+		of nothing but after every other router — an exception escaping here is a
+		traceback in the event loop for a button press. """
+		log = wire(monkeypatch, place_bet=("ok", 440),
+				   bets_raise=RuntimeError("db blip"))
+		i = FakeInteraction()
+		i.response.send_fails = True
+		run(i)                                   # must not raise
+		assert i.replies == []
+		assert len(log.errors) == 1

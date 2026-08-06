@@ -321,12 +321,50 @@ class FakeEmbed:
 		return self
 
 
+class _InteractionType:
+	""" The component-interaction discriminator, and the ONE piece of nextcord a
+	button router needs at runtime.
+
+	`bot/predictions/interactions.py` (and `bot/quiz/interactions.py`, and
+	`bot/classifications/interactions.py`) all open with
+
+	    if interaction.type != nextcord.InteractionType.component: return
+
+	which is the first line of the guard chain in front of the gold. Without
+	these five names that line is an AttributeError, the whole handler is
+	untestable, and the money entry point ships with no test at all — which is
+	exactly what happened.
+
+	The values are Discord's own wire numbers, not invented ones: a fake
+	interaction carrying `type = 3` is carrying what the gateway sends. """
+
+	ping = 1
+	application_command = 2
+	component = 3
+	application_command_autocomplete = 4
+	modal_submit = 5
+
+
+class _UiStub:
+	""" `nextcord.ui` / `ButtonStyle`, reached only because
+	bot/predictions/embeds.py imports them at module level to build the six-button
+	view. Nothing under test CALLS bet_view() — a View is a live Discord object
+	and faking one would be inventing an API this repo does not own — so this
+	exists purely so `from nextcord import ui, ButtonStyle` resolves. """
+
+	def __getattr__(self, _name):
+		return _NextcordStub
+
+
 _fake_nextcord = types.ModuleType('nextcord')
 for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents'):
 	setattr(_fake_nextcord, _name, _NextcordStub)
 _fake_nextcord.Embed = FakeEmbed
 _fake_nextcord.Colour = lambda value=0: value
 _fake_nextcord.Color = _fake_nextcord.Colour
+_fake_nextcord.InteractionType = _InteractionType
+_fake_nextcord.ui = _UiStub()
+_fake_nextcord.ButtonStyle = _UiStub()
 _fake_nextcord_utils = types.ModuleType('nextcord.utils')
 _fake_nextcord_utils.get = lambda *_a, **_k: None
 _fake_nextcord_utils.find = lambda *_a, **_k: None

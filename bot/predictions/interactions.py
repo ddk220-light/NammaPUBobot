@@ -15,8 +15,27 @@ from core.console import log
 from . import embeds, flow, gold, store, view
 from .scoring import SEED_AMOUNT, parse_bet_custom_id, pools
 
+# The two things the last-resort handler can truthfully say, kept side by side
+# because the difference between them is the difference between one charge and
+# two. Neither invites a retry it cannot honour.
+BET_FAILED_NOTICE = ("Something went wrong placing that bet — nothing was charged if you "
+					 "didn't get a confirmation. Try again.")
+BET_LANDED_NOTICE = ("Your bet went through — the gold is staked and your side is locked "
+					 "in. Only the confirmation failed, so **don't press again** unless you "
+					 "mean to stake more.")
+
 
 async def on_bet_interaction(interaction):
+	# THE POINT-OF-NO-RETURN FLAG. gold.place_bet() commits the balance
+	# decrement, the bet row and the ledger row in ONE transaction, so the
+	# instant it answers 'ok' the money has moved and pressing the button again
+	# would stake it twice. Everything after that call — reading the pools,
+	# rendering the confirmation, the Discord round-trip itself — can still
+	# fail, and the outer except below is the only thing the user hears from.
+	# It therefore has to know which side of the commit it is on: before it,
+	# "nothing was charged, try again" is true and reassuring; after it, that
+	# same sentence is a false statement that instructs the user to double-pay.
+	charged = False
 	try:
 		if interaction.type != nextcord.InteractionType.component:
 			return
@@ -48,6 +67,11 @@ async def on_bet_interaction(interaction):
 			return await _eph(interaction,
 				f"You're on **{locked}** this match — bets add up, they don't switch sides.")
 
+		# Committed. (The two rejections above roll the whole transaction back,
+		# and ensure_seeded is a grant rather than a charge and is idempotent —
+		# a retry that stops short of here costs the user nothing.)
+		charged = True
+
 		bets = await store.bets_for(post_id)
 		pool0, pool1 = pools(bets)
 		mine = next((b for b in bets if b["user_id"] == interaction.user.id), None)
@@ -61,10 +85,13 @@ async def on_bet_interaction(interaction):
 	except Exception as e:
 		log.error(f"bet interaction error: {e}\n{traceback.format_exc()}")
 		try:
+			# Silence is right when we have already responded: the user is
+			# holding their confirmation and a second ephemeral would only
+			# muddy it. It is only the no-response-yet case that needs a word,
+			# and which word depends entirely on `charged`.
 			if not interaction.response.is_done():
 				await interaction.response.send_message(
-					"Something went wrong placing that bet — nothing was charged if you "
-					"didn't get a confirmation. Try again.", ephemeral=True)
+					BET_LANDED_NOTICE if charged else BET_FAILED_NOTICE, ephemeral=True)
 		except Exception:
 			pass
 
