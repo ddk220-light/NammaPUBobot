@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import bot.quiz.scoring as s
+import bot.quiz.scoring as scoring
 
 
 def test_parse_custom_id_reveal_and_answer():
@@ -83,3 +84,9 @@ def test_parse_custom_id_multiselect_route():
 	assert parse_custom_id("quiz:7:msel") == ("mselect", 7, None)
 	assert parse_custom_id("quiz:7:ans:2") == ("answer", 7, 2)
 	assert parse_custom_id("quiz:7:reveal") == ("reveal", 7, None)
+
+
+def test_is_multi_category_only_techgaps():
+	assert scoring.is_multi_category("techgaps") is True
+	for c in ("combat", "stats", "effects", "villagers", None, ""):
+		assert scoring.is_multi_category(c) is False

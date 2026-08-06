@@ -13,6 +13,8 @@ database.
 STAKES = (10, 50, 100)
 SEED_AMOUNT = 500
 MATCH_REWARD = 100
+QUIZ_CORRECT_REWARD = 50
+QUIZ_PLAYED_REWARD = 10
 REWARD_CEILING = 500
 
 
@@ -76,6 +78,14 @@ def reward_amount(balance):
 	"""Playing regenerates a depleted balance toward REWARD_CEILING and does
 	nothing at or above it — the faucet is a lifeline, not an income."""
 	return min(MATCH_REWARD, max(0, REWARD_CEILING - balance))
+
+
+def quiz_reward_amount(balance, correct):
+	"""The quiz faucet: 50 for a correct answer, 10 for a cast vote, and the
+	same ceiling as the match faucet — neither ever lifts a balance above
+	REWARD_CEILING. A lifeline, not an income."""
+	return min(QUIZ_CORRECT_REWARD if correct else QUIZ_PLAYED_REWARD,
+			max(0, REWARD_CEILING - balance))
 
 
 def multiplier(pool_side, pool_other):

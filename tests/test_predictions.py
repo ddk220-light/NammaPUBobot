@@ -121,6 +121,23 @@ class TestRewardAmount:
 	def test_nothing_above_the_ceiling(self):
 		assert scoring.reward_amount(620) == 0
 
+	def test_quiz_reward_amount_correct_pays_50(self):
+		assert scoring.quiz_reward_amount(0, True) == 50
+		assert scoring.quiz_reward_amount(449, True) == 50
+		assert scoring.quiz_reward_amount(450, True) == 50
+		assert scoring.quiz_reward_amount(451, True) == 49
+		assert scoring.quiz_reward_amount(499, True) == 1
+		assert scoring.quiz_reward_amount(500, True) == 0
+		assert scoring.quiz_reward_amount(700, True) == 0
+
+	def test_quiz_reward_amount_played_pays_10(self):
+		assert scoring.quiz_reward_amount(0, False) == 10
+		assert scoring.quiz_reward_amount(490, False) == 10
+		assert scoring.quiz_reward_amount(491, False) == 9
+		assert scoring.quiz_reward_amount(499, False) == 1
+		assert scoring.quiz_reward_amount(500, False) == 0
+		assert scoring.quiz_reward_amount(700, False) == 0
+
 
 class TestMultiplier:
 	def test_underdog_pays_more(self):

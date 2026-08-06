@@ -40,6 +40,13 @@ def grade_multi(chosen_indices, correct_indices):
 	return set(int(i) for i in chosen_indices) == set(int(i) for i in correct_indices)
 
 
+def is_multi_category(category):
+	"""Only game 'techgaps' questions are multi-answer; every other category —
+	including all player-quiz categories — is single-answer. The ONE place
+	this rule lives; keep in sync if a multi-answer category is ever added."""
+	return category == "techgaps"
+
+
 def iso_week_key(ts):
 	"""ISO (year, week) bucket for a unix timestamp, UTC."""
 	d = datetime.datetime.fromtimestamp(int(ts), datetime.timezone.utc)
