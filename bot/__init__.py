@@ -3,7 +3,7 @@
 import time
 
 from .main import update_qc_lang, update_rating_system, save_state, save_state_db
-from .main import load_state, enable_channel, disable_channel
+from .main import load_state
 from .main import remove_players, expire_auto_ready
 
 from .queue_channel import QueueChannel

@@ -1,7 +1,4 @@
-__all__ = [
-	'create_pickup', 'delete_queue', 'show_queues', 'set_qc', 'set_queue', 'cfg_qc', 'cfg_queue',
-	'set_qc_cfg', 'set_queue_cfg'
-]
+__all__ = ['create_pickup', 'delete_queue', 'show_queues', 'set_qc', 'set_queue', 'cfg_qc', 'cfg_queue']
 
 import json
 from core.utils import find, get, split_big_text
@@ -94,27 +91,3 @@ async def cfg_queue(ctx, queue: str):
 	for piece in gen:
 		await ctx.reply_dm(piece)
 
-
-async def set_qc_cfg(ctx, cfg):
-	""" Update QueueChannel configuration via JSON string """
-	ctx.check_perms(ctx.Perms.ADMIN)
-	try:
-		await ctx.qc.cfg.update(json.loads(cfg))
-	except Exception as e:
-		raise bot.Exc.ValueError(str(e))
-	else:
-		await ctx.success(f"Channel configuration updated.")  # noqa: F541
-
-
-async def set_queue_cfg(ctx, queue: str, cfg: str):
-	""" Update queue configuration via JSON string """
-	ctx.check_perms(ctx.Perms.ADMIN)
-	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-		raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
-
-	try:
-		await q.cfg.update(json.loads(cfg))
-	except Exception as e:
-		raise bot.Exc.ValueError(str(e))
-	else:
-		await ctx.success(f"__{q.name}__ queue configuration updated.")

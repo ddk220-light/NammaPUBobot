@@ -157,11 +157,6 @@ async def on_message(message):
 	if message.channel.type != ChannelType.text:
 		return
 
-	if message.content == '!enable_pubobot':
-		await bot.enable_channel(message)
-	elif message.content == '!disable_pubobot':
-		await bot.disable_channel(message)
-
 	# `++` / `--` shorthand: add/remove the author to/from the channel queues.
 	# Restored after Layer 5 removed the text-command system — these two are the
 	# only shorthands kept. They reuse the existing add/remove command handlers

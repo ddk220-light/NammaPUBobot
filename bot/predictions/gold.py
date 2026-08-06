@@ -366,6 +366,22 @@ async def top_balances(community_id, limit=200):
 		[community_id]) or []
 
 
+async def balances_by_user(community_id):
+	"""{user_id: balance} for the whole community, unbounded.
+
+	NOT top_balances(): that one is LIMIT 200 ordered by balance, so using it as
+	a lookup silently reports "no balance" for anyone poorer than the 200th
+	holder rather than their real number. A board that annotates rows by user
+	needs every row it might annotate, not a leaderboard's worth.
+	"""
+	return {
+		r["user_id"]: int(r["balance"])
+		for r in await db.fetchall(
+			"SELECT user_id, balance FROM gold_balances WHERE community_id=%s",
+			[community_id]) or []
+	}
+
+
 async def recent_entries(community_id, user_id, limit=8):
 	return await db.fetchall(
 		"SELECT entry_type, amount, match_id, post_id, created_at FROM gold_ledger "

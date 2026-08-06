@@ -1,20 +1,17 @@
 from typing import Callable  # noqa: UP035
 from asyncio import wait_for, shield
 from asyncio.exceptions import TimeoutError as aTimeoutError
-from nextcord import Interaction, SlashOption, Member, TextChannel, Embed, Colour
-import re
+from nextcord import Interaction, SlashOption, Member, TextChannel
 import traceback
 import time
 
 from core.client import dc
-from core.database import db
 from core.utils import error_embed, ok_embed, parse_duration, get_nick
 from core.console import log
 from core.config import cfg
 
 import bot
 from bot.community import enroll_channel
-from bot.redo_teams import parse_embed_match, parse_text_match, captain_matchmaking, Player, embed_contains_match_id, get_all_embed_text
 
 
 from . import SlashContext, autocomplete, groups
@@ -300,6 +297,15 @@ _put.on_autocomplete('team_name')(autocomplete.teams_by_match_id)
 _put.on_autocomplete('match_id')(autocomplete.match_ids)
 
 
+# Undoing a finished match is a match operation, not a stats one — it lived at
+# /stats undo_match until the /stats group was retired.
+@groups.admin_match.subcommand(name='undo', description='Undo a finished match, reverting its rating changes.')
+async def _undo_match(
+		interaction: Interaction,
+		match_id: int
+): await run_slash(bot.commands.undo_match, interaction=interaction, match_id=match_id)
+
+
 # noadds -> ...
 
 @groups.admin_noadds.subcommand(name='list', description='Show noadds list.')
@@ -332,24 +338,7 @@ async def _forgive(
 
 # phrases -> ...
 
-@groups.admin_phrases.subcommand(name='add', description='Add a player phrase.')
-async def _phrases_add(
-		interaction: Interaction,
-		player: Member = SlashOption(verify=False),
-		phrase: str = SlashOption()
-): await run_slash(bot.commands.phrases_add, interaction=interaction, player=player, phrase=phrase)
-
-
-@groups.admin_phrases.subcommand(name='clear', description='Clear player phrases.')
-async def _phrases_clear(
-		interaction: Interaction,
-		player: Member = SlashOption(verify=False),
-): await run_slash(bot.commands.phrases_clear, interaction=interaction, player=player)
-
-
-# identity -> ...
-
-@groups.admin_identity.subcommand(
+@groups.admin_profile_identity.subcommand(
 	name='link', description='Link a Discord member to an AoE2 profile id, replacing any other link.'
 )
 async def _identity_link(
@@ -366,7 +355,7 @@ async def _identity_link(
 )
 
 
-@groups.admin_identity.subcommand(
+@groups.admin_profile_identity.subcommand(
 	name='unlink', description='Remove a member\'s link to an AoE2 profile id, with no replacement.'
 )
 async def _identity_unlink(
@@ -376,24 +365,7 @@ async def _identity_unlink(
 ): await run_slash(bot.commands.identity_unlink, interaction=interaction, member=member, profile_id=profile_id)
 
 
-@groups.admin_identity.subcommand(
-	name='show', description="Show a member's known AoE2 profiles, names and confidence."
-)
-async def _identity_show(
-		interaction: Interaction,
-		member: Member = SlashOption(verify=False)
-): await run_slash(bot.commands.identity_show, interaction=interaction, member=member)
-
-
-@groups.admin_identity.subcommand(
-	name='status', description='How many recent players are linked to an AoE2 profile.'
-)
-async def _identity_status(
-		interaction: Interaction,
-): await run_slash(bot.commands.identity_status, interaction=interaction)
-
-
-@groups.admin_identity.subcommand(
+@groups.admin_profile_identity.subcommand(
 	name='conflicts', description='List open profile_id/Discord-user disagreements awaiting resolution.'
 )
 async def _identity_conflicts(
@@ -412,15 +384,6 @@ async def _rating_seed(
 ): await run_slash(bot.commands.rating_seed, interaction=interaction, player=player, rating=rating, deviation=deviation)
 
 
-@groups.admin_rating.subcommand(name='penality', description='Subtract points from player rating.')
-async def _rating_penality(
-		interaction: Interaction,
-		player: str = SlashOption(verify=False),
-		points: int = SlashOption(),
-		reason: str = SlashOption(required=False)
-): await run_slash(bot.commands.rating_penality, interaction=interaction, player=player, penality=points, reason=reason)
-
-
 @groups.admin_rating.subcommand(name='hide_player', description='Hide player from the leaderboard.')
 async def _rating_hide(
 		interaction: Interaction,
@@ -428,61 +391,10 @@ async def _rating_hide(
 ): await run_slash(bot.commands.rating_hide, interaction=interaction, player=player, hide=True)
 
 
-@groups.admin_rating.subcommand(name='reset', description='Reset rating data on the channel.')
-async def _rating_reset(
-		interaction: Interaction
-): await run_slash(bot.commands.rating_reset, interaction=interaction)
-
-
-@groups.admin_rating.subcommand(name='snap', description='Snap players ratings to rank values.')
-async def _rating_snap(
-		interaction: Interaction
-): await run_slash(bot.commands.rating_snap, interaction=interaction)
-
-
-# stats -> ...
-
-@groups.admin_stats.subcommand(name='show', description='Show channel or player stats.')
-async def _stats(
-		interaction: Interaction,
-		player: Member = SlashOption(required=False, verify=False),
-): await run_slash(bot.commands.stats, interaction=interaction, player=player)
-
-
-@groups.admin_stats.subcommand(name='reset', description='Reset all stats data on the channel.')
-async def _stats_reset(
-		interaction: Interaction
-): await run_slash(bot.commands.stats_reset, interaction=interaction)
-
-
-@groups.admin_stats.subcommand(name='reset_player', description='Reset player stats.')
-async def _stats_reset_player(
-		interaction: Interaction,
-		player: str = SlashOption(verify=False)
-): await run_slash(bot.commands.stats_reset_player, interaction=interaction, player=player)
-
-
-@groups.admin_stats.subcommand(name='stats_replace_player', description='Replace player1 with player2.')
-async def _stats_replace_player(
-		interaction: Interaction,
-		player1: str = SlashOption(verify=False),
-		player2: str = SlashOption(verify=False)
-): await run_slash(bot.commands.stats_replace_player, interaction=interaction, player1=player1, player2=player2)
-
-
-@groups.admin_stats.subcommand(name='undo_match', description='Undo a finished match.')
-async def _stats_undo_match(
-		interaction: Interaction,
-		match_id: int
-): await run_slash(bot.commands.undo_match, interaction=interaction, match_id=match_id)
-
-
-# root commands
-
 @dc.slash_command(
-	name='link', description='Link your Discord account to your AoE2 profile.', **guild_kwargs
+	name='profile_link', description='Link your Discord account to your AoE2 profile.', **guild_kwargs
 )
-async def _link(
+async def _profile_link(
 		interaction: Interaction,
 		profile_id: int = SlashOption(
 			description='Your AoE2 profile id. Leave empty and I will show you how to find it.',
@@ -512,87 +424,10 @@ async def _remove(
 _remove.on_autocomplete("queues")(autocomplete.queues)
 
 
-@dc.slash_command(name='who', description='List added players.', **guild_kwargs)
-async def _who(
-	interaction: Interaction,
-	queues: str = SlashOption(
-		name="queues",
-		description="Specify queues to list.",
-		required=False)
-): await run_slash(bot.commands.who, interaction=interaction, queues=queues)
-_who.on_autocomplete("queues")(autocomplete.queues)
-
-
-@dc.slash_command(name='promote', description='Promote a queue.', **guild_kwargs)
-async def promote(
-		interaction: Interaction,
-		queue: str = SlashOption(required=False)
-): await run_slash(bot.commands.promote, interaction=interaction, queue=queue)
-promote.on_autocomplete("queue")(autocomplete.queues)
-
-
-@dc.slash_command(name='subscribe', description='Subscribe to a queue promotion role.', **guild_kwargs)
-async def subscribe(
-		interaction: Interaction,
-		queues: str
-): await run_slash(bot.commands.subscribe, interaction=interaction, queues=queues, unsub=False)
-subscribe.on_autocomplete("queues")(autocomplete.queues)
-
-
-@dc.slash_command(name='unsubscribe', description='Unsubscribe from a queue promotion role.', **guild_kwargs)
-async def unsubscribe(
-		interaction: Interaction,
-		queues: str
-): await run_slash(bot.commands.subscribe, interaction=interaction, queues=queues, unsub=True)
-unsubscribe.on_autocomplete("queues")(autocomplete.queues)
-
-
-@dc.slash_command(name='server', description='Show queue server.', **guild_kwargs)
-async def server(
-		interaction: Interaction,
-		queue: str
-): await run_slash(bot.commands.server, interaction=interaction, queue=queue)
-server.on_autocomplete("queue")(autocomplete.queues)
-
-
-@dc.slash_command(name='maps', description='List a queue maps.', **guild_kwargs)
-async def maps(
-		interaction: Interaction,
-		queue: str
-): await run_slash(bot.commands.maps, interaction=interaction, queue=queue, one=False)
-maps.on_autocomplete("queue")(autocomplete.queues)
-
-
-@dc.slash_command(name='map', description='Print a random map.', **guild_kwargs)
-async def _map(
-		interaction: Interaction,
-		queue: str
-): await run_slash(bot.commands.maps, interaction=interaction, queue=queue, one=True)
-_map.on_autocomplete("queue")(autocomplete.queues)
-
-
-@dc.slash_command(name='matches', description='Show active matches on the channel.', **guild_kwargs)
-async def _matches(
-		interaction: Interaction
-): await run_slash(bot.commands.show_matches, interaction=interaction)
-
-
 @dc.slash_command(name='teams', description='Show teams on your current match.', **guild_kwargs)
 async def _teams(
 		interaction: Interaction
 ): await run_slash(bot.commands.show_teams, interaction=interaction)
-
-
-@dc.slash_command(name='ready', description='Confirm participation during the check-in stage.', **guild_kwargs)
-async def _ready(
-		interaction: Interaction
-): await run_slash(bot.commands.set_ready, interaction=interaction, is_ready=True)
-
-
-@dc.slash_command(name='notready', description='Abort participation during the check-in stage.', **guild_kwargs)
-async def _not_ready(
-		interaction: Interaction
-): await run_slash(bot.commands.set_ready, interaction=interaction, is_ready=False)
 
 
 @dc.slash_command(name='subme', description='Request a substitute', **guild_kwargs)
@@ -626,47 +461,11 @@ async def _lobby2(
 ): await run_slash(bot.commands.lobby2, interaction=interaction, gameid=gameid)
 
 
-@dc.slash_command(
-	name='insights',
-	description='Leaderboard + winners-vs-losers facts for a play-style (e.g. archer_rush).',
-	**guild_kwargs
-)
-async def _insights(
-		interaction: Interaction,
-		use_case: str = SlashOption(name="use_case", description="Which play-style", required=False, default="archer_rush", choices=["archer_rush", "scout_rush", "maa_rush", "knight_rush", "crossbow_rush", "cav_archer_rush", "camel_rush", "ram_push", "forward_castle", "safe_castle", "late_knight", "late_crossbow", "late_cav_archer", "late_camel", "late_unique", "late_ram", "boom_to_imp"]),
-		days: int = SlashOption(name="days", description="Lookback window in days (default 385)", required=False, default=385),
-		aggregate_stats: bool = SlashOption(name="aggregate_stats", description="Also show winners-vs-losers averages (default off)", required=False, default=False),
-		player: Member = SlashOption(name="player", description="Filter to one player", required=False, default=None, verify=False),
-): await run_slash(bot.commands.insights, interaction=interaction, use_case=use_case, days=days, aggregate_stats=aggregate_stats, player=player)
-
-
 @dc.slash_command(name='subfor', description='Become a substitute', **guild_kwargs)
 async def _sub_for(
 		interaction: Interaction,
 		player: Member = SlashOption(name="player", description="The player to substitute for.", verify=False)
 ): await run_slash(bot.commands.sub_for, interaction=interaction, player=player)
-
-
-@dc.slash_command(name='capme', description="Leave captain's position.")
-async def _cap_me(
-		interaction: Interaction,
-): await run_slash(bot.commands.cap_me, interaction=interaction)
-
-
-@dc.slash_command(name='capfor', description='Become a captain', **guild_kwargs)
-async def _cap_for(
-		interaction: Interaction,
-		team: str
-): await run_slash(bot.commands.cap_for, interaction=interaction, team_name=team)
-_cap_for.on_autocomplete('team')(autocomplete.teams_by_author)
-
-
-# TODO: make possible to pick multiple players within singe command
-@dc.slash_command(name='pick', description='Pick a player.', **guild_kwargs)
-async def _pick(
-		interaction: Interaction,
-		player: Member = SlashOption(name="player", verify=False),
-): await run_slash(bot.commands.pick, interaction=interaction, players=[player])
 
 
 @dc.slash_command(name='report', description='Report match result.', **guild_kwargs)
@@ -676,35 +475,11 @@ async def _report(
 ): await run_slash(bot.commands.report, interaction=interaction, result=result)
 
 
-@dc.slash_command(name='lastgame', description='Show last game details.', **guild_kwargs)
-async def _last_game(
-		interaction: Interaction,
-		queue: str = SlashOption(required=False),
-		player: Member = SlashOption(required=False, verify=False),
-		match_id: int = SlashOption(required=False)
-): await run_slash(bot.commands.last_game, interaction=interaction, queue=queue, player=player, match_id=match_id)
-_last_game.on_autocomplete("queue")(autocomplete.queues)
-
-
-@dc.slash_command(name='top', description='Show top players on the channel.', **guild_kwargs)
-async def _top(
-		interaction: Interaction,
-		period: str = SlashOption(required=False, choices=['day', 'week', 'month', 'year']),
-): await run_slash(bot.commands.top, interaction=interaction, period=period)
-
-
 @dc.slash_command(name='rank', description='Show rating profile.', **guild_kwargs)
 async def _rank(
 		interaction: Interaction,
 		player: Member = SlashOption(required=False, verify=False),
 ): await run_slash(bot.commands.rank, interaction=interaction, player=player)
-
-
-@dc.slash_command(name='rank_detailed', description='Show the full rating profile.', **guild_kwargs)
-async def _rank_detailed(
-		interaction: Interaction,
-		player: Member = SlashOption(required=False, verify=False),
-): await run_slash(bot.commands.rank_detailed, interaction=interaction, player=player)
 
 
 @dc.slash_command(name='leaderboard', description='Show rating leaderboard.', **guild_kwargs)
@@ -714,114 +489,11 @@ async def _leaderboard(
 ): await run_slash(bot.commands.leaderboard, interaction=interaction, page=page)
 
 
-@dc.slash_command(name='eapm', description='Show the eAPM ranking for the last 60 days.', **guild_kwargs)
-async def _eapm(
-		interaction: Interaction,
-		metric: str = SlashOption(
-			name='metric', description='Median of per-game eAPM, or of per-game peak eAPM.',
-			required=False, default='average', choices=['average', 'peak']),
-		page: int = SlashOption(required=False),
-): await run_slash(bot.commands.eapm, interaction=interaction, metric=metric, page=page)
-
-
-@dc.slash_command(
-	name='eapm_explained',
-	description='Explain how eAPM is measured — which actions count and which do not.',
-	**guild_kwargs)
-async def _eapm_explained(
-		interaction: Interaction,
-): await run_slash(bot.commands.eapm_explained, interaction=interaction)
-
-
-# douche -> ...
-
-@groups.douche.subcommand(name='add', description='Record that a player douched another (moderator).')
-async def _douche_add(
-		interaction: Interaction,
-		player: Member = SlashOption(verify=False),
-		target: Member = SlashOption(verify=False)
-): await run_slash(bot.commands.douche_add, interaction=interaction, player=player, target=target)
-
-
-@groups.douche.subcommand(name='summary', description="Show a player's douche record.")
-async def _douche_summary(
-		interaction: Interaction,
-		player: Member = SlashOption(required=False, verify=False)
-): await run_slash(bot.commands.douche_summary, interaction=interaction, player=player)
-
-
-@groups.douche.subcommand(name='leaderboard', description='Show the douche leaderboard.')
-async def _douche_leaderboard(
-		interaction: Interaction
-): await run_slash(bot.commands.douche_leaderboard, interaction=interaction)
-
-
-@dc.slash_command(name='mapstats', description='Show channel map popularity as a chart.', **guild_kwargs)
-async def _mapstats(
-		interaction: Interaction,
-		period: str = SlashOption(required=False, choices=['1M', '6M', '1Y'])
-): await run_slash(bot.commands.mapstats, interaction=interaction, period=period)
-
-
-@dc.slash_command(name='activity', description='Show an activity heatmap (weekday × hour, IST).', **guild_kwargs)
-async def _activity(
-		interaction: Interaction,
-		player: Member = SlashOption(required=False, verify=False)
-): await run_slash(bot.commands.activity, interaction=interaction, player=player)
-
-
 @groups.admin_rating.subcommand(name='unhide_player', description='Unhide player from the leaderboard.')
 async def _rating_unhide(
 		interaction: Interaction,
 		player: str = SlashOption(verify=False)
 ): await run_slash(bot.commands.rating_hide, interaction=interaction, player=player, hide=False)
-
-
-@dc.slash_command(name='auto_ready', description='Confirm next match check-in automatically.', **guild_kwargs)
-async def _auto_ready(
-		interaction: Interaction,
-		duration: str = SlashOption(required=False),
-):
-	async def _run(ctx, *args, _duration=None, **kwargs):
-		if _duration:
-			_duration = _parse_duration(ctx, _duration)
-		await bot.commands.auto_ready(ctx, *args, duration=_duration, **kwargs)
-
-	await run_slash(_run, interaction=interaction, _duration=duration)
-
-
-@dc.slash_command(name='expire', description='Set or show your current expire timer.', **guild_kwargs)
-async def _expire(
-		interaction: Interaction,
-		duration: str = SlashOption(required=False)
-):
-	async def _run(ctx, *args, _duration=None, **kwargs):
-		if _duration:
-			_duration = _parse_duration(ctx, _duration)
-		await bot.commands.expire(ctx, *args, duration=_duration, **kwargs)
-
-	await run_slash(_run, interaction=interaction, _duration=duration)
-
-
-@dc.slash_command(name='expire_default', description='Set or show your default expire timer.', **guild_kwargs)
-async def _default_expire(
-		interaction: Interaction,
-		duration: str = SlashOption(required=False),
-		afk: bool = SlashOption(required=False),
-		clear: bool = SlashOption(required=False)
-):
-	async def _run(ctx, *args, _duration=None, **kwargs):
-		if _duration:
-			_duration = _parse_duration(ctx, _duration)
-		await bot.commands.default_expire(ctx, *args, duration=_duration, **kwargs)
-
-	await run_slash(_run, interaction=interaction, _duration=duration, afk=afk, clear=clear)
-
-
-@dc.slash_command(name='allow_offline', description='Switch your offline status immunity.', **guild_kwargs)
-async def _allow_offline(
-		interaction: Interaction,
-): await run_slash(bot.commands.allow_offline, interaction=interaction)
 
 
 @groups.predictions.subcommand(name='leaderboard', description='Audience prediction standings.')
@@ -838,322 +510,14 @@ async def _predictions_me(
 ): await run_slash(bot.commands.predictions_me, interaction=interaction, player=player)
 
 
-@dc.slash_command(name='gold', description='Your gold balance and recent movements.', **guild_kwargs)
-async def _gold(
-		interaction: Interaction,
-): await run_slash(bot.commands.gold, interaction=interaction)
-
-
-@dc.slash_command(name='gold_top', description='The richest bettors in the community.', **guild_kwargs)
-async def _gold_top(
-		interaction: Interaction,
-		page: int = SlashOption(required=False, description="Page number.")
-): await run_slash(bot.commands.gold_top, interaction=interaction, page=page or 1)
-
-
-@dc.slash_command(name='changelog', description="What's new — the latest changes shipped to the bot.", **guild_kwargs)
-async def _changelog(
-		interaction: Interaction,
-		count: int = SlashOption(required=False, description="How many entries to show (default 5).")
-): await run_slash(bot.commands.changelog, interaction=interaction, count=count or 5)
-
-
-@dc.slash_command(name='cointoss', description='Toss a coin.', **guild_kwargs)
-async def _cointoss(
-		interaction: Interaction,
-		side: str = SlashOption(choices=['heads', 'tails'], required=False)
-): await run_slash(bot.commands.cointoss, interaction=interaction, side=side)
-
-
-@dc.slash_command(name='help', description='Show channel or queue help.', **guild_kwargs)
-async def _help(
-		interaction: Interaction,
-		queue: str = SlashOption(name="queue", required=False)
-): await run_slash(bot.commands.show_help, interaction=interaction, queue=queue)
-_help.on_autocomplete("queue")(autocomplete.queues)
-
-
-@dc.slash_command(name='commands', description='Show commands list.', **guild_kwargs)
-async def _commands(
-		interaction: Interaction,
-): await interaction.response.send_message(cfg.COMMANDS_URL, ephemeral=True)
-
-
-@dc.slash_command(name='nick', description='Change your nickname with the rating prefix.', **guild_kwargs)
-async def _nick(
-		interaction: Interaction,
-		nick: str
-): await run_slash(bot.commands.set_nick, interaction=interaction, nick=nick)
-
-
-@dc.slash_command(name='test_teams', description='Compare last match teams with captain-based matchmaking.', **guild_kwargs)
-async def _redo_teams(
-	interaction: Interaction,
-):
-	await interaction.response.defer()
-
-	if not bot.bot_ready:
-		await interaction.followup.send(embed=error_embed("Bot is still starting up."))
-		return
-
-	qc = bot.queue_channels.get(interaction.channel_id)
-	if qc is None:
-		await interaction.followup.send(embed=error_embed("Not in a queue channel."))
-		return
-
-	# Find the last played match from the database
-	lg = await db.select_one(
-		['match_id'], "matches", where=dict(channel_id=qc.id), order_by="match_id", limit=1
-	)
-	if not lg:
-		await interaction.followup.send(embed=error_embed("No matches found on this channel."))
-		return
-
-	match_id = lg['match_id']
-
-	# Search channel history for the match message
-	target_str = str(match_id)
-	found_msg = None
-	found_embed = None
-	parsed_teams = None
-
-	async for msg in interaction.channel.history(limit=5000):
-		# Check embeds (PUBobot sends embeds)
-		for emb in msg.embeds:
-			if embed_contains_match_id(emb, target_str):
-				parsed_teams = parse_embed_match(emb)
-				if not parsed_teams:
-					# Try parsing all embed text as plain text
-					parsed_teams = parse_text_match(get_all_embed_text(emb))
-				found_msg = msg
-				found_embed = emb
-				break
-		if found_msg:
-			break
-
-		# Check plain text content (case-insensitive)
-		content = msg.content or ''
-		if target_str in content and re.search(r'match\s*id', content, re.IGNORECASE):
-			parsed_teams = parse_text_match(content)
-			found_msg = msg
-			break
-
-	if not found_msg:
-		await interaction.followup.send(
-			embed=error_embed(f"Could not find a message with match ID {match_id} in the last 5000 messages.")
-		)
-		return
-
-	if not parsed_teams:
-		# Found the message but couldn't parse teams — show debug info
-		debug_parts = []
-		if found_embed:
-			if found_embed.title:
-				debug_parts.append(f"Title: {found_embed.title[:100]}")
-			for i, f in enumerate(found_embed.fields):
-				debug_parts.append(f"Field {i} name: {(f.name or '')[:80]}")
-				debug_parts.append(f"Field {i} value: {(f.value or '')[:80]}")
-			if found_embed.footer:
-				debug_parts.append(f"Footer: {(found_embed.footer.text or '')[:100]}")
-		else:
-			debug_parts.append(f"Content: {(found_msg.content or '')[:200]}")
-		debug_text = "\n".join(debug_parts) or "No parseable content"
-		await interaction.followup.send(
-			embed=error_embed(
-				f"Found the message but couldn't parse teams.\n```\n{debug_text}\n```",
-				title="Parse Error"
-			)
-		)
-		return
-
-	# Resolve player names and collect all players
-	guild = interaction.guild
-	all_players = []
-	name_map = {}
-
-	for team in parsed_teams:
-		for p in team['players']:
-			uid = p['user_id']
-			member = guild.get_member(uid)
-			if member is None:
-				try:
-					member = await guild.fetch_member(uid)
-				except Exception:
-					pass
-			name = get_nick(member) if member else f"User#{uid}"
-			name_map[uid] = name
-			all_players.append(Player(id=uid, name=name))
-
-	if len(all_players) < 4:
-		await interaction.followup.send(
-			embed=error_embed(f"Found only {len(all_players)} players. Need at least 4 for team comparison.")
-		)
-		return
-
-	# Get ratings from our system
-	rating_data = await qc.rating.get_players(p.id for p in all_players)
-	ratings = {p['user_id']: p['rating'] for p in rating_data}
-
-	# Run captain-based matchmaking
-	new_team_a, new_team_b, captains, method = captain_matchmaking(all_players, ratings)
-
-	# Build comparison embed
-	def format_old_team(team_data):
-		lines = []
-		for p in team_data['players']:
-			uid = p['user_id']
-			rank = p['rank']
-			name = name_map.get(uid, '?')
-			rating = ratings.get(uid, '?')
-			lines.append(f"`〈{rank}〉` {name} ({rating})")
-		total = sum(ratings.get(p['user_id'], 0) for p in team_data['players'])
-		avg = total // len(team_data['players']) if team_data['players'] else 0
-		return "\n".join(lines), total, avg
-
-	def format_new_team(team_players, cap_ids):
-		lines = []
-		for p in team_players:
-			r = ratings[p.id]
-			cap = " **[C]**" if p.id in cap_ids else ""
-			lines.append(f"{p.name} ({r}){cap}")
-		total = sum(ratings[p.id] for p in team_players)
-		avg = total // len(team_players) if team_players else 0
-		return "\n".join(lines), total, avg
-
-	captain_ids = {c.id for c in captains}
-
-	old_a_text, old_a_total, old_a_avg = format_old_team(parsed_teams[0])
-	old_b_text, old_b_total, old_b_avg = format_old_team(parsed_teams[1])
-	old_diff = abs(old_a_total - old_b_total)
-
-	new_a_text, new_a_total, new_a_avg = format_new_team(new_team_a, captain_ids)
-	new_b_text, new_b_total, new_b_avg = format_new_team(new_team_b, captain_ids)
-	new_diff = abs(new_a_total - new_b_total)
-
-	embed = Embed(
-		title=f"⚠️ TEST — Team Comparison — Match {match_id}",
-		description="This is a test comparison only. These teams were **not** used in the actual match.",
-		colour=Colour(0x7289DA)
-	)
-
-	# Old teams
-	embed.add_field(
-		name=f"{parsed_teams[0]['emoji']} Old {parsed_teams[0]['name']} 〈{old_a_avg}〉",
-		value=old_a_text,
-		inline=True
-	)
-	embed.add_field(
-		name=f"{parsed_teams[1]['emoji']} Old {parsed_teams[1]['name']} 〈{old_b_avg}〉",
-		value=old_b_text,
-		inline=True
-	)
-	embed.add_field(name="\u200b", value=f"**Elo diff: {old_diff}**", inline=False)
-
-	# New teams
-	embed.add_field(
-		name=f"🔵 New A 〈{new_a_avg}〉",
-		value=new_a_text,
-		inline=True
-	)
-	embed.add_field(
-		name=f"🔴 New B 〈{new_b_avg}〉",
-		value=new_b_text,
-		inline=True
-	)
-	embed.add_field(name="\u200b", value=f"**Elo diff: {new_diff}** ({method})", inline=False)
-
-	# Summary
-	if new_diff < old_diff:
-		embed.set_footer(text=f"TEST ONLY | Captain matchmaking improves balance by {old_diff - new_diff} rating points")
-	elif new_diff > old_diff:
-		embed.set_footer(text=f"TEST ONLY | Captain matchmaking is {new_diff - old_diff} rating points worse")
-	else:
-		embed.set_footer(text="TEST ONLY | Same balance")
-
-	await interaction.followup.send(embed=embed)
-
-
-# ── AoE2 unit quiz (opt-in feature) ───────────────────────────────────────
 @dc.slash_command(name='quiz_leaderboard', description="Show this week's AoE2 quiz leaderboard.", **guild_kwargs)
 async def _quiz_leaderboard(
 		interaction: Interaction
 ): await run_slash(bot.commands.quiz_leaderboard, interaction=interaction)
 
 
-@groups.admin_quiz.subcommand(name='enable', description='Enable the daily AoE2 quiz in a channel.')
-async def _quiz_enable(
-		interaction: Interaction,
-		channel: TextChannel = SlashOption(name="channel", description="Channel to post the daily quiz in."),
-		hour: int = SlashOption(name="hour", description="UTC hour (0-23) for the daily post.", required=False, default=9)
-): await run_slash(bot.commands.quiz_enable, interaction=interaction, channel=channel, hour=hour)
-
-
 @groups.admin_quiz.subcommand(name='disable', description='Disable the daily AoE2 quiz.')
 async def _quiz_disable(
 		interaction: Interaction
 ): await run_slash(bot.commands.quiz_disable, interaction=interaction)
-
-
-@groups.admin_quiz.subcommand(name='config', description='Set a quiz setting (admin).')
-async def _quiz_config(
-		interaction: Interaction,
-		field: str = SlashOption(
-			name="field",
-			description="quiz_hour|open_window|leaderboard_dow|leaderboard_hour|test_interval|min_difficulty"),
-		value: str = SlashOption(name="value", description="New value.")
-): await run_slash(bot.commands.quiz_config, interaction=interaction, field=field, value=value)
-
-
-@groups.admin_quiz.subcommand(name='post_now', description='Post an AoE2 quiz immediately.')
-async def _quiz_post_now(
-		interaction: Interaction
-): await run_slash(bot.commands.quiz_post_now, interaction=interaction)
-
-
-@groups.admin_quiz.subcommand(name='status', description='Show the quiz schedule status (admin).')
-async def _quiz_status(
-		interaction: Interaction
-): await run_slash(bot.commands.quiz_status, interaction=interaction)
-
-
-@groups.admin_quiz.subcommand(name='skip', description='Skip the next scheduled quiz question (admin).')
-async def _quiz_skip(
-		interaction: Interaction
-): await run_slash(bot.commands.quiz_skip, interaction=interaction)
-
-
-@groups.admin_quiz.subcommand(name='reveal_now', description='Reveal the previous quiz answer now (admin).')
-async def _quiz_reveal_now(
-		interaction: Interaction
-): await run_slash(bot.commands.quiz_reveal_now, interaction=interaction)
-
-
-# ── Replay-stats pipeline (opt-in, admin) ─────────────────────────────────
-@groups.admin_replaystats.subcommand(name='status', description='Show replay-stats ingest status.')
-async def _replaystats_status(
-		interaction: Interaction,
-): await run_slash(bot.commands.replaystats_status, interaction=interaction)
-
-
-@groups.admin_replaystats.subcommand(name='backfill', description='Backfill recent replays, newest-first (admin).')
-async def _replaystats_backfill(
-		interaction: Interaction,
-		days: int = SlashOption(name="days", description="How many days back to backfill.", required=False, default=90),
-): await run_slash(bot.commands.replaystats_backfill, interaction=interaction, days=days)
-
-
-@groups.admin_replaystats.subcommand(name='reingest', description='Force re-ingest one aoe2 match (admin).')
-async def _replaystats_reingest(
-		interaction: Interaction,
-		match_id: str = SlashOption(name="match_id", description="The aoe2 match id."),
-): await run_slash(bot.commands.replaystats_reingest, interaction=interaction, match_id=match_id)
-
-
-@dc.slash_command(name='player_details', description="Show a player's build-timeline chart (last 90 days).", **guild_kwargs)
-async def _player_details(
-		interaction: Interaction,
-		player: Member = SlashOption(name="player", description="Whose stats to show (defaults to you).", required=False, verify=False),
-		compare: Member = SlashOption(name="compare", description="Optional second player to overlay (drawn dotted).", required=False, verify=False),
-		days: int = SlashOption(name="days", description="How many days back (default 90).", required=False, default=90),
-): await run_slash(bot.commands.player_details, interaction=interaction, player=player, player2=compare, days=days)
 

@@ -1,12 +1,7 @@
-__all__ = [
-	'add', 'remove', 'who', 'add_player', 'remove_player', 'promote', 'start', 'split',
-	'reset', 'subscribe', 'server', 'maps'
-]
+__all__ = ['add', 'remove', 'add_player', 'remove_player', 'start', 'split', 'reset']
 
-import time
-from random import choice
 from nextcord import Member
-from core.utils import error_embed, join_and, find, seconds_to_str
+from core.utils import error_embed, join_and, find
 import bot
 
 
@@ -77,24 +72,6 @@ async def remove(ctx, queues: str = None):
 		await ctx.ignore(content=ctx.qc.topic, embed=error_embed(ctx.qc.gt("Action had no effect."), title=None))
 
 
-async def who(ctx, queues: str = None):
-	""" List added players """
-	targets = queues.lower().split(" ") if queues else []
-
-	if len(targets):
-		t_queues = [
-			q for q in ctx.qc.queues if
-			any((t == q.name.lower() or t in (a["alias"].lower() for a in q.cfg.aliases) for t in targets))
-		]
-	else:
-		t_queues = [q for q in ctx.qc.queues if len(q.queue)]
-
-	if not len(t_queues):
-		await ctx.reply(f"> {ctx.qc.gt('no players')}")
-	else:
-		await ctx.reply("\n".join([f"> **{q.name}** ({q.status}) | {q.who}" for q in t_queues]))
-
-
 async def add_player(ctx, player: Member, queue: str):
 	""" Add a player to a queue """
 	ctx.check_perms(ctx.Perms.MODERATOR)
@@ -121,28 +98,6 @@ async def remove_player(ctx, player: Member, queues: str = None):
 		raise bot.Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
 	ctx.author = p
 	await remove(ctx, queues=queues)
-
-
-async def promote(ctx, queue: str = None):
-	""" Promote a queue """
-	if not queue:
-		if (q := next(iter(sorted(
-			(i for i in ctx.qc.queues if i.length),
-			key=lambda i: i.length, reverse=True
-		)), None)) is None:
-			raise bot.Exc.NotFoundError(ctx.qc.gt("Nothing to promote."))
-	else:
-		if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-			raise bot.Exc.NotFoundError(ctx.qc.gt("Specified queue not found."))
-
-	now = int(time.time())
-	if ctx.qc.cfg.promotion_delay and ctx.qc.cfg.promotion_delay+ctx.qc.last_promote > now:
-		raise bot.Exc.PermissionError(ctx.qc.gt("You're promoting too often, please wait `{delay}` until next promote.".format(
-			delay=seconds_to_str((ctx.qc.cfg.promotion_delay+ctx.qc.last_promote)-now)
-		)))
-
-	await q.promote(ctx)
-	ctx.qc.last_promote = now
 
 
 async def start(ctx, queue: str = None):
@@ -175,59 +130,3 @@ async def reset(ctx, queue: str = None):
 			await q.reset()
 	await ctx.reply(ctx.qc.topic)
 
-
-async def subscribe(ctx, queues: str = None, unsub: bool = False):
-	if not queues:
-		roles = [ctx.qc.cfg.promotion_role] if ctx.qc.cfg.promotion_role else []
-	else:
-		queues = queues.split(" ")
-		roles = (q.cfg.promotion_role for q in ctx.qc.queues if q.cfg.promotion_role and any(
-			(t == q.name.lower() or t in (a["alias"].lower() for a in q.cfg.aliases) for t in queues)
-		))
-
-	if unsub:
-		roles = [r for r in roles if r in ctx.author.roles]
-		if not len(roles):
-			raise bot.Exc.ValueError(ctx.qc.gt("No changes to apply."))
-		await ctx.author.remove_roles(*roles, reason="subscribe command")
-		await ctx.success(ctx.qc.gt("Removed `{count}` roles from you.").format(
-			count=len(roles)
-		))
-
-	else:
-		roles = [r for r in roles if r not in ctx.author.roles]
-		if not len(roles):
-			raise bot.Exc.ValueError(ctx.qc.gt("No changes to apply."))
-		await ctx.author.add_roles(*roles, reason="subscribe command")
-		await ctx.success(ctx.qc.gt("Added `{count}` roles to you.").format(
-			count=len(roles)
-		))
-
-
-async def server(ctx, queue: str):
-	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-		raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
-	if not q.cfg.server:
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Server for **{queue}** is not set.").format(
-			queue=q.name
-		))
-	await ctx.success(q.cfg.server, title=ctx.qc.gt("Server for **{queue}**").format(
-		queue=q.name
-	))
-
-
-async def maps(ctx, queue: str, one: bool = False):
-	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-		raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
-	if not len(q.cfg.maps):
-		raise bot.Exc.NotFoundError(ctx.qc.gt("No maps is set for **{queue}**.").format(
-			queue=q.name
-		))
-
-	if one:
-		await ctx.success(f"`{choice(q.cfg.maps)['name']}`")
-	else:
-		await ctx.success(
-			", ".join((f"`{i['name']}`" for i in q.cfg.maps)),
-			title=ctx.qc.gt("Maps for **{queue}**").format(queue=q.name)
-		)

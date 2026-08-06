@@ -137,30 +137,14 @@ def report_lines(team0, team1, winner_idx, bets, paid, max_named=25):
 	return lines
 
 
-def gold_lines(balance_amount, entries):
-	lines = [f"You hold **{balance_amount}** {GOLD}."]
-	if entries:
-		lines.append("")
-		for e in entries:
-			sign = "+" if e["amount"] >= 0 else ""
-			lines.append(f"`{sign}{e['amount']}` {_ENTRY_LABELS.get(e['entry_type'], e['entry_type'])}")
-	return lines
-
-
-def gold_top_lines(rows, page=1, per_page=10):
-	"""rows: [{nick, balance}] already sorted richest-first."""
-	if not rows:
-		return ["Nobody holds any gold yet."]
-	start = (page - 1) * per_page
-	page_rows = rows[start:start + per_page]
-	if not page_rows:
-		return [f"No entries on page {page}."]
-	return [f"`{start + n + 1:>2}.` **{r['nick']}** — {r['balance']} {GOLD}"
-			for n, r in enumerate(page_rows)]
-
-
 def leaderboard_lines(rows, page=1, per_page=10):
-	"""rows: [{nick, correct, total}] already sorted best-first."""
+	"""rows: [{nick, correct, total, balance}] already sorted best-first.
+
+	`balance` is optional and may be None per row: a channel outside a community
+	has a valid accuracy board and no gold at all, and a rated player who has
+	never been seeded genuinely holds nothing. Both render as accuracy alone
+	rather than as a zero -- absent and empty are different claims.
+	"""
 	if not rows:
 		return ["No predictions have been scored yet."]
 	start = (page - 1) * per_page
@@ -173,7 +157,37 @@ def leaderboard_lines(rows, page=1, per_page=10):
 		total = int(r["total"] or 0)
 		correct = int(r["correct"] or 0)
 		pct = round(100 * correct / total) if total else 0
-		lines.append(f"`{place:>2}.` **{r['nick']}** — {correct} pt ({correct}/{total}, {pct}%)")
+		line = f"`{place:>2}.` **{r['nick']}** — {correct} pt ({correct}/{total}, {pct}%)"
+		if r.get("balance") is not None:
+			line += f" · {r['balance']} {GOLD}"
+		lines.append(line)
+	return lines
+
+
+def me_lines(display_name, correct, total, balance_amount, entries, seeded_now=False):
+	"""The personal card: prediction record, then gold, then recent movements.
+
+	Absorbed /gold. A member who has never predicted still gets their balance --
+	the two halves are independent, and answering "no record" to someone who
+	only wanted their gold would be a worse answer than showing both.
+	"""
+	lines = [f"**{display_name}**"]
+
+	record = rank_field(correct, total)
+	lines.append(record if record else "No matches predicted yet.")
+
+	if balance_amount is not None:
+		lines.append("")
+		if seeded_now:
+			lines.append(f"Welcome to the betting floor — you start with {balance_amount} {GOLD}.")
+		else:
+			lines.append(f"Holding **{balance_amount}** {GOLD}.")
+
+	if entries:
+		lines.append("")
+		for e in entries:
+			sign = "+" if e["amount"] >= 0 else ""
+			lines.append(f"`{sign}{e['amount']}` {_ENTRY_LABELS.get(e['entry_type'], e['entry_type'])}")
 	return lines
 
 
