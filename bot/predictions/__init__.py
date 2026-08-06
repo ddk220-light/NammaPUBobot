@@ -107,6 +107,11 @@ db.ensure_table(dict(
 		dict(cname="user_id", ctype=db.types.int),
 		dict(cname="nick", ctype=db.types.str),
 		dict(cname="side", ctype=db.types.int),
+		# Captured at press time, NOT recomputed at report time: the roster
+		# lives in bot.active_matches (in memory) and the match is gone from
+		# there before the result is reported. Without this column the
+		# post-match report cannot tell who backed themselves.
+		dict(cname="is_player", ctype=db.types.bool, default=0),
 		dict(cname="stake", ctype=db.types.int),
 		dict(cname="updated_at", ctype=db.types.int),
 	],

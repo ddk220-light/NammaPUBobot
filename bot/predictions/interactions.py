@@ -48,8 +48,12 @@ async def on_bet_interaction(interaction):
 		post = await store.get_post(post_id)
 		if not post or post["status"] != "open" or now >= post["freezes_at"]:
 			return await _eph(interaction, "Betting on this match is closed.")
-		if interaction.user.id in flow._player_ids(post["match_id"]):
-			return await _eph(interaction, "Players can't bet on their own match.")
+		# Participants may bet, but only on themselves: a player who could take
+		# the opposing side could profit by losing. Spectators are unrestricted.
+		team0, team1 = flow._team_ids(post["match_id"])
+		is_player = interaction.user.id in team0 or interaction.user.id in team1
+		if is_player and interaction.user.id not in (team0 if side == 0 else team1):
+			return await _eph(interaction, "You can only bet on yourself — back your own team.")
 
 		from bot import community
 		community_id = await community.community_for_channel(post["channel_id"])
@@ -58,7 +62,8 @@ async def on_bet_interaction(interaction):
 
 		seeded_now = await gold.ensure_seeded(community_id, interaction.user.id, now)
 		status, value = await gold.place_bet(
-			community_id, interaction.user.id, post_id, side, stake, _nick(interaction.user), now)
+			community_id, interaction.user.id, post_id, side, stake, _nick(interaction.user), now,
+			is_player=is_player)
 		if status == "closed":
 			# The gate at the top of this handler read the post row before any
 			# of the above; place_bet re-read it FOR UPDATE inside the

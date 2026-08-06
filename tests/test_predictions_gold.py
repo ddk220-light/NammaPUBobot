@@ -131,6 +131,31 @@ class TestPlaceBet:
 		assert status == "side_locked" and value == 1
 		assert fake.rolled_back          # the stake deduction must not survive
 
+	def test_is_player_is_written_on_the_bets_row(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.rowcounts = [1, 0, 1, 1]      # balance ok, same-side UPDATE misses -> INSERT
+		asyncio.run(gold.place_bet(5, 42, 12, 0, 50, "nick", 1000, is_player=True))
+		row = next(c[2] for c in fake.calls if c[0] == "insert" and c[1] == "prediction_bets")
+		assert row["is_player"] == 1
+
+	def test_is_player_defaults_to_false_for_spectators(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.rowcounts = [1, 0, 1, 1]
+		asyncio.run(gold.place_bet(5, 42, 12, 0, 50, "nick", 1000))
+		row = next(c[2] for c in fake.calls if c[0] == "insert" and c[1] == "prediction_bets")
+		assert row["is_player"] == 0
+
+	def test_a_later_press_on_the_same_side_re_asserts_is_player(self, monkeypatch):
+		""" The additive path writes no INSERT at all, so without is_player in
+		the same-side UPDATE's SET list a player's second press would leave the
+		flag at whatever the first press happened to write. """
+		fake = use_fake(monkeypatch)
+		fake.rowcounts = [1, 1, 1]         # balance ok, same-side UPDATE hits
+		asyncio.run(gold.place_bet(5, 42, 12, 0, 50, "nick", 1000, is_player=True))
+		update = fake.sql("UPDATE prediction_bets")[0]
+		assert "is_player=%s" in update[1]
+		assert 1 in update[2]
+
 	def test_forged_stake_is_rejected_outright(self, monkeypatch):
 		use_fake(monkeypatch)
 		try:

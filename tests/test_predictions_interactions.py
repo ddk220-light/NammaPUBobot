@@ -12,9 +12,9 @@ module level), which unblocks `bot/quiz/interactions.py` too.
 Nothing here mocks the function under test. The handler runs for real against a
 fake interaction and fake collaborators; every assertion is on what the user is
 told, which side of the transaction the failure landed on, and whether the bank
-was touched at all. `flow._player_ids` in particular is NOT stubbed — the
-spectators-only rule is binding, so the tests drive the real lookup against a
-real-shaped `bot.active_matches`.
+was touched at all. `flow._team_ids` in particular is NOT stubbed — the
+own-team-only rule is binding, so the tests drive the real lookup against a
+real-shaped `bot.active_matches`, three-entry `teams` list and all.
 
 No pytest-asyncio in this repo: every coroutine is driven with asyncio.run().
 """
@@ -109,6 +109,31 @@ class RecordingLog:
 		self.infos.append(str(data))
 
 
+class Wiring:
+	""" What wire() hands back: the log the handler wrote to, and the bank calls
+	it made. `errors`/`warnings`/`infos` read straight through to the log, so
+	every `log = wire(...)` call site below still reads as it always did, and
+	`placed` is what the own-team tests need — a press that is refused must
+	leave it empty, and one that is allowed must carry the is_player flag the
+	post-match report is later rendered from. """
+
+	def __init__(self, log):
+		self.log = log
+		self.placed = []            # one dict per gold.place_bet call
+
+	@property
+	def errors(self):
+		return self.log.errors
+
+	@property
+	def warnings(self):
+		return self.log.warnings
+
+	@property
+	def infos(self):
+		return self.log.infos
+
+
 # ── the fixtures the handler reads ───────────────────────────────────────
 OPEN_POST = dict(
 	id=12, channel_id=900, match_id=77, message_id=None,
@@ -125,13 +150,17 @@ def post(**overrides):
 	return p
 
 
-def wire(monkeypatch, *, the_post=_DEFAULT_POST, players=(), community_id=5,
-		 place_bet=("ok", 440), seeded=False, bets=(), get_post_raises=None,
-		 bets_raise=None, bank=None):
-	"""Stand the handler's collaborators up. Returns the recording log.
+def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=(),
+		 community_id=5, place_bet=("ok", 440), seeded=False, bets=(),
+		 get_post_raises=None, bets_raise=None, bank=None):
+	"""Stand the handler's collaborators up. Returns the Wiring record.
 
 	`the_post=None` is a real value here — store.get_post answers None, i.e. the
 	post is gone — which is why the default is a sentinel and not None.
+
+	`team0`/`team1`/`unpicked` populate the live match's roster. They default to
+	empty, i.e. every user is a spectator, which is what every test that is not
+	about the roster wants.
 
 	`bank=EXPLODE` makes both gold entry points raise: a guard that is supposed
 	to reject a press before any money moves has to prove it never reached the
@@ -139,6 +168,7 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, players=(), community_id=5,
 	the wrong message to the user, so no guard test can pass through it.
 	"""
 	log = RecordingLog()
+	wiring = Wiring(log)
 	monkeypatch.setattr(interactions, "log", log)
 	the_post = post() if the_post is _DEFAULT_POST else the_post
 
@@ -160,9 +190,11 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, players=(), community_id=5,
 			raise AssertionError("ensure_seeded reached on a press that must be refused")
 		return seeded
 
-	async def _place_bet(_community_id, _user_id, _post_id, _side, _stake, _nick, _now):
+	async def _place_bet(_community_id, user_id, _post_id, side, stake, _nick, _now,
+						 is_player=False):
 		if bank is EXPLODE:
 			raise AssertionError("place_bet reached on a press that must be refused")
+		wiring.placed.append(dict(user_id=user_id, side=side, stake=stake, is_player=is_player))
 		if isinstance(place_bet, Exception):
 			raise place_bet
 		return place_bet
@@ -179,13 +211,19 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, players=(), community_id=5,
 	monkeypatch.setattr(sys.modules["bot"], "community",
 						types.SimpleNamespace(community_for_channel=_community_for_channel),
 						raising=False)
-	# What flow._player_ids actually walks. Real function, real shape.
+	# What flow._team_ids actually walks. Real function, real shape — including
+	# the THIRD entry in `teams`, the "unpicked" pseudo-team with idx=-1, which
+	# is exactly the trap a guard that iterates match.teams falls into.
+	def _roster(uids):
+		return [types.SimpleNamespace(id=uid) for uid in uids]
+
 	matches = [] if the_post is None else [
 		types.SimpleNamespace(
 			id=the_post["match_id"],
-			players=[types.SimpleNamespace(id=uid) for uid in players])]
+			players=_roster([*team0, *team1, *unpicked]),
+			teams=[_roster(team0), _roster(team1), _roster(unpicked)])]
 	monkeypatch.setattr(sys.modules["bot"], "active_matches", matches, raising=False)
-	return log
+	return wiring
 
 
 def run(interaction):
@@ -262,30 +300,55 @@ class TestBookIsClosed:
 		assert i.reply == interactions.BET_FAILED_NOTICE
 
 
-# ── spectators only ──────────────────────────────────────────────────────
-class TestSpectatorsOnly:
-	""" Binding rule from the design: "A press by anyone on either team roster is
-	rejected". Driven through the real flow._player_ids. """
+# ── own team only ────────────────────────────────────────────────────────
+class TestOwnTeamOnly:
+	""" Amendment 1 supersedes the spectators-only rule: a participant may bet,
+	but only on the side they are actually playing. Driven through the real
+	flow._team_ids. """
 
-	REFUSED = "Players can't bet on their own match."
+	def test_a_player_may_back_their_own_team(self, monkeypatch):
+		""" The whole point of the amendment: a participant's gold can join the
+		pool on the side they are actually playing. """
+		bank = wire(monkeypatch, team0={7}, team1={8})
+		i = FakeInteraction(user_id=7, custom_id="bet:12:0:50")
+		run(i)
+		assert bank.placed, "the bet never reached the bank"
+		assert bank.placed[-1]["is_player"] is True
 
-	def test_a_match_participant_is_refused_and_no_gold_moves(self, monkeypatch):
-		log = wire(monkeypatch, players=(7, 8, 9), bank=EXPLODE)
-		i = run(FakeInteraction(user_id=7))
-		assert i.reply == self.REFUSED
+	def test_a_player_backing_the_other_team_is_refused(self, monkeypatch):
+		""" A participant must never be able to hold a position against
+		themselves — that is the only reason letting players bet is safe. """
+		bank = wire(monkeypatch, team0={7}, team1={8})
+		i = FakeInteraction(user_id=7, custom_id="bet:12:1:50")
+		run(i)
+		assert not bank.placed, "the bank was reached on a forbidden side"
+		assert "only bet on yourself" in i.reply
+
+	def test_a_spectator_may_back_either_side(self, monkeypatch):
+		for side in (0, 1):
+			bank = wire(monkeypatch, team0={7}, team1={8})
+			i = FakeInteraction(user_id=99, custom_id=f"bet:12:{side}:50")
+			run(i)
+			assert bank.placed, f"spectator refused on side {side}"
+			assert bank.placed[-1]["is_player"] is False
+
+	def test_the_unpicked_pseudo_team_is_not_a_side(self, monkeypatch):
+		""" Match.teams[2] is 'unpicked'. Someone sitting there is not playing
+		either side and must be treated as a spectator, not silently blocked. """
+		bank = wire(monkeypatch, team0={7}, team1={8}, unpicked={42})
+		i = FakeInteraction(user_id=42, custom_id="bet:12:1:50")
+		run(i)
+		assert bank.placed
+		assert bank.placed[-1]["is_player"] is False
+
+	def test_the_refusal_is_a_decision_not_a_crash(self, monkeypatch):
+		""" bank=EXPLODE turns any leak past the guard into a logged error and
+		the wrong message, so neither assertion here can pass by accident. """
+		log = wire(monkeypatch, team0={7}, team1={8}, bank=EXPLODE)
+		i = run(FakeInteraction(user_id=8, custom_id="bet:12:0:100"))
+		assert "only bet on yourself" in i.reply
 		assert i.all_ephemeral
-		assert log.errors == [], "the refusal must be a decision, not a crash"
-
-	def test_a_participant_is_refused_on_the_other_side_too(self, monkeypatch):
-		""" Either side: a player cannot bet against themselves either. """
-		wire(monkeypatch, players=(7, 8), bank=EXPLODE)
-		assert run(FakeInteraction(custom_id="bet:12:1:100", user_id=8)).reply == self.REFUSED
-
-	def test_a_spectator_gets_through(self, monkeypatch):
-		""" The other half of the rule — without this the guard could reject
-		everyone and still look correct. """
-		wire(monkeypatch, players=(1, 2), bets=[dict(user_id=7, nick="Zed", side=0, stake=50)])
-		assert self.REFUSED not in run(FakeInteraction(user_id=7)).reply
+		assert log.errors == []
 
 
 # ── the community gate ───────────────────────────────────────────────────

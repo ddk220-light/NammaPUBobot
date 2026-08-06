@@ -143,10 +143,11 @@ async def void(post_id, now):
 # All WRITES to prediction_bets live in bot/predictions/gold.py (inside the
 # same transaction that moves the gold); the store only reads them.
 async def bets_for(post_id):
-	"""[{user_id, nick, side, stake}] biggest stake first — the order every
-	report and payout roll-call presents."""
+	"""[{user_id, nick, side, stake, is_player}] biggest stake first — the order
+	every report and payout roll-call presents. `is_player` is the roster fact
+	captured when the bet was placed; it cannot be recomputed at report time."""
 	return await db.fetchall(
-		"SELECT user_id, nick, side, stake FROM prediction_bets "
+		"SELECT user_id, nick, side, stake, is_player FROM prediction_bets "
 		"WHERE post_id=%s ORDER BY stake DESC, user_id ASC", [post_id]) or []
 
 

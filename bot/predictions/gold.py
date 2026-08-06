@@ -75,11 +75,16 @@ async def bulk_seed(now):
 	return seeded
 
 
-async def place_bet(community_id, user_id, post_id, side, stake, nick, now):
+async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_player=False):
 	"""One press of a bet button, atomically.
 
 	-> ('ok', new_balance) | ('insufficient', balance) | ('side_locked', locked_side)
 	   | ('closed', None)
+
+	`is_player` says the bettor is on the side they just backed, decided by the
+	caller against the live roster and stored on the row. It is captured here
+	because it cannot be recovered later: the roster lives in bot.active_matches
+	and the match has left it by the time the result is reported.
 
 	Inside one transaction: the book re-read and row-locked (see below), the
 	conditional balance decrement (matching zero rows means not enough gold),
@@ -122,15 +127,19 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now):
 				[stake, now, community_id, user_id, stake])
 			if not spent:
 				raise _Insufficient()
+			# is_player is re-asserted on every press rather than written once:
+			# the additive path never reaches the INSERT, so a flag set only
+			# there would depend on which press happened to create the row.
 			added = await tx.execute(
-				"UPDATE prediction_bets SET stake=stake+%s, nick=%s, updated_at=%s "
+				"UPDATE prediction_bets SET stake=stake+%s, nick=%s, is_player=%s, updated_at=%s "
 				"WHERE post_id=%s AND user_id=%s AND side=%s",
-				[stake, nick, now, post_id, user_id, side])
+				[stake, nick, 1 if is_player else 0, now, post_id, user_id, side])
 			if not added:
 				try:
 					await tx.insert("prediction_bets", dict(
 						post_id=post_id, user_id=user_id, nick=nick,
-						side=side, stake=stake, updated_at=now))
+						side=side, stake=stake, updated_at=now,
+						is_player=1 if is_player else 0))
 				except db.errors.IntegrityError:
 					raise _SideLocked() from None
 			await tx.insert("gold_ledger", dict(

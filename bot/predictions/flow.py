@@ -224,16 +224,32 @@ async def _freeze(post, now):
 
 
 def _player_ids(match_id):
-	"""Ids of everyone playing the match, so their own presses are refused.
+	"""Ids of everyone playing the match — both sides and the unpicked.
 
 	Reads the live match when it is still active; an already-finished match has
-	nobody left to exclude (the book froze long before that).
+	nobody left to name (the book froze long before that). This is the right
+	shape for callers that only need "is this person in the match at all";
+	callers deciding WHICH side someone may back want _team_ids below.
 	"""
 	import bot
 	for m in bot.active_matches:
 		if m.id == match_id:
 			return {p.id for p in m.players}
 	return set()
+
+
+def _team_ids(match_id):
+	"""(team0_ids, team1_ids) for a live match, or two empty sets.
+
+	Match.teams has THREE entries — [0], [1] and a "unpicked" pseudo-team at
+	[2] with idx=-1 — so this indexes the two real sides explicitly. Iterating
+	match.teams would turn unpicked players into a third side.
+	"""
+	import bot
+	for m in bot.active_matches:
+		if m.id == match_id:
+			return {p.id for p in m.teams[0]}, {p.id for p in m.teams[1]}
+	return set(), set()
 
 
 async def _community_for_post(post):
