@@ -151,6 +151,39 @@ async def record_answer_multi(post_id, user_id, choice_indices, is_correct, answ
 		 answered_at, response_ms, post_id, user_id])
 
 
+async def record_vote(post_id, user_id, nick, choice_index, now):
+	"""UPSERT the user's vote — the PK (post_id, user_id) IS the one-vote
+	rule, and REPLACE makes a changed mind overwrite the row (also wiping any
+	old-era timing fields, which is correct: this row now means a poll vote).
+	is_correct stays NULL until the post locks; answered_at is the latest
+	change, which keeps answers_for_post's cast-a-vote filter true."""
+	await db.insert("quiz_answers", dict(
+		post_id=post_id, user_id=user_id, nick=nick,
+		revealed_at=None, deadline_at=None,
+		choice_index=int(choice_index), choice_indices=None,
+		is_correct=None, answered_at=now, response_ms=None),
+		on_duplicate="replace")
+
+
+async def record_vote_multi(post_id, user_id, nick, choice_indices, now):
+	"""The multi-answer variant: the submitted set replaces the previous one
+	wholesale (JSON-sorted, the grade_multi convention)."""
+	await db.insert("quiz_answers", dict(
+		post_id=post_id, user_id=user_id, nick=nick,
+		revealed_at=None, deadline_at=None,
+		choice_index=None,
+		choice_indices=json.dumps(sorted(int(i) for i in choice_indices)),
+		is_correct=None, answered_at=now, response_ms=None),
+		on_duplicate="replace")
+
+
+async def write_grade(post_id, user_id, is_correct):
+	"""Lock-time grading write. Deterministic input -> safe to re-run."""
+	await db.execute(
+		"UPDATE quiz_answers SET is_correct=%s WHERE post_id=%s AND user_id=%s",
+		[(1 if is_correct else 0), post_id, user_id])
+
+
 async def answers_for_post(post_id):
 	rows = await db.fetchall(
 		"SELECT * FROM quiz_answers WHERE post_id=%s AND answered_at IS NOT NULL", [post_id])

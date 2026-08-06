@@ -22,15 +22,43 @@ from bot.quiz import store
 
 
 class FakeDb:
+	""" `calls` keeps the original (table, dict) shape `inserted()` relies on, so
+	the create_post tests above are untouched. `_rows` is the addition: a real
+	table keyed on (post_id, user_id), so a "replace" insert genuinely
+	overwrites the prior row (mirroring MySQL's REPLACE INTO) instead of just
+	accumulating history the way a bare append would -- which is what the
+	changed-her-mind test needs to be able to fail. """
 	def __init__(self):
 		self.calls = []  # [(table, dict)]
+		self.executed = []  # [(sql, args)]
+		self._rows = {}  # table -> {(post_id, user_id): dict}
 
 	async def insert(self, table, d, on_duplicate=None):
 		self.calls.append((table, dict(d)))
+		if "post_id" in d and "user_id" in d:
+			table_rows = self._rows.setdefault(table, {})
+			key = (d["post_id"], d["user_id"])
+			if on_duplicate == "ignore" and key in table_rows:
+				pass  # existing row wins, mirrors INSERT IGNORE
+			else:
+				table_rows[key] = dict(d)
 		return len(self.calls)
+
+	async def execute(self, sql, args=None):
+		args = list(args or [])
+		self.executed.append((sql, args))
+		if "UPDATE quiz_answers SET is_correct=" in sql:
+			is_correct, post_id, user_id = args
+			row = self._rows.get("quiz_answers", {}).get((post_id, user_id))
+			if row is not None:
+				row["is_correct"] = is_correct
+		return 1
 
 	def inserted(self, table):
 		return [d for t, d in self.calls if t == table]
+
+	def row(self, table, **keys):
+		return self._rows.get(table, {}).get((keys["post_id"], keys["user_id"]))
 
 
 @pytest.fixture
@@ -77,3 +105,30 @@ def test_create_post_stores_none_when_difficulty_is_absent(fake_db):
 
 	row = fake_db.inserted("quiz_posts")[-1]
 	assert row["difficulty"] is None
+
+
+def test_record_vote_is_a_replace_upsert(fake_db):
+	""" The PK (post_id, user_id) is the one-vote rule; REPLACE is what makes a
+	changed mind overwrite the row instead of erroring or piling up a second
+	one. """
+	asyncio.run(store.record_vote(9, 1, "Ann", 2, 1000))
+	asyncio.run(store.record_vote(9, 1, "Ann", 0, 1001))          # changed her mind
+	row = fake_db.row("quiz_answers", post_id=9, user_id=1)
+	assert row["choice_index"] == 0
+	assert row["choice_indices"] is None
+	assert row["is_correct"] is None                       # graded at lock, not at press
+	assert row["answered_at"] == 1001
+	assert row["revealed_at"] is None and row["response_ms"] is None
+
+
+def test_record_vote_multi_stores_sorted_set(fake_db):
+	asyncio.run(store.record_vote_multi(9, 1, "Ann", [2, 0], 1000))
+	row = fake_db.row("quiz_answers", post_id=9, user_id=1)
+	assert row["choice_indices"] == "[0, 2]"
+	assert row["choice_index"] is None
+
+
+def test_write_grade(fake_db):
+	asyncio.run(store.record_vote(9, 1, "Ann", 0, 1000))
+	asyncio.run(store.write_grade(9, 1, True))
+	assert fake_db.row("quiz_answers", post_id=9, user_id=1)["is_correct"] == 1
