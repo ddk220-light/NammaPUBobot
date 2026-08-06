@@ -838,6 +838,19 @@ async def _predictions_me(
 ): await run_slash(bot.commands.predictions_me, interaction=interaction, player=player)
 
 
+@dc.slash_command(name='gold', description='Your gold balance and recent movements.', **guild_kwargs)
+async def _gold(
+		interaction: Interaction,
+): await run_slash(bot.commands.gold, interaction=interaction)
+
+
+@dc.slash_command(name='gold_top', description='The richest bettors in the community.', **guild_kwargs)
+async def _gold_top(
+		interaction: Interaction,
+		page: int = SlashOption(required=False, description="Page number.")
+): await run_slash(bot.commands.gold_top, interaction=interaction, page=page or 1)
+
+
 @dc.slash_command(name='changelog', description="What's new — the latest changes shipped to the bot.", **guild_kwargs)
 async def _changelog(
 		interaction: Interaction,

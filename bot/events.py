@@ -1,5 +1,6 @@
 import csv
 import os
+import time
 import traceback
 from nextcord import ChannelType, Activity, ActivityType
 
@@ -315,6 +316,18 @@ async def on_ready():
 			log.error(f"Failed to enroll queue channels into communities:\n{traceback.format_exc()}")
 
 		await seed_ratings_from_csv()
+
+		# One idempotent pass seeds starting gold for every known player in
+		# every community; after the first boot this inserts nothing. Newcomers
+		# are seeded lazily on their first gold touch instead.
+		try:
+			from bot.predictions import gold as gold_bank
+			seeded = await gold_bank.bulk_seed(int(time.time()))
+			if seeded:
+				log.info(f"\tSeeded {seeded} player(s) with starting gold.")
+		except Exception:
+			log.error(f"Gold bulk seed failed:\n{traceback.format_exc()}")
+
 		await bot.load_state()
 		bot.bot_was_ready = True
 		bot.bot_ready = True
