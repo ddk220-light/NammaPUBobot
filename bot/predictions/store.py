@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Async MySQL access for audience predictions. Thin wrappers over
-core.database.db; all grading logic lives in bot.predictions.scoring (pure,
+"""Async MySQL access for audience predictions: persistence for posts, plus
+the read side of bets. All WRITES to prediction_bets live in
+bot.predictions.gold, inside the same transaction that moves the gold; this
+module only reads them. Grading logic lives in bot.predictions.scoring (pure,
 tested). No nextcord import here so importing bot.predictions stays test-safe."""
 from core.database import db
 
@@ -16,6 +18,10 @@ async def create_post(channel_id, match_id, team0_name, team1_name, opened_at, f
 
 async def set_message_id(post_id, message_id):
 	await db.update("prediction_posts", {"message_id": message_id}, {"id": post_id})
+
+
+async def get_post(post_id):
+	return await db.fetchone("SELECT * FROM prediction_posts WHERE id=%s", [post_id])
 
 
 async def due_to_freeze(now):
@@ -49,41 +55,45 @@ async def void(post_id, now):
 	await db.update("prediction_posts", {"status": "void", "resolved_at": now}, {"id": post_id})
 
 
-# ── votes ────────────────────────────────────────────────────────────────
-async def save_ballots(post_id, ballots, nicks, voted_at):
-	"""Persist the frozen tally. ballots is {user_id: team_idx}."""
-	if not ballots:
-		return
-	await db.insert_many("prediction_votes", (
-		dict(post_id=post_id, user_id=uid, nick=nicks.get(uid, str(uid)),
-			 team_idx=idx, voted_at=voted_at)
-		for uid, idx in ballots.items()
-	), on_duplicate="ignore")
+# ── bets ─────────────────────────────────────────────────────────────────
+# All WRITES to prediction_bets live in bot/predictions/gold.py (inside the
+# same transaction that moves the gold); the store only reads them.
+async def bets_for(post_id):
+	"""[{user_id, nick, side, stake}] biggest stake first — the order every
+	report and payout roll-call presents."""
+	return await db.fetchall(
+		"SELECT user_id, nick, side, stake FROM prediction_bets "
+		"WHERE post_id=%s ORDER BY stake DESC, user_id ASC", [post_id]) or []
 
 
-async def ballots_for(post_id):
-	"""{user_id: team_idx} as frozen, plus {user_id: nick}."""
-	rows = await db.fetchall(
-		"SELECT user_id, nick, team_idx FROM prediction_votes WHERE post_id=%s", [post_id]) or []
-	return ({r["user_id"]: r["team_idx"] for r in rows},
-			{r["user_id"]: r["nick"] for r in rows})
-
-
-async def mark_correct(post_id, results):
-	"""results is {user_id: bool} from scoring.grade."""
-	for uid, ok in results.items():
-		await db.update("prediction_votes", {"is_correct": 1 if ok else 0},
-						{"post_id": post_id, "user_id": uid})
+async def no_action(post_id, now):
+	"""Terminal status for a one-sided book: nobody on the other side, every
+	stake refunded at freeze time. Distinct from void so the card and the
+	audit trail say what actually happened."""
+	await db.update("prediction_posts", {"status": "no_action", "resolved_at": now}, {"id": post_id})
 
 
 # ── aggregates ───────────────────────────────────────────────────────────
+# One prediction = one row of `u`: historical reaction votes (frozen
+# is_correct) UNION ALL gold bets (side graded against winner_idx at read
+# time). A user appears once per predicted match either way, so the
+# accuracy leaderboard carried straight over when betting replaced votes.
+_LB_UNION = (
+	"SELECT v.user_id, v.nick, COALESCE(v.is_correct, 0) AS correct, p.channel_id "
+	"FROM prediction_votes v JOIN prediction_posts p ON p.id = v.post_id "
+	"WHERE p.status='resolved' "
+	"UNION ALL "
+	"SELECT b.user_id, b.nick, (b.side = p.winner_idx) AS correct, p.channel_id "
+	"FROM prediction_bets b JOIN prediction_posts p ON p.id = b.post_id "
+	"WHERE p.status='resolved'"
+)
+
 _LB_SQL = (
-	"SELECT v.user_id, MAX(v.nick) AS nick, "
-	"       COALESCE(SUM(v.is_correct), 0) AS correct, COUNT(*) AS total "
-	"FROM prediction_votes v "
-	"JOIN prediction_posts p ON p.id = v.post_id "
-	"WHERE p.status='resolved'{channel} "
-	"GROUP BY v.user_id "
+	"SELECT user_id, MAX(nick) AS nick, "
+	"       COALESCE(SUM(correct), 0) AS correct, COUNT(*) AS total "
+	"FROM (" + _LB_UNION + ") u "
+	"{channel}"
+	"GROUP BY user_id "
 	"ORDER BY correct DESC, total ASC"
 )
 
@@ -92,20 +102,18 @@ async def leaderboard(channel_id=None):
 	"""[{user_id, nick, correct, total}] best-first across resolved posts."""
 	if channel_id is None:
 		return await db.fetchall(_LB_SQL.format(channel="")) or []
-	return await db.fetchall(_LB_SQL.format(channel=" AND p.channel_id=%s"), [channel_id]) or []
+	return await db.fetchall(_LB_SQL.format(channel="WHERE channel_id=%s "), [channel_id]) or []
 
 
 async def user_stats(user_id, channel_id=None):
 	"""(correct, total) for one user across resolved posts."""
 	sql = (
-		"SELECT COALESCE(SUM(v.is_correct), 0) AS correct, COUNT(*) AS total "
-		"FROM prediction_votes v "
-		"JOIN prediction_posts p ON p.id = v.post_id "
-		"WHERE p.status='resolved' AND v.user_id=%s"
+		"SELECT COALESCE(SUM(correct), 0) AS correct, COUNT(*) AS total "
+		"FROM (" + _LB_UNION + ") u WHERE user_id=%s"
 	)
 	params = [user_id]
 	if channel_id is not None:
-		sql += " AND p.channel_id=%s"
+		sql += " AND channel_id=%s"
 		params.append(channel_id)
 	rows = await db.fetchall(sql, params)
 	if not rows:

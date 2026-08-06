@@ -61,11 +61,12 @@ REGISTRY = {
 	"prediction_posts": dict(
 		layer="core", tenancy="channel", writers=("bot/predictions/store.py",), retention="forever"
 	),
-	"prediction_votes": dict(
-		layer="core", tenancy="channel", writers=("bot/predictions/store.py",), retention="forever"
-	),
-	# prediction_votes stopped being written when gold betting replaced free
-	# votes (gold-betting spec, 2026-08-05); rows stay for leaderboard history.
+	# Meaning 1 of an empty writers tuple: read-only by design. Gold betting
+	# replaced free votes on 2026-08-05 — bot/predictions/store.py deleted its
+	# last write (save_ballots/mark_correct) in the same change. Rows are kept
+	# forever because the accuracy leaderboard UNIONs this table's frozen
+	# is_correct with prediction_bets, so votes-era history still counts.
+	"prediction_votes": dict(layer="core", tenancy="channel", writers=(), retention="forever"),
 	# bot/predictions/gold.py is the sole writer of this table and the two below.
 	"prediction_bets": dict(
 		layer="core", tenancy="channel", writers=("bot/predictions/gold.py",), retention="forever"
