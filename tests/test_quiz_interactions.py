@@ -287,3 +287,45 @@ def test_foreign_custom_ids_fall_through(quiz_env):
 	i = FakeInteraction(cid="bet:1:0:10", user_id=42, nick="Ann", message_id=111)
 	_run(i)
 	assert i.response.sent is None and i.response.edited is None
+
+
+# ── _rerender's view-kind branch ────────────────────────────────────────
+# _rerender picks the re-rendered card's component kind with
+# is_multi_category(post["category"]) — a StringSelect for techgaps, A/B/C/D
+# buttons for everything else. The stored vote (asserted above, e.g.
+# test_multi_select_replaces_the_set) says nothing about which control the
+# NEXT press sees: a hardcoded `False` there would leave every vote-recording
+# test green while silently turning every techgaps poll into single-answer
+# buttons after the first vote. These two pin the re-rendered VIEW itself.
+def test_rerender_after_multi_vote_uses_a_select(quiz_env):
+	quiz_env.posts[9] = _post(category="techgaps", correct_indices="[0, 2]",
+			options_json='["a", "b", "c"]', message_id=111)
+	i = FakeInteraction(cid="quiz:9:msel", values=["0", "2"], user_id=42, nick="Ann",
+			message_id=111, now=2000)
+	_run(i)
+	view = i.response.edited["view"]
+	assert len(view.children) == 1
+	assert isinstance(view.children[0], nextcord.ui.StringSelect)
+	assert view.children[0].custom_id == "quiz:9:msel"
+
+
+def test_rerender_after_single_vote_uses_buttons(quiz_env):
+	quiz_env.posts[9] = _post(category="combat", options_json='["Knight", "Pikeman"]',
+			message_id=111)
+	i = FakeInteraction(cid="quiz:9:ans:1", user_id=42, nick="Ann", message_id=111, now=2000)
+	_run(i)
+	view = i.response.edited["view"]
+	assert all(isinstance(c, nextcord.ui.Button) for c in view.children)
+	assert [b.custom_id for b in view.children] == ["quiz:9:ans:0", "quiz:9:ans:1"]
+
+
+# ── mselect's empty-values guard ────────────────────────────────────────
+def test_empty_multi_select_is_refused_and_not_recorded(quiz_env):
+	quiz_env.posts[9] = _post(category="techgaps", correct_indices="[0, 2]",
+			options_json='["a", "b", "c"]', message_id=111)
+	i = FakeInteraction(cid="quiz:9:msel", values=[], user_id=42, nick="Ann",
+			message_id=111, now=2000)
+	_run(i)
+	assert (9, 42) not in quiz_env.votes
+	assert i.response.edited is None
+	assert i.response.sent is not None and i.response.sent["ephemeral"] is True
