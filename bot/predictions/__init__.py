@@ -73,7 +73,7 @@ db.ensure_table(dict(
 		dict(cname="id", ctype=db.types.int, autoincrement=True),
 		dict(cname="community_id", ctype=db.types.int),
 		dict(cname="user_id", ctype=db.types.int),
-		# seed | match_reward | bet | refund | payout | admin_adjust
+		# seed | match_reward | bet | cancel | refund | payout | admin_adjust
 		dict(cname="entry_type", ctype=db.types.str),
 		dict(cname="amount", ctype=db.types.int),          # signed; negative only for 'bet'
 		dict(cname="match_id", ctype=db.types.int, notnull=False),

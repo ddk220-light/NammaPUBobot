@@ -37,7 +37,7 @@ class FakeTx:
 
 	async def fetchone(self, sql, args=None):
 		self.db.calls.append(("fetchone", sql, list(args or [])))
-		return self.db.fetchone_result
+		return self.db.next_row()
 
 
 class _Errors:
@@ -49,7 +49,9 @@ class _Errors:
 # the balance it reads back, the side it reports on a locked press — because the
 # fake has one slot for all of them. `status`/`freezes_at` belong to the book:
 # place_bet re-reads the post inside its own transaction, so a fake that omitted
-# them would KeyError before any money moved.
+# them would KeyError before any money moved. Where one slot genuinely cannot
+# say what a test means — cancel_bet reads an open book and then a bets row that
+# is NOT there — `answers()` scripts the fetchones one at a time instead.
 ROW = {"balance": 440, "side": 1, "status": "open", "freezes_at": 9_999_999_999}
 
 
@@ -58,6 +60,7 @@ class FakeDb:
 		self.calls = []
 		self.rowcounts = []          # consumed left-to-right by execute/insert
 		self.fetchone_result = dict(ROW)
+		self.fetchone_queue = []     # consumed left-to-right by fetchone, if set
 		self.raise_integrity_on = None
 		self.errors = _Errors
 		self.rolled_back = False
@@ -66,6 +69,18 @@ class FakeDb:
 		"""Override single columns without dropping the rest of the row."""
 		self.fetchone_result = {**ROW, **overrides}
 		return self
+
+	def answers(self, *rows):
+		"""Answer successive fetchones with these rows in order, falling back to
+		the single-slot answer once they run out. Each entry is either a dict of
+		column overrides or None, meaning THE ROW DOES NOT EXIST — the only
+		honest way to say "the book is there, the bet row is not", which one
+		shared slot cannot express, and which cancel_bet has to distinguish."""
+		self.fetchone_queue = [None if r is None else {**ROW, **r} for r in rows]
+		return self
+
+	def next_row(self):
+		return self.fetchone_queue.pop(0) if self.fetchone_queue else self.fetchone_result
 
 	def sql(self, fragment):
 		"""Every recorded statement containing `fragment`."""
@@ -87,7 +102,7 @@ class FakeDb:
 
 	async def fetchone(self, sql, args=None):
 		self.calls.append(("db.fetchone", sql, list(args or [])))
-		return self.fetchone_result
+		return self.next_row()
 
 	async def fetchall(self, sql, args=None):
 		self.calls.append(("db.fetchall", sql, list(args or [])))
@@ -306,6 +321,110 @@ class TestEnsureSeeded:
 		assert asyncio.run(gold.ensure_seeded(5, 42, 1000)) is False
 		# and no balance write happened after the skip
 		assert not [c for c in fake.calls if c[0] == "execute" and "gold_balances" in c[1]]
+
+
+class TestCancelBet:
+	""" Cancel is the one credit with no idem_key: the bets ROW is the refund
+	token, and the DELETE's rowcount is the exactly-once guard. Both halves of
+	that — the book lock and the rowcount — are money guards, and each is
+	defended by its own test below. """
+
+	OPEN = dict(status="open", freezes_at=9999)
+
+	def test_cancelling_returns_the_whole_stake_and_ledgers_it(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.answer(**self.OPEN, stake=60)
+		fake.rowcounts = [1, 1, 1]      # DELETE hits, ledger insert, balance bump
+		status, amount = asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
+		assert (status, amount) == ("ok", 60)
+		row = next(c[2] for c in fake.calls if c[0] == "insert" and c[1] == "gold_ledger")
+		assert row["entry_type"] == "cancel" and row["amount"] == 60
+		bumps = fake.sql("gold_balances SET balance=balance+")
+		assert len(bumps) == 1 and bumps[0][2][0] == 60
+
+	def test_the_cancel_ledger_row_carries_no_idem_key(self, monkeypatch):
+		""" A user may bet -> cancel -> bet -> cancel on one post, so a
+		cancel:{post}:{user} key would swallow the second cancel and silently
+		keep their gold. The DELETE's rowcount is the guard instead. """
+		fake = use_fake(monkeypatch)
+		fake.answer(**self.OPEN, stake=60)
+		fake.rowcounts = [1, 1, 1]
+		asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
+		row = next(c for c in fake.calls if c[0] == "insert" and c[1] == "gold_ledger")
+		assert row[2].get("idem_key") is None
+		assert row[3] is None, "on_duplicate must stay off the cancel row"
+
+	def test_a_second_cancel_refunds_nothing(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.answers(self.OPEN, None)            # the book is open; the bets row is gone
+		status, amount = asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
+		assert (status, amount) == ("nothing", 0)
+		assert not [c for c in fake.calls if c[0] == "insert"]
+		assert not fake.sql("DELETE FROM prediction_bets")
+
+	def test_a_delete_that_matches_nothing_refunds_nothing(self, monkeypatch):
+		""" Two presses both read the row; one DELETEs it first. The loser's
+		DELETE affects 0 rows and must not pay out. """
+		fake = use_fake(monkeypatch)
+		fake.answer(**self.OPEN, stake=60)
+		fake.rowcounts = [0]             # DELETE matched nothing
+		status, amount = asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
+		assert (status, amount) == ("nothing", 0)
+		assert not [c for c in fake.calls if c[0] == "insert"]
+		assert not fake.sql("gold_balances SET balance=balance+")
+
+	def test_a_frozen_book_refuses_the_cancel_under_the_row_lock(self, monkeypatch):
+		""" The mirror of place_bet's race. A cancel that slipped past a sweep's
+		snapshot would be refunded twice — once here, once by the sweep's
+		idempotent refund row — and reconcile() could never see it. The stake and
+		rowcounts are supplied so that dropping the book check pays out rather
+		than merely erroring: the mutation has to fail for the money reason. """
+		fake = use_fake(monkeypatch)
+		fake.answer(status="frozen", freezes_at=9999, stake=60)
+		fake.rowcounts = [1, 1, 1]
+		status, amount = asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
+		assert (status, amount) == ("closed", 0)
+		assert not [c for c in fake.calls if c[0] == "insert"]
+		assert not fake.sql("DELETE FROM prediction_bets")
+
+	def test_a_cancel_after_the_deadline_is_refused_even_while_open(self, monkeypatch):
+		""" The status flip lags the clock by up to one 15s sweep; the deadline is
+		authoritative in between, exactly as it is for a press. """
+		fake = use_fake(monkeypatch)
+		fake.answer(status="open", freezes_at=500, stake=60)   # now=1000 is past it
+		fake.rowcounts = [1, 1, 1]
+		status, amount = asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
+		assert (status, amount) == ("closed", 0)
+		assert not [c for c in fake.calls if c[0] == "insert"]
+		assert not fake.sql("DELETE FROM prediction_bets")
+
+	def test_a_deleted_post_refuses(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.fetchone_result = None
+		assert asyncio.run(gold.cancel_bet(5, 42, 12, 1000)) == ("closed", 0)
+
+	def test_the_book_is_locked_before_the_bet_row_is_read(self, monkeypatch):
+		""" Ordering is the guarantee: lock the post, THEN touch the money. """
+		fake = use_fake(monkeypatch)
+		fake.answer(status="open", freezes_at=9999, stake=60)
+		fake.rowcounts = [1, 1, 1]
+		asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
+		reads = [c[1] for c in fake.calls if c[0] == "fetchone"]
+		assert "prediction_posts" in reads[0] and "FOR UPDATE" in reads[0]
+		assert "prediction_bets" in reads[1]
+		delete = fake.sql("DELETE FROM prediction_bets")
+		assert len(delete) == 1 and delete[0][2] == [12, 42]
+
+	def test_a_missing_balance_row_rolls_the_refund_back(self, monkeypatch):
+		fake = use_fake(monkeypatch)
+		fake.answer(**self.OPEN, stake=60)
+		fake.rowcounts = [1, 1, 0]       # DELETE ok, ledger ok, balance UPDATE misses
+		try:
+			asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
+			assert False, "should have raised"
+		except RuntimeError:
+			pass
+		assert fake.rolled_back
 
 
 class TestCreditPaths:

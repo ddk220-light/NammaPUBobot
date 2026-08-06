@@ -6,8 +6,11 @@ matching gold_balances update, committed together or not at all. Non-bet
 movements carry an idem_key with a unique index, so seeds, rewards, refunds
 and payouts are impossible to apply twice — re-running a half-finished sweep
 skips the rows that already exist (INSERT IGNORE, rowcount 0) and applies the
-rest. Balance truth is SUM(gold_ledger.amount); gold_balances is the
-spendable cache, and reconcile() can prove the two agree.
+rest. The two exceptions are 'bet' and 'cancel', which a user may repeat on
+one post and which are therefore guarded by a conditional write's rowcount
+instead (see place_bet and cancel_bet). Balance truth is
+SUM(gold_ledger.amount); gold_balances is the spendable cache, and
+reconcile() can prove the two agree.
 
 No nextcord and no time.time() in here: callers pass `now`, and the module
 stays importable (and its control flow testable) under the conftest stubs."""
@@ -158,6 +161,62 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_p
 			"SELECT side FROM prediction_bets WHERE post_id=%s AND user_id=%s",
 			[post_id, user_id])
 		return "side_locked", int(row["side"]) if row else side
+
+
+async def cancel_bet(community_id, user_id, post_id, now):
+	"""Back out of a bet entirely, before the freeze.
+
+	-> ('ok', refunded) | ('nothing', 0) | ('closed', 0)
+
+	EXACTLY-ONCE WITHOUT AN IDEM_KEY, and that is deliberate. Every other credit
+	here is made once by a UNIQUE idem_key, but a user may bet -> cancel -> bet
+	-> cancel on ONE post, so cancel:{post_id}:{user_id} is not unique and the
+	second cancel would be swallowed as "already applied". The prediction_bets
+	ROW is the refund token instead: the DELETE's rowcount is the guard, so a
+	double press finds no row and refunds nothing. Same discipline as
+	place_bet's conditional balance decrement — the conditional write IS the
+	guard.
+
+	Deleting the row also releases the side lock — after cancelling, the user
+	may bet again on either side (subject to the own-team rule if playing).
+
+	THE BOOK IS RE-READ AND LOCKED HERE, not merely checked by the caller —
+	see place_bet's comment for the race. Its mirror duplicates gold rather
+	than destroying it: a sweep snapshots the book (store.bets_for) and then
+	refunds what it found, so a cancel committing after that snapshot but
+	before the status flip pays the stake back TWICE — once as this 'cancel'
+	row, once as the sweep's idempotent refund:{post_id}:{user_id} row. The
+	ledger and the balance cache would agree perfectly, so reconcile() would
+	never see it. FOR UPDATE on prediction_posts serialises the two, and the
+	'closed' verdict is therefore decided HERE, under the lock, never by the
+	caller's earlier read."""
+	async with db.transaction() as tx:
+		book = await tx.fetchone(
+			"SELECT status, freezes_at FROM prediction_posts WHERE id=%s FOR UPDATE",
+			[post_id])
+		if book is None or book["status"] != "open" or now >= int(book["freezes_at"]):
+			return "closed", 0
+		row = await tx.fetchone(
+			"SELECT stake FROM prediction_bets WHERE post_id=%s AND user_id=%s FOR UPDATE",
+			[post_id, user_id])
+		if not row:
+			return "nothing", 0
+		stake = int(row["stake"])
+		removed = await tx.execute(
+			"DELETE FROM prediction_bets WHERE post_id=%s AND user_id=%s", [post_id, user_id])
+		if not removed:
+			return "nothing", 0
+		await tx.insert("gold_ledger", dict(
+			community_id=community_id, user_id=user_id, entry_type="cancel",
+			amount=stake, post_id=post_id, created_at=now))
+		bumped = await tx.execute(
+			"UPDATE gold_balances SET balance=balance+%s, updated_at=%s "
+			"WHERE community_id=%s AND user_id=%s",
+			[stake, now, community_id, user_id])
+		if not bumped:
+			raise RuntimeError(
+				f"gold_balances row missing for {community_id}/{user_id} (cancel post {post_id})")
+		return "ok", stake
 
 
 async def _credit(community_id, user_id, entry_type, amount, idem_key, now,

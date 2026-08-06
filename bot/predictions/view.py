@@ -14,6 +14,7 @@ _ENTRY_LABELS = {
 	"seed": "Starting gold",
 	"match_reward": "Match played",
 	"bet": "Bet placed",
+	"cancel": "Bet cancelled",
 	"refund": "Refund",
 	"payout": "Winnings",
 	"admin_adjust": "Adjustment",
