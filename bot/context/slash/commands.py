@@ -40,7 +40,7 @@ async def run_slash(coro: Callable, interaction: Interaction, **kwargs):
 			embed=error_embed("Bot is under connection, please try agian later...", title="Error")
 		)
 		return
-	qc = bot.queue_channels.get(interaction.channel_id)
+	qc = dc.app.channels.get(interaction.channel_id)
 	if qc is None:
 		await interaction.response.send_message(embed=error_embed("Not in a queue channel.", title="Error"))
 		return
@@ -179,13 +179,13 @@ async def enable_channel(
 		return await interaction.response.send_message(
 			embed=error_embed('You must possess server administrator permissions.'), ephemeral=True
 		)
-	if bot.queue_channels.get(interaction.channel_id) is not None:
+	if dc.app.channels.get(interaction.channel_id) is not None:
 		return await interaction.response.send_message(
 			embed=error_embed('This channel is already enabled.'), ephemeral=True
 		)
 
 	await interaction.response.send_message(embed=ok_embed('The bot has been enabled.'))
-	bot.queue_channels[interaction.channel.id] = await bot.QueueChannel.create(interaction.channel, dc.app)
+	dc.app.channels[interaction.channel.id] = await bot.QueueChannel.create(interaction.channel, dc.app)
 	# Enroll into a community right away — on_ready's enrollment loop only
 	# runs once at boot, so without this a channel enabled at runtime has
 	# no community_id (community_for_channel() returns None) until the
@@ -201,12 +201,12 @@ async def disable_channel(
 		return await interaction.response.send_message(
 			embed=error_embed('You must possess server administrator permissions.'), ephemeral=True
 		)
-	if (qc := bot.queue_channels.get(interaction.channel_id)) is None:
+	if (qc := dc.app.channels.get(interaction.channel_id)) is None:
 		return await interaction.response.send_message(
 			embed=error_embed('This channel is not enabled.'), ephemeral=True
 		)
 
-	bot.queue_channels.pop(qc.id)
+	dc.app.channels.pop(qc.id)
 	await interaction.response.send_message(embed=ok_embed('The bot has been disabled.'))
 
 
@@ -218,7 +218,7 @@ async def delete_channel(
 		return await interaction.response.send_message(
 			embed=error_embed('You must possess server administrator permissions.'), ephemeral=True
 		)
-	if (qc := bot.queue_channels.get(interaction.channel_id)) is None:
+	if (qc := dc.app.channels.get(interaction.channel_id)) is None:
 		return await interaction.response.send_message(
 			embed=error_embed('This channel is not enabled.'), ephemeral=True
 		)
@@ -226,7 +226,7 @@ async def delete_channel(
 	for queue in qc.queues:
 		await queue.cfg.delete()
 	await qc.cfg.delete()
-	bot.queue_channels.pop(qc.id)
+	dc.app.channels.pop(qc.id)
 	await interaction.response.send_message(embed=ok_embed('The bot has been disabled.'))
 
 

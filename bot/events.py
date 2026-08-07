@@ -28,7 +28,7 @@ async def seed_ratings_from_csv():
 		log.info("No data/qc_players.csv found, skipping rating seed.")
 		return
 
-	for qc in bot.queue_channels.values():
+	for qc in dc.app.channels.values():
 		dest_id = qc.rating.channel_id
 		# Check if this channel already has rated players
 		existing = await db.select(['user_id'], 'player_ratings', where={'channel_id': dest_id})
@@ -173,7 +173,7 @@ async def on_message(message):
 	# only shorthands kept. They reuse the existing add/remove command handlers
 	# (add with no args -> default/active queues; remove with no args -> all).
 	if message.content in ('++', '--'):
-		if (qc := bot.queue_channels.get(message.channel.id)) is not None and dc.app.ready:
+		if (qc := dc.app.channels.get(message.channel.id)) is not None and dc.app.ready:
 			from bot.context.message import MessageContext
 			ctx = MessageContext(qc, message)
 			try:
@@ -216,7 +216,7 @@ async def on_message(message):
 			log.error(f"Civ sync buffer error: {e}\n{traceback.format_exc()}")
 
 	# Log all channel messages in queue channels
-	if message.channel.id in bot.queue_channels:
+	if message.channel.id in dc.app.channels:
 		try:
 			log_channel_message(message)
 		except Exception:
@@ -294,8 +294,8 @@ async def on_ready():
 		for channel_id in await bot.QueueChannel.cfg_factory.p_keys():
 			channel = dc.get_channel(channel_id)
 			if channel:
-				bot.queue_channels[channel_id] = await bot.QueueChannel.create(channel, dc.app)
-				await bot.queue_channels[channel_id].update_info(channel)
+				dc.app.channels[channel_id] = await bot.QueueChannel.create(channel, dc.app)
+				await dc.app.channels[channel_id].update_info(channel)
 				log.info(f"\tInit channel {channel.guild.name}>#{channel.name} successful.")
 			else:
 				log.info(f"\tCould not reach a text channel with id {channel_id}.")
@@ -307,7 +307,7 @@ async def on_ready():
 		# the bot from booting.
 		try:
 			enrolled_communities = set()
-			for channel_id in bot.queue_channels:
+			for channel_id in dc.app.channels:
 				channel = dc.get_channel(channel_id)
 				if not channel:
 					continue
@@ -315,7 +315,7 @@ async def on_ready():
 				if community_id is not None:
 					enrolled_communities.add(community_id)
 			log.info(
-				f"\tEnrolled {len(bot.queue_channels)} channels into "
+				f"\tEnrolled {len(dc.app.channels)} channels into "
 				f"{len(enrolled_communities)} communities."
 			)
 		except Exception:
@@ -360,7 +360,7 @@ async def on_resumed():
 async def on_presence_update(before, after):
 	if after.raw_status not in ['idle', 'offline']:
 		return
-	for qc in filter(lambda i: i.guild_id == after.guild.id, bot.queue_channels.values()):
+	for qc in filter(lambda i: i.guild_id == after.guild.id, dc.app.channels.values()):
 		if after.raw_status == "offline" and qc.cfg.remove_offline:
 			await qc.remove_members(after, reason="offline")
 
@@ -370,5 +370,5 @@ async def on_presence_update(before, after):
 
 @dc.event
 async def on_member_remove(member):
-	for qc in filter(lambda i: i.id == member.guild.id, bot.queue_channels.values()):
+	for qc in filter(lambda i: i.id == member.guild.id, dc.app.channels.values()):
 		await qc.remove_members(member, reason="left guild")

@@ -375,7 +375,7 @@ class QueueChannel:
 	@property
 	def _ranks_table(self):
 		if self.cfg.rating_channel:
-			return (bot.queue_channels.get(self.cfg.rating_channel.id) or self).cfg.ranks
+			return (self.app.channels.get(self.cfg.rating_channel.id) or self).cfg.ranks
 		else:
 			return self.cfg.ranks
 

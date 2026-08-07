@@ -2,8 +2,8 @@
 import time
 import datetime
 import asyncio
-import bot
 from core.console import log
+from core.client import dc
 from core.database import db
 from core.utils import iter_to_dict, find, get_nick  # noqa: F401
 
@@ -349,7 +349,7 @@ class StatsJobs:
 	@staticmethod
 	async def apply_rating_decays():
 		log.info("--- Applying weekly deviation decays ---")
-		for qc in bot.queue_channels.values():
+		for qc in dc.app.channels.values():
 			await qc.apply_rating_decay()
 			await asyncio.sleep(1)
 

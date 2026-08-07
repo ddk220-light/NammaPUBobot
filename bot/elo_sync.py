@@ -1,6 +1,7 @@
 import re
 import time
 import zlib
+from core.client import dc
 from core.database import db
 from core.console import log
 from bot.civ_sync import find_matching_lobby, find_matching_lobby_from_history, link_and_write
@@ -106,7 +107,6 @@ async def process_elo_sync(message):
 	3. For each player: look up or create in player_ratings, apply rating delta
 	4. Log to rating_history
 	"""
-	import bot
 
 	parsed = parse_elo_message(message.content)
 	if parsed is None:
@@ -116,7 +116,7 @@ async def process_elo_sync(message):
 	queue_name = parsed['queue_name']
 
 	# Find the queue channel for this Discord channel
-	qc = bot.queue_channels.get(message.channel.id)
+	qc = dc.app.channels.get(message.channel.id)
 	if qc is None:
 		return
 

@@ -4,6 +4,7 @@ import json
 import time
 from nextcord import Interaction  # noqa: F401
 
+from core.client import dc
 from core.console import log
 from core.database import db
 from core.utils import error_embed, ok_embed, get  # noqa: F401
@@ -27,16 +28,16 @@ db.ensure_table(dict(
 
 
 def update_qc_lang(qc_cfg):
-	bot.queue_channels[qc_cfg.p_key].update_lang()
+	dc.app.channels[qc_cfg.p_key].update_lang()
 
 
 def update_rating_system(qc_cfg):
-	bot.queue_channels[qc_cfg.p_key].update_rating_system()
+	dc.app.channels[qc_cfg.p_key].update_rating_system()
 
 
 def _serialize_state(app):
 	queues = []
-	for qc in bot.queue_channels.values():
+	for qc in dc.app.channels.values():
 		for q in qc.queues:
 			if q.length > 0:
 				queues.append(q.serialize())

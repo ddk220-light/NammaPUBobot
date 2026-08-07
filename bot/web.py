@@ -2521,14 +2521,14 @@ async def handle_api_guilds(request):
 	guilds = []
 	for guild in dc.guilds:
 		# Only show guilds with configured queue channels
-		qc_ids = [ch_id for ch_id, qc in bot.queue_channels.items() if qc.guild_id == guild.id]
+		qc_ids = [ch_id for ch_id, qc in dc.app.channels.items() if qc.guild_id == guild.id]
 		if not qc_ids:
 			continue
 		try:
 			member = guild.get_member(user_id) or await guild.fetch_member(user_id)
 		except Exception:
 			continue
-		is_admin = any(_check_admin(bot.queue_channels[ch_id], member) for ch_id in qc_ids)
+		is_admin = any(_check_admin(dc.app.channels[ch_id], member) for ch_id in qc_ids)
 		guilds.append({
 			"id": str(guild.id),
 			"name": guild.name,
@@ -2554,7 +2554,7 @@ async def handle_api_channels(request):
 		return web.json_response({"error": "Not a guild member"}, status=403)
 
 	channels = []
-	for ch_id, qc in bot.queue_channels.items():
+	for ch_id, qc in dc.app.channels.items():
 		if qc.guild_id != guild_id:
 			continue
 		ch = dc.get_channel(ch_id)
@@ -2573,7 +2573,7 @@ async def handle_api_channel_config(request):
 		return web.json_response({"error": "Not logged in"}, status=401)
 
 	channel_id = int(request.match_info["channel_id"])
-	qc = bot.queue_channels.get(channel_id)
+	qc = dc.app.channels.get(channel_id)
 	if not qc:
 		return web.json_response({"error": "Channel not configured"}, status=404)
 
@@ -2637,7 +2637,7 @@ async def handle_api_queues(request):
 		return web.json_response({"error": "Not logged in"}, status=401)
 
 	channel_id = int(request.match_info["channel_id"])
-	qc = bot.queue_channels.get(channel_id)
+	qc = dc.app.channels.get(channel_id)
 	if not qc:
 		return web.json_response({"error": "Channel not configured"}, status=404)
 
@@ -2666,7 +2666,7 @@ async def handle_api_queue_config(request):
 
 	channel_id = int(request.match_info["channel_id"])
 	queue_name = request.match_info["queue_name"]
-	qc = bot.queue_channels.get(channel_id)
+	qc = dc.app.channels.get(channel_id)
 	if not qc:
 		return web.json_response({"error": "Channel not configured"}, status=404)
 
@@ -2731,7 +2731,7 @@ async def handle_api_debug(request):
 		"bot_guilds": [{"id": str(g.id), "name": g.name} for g in dc.guilds],
 		"queue_channels": {
 			str(ch_id): {"guild_id": str(qc.guild_id), "queues": len(qc.queues)}
-			for ch_id, qc in bot.queue_channels.items()
+			for ch_id, qc in dc.app.channels.items()
 		},
 		"bot_ready": getattr(bot, 'bot_ready', 'unknown'),
 	})

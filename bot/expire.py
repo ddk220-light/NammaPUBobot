@@ -38,7 +38,7 @@ class ExpireTimer:
 
 		@classmethod
 		async def from_json(cls, data):
-			if (qc := bot.queue_channels.get(data['channel_id'])) is None:
+			if (qc := dc.app.channels.get(data['channel_id'])) is None:
 				raise bot.Exc.ValueError(f"QueueChannel is not found.")  # noqa: F541
 			if (guild := dc.get_guild(qc.guild_id)) is None:
 				raise bot.Exc.ValueError(f"Guild is not reachable.")  # noqa: F541

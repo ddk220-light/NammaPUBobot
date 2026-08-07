@@ -281,7 +281,7 @@ class PickupQueue:
 
 	@classmethod
 	async def from_json(cls, data):
-		if (qc := bot.queue_channels.get(data['channel_id'])) is None:
+		if (qc := dc.app.channels.get(data['channel_id'])) is None:
 			raise bot.Exc.ValueError("QueueChannel not found.")
 		if (q := get(qc.queues, id=data['queue_id'])) is None:
 			raise bot.Exc.ValueError("Queue not found.")

@@ -1,6 +1,17 @@
 # -*- coding: utf-8 -*-
+"""Package re-exports. NOTHING MUTABLE LIVES HERE ANY MORE.
 
-import time
+This module used to hold six globals — queue_channels, active_matches,
+active_queues, waiting_reactions, bot_ready, bot_was_ready — writable by any
+module that did `import bot`. That is what forced 65 function-local imports
+across the codebase: importing at module scope deadlocked, because the module
+holding the world also re-exported half of what used it.
+
+That state is now bot/app.py's Application, constructed once at boot and
+reached through the object that owns it — dc.app for module-level code,
+self.app for a QueueChannel, self.qc.app for a queue or a match. If adding
+state here ever looks convenient again, read bot/app.py first.
+"""
 
 from .main import update_qc_lang, update_rating_system, save_state, save_state_db
 from .main import load_state
@@ -28,5 +39,4 @@ from . import classifications  # noqa: F401  (cls_* ensure_table side effect)
 from . import derived  # noqa: F401  (game_stats/game_labels ensure_table side effect)
 
 
-queue_channels = dict()  # {channel.id: QueueChannel()}
 

@@ -8,7 +8,7 @@ import bot
 
 
 async def queues(interaction: Interaction, queue: str) -> List[str]:  # noqa: UP006
-	if (qc := bot.queue_channels.get(interaction.channel_id)) is not None:
+	if (qc := dc.app.channels.get(interaction.channel_id)) is not None:
 		return [q.name for q in qc.queues if q.name.startswith(queue)]
 	else:
 		return []
@@ -19,7 +19,7 @@ async def qc_variables(interaction: Interaction, variable: str) -> List[str]:  #
 
 
 async def queue_variables(interaction: Interaction, variable: str) -> List[str]:  # noqa: UP006
-	if (qc := bot.queue_channels.get(interaction.channel_id)) is None:
+	if (qc := dc.app.channels.get(interaction.channel_id)) is None:
 		return []
 	interaction_queue = find(lambda i: i['name'] == 'queue', interaction.data['options'][0]['options'])
 	if interaction_queue and (queue := get(qc.queues, name=interaction_queue['value'])):
@@ -28,7 +28,7 @@ async def queue_variables(interaction: Interaction, variable: str) -> List[str]:
 
 
 async def match_ids(interaction: Interaction, match_id: str) -> List[int]:  # noqa: UP006
-	if (qc := bot.queue_channels.get(interaction.channel_id)) is None:
+	if (qc := dc.app.channels.get(interaction.channel_id)) is None:
 		return []
 	return [m.id for m in dc.app.active_matches if m.qc == qc]
 

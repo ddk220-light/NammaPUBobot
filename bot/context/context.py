@@ -131,7 +131,7 @@ class WebContext(Context):
 	""" Context for actions within the web interface """
 
 	def __init__(self, user_id: int, channel_id: int):
-		if (qc := bot.queue_channels.get(channel_id)) is None:
+		if (qc := dc.app.channels.get(channel_id)) is None:
 			raise bot.Exc.NotFoundError(f"QueueChannel with id {channel_id} is not found.")
 		if (channel := dc.get_channel(channel_id)) is None:
 			raise bot.Exc.NotFoundError(f"Discord Channel object with id {channel_id} is not reachable.")
