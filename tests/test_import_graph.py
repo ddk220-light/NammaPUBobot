@@ -35,6 +35,7 @@ importing x, which is the thing this file will not do.
 """
 import ast
 import os
+import sys
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -292,3 +293,88 @@ def test_the_module_entrypoint_is_where_start_py_says_it_is():
 	assert '"nammaoe2bot/__main__.py"' not in start, (
 		"start.py execs the file path — that puts nammaoe2bot/ on sys.path "
 		"instead of the repo root and every intra-package import fails")
+
+
+# Third-party packages this repo actually depends on. Anything imported that is
+# neither stdlib, nor one of these, nor first-party, cannot resolve at runtime.
+_THIRD_PARTY = frozenset({
+	"nextcord", "aiomysql", "pymysql", "aiohttp", "requests", "mgz", "glicko2",
+	"trueskill", "sentry_sdk", "matplotlib", "emoji", "rlcompleter", "readline",
+	"pyreadline",
+})
+
+# utils/ scripts are run FROM their own directory (`python3 utils/civ_analysis.py`
+# puts utils/ on sys.path), so a bare `from db_helpers import ...` between
+# siblings resolves for them and only for them. The bot never imports these.
+_SIBLING_IMPORT_DIRS = ("utils/", "scripts/")
+
+
+def test_no_import_names_a_package_that_does_not_exist_anywhere():
+	""" An import whose top-level name is neither stdlib, nor a declared
+	dependency, nor first-party. It cannot resolve, anywhere, ever.
+
+	WHY THIS IS SEPARATE FROM THE SWEEP ABOVE, AND WHY IT HAD TO EXIST. That one
+	resolves imports whose first segment is a first-party package. An import
+	that has LOST its package prefix is not one of those — `from quiz import
+	interactions` looks exactly like a third-party import and gets skipped.
+
+	That is not hypothetical. Dissolving the re-export module rewrote every
+	`bot.quiz` attribute access to `quiz`, and the regex also hit the deferred
+	statement `from bot.quiz import interactions`, leaving `from quiz import
+	interactions` inside on_interaction. Three lines in nammaoe2bot/discord/events.py:
+	the quiz router, the betting router, and the boot-time gold seed.
+
+	Every one of them shipped. Ruff does not resolve imports; this file skipped
+	them as third-party; nothing in the suite pressed a button through the real
+	router; and the bot booted perfectly, because a function-local import does
+	not run until the function does. The first symptom was a player pressing a
+	quiz answer and getting "this bot didn't respond in time" — the interaction
+	raised ModuleNotFoundError inside nextcord's handler, which logs and
+	continues, so nothing was ever answered and nothing crashed. """
+	offenders = []
+	for _module, path in _py_files():
+		relative = os.path.relpath(path, _REPO_ROOT)
+		if relative.startswith(_SIBLING_IMPORT_DIRS):
+			continue
+		with open(path, encoding="utf-8") as f:
+			tree = ast.parse(f.read())
+		for node in ast.walk(tree):
+			if isinstance(node, ast.ImportFrom):
+				if node.level:
+					continue                      # relative — covered by the sweep above
+				root = (node.module or "").split(".")[0]
+			elif isinstance(node, ast.Import):
+				root = node.names[0].name.split(".")[0]
+			else:
+				continue
+			if not root or root in _PACKAGES or root in _THIRD_PARTY:
+				continue
+			if root in sys.stdlib_module_names:
+				continue
+			offenders.append(f"{relative}:{node.lineno}: imports '{root}', which is not "
+							 f"stdlib, not a dependency, and not a package in this repo")
+	assert not offenders, (
+		"imports that cannot resolve anywhere — usually a package prefix lost in a "
+		"refactor:\n  " + "\n  ".join(offenders))
+
+
+def test_the_third_party_allowlist_has_not_gone_stale():
+	""" _THIRD_PARTY is hand-maintained, and the test above is only as good as
+	it is: a name wrongly added there hides a real break forever. This pins the
+	direction that matters — every entry must still be imported by something,
+	so a dependency that goes away takes its allowlist entry with it rather
+	than leaving a hole for a future typo to fall through. """
+	imported = set()
+	for _module, path in _py_files():
+		with open(path, encoding="utf-8") as f:
+			tree = ast.parse(f.read())
+		for node in ast.walk(tree):
+			if isinstance(node, ast.ImportFrom) and not node.level and node.module:
+				imported.add(node.module.split(".")[0])
+			elif isinstance(node, ast.Import):
+				for alias in node.names:
+					imported.add(alias.name.split(".")[0])
+	unused = sorted(_THIRD_PARTY - imported)
+	assert not unused, (
+		f"_THIRD_PARTY lists packages nothing imports any more: {unused}. Remove them — "
+		f"each one is a name a future typo could hide behind.")

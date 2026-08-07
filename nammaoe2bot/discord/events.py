@@ -247,11 +247,11 @@ async def on_interaction(interaction):
 	# self-isolating (never raises). Lazy import keeps quiz's nextcord modules out of
 	# events' import path until first use.
 	await dc.process_application_commands(interaction)
-	from quiz import interactions as quiz_interactions
+	from nammaoe2bot.features.quiz import interactions as quiz_interactions
 	await quiz_interactions.on_quiz_interaction(interaction)
 	from nammaoe2bot.derived.classifications import interactions as cls_interactions
 	await cls_interactions.on_insights_interaction(interaction)
-	from predictions import interactions as bet_interactions
+	from nammaoe2bot.features.betting import interactions as bet_interactions
 	await bet_interactions.on_bet_interaction(interaction)
 
 
@@ -340,7 +340,7 @@ async def on_ready():
 		# every community; after the first boot this inserts nothing. Newcomers
 		# are seeded lazily on their first gold touch instead.
 		try:
-			from predictions import gold as gold_bank
+			from nammaoe2bot.features.betting import gold as gold_bank
 			seeded = await gold_bank.bulk_seed(int(time.time()))
 			if seeded:
 				log.info(f"\tSeeded {seeded} player(s) with starting gold.")
