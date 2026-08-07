@@ -549,7 +549,12 @@ class _FakeColour:
 
 
 _fake_nextcord = types.ModuleType('nextcord')
-for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents'):
+# The names the REAL pickup/match chain imports. tests/test_match_lifecycle_e2e.py
+# drives an actual Match through an actual lifecycle, so match.py, embeds.py,
+# checkin.py and substitution.py all have to import for real.
+for _name in ('Guild', 'Member', 'TextChannel', 'Role', 'Client', 'Intents',
+              'Streaming', 'Forbidden', 'Message', 'Interaction', 'ChannelType',
+              'Activity', 'ActivityType'):
 	setattr(_fake_nextcord, _name, _NextcordStub)
 _fake_nextcord.DiscordException = _FakeDiscordException
 _fake_nextcord.HTTPException = _FakeHTTPError
@@ -638,6 +643,12 @@ class _FakeDiscordClient:
 
 	def is_ready(self):
 		return False
+
+	# The bot's own user, which pickup/match/embeds.py reaches for an avatar to
+	# stamp on the footer of every match embed. `avatar = None` takes the
+	# `if dc.user.avatar else None` branch, which is the state a client with no
+	# Discord connection is genuinely in.
+	user = types.SimpleNamespace(id=0, name="nammaoe2bot", avatar=None)
 
 
 class _FakeMember:
