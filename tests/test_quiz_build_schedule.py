@@ -1,6 +1,6 @@
 """The offline GAME queue builder. Since stage 5b it emits game entries only —
-player questions are generated live (bot/quiz/player_bank.py) and the calendar
-is the bot's arithmetic (bot/quiz/schedule.py), so nothing here stamps a
+player questions are generated live (nammaoe2bot/features/quiz/player_bank.py) and the calendar
+is the bot's arithmetic (nammaoe2bot/features/quiz/schedule.py), so nothing here stamps a
 seq/week/day any more. What it still owes: three entries per week (the even
 days), in the curated GAME_SLOTS rotation, with no question repeated.
 """
@@ -39,7 +39,7 @@ def test_three_entries_per_week_of_game_days():
 
 
 def test_no_seq_week_or_day_is_stamped():
-    """The calendar moved into bot/quiz/schedule.py. An entry carrying its own
+    """The calendar moved into nammaoe2bot/features/quiz/schedule.py. An entry carrying its own
     week/day would be a second opinion about which day a channel is on."""
     for e in bs.build(_bank(), weeks=2):
         assert not {"seq", "week", "day", "weekday"} & set(e)

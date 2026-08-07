@@ -1,4 +1,4 @@
-"""Unit tests for the pure rendering helpers in bot.post_game.
+"""Unit tests for the pure rendering helpers in nammaoe2bot.features.postgame.card.
 
 Covers the Match Cards line and field rendering, the replay-to-roster merge, and
 post_match_analysis' send fallbacks. The DB read and the Discord send are kept
@@ -7,7 +7,7 @@ conftest's fakes).
 """
 from __future__ import annotations
 
-import bot.post_game as pg
+import nammaoe2bot.features.postgame.card as pg
 
 
 # ── Match Cards ────────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ def test_analysis_rows_selects_every_column_the_card_needs():
 def test_required_card_columns_are_all_selected():
 	import inspect
 
-	from bot.replay_stats import card_scoring
+	from nammaoe2bot.ingest import card_scoring
 
 	src = inspect.getsource(pg._analysis_rows)
 	for column in card_scoring.REQUIRED_COLUMNS:
@@ -320,10 +320,10 @@ def _wire_game_stats_db(monkeypatch, rows):
 	import sys
 	import types
 
-	fake_module = types.ModuleType("core.database")
+	fake_module = types.ModuleType("nammaoe2bot.runtime.database")
 	fake_db = _FakeGameStatsDB(rows)
 	fake_module.db = fake_db
-	monkeypatch.setitem(sys.modules, "core.database", fake_module)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.database", fake_module)
 	return fake_db
 
 
@@ -495,9 +495,9 @@ def _wire_post_match_analysis(monkeypatch, channel, chart_file):
 	import types
 
 	cards = _FakeEmbed()
-	fake_client = types.ModuleType("core.client")
+	fake_client = types.ModuleType("nammaoe2bot.runtime.client")
 	fake_client.dc = types.SimpleNamespace(get_channel=lambda _cid: channel)
-	monkeypatch.setitem(sys.modules, "core.client", fake_client)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.client", fake_client)
 
 	async def _channel_id(_bot_match_id):
 		return 123
@@ -573,7 +573,7 @@ def test_post_match_analysis_sends_the_file_when_it_is_accepted(monkeypatch):
 
 
 # ── a swept community's card ─────────────────────────────────────────────
-# bot/derived/sweeper.py deletes replay_events / replay_buildings / replay_apm
+# nammaoe2bot/derived/sweeper.py deletes replay_events / replay_buildings / replay_apm
 # rows for a community that opted out of keeping raw replay detail, so
 # card_query hands the renderer empty dicts for four of its six signals. This
 # pins what the card does then: it renders the facts that survive and omits the

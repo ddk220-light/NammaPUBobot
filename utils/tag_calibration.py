@@ -2,7 +2,7 @@
 """Offline calibration report: legacy vs current impact/tag formula.
 
 Compares the pre-July-2026 ("legacy") impact formula against the shared
-bot/replay_stats/scoring.py module over a snapshot of parsed matches, and
+nammaoe2bot/ingest/scoring.py module over a snapshot of parsed matches, and
 prints the metrics that drove the recalibration:
 
   * per-tag fire rates (share of player-games)
@@ -31,9 +31,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load_scoring():
-    """Import bot/replay_stats/scoring.py by path so this script doesn't pull in
+    """Import nammaoe2bot/ingest/scoring.py by path so this script doesn't pull in
     the bot package (whose __init__ needs a live DB adapter)."""
-    path = ROOT / "bot" / "replay_stats" / "scoring.py"
+    path = ROOT / "nammaoe2bot" / "ingest" / "scoring.py"
     spec = importlib.util.spec_from_file_location("rs_scoring_calibration", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -177,7 +177,7 @@ def main():
 
     scoring = _load_scoring()
     legacy_carries = evaluate("legacy formula", by_match, legacy_scores, legacy_tags)
-    new_carries = evaluate("current formula (bot/replay_stats/scoring.py)", by_match,
+    new_carries = evaluate("current formula (nammaoe2bot/ingest/scoring.py)", by_match,
                            scoring.impact_scores,
                            lambda s: [t["key"] for t in scoring.derive_impact_tags(s)])
 

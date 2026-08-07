@@ -1,6 +1,6 @@
 """The betting lifecycle — freeze, resolve, void — driven for real.
 
-tests/test_predictions_wiring.py pins the SHAPE of bot/predictions/flow.py (what
+tests/test_predictions_wiring.py pins the SHAPE of nammaoe2bot/features/betting/flow.py (what
 the package exports, which object the call sites hold). This file pins what the
 lifecycle DOES now that a book of gold, rather than a set of reactions, is the
 thing being settled:
@@ -24,7 +24,7 @@ import sys
 import time
 import types
 
-import bot.predictions.flow as flow
+import nammaoe2bot.features.betting.flow as flow
 
 
 # ── the fake Discord side ────────────────────────────────────────────────
@@ -253,17 +253,16 @@ def wire(monkeypatch, *, bets=(), the_post=None, community_id=5,
 		def get_channel(self, _channel_id):
 			return channel
 
-	monkeypatch.setattr(sys.modules["core.client"], "dc", _Client())
+	monkeypatch.setattr(sys.modules["nammaoe2bot.runtime.client"], "dc", _Client())
 
 	async def _community_for_channel(_channel_id):
 		return community_id
 
-	# `from bot import community` resolves the package attribute before it tries
+	# `from nammaoe2bot import community` resolves the package attribute before it tries
 	# to import the submodule, so this keeps the real module's DB access away.
-	monkeypatch.setattr(sys.modules["bot"], "community",
+	monkeypatch.setattr(sys.modules["nammaoe2bot"], "community",
 						types.SimpleNamespace(community_for_channel=_community_for_channel),
 						raising=False)
-	monkeypatch.setattr(sys.modules["bot"], "active_matches", [], raising=False)
 	return store, bank, channel, log
 
 
@@ -300,8 +299,8 @@ class TestOpen:
 			teams=[types.SimpleNamespace(name="Alpha"), types.SimpleNamespace(name="Bravo")])
 
 	def test_the_card_ships_with_the_six_bet_buttons_wired_to_the_post(self, monkeypatch):
-		from bot.predictions import embeds
-		from bot.predictions.scoring import STAKES, parse_bet_custom_id
+		from nammaoe2bot.features.betting import embeds
+		from nammaoe2bot.features.betting.scoring import STAKES, parse_bet_custom_id
 
 		store, _bank, channel, log = wire(monkeypatch)
 		asyncio.run(flow.open_for_match(self.match()))
@@ -408,7 +407,7 @@ class TestFreeze:
 			def get_channel(self, _channel_id):
 				return None
 
-		monkeypatch.setattr(sys.modules["core.client"], "dc", _Blind())
+		monkeypatch.setattr(sys.modules["nammaoe2bot.runtime.client"], "dc", _Blind())
 		asyncio.run(flow._freeze(post(), 2_000))
 
 		assert store.frozen == [(12, 2, 1)]

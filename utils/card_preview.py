@@ -8,8 +8,8 @@ Discord.
 
 Two things this script deliberately does, both mirroring tests/conftest.py:
 
-* It stubs ``core.database.db`` with a wrapper whose ``ensure_table`` is a no-op.
-  Importing bot.replay_stats normally runs a dozen ensure_table calls, which
+* It stubs ``nammaoe2bot.runtime.database.db`` with a wrapper whose ``ensure_table`` is a no-op.
+  Importing nammaoe2bot.ingest normally runs a dozen ensure_table calls, which
   create tables and add columns — writes. This script must never write, so the
   schema calls are swallowed and only SELECT reaches the server.
 * It pre-registers a bare ``bot`` package so bot/__init__.py never runs, which
@@ -31,7 +31,7 @@ from utils.db_helpers import load_config, parse_db_uri  # noqa: E402
 class ReadOnlyDB:
     """SELECT-only adapter with the subset of the db interface the card path uses."""
 
-    # bot/replay_stats/__init__.py reads db.types.* while declaring its tables.
+    # nammaoe2bot/ingest/__init__.py reads db.types.* while declaring its tables.
     # The values are irrelevant here because ensure_table is a no-op.
     types = types.SimpleNamespace(int="BIGINT", str="VARCHAR(191)", bool="TINYINT(1)",
                                   float="FLOAT", dict="MEDIUMTEXT")
@@ -66,16 +66,16 @@ class ReadOnlyDB:
 
 
 def _install_stubs(db):
-    """Register the fake core.database / bot package modules before any import."""
-    fake_db_mod = types.ModuleType("core.database")
+    """Register the fake nammaoe2bot.runtime.database / bot package modules before any import."""
+    fake_db_mod = types.ModuleType("nammaoe2bot.runtime.database")
     fake_db_mod.db = db
-    sys.modules["core.database"] = fake_db_mod
+    sys.modules["nammaoe2bot.runtime.database"] = fake_db_mod
 
-    fake_console = types.ModuleType("core.console")
+    fake_console = types.ModuleType("nammaoe2bot.runtime.console")
     fake_console.log = types.SimpleNamespace(
         error=lambda msg: print(f"  [log.error] {msg}", file=sys.stderr),
         info=lambda msg: None, debug=lambda msg: None)
-    sys.modules["core.console"] = fake_console
+    sys.modules["nammaoe2bot.runtime.console"] = fake_console
 
     fake_bot = types.ModuleType("bot")
     fake_bot.__path__ = [os.path.join(PROJECT_ROOT, "bot")]
@@ -107,7 +107,7 @@ async def main(limit, bot_match):
     try:
         db = ReadOnlyDB(conn)
         _install_stubs(db)
-        from bot import post_game as pg
+        from nammaoe2bot.features.postgame import card as pg
 
         if bot_match:
             metas = await db.fetchall(

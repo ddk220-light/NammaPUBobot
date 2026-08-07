@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Fetch one match's .aoe2record into the local replay cache.
 
-Called per match by the live ingest (bot/replay_stats/fetch.py wraps every
+Called per match by the live ingest (nammaoe2bot/ingest/fetch.py wraps every
 function here in asyncio.to_thread -- the requests calls are blocking) and, on
 demand, by the offline classification pipelines.
 

@@ -1,0 +1,387 @@
+import csv
+import os
+import time
+import traceback
+from nextcord import ChannelType, Activity, ActivityType
+
+from nammaoe2bot.runtime.client import dc
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.paths import data as data_path
+from nammaoe2bot.runtime.config import cfg
+from nammaoe2bot.features.civs import reconcile
+from nammaoe2bot.discord.commands import queues as queue_commands
+from nammaoe2bot import derived
+from nammaoe2bot.features import lobby
+from nammaoe2bot.features import betting
+from nammaoe2bot.features import quiz
+from nammaoe2bot import ingest
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.expire import expire
+from nammaoe2bot.state import load_state, save_state, save_state_db
+from nammaoe2bot.pickup.channel import QueueChannel
+from nammaoe2bot.pickup import stats
+from nammaoe2bot.pickup.noadds import noadds
+from nammaoe2bot.features.elo_sync import process_elo_sync
+from nammaoe2bot.features.civs.sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
+from nammaoe2bot.features.message_log import log_channel_message, log_bot_message
+from nammaoe2bot.community import enroll_channel
+
+
+async def seed_ratings_from_csv():
+	"""One-time bulk seed of player ratings from data/qc_players.csv into all queue channels.
+
+	qc_players.csv is an on-disk *filename*, not the `player_ratings` table it
+	seeds — it predates the stage-1 table rename and nothing renames files on
+	disk, so keep this literal as-is even though the table below is now
+	called player_ratings.
+	"""
+	csv_path = data_path('qc_players.csv')
+	if not os.path.exists(csv_path):
+		log.info("No data/qc_players.csv found, skipping rating seed.")
+		return
+
+	for qc in dc.app.channels.values():
+		dest_id = qc.rating.channel_id
+		# Check if this channel already has rated players
+		existing = await db.select(['user_id'], 'player_ratings', where={'channel_id': dest_id})
+		rated_existing = [p for p in existing if p.get('user_id')]
+		if len(rated_existing) > 0:
+			log.info(f"\tChannel {dest_id} already has {len(rated_existing)} players, skipping CSV seed.")
+			continue
+
+		with open(csv_path, newline='') as f:
+			reader = csv.DictReader(f)
+			rows = [r for r in reader if r.get('rating')]
+
+		if not rows:
+			continue
+
+		to_insert = []
+		for r in rows:
+			to_insert.append({
+				'channel_id': dest_id,
+				'user_id': int(r['user_id']),
+				'nick': r['nick'],
+				'rating': int(r['rating']),
+				'deviation': int(r['deviation']) if r.get('deviation') else 300,
+				'wins': int(r.get('wins') or 0),
+				'losses': int(r.get('losses') or 0),
+				'draws': int(r.get('draws') or 0),
+				'streak': int(r.get('streak') or 0),
+			})
+
+		await db.insert_many('player_ratings', to_insert, on_duplicate='replace')
+		log.info(f"\tSeeded {len(to_insert)} player ratings from CSV into channel {dest_id}.")
+
+
+@dc.event
+async def on_init():
+	await stats.check_match_id_counter()
+
+
+_last_state_save = 0
+_STATE_SAVE_INTERVAL = 30  # seconds; crash-survivability backstop for in-flight matches
+
+# Stamped every tick — read by nammaoe2bot/web/server.py handle_health as the "last_tick_age_seconds"
+# liveness signal. If think() stops running (rare, but possible under a deep
+# deadlock or if the supervisor misses an exception) this value stops advancing
+# and /health reflects the stall.
+last_tick_at = 0.0
+
+
+@dc.event
+async def on_think(frame_time):
+	global _last_state_save, last_tick_at
+	last_tick_at = frame_time
+
+	# Iterate over a snapshot so removing a failed match from the set
+	# doesn't skip the rest of the tick. Previously an exception in one
+	# match.think() broke the whole for-loop and starved every later
+	# match that tick.
+	for match in list(dc.app.active_matches):
+		try:
+			await match.think(frame_time)
+			match._think_errors = 0
+		except Exception as e:
+			match._think_errors = getattr(match, "_think_errors", 0) + 1
+			log.error("\n".join([
+				"Error at Match.think().",
+				f"match_id: {match.id}, consecutive errors: {match._think_errors}.",
+				f"{str(e)}. Traceback:\n{traceback.format_exc()}=========="
+			]))
+			# Don't silently drop an in-flight match on a single transient error
+			# — that leaves the captain unable to /report and frees players to
+			# re-queue (the 1390237 incident). Only remove after repeated
+			# failures, so one persistently-broken match still can't starve the rest.
+			if match._think_errors >= 5 and match in dc.app.active_matches:
+				log.error(f"Removing match {match.id} after {match._think_errors} consecutive think errors.")
+				dc.app.active_matches.remove(match)
+			continue
+	await expire.think(frame_time)
+	await noadds.think(frame_time)
+	await stats.jobs.think(frame_time)
+	await reconcile.reconcile.think(frame_time)
+	await lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
+	await quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
+	await ingest.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
+	await betting.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
+	# Reconciles game_stats/game_labels against the raw rows they are derived from.
+	# think() only schedules (the batch runs off-tick) and is self-isolating; the loop
+	# converges to zero work and then stays permanently as repair — see nammaoe2bot/derived/backfill.py.
+	await derived.jobs.think(frame_time)
+	# Rebuilds the derived-COMMUNITY layer (player_rollups / metric_boards / civ_stats)
+	# for whoever is out of date. Same self-isolating shape as the backfill above, and
+	# the same stateless convergence: it derives its own work list on every pass rather
+	# than keeping one, so a deploy mid-pass loses nothing — see nammaoe2bot/derived/refresh.py.
+	await derived.refresh_jobs.think(frame_time)
+	# Ages the bulky per-match replay detail out for LEAN communities once their
+	# summary provably exists — daily, off-tick, self-isolating like the two above.
+	# The only job in this bot that permanently destroys data, so it ships with
+	# DRY_RUN = True and deletes nothing until that constant is flipped in a commit
+	# of its own — see nammaoe2bot/derived/sweeper.py before touching it.
+	await derived.sweeper_jobs.think(frame_time)
+
+	# Sweep leaked check-in reaction callbacks. See TTLReactionDict
+	# docstring in nammaoe2bot/app.py — entries older than 30 minutes are
+	# guaranteed-dead leaks from check-in exit paths that raised before
+	# unsubscribing. Cheap (O(n), n ≈ 0-3) so no need to gate on interval.
+	dc.app.waiting_reactions.sweep_expired(frame_time)
+
+	# Periodic state snapshot — if the process crashes before a clean
+	# shutdown, SIGTERM (or the crash supervisor in nammaoe2bot/__main__.py) can only
+	# save state best-effort. This keeps a rolling ≤30s-old backup on
+	# disk for unexpected exits.
+	if frame_time - _last_state_save >= _STATE_SAVE_INTERVAL:
+		try:
+			save_state(dc.app)
+			await save_state_db(dc.app)   # durable copy on the MySQL volume
+			_last_state_save = frame_time
+		except Exception as e:
+			log.error(f"Periodic save_state failed: {e}\n{traceback.format_exc()}")
+
+
+# Answering a DM. Was cfg.HELP, an env-driven string that defaulted to
+# upstream's one-liner naming the wrong bot — so anyone who DMed us was told
+# "nammaoe2bot.__main__ is a discord bot for pickup games organisation." The bot only works
+# inside its pickup channel, so the useful answer is to say exactly that.
+_DM_REPLY = (
+	"I'm **NammaAoe2Bot** — I run the AoE2 pickup queue.\n\n"
+	"I only work inside the pickup channel, not in DMs. Head there and type "
+	"`/add` to join the queue, or `/profile_link` to connect your AoE2 profile "
+	"so your games get tracked."
+)
+
+
+@dc.event
+async def on_message(message):
+	if message.channel.type == ChannelType.private and message.author.id != dc.user.id:
+		await message.channel.send(_DM_REPLY)
+
+	if message.channel.type != ChannelType.text:
+		return
+
+	# `++` / `--` shorthand: add/remove the author to/from the channel queues.
+	# Restored after Layer 5 removed the text-command system — these two are the
+	# only shorthands kept. They reuse the existing add/remove command handlers
+	# (add with no args -> default/active queues; remove with no args -> all).
+	if message.content in ('++', '--'):
+		if (qc := dc.app.channels.get(message.channel.id)) is not None and dc.app.ready:
+			from nammaoe2bot.discord.message_context import MessageContext
+			ctx = MessageContext(qc, message)
+			try:
+				if message.content == '++':
+					await queue_commands.add(ctx)
+				else:
+					await queue_commands.remove(ctx)
+			except Exc.BotException as e:
+				await ctx.error(str(e), title=e.__class__.__name__)
+			except Exception as e:
+				log.error(f"Error processing '{message.content}': {e}\n{traceback.format_exc()}")
+		return
+
+	# Sync ELO from original Pubobot
+	pubobot_id = getattr(cfg, 'PUBOBOT_USER_ID', None)
+	if (pubobot_id
+		and message.author.id == pubobot_id
+		and message.author.bot
+		and '```markdown' in message.content
+		and 'results' in message.content):
+		try:
+			log_bot_message(message, 'Pubobot')
+			await process_elo_sync(message)
+		except Exception as e:
+			log.error(f"ELO sync error: {e}\n{traceback.format_exc()}")
+
+	# Buffer AOE2LobbyBOT match results for civ sync
+	lobbybot_id = getattr(cfg, 'LOBBYBOT_USER_ID', None)
+	if (lobbybot_id
+		and message.author.id == lobbybot_id
+		and message.author.bot
+		and message.embeds):
+		try:
+			log_bot_message(message, 'AOE2LobbyBOT')
+			parsed = parse_lobby_embed(message)
+			if parsed:
+				buffer_lobby_result(parsed)
+				await persist_lobby_civs(message.channel.id, parsed)
+		except Exception as e:
+			log.error(f"Civ sync buffer error: {e}\n{traceback.format_exc()}")
+
+	# Log all channel messages in queue channels
+	if message.channel.id in dc.app.channels:
+		try:
+			log_channel_message(message)
+		except Exception:
+			pass
+
+
+@dc.event
+async def on_interaction(interaction):
+	# CRITICAL: nammaoe2bot.runtime.client's @dc.event system replaces nextcord's built-in
+	# Client.on_interaction (which is just `process_application_commands`), so we MUST
+	# call it here or EVERY slash command + autocomplete silently stops working.
+	# Then route quiz component clicks (type 3, custom_id 'quiz:*'). The two handle
+	# disjoint interaction types — process_* no-ops on components, the quiz router
+	# no-ops on application commands — so calling both is safe. on_quiz_interaction is
+	# self-isolating (never raises). Lazy import keeps quiz's nextcord modules out of
+	# events' import path until first use.
+	await dc.process_application_commands(interaction)
+	from quiz import interactions as quiz_interactions
+	await quiz_interactions.on_quiz_interaction(interaction)
+	from nammaoe2bot.derived.classifications import interactions as cls_interactions
+	await cls_interactions.on_insights_interaction(interaction)
+	from predictions import interactions as bet_interactions
+	await bet_interactions.on_bet_interaction(interaction)
+
+
+@dc.event
+async def on_reaction_add(reaction, user):
+	if user.id != dc.user.id and reaction.message.id in dc.app.waiting_reactions:
+		await dc.app.waiting_reactions[reaction.message.id](reaction, user)
+
+
+@dc.event
+async def on_raw_reaction_remove(payload):
+	# Fixed in Layer 5 (was `on_reaction_remove` with a FIXME saying "event does not
+	# get triggered"). Two separate problems:
+	#
+	#   1. Nextcord only fires the cached `on_reaction_remove` for messages still
+	#      in its internal message cache. Check-in messages typically live 1-2
+	#      minutes but the cache turnover during a busy channel can evict them
+	#      before the user un-reacts, so the callback silently never ran.
+	#   2. Even when it did fire, the original code checked
+	#      `reaction.message.channel.id in app.waiting_reactions` (channel vs
+	#      message id typo), so the lookup always failed. That's a 2022-vintage
+	#      bug that nobody caught because of (1).
+	#
+	# `on_raw_reaction_remove` fires for ALL reaction removes, cached or not,
+	# and gives us `payload.message_id` directly. The callback only uses
+	# `str(reaction)` and `user` — `payload.emoji` is a PartialEmoji whose
+	# __str__ returns the same string as Reaction's __str__, so the check-in
+	# callback (`str(reaction) == self.READY_EMOJI`) continues to work.
+	if payload.user_id == dc.user.id:
+		return
+	if payload.message_id not in dc.app.waiting_reactions:
+		return
+	# Resolve Member — the callback checks `user not in self.m.players`, so we
+	# need the actual Member object, not just the id.
+	guild = dc.get_guild(payload.guild_id) if payload.guild_id else None
+	if guild is None:
+		return
+	member = guild.get_member(payload.user_id)
+	if member is None:
+		return
+	try:
+		await dc.app.waiting_reactions[payload.message_id](payload.emoji, member, remove=True)
+	except Exception as e:
+		log.error(f"on_raw_reaction_remove callback error: {e}\n{traceback.format_exc()}")
+
+
+@dc.event
+async def on_ready():
+	await dc.change_presence(activity=Activity(type=ActivityType.watching, name=cfg.STATUS))
+	if not dc.app.was_ready:  # Connected for the first time, load everything
+		log.info(f"Logged in discord as '{dc.user.name}#{dc.user.discriminator}'.")
+		log.info("Loading queue channels...")
+		for channel_id in await QueueChannel.cfg_factory.p_keys():
+			channel = dc.get_channel(channel_id)
+			if channel:
+				dc.app.channels[channel_id] = await QueueChannel.create(channel, dc.app)
+				await dc.app.channels[channel_id].update_info(channel)
+				log.info(f"\tInit channel {channel.guild.name}>#{channel.name} successful.")
+			else:
+				log.info(f"\tCould not reach a text channel with id {channel_id}.")
+
+		# Enroll every successfully-initialised queue channel into a community
+		# (one per Discord guild). Guild objects only exist once Discord is
+		# connected, which is why this is a runtime hook here rather than a
+		# migration — see nammaoe2bot/community.py. Never let a failure here stop
+		# the bot from booting.
+		try:
+			enrolled_communities = set()
+			for channel_id in dc.app.channels:
+				channel = dc.get_channel(channel_id)
+				if not channel:
+					continue
+				community_id = await enroll_channel(channel)
+				if community_id is not None:
+					enrolled_communities.add(community_id)
+			log.info(
+				f"\tEnrolled {len(dc.app.channels)} channels into "
+				f"{len(enrolled_communities)} communities."
+			)
+		except Exception:
+			log.error(f"Failed to enroll queue channels into communities:\n{traceback.format_exc()}")
+
+		await seed_ratings_from_csv()
+
+		# One idempotent pass seeds starting gold for every known player in
+		# every community; after the first boot this inserts nothing. Newcomers
+		# are seeded lazily on their first gold touch instead.
+		try:
+			from predictions import gold as gold_bank
+			seeded = await gold_bank.bulk_seed(int(time.time()))
+			if seeded:
+				log.info(f"\tSeeded {seeded} player(s) with starting gold.")
+		except Exception:
+			log.error(f"Gold bulk seed failed:\n{traceback.format_exc()}")
+
+		await load_state()
+		dc.app.was_ready = True
+		dc.app.ready = True
+		log.info("Done.")
+	else:  # Reconnected, fetch new channel objects
+		dc.app.ready = True
+		log.info("Reconnected to discord.")
+
+
+@dc.event
+async def on_disconnect():
+	log.info("Connection to discord is lost.")
+	dc.app.ready = False
+
+
+@dc.event
+async def on_resumed():
+	log.info("Connection to discord is resumed.")
+	if dc.app.was_ready:
+		dc.app.ready = True
+
+
+@dc.event
+async def on_presence_update(before, after):
+	if after.raw_status not in ['idle', 'offline']:
+		return
+	for qc in filter(lambda i: i.guild_id == after.guild.id, dc.app.channels.values()):
+		if after.raw_status == "offline" and qc.cfg.remove_offline:
+			await qc.remove_members(after, reason="offline")
+
+		if after.raw_status == "idle" and qc.cfg.remove_afk and expire.get(qc, after) is None:
+			await qc.remove_members(after, reason="afk", highlight=True)
+
+
+@dc.event
+async def on_member_remove(member):
+	for qc in filter(lambda i: i.id == member.guild.id, dc.app.channels.values()):
+		await qc.remove_members(member, reason="left guild")

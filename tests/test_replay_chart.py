@@ -6,7 +6,7 @@ same-team lines share a hue family and blurred together during crossing-heavy st
 legend because the production image (python:3.11-slim) ships no CJK fonts and matplotlib's
 bundled DejaVu Sans has no glyphs for them.
 """
-from bot.replay_stats.chart import (
+from nammaoe2bot.ingest.chart import (
     _APM_PLAYER_COLOURS,
     _APM_UNKNOWN_COLOUR,
     _apm_label,

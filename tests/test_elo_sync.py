@@ -1,4 +1,4 @@
-"""Unit tests for bot/elo_sync.py parser and resolver helpers.
+"""Unit tests for nammaoe2bot/features/elo_sync.py parser and resolver helpers.
 
 Scope: pure, non-DB functions only —
 
@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.elo_sync import _resolve_user_id, parse_elo_message
+from nammaoe2bot.features.elo_sync import _resolve_user_id, parse_elo_message
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────

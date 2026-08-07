@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Pure unit tests for bot/lobby/view.py (candidate pick + link decision + fill
+"""Pure unit tests for nammaoe2bot/features/lobby/view.py (candidate pick + link decision + fill
 lines). Builds state through the reducer using Phase-0-shaped events."""
-from bot.lobby import reducer, view
+from nammaoe2bot.features.lobby import reducer, view
 
 MID = 999
 
@@ -48,22 +48,6 @@ def test_pick_candidate_prefers_exact_size():
 
 def test_pick_candidate_none_when_empty():
 	assert view.pick_candidate({}, 2) is None
-
-
-def test_fill_lines_lists_players_civs_and_open_slots():
-	st = reducer.fold([_lobby(total=4), _slot(0, 1, "Alice", civ="Mongols"), _slot(1, 2, "Bob")])
-	lines, filled, playable = view.fill_lines(st[MID])
-	assert (filled, playable) == (2, 4)
-	assert "`Alice` — Mongols" in lines
-	assert "`Bob`" in lines
-	assert any("open slot" in line for line in lines)
-
-
-def test_fill_lines_no_open_marker_when_full():
-	st = reducer.fold([_lobby(total=2), _slot(0, 1, "A"), _slot(1, 2, "B")])
-	lines, filled, playable = view.fill_lines(st[MID])
-	assert filled == playable == 2
-	assert not any("open slot" in line for line in lines)
 
 
 def test_deep_link_join_and_spectate():

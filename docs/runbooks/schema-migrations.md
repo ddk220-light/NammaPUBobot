@@ -1,11 +1,11 @@
 # Runbook — schema migrations and rollback
 
 **Applies from:** the unified-data-layer rebuild (stage 1, 2026-07-30) onward.
-**Read this before deploying anything that adds a migration to `core/migrations.py`.**
+**Read this before deploying anything that adds a migration to `nammaoe2bot/runtime/migrations.py`.**
 
 ## How migrations run
 
-`PUBobot2.py` calls `migrations.run_all(db)` **after** `database.db.connect()` and
+`nammaoe2bot/__main__.py` calls `migrations.run_all(db)` **after** `database.db.connect()` and
 **before** `import bot`. That ordering is load-bearing: every bot package declares
 its tables with `db.ensure_table()` at import time, and `ensure_table` CREATEs any
 name it does not find and cannot rename. Renaming first lets the updated
@@ -54,7 +54,7 @@ On the next boot `run_all` skips it, `ensure_table` finds none of the renamed
 tables, CREATEs them all empty, and **the bot boots healthy while serving no
 history**. `/health` returns 200 throughout.
 
-`core/migrations.py` now has a post-condition check that catches this and crashes
+`nammaoe2bot/runtime/migrations.py` now has a post-condition check that catches this and crashes
 the boot instead, naming the offending tables. If you see that error, this is what
 happened: drop `schema_migrations` and reboot.
 
@@ -62,7 +62,7 @@ happened: drop `schema_migrations` and reboot.
 
 Redeploying an older commit without restoring does the same thing from the other
 direction — the old code's `ensure_table` recreates the old names empty. Worse,
-`bot/stats/stats.py`'s `check_match_id_counter()` runs on the first think tick,
+`nammaoe2bot/pickup/stats.py`'s `check_match_id_counter()` runs on the first think tick,
 before `on_ready` and before anyone reads a log; against an empty match table it
 resets the counter to 0, so every match played during the rollback window takes an
 id that collides with real history. Rolling forward afterwards does not fail

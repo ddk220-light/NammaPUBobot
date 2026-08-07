@@ -1,4 +1,4 @@
-"""Unit tests for the pure analysis helpers in bot.team_insights.
+"""Unit tests for the pure analysis helpers in nammaoe2bot.features.storylines.insights.
 
 The recency-weighted candidate builders, drama scoring, and the anti-saturation
 selection all run on hand-built history dicts — no DB, no nextcord (see conftest).
@@ -9,7 +9,7 @@ import random
 
 import pytest
 
-import bot.team_insights as ti
+import nammaoe2bot.features.storylines.insights as ti
 
 
 def _rows(*matches):
@@ -759,9 +759,9 @@ def _run_insights_build(monkeypatch, match, rows):
 
 	monkeypatch.setattr(ti, "db", _DB())
 
-	fake_utils = types.ModuleType("core.utils")
+	fake_utils = types.ModuleType("nammaoe2bot.runtime.utils")
 	fake_utils.get_nick = lambda p: f"u{p.id}"
-	monkeypatch.setitem(sys.modules, "core.utils", fake_utils)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.utils", fake_utils)
 
 	class _FakeEmbed:
 		def __init__(self, *, title=None, colour=None, description=None):
@@ -781,7 +781,7 @@ def _run_insights_build(monkeypatch, match, rows):
 
 
 def test_build_insights_embed_stashes_the_tease_context_when_it_teases(monkeypatch):
-	"""F1: bot/storyline_payoff.py recomputes these storylines at report time and
+	"""F1: nammaoe2bot/features/storylines/payoff.py recomputes these storylines at report time and
 	needs the exact window/seed/rosters the tease used, because none of the three
 	is stable across a match's lifetime on its own. build_insights_embed must
 	stash them on the match the moment it actually posts a tease."""

@@ -1,0 +1,40 @@
+from typing import List  # noqa: UP035
+from nextcord import Interaction
+
+from nammaoe2bot.runtime.client import dc
+from nammaoe2bot.runtime.utils import find, get
+
+from nammaoe2bot.pickup.channel import QueueChannel
+
+
+async def queues(interaction: Interaction, queue: str) -> List[str]:  # noqa: UP006
+	if (qc := dc.app.channels.get(interaction.channel_id)) is not None:
+		return [q.name for q in qc.queues if q.name.startswith(queue)]
+	else:
+		return []
+
+
+async def qc_variables(interaction: Interaction, variable: str) -> List[str]:  # noqa: UP006
+	return sorted([v for v in QueueChannel.cfg_factory.variables.keys() if v.startswith(variable)])[:10]
+
+
+async def queue_variables(interaction: Interaction, variable: str) -> List[str]:  # noqa: UP006
+	if (qc := dc.app.channels.get(interaction.channel_id)) is None:
+		return []
+	interaction_queue = find(lambda i: i['name'] == 'queue', interaction.data['options'][0]['options'])
+	if interaction_queue and (queue := get(qc.queues, name=interaction_queue['value'])):
+		return sorted([v for v in queue.cfg_factory.variables.keys() if v.startswith(variable)])[:10]
+	return []
+
+
+async def match_ids(interaction: Interaction, match_id: str) -> List[int]:  # noqa: UP006
+	if (qc := dc.app.channels.get(interaction.channel_id)) is None:
+		return []
+	return [m.id for m in dc.app.active_matches if m.qc == qc]
+
+
+async def teams_by_match_id(interaction: Interaction, name: str) -> List[str]:  # noqa: UP006
+	interaction_match = find(lambda i: i['name'] == 'match_id', interaction.data['options'][0]['options'])
+	if interaction_match and (match := get(dc.app.active_matches, id=interaction_match['value'])):
+		return [team.name for team in match.teams[:2] if team.name.startswith(name)]
+	return ['incorrect match_id supplied']

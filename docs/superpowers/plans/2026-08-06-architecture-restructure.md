@@ -255,6 +255,38 @@ balance cache still agreeing, so `reconcile()` will not see it.
 the six names returns only `app.` attribute access; the deferred-import count is
 reported, with any survivors documented.
 
+### Phase 1 outcome — measured, and it changes Phase 2
+
+All six globals are gone; `bot/__init__.py` is 31 lines of re-exports holding
+nothing mutable. Deferred imports went from **65 to 62** — and that small number
+is the finding, not a disappointment.
+
+**Removing the state was necessary but not sufficient.** The remaining cycles are
+not caused by shared state at all; they are caused by `bot/__init__.py`'s
+re-export block and the ORDER it imports in:
+
+```
+main → queue_channel → queues → match → expire → stats → exceptions →
+context → commands → events → utils → civ_reconcile → lobby → quiz →
+predictions → replay_stats → classifications → derived
+```
+
+**25 deferred imports are provably forced by that order** — a module needs a
+package that loads later in the sequence, so importing it at module scope would
+fail. They fall into three groups, and each has a different Phase 2 answer:
+
+| Group | Count | Why | Phase 2 answer |
+|---|---|---|---|
+| `bot/commands/*` → `quiz`, `predictions`, `lobby`, `derived` | 10 | handlers load at position 8, their features at 12-17 | **Dissolved.** Task 2.9 folds each handler into the feature that owns it, so there is no cross-package edge left to defer. |
+| `bot/match/*`, `bot/events.py` → `predictions`, `lobby`, `quiz` | 11 | the domain and the tick reaching into features | **A real inversion, not an ordering accident.** A match should not know that betting exists; it should announce that it finished and let a feature subscribe. This is the one place Phase 2 should change a dependency direction rather than move a file. |
+| `replay_stats` → `derived` | 2 | ingest loads before the layer it feeds | **Ordering only** — correct direction, fixed by the `ingest/` → `derived/` split. |
+
+The middle row is the substantive discovery of this phase: `Match.finish_match`
+calls into `bot.predictions`, and `Draft.sub_for`/`sub_auto` call
+`restart_for_match`. Those are the domain depending on a feature. Phase 2 should
+introduce a match-lifecycle event the betting and lobby features subscribe to,
+rather than relocating the call.
+
 ---
 
 ## Phase 2 — layer the packages
@@ -303,26 +335,248 @@ every `git blame` for nothing.
 
 ### Task sequence
 
-One package per task, leaves first so nothing moves under a dependent:
+**The order changed once Phase 1 reported.** The original sequence moved files
+first and left `bot/__init__.py`'s re-export block for last. That is backwards.
+Every `bot.Exc`, `bot.stats`, `bot.Match` in the tree — 250 attribute accesses —
+resolves through that block, so moving files underneath it means rewriting each
+access twice: once when its module moves, once when the block dies. Worse, the
+block is *why* the 25 deferred imports exist, so moving files while it stands
+carries the cycles into the new tree and invites re-creating them there.
 
-- [ ] 2.1 `core/` → `nammaoe2bot/runtime/`
-- [ ] 2.2 `core/client.py` + `bot/context/` + `bot/events.py` → `discord/`
-- [ ] 2.3 `bot/queue_channel.py`, `bot/queues/`, `bot/match/`, `bot/stats/` → `pickup/`
-- [ ] 2.4 the loose `bot/civ_*.py`, `identity*.py`, `scouting_report.py`,
-      `player_profile.py`, `team_insights.py`, `storyline_payoff.py`,
-      `tag_leaderboard.py` → `features/civs|identity|scouting/`
-- [ ] 2.5 `bot/quiz/`, `bot/predictions/` → `features/quiz/`, `features/betting/`
-- [ ] 2.6 `bot/lobby/` → `features/lobby/`; `bot/replay_stats/` → `ingest/`
-- [ ] 2.7 `bot/derived/`, `bot/classifications/` → `derived/`
+So: **dissolve the module first, then move files.** The dissolve is the only
+part that needs judgement; once it lands, every remaining task is a path rename
+a script can do and `tests/test_import_graph.py` can verify.
+
+- [ ] 2.1 dissolve the re-export module — `bot.X` becomes a real import
+- [ ] 2.2 the match-lifecycle inversion — a composition root, not a deferred import
+- [ ] 2.3 `core/` → `nammaoe2bot/runtime/`
+- [ ] 2.4 `bot/queue_channel.py`, `queues/`, `match/`, `stats/`, `expire.py` → `pickup/`
+- [ ] 2.5 `bot/quiz/`, `predictions/`, `lobby/` and the loose feature modules → `features/`
+- [ ] 2.6 `bot/replay_stats/` → `ingest/`; `bot/derived/` + `classifications/` → `derived/`
+- [ ] 2.7 `core/client.py`, `bot/context/`, `bot/events.py`, `bot/commands/` → `discord/`
 - [ ] 2.8 `bot/web.py`, `bot/web_page.html` → `web/`
-- [ ] 2.9 fold each `bot/commands/*.py` handler into its owning feature
+- [ ] 2.9 `bot/` is empty — `app.py`, `bootstrap.py`, `wiring.py`, `main.py` take
+      their places at the package root, and the tests follow the code
 
-Each task: `git mv` (preserves history — never delete-and-create), fix imports,
-`ruff check .`, full suite, commit.
+Each task: `git mv` (preserves history — never delete-and-create), rewrite
+imports, `ruff check .`, full suite, commit.
 
-**Detail these tasks after Phase 1 lands.** Task 1.8 reports which cycles survive,
-and that list may change where a boundary belongs. Writing exact file moves now
-would be guessing.
+### Task 2.1: dissolve the re-export module
+
+**Files:** `bot/__init__.py` (emptied), `bot/bootstrap.py` (new), plus every
+module that reaches through `bot.`
+
+`bot/__init__.py` does two unrelated jobs and both have to move:
+
+1. **Re-exports** — `bot.Exc`, `bot.Match`, `bot.stats`, `bot.Qr`, … Each
+   becomes a direct import in the module that uses it. Two of these were
+   actively dangerous: `from .stats import stats` and `from .expire import
+   expire` rebind a package/module name to the object inside it, which is
+   exactly the shadowing that killed the predictions feature for months
+   (`bot.predictions.jobs` — see `bot/predictions/__init__.py`). A direct
+   `from bot.stats import stats` in the consuming module has no such ambiguity.
+2. **Side-effect imports** — the `from . import quiz / predictions / lobby / …`
+   block that exists so `ensure_table` runs and the job singletons construct.
+   That is *boot wiring*, not package definition, and putting it in
+   `__init__.py` is what makes the import ORDER load-bearing. It moves to
+   `bot/bootstrap.py`, called explicitly from the entrypoint.
+
+- [ ] **Step 1:** For each re-exported name, add the real import to every module
+      that uses it and drop the `import bot` where it becomes unused.
+- [ ] **Step 2:** Move the side-effect block to `bot/bootstrap.py` with a
+      docstring naming what each import is there for; call it from `PUBobot2.py`
+      before the client starts.
+- [ ] **Step 3:** `bot/__init__.py` keeps a docstring and nothing else.
+- [ ] **Step 4:** `grep -rn '\bbot\.[A-Z]' bot/ core/` returns nothing.
+- [ ] **Step 5:** `ruff check . && pytest tests/ -q`
+- [ ] **Step 6:** Commit — `refactor: dissolve the re-export module`
+
+#### Task 2.1 outcome
+
+**34 modules in one import cycle → zero cycles.** `tests/test_import_cycles.py`
+now resolves the module-level import graph statically and fails on any
+strongly-connected component. It is the guard that makes the rest of this
+restructure safe without a running bot: conftest stubs `core.*` and `nextcord`
+is not installed, so nothing in the suite ever executes the real import graph,
+and a circular import is a boot crash rather than a test failure.
+
+Only 20 files actually reached through the shelf (a raw grep suggested 250; most
+were prose). Three defects fell out of the conversion:
+
+* **`PUBobot2.py` called `save_state()` with no argument**, twice. Phase 1 gave
+  it an `app` parameter and updated `bot/events.py`'s callers but not the
+  entrypoint's. One site is inside a `try/except Exception` that logged and
+  moved on; the other is the SIGTERM handler, so **every Railway redeploy
+  raised TypeError instead of writing the snapshot** — the exact failure the
+  function's own docstring exists to prevent.
+* **`bot/commands/admin.py` shadowed the noadds tracker with its own handler.**
+  `async def noadds(ctx): data = await noadds.get_noadds(ctx)` — the name
+  resolved to the function, not the singleton. It only worked because
+  `bot.noadds` reached the shelf. Renamed to `show_noadds`, matching
+  `show_queues` next to it.
+* **`bot/context/__init__.py` re-exported `SlashContext`**, so
+  `from bot.context.context import SystemContext` ran the entire slash command
+  surface — which imports `QueueChannel`, which imports `SystemContext`. Both
+  context packages now re-export nothing; `QueueChannel` is a `TYPE_CHECKING`
+  annotation.
+
+`remove_players` moved from `bot/main.py` to `Application`. It took `app` as its
+first argument, which is a method with extra steps — and an expensive one:
+`main.py` is also the state-snapshot module, so `check_in.py` and `draft.py`
+importing it for that one call closed `main → pickup_queue → match → check_in →
+main`.
+
+**What the deferred imports are now.** 63 remain, and the count is beside the
+point: none of them is still *required*. Feeding every one of them into the
+cycle detector as if hoisted leaves **two** cycles in `bot/`, and only one is
+real — `derived ↔ replay_stats ↔ post_game`. That one is Task 2.6's problem and
+bigger than the plan assumed: `derived.game_stats` reads `replay_stats.card_scoring`
+while `replay_stats.store` writes `derived.game_stats`, so it is a genuine
+two-way dependency, not the one-way ordering slip recorded after Phase 1.
+
+### Task 2.2: the match-lifecycle inversion
+
+**Files:** `bot/match/events.py` (new), `bot/wiring.py` (new), `bot/app.py`,
+`bot/match/match.py`, `bot/match/draft.py`
+
+This is the eleven deferred imports Phase 1 measured, and the only place in
+Phase 2 that changes a dependency direction rather than a path. `Match` calls
+`bot.predictions.open_for_match`, `resolve_for_match`, `void_for_match`;
+`Draft` calls `restart_for_match`; both reach into `bot.lobby.watcher`,
+`bot.team_insights` and `bot.storyline_payoff`. **A match should not know that
+betting exists.**
+
+`MatchLifecycle` — a dispatcher on `Application`, so it is reached the same way
+every other piece of application state is (`self.qc.app.match_events`) and no
+new global appears. Five events, matching the five points the domain currently
+reaches out from:
+
+| Event | Emitted | Subscribers, in order |
+|---|---|---|
+| `teams_posted` | end of `final_message` | team insights |
+| `live` | end of `start_waiting_report` | lobby watcher start, betting open |
+| `roster_changed` | `sub_for`, `sub_auto` | betting restart |
+| `ending` | `finish_match`, after the drop from `active_matches` | lobby watcher stop |
+| `finished` | `finish_match`, **after** stats registration | storyline payoff, betting settle |
+| `cancelled` | `cancel`, after the drop | lobby watcher stop, betting void |
+
+**Two ordering facts are load-bearing and must survive verbatim.** `finished`
+fires after `bot.stats` has written the `matches` row, because
+`store.unsettled_books` JOINs on it — that join is the entire resume mechanism.
+And `ending` fires separately from `finished` only because the watcher stop
+currently runs *before* stats; collapsing them would move it after.
+
+Guards (`ranked`, `predictions_enabled`) move from the emit site into the
+subscriber. The domain announces unconditionally; the feature decides whether
+it cares. Every handler is dispatched inside a try/except that logs — which is
+what all six sites already do by hand, and what all four `*_for_match`
+functions already do internally.
+
+`bot/wiring.py` is the composition root: the one module that imports both the
+domain and the features, and the one place the subscription order is written
+down. Nothing under `pickup/` may import a feature after this task.
+
+- [ ] **Step 1:** Write `tests/test_match_lifecycle.py`: registration order is
+      dispatch order; a raising handler does not stop the ones after it; every
+      event name in `wiring` exists on the dispatcher (a typo'd `on()` would
+      otherwise silently never fire).
+- [ ] **Step 2:** `bot/match/events.py` — `MatchLifecycle` with `on`/`emit`.
+- [ ] **Step 3:** `Application` gains `self.match_events = MatchLifecycle()`.
+- [ ] **Step 4:** Replace the six call sites with `emit`; write `bot/wiring.py`.
+- [ ] **Step 5:** Update `tests/test_draft_substitutions.py` and
+      `tests/test_predictions_wiring.py` — both pin the old call shape.
+- [ ] **Step 6:** `ruff check . && pytest tests/ -q`
+- [ ] **Step 7:** Commit — `refactor(pickup): the domain announces, features subscribe`
+
+#### Task 2.2 outcome
+
+`bot/match/` now imports `bot.context`, `bot.exceptions` and `bot.stats` and
+nothing else — no feature, in any file. The eleven imports are one
+`bot/wiring.py`, and `tests/test_match_lifecycle.py` checks the direction with
+an AST sweep rather than a docstring, so it cannot quietly grow back.
+
+Three things the split turned up:
+
+* **Nothing forced the inversion.** Feeding the deferred imports into the cycle
+  detector as if hoisted showed `bot/match/match.py → bot.predictions` was not
+  in any cycle: it would have imported cleanly at module scope. It was still
+  wrong, and the reason to fix it is the direction, not the mechanics.
+* **`cancel()` and `finish_match()` differed** in a way neither comment
+  mentioned: both stop the lobby watcher, but only `cancel` voids the book.
+  That is why `ending` and `cancelled` are two events rather than one.
+* **The storyline handler owns its own `except`.** Everything else relies on
+  the dispatcher's isolation, but a failed insights *send* has to clear
+  `match.storyline_ctx` — only the storyline feature knows its own failure
+  invalidates state it stored earlier, and the dispatcher cannot know that.
+
+Behaviour is unchanged, including the two orderings that carry weight:
+`finished` still fires after `register_match_*` has written the `matches` row
+(`store.unsettled_books` JOINs on it — that join is the whole resume
+mechanism), and `ending` still fires before it.
+
+### Tasks 2.3 – 2.9: the moves
+
+Mechanical once 2.1 and 2.2 land. Each one: `git mv`, rewrite the import paths
+across `bot/`, `core/`, `utils/`, `tests/` and the two root scripts, then
+`ruff check . && pytest tests/ -q`. `tests/test_import_graph.py` resolves every
+repo-internal import statically, so a missed rewrite fails the suite rather
+than waiting for a runtime `ModuleNotFoundError` — it is the safety net that
+makes a restructure of this size safe without a running bot. Update its
+`_PACKAGES` tuple in 2.3, when the new root first exists.
+
+### Phase 2 outcome
+
+`bot/` and `core/` are gone. The tree is `nammaoe2bot/{runtime, pickup,
+features, discord, ingest, derived, web}` plus seven root modules, 1867 tests
+green, ruff clean, no module-level import cycles.
+
+**"Mechanical" was wrong, and the mechanical parts were the dangerous ones.**
+A path rewrite handles `bot.quiz.store` and misses six other shapes, every one
+of which fails at runtime and most of which no linter can see:
+
+| Shape | Why the rewrite missed it | What caught it |
+|---|---|---|
+| `from bot.stats import stats` | never spells the module's dotted path | test_import_graph |
+| `from .check_in import CheckIn` | relative — no package prefix to match | test_import_graph |
+| `from ..context import Context` after a file moves UP a level | the LEVEL is wrong, not the name | test_import_graph |
+| `from bot import identity` where the file became `resolver.py` | the import is right; every `identity.x()` below it is not | ruff F821 in modules, nothing in tests |
+| `from bot import a, b` | a prefix match rewrote the first name and left the second | the suite, eventually |
+| `os.path.join(root, "bot", "web.py")` | a path spelled as separate quoted segments | the suite |
+| `import_module('core.DBAdapters.' + db_type)` | a string, not an import | **nothing** — read by hand |
+
+The last row is the one to remember. It would have failed on the first line of
+the first boot, and the adapter is now chosen from an explicit map.
+
+**Four live defects, all silent, all found by moving code past them:**
+
+* `/health` gated on `getattr(bot, 'bot_ready', False)` — a Phase 1 global,
+  swallowed by the getattr default. It is `railway.toml`'s `healthcheckPath`,
+  so every probe of every deploy would have answered 503 and Railway would
+  have restarted the container in a loop.
+* Five `from core import ...` lines survived, including the entrypoint's
+  first real import. Once a package stops existing, an import of it stops
+  looking first-party, so the import checker skipped them as third party —
+  `bot` and `core` are now guarded by name, the only check that works on a
+  package that is gone.
+* `HTML_PATH` still said `web_page.html` after the rename, and the dashboard
+  has a *fallback* for a missing file, so it would have served a placeholder
+  with a 200 while every web test stayed green (they all read the page by
+  their own literal path, never the server's).
+* `nammaoe2bot/pickup/stats.py` called `civ_matcher` after writing a result —
+  the same domain→feature inversion Task 2.2 removed from `Match`, hiding
+  behind a deferred import in a helper. It became a **seventh** lifecycle
+  event, `result_recorded`, because `/report_manual` writes a result without
+  ever finishing a match: hanging civ recording off `finished` would have
+  silently stopped recording civs for every manually reported game.
+
+**What is still owed.** `derived ↔ ingest` is a genuine two-way dependency —
+`derived/game_stats.py` reads ingest's `card_scoring`, `ingest/store.py` writes
+derived's `game_stats` — and only function-local imports keep the pair loading.
+Feeding every deferred import to the cycle detector as if hoisted leaves that
+one cycle in the package (the other three it reports are `utils/` and a
+`TYPE_CHECKING` artifact). Pulling the shared scoring helpers down a layer is
+its own change. 94 function-local first-party imports remain and none is
+required; hoisting them is cleanup, not repair.
 
 ---
 
@@ -332,38 +586,62 @@ Where a mistake is silent rather than loud. Small, and none of it is optional.
 
 ### Task 3.1: Migrate `cfg_name`
 
-- [ ] Write migration `00N_config_factory_rename`: `UPDATE channel_settings SET
-      cfg_name='channel_config' WHERE cfg_name='qc_config'` and `UPDATE
-      queue_settings SET cfg_name='queue_config' WHERE cfg_name='pq_config'`.
-- [ ] Rename the factories to match, in the same commit.
-- [ ] **Verify against a copy of production, not an empty database.** The failure
-      mode is a clean boot with blank config, which an empty test DB cannot show.
+- [x] Migration `011_config_factory_rename`, plus `pq_id` -> `queue_id`, which
+      the plan had not spotted: it is `queue_settings`' primary key, and
+      `ensure_table` ADDs any declared column it cannot find while never
+      altering keys — so a database that missed the ALTER gets a second,
+      keyless `queue_id` and every queue loads with a NULL primary key.
+- [x] Factories renamed in the same commit; `CfgFactory.icon` deleted (set,
+      never read, defaulting to a `star.png` that does not exist here).
+- [x] **Verified against production**: one row in each table, both still on the
+      old names, `pq_id` still the primary key. Added
+      `_assert_config_factories_renamed`, ledger-gated and asserted BEFORE and
+      after the migration loop, so a restore from a pre-011 backup — ledger
+      intact, renames lost — stops the boot instead of rebuilding blank.
 
 ### Task 3.2: Entrypoint
 
-- [ ] `PUBobot2.py` → `nammaoe2bot/__main__.py`; `start.py` execs
-      `python -m nammaoe2bot`; update `Dockerfile`, `railway.toml`, `ruff.toml`
-      (its `"PUBobot2.py"` per-file ignore), CI.
+- [x] `PUBobot2.py` → `nammaoe2bot/__main__.py`; `start.py` execs
+      `python -m nammaoe2bot` (the module form, not the file path — running the
+      file puts `nammaoe2bot/` on `sys.path` instead of the repo root and every
+      intra-package import fails). `ruff.toml` and the CI image tag updated;
+      `Dockerfile` needed none, it runs `start.py`.
+- [x] The dashboard session cookie `pubobot_session` renamed WITHOUT logging
+      anyone out: the old name is still read, since the session lives in MySQL
+      and the cookie only carries its id.
 
 ### Task 3.3: Wire-format compatibility
 
-- [ ] Confirm `quiz:`, `bet:`, `betcancel:` parse identically after the router
-      moves. Add a test that pins the exact strings — the failure is a live
-      message whose buttons stop responding, with no error anywhere.
+- [x] `tests/test_wire_format.py` pins all six live shapes as literal strings
+      — including `insights:full:`, whose command is gone but whose cards are
+      still in channel history — and both halves: what each builder emits and
+      what each parser accepts. Literals rather than shared constants, because
+      deriving both sides from one constant lets a rename pass untouched.
 
 ---
 
 ## Phase 4 — tests and docs
 
-- [ ] 4.1 Fix the ~20 test files hard-coding source paths and the 8 parsing source
-      with `ast`. **These break progressively through Phase 2** — fix each as its
-      package moves, not in a batch at the end, or the safety net is down for the
-      whole restructure.
-- [ ] 4.2 `CLAUDE.md` rewritten around the new structure.
-- [ ] 4.3 `README.md`, `COMMANDS.md`, `RAILWAY_SETUP.md` renamed and re-pathed;
-      GPL attribution to Leshaka retained in credits.
-- [ ] 4.4 Repo rename `NammaPUBobot` → `NammaAoe2Bot` (GitHub redirects the old
-      URL, but update the Railway source and any local clones).
+- [x] 4.1 Fix the test files hard-coding source paths and the ones parsing source
+      with `ast`. **These break progressively through Phase 2** — fixed as each
+      package moved, not in a batch at the end, so the safety net stayed up.
+- [x] 4.2 `CLAUDE.md` rewritten around the new structure.
+- [x] 4.3 `README.md`, `RAILWAY_SETUP.md` re-pathed; GPL attribution to Leshaka
+      retained and given its own section. `MESSAGE_COMMANDS.md` deleted — every
+      `!` command in it was removed two cleanups ago and nothing linked to it.
+      `COMMANDS.md` needed no change; it was rewritten during the consolidation.
+- [ ] 4.4 Repo rename `NammaPUBobot` → `NammaAoe2Bot`. **NOT DONE — this one is
+      yours.** GitHub redirects the old URL, but the Railway service's source
+      link and any local clones need updating by hand, and doing it while a
+      deploy is in flight is how a redeploy picks up nothing.
+
+### Phase 4 outcome
+
+The blanket rewrite that moved files had corrupted three docs on its way past:
+`PUBobot2` -> `nammaoe2bot/__main__` hit UPSTREAM's project name, its GitHub
+URL and the `STATUS` env default, which turned the GPL attribution into
+nonsense. Restored by hand. Naming Leshaka's project correctly is a licence
+obligation, not a courtesy, and a find-and-replace does not know that.
 
 ---
 

@@ -35,7 +35,7 @@ exclude = [
     "export-apr10",
     # `utils/replay_quiz` used to be excluded here, on the grounds that it was
     # vendored offline tooling the bot never imported. That was already only
-    # half true — bot/replay_stats/{fetch,parse}.py have imported its
+    # half true — nammaoe2bot/ingest/{fetch,parse}.py have imported its
     # download/extract modules for as long as live ingest has existed — and the
     # offline half is now deleted. What survived is utils/replay/, live ingest
     # code, and it is linted with everything else rather than exempted.
@@ -56,7 +56,7 @@ ignore = [
     # Tab indentation — the project uses tabs. E101/W191 complaints
     # are noise, not bugs.
     "E101", "W191",
-    # PUBobot2.py and start.py deliberately import bot AFTER the DB
+    # nammaoe2bot/__main__.py and start.py deliberately import bot AFTER the DB
     # adapter connect completes, so some imports sit below top-level
     # statements. This is the bootstrap ordering, not a style error.
     "E402",
@@ -74,7 +74,7 @@ ignore = [
     # easier to read than a wrapper import.
     "SIM105",
     # SIM108: ternary-over-if. Often makes code less readable for the
-    # state-machine logic in bot/match.
+    # state-machine logic in nammaoe2bot/pickup/match.
     "SIM108",
     # SIM117: merging nested with-statements. Often worse for async
     # context managers in the DB adapter.
@@ -109,19 +109,19 @@ ignore = [
 # start.py generates config via string templating; unused imports and
 # star-import tricks in the config loader are tolerated.
 "start.py" = ["F401"]
-# PUBobot2.py imports `locales` and `cfg_factory` for their side
+# nammaoe2bot/__main__.py imports `locales` and `cfg_factory` for their side
 # effects (translation registration + config factory class loading),
 # so F401 looks like a false positive here.
-"PUBobot2.py" = ["F401"]
-# core/locales.py and bot/__init__.py are legacy entry points full of
-# star imports. Don't rewrite them yet.
-"core/locales.py" = ["F401", "F403", "F405"]
-"bot/__init__.py" = ["F401", "F403", "F405"]
-"bot/commands/__init__.py" = ["F401", "F403", "F405"]
-# core/DBAdapters/mysql.py uses `from .common import *` to surface the
+"nammaoe2bot/__main__.py" = ["F401"]
+# nammaoe2bot/runtime/locales.py is the gettext passthrough stub and keeps its
+# star imports. The two entries that used to sit here — bot/__init__.py and
+# bot/commands/__init__.py — were exemptions for re-export shelves, and both
+# shelves are gone: nothing star-imports any more, so nothing needs excusing.
+"nammaoe2bot/runtime/locales.py" = ["F401", "F403", "F405"]
+# nammaoe2bot/runtime/database/mysql.py uses `from .common import *` to surface the
 # shared DB error classes. That's a legacy pattern and replacing it
 # is its own PR.
-"core/DBAdapters/mysql.py" = ["F401", "F403", "F405"]
+"nammaoe2bot/runtime/database/mysql.py" = ["F401", "F403", "F405"]
 
 [format]
 # Preserve tab indentation in auto-fixes. If we ever convert to spaces,

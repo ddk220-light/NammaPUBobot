@@ -17,13 +17,13 @@ import re
 import sqlite3
 import types
 
-import core.migrations as mig
+import nammaoe2bot.runtime.migrations as mig
 
 # {table: the column(s) an INSERT IGNORE dedups on} for FakeDb.insert_many's
 # emulation below. Only tables this suite actually writes via insert_many need
 # an entry. A tuple means a composite key. For identity_conflicts that is the
 # UNIQUE claim index migration 005 installs — NOT the primary key, which is a
-# surrogate `id` the writers never supply (see bot/identity.py's declaration).
+# surrogate `id` the writers never supply (see nammaoe2bot/features/identity/resolver.py's declaration).
 _PRIMARY_KEYS = {
 	"identities": "profile_id",
 	"identity_conflicts": ("profile_id", "claimed_user_id", "status"),
@@ -136,6 +136,18 @@ class FakeDb:
 			cols = self.columns.setdefault(table, set())
 			cols.discard(old)
 			cols.add(new)
+		if sql.startswith("ALTER TABLE") and " CHANGE " in sql:
+			# `ALTER TABLE t CHANGE `old` `new` TYPE ...` — 011's form, which
+			# exists because RENAME COLUMN drops AUTO_INCREMENT off a primary
+			# key. Modelled for the same reason RENAME COLUMN is: without it
+			# column_exists keeps answering True for the old name and 011's
+			# idempotency guard becomes untestable.
+			parts = sql.split("`")
+			table = sql.split("ALTER TABLE", 1)[1].split("CHANGE")[0].strip().strip("`")
+			old, new = parts[1], parts[3]
+			cols = self.columns.setdefault(table, set())
+			cols.discard(old)
+			cols.add(new)
 		is_ledger_insert = sql.startswith("INSERT INTO schema_migrations") or sql.startswith(
 			"INSERT IGNORE INTO schema_migrations")
 		if is_ledger_insert and args[0] not in self.applied:
@@ -155,6 +167,12 @@ class FakeDb:
 			return {"x": 1} if args[0] in self.applied else None
 		if "FROM identities" in sql:
 			return {"x": 1} if self.rows.get("identities") else None
+		if "COUNT(*) AS n FROM" in sql:
+			# 011's post-condition: `SELECT COUNT(*) AS n FROM t WHERE cfg_name = %s`
+			table = sql.split("FROM", 1)[1].split()[0]
+			stale = args[0]
+			return {"n": sum(1 for r in self.rows.get(table, [])
+							 if r.get("cfg_name") == stale)}
 		return None
 
 	async def fetchall(self, sql, args=None):
@@ -197,7 +215,7 @@ class FakeDb:
 		return out
 
 	async def insert_many(self, table, rows, on_duplicate=None):
-		""" Models MySQL's INSERT IGNORE (see core/DBAdapters/mysql.py's
+		""" Models MySQL's INSERT IGNORE (see nammaoe2bot/runtime/database/mysql.py's
 		_mysql_insert: on_duplicate="ignore" renders as literal `INSERT
 		IGNORE`): the first row written for a given primary key sticks, and
 		every later row for that same key — whether from this call or an
@@ -215,7 +233,7 @@ class FakeDb:
 
 	async def select(self, columns, table, where=None, **kwargs):
 		""" Generic exact-match SELECT, same shape as
-		core/DBAdapters/mysql.py's Adapter.select (used by _m003 to read the
+		nammaoe2bot/runtime/database/mysql.py's Adapter.select (used by _m003 to read the
 		current `identities` state before comparing incoming seed claims
 		against it — see _record_seed_conflicts). """
 		where = where or {}
@@ -226,7 +244,7 @@ class FakeDb:
 		]
 
 	async def update(self, table, d, keys=None):
-		""" Models a plain `UPDATE ... WHERE` (core/DBAdapters/mysql.py's
+		""" Models a plain `UPDATE ... WHERE` (nammaoe2bot/runtime/database/mysql.py's
 		update): every row matching `keys` is mutated in place with `d`'s
 		fields, unconditionally — no primary-key or INSERT-IGNORE semantics
 		here, since a real UPDATE always overwrites. A `keys` match with no
@@ -1191,7 +1209,7 @@ def test_m004_backfill_is_idempotent(tmp_path, monkeypatch):
 
 
 def test_m004_backfill_does_not_overwrite_a_link_the_live_path_already_wrote(tmp_path, monkeypatch):
-	"""bot/community.py's link_match_replay is the authoritative forward
+	"""nammaoe2bot/community.py's link_match_replay is the authoritative forward
 	writer. INSERT IGNORE (not REPLACE) means this one-shot backfill can never
 	stomp a row that writer produced."""
 	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
@@ -1281,7 +1299,7 @@ def test_m004_backfills_the_same_rows_from_either_schema_generation(tmp_path, mo
 
 def test_m004_backfill_is_skipped_only_when_neither_source_table_exists(tmp_path, monkeypatch):
 	"""The genuine fresh install, and the ONLY case that may skip: the raw
-	replay tables are declared by bot/replay_stats and created once `import bot`
+	replay tables are declared by nammaoe2bot/ingest and created once `import bot`
 	runs — well after migrations. The log line must name both spellings, so it
 	can never be mistaken for "the table is there under the other name", which
 	is exactly how the pre-fix skip read."""
@@ -1408,13 +1426,13 @@ def test_m004_dropped_tables_have_no_surviving_declaration():
 	nothing anywhere would say so. Pinned as a test rather than a one-time
 	grep so re-adding a declaration fails CI instead of silently resurrecting
 	the table on the next deploy."""
-	from core.data_registry import REGISTRY
+	from nammaoe2bot.runtime.data_registry import REGISTRY
 	from tests.test_data_registry import _declared_tables
 
 	declared = _declared_tables()
 	for name in mig._M004_DROPS:
 		assert name not in declared, f"{name!r} is still declared by an ensure_table call"
-		assert name not in REGISTRY, f"{name!r} still has a core.data_registry entry"
+		assert name not in REGISTRY, f"{name!r} still has a nammaoe2bot.runtime.data_registry entry"
 
 
 def test_m004_runs_the_backfill_before_the_drops(tmp_path, monkeypatch):
@@ -1443,12 +1461,12 @@ def test_stage1_renames_targets_are_registered_and_sources_are_not_declared():
 	ensure_table would then create the correct name empty. Cross-check the
 	pairs against the same declaration scanner test_data_registry.py uses,
 	rather than duplicating the walk."""
-	from core.data_registry import REGISTRY
+	from nammaoe2bot.runtime.data_registry import REGISTRY
 	from tests.test_data_registry import _declared_tables
 
 	declared = _declared_tables()
 	for old, new in mig._STAGE1_RENAMES:
-		assert new in REGISTRY, f"rename target {new!r} has no core.data_registry entry"
+		assert new in REGISTRY, f"rename target {new!r} has no nammaoe2bot.runtime.data_registry entry"
 		assert old not in declared, f"rename source {old!r} is still declared by an ensure_table call"
 
 
@@ -1721,18 +1739,18 @@ def test_m005_is_a_noop_after_003_created_the_table_in_the_new_shape(tmp_path, m
 
 
 def test_the_conflicts_ddl_matches_the_ensure_table_declaration():
-	""" identity_conflicts is declared TWICE — bot/identity.py's ensure_table
+	""" identity_conflicts is declared TWICE — nammaoe2bot/features/identity/resolver.py's ensure_table
 	and this module's raw CREATE TABLE (a migration cannot import bot.*) — and
 	they are kept in sync by hand. Drift is not theoretical: 005 exists because
 	the key was wrong, and a fresh install gets its schema from the raw DDL
 	while every runtime write assumes the declaration. Compare them here so the
 	build fails instead of production diverging.
 
-	Parses bot/identity.py's declaration as text rather than importing it:
-	`import bot.identity` executes db.ensure_table() against conftest's fake. """
+	Parses nammaoe2bot/features/identity/resolver.py's declaration as text rather than importing it:
+	`import nammaoe2bot.features.identity.resolver` executes db.ensure_table() against conftest's fake. """
 	import os
 
-	path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bot", "identity.py")
+	path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nammaoe2bot", "features", "identity", "resolver.py")
 	with open(path, encoding="utf-8") as f:
 		src = f.read()
 	block = src.split('tname="identity_conflicts"', 1)[1].split("))", 1)[0]
@@ -1768,7 +1786,7 @@ def test_the_conflicts_ddl_matches_the_ensure_table_declaration():
 
 
 # ─── 006_derived_indexes ──────────────────────────────────────────────────
-# bot/derived/backfill.py reads one match at a time out of cls_results and
+# nammaoe2bot/derived/backfill.py reads one match at a time out of cls_results and
 # cls_result_metrics. Both primary keys lead with `key`, so `WHERE
 # aoe2_match_id=%s` cannot use them and every read is a full scan of 32k / 112k
 # rows — ~2,250 times over on the first deploy of stage 3a.
@@ -1811,7 +1829,7 @@ def test_m006_finishes_the_job_after_a_body_that_died_between_the_two():
 
 def test_m006_skips_tables_that_do_not_exist_yet():
 	# The fresh-install case: migrations run BEFORE `import bot`, so the tables
-	# bot/classifications declares are genuinely absent here. It must not create
+	# nammaoe2bot/derived/classifications declares are genuinely absent here. It must not create
 	# them (that declaration owns their shape) and must not raise.
 	db = FakeDb(tables=())
 	asyncio.run(mig._m006(db))
@@ -1826,7 +1844,7 @@ def test_m006_runs_in_the_ledger_after_005(monkeypatch):
 
 def test_the_index_names_match_the_ensure_table_declaration():
 	""" These indexes are declared in THREE places, by necessity: this module (for
-	an existing database), bot/classifications/__init__.py's ensure_table (for a
+	an existing database), nammaoe2bot/derived/classifications/__init__.py's ensure_table (for a
 	fresh install, which this migration deliberately skips), and
 	utils/classifications/schema.py's raw DDL (for the offline runner's own
 	database). Nothing but agreement on the name makes the idempotency guard work
@@ -1837,12 +1855,12 @@ def test_the_index_names_match_the_ensure_table_declaration():
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "classifications", "__init__.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "derived", "classifications", "__init__.py"), encoding="utf-8") as f:
 		declared = dict(re.findall(r'indexes=\[\("(\w+)", \["(\w+)"\]\)\]', f.read()))
 	with open(os.path.join(root, "utils", "classifications", "schema.py"), encoding="utf-8") as f:
 		offline = f.read()
 
-	assert declared, "bot/classifications/__init__.py no longer declares any index"
+	assert declared, "nammaoe2bot/derived/classifications/__init__.py no longer declares any index"
 	for _table, index, column in mig._DERIVED_MATCH_INDEXES:
 		assert declared.get(index) == column, f"{index} drifted from the ensure_table declaration"
 		assert f"INDEX {index} ({column})" in offline, f"{index} drifted from the offline DDL"
@@ -1902,7 +1920,7 @@ def test_m007_is_idempotent():
 
 def test_m007_is_a_noop_on_a_fresh_install():
 	""" Migrations run before `import bot`, so on a first-ever boot none of
-	these tables exists yet — bot/replay_stats and bot/civ_sync create them,
+	these tables exists yet — nammaoe2bot/ingest and nammaoe2bot/features/civs/sync create them,
 	already correctly named, moments later. """
 	db = FakeDb()
 	asyncio.run(mig._m007(db))
@@ -1991,12 +2009,12 @@ def test_stage3_renames_targets_are_registered_and_sources_are_not_declared():
 	target is invisible to every other test here (they treat table names as
 	opaque strings) but would rename a production table out from under its
 	declaration, and ensure_table would then create the right name empty. """
-	from core.data_registry import REGISTRY
+	from nammaoe2bot.runtime.data_registry import REGISTRY
 	from tests.test_data_registry import _declared_tables
 
 	declared = _declared_tables()
 	for old, new in mig._STAGE3_RENAMES:
-		assert new in REGISTRY, f"rename target {new!r} has no core.data_registry entry"
+		assert new in REGISTRY, f"rename target {new!r} has no nammaoe2bot.runtime.data_registry entry"
 		assert old not in declared, f"rename source {old!r} is still declared by an ensure_table call"
 	assert "rs_config" not in declared, "007 drops rs_config; its declaration must be gone too"
 	assert "rs_config" not in REGISTRY, "007 drops rs_config; its registry entry must be gone too"
@@ -2029,7 +2047,7 @@ def test_the_replay_ingest_switch_has_a_home_in_both_config_paths():
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	for relpath in ("start.py", "config.example.cfg", "core/config.py"):
+	for relpath in ("start.py", "config.example.cfg", "nammaoe2bot/runtime/config.py"):
 		with open(os.path.join(root, relpath), encoding="utf-8") as f:
 			assert "REPLAY_INGEST_ENABLED" in f.read(), f"{relpath} does not carry REPLAY_INGEST_ENABLED"
 
@@ -2038,25 +2056,25 @@ def test_the_replay_ingest_switch_resolves_the_same_way_in_both_config_paths():
 	""" start.py prints whether ingestion resolved ON or OFF (a Railway variable
 	that EXISTS but is EMPTY yields "" rather than the "True" default, and ""
 	coerces to False — ingestion stops deployment-wide and that line is the only
-	thing that says so). It cannot IMPORT core/config.py to decide that: doing so
+	thing that says so). It cannot IMPORT nammaoe2bot/runtime/config.py to decide that: doing so
 	would execute it, and it loads the config.cfg start.py has not written yet.
 	So the truth values are mirrored, and mirrored constants drift — pin them.
 
 	Compared as text rather than by importing either module: conftest.py replaces
-	core.config with a fake, and start.py's import would run the generator. """
+	nammaoe2bot.runtime.config with a fake, and start.py's import would run the generator. """
 	import ast
 	import os
 	import re
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	found = {}
-	for relpath in ("start.py", "core/config.py"):
+	for relpath in ("start.py", "nammaoe2bot/runtime/config.py"):
 		with open(os.path.join(root, relpath), encoding="utf-8") as f:
 			m = re.search(r"^_TRUE = (\(.*\))$", f.read(), re.M)
 		assert m, f"{relpath} no longer defines a module-level _TRUE tuple"
 		found[relpath] = ast.literal_eval(m.group(1))
-	assert found["start.py"] == found["core/config.py"], (
-		"start.py reports an effective replay-ingest setting that core/config.py "
+	assert found["start.py"] == found["nammaoe2bot/runtime/config.py"], (
+		"start.py reports an effective replay-ingest setting that nammaoe2bot/runtime/config.py "
 		f"would not agree with: {found}")
 
 
@@ -2278,7 +2296,7 @@ def test_m008_still_backfills_when_the_column_already_exists():
 def test_m008_leaves_an_orphaned_derived_row_not_measured():
 	# A game_stats row whose raw rows are gone: MAX over no rows is NULL, the
 	# column is NOT NULL, and "not measured" is the honest reading of a slot
-	# with no surviving source. (bot/derived/backfill.py's set comparison
+	# with no surviving source. (nammaoe2bot/derived/backfill.py's set comparison
 	# deletes the row on its next pass regardless.)
 	db = _m008_db(players=[_raw(1, 1, 100, 20)], stats=[(1, 1), (9, 9)])
 
@@ -2289,7 +2307,7 @@ def test_m008_leaves_an_orphaned_derived_row_not_measured():
 
 def test_m008_takes_the_measured_row_when_a_slot_has_two_raw_rows():
 	# replay_players' primary key is (replay_match_id, profile_id) and does NOT
-	# constrain player_number -- the same property bot/derived/backfill.py's
+	# constrain player_number -- the same property nammaoe2bot/derived/backfill.py's
 	# DISTINCT exists for -- so two raw rows CAN share a slot. A plain scalar
 	# subquery would raise ER_SUBQUERY_NO_1_ROW on the whole statement the first
 	# time it met one; the aggregate makes the answer deterministic instead of
@@ -2305,7 +2323,7 @@ def test_m008_takes_the_measured_row_when_a_slot_has_two_raw_rows():
 
 
 def test_m008_is_a_noop_on_a_fresh_install():
-	# game_stats is declared by bot/derived, which is only imported AFTER
+	# game_stats is declared by nammaoe2bot/derived, which is only imported AFTER
 	# migrations run -- so on a first boot the table genuinely does not exist
 	# yet and is created moments later with has_production already on it.
 	db = _SqliteMigrationDb(schema="CREATE TABLE replay_players (replay_match_id INTEGER);")
@@ -2335,53 +2353,60 @@ def test_m008_raises_rather_than_recording_a_backfill_it_could_not_do():
 		raise AssertionError("a backfill that cannot run must not be recorded as applied")
 
 
-def test_m008_is_registered_once_under_the_next_free_number():
+def test_the_migration_list_is_a_gapless_ordered_sequence():
+	""" run_all applies MIGRATIONS in list order and records each by name, so a
+	duplicate name silently skips a migration and a number out of order applies
+	one before its prerequisite.
+
+	Stated as a property rather than as the expected list. The literal list this
+	replaced had to be edited by every migration that shipped, which makes it a
+	chore rather than a check — and a chore gets updated by pasting whatever the
+	failure message printed, which is not a review. """
 	names = [name for name, _fn in mig.MIGRATIONS]
-	assert names.count("008_game_stats_has_production") == 1
-	assert names == [
-		"001_core_renames", "002_drop_retired", "003_seed_identities", "004_identity_v2",
-		"005_identity_conflict_history", "006_derived_indexes", "007_raw_renames",
-		"008_game_stats_has_production", "009_identities_bound_at",
-		"010_game_stats_played_at",
-	]
+	assert len(set(names)) == len(names), f"duplicate migration name: {names}"
+	numbers = [int(n.split("_", 1)[0]) for n in names]
+	assert numbers == list(range(1, len(numbers) + 1)), (
+		f"migration numbers must run 1..N with no gaps and no reordering: {names}")
+	for name in names:
+		assert name[:3].isdigit() and name[3] == "_", f"malformed migration name: {name}"
 
 
 def test_the_has_production_ddl_matches_the_ensure_table_declaration():
-	""" has_production is declared twice — bot/derived/__init__.py's ensure_table
+	""" has_production is declared twice — nammaoe2bot/derived/__init__.py's ensure_table
 	and this module's raw ALTER (a migration cannot import bot.*) — and they are
 	kept in sync by hand, exactly like identity_conflicts above. Drift here is
 	not cosmetic: production's column comes from the ALTER and a fresh install's
 	from the declaration, and _ensure_table never alters nullability afterwards,
 	so a NOT NULL that lands on only one of the two is permanent.
 
-	The type is read from core/DBAdapters/mysql.py's own Types rather than
+	The type is read from nammaoe2bot/runtime/database/mysql.py's own Types rather than
 	hardcoded here, so changing what `db.types.bool` means fails this test
 	instead of silently leaving the migration on the old type.
 
-	Parsed as text rather than imported: `import bot.derived` executes
+	Parsed as text rather than imported: `import nammaoe2bot.derived` executes
 	db.ensure_table() against conftest's fake. """
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "derived", "__init__.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "derived", "__init__.py"), encoding="utf-8") as f:
 		block = f.read().split('tname="game_stats"', 1)[1].split("primary_keys=", 1)[0]
 	decl = re.search(r'dict\(cname="has_production"[^\n]*', block)
-	assert decl, "bot/derived/__init__.py no longer declares game_stats.has_production"
+	assert decl, "nammaoe2bot/derived/__init__.py no longer declares game_stats.has_production"
 	assert "ctype=db.types.bool" in decl.group(0), "column type drifted"
 	assert "notnull=True" in decl.group(0), "nullability drifted"
 	assert "default=" not in decl.group(0), (
 		"the declaration grew a DEFAULT the migration's ALTER does not have — see the migration's "
 		"comment for why neither should carry one")
 
-	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "runtime", "database", "mysql.py"), encoding="utf-8") as f:
 		bool_type = re.search(r'^\tbool = "([^"]+)"', f.read(), re.M)
-	assert bool_type, "core/DBAdapters/mysql.py no longer defines Types.bool"
+	assert bool_type, "nammaoe2bot/runtime/database/mysql.py no longer defines Types.bool"
 	expected = f"ALTER TABLE `game_stats` ADD COLUMN `has_production` {bool_type.group(1)} NOT NULL"
 	assert expected == mig._M008_ADD_COLUMN, "the migration's ALTER drifted from the declaration"
 
 
 # ── 009_identities_bound_at ───────────────────────────────────────────────────
-# The column bot/derived/refresh.py's staleness comparison needs in order to see
+# The column nammaoe2bot/derived/refresh.py's staleness comparison needs in order to see
 # an identity change at all: a /link makes a player's whole history attributable
 # without touching one game_stats row, so nothing else in the database moves.
 
@@ -2431,7 +2456,7 @@ def test_m009_seeds_an_unowned_row_too():
 def test_m009_does_not_clobber_values_the_running_bot_has_since_written():
 	# MUTANT GUARD: the UPDATE dropping its `WHERE bound_at = 0`. The repair
 	# runbook is "drop the schema_migrations ledger and reboot", so this body
-	# genuinely re-runs against a database bot/identity.py has been stamping for
+	# genuinely re-runs against a database nammaoe2bot/features/identity/resolver.py has been stamping for
 	# days. An unguarded UPDATE would rewind every real bound_at to last_seen_at,
 	# which is ALWAYS >= it — silently marking every rollup stale.
 	db = _m009_db([_m009_identity(11, 1, 9000)])
@@ -2459,7 +2484,7 @@ def test_m009_still_seeds_when_the_column_already_exists():
 
 
 def test_m009_is_a_noop_on_a_fresh_install():
-	# identities is declared by bot/identity.py AND created by 003 — but a
+	# identities is declared by nammaoe2bot/features/identity/resolver.py AND created by 003 — but a
 	# database where neither has happened must not have a table invented for it.
 	db = _SqliteMigrationDb(schema="CREATE TABLE unrelated (x INTEGER);")
 
@@ -2474,24 +2499,24 @@ def test_m009_is_registered_once_under_the_next_free_number():
 
 
 def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
-	""" bound_at is declared in THREE places — bot/identity.py's ensure_table,
+	""" bound_at is declared in THREE places — nammaoe2bot/features/identity/resolver.py's ensure_table,
 	this module's _ensure_identities_table CREATE (for a fresh install) and 009's
 	ALTER (for every database that already has the table) — because a migration
 	cannot import bot.*. Drift is not cosmetic: _ensure_table never alters an
 	existing column, so a NOT NULL or a DEFAULT that lands on only one of the
 	three is permanent.
 
-	The type and the rendered default are read from core/DBAdapters/mysql.py's
+	The type and the rendered default are read from nammaoe2bot/runtime/database/mysql.py's
 	own Types/_mysql_column rather than hardcoded, so changing what
 	`db.types.int` means fails this test instead of silently leaving the
 	migration on the old type. """
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "identity.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "features", "identity", "resolver.py"), encoding="utf-8") as f:
 		block = f.read().split('tname="identities"', 1)[1].split("primary_keys=", 1)[0]
 	decl = re.search(r'dict\(cname="bound_at"[^\n]*', block)
-	assert decl, "bot/identity.py no longer declares identities.bound_at"
+	assert decl, "nammaoe2bot/features/identity/resolver.py no longer declares identities.bound_at"
 	assert "ctype=db.types.int" in decl.group(0), "column type drifted"
 	assert "notnull=True" in decl.group(0), "nullability drifted"
 	assert "default=0" in decl.group(0), (
@@ -2500,62 +2525,66 @@ def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
 		"strict mode rejects an INSERT that omits a NOT NULL column with no default. See the comment "
 		"above _M009_ADD_COLUMN, including why 008 deliberately does the opposite")
 
-	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "runtime", "database", "mysql.py"), encoding="utf-8") as f:
 		int_type = re.search(r'^\tint = "([^"]+)"', f.read(), re.M)
-	assert int_type, "core/DBAdapters/mysql.py no longer defines Types.int"
+	assert int_type, "nammaoe2bot/runtime/database/mysql.py no longer defines Types.int"
 	column = f"`bound_at` {int_type.group(1)} NOT NULL DEFAULT '0'"
 	assert f"ALTER TABLE `identities` ADD COLUMN {column}" == mig._M009_ADD_COLUMN, (  # noqa: SIM300
 		"009's ALTER drifted from the declaration")
-	src = open(os.path.join(root, "core", "migrations.py"), encoding="utf-8").read()  # noqa: SIM115
+	src = open(os.path.join(root, "nammaoe2bot", "runtime", "migrations.py"), encoding="utf-8").read()  # noqa: SIM115
 	assert '"`last_seen_at` BIGINT NOT NULL, `bound_at` BIGINT NOT NULL DEFAULT \'0\', "' in src, (
 		"_ensure_identities_table's CREATE drifted from the declaration")
 
 
-def test_m010_is_registered_once_under_the_next_free_number():
-	names = [name for name, _fn in mig.MIGRATIONS]
-	assert names.count("010_game_stats_played_at") == 1
-	assert names[-1] == "010_game_stats_played_at"
+def test_every_migration_this_file_exercises_is_still_registered():
+	""" The tests below drive migration bodies directly. If one is renamed or
+	dropped from MIGRATIONS, those tests would keep passing against a function
+	nothing runs. """
+	names = {name for name, _fn in mig.MIGRATIONS}
+	for expected in ("008_game_stats_has_production", "009_identities_bound_at",
+					 "010_game_stats_played_at", "011_config_factory_rename"):
+		assert expected in names, f"{expected} is no longer registered"
 
 
 def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
-	""" Both columns are declared twice — bot/derived/__init__.py's ensure_table
+	""" Both columns are declared twice — nammaoe2bot/derived/__init__.py's ensure_table
 	and this module's raw ALTERs (a migration cannot import bot.*) — and are kept
 	in sync by hand, exactly like has_production and bound_at above. Drift is not
 	cosmetic: production's columns come from the ALTERs and a fresh install's
 	from the declaration, and _ensure_table never alters an existing column, so a
 	NOT NULL that lands on only one of the two is permanent.
 
-	Types are read from core/DBAdapters/mysql.py's own Types rather than
+	Types are read from nammaoe2bot/runtime/database/mysql.py's own Types rather than
 	hardcoded, so changing what `db.types.int` means fails this test instead of
 	silently leaving the migration on the old type.
 
-	Parsed as text rather than imported: `import bot.derived` executes
+	Parsed as text rather than imported: `import nammaoe2bot.derived` executes
 	db.ensure_table() against conftest's fake. """
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "derived", "__init__.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "derived", "__init__.py"), encoding="utf-8") as f:
 		block = f.read().split('tname="game_stats"', 1)[1].split("primary_keys=", 1)[0]
 
 	played_at = re.search(r'dict\(cname="played_at"[^\n]*', block)
-	assert played_at, "bot/derived/__init__.py no longer declares game_stats.played_at"
+	assert played_at, "nammaoe2bot/derived/__init__.py no longer declares game_stats.played_at"
 	assert "ctype=db.types.int" in played_at.group(0)
 	assert "notnull=False" in played_at.group(0), (
 		"played_at must stay nullable: 19 production matches have no recorded date, and "
 		"rollups.in_window reads NULL as outside every window")
 
 	version = re.search(r'dict\(cname="compute_version"[^\n]*', block)
-	assert version, "bot/derived/__init__.py no longer declares game_stats.compute_version"
+	assert version, "nammaoe2bot/derived/__init__.py no longer declares game_stats.compute_version"
 	assert "ctype=db.types.int" in version.group(0)
 	assert "notnull=True" in version.group(0), (
 		"compute_version must stay NOT NULL: a NULL would be a third value meaning "
 		"'not backfilled', which is the ambiguity the column exists to remove")
 
 	# Read out of the adapter's source, the same way 008's test does: importing
-	# core.DBAdapters.mysql needs aiomysql, which CI does not install.
-	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+	# nammaoe2bot.runtime.database.mysql needs aiomysql, which CI does not install.
+	with open(os.path.join(root, "nammaoe2bot", "runtime", "database", "mysql.py"), encoding="utf-8") as f:
 		int_type = re.search(r'^\tint = "([^"]+)"', f.read(), re.M)
-	assert int_type, "core/DBAdapters/mysql.py no longer defines Types.int"
+	assert int_type, "nammaoe2bot/runtime/database/mysql.py no longer defines Types.int"
 
 	assert (f"ALTER TABLE `game_stats` ADD COLUMN `played_at` {int_type.group(1)} NULL"
 	        == mig._M010_ADD_PLAYED_AT)
@@ -2566,14 +2595,14 @@ def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
 def test_the_version_column_defaults_to_zero_so_every_existing_row_is_pending():
 	""" THE MECHANISM, not an incidental default. 0 means "written by a compute
 	older than this deploy's", which is exactly true of every row already in the
-	table — and bot/derived/backfill.py tags its source side with the CURRENT
+	table — and nammaoe2bot/derived/backfill.py tags its source side with the CURRENT
 	version, so a 0 row is a plain set difference and gets rewritten by the
 	ordinary reconciliation loop. Without the default the seed would have to be a
 	separate UPDATE, and an old container's inserts during a rolling deploy would
 	fail rather than landing a value that self-corrects. """
 	assert "DEFAULT '0'" in mig._M010_ADD_VERSION
 
-	import bot.derived.game_stats as game_stats
+	import nammaoe2bot.derived.game_stats as game_stats
 	assert game_stats.COMPUTE_VERSION > 0, (
 		"the current version must differ from the 0 this migration seeds, or nothing "
 		"becomes pending and top_units is never recomputed")
@@ -2591,3 +2620,149 @@ def test_the_played_at_backfill_is_timezone_free_and_guarded():
 	assert "TIMESTAMPDIFF" in mig._M010_BACKFILL_PLAYED_AT
 	assert "UNIX_TIMESTAMP" not in mig._M010_BACKFILL_PLAYED_AT
 	assert "WHERE gs.played_at IS NULL" in mig._M010_BACKFILL_PLAYED_AT
+
+
+# ── 011: the config factories stop carrying the old class abbreviations ──
+
+class TestConfigFactoryRename:
+	""" `cfg_name` is a VALUE CfgFactory.spawn SELECTs on, not an identifier.
+	Rename the factory in Python without moving the rows and that SELECT
+	matches nothing, so spawn takes its "no config yet" branch and INSERTs a
+	blank row over the top: every channel setting and the queue definition gone,
+	with a bot that starts clean and logs nothing.
+
+	`pq_id` fails the same way one layer down. Migrations run BEFORE the feature
+	packages import, and importing pickup/queue.py runs ensure_table, which ADDs
+	any declared column it cannot find and never alters keys — so a database
+	that missed the ALTER gets a second, keyless `queue_id` beside the real
+	auto-increment `pq_id`, and every queue loads with a NULL primary key. """
+
+	def _db(self, **kw):
+		return FakeDb(
+			tables=("channel_settings", "queue_settings"),
+			columns={"queue_settings": {"pq_id", "channel_id", "cfg_name"},
+					 "channel_settings": {"channel_id", "cfg_name"}},
+			rows={"channel_settings": [{"cfg_name": "qc_config"}],
+				  "queue_settings": [{"cfg_name": "pq_config"}]},
+			**kw)
+
+	def test_it_renames_both_cfg_names_and_the_queue_primary_key(self):
+		db = self._db()
+		asyncio.run(mig._m011(db))
+		sql = " | ".join(db.executed)
+		assert "channel_settings SET cfg_name = 'channel_config'" in sql
+		assert "queue_settings SET cfg_name = 'queue_config'" in sql
+		assert "CHANGE `pq_id` `queue_id`" in sql
+
+	def test_the_primary_key_rename_keeps_auto_increment(self):
+		""" MySQL's RENAME COLUMN form drops AUTO_INCREMENT off a primary key,
+		which is why this migration uses CHANGE and restates the type. Without
+		it the next queue created gets primary key 0 and the one after it
+		collides. """
+		db = self._db()
+		asyncio.run(mig._m011(db))
+		alter = next(s for s in db.executed if "CHANGE" in s)
+		assert "BIGINT NOT NULL AUTO_INCREMENT" in alter
+
+	def test_a_re_run_does_not_re_issue_the_alter(self):
+		""" The two UPDATEs filter on the old value and are no-ops once applied.
+		The ALTER is not self-guarding — CHANGE on a column that is already
+		renamed is an error — so it is guarded on information_schema. """
+		db = self._db()
+		asyncio.run(mig._m011(db))
+		db.executed.clear()
+		asyncio.run(mig._m011(db))
+		assert not any("CHANGE" in s for s in db.executed), (
+			"the ALTER re-ran against a column that no longer exists")
+		assert any("SET cfg_name" in s for s in db.executed), (
+			"the UPDATEs should still run — see the migration docstring on why "
+			"short-circuiting on the ALTER's guard would be wrong")
+
+	def test_a_fresh_install_with_no_tables_is_a_no_op(self):
+		""" pickup/channel.py and queue.py CREATE both tables with the new names
+		already on them, so there is nothing to migrate and nothing to invent. """
+		db = FakeDb(tables=())
+		asyncio.run(mig._m011(db))
+		assert db.executed == []
+
+
+class TestConfigFactoryRenamePostCondition:
+	""" The check that turns the silent rebuild into a crash. Ledger-gated, so
+	it is a no-op on a database that has not reached 011 — which is what lets
+	run_all call it BEFORE the migration loop, ahead of anything irreversible. """
+
+	def test_it_passes_once_the_migration_has_run(self):
+		db = FakeDb(
+			tables=("channel_settings", "queue_settings"), applied=("011_config_factory_rename",),
+			columns={"queue_settings": {"queue_id", "cfg_name"}},
+			rows={"channel_settings": [{"cfg_name": "channel_config"}],
+				  "queue_settings": [{"cfg_name": "queue_config"}]})
+		asyncio.run(mig._assert_config_factories_renamed(db))
+
+	def test_it_is_silent_when_the_ledger_has_not_reached_011(self):
+		""" A database legitimately behind is not a disagreement with anything.
+		Old cfg_names and pq_id are the ordinary state there. """
+		db = FakeDb(
+			tables=("channel_settings", "queue_settings"), applied=("010_game_stats_played_at",),
+			columns={"queue_settings": {"pq_id", "cfg_name"}},
+			rows={"channel_settings": [{"cfg_name": "qc_config"}]})
+		asyncio.run(mig._assert_config_factories_renamed(db))
+
+	def test_a_stale_channel_cfg_name_stops_the_boot(self):
+		""" THE RESTORED-BACKUP CASE. run_all decides what to run purely from
+		the ledger, and a restore keeps the ledger while losing the rename — so
+		every migration reads as applied and the loop skips all of them. """
+		db = FakeDb(
+			tables=("channel_settings",), applied=("011_config_factory_rename",),
+			columns={}, rows={"channel_settings": [{"cfg_name": "qc_config"}]})
+		try:
+			asyncio.run(mig._assert_config_factories_renamed(db))
+		except RuntimeError as e:
+			assert "channel_settings" in str(e) and "qc_config" in str(e)
+			assert "BLANK" in str(e), "the message must say what the bot would do, not just what is wrong"
+		else:
+			raise AssertionError("a stale cfg_name must stop the boot, not be repaired silently")
+
+	def test_a_stale_queue_cfg_name_stops_the_boot(self):
+		db = FakeDb(
+			tables=("queue_settings",), applied=("011_config_factory_rename",),
+			columns={"queue_settings": {"queue_id"}},
+			rows={"queue_settings": [{"cfg_name": "pq_config"}]})
+		try:
+			asyncio.run(mig._assert_config_factories_renamed(db))
+		except RuntimeError as e:
+			assert "queue_settings" in str(e) and "pq_config" in str(e)
+		else:
+			raise AssertionError("a stale cfg_name must stop the boot")
+
+	def test_a_surviving_pq_id_stops_the_boot(self):
+		""" Distinct from the cfg_name checks: the rows can be perfectly renamed
+		while the column rename was lost, and that state produces queues with a
+		NULL primary key rather than blank config. """
+		db = FakeDb(
+			tables=("queue_settings",), applied=("011_config_factory_rename",),
+			columns={"queue_settings": {"pq_id", "queue_id", "cfg_name"}},
+			rows={"queue_settings": [{"cfg_name": "queue_config"}]})
+		try:
+			asyncio.run(mig._assert_config_factories_renamed(db))
+		except RuntimeError as e:
+			assert "pq_id" in str(e) and "NULL primary key" in str(e)
+		else:
+			raise AssertionError("a surviving pq_id must stop the boot")
+
+	def test_run_all_asserts_it_before_the_loop(self):
+		""" Same reasoning as the identity seed check: post-conditions describe
+		a database repaired by dropping the ledger, and migrations drop tables.
+		Checking only afterwards lets an irreversible body run first. """
+		db = FakeDb(
+			tables=("channel_settings",), applied=("011_config_factory_rename",),
+			rows={"channel_settings": [{"cfg_name": "qc_config"}]})
+		try:
+			asyncio.run(mig.run_all(db))
+		except RuntimeError as e:
+			assert "qc_config" in str(e)
+		else:
+			raise AssertionError("run_all must refuse to proceed")
+		assert not any("DROP TABLE" in s for s in db.executed), (
+			"run_all executed a destructive statement on a database its own "
+			"post-condition rejects")

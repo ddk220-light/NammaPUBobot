@@ -76,7 +76,7 @@ window. Practical pacing that avoids the 429 spiral: **~10s between fetches** (2
 `mgz/fast/header.py:parse()` only rejects unknown **game_version** enums (`USERPATCH15/DE/HD`) —
 **there is no `save_version` ceiling** in the parser. Save 68 is a DE replay and reuses the
 `save >= 66.6` header branches, so it parses. The thing that shelved 68 games was *our own*
-`bot/replay_stats/policy.py` gate (`MAX_SUPPORTED_SAVE`), set too conservatively.
+`nammaoe2bot/ingest/policy.py` gate (`MAX_SUPPORTED_SAVE`), set too conservatively.
 
 ### 2.2 The save-68 lesson (verified empirically)
 We first concluded a fork/rewrite was needed — **wrong**, because we tested `happyleavesaoc`
@@ -96,9 +96,9 @@ bump the gate + `PARSER_VERSION`, redeploy.
   `mgz @ git+…AoEInsights…` line silently gives you the wrong parser. Pin by repo+sha, then verify
   `mgz.model` exists at runtime.
 - **`ProcessPoolExecutor` is fork-vs-spawn sensitive.** The live ingest runs `extract_match` in a
-  one-worker pool (`bot/replay_stats/parse.py`) so the event loop never blocks. On Linux/Railway
+  one-worker pool (`nammaoe2bot/ingest/parse.py`) so the event loop never blocks. On Linux/Railway
   (`fork`) the worker inherits the already-imported, DB-connected parent — fine. On Windows
-  (`spawn`) the worker re-imports `bot.replay_stats`, which runs `ensure_table` against a
+  (`spawn`) the worker re-imports `nammaoe2bot.ingest`, which runs `ensure_table` against a
   not-yet-connected `db` and crashes. **For a local one-off, call `extract_match` in-process**
   (skip the pool) — same output, no spawn headache.
 
@@ -107,7 +107,7 @@ bump the gate + `PARSER_VERSION`, redeploy.
 ## 3. Discord / nextcord — slash commands, embeds, files
 
 ### 3.1 Command wiring (this codebase's pattern)
-- Slash commands are declared in `bot/context/slash/commands.py` with
+- Slash commands are declared in `nammaoe2bot/discord/slash.py` with
   `@dc.slash_command(name=…, **guild_kwargs)` (root) or `@group.subcommand(…)`, each delegating to
   `run_slash(bot.commands.<handler>, interaction=…, **opts)`.
 - `run_slash` builds a `SlashContext` and calls `await handler(ctx, **kwargs)`. Handlers live in
@@ -128,7 +128,7 @@ already routes to `send_message` vs `followup.send` based on `interaction.respon
   much," and we moved to an **image**. Lesson: a long stat dump is better as a chart than as a
   wall of embed fields.
 - **Image attachments:** render with the **OO `Figure` API**, not `pyplot` — pyplot keeps global
-  state that's unsafe under the async bot. Pattern (mirrors `bot/player_profile.py`):
+  state that's unsafe under the async bot. Pattern (mirrors `nammaoe2bot/features/scouting/profile.py`):
   `matplotlib.use("Agg")` → `Figure(...)` → `fig.savefig(io.BytesIO(), format="png", dpi=…)` →
   `File(fp=buf, filename="…png")` → `ctx.reply(file=…)`. Keep the matplotlib import lazy (CI has
   no matplotlib; importing it at module load would break the test collection).
@@ -166,7 +166,7 @@ functions so they're testable under that shim — and keep the rendering/DB in s
   connect with `WinError 121` ("semaphore timeout") even though raw TCP to the host works. Set
   `asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())` for any local script
   hitting the DB.
-- **The core MySQL adapter drops the URI port.** `core/DBAdapters/mysql.py:connect()` parses
+- **The core MySQL adapter drops the URI port.** `nammaoe2bot/runtime/database/mysql.py:connect()` parses
   `dbPort` but never passes `port=` to `aiomysql.create_pool`, so it always hits 3306. Fine for
   Railway's internal network; **wrong for the public proxy** (port 10509+). Local scripts must
   build the pool themselves with the real port. (Flagged as a one-line fix.)

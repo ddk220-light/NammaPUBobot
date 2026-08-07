@@ -1,5 +1,5 @@
-"""Unit tests for the pure aggregation in bot/replay_stats/persona_store.py."""
-from bot.replay_stats.persona_store import PERIODS, aggregate_player_stats
+"""Unit tests for the pure aggregation in nammaoe2bot/ingest/persona_store.py."""
+from nammaoe2bot.ingest.persona_store import PERIODS, aggregate_player_stats
 
 
 def _row(uid, pnum, team, **kw):
@@ -23,12 +23,12 @@ def _match(at, focus_kw=None):
 
 
 def test_periods_match_web_windows():
-	# Compare against the literal in bot/web.py itself (parsed via ast, since
-	# importing bot.web pulls aiohttp) so drift between the two dicts fails CI.
+	# Compare against the literal in nammaoe2bot/web/server.py itself (parsed via ast, since
+	# importing nammaoe2bot.web.server pulls aiohttp) so drift between the two dicts fails CI.
 	import ast
 	from pathlib import Path
 
-	src = (Path(__file__).resolve().parent.parent / "bot" / "web.py").read_text()
+	src = (Path(__file__).resolve().parent.parent / "nammaoe2bot" / "web" / "server.py").read_text()
 	tree = ast.parse(src)
 	web_periods = None
 	for node in ast.walk(tree):
@@ -36,7 +36,7 @@ def test_periods_match_web_windows():
 			isinstance(t, ast.Name) and t.id == "MATCH_STAT_PERIODS" for t in node.targets
 		):
 			web_periods = ast.literal_eval(node.value)
-	assert web_periods is not None, "MATCH_STAT_PERIODS not found in bot/web.py"
+	assert web_periods is not None, "MATCH_STAT_PERIODS not found in nammaoe2bot/web/server.py"
 	assert web_periods == PERIODS
 
 
@@ -88,7 +88,7 @@ def test_multi_profile_user_counts_match_once():
 
 
 def test_feeds_derive_persona():
-	from bot.replay_stats.persona import derive_persona
+	from nammaoe2bot.ingest.persona import derive_persona
 	groups = [_match(at=1000 + i, focus_kw={"villagers": 130, "military": 120}) for i in range(12)]
 	stats = aggregate_player_stats(groups, 1, None)
 	p = derive_persona(stats)

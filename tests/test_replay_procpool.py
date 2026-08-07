@@ -20,9 +20,9 @@ from concurrent.futures.process import BrokenProcessPool
 
 import pytest
 
-from bot.replay_stats import parse as parse_module
-from bot.replay_stats import procpool
-from bot.replay_stats import render as render_module
+from nammaoe2bot.ingest import parse as parse_module
+from nammaoe2bot.ingest import procpool
+from nammaoe2bot.ingest import render as render_module
 
 
 # ── WorkerPool lifecycle ─────────────────────────────────────────────────
@@ -62,7 +62,7 @@ def test_pool_pins_the_fork_start_method(fake_executors):
     # Load-bearing: _render and _extract are pickled by reference, so the worker only
     # resolves them if it inherited sys.modules. Under spawn/forkserver (the macOS
     # default, and the Linux default from Python 3.14) the child re-imports
-    # bot/replay_stats/__init__.py, whose module-scope db.ensure_table() calls need a
+    # nammaoe2bot/ingest/__init__.py, whose module-scope db.ensure_table() calls need a
     # live DB handle it does not have — and the worker dies on every single job.
     procpool.WorkerPool("t").get()
     assert fake_executors.calls[0]["max_workers"] == 1

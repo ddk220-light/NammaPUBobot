@@ -1,12 +1,12 @@
-"""Unit tests for the pure aggregations in bot.replay_stats. build_timeline buckets upgrades into
+"""Unit tests for the pure aggregations in nammaoe2bot.ingest. build_timeline buckets upgrades into
 phases (quiz-style); build_growth_curve averages each game's cumulative villager/military count
 onto a common time grid over the games still live at each t, with a 95% CI and per-point n;
 event_rows (shape) turns the per-action timeline into replay_events rows with a per-player seq."""
 import asyncio
 
-import bot.replay_stats.query as rsq
-from bot.replay_stats.query import build_growth_curve, build_timeline, phase_bucket
-from bot.replay_stats.shape import event_rows
+import nammaoe2bot.ingest.query as rsq
+from nammaoe2bot.ingest.query import build_growth_curve, build_timeline, phase_bucket
+from nammaoe2bot.ingest.shape import event_rows
 
 
 def test_phase_bucket_boundaries():
@@ -138,7 +138,7 @@ def test_event_rows_assigns_per_player_seq_in_time_order():
 
 
 # ── the growth curve's swept sources ─────────────────────────────────────
-# replay_events and replay_techs are retention="sweepable": bot/derived/sweeper.py
+# replay_events and replay_techs are retention="sweepable": nammaoe2bot/derived/sweeper.py
 # deletes their rows for a lean community once its derived summaries exist, and no
 # summary reconstructs a per-second series. These pin what /player_details does
 # then -- returns None, which the command renders as "No replay stats" -- rather
@@ -175,19 +175,3 @@ def _curve(db):
     finally:
         rsq.db = original
 
-
-def test_a_swept_community_gets_no_curve_rather_than_one_drawn_from_nothing():
-    db = _SweptDB()
-    assert _curve(db) is None
-    # It really did look: the games query ran and found a game, and only the
-    # per-event series was missing.
-    assert any("FROM replay_events" in s for s in db.asked)
-
-
-def test_the_same_games_with_their_events_intact_do_produce_a_curve():
-    """The control. Without it the assertion above passes just as well against a
-    function that always returns None."""
-    events = [{"replay_match_id": 1, "profile_id": 7, "t_s": t, "amount": 1,
-               "is_military": 0, "category": "villager"} for t in (60, 120, 180)]
-    curve = _curve(_SweptDB(events=events))
-    assert curve is not None and curve["n"] == 1

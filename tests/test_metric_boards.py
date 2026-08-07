@@ -1,5 +1,5 @@
 """Unit tests for the derived-community metric_boards pure aggregation + writer
-(bot/derived/boards.py).
+(nammaoe2bot/derived/boards.py).
 
 Every number a stage-5 leaderboard prints comes out of compute_board, so each
 test below is written to fail against a specific plausible-but-wrong
@@ -23,9 +23,9 @@ import json
 
 import pytest
 
-import bot.derived.boards as boards
-import bot.derived.rollups as rollups
-from bot.derived.boards import METRICS, compute_board
+import nammaoe2bot.derived.boards as boards
+import nammaoe2bot.derived.rollups as rollups
+from nammaoe2bot.derived.boards import METRICS, compute_board
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────

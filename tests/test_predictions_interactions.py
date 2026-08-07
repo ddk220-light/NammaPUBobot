@@ -6,8 +6,8 @@ was mechanical rather than deliberate — the module does `import nextcord` at
 load, nextcord is not installed in CI, and conftest's nextcord fake was missing
 `InteractionType`, which is the very first thing the handler touches. So the
 whole file was unreachable from pytest. conftest now stubs those five wire
-constants (and `ui`/`ButtonStyle`, which bot/predictions/embeds.py imports at
-module level), which unblocks `bot/quiz/interactions.py` too.
+constants (and `ui`/`ButtonStyle`, which nammaoe2bot/features/betting/embeds.py imports at
+module level), which unblocks `nammaoe2bot/features/quiz/interactions.py` too.
 
 Nothing here mocks the function under test. The handler runs for real against a
 fake interaction and fake collaborators; every assertion is on what the user is
@@ -27,7 +27,7 @@ import types
 
 import nextcord
 
-from bot.predictions import interactions, view
+from nammaoe2bot.features.betting import interactions, view
 
 ALL_SENDS = math.inf            # every send fails, for as long as the test runs
 
@@ -281,10 +281,10 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 	async def _community_for_channel(_channel_id):
 		return community_id
 
-	# `from bot import community` resolves the package attribute before it tries
+	# `from nammaoe2bot import community` resolves the package attribute before it tries
 	# to import the submodule, so setting it here keeps the real community
 	# module (and its DB access) out of the way.
-	monkeypatch.setattr(sys.modules["bot"], "community",
+	monkeypatch.setattr(sys.modules["nammaoe2bot"], "community",
 						types.SimpleNamespace(community_for_channel=_community_for_channel),
 						raising=False)
 	# What flow._team_ids actually walks. Real function, real shape — including
@@ -298,7 +298,12 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 			id=the_post["match_id"],
 			players=_roster([*team0, *team1, *unpicked]),
 			teams=[_roster(team0), _roster(team1), _roster(unpicked)])]
-	monkeypatch.setattr(sys.modules["bot"], "active_matches", matches, raising=False)
+	# Live match state hangs off the Application now, not off the bot module.
+	# flow._team_ids reads dc.app.active_matches, so patching the old module
+	# global would leave the roster empty and every own-team check would pass
+	# for the wrong reason — the participants would look like spectators.
+	from nammaoe2bot.runtime.client import dc
+	monkeypatch.setattr(dc.app, "active_matches", matches, raising=False)
 	return wiring
 
 
@@ -481,7 +486,7 @@ class TestConfirmation:
 		# The confirmation carries a live Cancel button — task 14's whole
 		# user-facing point — routable back through the real parser, not a
 		# custom_id that merely looks right.
-		from bot.predictions.scoring import parse_cancel_custom_id
+		from nammaoe2bot.features.betting.scoring import parse_cancel_custom_id
 		assert i.reply_view is not None and i.reply_view is not interactions.nextcord.utils.MISSING
 		assert [b.custom_id for b in i.reply_view.children] == ["betcancel:12"]
 		assert [parse_cancel_custom_id(b.custom_id) for b in i.reply_view.children] == [12]
@@ -588,7 +593,7 @@ class TestFailureAfterTheCharge:
 		assert i.all_ephemeral
 
 	def test_the_handler_never_raises_even_when_it_cannot_speak(self, monkeypatch):
-		""" Self-isolating: this runs inside bot/events.py's on_interaction, ahead
+		""" Self-isolating: this runs inside nammaoe2bot/discord/events.py's on_interaction, ahead
 		of nothing but after every other router — an exception escaping here is a
 		traceback in the event loop for a button press. """
 		log = wire(monkeypatch, place_bet=("ok", 440),
@@ -764,7 +769,7 @@ class TestFailureAfterTheRefund:
 		assert "already back" in interactions.CANCEL_LANDED_NOTICE
 
 	def test_the_cancel_route_never_raises_even_when_it_cannot_speak(self, monkeypatch):
-		""" Self-isolating, like the bet route: this runs inside bot/events.py's
+		""" Self-isolating, like the bet route: this runs inside nammaoe2bot/discord/events.py's
 		on_interaction, and an exception escaping is a traceback in the event
 		loop for a button press. """
 		log = wire(monkeypatch, cancel_bet=("ok", 60))

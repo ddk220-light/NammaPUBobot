@@ -1,4 +1,4 @@
-"""Unit tests for the derived-community refresh job (bot/derived/refresh.py).
+"""Unit tests for the derived-community refresh job (nammaoe2bot/derived/refresh.py).
 
 Three things shape this file.
 
@@ -11,7 +11,7 @@ Three things shape this file.
    (stdlib, never a real server), translating only MySQL's %s placeholders and
    its REPLACE/INSERT IGNORE spellings.
 
-2. THE IDENTITY HOOK IS DRIVEN THROUGH bot/identity.py, never simulated by
+2. THE IDENTITY HOOK IS DRIVEN THROUGH nammaoe2bot/features/identity/resolver.py, never simulated by
    writing an `identities` row by hand. The hook IS `bound_at` being stamped by
    link_self/relink/unlink; a test that wrote the column itself would still pass
    with every one of those stamps deleted.
@@ -28,12 +28,12 @@ import sqlite3
 
 import pytest
 
-import bot.identity as identity
-import bot.derived.boards as boards
-import bot.derived.civ_stats as civ_stats
-import bot.derived.game_stats as game_stats_mod
-import bot.derived.refresh as refresh
-import bot.derived.rollups as rollups
+import nammaoe2bot.features.identity.resolver as identity
+import nammaoe2bot.derived.boards as boards
+import nammaoe2bot.derived.civ_stats as civ_stats
+import nammaoe2bot.derived.game_stats as game_stats_mod
+import nammaoe2bot.derived.refresh as refresh
+import nammaoe2bot.derived.rollups as rollups
 
 _SCHEMA = """
 CREATE TABLE communities (
@@ -86,10 +86,10 @@ T0 = 1_700_000_000   # an ordinary epoch, so MAX_AGE arithmetic is realistic
 
 
 class _SqliteDB:
-	"""Stand-in for core.database.db backed by in-memory sqlite3. Never touches a
+	"""Stand-in for nammaoe2bot.runtime.database.db backed by in-memory sqlite3. Never touches a
 	real database.
 
-	The write helpers below build the same SQL core/DBAdapters/mysql.py's Adapter
+	The write helpers below build the same SQL nammaoe2bot/runtime/database/mysql.py's Adapter
 	builds (that module cannot be imported here -- it needs aiomysql, which CI
 	does not install), so the placeholder shapes and the REPLACE / INSERT IGNORE
 	spellings the production code depends on are exercised rather than bypassed.
@@ -175,7 +175,7 @@ class _ExplodingDB:
 
 
 class _RecordingLog:
-	"""Stand-in for core.console.log that keeps what was written, so the tests can
+	"""Stand-in for nammaoe2bot.runtime.console.log that keeps what was written, so the tests can
 	assert the pass line carries real counts rather than merely being emitted."""
 
 	def __init__(self):
@@ -209,7 +209,7 @@ def _restore_module_adapters():
 	"""Put every module's `db` back after each test.
 
 	_install below rebinds a module-level attribute on five shipped modules and
-	used to leave them rebound: after this file ran, bot/derived/rollups.py's
+	used to leave them rebound: after this file ran, nammaoe2bot/derived/rollups.py's
 	`db` was still this file's sqlite double for the rest of the session, so a
 	later file patching only the shared adapter would silently miss it. That is
 	the kind of leak that makes a suite pass in one order and fail in another,
@@ -233,8 +233,8 @@ def _restore_module_adapters():
 def _install(db, log, module=refresh):
 	"""Point every module in the refresh path at the fakes.
 
-	Each of them did `from core.database import db` at import time and holds its
-	own reference, so patching core.database alone would miss them -- which is
+	Each of them did `from nammaoe2bot.runtime.database import db` at import time and holds its
+	own reference, so patching nammaoe2bot.runtime.database alone would miss them -- which is
 	exactly what the restart test needs to be able to redo after a reload.
 	_restore_module_adapters above undoes this at the end of every test."""
 	for mod in (module, rollups, boards, civ_stats, identity):
@@ -259,7 +259,7 @@ def _community(db, community_id=1, channel_id=900):
 
 def _link(db, profile_id, user_id, bound_at=T0):
 	"""Seed a binding directly. Only for SETUP -- every test about the identity
-	hook itself goes through bot/identity.py's own write paths."""
+	hook itself goes through nammaoe2bot/features/identity/resolver.py's own write paths."""
 	db.add("identities", profile_id=profile_id, user_id=user_id, aoe2_name=f"p{profile_id}",
 	       confidence="learned", first_seen_at=T0, last_seen_at=T0, bound_at=bound_at)
 	identity.invalidate_cache()
@@ -412,7 +412,7 @@ def test_one_replay_linked_by_two_bot_matches_is_counted_once():
 # ── the identity hook ─────────────────────────────────────────────────────────
 
 def test_a_late_link_makes_an_already_computed_rollup_pending(monkeypatch):
-	"""MUTANT GUARD (c): deleting bound_at from bot/identity.py's write paths.
+	"""MUTANT GUARD (c): deleting bound_at from nammaoe2bot/features/identity/resolver.py's write paths.
 
 	This is the headline promise of identity v2 -- link late, get your whole
 	history -- and it is exactly the case a comparison built on game data alone
@@ -440,7 +440,7 @@ def test_a_late_link_makes_an_already_computed_rollup_pending(monkeypatch):
 def test_an_unlink_makes_the_departing_owner_pending(monkeypatch):
 	"""The LOSING side of a binding move, which the user's own profiles can no
 	longer report: once profile 22 is gone, `identities` holds no trace that user
-	1 ever owned it. identity_conflicts does -- bot/identity.py records every
+	1 ever owned it. identity_conflicts does -- nammaoe2bot/features/identity/resolver.py records every
 	removal there -- and that is what the watermark's UNION half reads."""
 	db, _log = _fresh()
 	_community(db)
@@ -1123,7 +1123,7 @@ def test_the_board_queries_only_read_catalogued_columns():
 
 
 def test_the_module_exposes_a_job_singleton_the_tick_can_drive():
-	# bot/events.py's on_think awaits `bot.derived.refresh_jobs.think(frame_time)`
-	# and bot/derived/__init__.py exports it under that name.
+	# nammaoe2bot/discord/events.py's on_think awaits `nammaoe2bot.derived.refresh_jobs.think(frame_time)`
+	# and nammaoe2bot/derived/__init__.py exports it under that name.
 	assert isinstance(refresh.jobs, refresh.DerivedRefresh)
 	assert inspect.iscoroutinefunction(refresh.jobs.think)

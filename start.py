@@ -24,8 +24,6 @@ REPLAY_INGEST_ENABLED = "{replay_ingest_enabled}"
 
 DB_URI = "{db_uri}"
 LOG_LEVEL = "{log_level}"
-COMMANDS_URL = "{commands_url}"
-HELP = """{help_text}"""
 STATUS = "{status}"
 
 WS_ENABLE = {ws_enable}
@@ -35,9 +33,9 @@ WS_ROOT_URL = "{ws_root_url}"
 '''
 
 
-# What core/config.py's _coerce() accepts as True for a bool key — the sole
+# What nammaoe2bot/runtime/config.py's _coerce() accepts as True for a bool key — the sole
 # authority on what a config string means. Mirrored here rather than imported
-# because importing core.config would EXECUTE it, and it loads config.cfg: the
+# because importing nammaoe2bot.runtime.config would EXECUTE it, and it loads config.cfg: the
 # very file this script has not written yet. tests/test_migrations.py's
 # test_the_replay_ingest_switch_resolves_the_same_way_in_both_config_paths pins
 # the two literals together so they cannot drift apart.
@@ -77,7 +75,7 @@ def main():
     if owner_id == "0":
         print("WARNING: DC_OWNER_ID not set. Bot owner commands won't work.")
 
-    # Fail-closed on these two: they're used by bot/events.py on_message
+    # Fail-closed on these two: they're used by nammaoe2bot/discord/events.py on_message
     # to gate ELO sync and civ sync. Silently defaulting to hardcoded
     # Discord user IDs (as we used to) means a misconfigured deployment
     # would either attribute every random bot's messages to Pubobot or
@@ -118,16 +116,12 @@ def main():
         # (a perfectly ordinary thing to type into Railway) would render as the
         # bare name `false` and raise NameError at import — taking the whole boot
         # down over a config value. Quoted, it is always a valid string literal
-        # and core/config.py's bool coercion ('1'/'true'/'yes'/'on', anything
+        # and nammaoe2bot/runtime/config.py's bool coercion ('1'/'true'/'yes'/'on', anything
         # else False) decides what it means.
         replay_ingest_enabled=replay_ingest_enabled,
         db_uri=db_uri,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
-        commands_url=os.environ.get("COMMANDS_URL",
-            "https://github.com/Leshaka/PUBobot2/blob/main/COMMANDS.md#avaible-commands"),
-        help_text=os.environ.get("HELP",
-            "PUBobot2 is a discord bot for pickup games organisation."),
-        status=os.environ.get("STATUS", "PUBobot2"),
+        status=os.environ.get("STATUS", "NammaAoe2Bot"),
         ws_enable=os.environ.get("WS_ENABLE", "False"),
         ws_port=os.environ.get("WS_PORT", os.environ.get("PORT", "8080")),
         ws_root_url=os.environ.get("WS_ROOT_URL", ""),
@@ -153,7 +147,10 @@ def main():
           f"(REPLAY_INGEST_ENABLED={replay_ingest_enabled!r}{_origin})")
 
     # Launch the bot
-    os.execvp(sys.executable, [sys.executable, "PUBobot2.py"])
+    # `-m`, not the file path: running nammaoe2bot/__main__.py directly puts
+    # that DIRECTORY on sys.path instead of the repo root, so every
+    # `import nammaoe2bot.x` fails. -m imports the package properly.
+    os.execvp(sys.executable, [sys.executable, "-m", "nammaoe2bot"])
 
 
 if __name__ == "__main__":

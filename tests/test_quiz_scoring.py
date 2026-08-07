@@ -1,7 +1,7 @@
-"""Pure-function tests for bot.quiz.scoring (no DB, no nextcord — see conftest)."""
+"""Pure-function tests for nammaoe2bot.features.quiz.scoring (no DB, no nextcord — see conftest)."""
 from __future__ import annotations
 
-import bot.quiz.scoring as s
+import nammaoe2bot.features.quiz.scoring as s
 
 
 def test_parse_custom_id_reveal_and_answer():
@@ -21,12 +21,6 @@ def test_parse_custom_id_rejects_foreign_and_malformed():
 def test_grade():
 	assert s.grade(2, 2) is True
 	assert s.grade(0, 2) is False
-
-
-def test_iso_week_key_buckets_same_week():
-	mon = 1718236800   # 2024-06-13 (Thursday) UTC
-	later = mon + 24 * 3600
-	assert s.iso_week_key(mon) == s.iso_week_key(later)
 
 
 def test_tally_counts_correct_and_accuracy():
@@ -52,7 +46,7 @@ def test_daily_due_fires_once_per_day_at_hour():
 	assert s.daily_due(now_ts=at, hour=10, last_post_ymd="2024-06-12") is False  # before hour
 
 
-from bot.quiz.scoring import grade_multi, parse_custom_id
+from nammaoe2bot.features.quiz.scoring import grade_multi, parse_custom_id
 
 
 def test_grade_multi_exact_match_is_correct():

@@ -1,6 +1,6 @@
 import asyncio
 
-from bot import civ_sync
+from nammaoe2bot.features.civs import sync
 
 
 class FakeDB:
@@ -34,7 +34,7 @@ def test_record_lobby_match_matches_profiles_and_writes_civs():
 		],
 	}
 	players = [(1, "A", 0), (2, "B", 1), (3, "C", 0), (4, "D", 0), (5, "E", 0), (6, "F", 1), (7, "G", 1), (8, "H", 1)]
-	ok = asyncio.run(civ_sync.record_lobby_match(
+	ok = asyncio.run(sync.record_lobby_match(
 		9, 77,
 		players,
 		winner=0,
@@ -93,7 +93,7 @@ def test_record_lobby_match_rejects_low_overlap():
 			]},
 		],
 	}
-	ok = asyncio.run(civ_sync.record_lobby_match(
+	ok = asyncio.run(sync.record_lobby_match(
 		9, 77,
 		[(1, "A", 0), (2, "B", 1), (3, "C", 1), (4, "D", 0), (5, "E", 0), (6, "F", 1), (7, "G", 1), (8, "H", 0)],
 		winner=0,

@@ -17,8 +17,8 @@ REPLAY_SCRATCH = os.path.join(ROOT, ".replay_scratch")
 if REPLAY_SCRATCH not in sys.path:
 	sys.path.insert(0, REPLAY_SCRATCH)
 
-from core import database
-from core.database import db
+from nammaoe2bot.runtime import database
+from nammaoe2bot.runtime.database import db
 
 
 async def _work_items(all_parsed, limit):

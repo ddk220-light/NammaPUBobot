@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""The identity deduction solver — bot/identity_solver.py.
+"""The identity deduction solver — nammaoe2bot/features/identity/solver.py.
 
 Three halves, tested three ways:
 
@@ -21,7 +21,7 @@ asyncio.run() from a plain sync test.
 import asyncio
 import types
 
-import bot.identity_solver as solver
+import nammaoe2bot.features.identity.solver as solver
 
 
 def _m(profiles, users):
@@ -396,7 +396,7 @@ def test_build_matches_drops_a_match_with_a_null_replay_winner():
 
 
 def test_build_matches_drops_a_match_with_a_null_team():
-	# bot/stats/stats.py writes team=None for a player on neither team. Without
+	# nammaoe2bot/pickup/stats.py writes team=None for a player on neither team. Without
 	# the guard, `None == winner` is False and they read as a loser — and the
 	# roster still looks complete, so the size guard cannot catch it either.
 	replay, discord = _raw_rows()
@@ -512,7 +512,7 @@ def _fake_db_for(matches, known=None, winner_overrides=None):
 def _setup(monkeypatch, fake_db, fake_identity=None):
 	fake_identity = fake_identity or FakeIdentity()
 	monkeypatch.setattr(solver, "db", fake_db)
-	monkeypatch.setattr(solver, "identity", fake_identity)
+	monkeypatch.setattr(solver, "resolver", fake_identity)
 	return fake_identity
 
 

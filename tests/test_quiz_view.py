@@ -1,7 +1,7 @@
-"""Tests for the pure render helpers in bot.quiz.view (no nextcord)."""
+"""Tests for the pure render helpers in nammaoe2bot.features.quiz.view (no nextcord)."""
 from __future__ import annotations
 
-import bot.quiz.view as v
+import nammaoe2bot.features.quiz.view as v
 
 
 def test_leaderboard_lines_ranks_and_accuracy():
@@ -33,7 +33,7 @@ def test_closed_notice_is_the_one_surviving_notice():
 	assert not hasattr(v, "too_late_notice")
 
 
-from bot.quiz.view import result_lines
+from nammaoe2bot.features.quiz.view import result_lines
 
 
 def test_result_lines_render_multiple_correct_letters():

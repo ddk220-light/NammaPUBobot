@@ -7,7 +7,7 @@ nextcord, no bot package), which is what makes this testable at all.
 """
 from __future__ import annotations
 
-from bot.predictions import scoring, view
+from nammaoe2bot.features.betting import scoring, view
 
 
 class TestParseBetCustomId:

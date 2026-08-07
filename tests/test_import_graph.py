@@ -27,8 +27,8 @@ list to grow and nothing about a missing optional dependency can hide a missing
 repo module.
 
 `_module_level_names` deliberately answers "every name this module binds",
-which includes names it imported itself: `from bot import identity` is
-satisfied by `bot/identity.py`, and `from utils.db_helpers import create_pool`
+which includes names it imported itself: `from nammaoe2bot.features.identity import resolver` is
+satisfied by `nammaoe2bot/features/identity/resolver.py`, and `from utils.db_helpers import create_pool`
 by the def in that file. A module containing a star-import is treated as
 binding anything, because resolving `from x import *` statically means
 importing x, which is the thing this file will not do.
@@ -38,9 +38,9 @@ import os
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# The three first-party packages. A dotted name whose first segment is not one
-# of these is third party (or stdlib) and is not this test's business.
-_PACKAGES = ("bot", "core", "utils")
+# The first-party packages. `bot` and `core` are gone — dissolved into
+# nammaoe2bot/ — and are guarded by name instead; see _RETIRED_PACKAGES.
+_PACKAGES = ("nammaoe2bot", "utils")
 
 # Directories the walk never descends into: caches, and the vendored mgz fork
 # that only exists on a machine that has run the replay pipeline.
@@ -48,7 +48,7 @@ _SKIP_DIRS = {"__pycache__", ".replay_scratch", "data", ".git"}
 
 
 def _py_files():
-	""" (dotted module name, absolute path) for every .py file in the three
+	""" (dotted module name, absolute path) for every .py file in the
 	first-party packages, plus the two root-level entry points. """
 	for package in _PACKAGES:
 		for dirpath, dirnames, filenames in os.walk(os.path.join(_REPO_ROOT, package)):
@@ -62,7 +62,7 @@ def _py_files():
 				if parts[-1] == "__init__":
 					parts = parts[:-1]
 				yield ".".join(parts), path
-	for filename in ("PUBobot2.py", "start.py"):
+	for filename in ("nammaoe2bot/__main__.py", "start.py"):
 		path = os.path.join(_REPO_ROOT, filename)
 		if os.path.exists(path):
 			yield filename[:-3], path
@@ -89,7 +89,7 @@ def _resolve(node, module_dotted, is_package):
 	""" The absolute module an ImportFrom names, or None for an unresolvable
 	relative level.
 
-	`from . import x` inside bot/derived/game_labels.py means bot.derived, so
+	`from . import x` inside nammaoe2bot/derived/game_labels.py means nammaoe2bot.derived, so
 	the anchor for a non-package module is its PARENT; for a package's
 	__init__.py it is the package itself. """
 	if not node.level:
@@ -188,6 +188,41 @@ def _unresolved_imports():
 	return broken
 
 
+_RETIRED_PACKAGES = ("bot", "core")
+
+
+def test_nothing_imports_a_package_that_no_longer_exists():
+	""" `bot` and `core` were this codebase's two top-level packages and both
+	are gone — dissolved into nammaoe2bot/ by the architecture restructure.
+
+	This needs its own test because the sweep below CANNOT catch it. That one
+	resolves imports whose first segment is a first-party package; once a
+	package stops existing, an import of it stops looking first-party and gets
+	skipped as third party. Five `from core import ...` lines survived the
+	move exactly that way — including nammaoe2bot/__main__.py's, the entrypoint's first
+	real import, which would have failed on the first line of the first boot.
+
+	`import bot` / `from bot import` is the same shape and the same risk, so
+	both names are guarded together. """
+	offenders = []
+	for _module, path in _py_files():
+		with open(path, encoding="utf-8") as f:
+			tree = ast.parse(f.read())
+		for node in ast.walk(tree):
+			if isinstance(node, ast.ImportFrom) and not node.level:
+				target = node.module or ""
+			elif isinstance(node, ast.Import):
+				target = node.names[0].name
+			else:
+				continue
+			root = target.split(".")[0]
+			if root in _RETIRED_PACKAGES:
+				offenders.append(f"{os.path.relpath(path, _REPO_ROOT)}: imports {target}")
+	assert not offenders, (
+		"imports of a package that no longer exists (ModuleNotFoundError at "
+		"the first line that runs):\n  " + "\n  ".join(offenders))
+
+
 def test_every_repo_internal_import_resolves():
 	""" The guard proper. A failure here means some module in bot/, core/ or
 	utils/ imports a first-party module or name that does not exist -- i.e. it
@@ -236,3 +271,24 @@ def test_the_guard_catches_a_move_that_forgets_a_sibling(tmp_path, monkeypatch):
 	assert any("stale.py" in b and "utils.replay_quiz" in b for b in broken)
 	assert any("missing_name.py" in b and "no_such_function" in b for b in broken)
 	assert not any("fine.py" in b for b in broken)
+
+
+def test_the_module_entrypoint_is_where_start_py_says_it_is():
+	""" start.py execs `python -m nammaoe2bot`, which needs
+	nammaoe2bot/__main__.py to exist. Nothing else in the suite touches either
+	file — the entrypoint cannot be imported under the conftest stubs (it
+	connects to MySQL and Discord on the way down) — so this is the only check
+	that the two agree.
+
+	`-m` and not the file path, deliberately: running nammaoe2bot/__main__.py
+	directly puts that DIRECTORY on sys.path instead of the repo root, and
+	every `import nammaoe2bot.x` inside it then fails. Both halves are pinned
+	because a fix to either one alone is silent until a deploy. """
+	assert os.path.isfile(os.path.join(_REPO_ROOT, "nammaoe2bot", "__main__.py"))
+	with open(os.path.join(_REPO_ROOT, "start.py"), encoding="utf-8") as f:
+		start = f.read()
+	assert '"-m", "nammaoe2bot"' in start, (
+		"start.py no longer execs `python -m nammaoe2bot`")
+	assert '"nammaoe2bot/__main__.py"' not in start, (
+		"start.py execs the file path — that puts nammaoe2bot/ on sys.path "
+		"instead of the repo root and every intra-package import fails")

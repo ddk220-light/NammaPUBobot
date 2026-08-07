@@ -1,4 +1,4 @@
-"""Unit tests for the derived-global reconciliation loop (bot/derived/backfill.py).
+"""Unit tests for the derived-global reconciliation loop (nammaoe2bot/derived/backfill.py).
 
 Two things shape this file.
 
@@ -18,10 +18,10 @@ import calendar
 import json
 import sqlite3
 
-import bot.replay_stats  # noqa: F401  — backfill's compute lazily imports card_scoring from it
-import bot.derived.backfill as backfill
-import bot.derived.game_labels as game_labels
-import bot.derived.game_stats as game_stats
+import nammaoe2bot.ingest  # noqa: F401  — backfill's compute lazily imports card_scoring from it
+import nammaoe2bot.derived.backfill as backfill
+import nammaoe2bot.derived.game_labels as game_labels
+import nammaoe2bot.derived.game_stats as game_stats
 
 _SCHEMA = """
 CREATE TABLE replay_matches (replay_match_id INTEGER PRIMARY KEY, played_at TEXT);
@@ -58,7 +58,7 @@ CREATE TABLE game_labels (
 
 
 class _SqliteDB:
-	"""Stand-in for core.database.db backed by in-memory sqlite3. Never touches a
+	"""Stand-in for nammaoe2bot.runtime.database.db backed by in-memory sqlite3. Never touches a
 	real database. `fail_on` makes the write for a given match id raise, which is
 	how the per-match isolation guard is exercised."""
 
@@ -109,7 +109,7 @@ class _SqliteDB:
 
 
 class _RecordingLog:
-	"""Stand-in for core.console.log that keeps what was written, so the tests can
+	"""Stand-in for nammaoe2bot.runtime.console.log that keeps what was written, so the tests can
 	assert the batch line carries real counts rather than merely being emitted."""
 
 	def __init__(self):
@@ -150,7 +150,7 @@ def _match_with_labels(fake, mid, keys, played_at=1700000000, player_number=1):
 		fake.add("cls_results", key=key, aoe2_match_id=mid,
 		         player_number=player_number, played_at=played_at)
 	# The provenance row every cls_results writer stamps once the classifier has
-	# finished a match (bot/replay_stats/classifications.write_extracted_match,
+	# finished a match (nammaoe2bot/ingest/classifications.write_extracted_match,
 	# utils/classifications/dbio.mark_match_classified). Set up here rather than
 	# per-test because production has no cls_results without it, and the
 	# reconciler's empty-source rule is only meaningful against that reality.

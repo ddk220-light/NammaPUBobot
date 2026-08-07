@@ -1,0 +1,270 @@
+# -*- coding: utf-8 -*-
+"""Single source of truth for every table's contract: layer (core/raw/link/
+derived/ops), tenancy, writers, and retention class. Names say WHAT a
+table is; this registry says HOW it is treated. tests/test_data_registry.py
+enforces two-way agreement with the ensure_table declarations.
+
+`writers` records the modules that write each table TODAY, as found by
+grepping bot/ and core/ for db.insert/insert_many/update/delete and raw
+INSERT/UPDATE/DELETE/REPLACE execute() calls. It is a description of the
+current, imperfect state — several tables below are written from more than
+one module. The project's target is exactly one dedicated writer per table;
+later stages consolidate these multi-writer entries down to one each.
+
+An empty tuple carries one of two distinct meanings, and the entry's comment
+must say which:
+1. The table is read-only from bot/core (populated externally, e.g. by an
+   offline utils/ script) — do not invent a writer for it.
+2. The table is declared ahead of its writer: its `ensure_table`/
+   `FactoryTable` landed in this deploy so its schema ships early, but the
+   module that writes to it is a later task. The entry's comment must name
+   that task (e.g. "task 3.3 adds nammaoe2bot/derived/game_labels.py as its
+   writer"), so the empty tuple reads as "not yet" rather than "never"."""
+
+REGISTRY = {
+	# core — irreplaceable
+	"matches": dict(
+		layer="core", tenancy="channel", writers=("nammaoe2bot/features/elo_sync.py", "nammaoe2bot/pickup/stats.py"), retention="forever"
+	),
+	"match_players": dict(
+		layer="core", tenancy="channel", writers=("nammaoe2bot/features/elo_sync.py", "nammaoe2bot/pickup/stats.py"), retention="forever"
+	),
+	# nammaoe2bot/pickup/rating.py writes this through `self.table` (set to the literal
+	# name once, at the top of the class), which is why a grep for the table name
+	# beside a db.insert/update call does not find it.
+	"player_ratings": dict(
+		layer="core",
+		tenancy="channel",
+		writers=("nammaoe2bot/features/elo_sync.py", "nammaoe2bot/discord/events.py", "nammaoe2bot/pickup/rating.py", "nammaoe2bot/pickup/stats.py"),
+		retention="forever",
+	),
+	"rating_history": dict(
+		layer="core",
+		tenancy="channel",
+		writers=("nammaoe2bot/features/elo_sync.py", "nammaoe2bot/pickup/rating.py", "nammaoe2bot/pickup/stats.py"),
+		retention="forever",
+	),
+	"match_counter": dict(
+		layer="core", tenancy="global", writers=("nammaoe2bot/pickup/stats.py",), retention="forever"
+	),
+	"channel_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/runtime/cfg_factory.py",), retention="forever"),
+	"queue_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/runtime/cfg_factory.py",), retention="forever"),
+	"bot_state": dict(layer="core", tenancy="global", writers=("nammaoe2bot/state.py",), retention="forever"),
+	"queue_bans": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/pickup/noadds.py",), retention="forever"),
+	# feature state (core contract)
+	"quiz_posts": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),
+	"quiz_answers": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),
+	"quiz_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),
+	"prediction_posts": dict(
+		layer="core", tenancy="channel", writers=("nammaoe2bot/features/betting/store.py",), retention="forever"
+	),
+	# Meaning 1 of an empty writers tuple: read-only by design. Gold betting
+	# replaced free votes on 2026-08-05 — nammaoe2bot/features/betting/store.py deleted its
+	# last write (save_ballots/mark_correct) in the same change. Rows are kept
+	# forever because the accuracy leaderboard UNIONs this table's frozen
+	# is_correct with prediction_bets, so votes-era history still counts.
+	"prediction_votes": dict(layer="core", tenancy="channel", writers=(), retention="forever"),
+	# nammaoe2bot/features/betting/gold.py is the sole writer of this table and the two below.
+	"prediction_bets": dict(
+		layer="core", tenancy="channel", writers=("nammaoe2bot/features/betting/gold.py",), retention="forever"
+	),
+	# Append-only money trail — the ONLY module allowed to write gold is
+	# nammaoe2bot/features/betting/gold.py, and gold_ledger rows are never updated/deleted.
+	"gold_ledger": dict(
+		layer="core", tenancy="community", writers=("nammaoe2bot/features/betting/gold.py",), retention="forever"
+	),
+	# Same writer as gold_ledger above; this one is the spendable cache, and
+	# gold.reconcile() proves it still equals its ledger sum.
+	"gold_balances": dict(
+		layer="core", tenancy="community", writers=("nammaoe2bot/features/betting/gold.py",), retention="forever"
+	),
+	# raw — append-only observations
+	"civ_picks": dict(
+		layer="raw",
+		tenancy="community",
+		writers=("nammaoe2bot/features/civs/matcher.py", "nammaoe2bot/features/civs/sync.py", "nammaoe2bot/features/lobby/completed.py"),
+		retention="forever",
+	),
+	"civ_reconcile": dict(
+		layer="ops", tenancy="community", writers=("nammaoe2bot/features/civs/reconcile.py",), retention="forever"
+	),
+	"lobbies": dict(
+		layer="raw",
+		tenancy="community",
+		writers=("nammaoe2bot/features/lobby/announce.py", "nammaoe2bot/features/lobby/completed.py", "nammaoe2bot/features/lobby/jobs.py", "nammaoe2bot/features/lobby/watcher.py"),
+		retention="forever",
+	),
+	# nammaoe2bot/runtime/migrations.py is a second writer of both: 003_seed_identities creates
+	# them with raw DDL and seeds them at boot, before `import bot` happens, so
+	# it cannot go through nammaoe2bot/features/identity/resolver.py (see that module's docstring).
+	# nammaoe2bot/features/identity/solver.py is deliberately NOT listed — it deduces bindings but
+	# writes them only through identity.learn()/record_refused_claim().
+	"identities": dict(
+		layer="raw", tenancy="global", writers=("nammaoe2bot/features/identity/resolver.py", "nammaoe2bot/runtime/migrations.py"), retention="forever"
+	),
+	"identity_conflicts": dict(
+		layer="derived",
+		tenancy="global",
+		writers=("nammaoe2bot/features/identity/resolver.py", "nammaoe2bot/runtime/migrations.py"),
+		retention="forever",
+	),
+	# raw replay observations. Renamed out of their inherited `rs_` prefix by
+	# 007_raw_renames; the single-row ops table that used to sit alongside them
+	# was dropped by the same migration, its one boolean replaced by the
+	# REPLAY_INGEST_ENABLED config var.
+	"replay_matches": dict(
+		layer="raw", tenancy="global", writers=("nammaoe2bot/ingest/store.py",), retention="forever"
+	),
+	"replay_players": dict(
+		layer="raw", tenancy="global", writers=("nammaoe2bot/ingest/store.py",), retention="forever"
+	),
+	# The five bulky per-match child tables, and the only rows in this database
+	# that anything ever deletes for good. `sweepable` stopped being an aspiration
+	# in task 4.6: nammaoe2bot/derived/sweeper.py now acts on exactly this set, and
+	# targets() there fails closed unless these five entries and its own
+	# TARGET_TABLES agree in BOTH directions — so retagging one of them here (or
+	# tagging a sixth table sweepable) turns the sweeper off rather than silently
+	# widening what it destroys. The sweeper is listed as a writer of each because
+	# it issues raw DELETE execute() calls against them, which is what `writers`
+	# records; store.py remains the only thing that puts rows IN.
+	"replay_units": dict(
+		layer="raw",
+		tenancy="global",
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
+		retention="sweepable",
+	),
+	"replay_techs": dict(
+		layer="raw",
+		tenancy="global",
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
+		retention="sweepable",
+	),
+	"replay_buildings": dict(
+		layer="raw",
+		tenancy="global",
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
+		retention="sweepable",
+	),
+	"replay_events": dict(
+		layer="raw",
+		tenancy="global",
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
+		retention="sweepable",
+	),
+	"replay_apm": dict(
+		layer="raw",
+		tenancy="global",
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
+		retention="sweepable",
+	),
+	"replay_ingest": dict(
+		layer="ops", tenancy="global", writers=("nammaoe2bot/ingest/store.py",), retention="forever"
+	),
+	# derived — rebuildable (legacy generation, retired across stages 3-6)
+	"rs_player_game_tags": dict(
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/player_tags.py",), retention="forever"
+	),
+	# NO WRITER IN THE RUNNING BOT since stage 5a. `/rank` stopped printing the
+	# generated persona (nammaoe2bot/features/scouting/report.py renders measured facts out of
+	# player_rollups instead), so store.write_match's refresh_match_users call went
+	# with it and nothing on the ingest path touches this table any more. The stored
+	# rows have been frozen since that deploy — a reader finding one is reading
+	# whatever the persona generator last said, not current data.
+	# nammaoe2bot/ingest/persona_store.py survives only as the module
+	# utils/backfill_personas.py loads by path, an offline script; it is listed here
+	# because a table with no writer at all is indistinguishable in this registry
+	# from a table somebody forgot to declare one for. Migration 009 drops the table
+	# in stage 6 and both modules go with it.
+	"rs_player_personas": dict(
+		layer="derived", tenancy="global", writers=("utils/backfill_personas.py",), retention="forever"
+	),
+	"cls_classifications": dict(
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/classifications.py",), retention="forever"
+	),
+	"cls_data_requirements": dict(
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/classifications.py",), retention="forever"
+	),
+	# Stage 5c dropped nammaoe2bot/ingest/classification_sync.py from both entries: it
+	# dual-wrote these two alongside game_labels while /insights and the match cards
+	# still read them, and both readers moved to game_labels. ONE writer is left, and
+	# it is load-bearing rather than vestigial — nammaoe2bot/derived/backfill.py reconciles
+	# game_labels against cls_results every pass, so write_extracted_match keeping
+	# these populated at ingest is what stops every new match from being permanently
+	# pending. It used to stop something worse: the reconciler answered an empty
+	# source by deleting the match's labels. It no longer can (see
+	# backfill._source_is_trustworthy and cls_match_ingest below), but the writer is
+	# still required, and tests/test_replay_stats_store.py now pins the call rather
+	# than leaving it to this comment. Both tables, that writer and that half of the
+	# reconciler retire together in stage 6; do not retire the writer alone.
+	"cls_results": dict(
+		layer="derived",
+		tenancy="global",
+		writers=("nammaoe2bot/ingest/classifications.py",),
+		retention="forever",
+	),
+	"cls_result_metrics": dict(
+		layer="derived",
+		tenancy="global",
+		writers=("nammaoe2bot/ingest/classifications.py",),
+		retention="forever",
+	),
+	"cls_player_totals": dict(
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/classifications.py",), retention="forever"
+	),
+	# Promoted from bookkeeping to a correctness dependency in stage 5c's follow-up:
+	# it is the ONLY thing that distinguishes "the classifier ran and matched nothing"
+	# from "the classifier never ran / its write failed", both of which cls_results
+	# spells as zero rows. nammaoe2bot/derived/backfill.py may delete a match's game_labels on
+	# an empty cls_results only when this table certifies the former. Every writer of
+	# cls_results must therefore write this too, for zero-result matches above all —
+	# utils/classifications/dbio.mark_match_classified is the offline runner's half.
+	"cls_match_ingest": dict(
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/classifications.py",), retention="forever"
+	),
+	# core — multi-tenancy root (stage 1.5)
+	"communities": dict(
+		layer="core", tenancy="community", writers=("nammaoe2bot/community.py",), retention="forever"
+	),
+	"community_channels": dict(
+		layer="core", tenancy="channel", writers=("nammaoe2bot/community.py",), retention="forever"
+	),
+	# link — cross-tenant joins (stage 1.6)
+	# nammaoe2bot/runtime/migrations.py is a writer too: 004_identity_v2 backfills every
+	# historical pairing out of replay_matches.bot_match_id (INSERT IGNORE, so
+	# nammaoe2bot/community.py's link_match_replay stays the authoritative one). That
+	# migration predates 007_raw_renames and still names the table by its old
+	# name, which is correct — it runs before the rename.
+	"match_replays": dict(
+		layer="link", tenancy="community", writers=("nammaoe2bot/community.py", "nammaoe2bot/runtime/migrations.py"),
+		retention="forever"
+	),
+	# derived-global (stage 3) — computed once at ingest from the replay_* raw
+	# tables, community-independent (unlike derived-community's per-community
+	# rollups, a later stage). Neither table carries a user_id; both key on
+	# profile_id only (identity v2 §5).
+	"game_stats": dict(
+		layer="derived", tenancy="global", writers=("nammaoe2bot/derived/game_stats.py",), retention="forever"
+	),
+	"game_labels": dict(
+		layer="derived", tenancy="global", writers=("nammaoe2bot/derived/game_labels.py",), retention="forever"
+	),
+	# derived-community (stage 4) — aggregates OF the derived-global rows above,
+	# keyed on (community_id, user_id) rather than on a slot in a match — the
+	# first derived grain that is a person in a community. Identity resolution
+	# happens in the task-4.5 refresh job that calls the writer, never in the
+	# writer and never in the table.
+	"player_rollups": dict(
+		layer="derived", tenancy="community", writers=("nammaoe2bot/derived/rollups.py",), retention="forever"
+	),
+	"metric_boards": dict(
+		layer="derived", tenancy="community", writers=("nammaoe2bot/derived/boards.py",), retention="forever"
+	),
+	"civ_stats": dict(
+		layer="derived", tenancy="community", writers=("nammaoe2bot/derived/civ_stats.py",), retention="forever"
+	),
+	# ops/web
+	"web_sessions": dict(layer="ops", tenancy="global", writers=("nammaoe2bot/web/server.py",), retention="forever"),
+	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("nammaoe2bot/web/server.py",), retention="forever"),
+}
+
+ALL_TABLES = frozenset(REGISTRY)

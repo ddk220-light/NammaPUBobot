@@ -1,5 +1,5 @@
 """Unit tests for the live classify -> game_labels ingest path
-(bot/replay_stats/classification_sync.py).
+(nammaoe2bot/ingest/classification_sync.py).
 
 No pytest-asyncio in this repo, so every test here is a plain sync test driving the
 coroutine with asyncio.run() -- never `async def test_...`, which pytest would silently
@@ -9,8 +9,8 @@ import asyncio
 
 import pytest
 
-from bot.derived import game_labels
-from bot.replay_stats import classification_sync
+from nammaoe2bot.derived import game_labels
+from nammaoe2bot.ingest import classification_sync
 
 
 class FakeDB:
@@ -78,8 +78,8 @@ def test_sync_match_writes_game_labels_from_the_live_classifier():
 
 def test_sync_match_no_longer_writes_the_cls_tables():
     """Stage 5c stopped the dual-write. cls_results/cls_result_metrics are still
-    written on the same ingest by bot/replay_stats/classifications.py's
-    write_extracted_match (store.write_match calls it, and bot/derived/backfill.py
+    written on the same ingest by nammaoe2bot/ingest/classifications.py's
+    write_extracted_match (store.write_match calls it, and nammaoe2bot/derived/backfill.py
     still reconciles game_labels against cls_results) -- but not from HERE, and not
     a second time."""
     fake = FakeDB()
@@ -135,7 +135,7 @@ def test_sync_match_still_uses_the_module_global_db_when_given_no_adapter(monkey
 
 def test_a_failing_write_raises_rather_than_reporting_zero_labels():
     """There is no cls_* write left to protect, so the best-effort guard that used
-    to swallow this is gone: bot/replay_stats/jobs.py wraps the call, logs the
+    to swallow this is gone: nammaoe2bot/ingest/jobs.py wraps the call, logs the
     failure against the match id, and the reconciler rewrites the match on its next
     pass. A guard here could only turn the failure into a silent '0 labels' line."""
     class _FailsOnGameLabels(FakeDB):

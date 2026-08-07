@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Persona assignment report over a snapshot — sanity-check the taxonomy.
 
-Recomputes per-player aggregates (same shape bot/web.py feeds derive_persona)
+Recomputes per-player aggregates (same shape nammaoe2bot/web/server.py feeds derive_persona)
 from a replay_players snapshot and prints every player's persona with the
 axis evidence, plus the style/role distribution. Use it whenever persona
 thresholds or scoring weights change.
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load(name):
-    path = ROOT / "bot" / "replay_stats" / f"{name}.py"
+    path = ROOT / "nammaoe2bot" / "ingest" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(f"persona_cal_{name}", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

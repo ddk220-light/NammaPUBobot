@@ -1,6 +1,6 @@
 """Raw CREATE TABLE IF NOT EXISTS for the cls_* tables, used by the offline runner (which
 connects via aiomysql, not the bot adapter). The bot mirrors these exact columns via
-db.ensure_table in bot/classifications/__init__.py — keep the two in sync."""
+db.ensure_table in nammaoe2bot/derived/classifications/__init__.py — keep the two in sync."""
 
 CLS_TABLES = [
     """CREATE TABLE IF NOT EXISTS cls_classifications (
@@ -34,9 +34,9 @@ CLS_TABLES = [
         PRIMARY KEY (`key`, aoe2_match_id, player_number),
         INDEX cls_results_window (`key`, played_at),
         INDEX cls_results_profile (`key`, profile_id),
-        -- Per-match lookup for bot/derived/backfill.py. The PK leads with `key`,
+        -- Per-match lookup for nammaoe2bot/derived/backfill.py. The PK leads with `key`,
         -- so it cannot serve a match-only WHERE. Mirrored by the ensure_table
-        -- declaration in bot/classifications/__init__.py and by migration
+        -- declaration in nammaoe2bot/derived/classifications/__init__.py and by migration
         -- 006_derived_indexes (this DDL only ever runs on a table that does not
         -- exist yet, so it cannot add the index to the live database).
         INDEX cls_results_match (aoe2_match_id)

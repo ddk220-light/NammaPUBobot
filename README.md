@@ -1,80 +1,117 @@
-# NammaPUBobot
+# NammaAoe2Bot
 
-**NammaPUBobot** is a fork of [PUBobot2](https://github.com/Leshaka/PUBobot2) built
-for organising Age of Empires II pickup games. Everything upstream does — queues,
-rating matches, drafts, rank roles — still works; the sections below the fold are
-upstream's own README and remain accurate for setup, credits and licensing.
+A Discord bot for organising Age of Empires II pickup games: queues, rated
+matches, replay-derived scouting reports, a play-money gold economy with
+betting on live matches, a daily quiz, and a public web dashboard.
 
-### What this fork adds
+It began as a fork of [PUBobot2](https://github.com/Leshaka/PUBobot2) by
+**Leshaka** and keeps that project's queue, rating and configuration
+foundations. See [Credits](#credits) and [License](#license) — this is GPL-3
+software and remains so.
 
-- **Replay ingest and scouting reports** — matches are linked to their recorded
-  games, so `/rank` reports what a player actually does: opening tendencies, the
-  units they mass, eAPM, and who they beat and lose to.
-- **Gold, betting and a daily quiz** — play-money betting on live matches
-  (pari-mutuel, 10-minute window, players may back only their own team) and a
-  public daily AoE2 poll that pays gold for taking part. Full rules in
+## What it does
+
+- **Pickup queues and rated matches.** Players `++` into a queue, the bot
+  balances teams by rating, runs check-in, and records the result. Four rating
+  systems (Flat, Glicko2, TrueSkill, AoE2).
+- **Replay ingest and scouting reports.** Finished matches are matched to their
+  recorded games and parsed, so `/rank` reports what a player actually does:
+  opening tendencies, the units they mass, eAPM, and who they beat and lose to
+  — windowed to the last 60 days, because a scouting report is a claim about
+  how somebody plays now.
+- **Gold, betting and a daily quiz.** Pari-mutuel betting on live matches with
+  a ten-minute window, where match participants may back only their own team,
+  and a public 24-hour AoE2 poll that pays gold for taking part. Full rules in
   [docs/GOLD.md](docs/GOLD.md).
-- **Civ statistics and balanced random draws**, and a public web dashboard with
-  leaderboards, player pages, civ stats and play-style breakdowns.
-- **A much smaller command surface than upstream.** 44 commands, 14 of them
-  player-facing; the admin groups declare `default_member_permissions` so
-  Discord hides them from everyone else. See
-  [COMMANDS.md](COMMANDS.md) and the reasoning in
-  [docs/superpowers/specs/2026-08-06-command-consolidation.md](docs/superpowers/specs/2026-08-06-command-consolidation.md).
+- **Civ statistics and balanced random draws**, informed by measured per-civ
+  win rates rather than a static list.
+- **A public web dashboard** — leaderboards, player pages, civ stats and
+  play-style breakdowns — plus an authenticated config surface for admins.
 
-For the complete command list see [COMMANDS.md](COMMANDS.md). Contributor and
-architecture notes live in [CLAUDE.md](CLAUDE.md). This fork deploys to Railway
-(see [RAILWAY_SETUP.md](RAILWAY_SETUP.md)) rather than the bare-metal setup
-described below.
+**44 slash commands, 14 of them player-facing.** Every admin group declares
+`default_member_permissions`, so Discord hides them from everyone else. See
+[COMMANDS.md](COMMANDS.md), and
+[the consolidation spec](docs/superpowers/specs/2026-08-06-command-consolidation.md)
+for why each of the 57 removed commands went.
 
----
+## Running it
 
-# PUBobot2 (upstream)
-**PUBobot2** is a Discord bot for pickup games organisation. PUBobot2 have a remarkable list of features such as rating matches, rank roles, drafts, map votepolls and more!
+```bash
+pip3 install -r requirements.txt
+cp config.example.cfg config.cfg   # fill in Discord + MySQL credentials
+python3 -m nammaoe2bot
+```
 
-### Some screenshots
-![screenshots](https://cdn.discordapp.com/attachments/824935426228748298/836978698321395712/screenshots.png)
+Requires **Python 3.11** and **MySQL**. `start.py` is the deployment wrapper:
+it generates `config.cfg` from environment variables and then execs
+`python -m nammaoe2bot`. The deployment target is Railway — see
+[RAILWAY_SETUP.md](RAILWAY_SETUP.md).
 
-### Using the public bot instance
-If you want to test the bot, feel free to join [**Pubobot2-dev** discord server](https://discord.gg/rjNt9nC).  
-All the bot settings can be found and configured on the [Web interface](https://pubobot.leshaka.xyz/).  
-For the complete list of commands see [COMMANDS.md](https://github.com/Leshaka/PUBobot2/blob/main/COMMANDS.md).  
-You can invite the bot to your discord server from the [web interface](https://pubobot.leshaka.xyz/) or use the direct [invite link](https://discord.com/oauth2/authorize?client_id=177021948935667713&scope=bot).
+Schema migrations run automatically at boot, before any feature package
+declares its tables. Several of them carry post-conditions that will refuse to
+start on a database in a state they cannot repair; that is deliberate, and the
+crash tells you what to do.
 
-### Support
-Hosting the service for everyone is not free, not mentioning the actual time and effort to develop the project. If you enjoy the bot please subscribe on [Boosty](https://boosty.to/leshaka).
+## Layout
 
-## Hosting the bot yourself
+```
+nammaoe2bot/
+  runtime/     config, logging, the Discord client, the DB adapter,
+               migrations, paths — everything below the domain
+  pickup/      THE DOMAIN: channels, queues, matches, ratings
+  features/    built on top and individually optional — betting, quiz,
+               lobby, civs, identity, scouting, storylines, postgame
+  ingest/      replays in, raw facts out
+  derived/     per-game facts and per-player aggregates read from ingest
+  discord/     the adapter: slash surface, contexts, event handlers
+  web/         the dashboard and the public stats API
+  app.py       the one Application — all live state, passed explicitly
+  wiring.py    the composition root: the domain announces, features subscribe
+  bootstrap.py every import that exists for a side effect, in one place
+```
 
-### Requirements
-* **Python 3.9+** 
-* **MySQL**.
-* **gettext** for multilanguage support.
+The dependency runs one way, and three static tests keep it that way:
+`tests/test_import_cycles.py` (no module-level import cycle),
+`tests/test_import_graph.py` (every internal import resolves) and
+`tests/test_match_lifecycle.py` (the domain imports no feature). They are
+static because nothing in the suite executes the real import graph — a
+circular import is a boot crash, not a test failure, and these turn it into
+one.
 
-### Installing
-* Create mysql user and database for PUBobot2:
-* * `sudo mysql`
-* * `CREATE USER 'pubobot'@'localhost' IDENTIFIED BY 'your-password';`
-* * `CREATE DATABASE pubodb CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;`
-* * `GRANT ALL PRIVILEGES ON pubodb.* TO 'pubobot'@'localhost';`
-* Install required modules and configure PUBobot2:
-* * `git clone https://github.com/Leshaka/PUBobot2`
-* * `cd PUBobot2`
-* * `pip3 install -r requirements.txt`
-* * `cp config.example.cfg config.cfg`
-* * `nano config.cfg` - Fill config file with your discord bot instance credentials and mysql settings and save.
-* * Optionally, if you want to use other languages, run script to compile translations: `./compile_locales.sh`.
-* * `python3 PUBobot2.py` - If everything is installed correctly the bot should launch without any errors and give you CLI.
+Contributor and architecture notes: [CLAUDE.md](CLAUDE.md).
+
+## Tests
+
+```bash
+ruff check .
+pytest tests/
+```
+
+Both run on every PR via `.github/workflows/ci.yml`.
 
 ## Credits
-Developer: **Leshaka**. Contact: leshkajm@ya.ru.  
-Used libraries: [discord.py](https://github.com/Rapptz/discord.py), [aiomysql](https://github.com/aio-libs/aiomysql), [emoji](https://github.com/carpedm20/emoji/), [glicko2](https://github.com/deepy/glicko2), [TrueSkill](https://trueskill.org/).
+
+Derived from **[PUBobot2](https://github.com/Leshaka/PUBobot2)** by
+**Leshaka** (leshkajm@ya.ru), whose queue, rating, match and configuration
+code this project is built on and still contains. If you find this bot useful,
+consider supporting the original author on [Boosty](https://boosty.to/leshaka).
+
+Libraries: [nextcord](https://github.com/nextcord/nextcord),
+[aiomysql](https://github.com/aio-libs/aiomysql),
+[mgz](https://github.com/happyleavesaoc/aoc-mgz),
+[glicko2](https://github.com/deepy/glicko2),
+[TrueSkill](https://trueskill.org/).
 
 ## License
-Copyright (C) 2020 **Leshaka**.
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3 as published by the Free Software Foundation.
+Copyright (C) 2020 **Leshaka**, and contributors to this fork.
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License version 3 as published by the Free
+Software Foundation.
 
-See 'GNU GPLv3.txt' for GNU General Public License.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+See [LICENSE](LICENSE) for the full GNU General Public License v3.

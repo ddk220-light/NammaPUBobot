@@ -24,7 +24,7 @@ identities.aoe2_name, so a table whose whole job is "what is this account
 called in the game" ended up holding Discord nicknames for most of its rows.
 The replay is the only authority on an in-game name, so it is now the only
 source. A consumer that wants a Discord-facing display name resolves
-profile_id -> user through the identity resolver (bot/identity.py), or applies
+profile_id -> user through the identity resolver (nammaoe2bot/features/identity/resolver.py), or applies
 its own mapping AFTER extraction. Run with PYTHONPATH=.replay_scratch.
 """
 import csv

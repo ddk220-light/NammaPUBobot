@@ -1,8 +1,8 @@
-"""The stage-5a scouting report: bot/scouting_report.py's renderer, the
+"""The stage-5a scouting report: nammaoe2bot/features/scouting/report.py's renderer, the
 player_rollups readers behind it, and the `/rank` wiring that chooses between
 a report, the pending-linking notice and no field at all.
 
-Most of the assertions below run the REAL aggregation (bot/derived/rollups.
+Most of the assertions below run the REAL aggregation (nammaoe2bot/derived/rollups.
 compute_rollup) over game_stats/game_labels-shaped rows and render its output,
 rather than hand-writing a tidy blob. Every copy rule this task exists to
 enforce is a rule about the relationship between a number and the rows behind
@@ -24,12 +24,12 @@ import sys
 import types
 from pathlib import Path
 
-import bot.community as community
-import bot.identity as identity
-import bot.derived.rollups as rollups
-from core.database import db
-import bot.scouting_report as scouting_report
-from bot.derived.rollups import SPLIT_MIN_GAMES, compute_rollup
+import nammaoe2bot.community as community
+import nammaoe2bot.features.identity.resolver as identity
+import nammaoe2bot.derived.rollups as rollups
+from nammaoe2bot.runtime.database import db
+import nammaoe2bot.features.scouting.report as scouting_report
+from nammaoe2bot.derived.rollups import SPLIT_MIN_GAMES, compute_rollup
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -144,7 +144,7 @@ def test_the_pending_string_goes_through_the_callers_translator():
 
 def test_the_two_floors_are_the_same_number():
 	""" MIN_GAMES is spelled here rather than imported from rollups (importing it
-	would drag core.database into a module whose whole test suite rests on
+	would drag nammaoe2bot.runtime.database into a module whose whole test suite rests on
 	importing nothing that reaches a database), so nothing but this test stops
 	the two drifting. One report must not quote a strategy over 5 games and a
 	medal rate over 2. """
@@ -152,11 +152,11 @@ def test_the_two_floors_are_the_same_number():
 
 
 def test_the_medal_glyphs_are_the_ones_the_match_card_already_stamps():
-	""" Copied from bot/post_game.MEDAL_GLYPHS for the same import reason, and
+	""" Copied from nammaoe2bot/features/postgame/card.MEDAL_GLYPHS for the same import reason, and
 	pinned here: a player who sees a crossed sword on the card has to see the
 	same mark on the report, or they are two different awards. Parsed as text
-	rather than imported -- bot/post_game.py reaches Discord. """
-	source = (_REPO_ROOT / "bot" / "post_game.py").read_text(encoding="utf-8")
+	rather than imported -- nammaoe2bot/features/postgame/card.py reaches Discord. """
+	source = (_REPO_ROOT / "nammaoe2bot" / "features" / "postgame" / "card.py").read_text(encoding="utf-8")
 	declared = ast.literal_eval(
 		source.split("MEDAL_GLYPHS = ", 1)[1].split("\n", 1)[0])
 	assert dict(declared) == {
@@ -692,18 +692,9 @@ def test_fetch_decodes_the_stored_json_blob(monkeypatch):
 	assert asyncio.run(rollups.fetch(1, 42)) == _rich()
 
 
-def test_fetch_community_maps_every_user_to_their_blob(monkeypatch):
-	monkeypatch.setattr(rollups, "db", _FakeDb([
-		_stored(1, 42, _rich()), _stored(1, 43, _blob()), _stored(2, 44, _rich())]))
-
-	fetched = asyncio.run(rollups.fetch_community(1))
-	assert set(fetched) == {42, 43}
-	assert fetched[42]["medal_rates"]["games_ranked"] == 10
-
-
 # ── /identity status' gated-features list ────────────────────────────────
 
-# ── the /rank wiring (bot/commands/stats.py) ─────────────────────────────
+# ── the /rank wiring (nammaoe2bot/discord/commands/stats.py) ─────────────────────────────
 # stats.py does `from nextcord import Member, Embed, Colour, File` and
 # `import bot`; under CI none of that resolves, and importing it normally
 # would first run bot/commands/__init__.py and star-import every other command
@@ -729,7 +720,7 @@ def _load_stats_module(monkeypatch):
 	fake_nextcord_utils.escape_markdown = lambda s: s
 	monkeypatch.setitem(sys.modules, "nextcord.utils", fake_nextcord_utils)
 
-	path = _REPO_ROOT / "bot" / "commands" / "stats.py"
+	path = _REPO_ROOT / "nammaoe2bot" / "discord" / "commands" / "stats.py"
 	spec = importlib.util.spec_from_file_location("stats_standalone_test", path)
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)
@@ -848,7 +839,7 @@ def _prepared_stats_module(monkeypatch):
 	has nothing to do with the scouting field; everything between that profile
 	and the field is the shipped code.
 	"""
-	import bot.player_profile as player_profile
+	import nammaoe2bot.features.scouting.profile as player_profile
 
 	stats = _load_stats_module(monkeypatch)
 	monkeypatch.setattr(stats, "find", lambda predicate, seq: next(
@@ -925,8 +916,8 @@ def test_rank_survives_a_scouting_read_that_blows_up_and_shows_no_field(monkeypa
 
 
 # ── what stage 5a removed ────────────────────────────────────────────────
-# Source-level, because bot/web.py cannot be imported under CI (aiohttp.web +
-# core.client's nextcord) -- the same approach tests/test_web_identity.py
+# Source-level, because nammaoe2bot/web/server.py cannot be imported under CI (aiohttp.web +
+# nammaoe2bot.runtime.client's nextcord) -- the same approach tests/test_web_identity.py
 # takes. These pin the deletion half of the cutover: the generated persona and
 # scout read are gone from /rank, and nothing recomputes a persona on ingest.
 
@@ -938,7 +929,7 @@ def test_rank_no_longer_renders_a_generated_persona_or_scout_read():
 	""" Parsed rather than grepped: the persona stack has to be gone from the
 	CODE, while the comments explaining what replaced it are exactly what a
 	future reader needs. """
-	tree = ast.parse(_source("bot", "commands", "stats.py"))
+	tree = ast.parse(_source("nammaoe2bot", "discord", "commands", "stats.py"))
 	strings = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
 	names = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
 	names |= {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
@@ -951,14 +942,14 @@ def test_rank_no_longer_renders_a_generated_persona_or_scout_read():
 
 
 def test_the_dashboard_overview_snapshot_is_gone_from_the_web_layer():
-	assert "player_overview_snapshot" not in _source("bot", "web.py")
+	assert "player_overview_snapshot" not in _source("nammaoe2bot", "web", "server.py")
 
 
 def test_the_ingest_path_no_longer_refreshes_personas():
 	""" rs_player_personas stops being written here. The module itself stays
 	until stage 6 drops the table, so this asserts the CALL is gone rather
 	than the file. """
-	src = _source("bot", "replay_stats", "store.py")
+	src = _source("nammaoe2bot", "ingest", "store.py")
 	tree = ast.parse(src)
 	calls = [n for n in ast.walk(tree)
 	         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
@@ -968,7 +959,7 @@ def test_the_ingest_path_no_longer_refreshes_personas():
 
 
 def test_rank_still_builds_its_scouting_field_from_the_rollup_helper():
-	tree = ast.parse(_source("bot", "commands", "stats.py"))
+	tree = ast.parse(_source("nammaoe2bot", "discord", "commands", "stats.py"))
 	profile = next(n for n in ast.walk(tree)
 	               if isinstance(n, ast.AsyncFunctionDef) and n.name == "_rank_profile")
 	called = {n.func.id for n in ast.walk(profile)

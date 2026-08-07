@@ -40,7 +40,7 @@ jobs:
         with:
           python-version: "3.11"
       - uses: actions/setup-node@v4
-        # tests/test_web_page_scouting.py executes bot/web_page.html's real
+        # tests/test_web_page_scouting.py executes nammaoe2bot/web/page.html's real
         # render functions — the SPA is inline JS, and three of stage 5's four
         # honest-number rules have no other executable coverage. That file
         # FAILS rather than skips without a JS runtime, deliberately, so this
@@ -65,4 +65,4 @@ jobs:
         # Validates the Dockerfile still produces a clean image. This
         # is what Railway runs on every deploy — catching breakage
         # here saves a failed deploy round-trip.
-        run: docker build -t nammapubobot:ci .
+        run: docker build -t nammaoe2bot:ci .

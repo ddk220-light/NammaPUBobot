@@ -1,5 +1,5 @@
 """Unit tests for the derived-community civ_stats pure aggregation + writer
-(bot/derived/civ_stats.py).
+(nammaoe2bot/derived/civ_stats.py).
 
 Every number the stage-5 civ-stats page prints comes out of
 compute_civ_stats, so each test below is written to fail against a specific
@@ -22,8 +22,8 @@ import json
 
 import pytest
 
-import bot.derived.civ_stats as civ_stats
-from bot.derived.civ_stats import compute_civ_stats
+import nammaoe2bot.derived.civ_stats as civ_stats
+from nammaoe2bot.derived.civ_stats import compute_civ_stats
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────

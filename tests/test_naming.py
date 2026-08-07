@@ -1,15 +1,21 @@
 """Old table names must never reappear in live code. The allowlist is
-core/migrations.py (renames reference old names forever) and this test."""
+nammaoe2bot/runtime/migrations.py (renames reference old names forever) and this test."""
 import os
 
 # Only names that cannot collide with ordinary identifiers. `players` and
 # `noadds` are deliberately absent: both are live command/module names
-# ("/noadds", bot/stats/noadds.py, team['players']), so a substring guard on
+# ("/noadds", nammaoe2bot/pickup/noadds.py, team['players']), so a substring guard on
 # them fires on legitimate code. Their renames are enforced by
 # tests/test_data_registry.py instead, which compares actual declarations.
 OLD_NAMES = [
 	"qc_matches", "qc_player_matches", "qc_players", "qc_rating_history",
 	"qc_match_id_counter", "qc_configs", "pq_configs", "qc_saved_state",
+	# Retired by 011_config_factory_rename. `qc_config`/`pq_config` are the
+	# cfg_name VALUES CfgFactory.spawn selects on and `pq_id` was
+	# queue_settings' primary key; a stray one anywhere in live code means a
+	# factory pointing at rows nothing will ever match. Guarded here because
+	# they are string literals, which no import test can resolve.
+	"qc_config", "pq_config", "pq_id",
 	"qc_phrases", "qc_douche", "qc_match_civs", "qc_civ_reconcile",
 	"qc_lobbies", "qc_quiz_posts", "qc_quiz_answers", "qc_quiz_config",
 	"qc_prediction_posts", "qc_prediction_votes", "on_dublicate",
@@ -18,7 +24,7 @@ OLD_NAMES = [
 	# queried anywhere, since `identities` is the sole answer to "who is this
 	# person", and dropped by a later migration. Guarded here so a query cannot
 	# come back after the table is gone, which would be a runtime error rather
-	# than merely stale data. core/migrations.py names it forever (the drop
+	# than merely stale data. nammaoe2bot/runtime/migrations.py names it forever (the drop
 	# migration) and is allowlisted.
 	"qc_profile_map",
 	# The raw replay tables, renamed out of their inherited `rs_` prefix by
@@ -39,19 +45,19 @@ OLD_NAMES = [
 # `rs_profiles` — the OTHER table retired by task 2.5.7 — is deliberately absent
 # for the same reason as `players` and `noadds` above: it is a substring of
 # ordinary identifiers this codebase already uses (`_match_players_profiles` in
-# bot/lobby/completed.py, `..._members_profiles_...` in tests/test_identity.py),
+# nammaoe2bot/features/lobby/completed.py, `..._members_profiles_...` in tests/test_identity.py),
 # so a substring guard on it fires on legitimate code. Its retirement is
 # enforced by tests/test_data_registry.py instead, which compares actual
-# ensure_table declarations against core/data_registry.py: re-declaring the
+# ensure_table declarations against nammaoe2bot/runtime/data_registry.py: re-declaring the
 # table without a registry entry fails, and adding the entry back is a
 # deliberate act rather than an accident.
 # Whole-file exemptions, kept to the two files that must name old tables to do
 # their job. Everything else stays fully guarded.
 _ALLOW = (
-	"core/migrations.py", "tests/test_naming.py",
-	# Exercises the rename guard itself (core/migrations.py's own _STAGE1_RENAMES
+	"nammaoe2bot/runtime/migrations.py", "tests/test_naming.py",
+	# Exercises the rename guard itself (nammaoe2bot/runtime/migrations.py's own _STAGE1_RENAMES
 	# and its post-condition check), so it necessarily uses old table names as
-	# literal rename-source strings — same reason core/migrations.py is above.
+	# literal rename-source strings — same reason nammaoe2bot/runtime/migrations.py is above.
 	"tests/test_migrations.py",
 )
 
@@ -63,7 +69,7 @@ def _scrub_csv_filenames(src):
 	table names, because the files themselves were never renamed — a
 	`qc_players.csv` literal is a filename, not a table reference. Exempting
 	the whole file would blind the guard to a genuine stale table name
-	appearing in it later (bot/events.py alone is 300+ lines), so only the
+	appearing in it later (nammaoe2bot/discord/events.py alone is 300+ lines), so only the
 	filename occurrences are removed and the rest of the file is still
 	checked.
 	"""
@@ -72,8 +78,8 @@ def _scrub_csv_filenames(src):
 	return src
 
 
-# The extensions the walk below scans. `.html` is here for bot/web_page.html,
-# the self-contained dashboard SPA: 200KB of inline JS that calls bot/web.py's
+# The extensions the walk below scans. `.html` is here for nammaoe2bot/web/page.html,
+# the self-contained dashboard SPA: 200KB of inline JS that calls nammaoe2bot/web/server.py's
 # REST API, so it is exactly the kind of file a stale table or field name
 # survives in — and, being the only non-Python file that talks about the schema
 # at all, exactly the kind CI would never look at. Substring matching is safe on
@@ -84,16 +90,16 @@ def _scrub_csv_filenames(src):
 _EXTENSIONS = (".py", ".html")
 
 # Files outside the four package directories that must still be guarded.
-# PUBobot2.py is the entrypoint (it drives migrations.run_all and imports every
+# nammaoe2bot/__main__.py is the entrypoint (it drives migrations.run_all and imports every
 # bot package) and start.py generates config.cfg — both can name a table, and
 # neither lives under bot/, core/, utils/ or tests/, so the walk alone would
 # leave them unguarded.
-_ROOT_FILES = ("start.py", "PUBobot2.py")
+_ROOT_FILES = ("start.py", "nammaoe2bot/__main__.py")
 
 
 def _scanned_files(root):
 	""" Every file the guard checks, as (absolute path, repo-relative path). """
-	for base in ("bot", "core", "utils", "tests"):
+	for base in ("nammaoe2bot", "utils", "tests"):
 		for dirpath, _d, files in os.walk(os.path.join(root, base)):
 			if "__pycache__" in dirpath:
 				continue
@@ -127,12 +133,12 @@ def test_the_guard_covers_the_files_outside_the_package_directories():
 
 	This recomputes the walk AND applies _ALLOW, because the guard skips
 	allowlisted files before reading them: checking the walk alone left the
-	allowlist as an unguarded back door, so adding bot/web_page.html to _ALLOW
+	allowlist as an unguarded back door, so adding nammaoe2bot/web/page.html to _ALLOW
 	removed 200KB of coverage and passed green. Both halves of "is this file
 	actually checked" are asserted. """
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	checked = {rel for _path, rel in _scanned_files(root) if rel not in _ALLOW}
-	for rel in ("start.py", "PUBobot2.py", os.path.join("bot", "web_page.html")):
+	for rel in ("start.py", "nammaoe2bot/__main__.py", os.path.join("nammaoe2bot", "web", "page.html")):
 		assert rel in checked, f"{rel} is not covered by the stale-name guard"
 
 
@@ -142,7 +148,7 @@ def test_the_allowlist_holds_only_the_files_that_must_name_old_tables():
 	so growing it is a deliberate edit to this test, with a reason, rather than
 	a one-line way to make the guard stop complaining. """
 	assert set(_ALLOW) == {
-		"core/migrations.py",      # names every renamed table forever, by design
+		"nammaoe2bot/runtime/migrations.py",      # names every renamed table forever, by design
 		"tests/test_naming.py",    # this file lists them as literals
 		"tests/test_migrations.py",  # exercises the rename map itself
 	}

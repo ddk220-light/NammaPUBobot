@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from bot.match.subbing import pick_available, should_warn
+from nammaoe2bot.pickup.match.subbing import pick_available, should_warn
 
 
 def _member(id_):

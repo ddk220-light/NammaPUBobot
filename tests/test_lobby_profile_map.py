@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for bot/lobby/profile_map.py.
+"""Unit tests for nammaoe2bot/features/lobby/profile_map.py.
 
 The module is read-only since identity v2: ``known_for`` -> identity.
 user_for_profile, and nothing else. Its two writers are gone — ``eliminate``
 (pure by-elimination inference, no roster guard, could pin a wrong pair) and
 ``link`` (its only caller was the watcher's eliminate loop). Identity is now
-deduced by bot/identity_solver.py; those tests live in
+deduced by nammaoe2bot/features/identity/solver.py; those tests live in
 tests/test_identity_solver.py.
 """
 import asyncio
 
-from bot.lobby import profile_map
+from nammaoe2bot.features.lobby import profile_map
 
 
 class _FakeIdentity:
@@ -25,7 +25,7 @@ class _FakeIdentity:
 
 def test_known_for_consults_identity_user_for_profile(monkeypatch):
 	fake = _FakeIdentity({101: 10, 103: 30})
-	monkeypatch.setattr(profile_map, "identity", fake)
+	monkeypatch.setattr(profile_map, "resolver", fake)
 
 	result = asyncio.run(profile_map.known_for([101, 102, 103]))
 
@@ -38,7 +38,7 @@ def test_known_for_swallows_lookup_errors(monkeypatch):
 		async def user_for_profile(self, profile_id):
 			raise RuntimeError("db down")
 
-	monkeypatch.setattr(profile_map, "identity", _Boom())
+	monkeypatch.setattr(profile_map, "resolver", _Boom())
 
 	assert asyncio.run(profile_map.known_for([1, 2])) == {}
 

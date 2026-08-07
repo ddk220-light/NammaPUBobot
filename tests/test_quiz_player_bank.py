@@ -1,4 +1,4 @@
-"""bot/quiz/player_bank.py — player-source quiz questions generated live from
+"""nammaoe2bot/features/quiz/player_bank.py — player-source quiz questions generated live from
 metric_boards, and the day-parity selection that decides when they are used.
 
 There is no pytest-asyncio in this repo: an `async def test_` is silently
@@ -8,9 +8,9 @@ test with asyncio.run(...), against fakes — never a real database.
 import asyncio
 import random
 
-from bot.derived import boards as derived_boards
-from bot.quiz import player_bank as pb
-from bot.quiz import schedule as sched
+from nammaoe2bot.derived import boards as derived_boards
+from nammaoe2bot.features.quiz import player_bank as pb
+from nammaoe2bot.features.quiz import schedule as sched
 
 
 def _leaders(n, direction="high", start=41.5, step=3.2, nicks=None):
@@ -43,7 +43,7 @@ def _q(board=None, seed=7, ask=None, **kw):
 
 # ── the sample floor ─────────────────────────────────────────────────────
 def test_a_board_with_too_few_leaders_yields_no_question():
-    """Four options is the card's arity, not a preference (bot/quiz/view.py
+    """Four options is the card's arity, not a preference (nammaoe2bot/features/quiz/view.py
     renders A-D). Three leaders cannot make a fair four-option question and
     must produce nothing at all rather than a padded or shrunken one."""
     assert _q(_board(n=3)) is None
@@ -152,7 +152,7 @@ def test_best_asks_for_the_head_of_the_window_and_worst_for_its_tail():
 
 def test_direction_is_taken_from_the_boards_own_ordering_not_re_derived():
     """A 'low' metric's leaders ascend. compute_board already applied that;
-    this module must not sort again (bot/derived/boards.py keeps direction in
+    this module must not sort again (nammaoe2bot/derived/boards.py keeps direction in
     one place)."""
     low = _board(n=pb.MIN_LEADERS, direction="low", unit="seconds",
                  label="Fastest to Castle Age")
@@ -180,7 +180,7 @@ def test_the_record_matches_what_the_store_and_the_card_read():
 
 
 def test_metric_categories_cover_the_whole_catalog():
-    """A metric added to bot/derived/boards.METRICS with no category here would
+    """A metric added to nammaoe2bot/derived/boards.METRICS with no category here would
     ship questions labelled with the fallback and nobody would notice."""
     assert set(derived_boards.METRICS) <= set(pb.CATEGORIES)
 
@@ -239,19 +239,19 @@ def test_pick_elos_is_independent_of_row_order():
 
 
 def test_question_for_channel_is_none_for_an_unenrolled_channel(monkeypatch):
-    import bot.community as community
+    import nammaoe2bot.community as community
     monkeypatch.setattr(community, "community_for_channel",
                         lambda _cid: asyncio.sleep(0, result=None))
     assert asyncio.run(pb.question_for_channel(123, 1)) is None
 
 
 # ── day parity: which bank fills a slot ──────────────────────────────────
-# `from bot.quiz import jobs` hands back the QuizJobs SINGLETON, not the module:
-# bot/quiz/__init__.py rebinds the name with `from .jobs import jobs`.
-import bot.quiz.jobs                                       # noqa: E402
+# `from nammaoe2bot.features.quiz import jobs` hands back the QuizJobs SINGLETON, not the module:
+# nammaoe2bot/features/quiz/__init__.py rebinds the name with `from .jobs import jobs`.
+import nammaoe2bot.features.quiz.jobs                                       # noqa: E402
 import sys                                                 # noqa: E402
 
-_JOBS = sys.modules["bot.quiz.jobs"]
+_JOBS = sys.modules["nammaoe2bot.features.quiz.jobs"]
 
 _LIVE = dict(id="player:eapm:1", source="player", category="eAPM", prompt="p",
              options=["a", "b", "c", "d"], correct_indices=[0], explanation="e",

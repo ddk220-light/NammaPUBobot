@@ -1,13 +1,13 @@
 """The data registry is the single source of truth for table contracts.
 
 Scans every ensure_table/FactoryTable declaration under bot/ and core/ and
-asserts exact two-way agreement with core.data_registry.REGISTRY. A table
+asserts exact two-way agreement with nammaoe2bot.runtime.data_registry.REGISTRY. A table
 added without a registry entry (or an entry whose table was dropped) fails CI.
 """
 import os
 import re
 
-from core.data_registry import REGISTRY
+from nammaoe2bot.runtime.data_registry import REGISTRY
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DECL = re.compile(r"""(?:tname|name)\s*=\s*['"]([A-Za-z0-9_]+)['"]""")
@@ -16,7 +16,7 @@ _SCAN_HINTS = ("ensure_table", "FactoryTable")
 
 def _declared_tables():
 	found = set()
-	for base in ("bot", "core"):
+	for base in ("nammaoe2bot",):
 		for dirpath, _dirs, files in os.walk(os.path.join(_ROOT, base)):
 			if "__pycache__" in dirpath:
 				continue

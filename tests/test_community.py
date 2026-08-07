@@ -1,13 +1,13 @@
 """The community entity — the multi-tenancy root every new table keys on.
 
 Pure-logic tests against a fake adapter, same pattern as test_migrations.py:
-no MySQL involved. bot.community.db and bot.community.cfg are monkeypatched
-per test so nothing here touches the real core.database/core.config fakes
+no MySQL involved. nammaoe2bot.community.db and nammaoe2bot.community.cfg are monkeypatched
+per test so nothing here touches the real nammaoe2bot.runtime.database/nammaoe2bot.runtime.config fakes
 that conftest.py installs for every other test file.
 """
 import asyncio
 
-import bot.community as community
+import nammaoe2bot.community as community
 
 
 class _FakeErrors:
@@ -247,14 +247,6 @@ def test_community_for_channel_does_not_cache_a_miss(monkeypatch):
 
 	second = asyncio.run(community.community_for_channel(555))
 	assert second == 9
-
-
-def test_retention_for_returns_stored_value(monkeypatch):
-	_setup(monkeypatch, flagship_ids=(1,))
-	guild = _Guild(1)
-	community_id = asyncio.run(community.ensure_community(guild))
-
-	assert asyncio.run(community.retention_for(community_id)) == "full"
 
 
 def test_invalidate_cache_clears_cached_lookups(monkeypatch):

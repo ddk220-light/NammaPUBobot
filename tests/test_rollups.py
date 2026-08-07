@@ -1,5 +1,5 @@
 """Unit tests for the derived-community player_rollups pure aggregation +
-writer (bot/derived/rollups.py).
+writer (nammaoe2bot/derived/rollups.py).
 
 Every number the stage-5 scouting report prints comes out of compute_rollup,
 so each test below is written to fail against a specific plausible-but-wrong
@@ -29,8 +29,8 @@ import json
 
 import pytest
 
-import bot.derived.rollups as rollups
-from bot.derived.rollups import compute_rollup
+import nammaoe2bot.derived.rollups as rollups
+from nammaoe2bot.derived.rollups import compute_rollup
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────

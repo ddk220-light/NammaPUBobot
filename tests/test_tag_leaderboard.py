@@ -1,4 +1,4 @@
-from bot.tag_leaderboard import tag_leaderboard_score
+from nammaoe2bot.features.scouting.tag_leaderboard import tag_leaderboard_score
 
 
 def test_tag_score_does_not_over_reward_tiny_perfect_sample():

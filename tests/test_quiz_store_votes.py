@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pins bot.quiz.store.create_post's contract for the poll re-render: every field
+"""Pins nammaoe2bot.features.quiz.store.create_post's contract for the poll re-render: every field
 the card displays has to survive the round trip through quiz_posts, and this is
 where difficulty and closes_at get pinned.
 
@@ -22,7 +22,7 @@ race tests below meaningless, so it models four things it did not before:
   * `db.transaction()` (the FakeTx handle, same shape as
     tests/test_predictions_gold.py's);
   * a real `quiz_posts` table the lock reads back and the clamp mutates;
-  * a WALL CLOCK (`fake.clock`) that `bot.quiz.store` reads through `time.time`,
+  * a WALL CLOCK (`fake.clock`) that `nammaoe2bot.features.quiz.store` reads through `time.time`,
     and that the tests move forward -- because the bug this file exists to
     catch is entirely about WHEN the clock is read, and a frozen clock cannot
     express it;
@@ -51,7 +51,7 @@ import types
 
 import pytest
 
-from bot.quiz import store
+from nammaoe2bot.features.quiz import store
 
 
 class OutsideTransaction(AssertionError):
@@ -68,7 +68,7 @@ class OutsideTransaction(AssertionError):
 
 
 class Clock:
-	"""The wall clock `bot.quiz.store` reads -- deliberately NOT the caller's.
+	"""The wall clock `nammaoe2bot.features.quiz.store` reads -- deliberately NOT the caller's.
 
 	Held by the fake DB because it belongs to the same fake world the rows do:
 	a press's timeline (arrived, queued for the row, granted the row) is a
@@ -90,7 +90,7 @@ class Clock:
 
 class FakeTx:
 	""" The connection-bound handle db.transaction() yields (see
-	core/DBAdapters/mysql.py::Transaction): the same query surface as the
+	nammaoe2bot/runtime/database/mysql.py::Transaction): the same query surface as the
 	adapter, sharing its tables, with execute/insert returning ROWCOUNTS.
 
 	It has an IDENTITY -- `scope`, e.g. "tx#1" -- and stamps it on everything
@@ -336,7 +336,7 @@ def test_create_post_stores_closes_at_as_passed(fake_db):
 
 
 def test_create_post_stores_none_when_difficulty_is_absent(fake_db):
-	""" A live-generated player question (bot/quiz/player_bank.py) carries no
+	""" A live-generated player question (nammaoe2bot/features/quiz/player_bank.py) carries no
 	difficulty key at all -- create_post must read it with .get, not [], or
 	every player-day quiz crashes at post time instead of storing NULL. """
 	q = _question()
@@ -394,9 +394,9 @@ def test_write_grade_records_a_wrong_answer_as_wrong(fake_db):
 # THE RESIDUAL RACE, and why a boolean return exists at all.
 #
 # The vote path used to be read-then-write across two round-trips:
-# bot/quiz/interactions.py called store.get_post, checked `status == 'open' and
+# nammaoe2bot/features/quiz/interactions.py called store.get_post, checked `status == 'open' and
 # now < closes_at`, and wrote later. A press whose get_post returned
-# microseconds before bot/quiz/jobs.py::_reveal clamped the deadline passed that
+# microseconds before nammaoe2bot/features/quiz/jobs.py::_reveal clamped the deadline passed that
 # check and committed AFTER _reveal's vote snapshot. Reproduced timeline: press
 # at T, get_post returns at T+2ms with the old closes_at, the clamp lands at
 # T+3ms, the snapshot at T+5ms, the REPLACE commits at T+6ms. That vote is never
@@ -652,7 +652,7 @@ def test_the_clamp_never_pushes_a_deadline_forward(fake_db):
 
 
 # ── answers_for_post's cast-a-vote filter ───────────────────────────────
-# `AND answered_at IS NOT NULL` is a PAYROLL predicate. bot/quiz/jobs.py::_reveal
+# `AND answered_at IS NOT NULL` is a PAYROLL predicate. nammaoe2bot/features/quiz/jobs.py::_reveal
 # grades and pays every row this returns, so a reveal-era ghost — a user who
 # pressed the old "Reveal & start" button and never answered — that leaks
 # through is graded wrong and paid 10 gold it never earned, with real ledger

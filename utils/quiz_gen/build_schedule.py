@@ -6,8 +6,8 @@ the game bank and an offline PLAYER bank (data/quiz_bank_player.json, compiled
 from parsed replays into a committed SQLite file) -- and stamped every entry
 with seq/week/day, so the committed JSON was both the game queue AND the
 calendar. The player half is now generated live at post time from
-`metric_boards` (bot/quiz/player_bank.py), and the calendar is arithmetic the
-bot owns (bot/quiz/schedule.py's slot_for_seq): a schedule stamped months in
+`metric_boards` (nammaoe2bot/features/quiz/player_bank.py), and the calendar is arithmetic the
+bot owns (nammaoe2bot/features/quiz/schedule.py's slot_for_seq): a schedule stamped months in
 advance cannot say which day a channel is on when that channel started posting
 later, was disabled for a fortnight, or had a question forced by an admin. So
 this file emits the game queue and nothing else -- no seq, no week, no day.

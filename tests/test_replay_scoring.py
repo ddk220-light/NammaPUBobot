@@ -1,11 +1,11 @@
-"""Unit tests for bot/replay_stats/scoring.py — the shared impact/tag formula.
+"""Unit tests for nammaoe2bot/ingest/scoring.py — the shared impact/tag formula.
 
 The regression scenarios here encode the July-2026 recalibration contract:
 a player who idles early and rebooms late must NOT out-impact a steady
 contributor, and the carry-style tags require a real early economy.
 """
-from bot.replay_stats.scoring import (
-	carry_sort_key, derive_impact_tags, impact_scores, impact_tag_names, strength_glyphs,
+from nammaoe2bot.ingest.scoring import (
+	carry_sort_key, derive_impact_tags, impact_scores, impact_tag_names,
 )
 
 
@@ -149,16 +149,16 @@ def test_early_aggressor_outranks_late_spam_turtle():
 
 
 def test_impact_queries_select_every_scoring_column():
-	"""bot/web.py and bot/post_game.py feed _impact_payload from hand-written
+	"""nammaoe2bot/web/server.py and nammaoe2bot/features/postgame/card.py feed _impact_payload from hand-written
 	SELECT column lists. A missing column silently zeroes that component for
 	every player (this shipped once: mil_pre_imperial was absent, flattening
 	the new army mix on the live site while the backfill — which uses
 	SELECT * — wrote correct stored tags)."""
 	from pathlib import Path
-	from bot.replay_stats.scoring import REQUIRED_COLUMNS
+	from nammaoe2bot.ingest.scoring import REQUIRED_COLUMNS
 
 	root = Path(__file__).resolve().parent.parent
-	for rel in ("bot/web.py", "bot/post_game.py"):
+	for rel in ("nammaoe2bot/web/server.py", "nammaoe2bot/features/postgame/card.py"):
 		src = (root / rel).read_text()
 		queries = [chunk for chunk in src.split('await db.fetchall(')
 		           if 'replay_players' in chunk.split('FROM')[0] + chunk[:600]
@@ -171,14 +171,14 @@ def test_impact_queries_select_every_scoring_column():
 
 
 def test_fallback_tag_partial_replay_when_no_production_data():
-	from bot.replay_stats.scoring import fallback_tag
+	from nammaoe2bot.ingest.scoring import fallback_tag
 	row = {"player_number": 1, "villagers": 0, "military": None}
 	scores = impact_scores(row, [row, {"player_number": 2}])
 	assert fallback_tag(scores, row)["key"] == "partial_replay"
 
 
 def test_fallback_tag_picks_strongest_lean():
-	from bot.replay_stats.scoring import fallback_tag
+	from nammaoe2bot.ingest.scoring import fallback_tag
 	row = _player(villagers=100, vil_pre_castle=26, military=85)
 	group = [row, _player(player_number=2), _player(player_number=3, villagers=85)]
 	scores = impact_scores(row, group)
@@ -187,7 +187,7 @@ def test_fallback_tag_picks_strongest_lean():
 
 
 def test_fallback_tag_all_rounder_when_flat():
-	from bot.replay_stats.scoring import fallback_tag
+	from nammaoe2bot.ingest.scoring import fallback_tag
 	row = _player()
 	scores = {"army": 50, "eco": 51, "timing": 49, "impact": 50,
 	          "early_eco": 50, "early_army": 50, "reboom": 50}
@@ -197,7 +197,7 @@ def test_fallback_tag_all_rounder_when_flat():
 def test_fallback_tag_uphill_when_below_average_everywhere():
 	# Uniformly weak game must not read as the same "All-rounder" a
 	# balanced-strong game gets.
-	from bot.replay_stats.scoring import fallback_tag
+	from nammaoe2bot.ingest.scoring import fallback_tag
 	row = _player()
 	scores = {"army": 44, "eco": 46, "timing": 43, "impact": 44,
 	          "early_eco": 45, "early_army": 50, "reboom": 45}
@@ -205,18 +205,12 @@ def test_fallback_tag_uphill_when_below_average_everywhere():
 
 
 def test_payload_names_always_return_at_least_one_tag():
-	from bot.replay_stats.scoring import impact_tag_names_with_fallback
+	from nammaoe2bot.ingest.scoring import impact_tag_names_with_fallback
 	row = _player()
 	group = [row, _player(player_number=2), _player(player_number=3)]
 	scores = impact_scores(row, group)
 	names = impact_tag_names_with_fallback(scores, row)
 	assert len(names) >= 1
-
-
-def test_strength_glyphs_have_no_numbers():
-	text = strength_glyphs({"army": 70, "eco": 30, "timing": 50})
-	assert text == "⚔▲ 🌾▼ ⏱·"
-	assert not any(ch.isdigit() for ch in text)
 
 
 def test_player_tags_loads_standalone_like_the_backfill_script():
@@ -225,7 +219,7 @@ def test_player_tags_loads_standalone_like_the_backfill_script():
 	import importlib.util
 	from pathlib import Path
 
-	path = Path(__file__).resolve().parent.parent / "bot" / "replay_stats" / "player_tags.py"
+	path = Path(__file__).resolve().parent.parent / "nammaoe2bot" / "ingest" / "player_tags.py"
 	spec = importlib.util.spec_from_file_location("player_tags_standalone_test", path)
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)

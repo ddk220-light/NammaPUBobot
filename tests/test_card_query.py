@@ -1,8 +1,8 @@
-"""Unit tests for the Match Cards read layer (bot/replay_stats/card_query.py)."""
+"""Unit tests for the Match Cards read layer (nammaoe2bot/ingest/card_query.py)."""
 
 import asyncio
 
-import bot.replay_stats.card_query as cq
+import nammaoe2bot.ingest.card_query as cq
 
 
 class _FakeDB:
@@ -27,7 +27,7 @@ class _FakeDB:
 
 
 def _run(monkeypatch, db, match_end_s=600):
-    # Object form: the string form cannot resolve core.database (namespace
+    # Object form: the string form cannot resolve nammaoe2bot.runtime.database (namespace
     # package), and card_query bound its own `db` reference at import.
     monkeypatch.setattr(cq, "db", db)
     return asyncio.run(cq.fetch_card_signals(1, match_end_s))
@@ -111,7 +111,7 @@ def test_spawn_asks_game_labels_for_the_three_sayable_keys_of_the_eleven_stored(
     """SPAWN_PHRASES stays a DISPLAY subset: kind='spawn' picks the stored category,
     the key list narrows it to what the card can put in a sentence. Merging the two
     concepts in either direction is the failure this pins."""
-    from bot.derived import game_labels
+    from nammaoe2bot.derived import game_labels
 
     db = _FakeDB()
     _run(monkeypatch, db)
@@ -193,7 +193,7 @@ def test_composition_joins_on_player_number_and_filters_to_military(monkeypatch)
 
 
 # ── swept sources ────────────────────────────────────────────────────────
-# bot/derived/sweeper.py deletes replay_events / replay_buildings / replay_apm rows
+# nammaoe2bot/derived/sweeper.py deletes replay_events / replay_buildings / replay_apm rows
 # for a lean community once its derived summaries exist. These pin what the card
 # does then: the swept signals go quiet, the retained ones (strategies and spawn,
 # now on the forever-retained game_labels) still render, and nothing raises. The

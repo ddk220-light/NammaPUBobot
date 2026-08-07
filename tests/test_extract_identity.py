@@ -26,7 +26,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from bot.replay_stats import store
+from nammaoe2bot.ingest import store
 from utils.replay.extract import extract_match
 
 REPLAY_NAME = "TheInGameName"
@@ -120,7 +120,7 @@ def test_the_name_reaching_the_resolver_is_the_replay_name(monkeypatch, replay_p
 	extracted = extract_match(replay_path, {})
 
 	fake = _RecordingIdentity()
-	monkeypatch.setattr(store, "identity", fake)
+	monkeypatch.setattr(store, "resolver", fake)
 	asyncio.run(store._learn_from_ingest(extracted["players"], {PROFILE_ID: 777}))
 
 	assert fake.learn_calls == [(PROFILE_ID, 777, "learned", REPLAY_NAME)]

@@ -32,7 +32,7 @@ RUN (apt-get update \
     || echo "changelog: build-time snapshot skipped; shipping committed fallback" \
     ; rm -rf /var/lib/apt/lists/*
 
-# gettext / locales/ removed in Layer 5 — see core/locales.py.
+# gettext / locales/ removed in Layer 5 — see nammaoe2bot/runtime/locales.py.
 # The translator is now a passthrough stub, so no build-time
 # compilation step is needed.
 

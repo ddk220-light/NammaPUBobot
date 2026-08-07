@@ -3,7 +3,7 @@
 > `game_labels`, the factor specs, the troubleshooting — is still accurate and
 > still live: the post-game match cards read `cls_classifications` for their
 > labels, and the web dashboard's **Strategies** page serves what `/insights`
-> used to. Only the slash command and `bot/commands/insights.py` are gone;
+> used to. Only the slash command and its handler are gone;
 > read every `/insights` reference below as "the Strategies page".
 
 # Player Classification Framework
@@ -53,7 +53,7 @@ bot runs registered classifications automatically.)
         ▼
  MySQL  cls_classifications · cls_data_requirements · cls_results · cls_result_metrics
         ▲ read
- bot/classifications/query.py (roster + winners_vs_losers + fetch_results) ──► bot/commands/insights.py
+ nammaoe2bot/derived/classifications/query.py (roster + winners_vs_losers + fetch_results) ──► bot/commands/insights.py
         ▲ slash
  /insights <use_case> [days] [player]
 ```
@@ -70,11 +70,11 @@ bot runs registered classifications automatically.)
 | `cls_*` schema (raw SQL, offline) | `utils/classifications/schema.py` | — |
 | Async DB I/O (aiomysql) | `utils/classifications/dbio.py` | I/O |
 | Runner CLI (orchestration) | `utils/classifications/runner.py` | I/O |
-| `cls_*` schema for the bot (`ensure_table`) | `bot/classifications/__init__.py` | I/O |
-| Read aggregation (`roster`/`winners_vs_losers` pure, `fetch_results` DB) | `bot/classifications/query.py` | mixed |
-| Slash command | `bot/commands/insights.py` | I/O |
+| `cls_*` schema for the bot (`ensure_table`) | `nammaoe2bot/derived/classifications/__init__.py` | I/O |
+| Read aggregation (`roster`/`winners_vs_losers` pure, `fetch_results` DB) | `nammaoe2bot/derived/classifications/query.py` | mixed |
+| Slash command | removed in the command consolidation; the button router in `nammaoe2bot/derived/classifications/interactions.py` survives for cards already in channel history | I/O |
 
-> Indentation: `utils/` uses **4 spaces**; `bot/` uses **tabs** (`ruff.toml` `indent-style = "tab"`).
+> Indentation: `utils/` uses **4 spaces**; `nammaoe2bot/` uses **tabs** (`ruff.toml` `indent-style = "tab"`), except `features/civs/pools.py` and `ingest/`, which are 4-space. Match the file you edit.
 
 ---
 
@@ -87,7 +87,7 @@ bot runs registered classifications automatically.)
 | `cls_results` | per matched player-game | `key`, `aoe2_match_id`, `player_number`, `profile_id`, `identity`, `civ`, `team`, `winner`, `played_at` (epoch). **A row exists only if the trigger fired** (presence = matched). |
 | `cls_result_metrics` | per classification × player-game × metric | generic long-form (`metric`, `value`) — **new classifications add rows, never columns** |
 
-The bot (`bot/classifications/__init__.py`) and the offline runner (`utils/classifications/schema.py`)
+The bot (`nammaoe2bot/derived/classifications/__init__.py`) and the offline runner (`utils/classifications/schema.py`)
 declare the same columns two ways; **keep them in sync**.
 
 ---
@@ -106,7 +106,7 @@ declare the same columns two ways; **keep them in sync**.
 3. Add pure unit tests in `tests/test_classifications_<key>.py` (synthetic game dicts — no DB,
    no mgz).
 4. Run the runner; it auto-registers the classification + ledger and stores results. Add the new
-   key to the `/insights` command's `use_case` choices (`bot/context/slash/commands.py`) to surface it.
+   key to the `/insights` command's `use_case` choices (`nammaoe2bot/discord/slash.py`) to surface it.
 
 No schema migration is needed — metrics are stored long-form.
 
@@ -135,7 +135,7 @@ PYTHONPATH=.replay_scratch python -m utils.classifications.runner --days 90 [--k
 ## Operating it in production (populating the bot's DB)
 
 The bot **creates the empty `cls_*` tables** in the Railway MySQL at startup (`ensure_table` in
-`bot/classifications/__init__.py`) and only ever **reads** them. The **offline runner fills them**,
+`nammaoe2bot/derived/classifications/__init__.py`) and only ever **reads** them. The **offline runner fills them**,
 and it must run **where the replays + mgz fork live** (locally) — those are gitignored and not in the
 Railway image.
 
@@ -156,7 +156,7 @@ data-requirements ledger first, then the per-player results, so even a brief run
 - `/insights` says **"Unknown use case 'archer_rush'"** → `cls_classifications` is **empty**: the
   runner hasn't run against that DB. Run it (above).
 - **`1064 … near 'key))'` at deploy** (historical) → `key` is a MySQL reserved word; fixed by
-  backticking `PRIMARY KEY` columns in `core/DBAdapters/mysql.py::create_table`.
+  backticking `PRIMARY KEY` columns in `nammaoe2bot/runtime/database/mysql.py::create_table`.
 
 **Window vs. data freshness (important):** `/insights` defaults to **385 days**. A one-time backfill
 from cached replays is only as fresh as the cache (the initial corpus stopped ~Apr 2026), so a short

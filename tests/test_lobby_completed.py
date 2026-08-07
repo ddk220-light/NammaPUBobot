@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Pure unit tests for bot/lobby/completed.py decision helpers — the winner ->
+"""Pure unit tests for nammaoe2bot/features/lobby/completed.py decision helpers — the winner ->
 losing-captain resolution and its degrade modes, plus poll/giveup arithmetic and
 pid parsing. No nextcord / DB / network touched."""
 import types
 
-from bot.lobby import completed
+from nammaoe2bot.features.lobby import completed
 
 
 def _member(uid):
