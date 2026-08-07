@@ -11,7 +11,7 @@ That direction is wrong regardless of whether it happens to compile. **A match
 does not know that betting exists.** It knows that it went live, that its
 roster changed, and that it finished — which is all any of those features
 actually needed. Everything that wants to hear about it registers here, and the
-registration lives in bot/wiring.py so the whole set is readable in one place.
+registration lives in nammaoe2bot/wiring.py so the whole set is readable in one place.
 
 WHAT THIS IS NOT. It is not a general event bus, and it must not grow into one.
 There are six events because there are six moments the domain already
@@ -19,7 +19,7 @@ announced; adding a seventh means the domain gained a moment, not that a
 feature wanted a hook.
 
 ORDER IS PART OF THE CONTRACT. Handlers run in registration order, and two of
-the sequences in bot/wiring.py are load-bearing rather than cosmetic — see the
+the sequences in nammaoe2bot/wiring.py are load-bearing rather than cosmetic — see the
 notes there before reordering anything.
 """
 from nammaoe2bot.runtime.console import log
@@ -30,7 +30,7 @@ class MatchLifecycle:
 
 	Held on Application, so a handler reaches it the same way it reaches every
 	other piece of live state (`self.qc.app.match_events`) and no new global
-	appears. Constructed empty; bot/wiring.py fills it once at boot.
+	appears. Constructed empty; nammaoe2bot/wiring.py fills it once at boot.
 	"""
 
 	# Declared up front so a typo in `on("finshed", ...)` fails at wiring time

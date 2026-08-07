@@ -16,7 +16,7 @@ _SCAN_HINTS = ("ensure_table", "FactoryTable")
 
 def _declared_tables():
 	found = set()
-	for base in ("bot", "nammaoe2bot"):
+	for base in ("nammaoe2bot",):
 		for dirpath, _dirs, files in os.walk(os.path.join(_ROOT, base)):
 			if "__pycache__" in dirpath:
 				continue

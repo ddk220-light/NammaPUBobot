@@ -87,11 +87,11 @@ def test_the_submodule_name_no_longer_collides_with_the_singleton():
 # ── what the call sites actually type ────────────────────────────────────
 
 # THE CALL SITES MOVED. bot/match/ used to import these four hooks directly;
-# the domain now announces a lifecycle event and bot/wiring.py answers it, so
+# the domain now announces a lifecycle event and nammaoe2bot/wiring.py answers it, so
 # wiring.py IS the call site and is the only file scanned below. The bug this
 # section guards against is unchanged: a name that does not resolve to what the
 # caller thinks it does, failing inside a best-effort guard where nobody sees it.
-_CALL_SITE = "bot/wiring.py"
+_CALL_SITE = "nammaoe2bot/wiring.py"
 
 
 def _prediction_imports(relative_path):

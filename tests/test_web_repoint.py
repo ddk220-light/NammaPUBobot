@@ -14,6 +14,7 @@ sync test with asyncio.run().
 import asyncio
 import json
 import os
+import sys
 import time
 import types
 from pathlib import Path
@@ -26,6 +27,61 @@ from nammaoe2bot.features.scouting.report import PENDING
 
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class TestHealth:
+	""" /health is railway.toml's healthcheckPath. A 503 from it does not
+	degrade anything gracefully — Railway kills the container and redeploys,
+	over and over.
+
+	It read `getattr(bot, 'bot_ready', False)` for its Discord gate. Phase 1
+	moved that global onto Application and the getattr DEFAULT swallowed the
+	change: `discord_ok` became permanently False, so the endpoint would have
+	answered 503 on every probe of every deploy. Nothing raised, no test
+	failed, and the payload it returned was well-formed and wrong.
+
+	These drive the real handler. `db_ok` is left failing in both cases — the
+	fake adapter raises on fetchone — so the healthy case pins the DB half too
+	rather than passing for the wrong reason. """
+
+	def _request(self, monkeypatch, ready, matches, db_answers):
+		async def _fetchone(*_a, **_k):
+			if not db_answers:
+				raise RuntimeError("db down")
+			return {"ok": 1}
+
+		# handle_health reaches two modules by function-local import, purely to
+		# read one timestamp off each. Importing them for real pulls in the
+		# whole Discord layer and the config factory, so they are pre-seeded in
+		# sys.modules instead — `from pkg import name` binds whatever is
+		# already there. The alternative is a nextcord fake big enough to load
+		# the bot, which is a larger lie than these two floats.
+		monkeypatch.setitem(sys.modules, "nammaoe2bot.discord.events",
+							types.SimpleNamespace(last_tick_at=time.time()))
+		monkeypatch.setitem(sys.modules, "nammaoe2bot.features.elo_sync",
+							types.SimpleNamespace(last_elo_sync_at=0.0))
+		monkeypatch.setattr(web.db, "fetchone", _fetchone, raising=False)
+		monkeypatch.setattr(web.dc, "is_ready", lambda: ready, raising=False)
+		web.dc.app.ready = ready
+		web.dc.app.active_matches = list(matches)
+		return asyncio.run(web.handle_health(types.SimpleNamespace()))
+
+	def test_a_connected_bot_with_a_live_db_is_healthy(self, monkeypatch):
+		resp = self._request(monkeypatch, ready=True, matches=[1, 2], db_answers=True)
+		assert resp.status == 200
+		assert resp.payload["status"] == "ok"
+		assert resp.payload["bot_ready"] is True
+		assert resp.payload["active_matches"] == 2
+
+	def test_a_disconnected_bot_is_unhealthy(self, monkeypatch):
+		resp = self._request(monkeypatch, ready=False, matches=[], db_answers=True)
+		assert resp.status == 503
+		assert resp.payload["discord_connected"] is False
+
+	def test_a_dead_database_is_unhealthy_even_with_discord_up(self, monkeypatch):
+		resp = self._request(monkeypatch, ready=True, matches=[], db_answers=False)
+		assert resp.status == 503
+		assert resp.payload["db_connected"] is False
 
 
 def test_the_server_can_actually_find_its_page():

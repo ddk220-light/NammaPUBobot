@@ -18,7 +18,7 @@ from nammaoe2bot.features import quiz
 from nammaoe2bot import ingest
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.expire import expire
-from bot.main import load_state, save_state, save_state_db
+from nammaoe2bot.state import load_state, save_state, save_state_db
 from nammaoe2bot.pickup.channel import QueueChannel
 from nammaoe2bot.pickup import stats
 from nammaoe2bot.pickup.noadds import noadds
@@ -143,7 +143,7 @@ async def on_think(frame_time):
 	await derived.sweeper_jobs.think(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See TTLReactionDict
-	# docstring in bot/app.py — entries older than 30 minutes are
+	# docstring in nammaoe2bot/app.py — entries older than 30 minutes are
 	# guaranteed-dead leaks from check-in exit paths that raised before
 	# unsubscribing. Cheap (O(n), n ≈ 0-3) so no need to gate on interval.
 	dc.app.waiting_reactions.sweep_expired(frame_time)

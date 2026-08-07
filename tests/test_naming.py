@@ -93,7 +93,7 @@ _ROOT_FILES = ("start.py", "PUBobot2.py")
 
 def _scanned_files(root):
 	""" Every file the guard checks, as (absolute path, repo-relative path). """
-	for base in ("bot", "nammaoe2bot", "utils", "tests"):
+	for base in ("nammaoe2bot", "utils", "tests"):
 		for dirpath, _d, files in os.walk(os.path.join(root, base)):
 			if "__pycache__" in dirpath:
 				continue

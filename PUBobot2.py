@@ -10,7 +10,7 @@ from asyncio import sleep as asleep
 
 # Sentry — opt-in via SENTRY_DSN env var. Initialized BEFORE any other bot
 # imports so that exceptions raised during module import (config parse,
-# DB connect, bot.__init__) get reported instead of silently killing the
+# DB connect, bootstrap) get reported instead of silently killing the
 # container. If SENTRY_DSN is unset, sentry_sdk.init() is skipped entirely
 # and all downstream sentry_sdk.capture_exception() calls become no-ops
 # (the SDK's documented behavior for an uninitialized client).
@@ -35,34 +35,34 @@ if _sentry_dsn:
 else:
 	sentry_sdk = None
 
-# Load bot core
+# Load the runtime layer.
 # Layer 5: `locales` used to be in this import for its side effect
 # (it listdir'd locales/compiled/ and built a gettext translation
 # table at import time). With the Layer 5 stub, nammaoe2bot/runtime/locales.py does
 # no I/O and needs no eager load — nammaoe2bot/pickup/channel.py imports it
 # lazily on its own. Dropped from this line.
-from core import config, console, database, cfg_factory
+from nammaoe2bot.runtime import config, console, database, cfg_factory
 from nammaoe2bot.runtime.client import dc
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(database.db.connect())
 
-# Schema migrations MUST run before `import bot`: bot packages auto-CREATE
-# their declared tables at import, and the adapter cannot rename — see
-# nammaoe2bot/runtime/migrations.py for why this ordering is load-bearing.
-from core import migrations
+# Schema migrations MUST run before bootstrap(): every feature package
+# auto-CREATEs its declared tables at import, and the adapter cannot rename —
+# see nammaoe2bot/runtime/migrations.py for why this ordering is load-bearing.
+from nammaoe2bot.runtime import migrations
 loop.run_until_complete(migrations.run_all(database.db))
 
-# The one Application for this process. Everything that used to be a
-# module-level global in bot/__init__.py lives here.
+# The one Application for this process. It holds everything that used to be a
+# module-level global in the old bot/__init__.py.
 #
 # It hangs off the Discord client rather than off a module: `dc` is the one
-# process-level object every handler already imports, so `dc.app` breaks the
-# import cycle that `import bot` created without inventing a second global.
-# Classes that need state (Match, QueueChannel, PickupQueue) take it in their
-# constructor and keep it as self.app — they must not reach for dc.app inside
-# a method. See bot/app.py.
-from bot.app import Application
+# process-level object every handler already imports, so `dc.app` gives the
+# state one home without inventing a second global. Classes that need it
+# (Match, QueueChannel, PickupQueue) take it in their constructor and keep it
+# as self.app — they must not reach for dc.app inside a method. See
+# nammaoe2bot/app.py.
+from nammaoe2bot.app import Application
 dc.app = Application(client=dc)
 
 # Boot wiring. Every import inside bootstrap() exists for a side effect —
@@ -70,10 +70,10 @@ dc.app = Application(client=dc)
 # registration of the 44 slash commands. It runs AFTER dc.app is built, so no
 # handler can be registered against a world that does not exist yet, and after
 # migrations because those packages CREATE the tables they declare.
-from bot.bootstrap import bootstrap
+from nammaoe2bot.bootstrap import bootstrap
 bootstrap(dc.app)
 
-from bot.main import save_state
+from nammaoe2bot.state import save_state
 
 # Load web server
 from nammaoe2bot.web.server import start_web_server

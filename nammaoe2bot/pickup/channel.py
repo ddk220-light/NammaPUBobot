@@ -30,7 +30,7 @@ class Perms(Enum):
 
 # CfgFactory fires these when the variable they are attached to changes; it
 # hands the callback the config object, which carries the channel id as its
-# primary key. They lived in bot/main.py, the state-snapshot module, for no
+# primary key. They lived in nammaoe2bot/state.py, the state-snapshot module, for no
 # reason except that it was where loose functions went — and importing it from
 # here made the domain depend on a feature-adjacent module for two one-liners.
 def update_qc_lang(qc_cfg):

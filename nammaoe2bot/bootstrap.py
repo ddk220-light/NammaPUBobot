@@ -33,28 +33,32 @@ Discord client connects.
 def bootstrap(app):
 	"""Import every module whose import is itself the wiring, then connect the
 	features to the domain."""
-	# The domain. Also declares bot_state (main) and the queue/match tables.
-	from bot import main                            # noqa: F401  (bot_state ensure_table)
-	from nammaoe2bot.pickup import channel                   # noqa: F401  (qc/pq config factories)
-	from nammaoe2bot.features.civs import reconcile                   # noqa: F401  (civ_reconcile table + job)
+	# The domain, plus the state snapshot's bot_state table and the channel /
+	# queue config factories.
+	from nammaoe2bot import state                       # noqa: F401
+	from nammaoe2bot.pickup import channel              # noqa: F401
 
-	# Features, each self-contained: tables + its job singleton.
-	from nammaoe2bot.features import lobby                           # noqa: F401
-	from nammaoe2bot.features import quiz                            # noqa: F401
-	from nammaoe2bot.features import betting                     # noqa: F401
-	from nammaoe2bot import ingest                    # noqa: F401
-	from nammaoe2bot.derived import classifications                 # noqa: F401
-	from nammaoe2bot import derived                         # noqa: F401
+	# Features, each self-contained: its tables, and its job singleton if the
+	# tick drives one.
+	from nammaoe2bot.features import betting            # noqa: F401
+	from nammaoe2bot.features import lobby              # noqa: F401
+	from nammaoe2bot.features import quiz               # noqa: F401
+	from nammaoe2bot.features.civs import reconcile     # noqa: F401
+
+	# Ingest, and the two layers derived from it.
+	from nammaoe2bot import ingest                      # noqa: F401
+	from nammaoe2bot import derived                     # noqa: F401
+	from nammaoe2bot.derived import classifications     # noqa: F401
 
 	# The Discord front end. Importing this module registers the slash surface.
-	from nammaoe2bot.discord import slash          # noqa: F401
+	from nammaoe2bot.discord import slash               # noqa: F401
 
 	# The event handlers (on_ready, on_message, on_interaction, the tick).
-	from nammaoe2bot.discord import events                          # noqa: F401
+	from nammaoe2bot.discord import events              # noqa: F401
 
 	# Subscribe the features to the match lifecycle. Unlike everything above
 	# this is a real call, not an import for its side effect: a Match announces
-	# that it went live / changed roster / finished, and betting, the lobby
-	# watcher and the storylines listen. Nothing under bot/match/ imports them.
-	from bot.wiring import wire_match_lifecycle
+	# that it went live, changed roster or finished, and betting, the lobby
+	# watcher and the storylines listen. Nothing under pickup/ imports them.
+	from nammaoe2bot.wiring import wire_match_lifecycle
 	wire_match_lifecycle(app)

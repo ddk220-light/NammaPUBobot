@@ -52,7 +52,6 @@ from nammaoe2bot.runtime.cfg_factory import (
 )
 from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.database import db
-import bot
 from nammaoe2bot.features.identity import resolver
 from nammaoe2bot.features.scouting import report as scouting_report
 from nammaoe2bot.derived import game_labels, rollups
@@ -316,7 +315,7 @@ def _check_admin(qc, member):
 
 	Mirrors the permission model used by slash admin commands in
 	bot/context/slash/ and by enable_channel/disable_channel in
-	bot/main.py: the bot owner, the guild owner, or any member with the
+	nammaoe2bot/state.py: the bot owner, the guild owner, or any member with the
 	Manage Guild permission is treated as an admin. Until 2026-04-11
 	this returned True unconditionally (see the old TODO comment),
 	which meant any OAuth-logged-in Discord user could mutate the
@@ -396,7 +395,7 @@ async def handle_health(request):
 	from nammaoe2bot.discord import events as _events
 	from nammaoe2bot.features import elo_sync as _elo_sync
 
-	discord_ok = bool(getattr(bot, 'bot_ready', False)) and dc.is_ready()
+	discord_ok = bool(dc.app.ready) and dc.is_ready()
 
 	db_ok = False
 	try:
@@ -417,8 +416,8 @@ async def handle_health(request):
 		"status": "ok" if healthy else "unhealthy",
 		"discord_connected": discord_ok,
 		"db_connected": db_ok,
-		"bot_ready": bool(getattr(bot, 'bot_ready', False)),
-		"active_matches": len(getattr(bot, 'active_matches', []) or []),
+		"bot_ready": bool(dc.app.ready),
+		"active_matches": len(dc.app.active_matches),
 		"last_tick_age_seconds": last_tick_age,
 		"last_elo_sync_at": int(last_elo_sync) if last_elo_sync > 0 else 0,
 		"uptime_seconds": int(now - _boot_time),
@@ -2734,7 +2733,7 @@ async def handle_api_debug(request):
 			str(ch_id): {"guild_id": str(qc.guild_id), "queues": len(qc.queues)}
 			for ch_id, qc in dc.app.channels.items()
 		},
-		"bot_ready": getattr(bot, 'bot_ready', 'unknown'),
+		"bot_ready": dc.app.ready,
 	})
 
 

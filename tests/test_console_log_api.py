@@ -31,7 +31,7 @@ _CONSOLE = os.path.join(_REPO_ROOT, "nammaoe2bot", "runtime", "console.py")
 
 # Where `log` means the console singleton. utils/ is standalone tooling with its
 # own logging habits and is not in the bot's import path.
-_ROOTS = ("bot", "nammaoe2bot")
+_ROOTS = ("nammaoe2bot",)
 _SKIP_DIRS = {"__pycache__", ".replay_scratch", "data", ".git"}
 
 

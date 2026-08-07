@@ -569,6 +569,12 @@ _fake_nextcord.ButtonStyle = _ButtonStyleStub()
 # resolve to something.
 _fake_nextcord.abc = types.ModuleType('nextcord.abc')
 _fake_nextcord.abc.GuildChannel = _NextcordStub
+# `nextcord.errors`, imported by nammaoe2bot/pickup/match/checkin.py. Same
+# class object as nextcord.DiscordException — the real library re-exports it,
+# and an `except DiscordException` in one module has to catch what another
+# module raises.
+_fake_nextcord.errors = types.ModuleType('nextcord.errors')
+_fake_nextcord.errors.DiscordException = _FakeDiscordException
 _fake_nextcord_utils = types.ModuleType('nextcord.utils')
 _fake_nextcord_utils.get = _get
 _fake_nextcord_utils.find = _find
@@ -596,6 +602,8 @@ class _MissingSentinel:
 _fake_nextcord_utils.MISSING = _MissingSentinel()
 _fake_nextcord.utils = _fake_nextcord_utils
 sys.modules['nextcord'] = _fake_nextcord
+sys.modules['nextcord.abc'] = _fake_nextcord.abc
+sys.modules['nextcord.errors'] = _fake_nextcord.errors
 sys.modules['nextcord.utils'] = _fake_nextcord_utils
 
 # nammaoe2bot/runtime/cfg_factory.py's only other third-party import.
@@ -655,13 +663,13 @@ _fake_core_client.FakeMember = _FakeMember
 # that touches dc.app raises AttributeError, which reads as a broken test
 # rather than as the missing wiring it would actually be.
 #
-# Loaded BY PATH, not as `from bot.app import ...`: importing it through the
+# Loaded BY PATH, not as `from nammaoe2bot.app import ...`: importing it through the
 # package runs bot/__init__.py, which pulls the whole nextcord-heavy import
 # graph and fails here. Deliberately NOT wrapped in try/except — if this stops
 # working the stub silently reverts to the wrong shape and every test that
 # touches app state starts passing for the wrong reason.
 _app_spec = importlib.util.spec_from_file_location(
-	"_bot_app_for_tests", Path(__file__).resolve().parent.parent / "bot" / "app.py")
+	"_bot_app_for_tests", Path(__file__).resolve().parent.parent / "nammaoe2bot" / "app.py")
 _app_mod = importlib.util.module_from_spec(_app_spec)
 _app_spec.loader.exec_module(_app_mod)
 _fake_core_client.dc.app = _app_mod.Application(client=_fake_core_client.dc)
@@ -678,7 +686,7 @@ sys.modules['nammaoe2bot.runtime.client'] = _fake_core_client
 # bot/__init__.py re-exported half the codebase and imported every feature
 # package for its ensure_table side effects, so reaching one parser pulled in
 # nextcord, aiomysql and the whole graph. That file is now a docstring and
-# nothing else — the side-effect imports moved to bot/bootstrap.py, which
+# nothing else — the side-effect imports moved to nammaoe2bot/bootstrap.py, which
 # only the entrypoint calls — so importing it for real would be harmless.
 #
 # It is kept because tests monkeypatch submodules ONTO this object:

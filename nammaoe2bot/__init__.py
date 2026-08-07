@@ -3,7 +3,7 @@
 
 VERSION ONLY. No state, no re-exports, no side effects. The last package root
 that held either is the reason this restructure exists: see bot/__init__.py's
-docstring for what a re-export shelf cost, and bot/app.py for where the state
+docstring for what a re-export shelf cost, and nammaoe2bot/app.py for where the state
 went.
 
 Boot wiring — the imports that exist for a side effect, and the subscription of

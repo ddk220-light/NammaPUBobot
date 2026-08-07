@@ -14,7 +14,7 @@ This file proves the other half.
 
 IT USED TO BE ONE END-TO-END TEST, because Match.final_message both posted the
 tease and cleared the stash. The domain no longer knows storylines exist: it
-posts the teams and emits `teams_posted`, and bot/wiring.py subscribes the
+posts the teams and emits `teams_posted`, and nammaoe2bot/wiring.py subscribes the
 storyline handler. So the contract splits in two, and both halves are here --
 that final_message really announces, and that the handler really clears. The
 third link, that wiring subscribes something to `teams_posted` at all, is
@@ -110,9 +110,9 @@ class _RaisingNotice:
 
 
 def _post_team_insights(monkeypatch, *, tease_send_fails):
-	"""Drive the REAL storyline handler out of bot/wiring.py."""
+	"""Drive the REAL storyline handler out of nammaoe2bot/wiring.py."""
 	import nammaoe2bot.features.storylines.insights as ti
-	import bot.wiring as wiring
+	import nammaoe2bot.wiring as wiring
 
 	match = types.SimpleNamespace(id=42, storyline_ctx=None)
 	stashed_ctx = {"since": 0, "seed": 42, "rosters": {0: [1], 1: [2]}}

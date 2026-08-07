@@ -226,7 +226,7 @@ db.ensure_table(dict(
 - **Lobby not found at /lobby time** (private/started): no lobbyAdded in snapshot timeout → error, no watcher.
 - **Socket down/changed:** isolate nammaoe2bot/features/lobby/api.py; fall back to poll-style snapshot or findAdvertisements; even if all live sources fail, still do the completed half via by-id REST.
 - **API/socket slow:** /lobby deferred immediately (no "Unknown interaction"); FILLING tolerates "no message = no change".
-- **Bot restart (Railway redeploy):** in-flight watchers are memory-only; qc_lobbies is the durable store. On boot rehydrate non-terminal rows, channel.fetch_message handles, re-open sockets/resume polls. Do NOT shoehorn lobbies into saved_state.json (bot/main.py:54-99 doesn't know about them) — qc_lobbies survives crashes the same way.
+- **Bot restart (Railway redeploy):** in-flight watchers are memory-only; qc_lobbies is the durable store. On boot rehydrate non-terminal rows, channel.fetch_message handles, re-open sockets/resume polls. Do NOT shoehorn lobbies into saved_state.json (nammaoe2bot/state.py:54-99 doesn't know about them) — qc_lobbies survives crashes the same way.
 - **Duplicate /lobby for same id:** dedup on in-memory registry + non-terminal qc_lobbies row; reply with jump link.
 - **Discord edit rate limits:** edit only on roster change, debounced ≥~3s, wrapped in try/except DiscordException.
 - **Post-match data delay (minutes):** by-id poll on _RETRY_DELAYS; if 404 fall back to by-pids overlap; bound the window then EXPIRE with a graceful note.

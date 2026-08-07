@@ -38,10 +38,9 @@ import os
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# The first-party packages. `bot` is mid-migration into `nammaoe2bot` and both
-# are live until Phase 2 finishes; a dotted name whose first segment is not one
-# of these is third party (or stdlib) and is not this file's business.
-_PACKAGES = ("bot", "nammaoe2bot", "utils")
+# The first-party packages. `bot` and `core` are gone — dissolved into
+# nammaoe2bot/ — and are guarded by name instead; see _RETIRED_PACKAGES.
+_PACKAGES = ("nammaoe2bot", "utils")
 
 # Directories the walk never descends into: caches, and the vendored mgz fork
 # that only exists on a machine that has run the replay pipeline.
@@ -49,7 +48,7 @@ _SKIP_DIRS = {"__pycache__", ".replay_scratch", "data", ".git"}
 
 
 def _py_files():
-	""" (dotted module name, absolute path) for every .py file in the three
+	""" (dotted module name, absolute path) for every .py file in the
 	first-party packages, plus the two root-level entry points. """
 	for package in _PACKAGES:
 		for dirpath, dirnames, filenames in os.walk(os.path.join(_REPO_ROOT, package)):
@@ -187,6 +186,41 @@ def _unresolved_imports():
 				broken.append(
 					f"{os.path.relpath(path, _REPO_ROOT)}: from {target} import {alias.name}")
 	return broken
+
+
+_RETIRED_PACKAGES = ("bot", "core")
+
+
+def test_nothing_imports_a_package_that_no_longer_exists():
+	""" `bot` and `core` were this codebase's two top-level packages and both
+	are gone — dissolved into nammaoe2bot/ by the architecture restructure.
+
+	This needs its own test because the sweep below CANNOT catch it. That one
+	resolves imports whose first segment is a first-party package; once a
+	package stops existing, an import of it stops looking first-party and gets
+	skipped as third party. Five `from core import ...` lines survived the
+	move exactly that way — including PUBobot2.py's, the entrypoint's first
+	real import, which would have failed on the first line of the first boot.
+
+	`import bot` / `from bot import` is the same shape and the same risk, so
+	both names are guarded together. """
+	offenders = []
+	for _module, path in _py_files():
+		with open(path, encoding="utf-8") as f:
+			tree = ast.parse(f.read())
+		for node in ast.walk(tree):
+			if isinstance(node, ast.ImportFrom) and not node.level:
+				target = node.module or ""
+			elif isinstance(node, ast.Import):
+				target = node.names[0].name
+			else:
+				continue
+			root = target.split(".")[0]
+			if root in _RETIRED_PACKAGES:
+				offenders.append(f"{os.path.relpath(path, _REPO_ROOT)}: imports {target}")
+	assert not offenders, (
+		"imports of a package that no longer exists (ModuleNotFoundError at "
+		"the first line that runs):\n  " + "\n  ".join(offenders))
 
 
 def test_every_repo_internal_import_resolves():

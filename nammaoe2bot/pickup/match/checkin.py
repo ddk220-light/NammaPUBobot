@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import mmap  # noqa: F401
 import random
 from time import time
 

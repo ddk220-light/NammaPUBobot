@@ -49,7 +49,7 @@ REGISTRY = {
 	),
 	"channel_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/runtime/cfg_factory.py",), retention="forever"),
 	"queue_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/runtime/cfg_factory.py",), retention="forever"),
-	"bot_state": dict(layer="core", tenancy="global", writers=("bot/main.py",), retention="forever"),
+	"bot_state": dict(layer="core", tenancy="global", writers=("nammaoe2bot/state.py",), retention="forever"),
 	"queue_bans": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/pickup/noadds.py",), retention="forever"),
 	# feature state (core contract)
 	"quiz_posts": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),

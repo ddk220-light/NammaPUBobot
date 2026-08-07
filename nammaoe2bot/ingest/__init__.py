@@ -16,7 +16,7 @@ ordering accident, and splitting the shared scoring helpers out is its own
 change.
 
 Dedicated replay_* tables are declared here via ensure_table at import and
-bot/bootstrap.py imports this package for that side effect and the
+nammaoe2bot/bootstrap.py imports this package for that side effect and the
 ReplayStatsJobs singleton. Heavy imports (mgz, requests) stay lazy inside
 fetch.py/parse.py so importing this package is test-safe under the conftest
 stubs."""

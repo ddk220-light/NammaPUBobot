@@ -2,7 +2,7 @@
 
 The pickup domain used to call into betting, the lobby watcher and the
 storyline builders directly — eleven function-local imports across five
-methods of the domain. It now announces six moments and bot/wiring.py
+methods of the domain. It now announces six moments and nammaoe2bot/wiring.py
 subscribes the features. Three things have to hold for that to be an
 improvement rather than a layer of indirection:
 
@@ -115,8 +115,8 @@ class TestWiring:
 		""" Both halves are written by hand in different files. An emit nobody
 		listens to is a feature that silently stopped working — which is
 		exactly how audience predictions died the first time. """
-		import bot.app as app_module
-		import bot.wiring as wiring
+		import nammaoe2bot.app as app_module
+		import nammaoe2bot.wiring as wiring
 
 		app = app_module.Application(client=None)
 		wiring.wire_match_lifecycle(app)
@@ -128,8 +128,8 @@ class TestWiring:
 	def test_every_event_wiring_subscribes_to_is_actually_emitted(self):
 		""" And the converse: a handler on an event the domain never announces
 		is dead code that reads as live. """
-		import bot.app as app_module
-		import bot.wiring as wiring
+		import nammaoe2bot.app as app_module
+		import nammaoe2bot.wiring as wiring
 
 		app = app_module.Application(client=None)
 		wiring.wire_match_lifecycle(app)

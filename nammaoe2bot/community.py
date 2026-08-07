@@ -17,7 +17,7 @@ tests/test_data_registry.py's scanner needs a declaration here to find them):
 `ensure_community`/`attach_channel` (via `enroll_channel`, below) are called
 once real Discord guild objects exist — from nammaoe2bot/discord/events.py's on_ready at
 boot, and from the two runtime "admin enables the bot on a channel" call
-sites (bot/main.py, nammaoe2bot/discord/slash.py). A migration can't do
+sites (nammaoe2bot/state.py, nammaoe2bot/discord/slash.py). A migration can't do
 this enrollment: migrations run before `import bot`, with no Discord
 connection at all — see nammaoe2bot/runtime/migrations.py for that ordering.
 

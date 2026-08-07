@@ -16,7 +16,7 @@ And `is_player` stays at the value captured when the bet was placed — 0 — so
 the post-match report would not even name them as a participant.
 
 Nothing here mocks Draft, and nothing mocks the lifecycle either: the fake
-queue channel carries a real Application, bot/wiring.py subscribes the real
+queue channel carries a real Application, nammaoe2bot/wiring.py subscribes the real
 handlers to it, and only nammaoe2bot.features.betting' hook is swapped for a recorder. One
 test leaves even that alone and drives the REAL restart_for_match, to prove a
 book failure cannot break a substitution.
@@ -34,7 +34,7 @@ import types
 
 import nammaoe2bot.features.betting as predictions
 from nammaoe2bot.pickup.match.substitution import Draft
-from bot.wiring import wire_match_lifecycle
+from nammaoe2bot.wiring import wire_match_lifecycle
 
 
 # ── the fake match ───────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ class FakeQueueChannel:
 		# app.active_queues). A fake without one is a different shape from
 		# production and the AttributeError it raises here is the fixture's
 		# fault, not the code's.
-		from bot.app import Application
+		from nammaoe2bot.app import Application
 		self.app = Application(client=None)
 
 	async def _get_players(self, user_ids):

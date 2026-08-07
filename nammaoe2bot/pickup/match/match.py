@@ -349,7 +349,7 @@ class Match:
 
 		# Teams are final and the match is being played. Whatever wants to act
 		# on that — the live-lobby watcher, the betting book — subscribes in
-		# bot/wiring.py, including the `ranked` test each of them applies.
+		# nammaoe2bot/wiring.py, including the `ranked` test each of them applies.
 		await self.qc.app.match_events.emit("live", self, ctx)
 
 	async def report_loss(self, ctx, member, draw_flag):

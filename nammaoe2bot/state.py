@@ -1,13 +1,10 @@
 # -*- coding: utf-8 -*-
-import traceback  # noqa: F401
 import json
 import time
-from nextcord import Interaction  # noqa: F401
 
 from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
-from nammaoe2bot.runtime.utils import error_embed, ok_embed, get  # noqa: F401
 
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.expire import expire

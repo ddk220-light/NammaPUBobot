@@ -79,7 +79,7 @@ class Application:
 		self.waiting_reactions = TTLReactionDict()   # {message_id: callback}
 		self.ready = False
 		self.was_ready = False
-		# Empty until bot/wiring.py subscribes the features. A Match announces
+		# Empty until nammaoe2bot/wiring.py subscribes the features. A Match announces
 		# through this rather than importing betting, the lobby watcher or the
 		# storyline builders — see nammaoe2bot/pickup/match/events.py.
 		self.match_events = MatchLifecycle()
@@ -87,7 +87,7 @@ class Application:
 	async def remove_players(self, *users, reason=None):
 		"""Drop these users from every queue that currently holds anyone.
 
-		It lived in bot/main.py as a free function taking `app` as its first
+		It lived in nammaoe2bot/state.py as a free function taking `app` as its first
 		argument, which is a method with extra steps — and an expensive one:
 		main.py is also the state-snapshot module, so check_in.py and draft.py
 		importing it for this one call put the whole snapshot chain into their

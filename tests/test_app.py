@@ -14,7 +14,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from bot.app import Application
+from nammaoe2bot.app import Application
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -48,12 +48,12 @@ def test_the_module_exposes_no_global_instance_and_no_accessor():
 	recreate exactly the coupling this class exists to remove: any module could
 	reach the world again without declaring that it needs it. The explicit
 	hand-off IS the design, so it is worth a test rather than a comment."""
-	import bot.app as m
+	import nammaoe2bot.app as m
 
 	assert not any(isinstance(v, Application) for v in vars(m).values()), \
-		"bot/app.py must not hold a module-level Application instance"
+		"nammaoe2bot/app.py must not hold a module-level Application instance"
 	for accessor in ("get_app", "current_app", "app", "instance", "the_app"):
-		assert not hasattr(m, accessor), f"bot/app.py must not expose {accessor}()"
+		assert not hasattr(m, accessor), f"nammaoe2bot/app.py must not expose {accessor}()"
 
 
 def test_waiting_reactions_still_sweeps_by_ttl():
