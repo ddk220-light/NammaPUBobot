@@ -524,6 +524,60 @@ than waiting for a runtime `ModuleNotFoundError` — it is the safety net that
 makes a restructure of this size safe without a running bot. Update its
 `_PACKAGES` tuple in 2.3, when the new root first exists.
 
+### Phase 2 outcome
+
+`bot/` and `core/` are gone. The tree is `nammaoe2bot/{runtime, pickup,
+features, discord, ingest, derived, web}` plus seven root modules, 1867 tests
+green, ruff clean, no module-level import cycles.
+
+**"Mechanical" was wrong, and the mechanical parts were the dangerous ones.**
+A path rewrite handles `bot.quiz.store` and misses six other shapes, every one
+of which fails at runtime and most of which no linter can see:
+
+| Shape | Why the rewrite missed it | What caught it |
+|---|---|---|
+| `from bot.stats import stats` | never spells the module's dotted path | test_import_graph |
+| `from .check_in import CheckIn` | relative — no package prefix to match | test_import_graph |
+| `from ..context import Context` after a file moves UP a level | the LEVEL is wrong, not the name | test_import_graph |
+| `from bot import identity` where the file became `resolver.py` | the import is right; every `identity.x()` below it is not | ruff F821 in modules, nothing in tests |
+| `from bot import a, b` | a prefix match rewrote the first name and left the second | the suite, eventually |
+| `os.path.join(root, "bot", "web.py")` | a path spelled as separate quoted segments | the suite |
+| `import_module('core.DBAdapters.' + db_type)` | a string, not an import | **nothing** — read by hand |
+
+The last row is the one to remember. It would have failed on the first line of
+the first boot, and the adapter is now chosen from an explicit map.
+
+**Four live defects, all silent, all found by moving code past them:**
+
+* `/health` gated on `getattr(bot, 'bot_ready', False)` — a Phase 1 global,
+  swallowed by the getattr default. It is `railway.toml`'s `healthcheckPath`,
+  so every probe of every deploy would have answered 503 and Railway would
+  have restarted the container in a loop.
+* Five `from core import ...` lines survived, including the entrypoint's
+  first real import. Once a package stops existing, an import of it stops
+  looking first-party, so the import checker skipped them as third party —
+  `bot` and `core` are now guarded by name, the only check that works on a
+  package that is gone.
+* `HTML_PATH` still said `web_page.html` after the rename, and the dashboard
+  has a *fallback* for a missing file, so it would have served a placeholder
+  with a 200 while every web test stayed green (they all read the page by
+  their own literal path, never the server's).
+* `nammaoe2bot/pickup/stats.py` called `civ_matcher` after writing a result —
+  the same domain→feature inversion Task 2.2 removed from `Match`, hiding
+  behind a deferred import in a helper. It became a **seventh** lifecycle
+  event, `result_recorded`, because `/report_manual` writes a result without
+  ever finishing a match: hanging civ recording off `finished` would have
+  silently stopped recording civs for every manually reported game.
+
+**What is still owed.** `derived ↔ ingest` is a genuine two-way dependency —
+`derived/game_stats.py` reads ingest's `card_scoring`, `ingest/store.py` writes
+derived's `game_stats` — and only function-local imports keep the pair loading.
+Feeding every deferred import to the cycle detector as if hoisted leaves that
+one cycle in the package (the other three it reports are `utils/` and a
+`TYPE_CHECKING` artifact). Pulling the shared scoring helpers down a layer is
+its own change. 94 function-local first-party imports remain and none is
+required; hoisting them is cleanup, not repair.
+
 ---
 
 ## Phase 3 — the couplings
