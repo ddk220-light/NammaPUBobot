@@ -56,6 +56,18 @@ loop.run_until_complete(migrations.run_all(database.db))
 # Load bot
 import bot
 
+# The one Application for this process. Everything that used to be a
+# module-level global in bot/__init__.py lives here.
+#
+# It hangs off the Discord client rather than off a module: `dc` is the one
+# process-level object every handler already imports, so `dc.app` breaks the
+# import cycle that `import bot` created without inventing a second global.
+# Classes that need state (Match, QueueChannel, PickupQueue) take it in their
+# constructor and keep it as self.app — they must not reach for dc.app inside
+# a method. See bot/app.py.
+from bot.app import Application
+dc.app = Application(client=dc)
+
 # Load web server
 from bot.web import start_web_server
 web_runner = None
