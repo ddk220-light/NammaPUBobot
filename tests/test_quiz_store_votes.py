@@ -90,7 +90,7 @@ class Clock:
 
 class FakeTx:
 	""" The connection-bound handle db.transaction() yields (see
-	core/DBAdapters/mysql.py::Transaction): the same query surface as the
+	nammaoe2bot/runtime/database/mysql.py::Transaction): the same query surface as the
 	adapter, sharing its tables, with execute/insert returning ROWCOUNTS.
 
 	It has an IDENTITY -- `scope`, e.g. "tx#1" -- and stamps it on everything

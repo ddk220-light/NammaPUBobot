@@ -33,9 +33,9 @@ WS_ROOT_URL = "{ws_root_url}"
 '''
 
 
-# What core/config.py's _coerce() accepts as True for a bool key — the sole
+# What nammaoe2bot/runtime/config.py's _coerce() accepts as True for a bool key — the sole
 # authority on what a config string means. Mirrored here rather than imported
-# because importing core.config would EXECUTE it, and it loads config.cfg: the
+# because importing nammaoe2bot.runtime.config would EXECUTE it, and it loads config.cfg: the
 # very file this script has not written yet. tests/test_migrations.py's
 # test_the_replay_ingest_switch_resolves_the_same_way_in_both_config_paths pins
 # the two literals together so they cannot drift apart.
@@ -116,7 +116,7 @@ def main():
         # (a perfectly ordinary thing to type into Railway) would render as the
         # bare name `false` and raise NameError at import — taking the whole boot
         # down over a config value. Quoted, it is always a valid string literal
-        # and core/config.py's bool coercion ('1'/'true'/'yes'/'on', anything
+        # and nammaoe2bot/runtime/config.py's bool coercion ('1'/'true'/'yes'/'on', anything
         # else False) decides what it means.
         replay_ingest_enabled=replay_ingest_enabled,
         db_uri=db_uri,

@@ -24,7 +24,7 @@ from here so the two derived-community modules cannot drift apart.
 import json
 import statistics
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 from . import game_labels
 
@@ -386,7 +386,7 @@ async def write(community_id, user_id, games, rollup, computed_at):
 	one row per (community_id, user_id) -- the primary key is the whole
 	argument list -- so there is nothing a REPLACE can orphan, and a
 	delete-then-insert would only add a failure mode: the adapter is
-	autocommit with no transaction surface (see core/DBAdapters/mysql.py), so
+	autocommit with no transaction surface (see nammaoe2bot/runtime/database/mysql.py), so
 	an insert that fails after the delete succeeded leaves the user with NO
 	rollup, and /rank renders "Statistics pending linking" at them until the
 	next refresh -- up to a nightly pass away, since task 4.5's backstop is
@@ -455,7 +455,7 @@ async def delete(community_id, user_id):
 
 	Lives here rather than in bot/derived/refresh.py, which is the only
 	caller, so `player_rollups` keeps exactly one writing module --
-	core/data_registry.py's stated target of one dedicated writer per table,
+	nammaoe2bot/runtime/data_registry.py's stated target of one dedicated writer per table,
 	and the reason the registry does not have to grow a second entry for the
 	refresh job."""
 	await db.delete("player_rollups", where=dict(community_id=community_id, user_id=user_id))

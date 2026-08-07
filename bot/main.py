@@ -4,10 +4,10 @@ import json
 import time
 from nextcord import Interaction  # noqa: F401
 
-from core.client import dc
-from core.console import log
-from core.database import db
-from core.utils import error_embed, ok_embed, get  # noqa: F401
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.utils import error_embed, ok_embed, get  # noqa: F401
 
 from bot.exceptions import Exceptions as Exc
 from bot.expire import expire

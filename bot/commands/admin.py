@@ -5,8 +5,8 @@ from datetime import timedelta
 from nextcord import Member, Embed, Colour
 from nextcord.utils import escape_markdown
 
-from core.console import log
-from core.utils import seconds_to_str, get_nick
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.utils import seconds_to_str, get_nick
 
 from bot import identity
 from bot.exceptions import Exceptions as Exc

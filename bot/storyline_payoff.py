@@ -286,8 +286,8 @@ async def build_payoff_embed(match):
 
 	from nextcord import Colour, Embed
 
-	from core.console import log
-	from core.utils import get_nick
+	from nammaoe2bot.runtime.console import log
+	from nammaoe2bot.runtime.utils import get_nick
 
 	nick = {p.id: get_nick(p) for p in players}
 	teams_meta = [

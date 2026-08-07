@@ -29,10 +29,10 @@ never crashes before the queue is generated."""
 from __future__ import annotations
 
 import json
-import os
 
-_DEFAULT_PATH = os.path.join(
-	os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "quiz_schedule.json")
+from nammaoe2bot.runtime.paths import data as data_path
+
+_DEFAULT_PATH = data_path("quiz_schedule.json")
 _REQUIRED = ("id", "category", "prompt", "options", "correct_indices", "explanation")
 
 DAYS_PER_WEEK = 7

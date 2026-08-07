@@ -253,7 +253,7 @@ def wire(monkeypatch, *, bets=(), the_post=None, community_id=5,
 		def get_channel(self, _channel_id):
 			return channel
 
-	monkeypatch.setattr(sys.modules["core.client"], "dc", _Client())
+	monkeypatch.setattr(sys.modules["nammaoe2bot.discord.client"], "dc", _Client())
 
 	async def _community_for_channel(_channel_id):
 		return community_id
@@ -407,7 +407,7 @@ class TestFreeze:
 			def get_channel(self, _channel_id):
 				return None
 
-		monkeypatch.setattr(sys.modules["core.client"], "dc", _Blind())
+		monkeypatch.setattr(sys.modules["nammaoe2bot.discord.client"], "dc", _Blind())
 		asyncio.run(flow._freeze(post(), 2_000))
 
 		assert store.frozen == [(12, 2, 1)]

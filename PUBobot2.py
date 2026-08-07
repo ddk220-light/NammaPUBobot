@@ -38,18 +38,18 @@ else:
 # Load bot core
 # Layer 5: `locales` used to be in this import for its side effect
 # (it listdir'd locales/compiled/ and built a gettext translation
-# table at import time). With the Layer 5 stub, core/locales.py does
+# table at import time). With the Layer 5 stub, nammaoe2bot/runtime/locales.py does
 # no I/O and needs no eager load — bot/queue_channel.py imports it
 # lazily on its own. Dropped from this line.
 from core import config, console, database, cfg_factory
-from core.client import dc
+from nammaoe2bot.discord.client import dc
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(database.db.connect())
 
 # Schema migrations MUST run before `import bot`: bot packages auto-CREATE
 # their declared tables at import, and the adapter cannot rename — see
-# core/migrations.py for why this ordering is load-bearing.
+# nammaoe2bot/runtime/migrations.py for why this ordering is load-bearing.
 from core import migrations
 loop.run_until_complete(migrations.run_all(database.db))
 

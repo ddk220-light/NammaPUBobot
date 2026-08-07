@@ -103,7 +103,7 @@ def install_db(monkeypatch, fake):
 	enough:
 
 	  * the METHODS on the shared adapter instance, since every module did
-	    `from core.database import db` at import and they all hold that one
+	    `from nammaoe2bot.runtime.database import db` at import and they all hold that one
 	    object — so this reaches any module in the path that this list forgets.
 	  * the module-level `db` attribute on each module the path actually uses,
 	    since a module that rebound its own `db` no longer resolves through the
@@ -113,7 +113,7 @@ def install_db(monkeypatch, fake):
 	    restores what it patched, and this stays because the general point
 	    (module-level references outlive an instance patch) is unchanged.
 	"""
-	from core.database import db as real_db
+	from nammaoe2bot.runtime.database import db as real_db
 	for name in ("fetchall", "fetchone", "select", "select_one", "execute", "insert", "delete"):
 		monkeypatch.setattr(real_db, name, getattr(fake, name), raising=False)
 	for module in (web, rollups):
@@ -823,8 +823,8 @@ def test_logout_clears_the_session_cookie_and_redirects_home(monkeypatch):
 
 # ─── this file must not change what another file sees ───
 # `import bot.web` at module scope runs during COLLECTION and pulls in
-# core.cfg_factory -> core.utils, which builds Embeds at import time out of
-# whatever sys.modules['nextcord'] holds. That cached core.utils is then shared
+# nammaoe2bot.runtime.cfg_factory -> nammaoe2bot.runtime.utils, which builds Embeds at import time out of
+# whatever sys.modules['nextcord'] holds. That cached nammaoe2bot.runtime.utils is then shared
 # with every later file, so a fake defined here can decide what an unrelated
 # file's assertions compare against. It stays correct only while there is
 # exactly ONE definition of that fake.
@@ -832,12 +832,12 @@ def test_logout_clears_the_session_cookie_and_redirects_home(monkeypatch):
 def test_the_embed_fake_has_a_single_definition_in_the_suite():
 	""" tests/test_identity.py and tests/test_scouting_report.py both used to
 	carry their own copy, kept in step by a comment. Which one ended up behind
-	core.utils depended on collection order. """
-	import core.utils
+	nammaoe2bot.runtime.utils depended on collection order. """
+	import nammaoe2bot.runtime.utils
 	from tests import conftest
 
-	assert core.utils.Embed is conftest.FakeEmbed, (
-		"core.utils was imported against some other nextcord fake — whichever file "
+	assert nammaoe2bot.runtime.utils.Embed is conftest.FakeEmbed, (
+		"nammaoe2bot.runtime.utils was imported against some other nextcord fake — whichever file "
 		"collected first now decides what every Embed assertion in the suite compares "
 		"against")
 
@@ -850,14 +850,14 @@ def test_the_embed_fake_has_a_single_definition_in_the_suite():
 			defined_in.append(name)
 	assert defined_in == [], (
 		f"{defined_in} define their own Embed fake again; conftest.FakeEmbed is the one "
-		f"definition, because core.utils caches whichever it sees first")
+		f"definition, because nammaoe2bot.runtime.utils caches whichever it sees first")
 
 
 def test_importing_this_file_leaves_the_shared_adapter_alone():
 	""" Collection-time side effects are the other half of the same problem: a
 	file that permanently rebinds a shipped module's `db` makes the suite pass
 	in one order and fail in another. """
-	from core.database import db as real_db
+	from nammaoe2bot.runtime.database import db as real_db
 
 	assert web.db is real_db, "bot.web.db was left pointing at a test double"
 	assert rollups.db is real_db, "bot.derived.rollups.db was left pointing at a test double"

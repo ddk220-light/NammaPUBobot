@@ -20,12 +20,12 @@ sys.path.insert(0, ROOT)
 # `from bot.replay_stats...` below would normally import the `bot` package first, which runs
 # bot/__init__.py -- pulling in ~10 feature modules purely for their ensure_table() side effects
 # (schema-DDL-capable CREATE TABLE / ALTER TABLE ADD COLUMN checks) against a live
-# core.database.db handle. This script is validation-only and must never open a database
+# nammaoe2bot.runtime.database.db handle. This script is validation-only and must never open a database
 # connection, so instead of connecting for real (the way PUBobot2.py's own boot sequence does)
-# we pre-register minimal fakes for core.console / core.database / bot in sys.modules, the same
+# we pre-register minimal fakes for nammaoe2bot.runtime.console / nammaoe2bot.runtime.database / bot in sys.modules, the same
 # shim tests/conftest.py uses so unit tests can import bot.* parsers with no live DB. This is a
 # trimmed-down copy: only what apm_series + render_apm_curve's import chain actually touches
-# (conftest.py additionally fakes core.config and aiohttp, which neither needs).
+# (conftest.py additionally fakes nammaoe2bot.runtime.config and aiohttp, which neither needs).
 #
 # Pre-registering `bot` with an explicit __path__ means bot/__init__.py itself never runs --
 # only the real bot.replay_stats package (and the apm_query / chart submodules we need) do -- so
@@ -34,20 +34,20 @@ sys.path.insert(0, ROOT)
 
 
 class _NullLog:
-    """Swallows every core.console.log call (bot.replay_stats.jobs/store log through it)."""
+    """Swallows every nammaoe2bot.runtime.console.log call (bot.replay_stats.jobs/store log through it)."""
 
     def __getattr__(self, _name):
         return lambda *_a, **_k: None
 
 
-_fake_core_console = types.ModuleType("core.console")
+_fake_core_console = types.ModuleType("nammaoe2bot.runtime.console")
 _fake_core_console.log = _NullLog()
 _fake_core_console.alive = True
-sys.modules["core.console"] = _fake_core_console
+sys.modules["nammaoe2bot.runtime.console"] = _fake_core_console
 
 
 class _NoDB:
-    """Stands in for core.database.db. `ensure_table` is the only method the bot.replay_stats
+    """Stands in for nammaoe2bot.runtime.database.db. `ensure_table` is the only method the bot.replay_stats
     import chain calls at module scope (schema declarations), so it's a genuine no-op here. Any
     other attribute access means something is trying to touch a real database -- which this
     validation-only script must never do -- so it raises immediately instead of connecting."""
@@ -67,9 +67,9 @@ class _NoDB:
         raise RuntimeError(f"validate_apm.py must never touch a live database (db.{name})")
 
 
-_fake_core_database = types.ModuleType("core.database")
+_fake_core_database = types.ModuleType("nammaoe2bot.runtime.database")
 _fake_core_database.db = _NoDB()
-sys.modules["core.database"] = _fake_core_database
+sys.modules["nammaoe2bot.runtime.database"] = _fake_core_database
 
 _fake_bot = types.ModuleType("bot")
 _fake_bot.__path__ = [os.path.join(ROOT, "bot")]

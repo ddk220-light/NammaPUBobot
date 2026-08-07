@@ -11,7 +11,7 @@ import traceback
 
 import nextcord
 
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 from . import embeds, flow, gold, store, view
 from .scoring import SEED_AMOUNT, parse_bet_custom_id, parse_cancel_custom_id, pools
@@ -186,7 +186,7 @@ async def _refresh_card(post, pool0, pool1, now):
 	"""Best-effort embed update so the card shows the live pools. The buttons
 	(the View) are left untouched by omitting `view` from the edit."""
 	try:
-		from core.client import dc
+		from nammaoe2bot.discord.client import dc
 		channel = dc.get_channel(post["channel_id"])
 		if channel is None or not post.get("message_id"):
 			return

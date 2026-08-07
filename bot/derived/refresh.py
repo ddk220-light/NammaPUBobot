@@ -169,8 +169,8 @@ one bad row cannot cost the rest of its batch.
 import asyncio
 import time
 
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 from bot import identity
 

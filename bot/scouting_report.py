@@ -92,7 +92,7 @@ PENDING = "Statistics pending linking"
 # rollups.SPLIT_MIN_GAMES by intent -- one report should not report a strategy
 # over 5 games and a medal rate over 2 -- and pinned equal by
 # tests/test_scouting_report.py rather than imported, because importing
-# bot.derived.rollups drags in core.database and costs this module the purity
+# bot.derived.rollups drags in nammaoe2bot.runtime.database and costs this module the purity
 # its whole test suite rests on.
 MIN_GAMES = 5
 

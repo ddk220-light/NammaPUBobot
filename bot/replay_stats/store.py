@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """Async DB layer for replay-stats: enable flag, find-next, idempotent per-match write,
-and ingest status bookkeeping. All access via core.database.db, except everything
+and ingest status bookkeeping. All access via nammaoe2bot.runtime.database.db, except everything
 identity — both the profile_id->user_id read and the write-back of what this parse
 observed go through the identity resolver (bot/identity.py), which is the single
 store answering "who is this person"."""
 import time
 
 from bot import identity
-from core.config import cfg
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.config import cfg
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 from . import shape
 

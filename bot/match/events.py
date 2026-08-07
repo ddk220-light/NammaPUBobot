@@ -22,7 +22,7 @@ ORDER IS PART OF THE CONTRACT. Handlers run in registration order, and two of
 the sequences in bot/wiring.py are load-bearing rather than cosmetic — see the
 notes there before reordering anything.
 """
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 
 class MatchLifecycle:

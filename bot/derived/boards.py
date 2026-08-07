@@ -11,7 +11,7 @@ trivially testable without a database.
 
 THE CATALOG IS A HARD BOUNDARY, not a convenience list. Every metric_id below
 resolves to a column on `replay_players` or `game_stats` -- both retained
-FOREVER (core/data_registry.py) -- and nothing else. The old quiz catalog
+FOREVER (nammaoe2bot/runtime/data_registry.py) -- and nothing else. The old quiz catalog
 (utils/replay_quiz/build_db.py's build_metrics(), now retired) additionally
 scored tech-click-timing and building-count metrics sourced from
 `replay_techs`/`replay_buildings`, both `retention="sweepable"`: task 4.6's
@@ -28,7 +28,7 @@ first_tc_s is ascending" -- that knowledge lives exactly once, here.
 """
 import json
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 from bot.derived.rollups import BOARD_MIN_GAMES  # noqa: F401  (re-exported: see docstring below)
 
 # Kept top single-game performances per board. 3, not an arbitrary round

@@ -2,8 +2,8 @@ from asyncio import sleep as asleep
 from asyncio import create_task
 from nextcord import DiscordException
 
-from core.client import dc
-from core.console import log
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.console import log
 
 
 

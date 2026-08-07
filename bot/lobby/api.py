@@ -16,7 +16,7 @@ Verified live (Phase 3 understand workflow):
 """
 from datetime import datetime
 
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 AOE2_API = "https://data.aoe2companion.com/api"
 _UA = {"User-Agent": "NammaPUBobot/1.0"}

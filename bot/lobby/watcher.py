@@ -24,8 +24,8 @@ import time
 
 from nextcord import DiscordException
 
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 from . import buttons, embeds, reducer, socket, view
 

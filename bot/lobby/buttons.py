@@ -11,7 +11,7 @@ browser to the `aoe2de://` deep link that launches the game.
 """
 import nextcord
 
-from core.config import cfg
+from nammaoe2bot.runtime.config import cfg
 
 from . import view
 

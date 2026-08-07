@@ -6,7 +6,7 @@ extract so match/player tags stay fresh without a separate offline runner.
 """
 import time
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 
 async def upsert_registry():

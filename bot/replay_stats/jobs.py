@@ -7,7 +7,7 @@ import asyncio
 import os
 import time
 
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 from . import policy, store
 from .fetch import fetch_replay

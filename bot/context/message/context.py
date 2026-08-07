@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 # every annotation in this file as a string.
 if TYPE_CHECKING:
 	from bot.queue_channel import QueueChannel
-from core.utils import error_embed, ok_embed
+from nammaoe2bot.runtime.utils import error_embed, ok_embed
 
 from ..context import Context
 

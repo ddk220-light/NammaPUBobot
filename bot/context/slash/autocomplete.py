@@ -1,8 +1,8 @@
 from typing import List  # noqa: UP035
 from nextcord import Interaction
 
-from core.client import dc
-from core.utils import find, get
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.utils import find, get
 
 from bot.queue_channel import QueueChannel
 

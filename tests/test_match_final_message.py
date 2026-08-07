@@ -21,11 +21,11 @@ third link, that wiring subscribes something to `teams_posted` at all, is
 tests/test_match_lifecycle.py.
 
 Importing the real bot.match.match module pulls in nextcord and the rest of
-its transitive import chain (core.client, core.utils, bot.match.check_in,
+its transitive import chain (nammaoe2bot.discord.client, nammaoe2bot.runtime.utils, bot.match.check_in,
 bot.match.draft, bot.match.embeds), none of which is installed in this test
 environment (CI installs only pytest; nextcord and prettytable are absent).
 This module fakes just enough of that chain -- the same sys.modules-injection
-trick tests/conftest.py already uses for core.config/console/database -- to
+trick tests/conftest.py already uses for nammaoe2bot.runtime.config/console/database -- to
 import the real match.py and exercise the real final_message body end to end.
 bot.team_insights itself is NOT faked: it is imported for real, and only its
 build_insights_embed function is monkeypatched, so the test exercises the
@@ -67,16 +67,16 @@ def _install_fakes(monkeypatch):
 	monkeypatch.setitem(sys.modules, "nextcord.errors", fake_nextcord_errors)
 	monkeypatch.setitem(sys.modules, "nextcord.abc", fake_nextcord_abc)
 
-	fake_core_client = types.ModuleType("core.client")
+	fake_core_client = types.ModuleType("nammaoe2bot.discord.client")
 	fake_core_client.dc = types.SimpleNamespace(user=None)
 	fake_core_client.FakeMember = object      # Context.get_member's `name@id` path
-	monkeypatch.setitem(sys.modules, "core.client", fake_core_client)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.discord.client", fake_core_client)
 
-	fake_core_config = types.ModuleType("core.config")
+	fake_core_config = types.ModuleType("nammaoe2bot.runtime.config")
 	fake_core_config.cfg = types.SimpleNamespace(DC_OWNER_ID=0)
-	monkeypatch.setitem(sys.modules, "core.config", fake_core_config)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.config", fake_core_config)
 
-	fake_core_utils = types.ModuleType("core.utils")
+	fake_core_utils = types.ModuleType("nammaoe2bot.runtime.utils")
 	fake_core_utils.find = lambda *a, **k: None
 	fake_core_utils.get = lambda *a, **k: None
 	fake_core_utils.iter_to_dict = lambda *a, **k: {}
@@ -84,7 +84,7 @@ def _install_fakes(monkeypatch):
 	fake_core_utils.get_nick = lambda p: getattr(p, "name", str(p))
 	fake_core_utils.error_embed = lambda *a, **k: None
 	fake_core_utils.ok_embed = lambda *a, **k: None
-	monkeypatch.setitem(sys.modules, "core.utils", fake_core_utils)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.utils", fake_core_utils)
 
 
 class _FakeEmbeds:

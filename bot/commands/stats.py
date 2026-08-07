@@ -6,10 +6,10 @@ from time import time
 from math import ceil
 from nextcord import Member, Embed, Colour, File
 
-from core.utils import get, find, seconds_to_str, get_nick  # noqa: F401
-from core.database import db
-from core.console import log
-from core.config import cfg
+from nammaoe2bot.runtime.utils import get, find, seconds_to_str, get_nick  # noqa: F401
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.config import cfg
 
 from bot.exceptions import Exceptions as Exc
 

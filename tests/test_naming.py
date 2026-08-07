@@ -1,5 +1,5 @@
 """Old table names must never reappear in live code. The allowlist is
-core/migrations.py (renames reference old names forever) and this test."""
+nammaoe2bot/runtime/migrations.py (renames reference old names forever) and this test."""
 import os
 
 # Only names that cannot collide with ordinary identifiers. `players` and
@@ -18,7 +18,7 @@ OLD_NAMES = [
 	# queried anywhere, since `identities` is the sole answer to "who is this
 	# person", and dropped by a later migration. Guarded here so a query cannot
 	# come back after the table is gone, which would be a runtime error rather
-	# than merely stale data. core/migrations.py names it forever (the drop
+	# than merely stale data. nammaoe2bot/runtime/migrations.py names it forever (the drop
 	# migration) and is allowlisted.
 	"qc_profile_map",
 	# The raw replay tables, renamed out of their inherited `rs_` prefix by
@@ -42,16 +42,16 @@ OLD_NAMES = [
 # bot/lobby/completed.py, `..._members_profiles_...` in tests/test_identity.py),
 # so a substring guard on it fires on legitimate code. Its retirement is
 # enforced by tests/test_data_registry.py instead, which compares actual
-# ensure_table declarations against core/data_registry.py: re-declaring the
+# ensure_table declarations against nammaoe2bot/runtime/data_registry.py: re-declaring the
 # table without a registry entry fails, and adding the entry back is a
 # deliberate act rather than an accident.
 # Whole-file exemptions, kept to the two files that must name old tables to do
 # their job. Everything else stays fully guarded.
 _ALLOW = (
-	"core/migrations.py", "tests/test_naming.py",
-	# Exercises the rename guard itself (core/migrations.py's own _STAGE1_RENAMES
+	"nammaoe2bot/runtime/migrations.py", "tests/test_naming.py",
+	# Exercises the rename guard itself (nammaoe2bot/runtime/migrations.py's own _STAGE1_RENAMES
 	# and its post-condition check), so it necessarily uses old table names as
-	# literal rename-source strings — same reason core/migrations.py is above.
+	# literal rename-source strings — same reason nammaoe2bot/runtime/migrations.py is above.
 	"tests/test_migrations.py",
 )
 
@@ -93,7 +93,7 @@ _ROOT_FILES = ("start.py", "PUBobot2.py")
 
 def _scanned_files(root):
 	""" Every file the guard checks, as (absolute path, repo-relative path). """
-	for base in ("bot", "core", "utils", "tests"):
+	for base in ("bot", "nammaoe2bot", "utils", "tests"):
 		for dirpath, _d, files in os.walk(os.path.join(root, base)):
 			if "__pycache__" in dirpath:
 				continue
@@ -142,7 +142,7 @@ def test_the_allowlist_holds_only_the_files_that_must_name_old_tables():
 	so growing it is a deliberate edit to this test, with a reason, rather than
 	a one-line way to make the guard stop complaining. """
 	assert set(_ALLOW) == {
-		"core/migrations.py",      # names every renamed table forever, by design
+		"nammaoe2bot/runtime/migrations.py",      # names every renamed table forever, by design
 		"tests/test_naming.py",    # this file lists them as literals
 		"tests/test_migrations.py",  # exercises the rename map itself
 	}

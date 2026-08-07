@@ -38,19 +38,25 @@ CI runs both on every PR via `.github/workflows/ci.yml`.
 
 ### Boot sequence
 `PUBobot2.py` is the entrypoint. It:
-1. Loads `core/config.py` (imports `config.cfg` as a Python module via `SourceFileLoader`)
-2. Connects to MySQL via `core/database.py` → `core/DBAdapters/mysql.py` (aiomysql pool)
-3. Imports `bot/` which registers all commands and event handlers
+1. Loads `nammaoe2bot/runtime/config.py` (imports `config.cfg` as a Python module via `SourceFileLoader`)
+2. Connects to MySQL via `nammaoe2bot/runtime/database/__init__.py` → `nammaoe2bot/runtime/database/mysql.py` (aiomysql pool)
+3. Builds the one `Application` (`bot/app.py`) and hands it to `bot/bootstrap.py`, which imports every module whose import IS the wiring — `ensure_table` declarations, job singletons, the slash surface — and then calls `bot/wiring.py` to subscribe the features to the match lifecycle
 4. Starts the asyncio event loop with a 1-second `think()` tick and the Discord client
 
-### Core layer (`core/`)
+### Runtime layer (`nammaoe2bot/runtime/`)
+The bottom layer, and the first part of `core/` to move into the new package root. Nothing here knows what a pickup game is.
 - **`config.py`** — Loads `config.cfg` as a Python module (not INI/YAML — it's raw Python)
-- **`client.py`** — `DiscordClient` subclass of `nextcord.Client`. Custom event system allowing multiple handlers per event. Command registry via `@dc.command()` decorator
-- **`database.py`** — Initializes the DB adapter from `DB_URI` (only MySQL adapter exists)
+- **`database/`** — `__init__.py` builds the adapter from `DB_URI` against the explicit `ADAPTERS` map; `mysql.py` + `common.py` are the adapter itself (was `core/DBAdapters/`). The scheme→adapter map replaced an `import_module('core.DBAdapters.' + db_type)` string, which no linter, import test or unit test can follow across a move
+- **`paths.py`** — `REPO_ROOT` / `DATA_DIR` / `data()`, anchored on the package rather than on a count of `..` from a module's `__file__`. **Never compute a repo root from `__file__` again**: a wrong directory does not raise, it resolves and is empty, which reads as "no data in this image" — the migrations post-condition disarms itself on exactly that
 - **`cfg_factory.py`** — Generic config system: `CfgFactory` manages typed variables stored in MySQL, used by both `QueueChannel` and `PickupQueue` for per-channel/per-queue settings
 
-### Bot layer (`bot/`)
-- **`bot/__init__.py`** — Global state: `queue_channels` dict, `active_queues`, `active_matches`, `waiting_reactions`
+### Discord layer (`nammaoe2bot/discord/`)
+- **`client.py`** — `DiscordClient` subclass of `nextcord.Client`. Custom event system allowing multiple handlers per event. Command registry via `@dc.command()` decorator
+
+### Bot layer (`bot/`) — being dissolved into `nammaoe2bot/`
+- **`bot/__init__.py`** — **empty, deliberately.** It held six mutable globals and then a re-export shelf; both are gone. Import from the module that defines the thing. State is `bot/app.py`'s `Application`, reached as `dc.app`, `self.app` or `self.qc.app`
+- **`bot/bootstrap.py`** — every import that exists for a side effect, in one readable place, called once by the entrypoint. Putting this block in a package `__init__` is what made the import order load-bearing and put 34 modules into a single cycle
+- **`bot/wiring.py`** — the composition root. `bot/match/` announces six lifecycle events (`teams_posted`, `live`, `roster_changed`, `ending`, `finished`, `cancelled`) and betting, the lobby watcher and the storylines subscribe here. **Nothing under `bot/match/` may import a feature** — `tests/test_match_lifecycle.py` checks it. `finished` fires only after `register_match_*` has written the `matches` row, because `store.unsettled_books` JOINs on it
 - **`bot/events.py`** — Discord event handlers: `on_ready` loads queue channels from DB, `on_think` runs match/expire/noadds ticks, `on_presence_update` removes offline/afk players when the channel sets `remove_offline` (there is no per-player exemption any more — `/allow_offline` and the `bot.allow_offline` list went with the command consolidation)
 - **`bot/queue_channel.py`** — `QueueChannel` class: represents a Discord channel with pickup queues. Manages its own `CfgFactory` config and list of `PickupQueue` instances
 - **`bot/queues/pickup_queue.py`** — `PickupQueue`: player queue that starts a `Match` when full
@@ -107,13 +113,13 @@ Slash commands are defined in `bot/context/slash/commands.py`. Each wraps a hand
 ### Key conventions
 - Bot uses tabs for indentation throughout the original codebase; newer files use 4-space indentation — everything under `utils/`, plus `bot/civ_stats.py` and `bot/replay_stats/*`. Match the file you are editing; never mix the two within one file
 - Config is a `.cfg` file but is actually Python source loaded via `SourceFileLoader`
-- All DB access is async through `core/database.db` (the adapter instance)
+- All DB access is async through `nammaoe2bot/runtime/database/__init__.db` (the adapter instance)
 - `bot.queue_channels` is the central dict mapping `channel_id → QueueChannel`
 - State is persisted to `saved_state.json` on shutdown and restored on startup
 - **The scouting report** (`/rank`, and the web player page) is windowed to the last `rollups.WINDOW_DAYS` (60) and reads one `player_rollups` blob. Four states, all distinct and all deliberate: no row → `scouting_report.PENDING`; a row with no game in the window → "No games in the last 60 days"; a row with games but nothing above `MIN_GAMES` → "Only N games…"; otherwise the report. The wins-most/loses-most clauses are chosen by a **shrunk win rate** against the player's own windowed baseline (`scouting_report.highlights`) — never by absolute wins ("most played", which picks losing records) and never by raw rate (which picks 5-game flukes). `highlights()` is the ONE implementation: `bot/web_page.html` phrases what it is given and must never re-rank. `/rank detailed:true` adds streak, peak, civs, duos & rivals and recent rating changes — it was `/rank_detailed`, a separate command calling the same function with the flag flipped. The unit split tallies only the player's **most-built** style unit per game (rollups re-applies `game_stats`' `(-total, name)` ordering rather than trusting the stored list's order) — "massing X" claims X was the plan that game, and counting the whole stored top 3 hands small-number support units (Monk, siege) an inflated record no shrinkage corrects
 - **`game_stats.compute_version`** is what lets `bot/derived/backfill.py` see a change in what a row *contains*, not only in which rows exist — its pending predicate is a set comparison, and the version rides in the `(mid, pn, tag)` tuple it already groups on. **Change `compute_game_stats`'s output → bump `COMPUTE_VERSION`**, and the reconciliation loop rewrites every stale row on its own. Do not add a column-level predicate, and do not reimplement the compute in a migration's SQL
 - **`game_stats.top_units`** holds **style units** only (`is_style_unit`): military, gold-costing, non-ubiquitous — no trash lines (`scout`/`skirmisher`/`spearman_line`) and no trebuchet of any spelling. The filter runs **before** the top-3 cut; filtering at read time instead would leave trash-heavy players with no unit line at all
-- `core/data_registry.py` is the source of truth for every table's contract: its layer (core/raw/link/derived/ops), tenancy, sole writer(s), and retention class. `tests/test_data_registry.py` enforces two-way agreement on the **set of table names** between this registry and every `ensure_table`/`FactoryTable` declaration in `bot/` and `core/` — so a table declared without a registry entry (or listed without a declaration) fails the build. The `writers`, `tenancy` and `layer` fields are **not** machine-checked against the code: they are curated documentation, and a writer that moves or is deleted will not fail a test. Update them by hand when you change one
+- `nammaoe2bot/runtime/data_registry.py` is the source of truth for every table's contract: its layer (core/raw/link/derived/ops), tenancy, sole writer(s), and retention class. `tests/test_data_registry.py` enforces two-way agreement on the **set of table names** between this registry and every `ensure_table`/`FactoryTable` declaration in `bot/` and `core/` — so a table declared without a registry entry (or listed without a declaration) fails the build. The `writers`, `tenancy` and `layer` fields are **not** machine-checked against the code: they are curated documentation, and a writer that moves or is deleted will not fail a test. Update them by hand when you change one
 - Deployment target is Railway (see `railway.toml`, `Dockerfile`, `start.py`)
 - Web dashboard requires `WS_ENABLE=True`, `WS_ROOT_URL`, `DC_CLIENT_SECRET` env vars. OAuth2 redirect URL must be registered in Discord Developer Portal as `{WS_ROOT_URL}/auth/callback`
 - `start.py` generates `config.cfg` from env vars — any new config vars need corresponding entries in its template

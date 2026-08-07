@@ -8,7 +8,7 @@ Discord.
 
 Two things this script deliberately does, both mirroring tests/conftest.py:
 
-* It stubs ``core.database.db`` with a wrapper whose ``ensure_table`` is a no-op.
+* It stubs ``nammaoe2bot.runtime.database.db`` with a wrapper whose ``ensure_table`` is a no-op.
   Importing bot.replay_stats normally runs a dozen ensure_table calls, which
   create tables and add columns — writes. This script must never write, so the
   schema calls are swallowed and only SELECT reaches the server.
@@ -66,16 +66,16 @@ class ReadOnlyDB:
 
 
 def _install_stubs(db):
-    """Register the fake core.database / bot package modules before any import."""
-    fake_db_mod = types.ModuleType("core.database")
+    """Register the fake nammaoe2bot.runtime.database / bot package modules before any import."""
+    fake_db_mod = types.ModuleType("nammaoe2bot.runtime.database")
     fake_db_mod.db = db
-    sys.modules["core.database"] = fake_db_mod
+    sys.modules["nammaoe2bot.runtime.database"] = fake_db_mod
 
-    fake_console = types.ModuleType("core.console")
+    fake_console = types.ModuleType("nammaoe2bot.runtime.console")
     fake_console.log = types.SimpleNamespace(
         error=lambda msg: print(f"  [log.error] {msg}", file=sys.stderr),
         info=lambda msg: None, debug=lambda msg: None)
-    sys.modules["core.console"] = fake_console
+    sys.modules["nammaoe2bot.runtime.console"] = fake_console
 
     fake_bot = types.ModuleType("bot")
     fake_bot.__path__ = [os.path.join(PROJECT_ROOT, "bot")]

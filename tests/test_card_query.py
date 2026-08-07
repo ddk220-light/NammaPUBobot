@@ -27,7 +27,7 @@ class _FakeDB:
 
 
 def _run(monkeypatch, db, match_end_s=600):
-    # Object form: the string form cannot resolve core.database (namespace
+    # Object form: the string form cannot resolve nammaoe2bot.runtime.database (namespace
     # package), and card_query bound its own `db` reference at import.
     monkeypatch.setattr(cq, "db", db)
     return asyncio.run(cq.fetch_card_signals(1, match_end_s))

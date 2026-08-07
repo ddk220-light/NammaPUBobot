@@ -5,7 +5,7 @@ for /insights. Columns mirror utils/classifications/schema.py exactly.
 
 The `indexes=` entries below only take effect when this declaration CREATES the table
 (a fresh install) -- ensure_table never alters the keys of a table that already exists,
-by design (see core/DBAdapters/mysql.py's table_blank). An existing database gets the
+by design (see nammaoe2bot/runtime/database/mysql.py's table_blank). An existing database gets the
 same indexes from migration 006_derived_indexes instead. Both halves are required:
 neither one covers the other's case, so an index added here must be added there too.
 
@@ -16,7 +16,7 @@ Index names are written out literally rather than via a shared constant so
 tests/test_migrations.py::test_the_index_names_match_the_ensure_table_declaration can
 compare all three declarations as text without importing this module (importing it
 executes ensure_table)."""
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 db.ensure_table(dict(
 	tname="cls_classifications",

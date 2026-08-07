@@ -1,9 +1,9 @@
 import re
 import time
 import zlib
-from core.client import dc
-from core.database import db
-from core.console import log
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.console import log
 from bot.civ_sync import find_matching_lobby, find_matching_lobby_from_history, link_and_write
 
 # Last successful ELO sync timestamp (unix). Read by bot/web.py handle_health as

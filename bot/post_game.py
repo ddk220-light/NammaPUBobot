@@ -90,7 +90,7 @@ async def _medals_for(rows):
 	file's module doc), so a genuinely absent row must render medal-less
 	rather than raise.
 	"""
-	from core.database import db
+	from nammaoe2bot.runtime.database import db
 
 	aoe2_id = next((r.get("replay_match_id") for r in rows if r.get("replay_match_id")), None)
 	if aoe2_id is None:
@@ -322,7 +322,7 @@ def _team_card_fields(player_rows, team_names=None, medals_by_player=None):
 
 # ── DB read + embed building (deferred heavy imports) ────────────────────
 async def _team_names(channel_id, bot_match_id):
-	from core.database import db
+	from nammaoe2bot.runtime.database import db
 	row = await db.fetchone(
 		"SELECT alpha_name, beta_name FROM matches WHERE match_id=%s AND channel_id=%s",
 		[bot_match_id, channel_id]
@@ -333,13 +333,13 @@ async def _team_names(channel_id, bot_match_id):
 
 
 async def _match_channel_id(bot_match_id):
-	from core.database import db
+	from nammaoe2bot.runtime.database import db
 	row = await db.fetchone("SELECT channel_id FROM matches WHERE match_id=%s", [bot_match_id])
 	return row.get("channel_id") if row else None
 
 
 async def _analysis_rows(bot_match_id):
-	from core.database import db
+	from nammaoe2bot.runtime.database import db
 	pm_rows = await db.fetchall(
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, pm.team AS bot_team, "
 		"CASE WHEN m.winner=pm.team THEN 'W' "
@@ -413,7 +413,7 @@ async def _apm_chart_file(bot_match_id):
 	"""Rendered APM chart for a match, or None. Best-effort: every failure path
 	returns None so the cards still post without an image."""
 	try:
-		from core.database import db
+		from nammaoe2bot.runtime.database import db
 		from bot.replay_stats import render
 		from bot.replay_stats.apm_query import apm_series, fetch_match_apm
 
@@ -439,14 +439,14 @@ async def _apm_chart_file(bot_match_id):
 			# genuine failure. should_render is the pure gate it uses, so re-asking it separates
 			# the two — otherwise a permanently broken renderer looks exactly like an old match.
 			if render.should_render(series):
-				from core.console import log
+				from nammaoe2bot.runtime.console import log
 				log.error(f"APM chart render produced nothing for {len(series)} series "
 				          f"(bot match {bot_match_id})")
 			return None
 		from nextcord import File
 		return File(fp=buf, filename="apm.png")
 	except Exception as e:
-		from core.console import log
+		from nammaoe2bot.runtime.console import log
 		log.error(f"APM chart build failed (bot match {bot_match_id}): {e}")
 		return None
 
@@ -454,8 +454,8 @@ async def _apm_chart_file(bot_match_id):
 async def post_match_analysis(bot_match_id):
 	"""Best-effort Discord post once replay analysis is stored."""
 	try:
-		from core.client import dc
-		from core.console import log
+		from nammaoe2bot.discord.client import dc
+		from nammaoe2bot.runtime.console import log
 
 		channel_id = await _match_channel_id(bot_match_id)
 		if channel_id is None:

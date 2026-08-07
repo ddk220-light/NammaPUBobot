@@ -25,7 +25,7 @@ what put 34 modules into a single import cycle. Here, nothing imports this
 file except the entrypoint, so the order below is a preference, not a
 constraint.
 
-Call `bootstrap()` once, after core.database is initialised and before the
+Call `bootstrap()` once, after nammaoe2bot.runtime.database is initialised and before the
 Discord client connects.
 """
 

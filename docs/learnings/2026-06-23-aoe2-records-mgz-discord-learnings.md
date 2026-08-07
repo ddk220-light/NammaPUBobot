@@ -166,7 +166,7 @@ functions so they're testable under that shim — and keep the rendering/DB in s
   connect with `WinError 121` ("semaphore timeout") even though raw TCP to the host works. Set
   `asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())` for any local script
   hitting the DB.
-- **The core MySQL adapter drops the URI port.** `core/DBAdapters/mysql.py:connect()` parses
+- **The core MySQL adapter drops the URI port.** `nammaoe2bot/runtime/database/mysql.py:connect()` parses
   `dbPort` but never passes `port=` to `aiomysql.create_pool`, so it always hits 3306. Fine for
   Railway's internal network; **wrong for the public proxy** (port 10509+). Local scripts must
   build the pool themselves with the real port. (Flagged as a one-line fix.)

@@ -43,7 +43,10 @@ import ast
 import os
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_PACKAGES = ("bot", "core", "utils")
+# The first-party packages. `bot` is mid-migration into `nammaoe2bot` and both
+# are live until Phase 2 finishes; a dotted name whose first segment is not one
+# of these is third party (or stdlib) and is not this file's business.
+_PACKAGES = ("bot", "nammaoe2bot", "utils")
 _SKIP_DIRS = {"__pycache__", ".replay_scratch", "data", ".git"}
 
 

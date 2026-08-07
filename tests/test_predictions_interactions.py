@@ -302,7 +302,7 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 	# flow._team_ids reads dc.app.active_matches, so patching the old module
 	# global would leave the roster empty and every own-team check would pass
 	# for the wrong reason — the participants would look like spectators.
-	from core.client import dc
+	from nammaoe2bot.discord.client import dc
 	monkeypatch.setattr(dc.app, "active_matches", matches, raising=False)
 	return wiring
 

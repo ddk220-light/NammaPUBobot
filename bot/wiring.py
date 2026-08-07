@@ -16,7 +16,7 @@ READ THE ORDER NOTES BEFORE REORDERING ANYTHING. Handlers run in registration
 order, and two of these sequences encode a real constraint rather than a
 preference.
 """
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 from bot import predictions
 from bot.lobby import watcher as lobby_watcher

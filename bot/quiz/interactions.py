@@ -12,7 +12,7 @@ import traceback
 
 import nextcord
 
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 from . import store
 from .scoring import is_multi_category, parse_custom_id

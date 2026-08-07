@@ -1,9 +1,9 @@
-"""Every `log.<method>(...)` in the repo must name a method `core.console.Log`
+"""Every `log.<method>(...)` in the repo must name a method `nammaoe2bot.runtime.console.Log`
 actually defines.
 
 WHY THIS FILE EXISTS. `Log` shipped chat / debug / command / info / error and no
 `warning`, while fifteen call sites across bot/lobby/, bot/predictions/ and
-core/migrations.py called `log.warning(...)`. Every one of them raised
+nammaoe2bot/runtime/migrations.py called `log.warning(...)`. Every one of them raised
 AttributeError — and every one of them sits INSIDE an `except` block, so the
 exception it was trying to report was replaced by a different, uglier one
 escaping the handler. `bot/predictions/interactions.py::_refresh_card` was the
@@ -12,14 +12,14 @@ down with it.
 
 Nothing could see this. ruff does not resolve attributes. The unit suite cannot
 see it either, and that is the important part: `tests/conftest.py` fakes
-`core.console` with a null logger whose `__getattr__` answers to ANY name, so
+`nammaoe2bot.runtime.console` with a null logger whose `__getattr__` answers to ANY name, so
 under pytest `log.warning` has always worked. A test that drove a call site and
 asserted "it logged" would have passed on the broken code.
 
 So this checks the two halves against each other STATICALLY, the
 tests/test_import_graph.py pattern: the method names `Log` binds, parsed out of
-the real core/console.py, versus the attribute names the call sites reach for.
-Neither side is mocked and neither is imported — importing core.console for real
+the real nammaoe2bot/runtime/console.py, versus the attribute names the call sites reach for.
+Neither side is mocked and neither is imported — importing nammaoe2bot.runtime.console for real
 creates a logs/ directory and opens a file, and importing it under the conftest
 stub would hand back the fake and prove nothing.
 """
@@ -27,11 +27,11 @@ import ast
 import os
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_CONSOLE = os.path.join(_REPO_ROOT, "core", "console.py")
+_CONSOLE = os.path.join(_REPO_ROOT, "nammaoe2bot", "runtime", "console.py")
 
 # Where `log` means the console singleton. utils/ is standalone tooling with its
 # own logging habits and is not in the bot's import path.
-_ROOTS = ("bot", "core")
+_ROOTS = ("bot", "nammaoe2bot")
 _SKIP_DIRS = {"__pycache__", ".replay_scratch", "data", ".git"}
 
 
@@ -116,7 +116,7 @@ def test_every_log_call_site_names_a_method_that_exists():
 	broken = [f"{path}:{line}: log.{attr}(...)"
 			  for path, line, attr in _log_calls() if attr not in known]
 	assert broken == [], (
-		"log calls naming a method core.console.Log does not define — each raises "
+		"log calls naming a method nammaoe2bot.runtime.console.Log does not define — each raises "
 		"AttributeError, and every one of them lives in an error path:\n  "
 		+ "\n  ".join(broken))
 

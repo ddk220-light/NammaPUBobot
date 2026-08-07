@@ -4,7 +4,7 @@ REPLAY_INGEST_ENABLED config var is set). Mirrors bot/quiz/ isolation: dedicated
 tables declared here via ensure_table at import, imported by bot/__init__.py for that side
 effect and the ReplayStatsJobs singleton. Heavy imports (mgz, requests) stay lazy inside
 fetch.py/parse.py so importing this package is test-safe under the conftest stubs."""
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 # Bumped whenever the mgz pin or SUPPORTED_SAVE_VERSIONS policy changes (see policy.py),
 # or when the extractor's output shape changes. Stored on every parsed match; a bump

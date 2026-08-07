@@ -10,7 +10,7 @@ try:
 except ModuleNotFoundError:  # windows support
 	import pyreadline as readline
 
-from core.config import cfg
+from nammaoe2bot.runtime.config import cfg
 
 LogLevelToInt = {
 	'CHAT': 0,

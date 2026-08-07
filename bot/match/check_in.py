@@ -7,8 +7,8 @@ from bot.context.context import SystemContext
 from bot.exceptions import Exceptions as Exc
 from nextcord.errors import DiscordException
 
-from core.utils import join_and
-from core.console import log  # noqa: F401
+from nammaoe2bot.runtime.utils import join_and
+from nammaoe2bot.runtime.console import log  # noqa: F401
 from bot.match.subbing import pick_available, should_warn
 
 

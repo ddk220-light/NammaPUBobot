@@ -10,7 +10,7 @@ import datetime
 import statistics
 import time
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 STANDARD_MAPS = ("Land Nomad", "Nomad")
 

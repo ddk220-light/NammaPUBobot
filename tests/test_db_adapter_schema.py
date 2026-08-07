@@ -1,4 +1,4 @@
-"""The DDL core/DBAdapters/mysql.py generates from an ensure_table declaration.
+"""The DDL nammaoe2bot/runtime/database/mysql.py generates from an ensure_table declaration.
 
 Only the schema-rendering half of the adapter is exercised — create_table builds
 one CREATE TABLE string and hands it to execute(), so a fake execute is enough

@@ -58,7 +58,7 @@ CREATE TABLE game_labels (
 
 
 class _SqliteDB:
-	"""Stand-in for core.database.db backed by in-memory sqlite3. Never touches a
+	"""Stand-in for nammaoe2bot.runtime.database.db backed by in-memory sqlite3. Never touches a
 	real database. `fail_on` makes the write for a given match id raise, which is
 	how the per-match isolation guard is exercised."""
 
@@ -109,7 +109,7 @@ class _SqliteDB:
 
 
 class _RecordingLog:
-	"""Stand-in for core.console.log that keeps what was written, so the tests can
+	"""Stand-in for nammaoe2bot.runtime.console.log that keeps what was written, so the tests can
 	assert the batch line carries real counts rather than merely being emitted."""
 
 	def __init__(self):

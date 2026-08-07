@@ -11,7 +11,7 @@ dict is a column rather than a second query and a join in Python."""
 import json
 import time
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 
 def roster(results):

@@ -6,7 +6,6 @@ across the process boundary.
 The worker assumes `fork` start-method semantics (Linux/Railway); procpool.WorkerPool now pins
 that explicitly rather than relying on the platform default."""
 import asyncio
-import os
 import sys
 from concurrent.futures.process import BrokenProcessPool
 
@@ -14,7 +13,7 @@ from . import policy
 from .fetch import read_save_version
 from .procpool import WorkerPool
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+from nammaoe2bot.runtime.paths import REPO_ROOT as _ROOT
 _POOL = WorkerPool("parse")
 
 

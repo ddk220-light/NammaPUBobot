@@ -90,7 +90,7 @@ running (see PUBobot2.py's boot order). Calling it from a lazy import inside
 an already-running coroutine -- e.g. only ever importing this package from
 inside store.write_match -- would raise "event loop is already running" on
 every single ingest."""
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 db.ensure_table(dict(
 	tname="game_stats",

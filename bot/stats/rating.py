@@ -3,8 +3,8 @@ import glicko2
 import trueskill
 import time
 
-from core.database import db
-from core.utils import find, get_nick
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.utils import find, get_nick
 
 from bot.stats import stats
 from bot.stats.decay import compute_decay

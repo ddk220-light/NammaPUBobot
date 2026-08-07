@@ -38,9 +38,10 @@ import os
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# The three first-party packages. A dotted name whose first segment is not one
-# of these is third party (or stdlib) and is not this test's business.
-_PACKAGES = ("bot", "core", "utils")
+# The first-party packages. `bot` is mid-migration into `nammaoe2bot` and both
+# are live until Phase 2 finishes; a dotted name whose first segment is not one
+# of these is third party (or stdlib) and is not this file's business.
+_PACKAGES = ("bot", "nammaoe2bot", "utils")
 
 # Directories the walk never descends into: caches, and the vendored mgz fork
 # that only exists on a machine that has run the replay pipeline.

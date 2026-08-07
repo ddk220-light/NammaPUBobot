@@ -4,7 +4,7 @@ the read side of bets. All WRITES to prediction_bets live in
 bot.predictions.gold, inside the same transaction that moves the gold; this
 module only reads them. Grading logic lives in bot.predictions.scoring (pure,
 tested). No nextcord import here so importing bot.predictions stays test-safe."""
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 
 # ── posts ────────────────────────────────────────────────────────────────

@@ -86,10 +86,10 @@ T0 = 1_700_000_000   # an ordinary epoch, so MAX_AGE arithmetic is realistic
 
 
 class _SqliteDB:
-	"""Stand-in for core.database.db backed by in-memory sqlite3. Never touches a
+	"""Stand-in for nammaoe2bot.runtime.database.db backed by in-memory sqlite3. Never touches a
 	real database.
 
-	The write helpers below build the same SQL core/DBAdapters/mysql.py's Adapter
+	The write helpers below build the same SQL nammaoe2bot/runtime/database/mysql.py's Adapter
 	builds (that module cannot be imported here -- it needs aiomysql, which CI
 	does not install), so the placeholder shapes and the REPLACE / INSERT IGNORE
 	spellings the production code depends on are exercised rather than bypassed.
@@ -175,7 +175,7 @@ class _ExplodingDB:
 
 
 class _RecordingLog:
-	"""Stand-in for core.console.log that keeps what was written, so the tests can
+	"""Stand-in for nammaoe2bot.runtime.console.log that keeps what was written, so the tests can
 	assert the pass line carries real counts rather than merely being emitted."""
 
 	def __init__(self):
@@ -233,8 +233,8 @@ def _restore_module_adapters():
 def _install(db, log, module=refresh):
 	"""Point every module in the refresh path at the fakes.
 
-	Each of them did `from core.database import db` at import time and holds its
-	own reference, so patching core.database alone would miss them -- which is
+	Each of them did `from nammaoe2bot.runtime.database import db` at import time and holds its
+	own reference, so patching nammaoe2bot.runtime.database alone would miss them -- which is
 	exactly what the restart test needs to be able to redo after a reload.
 	_restore_module_adapters above undoes this at the end of every test."""
 	for mod in (module, rollups, boards, civ_stats, identity):

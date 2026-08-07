@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
 	from bot.queue_channel import QueueChannel
 
-from core.config import cfg
-from core.utils import error_embed, ok_embed, find
-from core.client import FakeMember, dc
-from core.console import log  # noqa: F401
+from nammaoe2bot.runtime.config import cfg
+from nammaoe2bot.runtime.utils import error_embed, ok_embed, find
+from nammaoe2bot.discord.client import FakeMember, dc
+from nammaoe2bot.runtime.console import log  # noqa: F401
 
 
 class Context:

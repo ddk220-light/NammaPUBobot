@@ -2,7 +2,7 @@
 """Reconciliation of the derived-global tables against the raw layer they are
 computed from — a permanent loop, not a one-shot migration.
 
-It cannot be a migration at all: core/migrations.py runs before `import bot`
+It cannot be a migration at all: nammaoe2bot/runtime/migrations.py runs before `import bot`
 and may not import bot.*, while the medal maths game_stats stores lives in
 bot/replay_stats/card_scoring.py. Recomputing medals in SQL to dodge that would
 fork the logic, the exact divergence identity v2 spent a stage repairing.
@@ -121,8 +121,8 @@ import asyncio
 import calendar
 import time
 
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 from . import game_labels, game_stats
 

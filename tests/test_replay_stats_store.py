@@ -245,7 +245,7 @@ def test_write_match_writes_game_stats_for_the_match_it_just_parsed(monkeypatch)
 
 # ─── the cls_results writer is load-bearing, not vestigial ────────────────
 # Three separate comments — here, in classification_sync.py, and in
-# core/data_registry.py — warn that deleting this one call arms a data-loss
+# nammaoe2bot/runtime/data_registry.py — warn that deleting this one call arms a data-loss
 # path. Prose does not fail a build: deleting the call outright passed the
 # entire suite green, while stage 6 is aimed straight at that call site. This
 # is the executable half of those warnings.

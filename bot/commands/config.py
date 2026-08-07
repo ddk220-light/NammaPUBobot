@@ -1,8 +1,8 @@
 __all__ = ['create_pickup', 'delete_queue', 'show_queues', 'set_qc', 'set_queue', 'cfg_qc', 'cfg_queue']
 
 import json
-from core.utils import find, get, split_big_text
-from core.console import log  # noqa: F401
+from nammaoe2bot.runtime.utils import find, get, split_big_text
+from nammaoe2bot.runtime.console import log  # noqa: F401
 from bot.exceptions import Exceptions as Exc
 from bot.queues.pickup_queue import PickupQueue
 

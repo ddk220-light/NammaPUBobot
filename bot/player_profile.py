@@ -9,7 +9,7 @@ uses the OO Figure API (no pyplot global state) so it's safe to run in a thread.
 from datetime import datetime, timedelta, timezone
 from time import time
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 # Minimum games on a civ before it qualifies for the best/worst lists.
 MIN_CIV_GAMES = 15

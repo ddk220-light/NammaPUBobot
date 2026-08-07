@@ -217,7 +217,7 @@ db.ensure_table(dict(
 | Table + migration | bot/civ_sync.py:15-33, mysql.py:161-244 | ensure_table + insert/update/select |
 | Slash reg + defer | commands.py:534-541, :778 | /subauto template, explicit defer |
 | Context helpers | bot/context/slash/context.py:10-47 | reply/notice/success/error after defer |
-| Config var (3 places) | core/config.py:25-46, start.py:18-21, config.example.cfg | any LOBBY_* var in all three |
+| Config var (3 places) | nammaoe2bot/runtime/config.py:25-46, start.py:18-21, config.example.cfg | any LOBBY_* var in all three |
 
 ---
 
@@ -249,7 +249,7 @@ db.ensure_table(dict(
 - **Phase 0 — Spike (½ day):** throwaway aiohttp ws_connect to `...&match_ids=<live id>`, capture exact event JSON into a fixture; confirm by-id REST on a finished id. De-risks the only unproven surface.
 - **Phase 1 — MVP completed-only (1–2 days):** /lobby posts a "tracking" message; LobbyJobs polls /api/matches/{id} on the ladder; on finish post MATCH-COMPLETED (reuse civ_matcher links + civ_sync layout). Files: commands.py (+/lobby), bot/commands/lobby.py, bot/lobby/__init__.py (table), bot/lobby/api.py (REST), bot/lobby/completed.py, bot/lobby/jobs.py, register events.py:95 + bot/commands/__init__.py. Test tests/test_lobby_completed.py.
 - **Phase 2 — Live lobby fill (2–3 days):** bot/lobby/watcher.py (state machine), bot/lobby/socket.py (ws client + reducer from lobbies.ts), live LOBBY embed + slot fill + "+N remaining", lobbyRemoved→IN_PROGRESS, profileId capture, dedup, boot rehydration, reconnect/cleanup. Test tests/test_lobby_reducer.py.
-- **Phase 3 — richer/fallbacks (optional 1–2 days):** findAdvertisements + poll-style socket fallback; live win-probability; civ matchup context; mgz parsing offloaded to the Railway visualizer (never on the asyncio loop). Add LOBBY_* config vars in core/config.py _SCHEMA, start.py TEMPLATE, config.example.cfg.
+- **Phase 3 — richer/fallbacks (optional 1–2 days):** findAdvertisements + poll-style socket fallback; live win-probability; civ matchup context; mgz parsing offloaded to the Railway visualizer (never on the asyncio loop). Add LOBBY_* config vars in nammaoe2bot/runtime/config.py _SCHEMA, start.py TEMPLATE, config.example.cfg.
 
 **CI:** `ruff check .` (tabs, line-length 120) + `pytest tests/` per PR (.github/workflows/ci.yml). Keep pure logic (renderer, reducer, id parsing) test-covered like elo_sync/civ_sync.
 
@@ -285,7 +285,7 @@ AOE2LobbyBOT is closed-source, breaks on patches needing manual fixes, and has o
 - [0.5 day] **Phase 0 — Live-socket + by-id REST spike** — Throwaway aiohttp ws_connect script subscribing to wss://socket.aoe2companion.com/listen?handler=lobbies&match_ids=<id>; captures exact lobbyAdded/slotAdded/Updated/Removed JSON shapes into a fixture; confirms GET /api/matches/{id} returns a finished match. De-risks the only unproven surface.
 - [1-2 days] **Phase 1 — MVP: completed-match embed only** — /lobby <gameid> registered (commands.py + bot/commands/lobby.py); qc_lobbies table (bot/lobby/__init__.py); REST client (bot/lobby/api.py); completed renderer (bot/lobby/completed.py) reusing civ_matcher links + civ_sync layout; LobbyJobs backoff poll (bot/lobby/jobs.py) wired into events.py:95. Posts the two-team/civ/winner/duration/rec-links embed on game-end. Pure-function renderer test (tests/test_lobby_completed.py).
 - [2-3 days] **Phase 2 — Live lobby fill embed** — bot/lobby/watcher.py (CREATED→FILLING→IN_PROGRESS→COMPLETED/EXPIRED state machine) + bot/lobby/socket.py (ws client + delta reducer ported from lobbies.ts). Live LOBBY embed with slot fill, '+N remaining', aoe2de://0/<id> join code; lobbyRemoved→IN_PROGRESS handoff; profileId capture; dedup; reconnect/cleanup; boot rehydration from qc_lobbies. Pure reducer test (tests/test_lobby_reducer.py).
-- [2-4 days] **Phase 3 — Richer data, fallbacks & differentiators** — findAdvertisements + poll-style socket fallbacks; live win-probability from bot/stats ratings; civ matchup context from bot/civ_stats.py; post-game rating deltas; optional mgz replay parsing offloaded to the Railway visualizer. New LOBBY_* config vars added in core/config.py, start.py, config.example.cfg.
+- [2-4 days] **Phase 3 — Richer data, fallbacks & differentiators** — findAdvertisements + poll-style socket fallbacks; live win-probability from bot/stats ratings; civ matchup context from bot/civ_stats.py; post-game rating deltas; optional mgz replay parsing offloaded to the Railway visualizer. New LOBBY_* config vars added in nammaoe2bot/runtime/config.py, start.py, config.example.cfg.
 
 
 # OPEN QUESTIONS

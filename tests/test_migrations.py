@@ -17,7 +17,7 @@ import re
 import sqlite3
 import types
 
-import core.migrations as mig
+import nammaoe2bot.runtime.migrations as mig
 
 # {table: the column(s) an INSERT IGNORE dedups on} for FakeDb.insert_many's
 # emulation below. Only tables this suite actually writes via insert_many need
@@ -197,7 +197,7 @@ class FakeDb:
 		return out
 
 	async def insert_many(self, table, rows, on_duplicate=None):
-		""" Models MySQL's INSERT IGNORE (see core/DBAdapters/mysql.py's
+		""" Models MySQL's INSERT IGNORE (see nammaoe2bot/runtime/database/mysql.py's
 		_mysql_insert: on_duplicate="ignore" renders as literal `INSERT
 		IGNORE`): the first row written for a given primary key sticks, and
 		every later row for that same key — whether from this call or an
@@ -215,7 +215,7 @@ class FakeDb:
 
 	async def select(self, columns, table, where=None, **kwargs):
 		""" Generic exact-match SELECT, same shape as
-		core/DBAdapters/mysql.py's Adapter.select (used by _m003 to read the
+		nammaoe2bot/runtime/database/mysql.py's Adapter.select (used by _m003 to read the
 		current `identities` state before comparing incoming seed claims
 		against it — see _record_seed_conflicts). """
 		where = where or {}
@@ -226,7 +226,7 @@ class FakeDb:
 		]
 
 	async def update(self, table, d, keys=None):
-		""" Models a plain `UPDATE ... WHERE` (core/DBAdapters/mysql.py's
+		""" Models a plain `UPDATE ... WHERE` (nammaoe2bot/runtime/database/mysql.py's
 		update): every row matching `keys` is mutated in place with `d`'s
 		fields, unconditionally — no primary-key or INSERT-IGNORE semantics
 		here, since a real UPDATE always overwrites. A `keys` match with no
@@ -1408,13 +1408,13 @@ def test_m004_dropped_tables_have_no_surviving_declaration():
 	nothing anywhere would say so. Pinned as a test rather than a one-time
 	grep so re-adding a declaration fails CI instead of silently resurrecting
 	the table on the next deploy."""
-	from core.data_registry import REGISTRY
+	from nammaoe2bot.runtime.data_registry import REGISTRY
 	from tests.test_data_registry import _declared_tables
 
 	declared = _declared_tables()
 	for name in mig._M004_DROPS:
 		assert name not in declared, f"{name!r} is still declared by an ensure_table call"
-		assert name not in REGISTRY, f"{name!r} still has a core.data_registry entry"
+		assert name not in REGISTRY, f"{name!r} still has a nammaoe2bot.runtime.data_registry entry"
 
 
 def test_m004_runs_the_backfill_before_the_drops(tmp_path, monkeypatch):
@@ -1443,12 +1443,12 @@ def test_stage1_renames_targets_are_registered_and_sources_are_not_declared():
 	ensure_table would then create the correct name empty. Cross-check the
 	pairs against the same declaration scanner test_data_registry.py uses,
 	rather than duplicating the walk."""
-	from core.data_registry import REGISTRY
+	from nammaoe2bot.runtime.data_registry import REGISTRY
 	from tests.test_data_registry import _declared_tables
 
 	declared = _declared_tables()
 	for old, new in mig._STAGE1_RENAMES:
-		assert new in REGISTRY, f"rename target {new!r} has no core.data_registry entry"
+		assert new in REGISTRY, f"rename target {new!r} has no nammaoe2bot.runtime.data_registry entry"
 		assert old not in declared, f"rename source {old!r} is still declared by an ensure_table call"
 
 
@@ -1991,12 +1991,12 @@ def test_stage3_renames_targets_are_registered_and_sources_are_not_declared():
 	target is invisible to every other test here (they treat table names as
 	opaque strings) but would rename a production table out from under its
 	declaration, and ensure_table would then create the right name empty. """
-	from core.data_registry import REGISTRY
+	from nammaoe2bot.runtime.data_registry import REGISTRY
 	from tests.test_data_registry import _declared_tables
 
 	declared = _declared_tables()
 	for old, new in mig._STAGE3_RENAMES:
-		assert new in REGISTRY, f"rename target {new!r} has no core.data_registry entry"
+		assert new in REGISTRY, f"rename target {new!r} has no nammaoe2bot.runtime.data_registry entry"
 		assert old not in declared, f"rename source {old!r} is still declared by an ensure_table call"
 	assert "rs_config" not in declared, "007 drops rs_config; its declaration must be gone too"
 	assert "rs_config" not in REGISTRY, "007 drops rs_config; its registry entry must be gone too"
@@ -2029,7 +2029,7 @@ def test_the_replay_ingest_switch_has_a_home_in_both_config_paths():
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	for relpath in ("start.py", "config.example.cfg", "core/config.py"):
+	for relpath in ("start.py", "config.example.cfg", "nammaoe2bot/runtime/config.py"):
 		with open(os.path.join(root, relpath), encoding="utf-8") as f:
 			assert "REPLAY_INGEST_ENABLED" in f.read(), f"{relpath} does not carry REPLAY_INGEST_ENABLED"
 
@@ -2038,25 +2038,25 @@ def test_the_replay_ingest_switch_resolves_the_same_way_in_both_config_paths():
 	""" start.py prints whether ingestion resolved ON or OFF (a Railway variable
 	that EXISTS but is EMPTY yields "" rather than the "True" default, and ""
 	coerces to False — ingestion stops deployment-wide and that line is the only
-	thing that says so). It cannot IMPORT core/config.py to decide that: doing so
+	thing that says so). It cannot IMPORT nammaoe2bot/runtime/config.py to decide that: doing so
 	would execute it, and it loads the config.cfg start.py has not written yet.
 	So the truth values are mirrored, and mirrored constants drift — pin them.
 
 	Compared as text rather than by importing either module: conftest.py replaces
-	core.config with a fake, and start.py's import would run the generator. """
+	nammaoe2bot.runtime.config with a fake, and start.py's import would run the generator. """
 	import ast
 	import os
 	import re
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	found = {}
-	for relpath in ("start.py", "core/config.py"):
+	for relpath in ("start.py", "nammaoe2bot/runtime/config.py"):
 		with open(os.path.join(root, relpath), encoding="utf-8") as f:
 			m = re.search(r"^_TRUE = (\(.*\))$", f.read(), re.M)
 		assert m, f"{relpath} no longer defines a module-level _TRUE tuple"
 		found[relpath] = ast.literal_eval(m.group(1))
-	assert found["start.py"] == found["core/config.py"], (
-		"start.py reports an effective replay-ingest setting that core/config.py "
+	assert found["start.py"] == found["nammaoe2bot/runtime/config.py"], (
+		"start.py reports an effective replay-ingest setting that nammaoe2bot/runtime/config.py "
 		f"would not agree with: {found}")
 
 
@@ -2354,7 +2354,7 @@ def test_the_has_production_ddl_matches_the_ensure_table_declaration():
 	from the declaration, and _ensure_table never alters nullability afterwards,
 	so a NOT NULL that lands on only one of the two is permanent.
 
-	The type is read from core/DBAdapters/mysql.py's own Types rather than
+	The type is read from nammaoe2bot/runtime/database/mysql.py's own Types rather than
 	hardcoded here, so changing what `db.types.bool` means fails this test
 	instead of silently leaving the migration on the old type.
 
@@ -2373,9 +2373,9 @@ def test_the_has_production_ddl_matches_the_ensure_table_declaration():
 		"the declaration grew a DEFAULT the migration's ALTER does not have — see the migration's "
 		"comment for why neither should carry one")
 
-	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "runtime", "database", "mysql.py"), encoding="utf-8") as f:
 		bool_type = re.search(r'^\tbool = "([^"]+)"', f.read(), re.M)
-	assert bool_type, "core/DBAdapters/mysql.py no longer defines Types.bool"
+	assert bool_type, "nammaoe2bot/runtime/database/mysql.py no longer defines Types.bool"
 	expected = f"ALTER TABLE `game_stats` ADD COLUMN `has_production` {bool_type.group(1)} NOT NULL"
 	assert expected == mig._M008_ADD_COLUMN, "the migration's ALTER drifted from the declaration"
 
@@ -2481,7 +2481,7 @@ def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
 	existing column, so a NOT NULL or a DEFAULT that lands on only one of the
 	three is permanent.
 
-	The type and the rendered default are read from core/DBAdapters/mysql.py's
+	The type and the rendered default are read from nammaoe2bot/runtime/database/mysql.py's
 	own Types/_mysql_column rather than hardcoded, so changing what
 	`db.types.int` means fails this test instead of silently leaving the
 	migration on the old type. """
@@ -2500,13 +2500,13 @@ def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
 		"strict mode rejects an INSERT that omits a NOT NULL column with no default. See the comment "
 		"above _M009_ADD_COLUMN, including why 008 deliberately does the opposite")
 
-	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "runtime", "database", "mysql.py"), encoding="utf-8") as f:
 		int_type = re.search(r'^\tint = "([^"]+)"', f.read(), re.M)
-	assert int_type, "core/DBAdapters/mysql.py no longer defines Types.int"
+	assert int_type, "nammaoe2bot/runtime/database/mysql.py no longer defines Types.int"
 	column = f"`bound_at` {int_type.group(1)} NOT NULL DEFAULT '0'"
 	assert f"ALTER TABLE `identities` ADD COLUMN {column}" == mig._M009_ADD_COLUMN, (  # noqa: SIM300
 		"009's ALTER drifted from the declaration")
-	src = open(os.path.join(root, "core", "migrations.py"), encoding="utf-8").read()  # noqa: SIM115
+	src = open(os.path.join(root, "nammaoe2bot", "runtime", "migrations.py"), encoding="utf-8").read()  # noqa: SIM115
 	assert '"`last_seen_at` BIGINT NOT NULL, `bound_at` BIGINT NOT NULL DEFAULT \'0\', "' in src, (
 		"_ensure_identities_table's CREATE drifted from the declaration")
 
@@ -2525,7 +2525,7 @@ def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
 	from the declaration, and _ensure_table never alters an existing column, so a
 	NOT NULL that lands on only one of the two is permanent.
 
-	Types are read from core/DBAdapters/mysql.py's own Types rather than
+	Types are read from nammaoe2bot/runtime/database/mysql.py's own Types rather than
 	hardcoded, so changing what `db.types.int` means fails this test instead of
 	silently leaving the migration on the old type.
 
@@ -2552,10 +2552,10 @@ def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
 		"'not backfilled', which is the ambiguity the column exists to remove")
 
 	# Read out of the adapter's source, the same way 008's test does: importing
-	# core.DBAdapters.mysql needs aiomysql, which CI does not install.
-	with open(os.path.join(root, "core", "DBAdapters", "mysql.py"), encoding="utf-8") as f:
+	# nammaoe2bot.runtime.database.mysql needs aiomysql, which CI does not install.
+	with open(os.path.join(root, "nammaoe2bot", "runtime", "database", "mysql.py"), encoding="utf-8") as f:
 		int_type = re.search(r'^\tint = "([^"]+)"', f.read(), re.M)
-	assert int_type, "core/DBAdapters/mysql.py no longer defines Types.int"
+	assert int_type, "nammaoe2bot/runtime/database/mysql.py no longer defines Types.int"
 
 	assert (f"ALTER TABLE `game_stats` ADD COLUMN `played_at` {int_type.group(1)} NULL"
 	        == mig._M010_ADD_PLAYED_AT)

@@ -30,7 +30,7 @@ import asyncio
 import sqlite3
 
 import bot.derived.sweeper as sweeper
-from core.data_registry import REGISTRY
+from nammaoe2bot.runtime.data_registry import REGISTRY
 
 _SCHEMA = """
 CREATE TABLE communities (
@@ -88,7 +88,7 @@ SPINE = ("replay_matches", "replay_players", "game_stats", "game_labels",
 
 
 class _SqliteDB:
-	"""Stand-in for core.database.db backed by in-memory sqlite3. Never touches a
+	"""Stand-in for nammaoe2bot.runtime.database.db backed by in-memory sqlite3. Never touches a
 	real database. Only the four methods the sweeper uses are implemented, so a
 	sweeper that started writing through some other adapter method would fail
 	loudly here rather than being silently unexercised."""
@@ -694,7 +694,7 @@ def test_target_tables_are_exactly_the_five_bulky_child_tables():
 
 def test_the_registry_and_the_target_list_agree_in_both_directions():
 	"""MUTANT GUARD (e). The lock is two-way on purpose: widening the blast
-	radius needs an edit in this module AND one in core/data_registry.py, and the
+	radius needs an edit in this module AND one in nammaoe2bot/runtime/data_registry.py, and the
 	state in between deletes nothing at all."""
 	assert sweeper.targets() == sweeper.TARGET_TABLES
 	registry_sweepable = {n for n, m in REGISTRY.items() if m.get("retention") == "sweepable"}

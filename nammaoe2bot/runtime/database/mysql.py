@@ -6,7 +6,7 @@ import aiomysql
 from pymysql import err as mysqlErr
 from .common import *
 
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 
 class Types:

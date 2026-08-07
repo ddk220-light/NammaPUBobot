@@ -5,10 +5,10 @@ import asyncio
 from enum import Enum
 from nextcord import Forbidden
 
-from core.cfg_factory import FactoryTable, CfgFactory, Variables, VariableTable
-from core.locales import locales
-from core.utils import join_and, seconds_to_str, get_nick
-from core.database import db
+from nammaoe2bot.runtime.cfg_factory import FactoryTable, CfgFactory, Variables, VariableTable
+from nammaoe2bot.runtime.locales import locales
+from nammaoe2bot.runtime.utils import join_and, seconds_to_str, get_nick
+from nammaoe2bot.runtime.database import db
 
 from bot.context.context import SystemContext
 from bot.exceptions import Exceptions as Exc

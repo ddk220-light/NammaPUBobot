@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import nextcord
 from asyncio import iscoroutinefunction
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 
 class FakeMember:

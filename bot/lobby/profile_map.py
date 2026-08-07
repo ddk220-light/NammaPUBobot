@@ -16,7 +16,7 @@ and per-player civ attribution in bot/lobby/completed.py, both best-effort. The
 results/ratings loop never reads it.
 """
 from bot import identity
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 
 async def known_for(profile_ids):

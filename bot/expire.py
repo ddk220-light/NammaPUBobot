@@ -1,10 +1,10 @@
 import time
 
-from core.client import dc
+from nammaoe2bot.discord.client import dc
 
 from bot.exceptions import Exceptions as Exc
 
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 
 class ExpireTimer:

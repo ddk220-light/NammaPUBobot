@@ -320,10 +320,10 @@ def _wire_game_stats_db(monkeypatch, rows):
 	import sys
 	import types
 
-	fake_module = types.ModuleType("core.database")
+	fake_module = types.ModuleType("nammaoe2bot.runtime.database")
 	fake_db = _FakeGameStatsDB(rows)
 	fake_module.db = fake_db
-	monkeypatch.setitem(sys.modules, "core.database", fake_module)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.database", fake_module)
 	return fake_db
 
 
@@ -495,9 +495,9 @@ def _wire_post_match_analysis(monkeypatch, channel, chart_file):
 	import types
 
 	cards = _FakeEmbed()
-	fake_client = types.ModuleType("core.client")
+	fake_client = types.ModuleType("nammaoe2bot.discord.client")
 	fake_client.dc = types.SimpleNamespace(get_channel=lambda _cid: channel)
-	monkeypatch.setitem(sys.modules, "core.client", fake_client)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.discord.client", fake_client)
 
 	async def _channel_id(_bot_match_id):
 		return 123

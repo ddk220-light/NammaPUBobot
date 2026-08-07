@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import time
-from core.database import db
-from core.utils import get_nick
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.utils import get_nick
 
 db.ensure_table(dict(
 	tname="queue_bans",

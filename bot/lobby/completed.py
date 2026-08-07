@@ -14,7 +14,7 @@ is guarded; nothing here raises into the tick or the match flow. < 15 min games
 are SILENT (no message). An ignored proposal does nothing (the row eventually
 expires; the underlying match times out and collapses to a no-op).
 
-The module top imports are kept light (no nextcord / core.client) so the pure
+The module top imports are kept light (no nextcord / nammaoe2bot.discord.client) so the pure
 helpers are unit-testable; Discord/client deps are lazy-imported inside the
 impure orchestration only.
 """
@@ -23,9 +23,9 @@ import time
 from bot import identity
 from bot.context.context import SystemContext
 from bot.exceptions import Exceptions as Exc
-from core.client import dc
-from core.console import log
-from core.database import db
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 from . import api, profile_map
 
@@ -185,7 +185,7 @@ async def _resolve_informational(row, now):
 	channel and close the row. No ranked reporting, no captain confirm."""
 	from nextcord import DiscordException
 
-	from core.client import dc
+	from nammaoe2bot.discord.client import dc
 
 	from . import results
 
@@ -292,7 +292,7 @@ class LossConfirm:
 		self.losing_captain = losing_captain
 
 	async def process_reaction(self, reaction, user, remove=False):
-		from core.client import dc
+		from nammaoe2bot.discord.client import dc
 
 		if remove:
 			return
@@ -352,7 +352,7 @@ async def record_civs_by_id(channel_id, bot_match_id, match_api, players, winner
 
 async def _safe_record_civs(match, match_api, now, winner_idx=None):
 	try:
-		from core.utils import get_nick
+		from nammaoe2bot.runtime.utils import get_nick
 		players = [
 			(p.id, get_nick(p), 0 if p in match.teams[0] else (1 if p in match.teams[1] else None))
 			for p in match.players

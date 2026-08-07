@@ -4,7 +4,7 @@
 Kept separate from query.py so the pure helpers import cleanly under the CI shim
 (no matplotlib, no DB at import time). The DB read is the only async function here.
 """
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 
 def apm_series(rows, names):

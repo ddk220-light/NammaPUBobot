@@ -288,7 +288,7 @@ def env(monkeypatch):
 			def get_channel(self, _channel_id):
 				return chan
 
-		monkeypatch.setattr(sys.modules["core.client"], "dc", _Client())
+		monkeypatch.setattr(sys.modules["nammaoe2bot.discord.client"], "dc", _Client())
 		return types.SimpleNamespace(calls=calls, store=store, bank=bank,
 				channel=chan, job=jobs.QuizJobs(), post=dict(POST))
 

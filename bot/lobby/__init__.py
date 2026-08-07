@@ -22,7 +22,7 @@ Tables are declared here (ensure_table auto-creates + ALTERs at import, the
 civ_sync.py pattern). bot/__init__.py imports this module for that side effect
 and for the LobbyJobs singleton.
 """
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 # One row per tracked lobby. status walks: created -> filling -> in_progress ->
 # completed | expired. match_id links to the ranked bot match (NULL for a bare

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Async MySQL access for the quiz feature. Thin wrappers over core.database.db;
+"""Async MySQL access for the quiz feature. Thin wrappers over nammaoe2bot.runtime.database.db;
 all aggregation logic lives in bot.quiz.scoring (pure, tested). No nextcord import
 here so importing bot.quiz stays test-safe."""
 import json
 import time
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 
 # ── config ───────────────────────────────────────────────────────────────

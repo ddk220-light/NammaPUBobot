@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from nextcord import Interaction
 
-from core.utils import ok_embed, error_embed
+from nammaoe2bot.runtime.utils import ok_embed, error_embed
 
 from typing import TYPE_CHECKING
 

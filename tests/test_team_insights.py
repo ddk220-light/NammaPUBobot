@@ -759,9 +759,9 @@ def _run_insights_build(monkeypatch, match, rows):
 
 	monkeypatch.setattr(ti, "db", _DB())
 
-	fake_utils = types.ModuleType("core.utils")
+	fake_utils = types.ModuleType("nammaoe2bot.runtime.utils")
 	fake_utils.get_nick = lambda p: f"u{p.id}"
-	monkeypatch.setitem(sys.modules, "core.utils", fake_utils)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.utils", fake_utils)
 
 	class _FakeEmbed:
 		def __init__(self, *, title=None, colour=None, description=None):

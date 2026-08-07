@@ -20,8 +20,8 @@ background task so a slow batch never blocks the tick.
 import asyncio
 import time
 
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 from .civ_matcher import _find_and_record
 from .civ_sync import find_and_record_lobby_from_history
@@ -123,7 +123,7 @@ class CivReconcile:
 				)
 				if not done:
 					try:
-						from core.client import dc
+						from nammaoe2bot.discord.client import dc
 						channel = dc.get_channel(r["channel_id"])
 						done = await find_and_record_lobby_from_history(
 							channel, r["channel_id"], match_id, players, r["winner"], r["at"]

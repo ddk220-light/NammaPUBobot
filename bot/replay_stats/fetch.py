@@ -4,9 +4,8 @@ we run it in a thread so the bot event loop is never blocked. Returns a cached .
 path or a status string."""
 import asyncio
 import sys
-import os
 
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+from nammaoe2bot.runtime.paths import REPO_ROOT as _ROOT
 
 
 def _download_module():

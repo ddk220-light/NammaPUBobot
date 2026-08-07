@@ -5,10 +5,10 @@ from nextcord import Interaction, SlashOption, Member, TextChannel
 import traceback
 import time
 
-from core.client import dc
-from core.utils import error_embed, ok_embed, parse_duration, get_nick
-from core.console import log
-from core.config import cfg
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.utils import error_embed, ok_embed, parse_duration, get_nick
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.config import cfg
 
 from bot import commands
 from bot.exceptions import Exceptions as Exc

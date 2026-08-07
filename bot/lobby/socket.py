@@ -16,7 +16,7 @@ outage can never reach the core match flow.
 import asyncio
 import json
 
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 _BASE = "wss://socket.aoe2companion.com/listen?handler=lobbies"
 _UA = {"User-Agent": "NammaPUBobot/1.0"}

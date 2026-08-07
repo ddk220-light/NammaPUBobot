@@ -37,7 +37,7 @@ derived-community one; deleting any of those would delete the very thing that
 justifies deleting the detail.
 
 That list is not merely written down here, it is CHECKED, in both directions,
-against core/data_registry.py on every pass (see targets()). A table this module
+against nammaoe2bot/runtime/data_registry.py on every pass (see targets()). A table this module
 targets must carry retention='sweepable' in the registry, and a table the
 registry calls 'sweepable' must appear here. Widening the blast radius therefore
 takes two edits in two files that already disagree with each other in between --
@@ -116,9 +116,9 @@ there immediately before the DELETE ran.
 import asyncio
 import time
 
-from core.console import log
-from core.data_registry import REGISTRY
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.data_registry import REGISTRY
+from nammaoe2bot.runtime.database import db
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  D R Y _ R U N  --  the last thing standing between this module and
@@ -146,7 +146,7 @@ BATCH = 200             # replays considered per pass
 CHUNK = 25              # replay ids per COUNT/DELETE statement (see the module docstring)
 
 # The ONLY tables this job may ever delete from. Cross-checked against
-# core/data_registry.py by targets() on every pass -- read that function before
+# nammaoe2bot/runtime/data_registry.py by targets() on every pass -- read that function before
 # touching this tuple, and read the module docstring before touching that.
 TARGET_TABLES = ("replay_events", "replay_techs", "replay_buildings", "replay_units", "replay_apm")
 
@@ -167,7 +167,7 @@ _tasks = set()   # strong refs to in-flight sweep tasks (asyncio only keeps weak
 def targets():
 	"""The tables this pass is permitted to delete from, or a raised exception.
 
-	Two-way agreement with core/data_registry.py, checked every pass rather than
+	Two-way agreement with nammaoe2bot/runtime/data_registry.py, checked every pass rather than
 	once at import: the registry is the project's single source of truth for what
 	a table's retention CONTRACT is, and this module is the only thing that acts
 	on it. If the two ever disagree, the honest reading is that nobody currently

@@ -10,7 +10,7 @@ join, so joining on it silently drops players.
 
 FOUR OF THE SIX SIGNALS BELOW READ A SWEEPABLE TABLE, and that is an accepted,
 deliberate trade rather than an oversight. replay_events, replay_buildings and
-replay_apm are all retention="sweepable" (core/data_registry.py):
+replay_apm are all retention="sweepable" (nammaoe2bot/runtime/data_registry.py):
 bot/derived/sweeper.py deletes their rows for a community that opted out of
 keeping raw replay detail, once the derived summaries that stand in for them
 have been computed. When that happens these queries return no rows and the
@@ -29,7 +29,7 @@ forever, so a lean community keeps its strategy chips after its raw events are
 gone.
 """
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 # The 3 spawn facts worth rendering as a sentence on a card — a DISPLAY subset,
 # and emphatically not a copy of what game_labels stores. bot/derived/
@@ -52,7 +52,7 @@ TC_BUILDING = "Town Center"
 
 
 async def _safe(coro, default, what):
-	from core.console import log
+	from nammaoe2bot.runtime.console import log
 	try:
 		return await coro
 	except Exception as e:

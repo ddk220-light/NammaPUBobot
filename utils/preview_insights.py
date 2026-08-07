@@ -26,15 +26,15 @@ _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, ".."))
 
 # Load the analysis helpers from bot/team_insights WITHOUT dragging in the bot's
-# DB/Discord import chain. team_insights only imports `core.database` (at load)
-# and `core.utils.join_and` (lazily, inside _phrase) — stub both so the pure
+# DB/Discord import chain. team_insights only imports `nammaoe2bot.runtime.database` (at load)
+# and `nammaoe2bot.runtime.utils.join_and` (lazily, inside _phrase) — stub both so the pure
 # scoring/selection/phrasing functions load with just aiomysql present.
-_fake_db = types.ModuleType("core.database")
+_fake_db = types.ModuleType("nammaoe2bot.runtime.database")
 _fake_db.db = None
-sys.modules.setdefault("core.database", _fake_db)
-_fake_utils = types.ModuleType("core.utils")
+sys.modules.setdefault("nammaoe2bot.runtime.database", _fake_db)
+_fake_utils = types.ModuleType("nammaoe2bot.runtime.utils")
 _fake_utils.join_and = lambda names: (", ".join(names[:-1]) + f" & {names[-1]}") if len(names) > 1 else names[0]
-sys.modules.setdefault("core.utils", _fake_utils)
+sys.modules.setdefault("nammaoe2bot.runtime.utils", _fake_utils)
 
 sys.path.insert(0, _THIS_DIR)        # db_helpers
 sys.path.insert(0, _REPO_ROOT)       # repo root (for the `bot` package path)

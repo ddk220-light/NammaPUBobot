@@ -5,10 +5,10 @@ import emoji
 import json
 from nextcord import Guild
 
-from core.database import db
-from core.client import dc
-from core.utils import format_emoji, parse_duration, seconds_to_str  # noqa: F401
-from core.console import log
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.utils import format_emoji, parse_duration, seconds_to_str  # noqa: F401
+from nammaoe2bot.runtime.console import log
 
 FACTORY_VERSION = 1
 
@@ -89,7 +89,7 @@ class FactoryTable:
 		)):
 			raise ValueError(
 				f"Table '{self.name}' has rows with a stale factory_version. Add a migration to "
-				"core/migrations.py that updates them; it runs at startup before the bot loads."
+				"nammaoe2bot/runtime/migrations.py that updates them; it runs at startup before the bot loads."
 			)
 
 	async def get_next_p_key(self) -> int:

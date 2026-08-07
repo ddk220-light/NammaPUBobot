@@ -1,7 +1,7 @@
 """AST-level tests for bot/web.py's identity reads.
 
 bot/web.py can't be imported under CI — it pulls in aiohttp.web and
-core.client's nextcord dependency, neither installed in the pytest-only CI
+nammaoe2bot.discord.client's nextcord dependency, neither installed in the pytest-only CI
 job (see test_persona_store.py's PERIODS comparison for the established
 workaround of parsing the source with ast instead of importing it).
 

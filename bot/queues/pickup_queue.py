@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from core.console import log  # noqa: F401
-from core.cfg_factory import FactoryTable, CfgFactory, Variables, VariableTable
-from core.utils import get_nick, get, SafeTemplateDict
-from core.client import dc
+from nammaoe2bot.runtime.console import log  # noqa: F401
+from nammaoe2bot.runtime.cfg_factory import FactoryTable, CfgFactory, Variables, VariableTable
+from nammaoe2bot.runtime.utils import get_nick, get, SafeTemplateDict
+from nammaoe2bot.discord.client import dc
 
 from bot.exceptions import Exceptions as Exc
 from bot.match.match import Match

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 from bot.exceptions import Exceptions as Exc
-from core.utils import find
+from nammaoe2bot.runtime.utils import find
 from nextcord import DiscordException
 
 from .subbing import pick_available

@@ -10,7 +10,7 @@ Neither caller teaches the function anything about where its input rows came
 from, which is what lets one implementation serve both."""
 import json
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 # The classifier emits strategy rows and luck/spawn rows in one undifferentiated
 # stream (cls_results mixed them in one table with no category column), so what
@@ -118,7 +118,7 @@ def label_rows(result_rows, metric_rows, played_at):
 	return rows
 
 
-# The column order every payload row is emitted in. core/DBAdapters/mysql.py's
+# The column order every payload row is emitted in. nammaoe2bot/runtime/database/mysql.py's
 # insert_many takes its column list from the FIRST row's keys and then zips each
 # subsequent row's .values() against it -- so two rows whose dicts carry the same
 # keys in a DIFFERENT order write values into the wrong columns, silently, with
@@ -148,7 +148,7 @@ async def write(replay_match_id, rows, db_adapter=None):
 
 	ACCEPTED TRADEOFF, deliberate: the DELETE and the INSERT are not one
 	transaction, because the adapter runs in autocommit (see
-	core/DBAdapters/mysql.py's connect) and has no transaction surface to reach
+	nammaoe2bot/runtime/database/mysql.py's connect) and has no transaction surface to reach
 	for. If the insert fails after the delete succeeded, this match is briefly
 	label-less -- and bot/derived/backfill.py's reconciliation loop notices the
 	set difference and rewrites it within POLL_INTERVAL. Making this atomic

@@ -4,10 +4,11 @@ import time
 import traceback
 from nextcord import ChannelType, Activity, ActivityType
 
-from core.client import dc
-from core.database import db
-from core.console import log
-from core.config import cfg
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.paths import data as data_path
+from nammaoe2bot.runtime.config import cfg
 from bot import civ_reconcile
 from bot import commands
 from bot import derived
@@ -35,7 +36,7 @@ async def seed_ratings_from_csv():
 	disk, so keep this literal as-is even though the table below is now
 	called player_ratings.
 	"""
-	csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'qc_players.csv')
+	csv_path = data_path('qc_players.csv')
 	if not os.path.exists(csv_path):
 		log.info("No data/qc_players.csv found, skipping rating seed.")
 		return
@@ -237,7 +238,7 @@ async def on_message(message):
 
 @dc.event
 async def on_interaction(interaction):
-	# CRITICAL: core.client's @dc.event system replaces nextcord's built-in
+	# CRITICAL: nammaoe2bot.discord.client's @dc.event system replaces nextcord's built-in
 	# Client.on_interaction (which is just `process_application_commands`), so we MUST
 	# call it here or EVERY slash command + autocomplete silently stops working.
 	# Then route quiz component clicks (type 3, custom_id 'quiz:*'). The two handle

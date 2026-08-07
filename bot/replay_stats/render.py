@@ -42,7 +42,7 @@ def _render(series, teams):
 
 def _log():
     """Lazy so importing this module stays CI-safe (no core.* at module scope)."""
-    from core.console import log
+    from nammaoe2bot.runtime.console import log
     return log
 
 

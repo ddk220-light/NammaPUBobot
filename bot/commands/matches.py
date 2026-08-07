@@ -4,7 +4,7 @@ from nextcord import Member
 from typing import List  # noqa: UP035
 from functools import wraps
 
-from core.utils import get, find  # noqa: F401
+from nammaoe2bot.runtime.utils import get, find  # noqa: F401
 
 from bot.exceptions import Exceptions as Exc
 from bot.match.match import Match

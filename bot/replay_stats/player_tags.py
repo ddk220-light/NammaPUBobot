@@ -9,7 +9,7 @@ import json
 import time
 from collections import defaultdict
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 try:
 	from . import scoring

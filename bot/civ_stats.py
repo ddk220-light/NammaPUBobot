@@ -36,7 +36,7 @@ NAME COLLISION, DELIBERATE: bot/derived/civ_stats.py is a completely different m
 import random
 from datetime import datetime, timezone, timedelta
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 # A civ needs this many games in the community before it is used for balanced pools.
 # Applied here, at read time, rather than in the stored table: civ_stats is a plain

@@ -1,7 +1,7 @@
 # Runbook — schema migrations and rollback
 
 **Applies from:** the unified-data-layer rebuild (stage 1, 2026-07-30) onward.
-**Read this before deploying anything that adds a migration to `core/migrations.py`.**
+**Read this before deploying anything that adds a migration to `nammaoe2bot/runtime/migrations.py`.**
 
 ## How migrations run
 
@@ -54,7 +54,7 @@ On the next boot `run_all` skips it, `ensure_table` finds none of the renamed
 tables, CREATEs them all empty, and **the bot boots healthy while serving no
 history**. `/health` returns 200 throughout.
 
-`core/migrations.py` now has a post-condition check that catches this and crashes
+`nammaoe2bot/runtime/migrations.py` now has a post-condition check that catches this and crashes
 the boot instead, naming the offending tables. If you see that error, this is what
 happened: drop `schema_migrations` and reboot.
 

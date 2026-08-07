@@ -26,11 +26,12 @@ re-run; the ledger only records success after the entire body returns.
 import os
 import time
 
-from core.console import log
-from core.identity_seed import CONFIDENCE_ORDER, parse_name_repairs, parse_seed_csv
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.identity_seed import CONFIDENCE_ORDER, parse_name_repairs, parse_seed_csv
+from nammaoe2bot.runtime.paths import REPO_ROOT
 
 LEDGER = "schema_migrations"
-_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_ROOT = REPO_ROOT
 
 # (name, async fn(db)) in execution order. Stage tasks append via @migration.
 MIGRATIONS = []
@@ -392,7 +393,7 @@ async def _ensure_identities_table(db):
 	This CREATE TABLE must stay in sync with bot/identity.py's `identities`
 	declaration by hand — that part cannot be shared. The row-parsing logic
 	that used to be duplicated alongside it now lives in
-	core/identity_seed.py (stdlib-only, safe to import from both here and
+	nammaoe2bot/runtime/identity_seed.py (stdlib-only, safe to import from both here and
 	bot/identity.py) precisely so it does not have to be kept in sync by
 	hand too.
 	"""
@@ -501,8 +502,8 @@ _MANUAL_CONFIDENCE = "manual"    # strongest tier — a human correction
 for _tier in (_SEED_CONFIDENCE, _LEARNED_CONFIDENCE, _MANUAL_CONFIDENCE):
 	if _tier not in CONFIDENCE_ORDER:
 		raise RuntimeError(
-			f"core/migrations.py seeds `identities` at confidence {_tier!r}, which is no longer in "
-			f"core.identity_seed.CONFIDENCE_ORDER ({CONFIDENCE_ORDER}). Renaming a tier requires "
+			f"nammaoe2bot/runtime/migrations.py seeds `identities` at confidence {_tier!r}, which is no longer in "
+			f"nammaoe2bot.runtime.identity_seed.CONFIDENCE_ORDER ({CONFIDENCE_ORDER}). Renaming a tier requires "
 			f"updating 003_seed_identities (and any already-seeded rows) to match."
 		)
 
@@ -1118,7 +1119,7 @@ async def _m005(db):
 # migrations run — and in utils/classifications/schema.py's raw DDL for the offline
 # runner. All three must name the same index on the same column; keep them in step.
 # Duplicated rather than imported for the reason in this module's docstring:
-# core/migrations.py runs before `import bot` and importing anything under bot.*
+# nammaoe2bot/runtime/migrations.py runs before `import bot` and importing anything under bot.*
 # from here drives db.ensure_table's loop.run_until_complete on an already-running
 # loop and crashes the boot.
 _DERIVED_MATCH_INDEXES = (
@@ -1231,7 +1232,7 @@ async def _m007(db):
 	one boolean (`enabled`), toggled by an admin command — a deployment-wide
 	on/off switch that has no business being a table, and which every read had
 	to go to the database for. It is now the REPLAY_INGEST_ENABLED config var
-	(core/config.py, config.example.cfg, start.py's generated template),
+	(nammaoe2bot/runtime/config.py, config.example.cfg, start.py's generated template),
 	defaulting to enabled to match the production row this drop removes. The
 	drop is guarded, so re-running finds nothing to do; it is also the one
 	irreversible statement here, which is why it goes last.
@@ -1402,7 +1403,7 @@ async def _m008(db):
 # cannot answer it without recomputing every rollup on every ingest.
 #
 # DEFAULT '0' on both this ALTER and bot/identity.py's declaration, quoted
-# exactly the way core/DBAdapters/mysql.py's _mysql_column renders a default, so
+# exactly the way nammaoe2bot/runtime/database/mysql.py's _mysql_column renders a default, so
 # the column a fresh install creates and the column this ALTER adds are
 # byte-identical (test_the_bound_at_ddl_matches_the_ensure_table_declaration
 # pins that).

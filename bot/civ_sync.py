@@ -3,10 +3,10 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.paths import DATA_DIR
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 
 # Durable record of civs played per AOE2LobbyBOT-reported match. Written when
 # LobbyBOT posts a completed-match embed (see persist_lobby_civs), and read by
@@ -172,7 +172,7 @@ async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at
 async def find_and_record_lobby_from_history(channel, channel_id, bot_match_id, players, winner, match_at,
 											 limit=300):
 	"""Scan LobbyBOT messages around a bot match time and backfill civ_picks if profiles overlap."""
-	from core.config import cfg
+	from nammaoe2bot.runtime.config import cfg
 	lobbybot_id = getattr(cfg, 'LOBBYBOT_USER_ID', None)
 	if not lobbybot_id or channel is None:
 		return False
@@ -452,7 +452,7 @@ async def find_matching_lobby_from_history(channel, elo_parsed, elo_timestamp):
 	there: the game is spoken for either way, and leaving the copy behind would
 	let it shadow the next ELO message (see consume_lobby_result).
 	"""
-	from core.config import cfg
+	from nammaoe2bot.runtime.config import cfg
 	lobbybot_id = getattr(cfg, 'LOBBYBOT_USER_ID', None)
 	if not lobbybot_id:
 		return None

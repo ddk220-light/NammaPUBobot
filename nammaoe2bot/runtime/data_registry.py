@@ -47,8 +47,8 @@ REGISTRY = {
 	"match_counter": dict(
 		layer="core", tenancy="global", writers=("bot/stats/stats.py",), retention="forever"
 	),
-	"channel_settings": dict(layer="core", tenancy="channel", writers=("core/cfg_factory.py",), retention="forever"),
-	"queue_settings": dict(layer="core", tenancy="channel", writers=("core/cfg_factory.py",), retention="forever"),
+	"channel_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/runtime/cfg_factory.py",), retention="forever"),
+	"queue_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/runtime/cfg_factory.py",), retention="forever"),
 	"bot_state": dict(layer="core", tenancy="global", writers=("bot/main.py",), retention="forever"),
 	"queue_bans": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
 	# feature state (core contract)
@@ -94,18 +94,18 @@ REGISTRY = {
 		writers=("bot/lobby/announce.py", "bot/lobby/completed.py", "bot/lobby/jobs.py", "bot/lobby/watcher.py"),
 		retention="forever",
 	),
-	# core/migrations.py is a second writer of both: 003_seed_identities creates
+	# nammaoe2bot/runtime/migrations.py is a second writer of both: 003_seed_identities creates
 	# them with raw DDL and seeds them at boot, before `import bot` happens, so
 	# it cannot go through bot/identity.py (see that module's docstring).
 	# bot/identity_solver.py is deliberately NOT listed — it deduces bindings but
 	# writes them only through identity.learn()/record_refused_claim().
 	"identities": dict(
-		layer="raw", tenancy="global", writers=("bot/identity.py", "core/migrations.py"), retention="forever"
+		layer="raw", tenancy="global", writers=("bot/identity.py", "nammaoe2bot/runtime/migrations.py"), retention="forever"
 	),
 	"identity_conflicts": dict(
 		layer="derived",
 		tenancy="global",
-		writers=("bot/identity.py", "core/migrations.py"),
+		writers=("bot/identity.py", "nammaoe2bot/runtime/migrations.py"),
 		retention="forever",
 	),
 	# raw replay observations. Renamed out of their inherited `rs_` prefix by
@@ -229,13 +229,13 @@ REGISTRY = {
 		layer="core", tenancy="channel", writers=("bot/community.py",), retention="forever"
 	),
 	# link — cross-tenant joins (stage 1.6)
-	# core/migrations.py is a writer too: 004_identity_v2 backfills every
+	# nammaoe2bot/runtime/migrations.py is a writer too: 004_identity_v2 backfills every
 	# historical pairing out of replay_matches.bot_match_id (INSERT IGNORE, so
 	# bot/community.py's link_match_replay stays the authoritative one). That
 	# migration predates 007_raw_renames and still names the table by its old
 	# name, which is correct — it runs before the rename.
 	"match_replays": dict(
-		layer="link", tenancy="community", writers=("bot/community.py", "core/migrations.py"),
+		layer="link", tenancy="community", writers=("bot/community.py", "nammaoe2bot/runtime/migrations.py"),
 		retention="forever"
 	),
 	# derived-global (stage 3) — computed once at ingest from the replay_* raw

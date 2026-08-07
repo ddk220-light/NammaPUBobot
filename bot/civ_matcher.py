@@ -18,8 +18,8 @@ from datetime import datetime
 import aiohttp
 
 from bot import identity
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 AOE2_API = "https://data.aoe2companion.com/api"
 
@@ -85,7 +85,7 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 	player_info, active_pids = await _map_players_to_profiles(players)
 	if len(player_info) < 2:
 		# The observable symptom of a degraded/empty identity resolver (see
-		# bot/identity.py and core/migrations.py's 003_seed_identities): if
+		# bot/identity.py and nammaoe2bot/runtime/migrations.py's 003_seed_identities): if
 		# `identities` is unexpectedly empty, every match lands here forever
 		# with no exception and no retry, so civ stats silently stop
 		# accruing. Log it so that failure mode is at least visible.

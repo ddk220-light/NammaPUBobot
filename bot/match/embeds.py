@@ -1,6 +1,6 @@
 from nextcord import Embed, Colour, Streaming, Member
-from core.client import dc
-from core.utils import get_nick, join_and
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.utils import get_nick, join_and
 
 
 class Embeds:

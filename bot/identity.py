@@ -51,15 +51,15 @@ See identity v2 (docs/superpowers/specs/2026-07-30-identity-v2-design.md §1
 and §3) for why the tie rule inverted and why relink must be atomic.
 
 CI installs only pytest (no nextcord/aiomysql/aiohttp), so this module must
-import cleanly with nothing but the stdlib and core.database — same
+import cleanly with nothing but the stdlib and nammaoe2bot.runtime.database — same
 constraint as bot/community.py.
 """
 import time
 
-from core.database import db
-from core.identity_seed import CONFIDENCE_ORDER, parse_seed_csv  # noqa: F401 (re-exported public API)
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.identity_seed import CONFIDENCE_ORDER, parse_seed_csv  # noqa: F401 (re-exported public API)
 
-# core/migrations.py's 003_seed_identities duplicates this exact schema in a
+# nammaoe2bot/runtime/migrations.py's 003_seed_identities duplicates this exact schema in a
 # self-contained raw CREATE TABLE (_ensure_identities_table) rather than
 # importing this module — that migration runs before `import bot` even
 # happens, and importing bot.identity from inside it would execute the
@@ -134,10 +134,10 @@ db.ensure_table(dict(
 # does not have, and (profile_id, claimed_user_id, status) as the PRIMARY key
 # would make status immutable-in-place for a future resolution UI.
 #
-# Same "why is this raw DDL duplicated in core/migrations.py" answer as
+# Same "why is this raw DDL duplicated in nammaoe2bot/runtime/migrations.py" answer as
 # `identities` above: 003_seed_identities needs to write this table too, and
 # it cannot import bot.identity (see this module's docstring, and
-# core/migrations.py's _ensure_identity_conflicts_table). Keep the two
+# nammaoe2bot/runtime/migrations.py's _ensure_identity_conflicts_table). Keep the two
 # declarations in sync by hand if this table's columns ever change --
 # tests/test_migrations.py::test_the_conflicts_ddl_matches_the_ensure_table
 # _declaration fails the build if they drift.
@@ -606,7 +606,7 @@ async def relink(profile_id, user_id, additional=False, aoe2_name=None) -> None:
 	halves of the move are recorded as `superseded` (the displaced owner of
 	this profile, and each profile the member is released from), per spec §3.
 
-	KNOWN LIMITATION — this is NOT atomic. core/DBAdapters/mysql.py connects
+	KNOWN LIMITATION — this is NOT atomic. nammaoe2bot/runtime/database/mysql.py connects
 	with autocommit=True and exposes no transaction API, so these are several
 	independent statements: an exception after the bind but before/while the
 	release loop runs leaves the member owning two profiles, exactly the state

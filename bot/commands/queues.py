@@ -1,7 +1,7 @@
 __all__ = ['add', 'remove', 'add_player', 'remove_player', 'start', 'split', 'reset']
 
 from nextcord import Member
-from core.utils import error_embed, join_and, find
+from nammaoe2bot.runtime.utils import error_embed, join_and, find
 from bot.exceptions import Exceptions as Exc
 from bot.expire import expire
 from bot.queues.common import QueueResponses as Qr

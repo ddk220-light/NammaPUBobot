@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """Pure, dependency-free identity-seeding logic shared by bot/identity.py
-and core/migrations.py.
+and nammaoe2bot/runtime/migrations.py.
 
-Why this module exists: core/migrations.py's 003_seed_identities migration
+Why this module exists: nammaoe2bot/runtime/migrations.py's 003_seed_identities migration
 cannot `import bot.identity` — migrations run before `import bot`, and
 importing anything under bot.* would execute bot/__init__.py, which fires
 ~10 modules' db.ensure_table() calls; that sync wrapper does
@@ -14,7 +14,7 @@ import the same code rather than keeping two copies in sync by hand.
 
 Stdlib-only by design: CI's pytest job installs only pytest (no nextcord/
 aiomysql/aiohttp), and this module must import cleanly there. Do not add an
-import of core.database, core.config, or anything under bot.* here — that
+import of nammaoe2bot.runtime.database, nammaoe2bot.runtime.config, or anything under bot.* here — that
 would reintroduce the exact reentrancy hazard this module exists to avoid.
 """
 import csv
@@ -23,7 +23,7 @@ import io
 # The confidence lattice, weakest first — position IS the precedence, so
 # order matters and index arithmetic on it must never assume a fixed length
 # (identity v2 inserted `self` between `learned` and `manual`; more tiers may
-# follow). bot/identity.py's _rank() compares by position; core/migrations.py
+# follow). bot/identity.py's _rank() compares by position; nammaoe2bot/runtime/migrations.py
 # names its tiers as literals and checks them against this tuple at import, so
 # RENAMING or REMOVING a value here is a breaking change that fails the boot
 # loudly — inserting one is not.
@@ -57,7 +57,7 @@ def parse_seed_csv(text: str, kind: str) -> list:
 	value was missing/empty — including every `profile_map` row, since that
 	CSV shape has no `source` column at all. This module deliberately does
 	not interpret the value (e.g. map it to a confidence tier) — it is raw
-	pass-through data; core/migrations.py's 003_seed_identities is what
+	pass-through data; nammaoe2bot/runtime/migrations.py's 003_seed_identities is what
 	decides what a given `source` value means for seeding precedence. """
 	if kind not in _SEED_CSV_KINDS:
 		raise ValueError(f"parse_seed_csv: unknown kind {kind!r}, expected one of {_SEED_CSV_KINDS}")
@@ -85,7 +85,7 @@ def parse_seed_csv(text: str, kind: str) -> list:
 def parse_name_repairs(text: str) -> list:
 	""" Parse data/profile_resolved.csv into a list of
 	{profile_id, nick, aoe2_name} dicts — the pair of names
-	core/migrations.py's 004_identity_v2 needs to tell a Discord nick that was
+	nammaoe2bot/runtime/migrations.py's 004_identity_v2 needs to tell a Discord nick that was
 	wrongly stored as a game name apart from a genuine game name. Pure: no
 	file I/O, no DB.
 

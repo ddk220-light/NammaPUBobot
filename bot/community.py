@@ -19,7 +19,7 @@ once real Discord guild objects exist — from bot/events.py's on_ready at
 boot, and from the two runtime "admin enables the bot on a channel" call
 sites (bot/main.py, bot/context/slash/commands.py). A migration can't do
 this enrollment: migrations run before `import bot`, with no Discord
-connection at all — see core/migrations.py for that ordering.
+connection at all — see nammaoe2bot/runtime/migrations.py for that ordering.
 
 `enroll_channel` wraps ensure_community()+attach_channel() for a single
 channel so all three call sites share one try/except shape instead of
@@ -27,17 +27,17 @@ duplicating it — a failure here must never block a channel being enabled or
 the bot from booting.
 
 CI installs only pytest (no nextcord/aiomysql/aiohttp), so this module must
-import cleanly with nothing but the stdlib and core.database/core.config
-(plus core.console, which is equally dependency-free and fully faked by
-conftest.py). Do not add a nextcord or core.client import at module level;
+import cleanly with nothing but the stdlib and nammaoe2bot.runtime.database/nammaoe2bot.runtime.config
+(plus nammaoe2bot.runtime.console, which is equally dependency-free and fully faked by
+conftest.py). Do not add a nextcord or nammaoe2bot.discord.client import at module level;
 keep any such import lazy inside a function if one is ever needed here.
 """
 import time
 import traceback
 
-from core.database import db
-from core.config import cfg
-from core.console import log
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.config import cfg
+from nammaoe2bot.runtime.console import log
 
 db.ensure_table(dict(
 	tname="communities",
@@ -89,7 +89,7 @@ db.ensure_table(dict(
 		# has nothing to say here: link_match_replay stamps int(time.time()) and
 		# 004's backfill falls back through parsed_at -> reported_at -> now, so
 		# both writers always supply a value. It was nullable only because
-		# core/DBAdapters/mysql.py's column_blank defaults notnull=False, and a
+		# nammaoe2bot/runtime/database/mysql.py's column_blank defaults notnull=False, and a
 		# NULL would be a third meaning ("linked, at an unknown time") that
 		# bot/derived/sweeper.py's retention window has to defend against.
 		#

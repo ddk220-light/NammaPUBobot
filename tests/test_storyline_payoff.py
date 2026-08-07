@@ -307,14 +307,14 @@ def _run_build(monkeypatch, winner, rows, *, storyline_ctx=_UNSET, seen=None):
 
 	monkeypatch.setattr(ti, "db", _DB())
 
-	fake_utils = types.ModuleType("core.utils")
+	fake_utils = types.ModuleType("nammaoe2bot.runtime.utils")
 	fake_utils.get_nick = lambda p: f"u{p.id}"
-	monkeypatch.setitem(sys.modules, "core.utils", fake_utils)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.utils", fake_utils)
 
 	# build_payoff_embed defers `from nextcord import Colour, Embed` specifically so
 	# the pure helpers import cleanly under the CI test shim (see the module
 	# docstring) -- CI never installs nextcord (see ci.yml). A candidate-producing
-	# fixture reaches that import, so it needs the same treatment as core.utils
+	# fixture reaches that import, so it needs the same treatment as nammaoe2bot.runtime.utils
 	# above: a minimal fake standing in for the real package.
 	class _FakeEmbed:
 		def __init__(self, *, title=None, colour=None, description=None):

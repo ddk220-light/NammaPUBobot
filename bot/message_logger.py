@@ -1,7 +1,8 @@
 import os
 from datetime import datetime, timezone
 
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
+from nammaoe2bot.runtime.paths import DATA_DIR
+
 LOGS_DIR = os.path.join(DATA_DIR, 'logs')
 
 

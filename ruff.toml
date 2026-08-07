@@ -113,15 +113,15 @@ ignore = [
 # effects (translation registration + config factory class loading),
 # so F401 looks like a false positive here.
 "PUBobot2.py" = ["F401"]
-# core/locales.py and bot/__init__.py are legacy entry points full of
+# nammaoe2bot/runtime/locales.py and bot/__init__.py are legacy entry points full of
 # star imports. Don't rewrite them yet.
-"core/locales.py" = ["F401", "F403", "F405"]
+"nammaoe2bot/runtime/locales.py" = ["F401", "F403", "F405"]
 "bot/__init__.py" = ["F401", "F403", "F405"]
 "bot/commands/__init__.py" = ["F401", "F403", "F405"]
-# core/DBAdapters/mysql.py uses `from .common import *` to surface the
+# nammaoe2bot/runtime/database/mysql.py uses `from .common import *` to surface the
 # shared DB error classes. That's a legacy pattern and replacing it
 # is its own PR.
-"core/DBAdapters/mysql.py" = ["F401", "F403", "F405"]
+"nammaoe2bot/runtime/database/mysql.py" = ["F401", "F403", "F405"]
 
 [format]
 # Preserve tab indentation in auto-fixes. If we ever convert to spaces,

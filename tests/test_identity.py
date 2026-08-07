@@ -4,7 +4,7 @@ the two generated CSVs and the two retired profile tables) at.
 
 Pure-logic tests against a fake adapter, same pattern as test_community.py:
 no MySQL involved. bot.identity.db is monkeypatched per test so nothing here
-touches the real core.database fake conftest.py installs for every other
+touches the real nammaoe2bot.runtime.database fake conftest.py installs for every other
 test file.
 """
 import asyncio
@@ -26,11 +26,11 @@ import bot.derived.rollups as rollups
 # convention for an admin-facing refusal), so the tests need the real class to
 # assert on. Importable under CI: bot/exceptions.py is pure stdlib.
 from bot.exceptions import Exceptions as _Exc
-# The shared pure module both bot/identity.py and core/migrations.py read
+# The shared pure module both bot/identity.py and nammaoe2bot/runtime/migrations.py read
 # their CSV parsing from. Imported directly because parse_name_repairs is a
 # migration-side reader only — bot/identity.py deliberately does not re-export
 # it the way it does parse_seed_csv.
-import core.identity_seed as identity_seed
+import nammaoe2bot.runtime.identity_seed as identity_seed
 # /link validates an id through this module before it writes anything. Imported
 # for real (it is pure + lazy-imports aiohttp, see tests/test_lobby_api.py) so
 # the tests below can monkeypatch fetch_profile on the actual dependency the
@@ -1343,7 +1343,7 @@ def _coverage_setup(monkeypatch):
 
 # ─── admin identity commands (bot/commands/admin.py) ────────────────────
 # bot/commands/admin.py does `from nextcord import Member, Embed, Colour`,
-# `from core.utils import seconds_to_str, get_nick` and `import bot`. Under
+# `from nammaoe2bot.runtime.utils import seconds_to_str, get_nick` and `import bot`. Under
 # CI (pytest only, no nextcord/aiomysql/aiohttp) none of that resolves, and
 # importing it the normal way -- `import bot.commands.admin` -- would first
 # run bot/commands/__init__.py, which star-imports every other command
@@ -1408,9 +1408,9 @@ class _FakeCtx:
 
 def _load_command_module(monkeypatch, filename, modname):
 	# The Embed fake comes from conftest rather than being redefined here.
-	# core/utils.py builds Embeds at import time out of whatever
+	# nammaoe2bot/runtime/utils.py builds Embeds at import time out of whatever
 	# sys.modules['nextcord'] holds, and it is imported during COLLECTION (via
-	# bot/web.py in tests/test_web_repoint.py) — so whether core.utils sits on
+	# bot/web.py in tests/test_web_repoint.py) — so whether nammaoe2bot.runtime.utils sits on
 	# conftest's fake or this file's depended on collection order, and the two
 	# only agreed because a comment asked someone to keep them in step. One
 	# definition, nothing to drift, order irrelevant.

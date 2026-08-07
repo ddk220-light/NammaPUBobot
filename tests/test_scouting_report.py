@@ -27,7 +27,7 @@ from pathlib import Path
 import bot.community as community
 import bot.identity as identity
 import bot.derived.rollups as rollups
-from core.database import db
+from nammaoe2bot.runtime.database import db
 import bot.scouting_report as scouting_report
 from bot.derived.rollups import SPLIT_MIN_GAMES, compute_rollup
 
@@ -144,7 +144,7 @@ def test_the_pending_string_goes_through_the_callers_translator():
 
 def test_the_two_floors_are_the_same_number():
 	""" MIN_GAMES is spelled here rather than imported from rollups (importing it
-	would drag core.database into a module whose whole test suite rests on
+	would drag nammaoe2bot.runtime.database into a module whose whole test suite rests on
 	importing nothing that reaches a database), so nothing but this test stops
 	the two drifting. One report must not quote a strategy over 5 games and a
 	medal rate over 2. """
@@ -917,7 +917,7 @@ def test_rank_survives_a_scouting_read_that_blows_up_and_shows_no_field(monkeypa
 
 # ── what stage 5a removed ────────────────────────────────────────────────
 # Source-level, because bot/web.py cannot be imported under CI (aiohttp.web +
-# core.client's nextcord) -- the same approach tests/test_web_identity.py
+# nammaoe2bot.discord.client's nextcord) -- the same approach tests/test_web_identity.py
 # takes. These pin the deletion half of the cutover: the generated persona and
 # scout read are gone from /rank, and nothing recomputes a persona on ingest.
 

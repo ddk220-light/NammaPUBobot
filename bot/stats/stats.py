@@ -2,10 +2,10 @@
 import time
 import datetime
 import asyncio
-from core.console import log
-from core.client import dc
-from core.database import db
-from core.utils import iter_to_dict, find, get_nick  # noqa: F401
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.utils import iter_to_dict, find, get_nick  # noqa: F401
 
 db.ensure_table(dict(
 	tname="player_ratings",

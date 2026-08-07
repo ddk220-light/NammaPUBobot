@@ -14,8 +14,8 @@ reconcile() can prove the two agree.
 
 No nextcord and no time.time() in here: callers pass `now`, and the module
 stays importable (and its control flow testable) under the conftest stubs."""
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 from . import scoring
 

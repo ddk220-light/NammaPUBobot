@@ -9,7 +9,7 @@ rows came from, which is what lets one implementation serve both."""
 import json
 import re
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 # Bumped whenever THIS function's output changes for unchanged input. Stored on
 # every row, and bot/derived/backfill.py's pending predicate compares the stored
@@ -208,7 +208,7 @@ async def write(replay_match_id, rows):
 
 	ACCEPTED TRADEOFF, deliberate: the DELETE and the INSERT are not one
 	transaction, because the adapter runs in autocommit (see
-	core/DBAdapters/mysql.py's connect) and has no transaction surface to reach
+	nammaoe2bot/runtime/database/mysql.py's connect) and has no transaction surface to reach
 	for. If the insert fails after the delete succeeded, this match briefly has
 	no stored medals and its card renders bare -- and bot/derived/backfill.py's
 	reconciliation loop notices the set difference and rewrites it within

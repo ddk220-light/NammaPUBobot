@@ -2,7 +2,7 @@
 
 Pure-logic tests against a fake adapter, same pattern as test_migrations.py:
 no MySQL involved. bot.community.db and bot.community.cfg are monkeypatched
-per test so nothing here touches the real core.database/core.config fakes
+per test so nothing here touches the real nammaoe2bot.runtime.database/nammaoe2bot.runtime.config fakes
 that conftest.py installs for every other test file.
 """
 import asyncio

@@ -220,7 +220,7 @@ def rolling_mean(values, window):
     Used to smooth a 1-minute-resolution series into a readable line. Pure.
 
     Lives here rather than in apm_query so the renderer has no path to the DB layer:
-    apm_query does `from core.database import db` at module scope, and importing it from
+    apm_query does `from nammaoe2bot.runtime.database import db` at module scope, and importing it from
     the chart worker only ever worked because fork inherits the parent's sys.modules.
     """
     window = max(1, int(window))       # a non-positive window would divide by zero

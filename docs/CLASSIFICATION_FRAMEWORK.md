@@ -156,7 +156,7 @@ data-requirements ledger first, then the per-player results, so even a brief run
 - `/insights` says **"Unknown use case 'archer_rush'"** → `cls_classifications` is **empty**: the
   runner hasn't run against that DB. Run it (above).
 - **`1064 … near 'key))'` at deploy** (historical) → `key` is a MySQL reserved word; fixed by
-  backticking `PRIMARY KEY` columns in `core/DBAdapters/mysql.py::create_table`.
+  backticking `PRIMARY KEY` columns in `nammaoe2bot/runtime/database/mysql.py::create_table`.
 
 **Window vs. data freshness (important):** `/insights` defaults to **385 days**. A one-time backfill
 from cached replays is only as fresh as the cache (the initial corpus stopped ~Apr 2026), so a short

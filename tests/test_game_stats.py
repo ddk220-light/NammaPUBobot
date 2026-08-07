@@ -232,7 +232,7 @@ def test_write_with_no_rows_still_deletes_but_never_inserts():
 
 
 # ── payload column order ─────────────────────────────────────────────────
-# core/DBAdapters/mysql.py's insert_many takes its column list from the FIRST
+# nammaoe2bot/runtime/database/mysql.py's insert_many takes its column list from the FIRST
 # row's keys and then zips every later row's .values() against it. Two rows
 # carrying the same keys in a DIFFERENT order therefore write values into the
 # wrong columns -- silently, with no MySQL error whenever the types happen to be

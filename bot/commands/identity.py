@@ -31,7 +31,7 @@ so this module loads under a pytest-only CI.
 __all__ = ['link']
 
 from bot import identity
-from core.console import log
+from nammaoe2bot.runtime.console import log
 
 # The player-verifiable profile page. This exact shape is proven in production
 # by bot/civ_sync.py:295, which parses it back out of live LobbyBOT embeds --
@@ -145,7 +145,7 @@ async def _refuse(ctx, title, message):
 	the messages a first-time player is most likely to see -- would arrive under
 	a red "ValueError". Nothing here is an internal error; they are ordinary
 	answers, so the handler renders them itself. """
-	from core.utils import error_embed
+	from nammaoe2bot.runtime.utils import error_embed
 
 	await _reply_privately(ctx, error_embed(message, title=ctx.qc.gt(title)))
 

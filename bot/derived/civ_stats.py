@@ -35,7 +35,7 @@ an inconsistency:
     it, and no other task claims ownership of it the way 4.5 claims identity
     resolution.
 """
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 _WIN_RESULTS = frozenset({"W", "L"})
 
@@ -111,7 +111,7 @@ async def write(community_id, civ_counts, computed_at):
 	ACCEPTED TRADEOFF, deliberate, same as every delete-then-insert writer in
 	this package: the DELETE and the INSERT are not one transaction (the
 	adapter runs autocommit with no transaction surface -- see
-	core/DBAdapters/mysql.py). An insert failing after a successful delete
+	nammaoe2bot/runtime/database/mysql.py). An insert failing after a successful delete
 	leaves this community's civ-stats page briefly empty rather than stale;
 	the next refresh pass repopulates it.
 	"""

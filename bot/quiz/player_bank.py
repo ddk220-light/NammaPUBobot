@@ -53,7 +53,7 @@ reason this file is testable with neither a database nor Discord.
 import json
 import random
 
-from core.database import db
+from nammaoe2bot.runtime.database import db
 
 # Exactly the number of lettered options bot/quiz/view.py renders (A-D), so the
 # floor on leaders is not a taste call: it is the card's arity.

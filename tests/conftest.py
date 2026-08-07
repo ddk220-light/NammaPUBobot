@@ -3,8 +3,8 @@ test files can import the bot's parser helpers without a live MySQL
 connection, a Discord client, or a real ``config.cfg``.
 
 Why this is needed: the bot's module-load wiring is aggressive.
-``bot/elo_sync.py`` does ``from core.database import db`` at module
-load, and ``core/database.py`` in turn does
+``bot/elo_sync.py`` does ``from nammaoe2bot.runtime.database import db`` at module
+load, and ``nammaoe2bot/runtime/database/__init__.py`` in turn does
 ``db = init_db(cfg.DB_URI)`` at module load — constructing the DB
 adapter from ``config.cfg`` the moment anything reaches into the core
 layer. That's fine in production but means the first line of any
@@ -39,12 +39,12 @@ if str(_REPO_ROOT) not in sys.path:
 	sys.path.insert(0, str(_REPO_ROOT))
 
 
-# ─── core.config ─────────────────────────────────────────────────────
+# ─── nammaoe2bot.runtime.config ─────────────────────────────────────────────────────
 # The real module loads config.cfg via SourceFileLoader and exposes it
 # as `cfg`. Tests only need a tiny subset of attributes — whatever the
 # parsers happen to look up. Use SimpleNamespace so getattr-with-default
 # works naturally.
-_fake_core_config = types.ModuleType('core.config')
+_fake_core_config = types.ModuleType('nammaoe2bot.runtime.config')
 _fake_core_config.cfg = types.SimpleNamespace(
 	DB_URI='mysql://test:test@localhost:3306/test',
 	DC_OWNER_ID=0,
@@ -58,10 +58,10 @@ _fake_core_config.cfg = types.SimpleNamespace(
 	# is here to make the test environment's answer explicit, not incidental.
 	REPLAY_INGEST_ENABLED=True,
 )
-sys.modules['core.config'] = _fake_core_config
+sys.modules['nammaoe2bot.runtime.config'] = _fake_core_config
 
 
-# ─── core.console ────────────────────────────────────────────────────
+# ─── nammaoe2bot.runtime.console ────────────────────────────────────────────────────
 # log.info / log.error / log.debug / log.warning are called from many
 # places in the parsers. A null logger that swallows every call is all
 # we need for unit tests. `alive` is a bool attribute `think()` reads
@@ -74,13 +74,13 @@ class _NullLog:
 		return _noop
 
 
-_fake_core_console = types.ModuleType('core.console')
+_fake_core_console = types.ModuleType('nammaoe2bot.runtime.console')
 _fake_core_console.log = _NullLog()
 _fake_core_console.alive = True
-sys.modules['core.console'] = _fake_core_console
+sys.modules['nammaoe2bot.runtime.console'] = _fake_core_console
 
 
-# ─── core.database ───────────────────────────────────────────────────
+# ─── nammaoe2bot.runtime.database ───────────────────────────────────────────────────
 # Every DB method raises — unit tests must not hit the database. If a
 # test needs to exercise a function that writes to DB, it should either
 # monkeypatch the method or use a proper integration-test harness.
@@ -103,7 +103,7 @@ class _RaisingDB:
 
 	async def _unexpected(self, *_a, **_k):
 		raise RuntimeError(
-			'core.database.db method called during unit test — mock it '
+			'nammaoe2bot.runtime.database.db method called during unit test — mock it '
 			'in the test, or move the function under test to a pure '
 			'helper that does not touch the DB.'
 		)
@@ -120,9 +120,16 @@ class _RaisingDB:
 	fetchall = _unexpected
 
 
-_fake_core_database = types.ModuleType('core.database')
+_fake_core_database = types.ModuleType('nammaoe2bot.runtime.database')
 _fake_core_database.db = _RaisingDB()
-sys.modules['core.database'] = _fake_core_database
+# __path__ so the stub does not hide its own submodules. The adapter tests
+# import nammaoe2bot.runtime.database.mysql for real (that IS the code under
+# test), and a plain ModuleType here answers "not a package" — which is a
+# collection error, not a skip, so it would have been loud rather than silent.
+# It became possible only when core/database.py and core/DBAdapters/ merged
+# into one package; before that the stub and the adapters were siblings.
+_fake_core_database.__path__ = [str(_REPO_ROOT / 'nammaoe2bot' / 'runtime' / 'database')]
+sys.modules['nammaoe2bot.runtime.database'] = _fake_core_database
 
 
 # ─── aiohttp (stub) ──────────────────────────────────────────────────
@@ -268,8 +275,8 @@ _fake_aiohttp.web = _fake_aiohttp_web
 
 
 # ─── nextcord (stub) ─────────────────────────────────────────────────
-# Reached only through core/cfg_factory.py (`from nextcord import Guild`, for an
-# isinstance check) and core/utils.py (Embed + three utils helpers), both of
+# Reached only through nammaoe2bot/runtime/cfg_factory.py (`from nextcord import Guild`, for an
+# isinstance check) and nammaoe2bot/runtime/utils.py (Embed + three utils helpers), both of
 # which bot/web.py imports. Permissive on purpose: nothing under test calls into
 # it, so a stand-in class that accepts anything is enough, and pinning a fuller
 # shape would be inventing an API contract this repo does not own.
@@ -285,16 +292,16 @@ class FakeEmbed:
 	""" Faithful enough to assert on, unlike the permissive stub above, and the
 	ONLY definition of it in the suite.
 
-	This one is NOT a rubber stamp on purpose. core/utils.py's error_embed /
-	ok_embed build an Embed at import-of-core.utils time from whatever
-	sys.modules['nextcord'] holds, and core.utils is imported (via
-	core.cfg_factory, via bot/web.py) during collection of
+	This one is NOT a rubber stamp on purpose. nammaoe2bot/runtime/utils.py's error_embed /
+	ok_embed build an Embed at import-of-nammaoe2bot.runtime.utils time from whatever
+	sys.modules['nextcord'] holds, and nammaoe2bot.runtime.utils is imported (via
+	nammaoe2bot.runtime.cfg_factory, via bot/web.py) during collection of
 	tests/test_web_repoint.py — before any test's own nextcord fake is
 	installed. A stub that swallowed the kwargs would make `embed.title` a stub
 	object and every copy assertion in tests/test_identity.py would compare a
 	stub to a string.
 
-	Which fake ends up behind core.utils therefore depends on COLLECTION ORDER,
+	Which fake ends up behind nammaoe2bot.runtime.utils therefore depends on COLLECTION ORDER,
 	and for a while the answer was "whichever of two hand-maintained copies got
 	there first" — tests/test_identity.py and tests/test_scouting_report.py each
 	carried their own, kept in step by a comment. Both now import this class
@@ -591,7 +598,7 @@ _fake_nextcord.utils = _fake_nextcord_utils
 sys.modules['nextcord'] = _fake_nextcord
 sys.modules['nextcord.utils'] = _fake_nextcord_utils
 
-# core/cfg_factory.py's only other third-party import.
+# nammaoe2bot/runtime/cfg_factory.py's only other third-party import.
 _fake_emoji = types.ModuleType('emoji')
 _fake_emoji.emojize = lambda s, **_k: s
 _fake_emoji.demojize = lambda s, **_k: s
@@ -599,7 +606,7 @@ _fake_emoji.EMOJI_DATA = {}
 sys.modules['emoji'] = _fake_emoji
 
 
-# ─── core.client (stub) ──────────────────────────────────────────────
+# ─── nammaoe2bot.discord.client (stub) ──────────────────────────────────────────────
 # The real module subclasses nextcord.Client and builds an Intents object at
 # import time, so it is faked outright rather than run against the permissive
 # nextcord stub above. bot/web.py reaches `dc` for three things only: looking up
@@ -626,7 +633,7 @@ class _FakeDiscordClient:
 
 
 class _FakeMember:
-	""" core.client.FakeMember — the stand-in the bot builds for a player who
+	""" nammaoe2bot.discord.client.FakeMember — the stand-in the bot builds for a player who
 	is named by `name@id` rather than by a real Discord mention. Only
 	bot/context/context.py imports it, and only inside Context.get_member. """
 
@@ -638,7 +645,7 @@ class _FakeMember:
 		self.bot = True
 
 
-_fake_core_client = types.ModuleType('core.client')
+_fake_core_client = types.ModuleType('nammaoe2bot.discord.client')
 _fake_core_client.dc = _FakeDiscordClient()
 _fake_core_client.FakeMember = _FakeMember
 
@@ -659,7 +666,7 @@ _app_mod = importlib.util.module_from_spec(_app_spec)
 _app_spec.loader.exec_module(_app_mod)
 _fake_core_client.dc.app = _app_mod.Application(client=_fake_core_client.dc)
 
-sys.modules['core.client'] = _fake_core_client
+sys.modules['nammaoe2bot.discord.client'] = _fake_core_client
 
 
 # ─── bot (package shim) ──────────────────────────────────────────────
@@ -685,7 +692,7 @@ _fake_bot.__path__ = [str(_REPO_ROOT / 'bot')]
 sys.modules['bot'] = _fake_bot
 
 
-# ─── core.DBAdapters.mysql (real module, stubbed drivers) ────────────
+# ─── nammaoe2bot.runtime.database.mysql (real module, stubbed drivers) ────────────
 # Unlike everything above, this hands back the REAL adapter module — the
 # thing under test — with only its two driver imports faked. It is a
 # fixture rather than a module-level stub because the fake drivers must
@@ -727,7 +734,7 @@ def adapter_module(monkeypatch):
 	monkeypatch.setitem(sys.modules, "pymysql", fake_pymysql)
 	monkeypatch.setitem(sys.modules, "pymysql.err", fake_pymysql.err)
 
-	monkeypatch.delitem(sys.modules, "core.DBAdapters.mysql", raising=False)
-	import core.DBAdapters.mysql as mysql
-	monkeypatch.delitem(sys.modules, "core.DBAdapters.mysql", raising=False)
+	monkeypatch.delitem(sys.modules, "nammaoe2bot.runtime.database.mysql", raising=False)
+	import nammaoe2bot.runtime.database.mysql as mysql
+	monkeypatch.delitem(sys.modules, "nammaoe2bot.runtime.database.mysql", raising=False)
 	return mysql

@@ -45,13 +45,13 @@ from urllib.parse import urlencode
 import aiohttp as aiohttp_client
 from aiohttp import web
 
-from core.config import cfg
-from core.cfg_factory import (
+from nammaoe2bot.runtime.config import cfg
+from nammaoe2bot.runtime.cfg_factory import (
 	RoleVar, TextChanVar, MemberVar, VariableTable,
 	BoolVar, IntVar, SliderVar, OptionVar, DurationVar, TextVar
 )
-from core.client import dc
-from core.database import db
+from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.database import db
 import bot
 from bot import identity, scouting_report
 from bot.derived import game_labels, rollups
@@ -391,7 +391,7 @@ async def handle_health(request):
 	degradation before it becomes an outage.
 	"""
 	import asyncio as _asyncio
-	from core.database import db as _db
+	from nammaoe2bot.runtime.database import db as _db
 	from bot import events as _events
 	from bot import elo_sync as _elo_sync
 

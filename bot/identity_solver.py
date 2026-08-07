@@ -121,12 +121,12 @@ question, not a taste question.
 Structure: `deduce()` is pure (stdlib only, no DB, no I/O) so the scoring rules
 are testable as data-in/data-out, and `run_for_community()` is the thin async
 wrapper that loads rows and writes bindings. CI installs only pytest, so this
-module must keep importing with nothing but the stdlib, core.database and its
+module must keep importing with nothing but the stdlib, nammaoe2bot.runtime.database and its
 bot.identity/bot.community siblings — no nextcord, aiomysql or aiohttp.
 """
 from bot import community, identity
-from core.console import log
-from core.database import db
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import db
 
 # Calibrated on the flagship community's 1101 usable paired matches (see the
 # module docstring for the full distribution) — these are measurements, not
