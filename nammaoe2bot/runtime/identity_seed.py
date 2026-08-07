@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Pure, dependency-free identity-seeding logic shared by bot/identity.py
+"""Pure, dependency-free identity-seeding logic shared by nammaoe2bot/features/identity/resolver.py
 and nammaoe2bot/runtime/migrations.py.
 
 Why this module exists: nammaoe2bot/runtime/migrations.py's 003_seed_identities migration
-cannot `import bot.identity` — migrations run before `import bot`, and
+cannot `import nammaoe2bot.features.identity.resolver` — migrations run before `import bot`, and
 importing anything under bot.* would execute bot/__init__.py, which fires
 ~10 modules' db.ensure_table() calls; that sync wrapper does
 `loop.run_until_complete(...)` on the loop the migration is already running
@@ -23,7 +23,7 @@ import io
 # The confidence lattice, weakest first — position IS the precedence, so
 # order matters and index arithmetic on it must never assume a fixed length
 # (identity v2 inserted `self` between `learned` and `manual`; more tiers may
-# follow). bot/identity.py's _rank() compares by position; nammaoe2bot/runtime/migrations.py
+# follow). nammaoe2bot/features/identity/resolver.py's _rank() compares by position; nammaoe2bot/runtime/migrations.py
 # names its tiers as literals and checks them against this tuple at import, so
 # RENAMING or REMOVING a value here is a breaking change that fails the boot
 # loudly — inserting one is not.

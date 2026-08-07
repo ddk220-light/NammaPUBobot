@@ -120,7 +120,7 @@ The pleasant surprise: most of the hard plumbing exists.
   and it's **the only table that knows the `aoe2_match_id`** (`qc_matches` has no such column).
 - **A working offline fetch→parse pipeline exists** (`utils/replay_quiz/download.py` +
   `extract.py` + `build_db.py`) — going live is mostly *wiring + an async refactor*, not new code.
-- **The `think()` job pattern** (from `bot/quiz/jobs.py`) is the safe way to add background work:
+- **The `think()` job pattern** (from `nammaoe2bot/features/quiz/jobs.py`) is the safe way to add background work:
   self-isolating (never raises into the 1-s tick), cadence-gated, one-run-at-a-time. Copy it.
 - **`extract.py` can be the single source of truth** shared by the offline quiz pipeline and the
   live job — reuse it to avoid the two drifting apart.
@@ -191,8 +191,8 @@ build time/size from the parser deps.
   `aoe.ms/replay/?gameId={gid}&profileId={pid}` (ZIP → `.aoe2record`); human link
   `aoe2insights.com/match/{id}/`. (aoe2.net retired Oct 2025.)
 - **Parser:** `mgz @ github.com/sanduckhan/aoc-mgz` commit `a1683d8…` + `aocref`.
-- **Code:** `utils/replay_quiz/{download,extract,build_db}.py`; `bot/civ_matcher.py` +
-  `bot/civ_sync.py` (`qc_match_civs`); `bot/quiz/jobs.py` (think-job pattern);
+- **Code:** `utils/replay_quiz/{download,extract,build_db}.py`; `nammaoe2bot/features/civs/matcher.py` +
+  `nammaoe2bot/features/civs/sync.py` (`qc_match_civs`); `nammaoe2bot/features/quiz/jobs.py` (think-job pattern);
   `utils/db_helpers.py` (read-only spot-checks).
 - **Railway:** [plan limits](https://docs.railway.com/pricing/plans),
   [scaling](https://docs.railway.com/deployments/scaling),

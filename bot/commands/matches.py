@@ -116,7 +116,7 @@ async def lobby2(ctx, gameid: str):
 	Join button — like AOE2LobbyBOT's /lobby. When the game ends a results card is posted.
 	If you're in a ranked match awaiting a result, it also links the game so the result
 	posts automatically (best-effort, silent)."""
-	from bot.lobby import announce, completed
+	from nammaoe2bot.features.lobby import announce, completed
 
 	game_id = completed.parse_game_id(gameid)
 	if game_id is None:

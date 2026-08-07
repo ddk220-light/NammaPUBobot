@@ -8,7 +8,7 @@ imported:
 * **Schema.** Every feature package declares its own tables with
   `db.ensure_table(...)` at module scope. Nothing calls those declarations;
   importing the package IS the declaration.
-* **Job singletons.** `quiz.jobs`, `predictions.jobs`, `lobby.jobs`,
+* **Job singletons.** `quiz.jobs`, `betting.jobs`, `lobby.jobs`,
   `replay_stats.jobs` are module-level instances the tick in bot/events.py
   drives. They construct on import.
 * **The command surface.** Importing `bot.context.slash.commands` runs a file
@@ -36,12 +36,12 @@ def bootstrap(app):
 	# The domain. Also declares bot_state (main) and the queue/match tables.
 	from bot import main                            # noqa: F401  (bot_state ensure_table)
 	from nammaoe2bot.pickup import channel                   # noqa: F401  (qc/pq config factories)
-	from bot import civ_reconcile                   # noqa: F401  (civ_reconcile table + job)
+	from nammaoe2bot.features.civs import reconcile                   # noqa: F401  (civ_reconcile table + job)
 
 	# Features, each self-contained: tables + its job singleton.
-	from bot import lobby                           # noqa: F401
-	from bot import quiz                            # noqa: F401
-	from bot import predictions                     # noqa: F401
+	from nammaoe2bot.features import lobby                           # noqa: F401
+	from nammaoe2bot.features import quiz                            # noqa: F401
+	from nammaoe2bot.features import betting                     # noqa: F401
 	from bot import replay_stats                    # noqa: F401
 	from bot import classifications                 # noqa: F401
 	from bot import derived                         # noqa: F401

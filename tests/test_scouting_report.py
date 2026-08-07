@@ -1,4 +1,4 @@
-"""The stage-5a scouting report: bot/scouting_report.py's renderer, the
+"""The stage-5a scouting report: nammaoe2bot/features/scouting/report.py's renderer, the
 player_rollups readers behind it, and the `/rank` wiring that chooses between
 a report, the pending-linking notice and no field at all.
 
@@ -24,11 +24,11 @@ import sys
 import types
 from pathlib import Path
 
-import bot.community as community
-import bot.identity as identity
+import nammaoe2bot.community as community
+import nammaoe2bot.features.identity.resolver as identity
 import bot.derived.rollups as rollups
 from nammaoe2bot.runtime.database import db
-import bot.scouting_report as scouting_report
+import nammaoe2bot.features.scouting.report as scouting_report
 from bot.derived.rollups import SPLIT_MIN_GAMES, compute_rollup
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -152,11 +152,11 @@ def test_the_two_floors_are_the_same_number():
 
 
 def test_the_medal_glyphs_are_the_ones_the_match_card_already_stamps():
-	""" Copied from bot/post_game.MEDAL_GLYPHS for the same import reason, and
+	""" Copied from nammaoe2bot/features/postgame/card.MEDAL_GLYPHS for the same import reason, and
 	pinned here: a player who sees a crossed sword on the card has to see the
 	same mark on the report, or they are two different awards. Parsed as text
-	rather than imported -- bot/post_game.py reaches Discord. """
-	source = (_REPO_ROOT / "bot" / "post_game.py").read_text(encoding="utf-8")
+	rather than imported -- nammaoe2bot/features/postgame/card.py reaches Discord. """
+	source = (_REPO_ROOT / "nammaoe2bot" / "features" / "postgame" / "card.py").read_text(encoding="utf-8")
 	declared = ast.literal_eval(
 		source.split("MEDAL_GLYPHS = ", 1)[1].split("\n", 1)[0])
 	assert dict(declared) == {
@@ -839,7 +839,7 @@ def _prepared_stats_module(monkeypatch):
 	has nothing to do with the scouting field; everything between that profile
 	and the field is the shipped code.
 	"""
-	import bot.player_profile as player_profile
+	import nammaoe2bot.features.scouting.profile as player_profile
 
 	stats = _load_stats_module(monkeypatch)
 	monkeypatch.setattr(stats, "find", lambda predicate, seq: next(

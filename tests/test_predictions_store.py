@@ -1,4 +1,4 @@
-"""The SQL bot/predictions/store.py actually issues.
+"""The SQL nammaoe2bot/features/betting/store.py actually issues.
 
 Everything else in this package is tested through its decisions; these three
 statements have no decisions in them, which is exactly why they were the ones
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import asyncio
 
-from bot.predictions import store
+from nammaoe2bot.features.betting import store
 
 
 class FakeTx:
@@ -216,7 +216,7 @@ class TestBetsFor:
 		bot.active_matches, in memory, and the match has left it by the time
 		the result is reported — which is the entire reason the column exists
 		rather than being derived at read time. """
-		from bot.predictions import view
+		from nammaoe2bot.features.betting import view
 
 		fake = use_fake(monkeypatch, rows=[
 			dict(user_id=1, nick="anu", side=0, stake=150, is_player=1)])

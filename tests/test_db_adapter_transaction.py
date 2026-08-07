@@ -142,7 +142,7 @@ class TestTransaction:
 
 class TestDriverErrorsAreTranslated:
 	""" Transaction wraps every driver error in the adapter's own type, and that
-	translation is not cosmetic: bot/predictions/gold.py implements the side lock
+	translation is not cosmetic: nammaoe2bot/features/betting/gold.py implements the side lock
 	by catching `db.errors.IntegrityError` around the prediction_bets INSERT. A
 	raw pymysql IntegrityError escaping the handle would sail past that except
 	clause, roll the transaction back through the outer guard, and report a

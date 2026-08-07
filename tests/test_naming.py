@@ -39,7 +39,7 @@ OLD_NAMES = [
 # `rs_profiles` — the OTHER table retired by task 2.5.7 — is deliberately absent
 # for the same reason as `players` and `noadds` above: it is a substring of
 # ordinary identifiers this codebase already uses (`_match_players_profiles` in
-# bot/lobby/completed.py, `..._members_profiles_...` in tests/test_identity.py),
+# nammaoe2bot/features/lobby/completed.py, `..._members_profiles_...` in tests/test_identity.py),
 # so a substring guard on it fires on legitimate code. Its retirement is
 # enforced by tests/test_data_registry.py instead, which compares actual
 # ensure_table declarations against nammaoe2bot/runtime/data_registry.py: re-declaring the

@@ -13,7 +13,7 @@ from nammaoe2bot.runtime.config import cfg
 from bot import commands
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.channel import QueueChannel
-from bot.community import enroll_channel
+from nammaoe2bot.community import enroll_channel
 
 
 from . import autocomplete, groups
@@ -192,7 +192,7 @@ async def enable_channel(
 	# Enroll into a community right away — on_ready's enrollment loop only
 	# runs once at boot, so without this a channel enabled at runtime has
 	# no community_id (community_for_channel() returns None) until the
-	# next full restart. See bot/community.py.
+	# next full restart. See nammaoe2bot/community.py.
 	await enroll_channel(interaction.channel)
 
 

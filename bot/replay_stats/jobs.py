@@ -115,7 +115,7 @@ class ReplayStatsJobs:
                                       parser_version=PARSER_VERSION, attempts=attempts + 1)
             if post_summary and bot_match_id:
                 try:
-                    from bot.post_game import post_match_analysis
+                    from nammaoe2bot.features.postgame.card import post_match_analysis
                     posted = await post_match_analysis(bot_match_id)
                     if posted:
                         log.info(f"Replay-stats posted match analysis for bot match {bot_match_id}.")

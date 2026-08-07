@@ -18,7 +18,7 @@ the stores stage 6 drops:
     with no elo dimension, and inventing brackets it does not store would be a
     fabricated number, not a smaller one.
   * the player page's scouting report reads `player_rollups`, through the same
-    bot/scouting_report.py contract `/rank` renders. A player with NO ROW
+    nammaoe2bot/features/scouting/report.py contract `/rank` renders. A player with NO ROW
     yields exactly PENDING — the absence is the signal (identity v2 §5).
   * the generated persona is gone from both ends: the stored overlay (the
     legacy persona table, whose writer stage 5a deleted, so every row in it is
@@ -53,15 +53,16 @@ from nammaoe2bot.runtime.cfg_factory import (
 from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.database import db
 import bot
-from bot import identity, scouting_report
+from nammaoe2bot.features.identity import resolver
+from nammaoe2bot.features.scouting import report as scouting_report
 from bot.derived import game_labels, rollups
 from bot.replay_stats import scoring as rs_scoring
-from bot.tag_leaderboard import tag_leaderboard_score
+from nammaoe2bot.features.scouting.tag_leaderboard import tag_leaderboard_score
 
 # --- Paths ---
 HTML_PATH = os.path.join(os.path.dirname(__file__), 'web_page.html')
 # A civ needs this many recorded picks in the community before /api/civ-stats
-# lists it. Applied at read time and NOT shared with bot/civ_stats.py's
+# lists it. Applied at read time and NOT shared with nammaoe2bot/features/civs/pools.py's
 # MIN_CIV_GAMES, which happens to hold the same number for a different question
 # ("enough evidence to put this civ in a randomised pool"): `civ_stats` is a
 # plain tally with no opinion about what counts as enough evidence, and two
@@ -393,7 +394,7 @@ async def handle_health(request):
 	import asyncio as _asyncio
 	from nammaoe2bot.runtime.database import db as _db
 	from bot import events as _events
-	from bot import elo_sync as _elo_sync
+	from nammaoe2bot.features import elo_sync as _elo_sync
 
 	discord_ok = bool(getattr(bot, 'bot_ready', False)) and dc.is_ready()
 
@@ -432,9 +433,9 @@ async def _public_community_id():
 	None when there is not one yet.
 
 	The public pages have no channel to resolve through, so the one resolver
-	every other consumer uses (bot/community.community_for_channel) does not
+	every other consumer uses (nammaoe2bot/community.community_for_channel) does not
 	apply here. The flagship guild is the honest stand-in: cfg.FLAGSHIP_GUILD_IDS
-	is already "the server this deployment is really for" (bot/community.py's
+	is already "the server this deployment is really for" (nammaoe2bot/community.py's
 	ensure_community pins it to retention='full' for exactly that reason), and
 	it is a stated configuration value rather than a guess.
 
@@ -702,7 +703,7 @@ async def _player_has_public_stats(user_id):
 	# No reported match, but a linked AoE2 profile still gives them a page
 	# (replay-derived stats key on profile_id). One store answers that now.
 	uid = int(user_id)
-	return bool((await identity.profiles_for_users([uid])).get(uid))
+	return bool((await resolver.profiles_for_users([uid])).get(uid))
 
 
 def _map_counts(rows):
@@ -724,7 +725,7 @@ async def _match_stat_players():
 	now-retired profile tables and a hand-maintained CSV; identity v2 makes
 	`identities` the sole store, so this reads one place. The one thing that
 	union supplied and `identities` does not is a Discord nickname — see
-	identity.profiles_and_names_by_user for why that is correct rather than a
+	resolver.profiles_and_names_by_user for why that is correct rather than a
 	gap — so a player with no row in match_players is now labelled by their
 	AoE2 in-game name instead of a stale CSV nick.
 	"""
@@ -734,7 +735,7 @@ async def _match_stat_players():
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT pm.match_id) AS games "
 		"FROM match_players pm WHERE 1=1" + _visible_user_clause("pm") +
 		" GROUP BY pm.user_id ORDER BY games DESC, nick ASC LIMIT 250")
-	mapped = await identity.profiles_and_names_by_user()
+	mapped = await resolver.profiles_and_names_by_user()
 	players = {}
 	for r in rows or []:
 		uid = int(r["user_id"])
@@ -763,10 +764,10 @@ async def _mapped_player_identity(user_id):
 	"""(profile_ids, aoe2_names) for a Discord user, via the identity resolver.
 	aoe2_names feeds _civ_player_clause's fallback match on civ_picks rows
 	recorded without a user_id (the un-linked lobby scrape — see
-	bot.civ_sync.persist_lobby_civs)."""
+	nammaoe2bot.features.civs.sync.persist_lobby_civs)."""
 	uid = int(user_id)
-	profile_ids = (await identity.profiles_for_users([uid])).get(uid, [])
-	names = await identity.names_for_profiles(profile_ids)
+	profile_ids = (await resolver.profiles_for_users([uid])).get(uid, [])
+	names = await resolver.names_for_profiles(profile_ids)
 	return sorted(profile_ids), sorted({n.lower() for n in names.values() if n})
 
 
@@ -941,7 +942,7 @@ def _label_for(mapped, user_id):
 	is whatever that one game recorded: one stable name per player beats a label
 	that changes with whichever row happened to be grouped first. Was a Discord
 	nick from the old three-store union; `identities` holds in-game names only
-	(see identity.profiles_and_names_by_user for why that is the right shape).
+	(see resolver.profiles_and_names_by_user for why that is the right shape).
 	"""
 	return next(iter(mapped.get(user_id, {}).get("aoe2_names", [])), None)
 
@@ -1034,7 +1035,7 @@ async def _tag_leaderboard(period, tag_key="all"):
 	# Same single source as the player directory: the tag leaderboards join
 	# replay-derived rows (keyed on profile_id) back to Discord users, which is
 	# the identity resolver's whole job.
-	mapped = await identity.profiles_and_names_by_user()
+	mapped = await resolver.profiles_and_names_by_user()
 	profile_to_user = {}
 	for uid, data in mapped.items():
 		for pid in data.get("profile_ids") or []:
@@ -1227,7 +1228,7 @@ def _strategy_label(key):
 	""" A stored strategy key as a display name.
 
 	The hand-written map first, then the same `archer_rush` -> `Archer Rush`
-	fallback bot/scouting_report.py and bot/replay_stats/card_query.py apply.
+	fallback nammaoe2bot/features/scouting/report.py and bot/replay_stats/card_query.py apply.
 	The fallback is what makes this safe against a new classifier key: it renders
 	as its own name rather than as nothing at all. """
 	return STRATEGY_TAG_LABELS.get(key, str(key or "").replace("_", " ").title())
@@ -1495,7 +1496,7 @@ def _scouting_payload(rollup):
 	`player_rollups` blob — or the pending sentinel when they have no row.
 
 	Pure, and deliberately the web's own shaping of the same blob
-	bot/scouting_report.py renders for `/rank`. The copy rules are that module's,
+	nammaoe2bot/features/scouting/report.py renders for `/rank`. The copy rules are that module's,
 	restated here because they are the point rather than a formatting detail:
 
 	  * NO ROW -> exactly PENDING, imported from scouting_report so the two
@@ -1575,7 +1576,7 @@ def _scouting_payload(rollup):
 		"apm": apm_payload,
 		# THE CHOSEN CLAUSES, PICKED IN PYTHON. Which strategy is a player's
 		# strength is a shrunk-rate calculation against their own baseline
-		# (bot/scouting_report.highlights), not "the first row of the list" — so
+		# (nammaoe2bot/features/scouting/report.highlights), not "the first row of the list" — so
 		# the page is handed the answer instead of re-deriving it in JavaScript,
 		# where a second copy of the shrinkage would drift silently and both
 		# surfaces would still look entirely plausible.

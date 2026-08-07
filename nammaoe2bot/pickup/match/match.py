@@ -467,7 +467,7 @@ class Match:
 		# THE RESULT IS NOW IN THE `matches` TABLE — register_match_* above wrote
 		# it. That is why settlement fires here and not on 'ending': the betting
 		# resume sweep finds a stranded book by JOINing prediction_posts to that
-		# row (bot/predictions/store.py::unsettled_books), so a payout attempted
+		# row (nammaoe2bot/features/betting/store.py::unsettled_books), so a payout attempted
 		# before it exists could not be recovered if it died half-way.
 		await self.qc.app.match_events.emit("finished", self, ctx)
 

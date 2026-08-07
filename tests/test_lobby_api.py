@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Pure unit tests for bot/lobby/api.py parsers (no network). Shapes mirror the
+"""Pure unit tests for nammaoe2bot/features/lobby/api.py parsers (no network). Shapes mirror the
 live /api/matches/{id} response verified in the Phase 3 understand workflow:
 ISO started/finished strings, per-player `won` bool, per-team teamId, civName."""
 import asyncio
 
-from bot.lobby import api
+from nammaoe2bot.features.lobby import api
 
 
 def test_parse_iso_epoch_and_invalid():

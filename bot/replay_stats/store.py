@@ -2,11 +2,11 @@
 """Async DB layer for replay-stats: enable flag, find-next, idempotent per-match write,
 and ingest status bookkeeping. All access via nammaoe2bot.runtime.database.db, except everything
 identity — both the profile_id->user_id read and the write-back of what this parse
-observed go through the identity resolver (bot/identity.py), which is the single
+observed go through the identity resolver (nammaoe2bot/features/identity/resolver.py), which is the single
 store answering "who is this person"."""
 import time
 
-from bot import identity
+from nammaoe2bot.features.identity import resolver
 from nammaoe2bot.runtime.config import cfg
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
@@ -93,7 +93,7 @@ async def load_profile_user_map(profile_ids):
     simply absent — never mapped to None."""
     out = {}
     for pid in profile_ids:
-        uid = await identity.user_for_profile(pid)
+        uid = await resolver.user_for_profile(pid)
         if uid is not None:
             out[pid] = uid
     return out
@@ -104,9 +104,9 @@ async def _learn_from_ingest(players, profmap):
     profile the resolver already binds to a Discord user.
 
     What it does now that the legacy replay-side profile table is gone: profmap
-    comes from load_profile_user_map, i.e. from identity.user_for_profile, so
+    comes from load_profile_user_map, i.e. from resolver.user_for_profile, so
     this can never discover a brand-new mapping. It re-asserts a binding the resolver
-    already knows, at the same 'learned' tier, which per identity.learn()'s
+    already knows, at the same 'learned' tier, which per resolver.learn()'s
     "same or lower tier, same user" branch updates exactly two things --
     aoe2_name and last_seen_at. That is the point: `identities.aoe2_name` is
     supposed to be what this account is called IN THE GAME, and this ingest
@@ -128,7 +128,7 @@ async def _learn_from_ingest(players, profmap):
         if user_id is None:
             continue
         try:
-            await identity.learn(profile_id, user_id, "learned", aoe2_name=p.get("identity") or None)
+            await resolver.learn(profile_id, user_id, "learned", aoe2_name=p.get("identity") or None)
         except Exception as e:
             log.error(f"Replay-stats identity learn failed for profile_id={profile_id} "
                       f"user_id={user_id}: {e}")
@@ -157,7 +157,7 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     # link.
     if bot_match_id is not None:
         try:
-            from bot.community import link_match_replay
+            from nammaoe2bot.community import link_match_replay
             await link_match_replay(bot_match_id, aoe2_id)
         except Exception as e:
             log.error(f"Replay-stats match_replays link failed for bot_match_id={bot_match_id} "
@@ -213,7 +213,7 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     # write and leave a table that looks maintained.
     #
     # A newly paired match is new evidence for the identity deduction solver
-    # (bot/identity_solver.py) -- it is what links players in a community with
+    # (nammaoe2bot/features/identity/solver.py) -- it is what links players in a community with
     # no seed CSVs and no admin willing to curate one. Run it last, after the
     # match_replays link above exists, so this ingest is part of the evidence.
     # run_for_match never raises and skips quietly when the match's channel is
@@ -223,8 +223,8 @@ async def write_match(extracted, bot_match_id, parsed_at, parser_version, played
     # expire) and nothing optional may cost us it.
     if bot_match_id is not None:
         try:
-            from bot import identity_solver
-            await identity_solver.run_for_match(bot_match_id)
+            from nammaoe2bot.features.identity import solver
+            await solver.run_for_match(bot_match_id)
         except Exception as e:
             log.error(f"Identity solver run failed for bot match {bot_match_id} "
                       f"(aoe2 match {aoe2_id}): {e}")

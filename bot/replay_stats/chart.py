@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """matplotlib renderer for the /player_details build-timeline chart. Headless (Agg) + the OO
-Figure API (no pyplot global state, safe under the async bot) — mirrors bot/player_profile.py.
+Figure API (no pyplot global state, safe under the async bot) — mirrors nammaoe2bot/features/scouting/profile.py.
 matplotlib is imported lazily inside render_timeline so importing this module stays cheap and
 test-safe (CI has no matplotlib)."""
 import io

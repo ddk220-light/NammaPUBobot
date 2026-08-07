@@ -1,4 +1,4 @@
-"""Unit tests for bot/civ_sync.py parser and matcher helpers.
+"""Unit tests for nammaoe2bot/features/civs/sync.py parser and matcher helpers.
 
 Scope: pure, non-IO functions only. We test:
 
@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from bot.civ_sync import (
+from nammaoe2bot.features.civs.sync import (
 	MAX_BUFFER,
 	_lobby_buffer,
 	buffer_lobby_result,
@@ -373,7 +373,7 @@ class TestProfileMapIsGone:
 		hand-maintained CSV on every ELO result, and _auto_add_profile_mappings
 		APPENDED to it with an empty user_id — rows nothing could ever read back
 		into `identities`, on a filesystem that Railway resets on every deploy."""
-		import bot.civ_sync as cs
+		import nammaoe2bot.features.civs.sync as cs
 		assert not hasattr(cs, 'load_profile_map')
 		assert not hasattr(cs, '_auto_add_profile_mappings')
 

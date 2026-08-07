@@ -11,7 +11,7 @@ import random
 
 import pytest
 
-import bot.storyline_payoff as sp
+import nammaoe2bot.features.storylines.payoff as sp
 
 _NICK = {1: "Ann", 2: "Bo", 3: "Cy", 4: "Dee", 5: "Eve", 6: "Fay", 7: "Gil", 8: "Hal"}
 _META = [{"name": "Alpha", "emoji": "🟦"}, {"name": "Beta", "emoji": "🟥"}]
@@ -143,7 +143,7 @@ _SMALL_ROSTERS = {0: [1, 2, 3], 1: [5, 6, 7]}
 
 
 def test_a_large_complement_payoff_frame_does_not_lowercase_after_the_period():
-	"""Same defect as bot/team_insights.py's _frame: complement_of collapses to
+	"""Same defect as nammaoe2bot/features/storylines/insights.py's _frame: complement_of collapses to
 	'the rest of {name}' past two uninvolved players, and _payoff_frame has its
 	own sentence-initial templates that must not leak the lowercase phrase."""
 	c = _c("form", (1,), {"p": 1, "k": 5, "won": True})
@@ -296,7 +296,7 @@ def _run_build(monkeypatch, winner, rows, *, storyline_ctx=_UNSET, seen=None):
 	import sys
 	import types
 
-	import bot.team_insights as ti
+	import nammaoe2bot.features.storylines.insights as ti
 
 	class _DB:
 		async def fetchall(self, sql, params=None):

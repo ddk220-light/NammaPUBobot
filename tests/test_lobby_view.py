@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Pure unit tests for bot/lobby/view.py (candidate pick + link decision + fill
+"""Pure unit tests for nammaoe2bot/features/lobby/view.py (candidate pick + link decision + fill
 lines). Builds state through the reducer using Phase-0-shaped events."""
-from bot.lobby import reducer, view
+from nammaoe2bot.features.lobby import reducer, view
 
 MID = 999
 

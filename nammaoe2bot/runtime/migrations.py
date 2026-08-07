@@ -285,7 +285,7 @@ async def _assert_identities_seeded(db):
 	ensure_table() then either finds the empty restored table or CREATEs it
 	fresh, either way empty. From there the failure is silent: every civ stat
 	lookup routes through profiles_for_users(), which just returns {} for an
-	empty table, and bot/civ_matcher.py's _find_and_record() treats too few
+	empty table, and nammaoe2bot/features/civs/matcher.py's _find_and_record() treats too few
 	mapped players as "nothing to record here", not an error — no exception,
 	no retry, no log line, and /health stays 200.
 
@@ -384,17 +384,17 @@ async def _m002(db):
 
 
 async def _ensure_identities_table(db):
-	"""Minimal, idempotent CREATE TABLE for `identities` — bot/identity.py's
+	"""Minimal, idempotent CREATE TABLE for `identities` — nammaoe2bot/features/identity/resolver.py's
 	table, duplicated here rather than created via its db.ensure_table()
 	declaration, because db.ensure_table() cannot be reached from this
 	module (see this module's docstring for why importing anything under
 	bot.* from a migration crashes the boot).
 
-	This CREATE TABLE must stay in sync with bot/identity.py's `identities`
+	This CREATE TABLE must stay in sync with nammaoe2bot/features/identity/resolver.py's `identities`
 	declaration by hand — that part cannot be shared. The row-parsing logic
 	that used to be duplicated alongside it now lives in
 	nammaoe2bot/runtime/identity_seed.py (stdlib-only, safe to import from both here and
-	bot/identity.py) precisely so it does not have to be kept in sync by
+	nammaoe2bot/features/identity/resolver.py) precisely so it does not have to be kept in sync by
 	hand too.
 	"""
 	await db.execute(
@@ -419,21 +419,21 @@ _CONFLICT_CLAIM_INDEX = "uniq_identity_conflicts_claim"
 
 async def _ensure_identity_conflicts_table(db):
 	"""Minimal, idempotent CREATE TABLE for `identity_conflicts` —
-	bot/identity.py's table of losing profile_id<->user_id claims, duplicated
+	nammaoe2bot/features/identity/resolver.py's table of losing profile_id<->user_id claims, duplicated
 	here for the same reason _ensure_identities_table is (see that function's
-	and this module's docstrings for why importing bot.identity from here
+	and this module's docstrings for why importing nammaoe2bot.features.identity.resolver from here
 	crashes the boot). 003_seed_identities is the only writer of this table
-	from inside a migration; bot/identity.py's learn() is the other writer,
+	from inside a migration; nammaoe2bot/features/identity/resolver.py's learn() is the other writer,
 	at runtime, well after this table already exists.
 
 	The shape is a surrogate `id` primary key plus a UNIQUE index on
-	(profile_id, claimed_user_id, status) — see bot/identity.py's declaration
+	(profile_id, claimed_user_id, status) — see nammaoe2bot/features/identity/resolver.py's declaration
 	for why the status column is part of the dedup key and what went wrong
 	while it was not. A database created by THIS function therefore never needs
 	005_identity_conflict_history; that migration exists for the databases
 	created by the earlier version of it.
 
-	Must stay in sync with bot/identity.py's `identity_conflicts` declaration
+	Must stay in sync with nammaoe2bot/features/identity/resolver.py's `identity_conflicts` declaration
 	by hand — test_the_conflicts_ddl_matches_the_ensure_table_declaration pins it.
 	"""
 	await db.execute(
@@ -442,7 +442,7 @@ async def _ensure_identity_conflicts_table(db):
 		# NOT NULL on both id columns is deliberate and load-bearing now that
 		# they are no longer the primary key (which forced it implicitly): a
 		# NULL in either defeats the unique index, since MySQL treats NULLs
-		# there as never equal. See bot/identity.py's declaration.
+		# there as never equal. See nammaoe2bot/features/identity/resolver.py's declaration.
 		"`profile_id` BIGINT NOT NULL, `claimed_user_id` BIGINT NOT NULL, "
 		"`source` VARCHAR(191) NOT NULL, "
 		"`noticed_at` BIGINT NOT NULL, `status` VARCHAR(191) NOT NULL DEFAULT 'open', "
@@ -515,7 +515,7 @@ def _confidence_for_seed_row(source):
 
 	data/profile_resolved.csv carries its own `source` column, and at least
 	one row is tagged 'manual' — a deliberate human correction that must
-	seed at manual confidence, the same tier bot/identity.py's learn() uses
+	seed at manual confidence, the same tier nammaoe2bot/features/identity/resolver.py's learn() uses
 	for an admin command, so a later automated learn() call can never
 	silently overwrite it. Every other value (including the ordinary 'seed'
 	rows and every player_profile_map.csv row, which has no `source` column
@@ -735,7 +735,7 @@ _M004_DROPS = ("rs_profiles", "qc_profile_map", "identity_aliases")
 # renamed, where `rs_matches` no longer exists. Pinning 004 to the old names
 # made that re-run skip the backfill silently, log a line indistinguishable
 # from the benign fresh-install case, and leave every historical pairing
-# unrebuilt: bot/identity_solver.py then reads an empty match_replays and sees
+# unrebuilt: nammaoe2bot/features/identity/solver.py then reads an empty match_replays and sees
 # no replay evidence at all, forever, with nothing wrong anywhere in the logs.
 #
 # Editing an already-applied migration is safe here because every read below is
@@ -877,7 +877,7 @@ async def _m004_backfill_match_replays(db):
 	Those pairings are the identity deduction solver's entire input and the
 	join behind every historical per-community replay query.
 
-	The community is resolved the same way bot/community.py's
+	The community is resolved the same way nammaoe2bot/community.py's
 	link_match_replay does it — matches.match_id -> matches.channel_id ->
 	community_channels — but in SQL here, because a migration cannot import
 	anything under bot.* (see this module's docstring).
@@ -1402,7 +1402,7 @@ async def _m008(db):
 # narrow question — see that module's docstring for why an observation timestamp
 # cannot answer it without recomputing every rollup on every ingest.
 #
-# DEFAULT '0' on both this ALTER and bot/identity.py's declaration, quoted
+# DEFAULT '0' on both this ALTER and nammaoe2bot/features/identity/resolver.py's declaration, quoted
 # exactly the way nammaoe2bot/runtime/database/mysql.py's _mysql_column renders a default, so
 # the column a fresh install creates and the column this ALTER adds are
 # byte-identical (test_the_bound_at_ddl_matches_the_ensure_table_declaration
@@ -1416,7 +1416,7 @@ async def _m008(db):
 # mode does reject is a later INSERT that OMITS a NOT NULL column with no
 # default, and that is the real reason: this is a ROLLING deploy. Migrations run
 # on the new container while the OLD one is still serving, and its pre-009
-# bot/identity.py inserts `identities` rows with no `bound_at` in the column
+# nammaoe2bot/features/identity/resolver.py inserts `identities` rows with no `bound_at` in the column
 # list. Without a DEFAULT every one of those — every `/link`, every learn()
 # insert — fails for the length of the overlap. With it they land the placeholder
 # 0, which is the same value _M009_BACKFILL reads as "never set" and which errs
@@ -1473,7 +1473,7 @@ async def _m009(db):
 	it is actually being asked for.
 
 	WHY PURE SQL. This module runs before `import bot` (see the docstring at the
-	top of this file), so it cannot import bot.identity to reuse its declaration —
+	top of this file), so it cannot import nammaoe2bot.features.identity.resolver to reuse its declaration —
 	db.ensure_table's sync wrapper would drive loop.run_until_complete on an
 	already-running loop and crash the boot. Same constraint 003 works under, and
 	the same hand-kept duplication: _ensure_identities_table above also carries
@@ -1505,7 +1505,7 @@ async def _m009(db):
 	"""
 	if not await table_exists(db, "identities"):
 		log.info("migrations: 009_identities_bound_at: identities does not exist, skipping "
-		         "(bot/identity.py creates it with bound_at already on it)")
+		         "(nammaoe2bot/features/identity/resolver.py creates it with bound_at already on it)")
 		return
 
 	if not await column_exists(db, "identities", "bound_at"):

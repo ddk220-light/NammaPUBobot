@@ -227,7 +227,7 @@ _SUMMARY_SQL = (
 # ANYWHERE in the group poison the whole group's answer, which is what "unknown
 # is not old" has to mean per community as well as across communities.
 #
-# bot/community.py declares linked_at notnull=True, so this can only bite a
+# nammaoe2bot/community.py declares linked_at notnull=True, so this can only bite a
 # database whose column predates that declaration -- _ensure_table never alters
 # an existing column's nullability, so production's stays nullable permanently
 # and this guard stays load-bearing rather than belt-and-braces.

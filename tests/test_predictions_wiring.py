@@ -1,10 +1,10 @@
-"""The wiring between the match flow and bot/predictions — the part that was
+"""The wiring between the match flow and nammaoe2bot/features/betting — the part that was
 silently dead in production.
 
-WHAT HAPPENED. bot/predictions/__init__.py used to end with `from .jobs import jobs`, binding
+WHAT HAPPENED. nammaoe2bot/features/betting/__init__.py used to end with `from .jobs import jobs`, binding
 the PredictionJobs singleton onto the package under the same name as the `jobs`
 SUBMODULE. Every call site in bot/match/ then did
-`from bot.predictions import jobs as prediction_jobs` and reached for a module
+`from nammaoe2bot.features.betting import jobs as prediction_jobs` and reached for a module
 function on it:
 
     AttributeError: 'PredictionJobs' object has no attribute 'open_for_match'
@@ -28,8 +28,8 @@ import sys
 import types
 from pathlib import Path
 
-import bot.predictions as predictions
-import bot.predictions.flow as jobs_module
+import nammaoe2bot.features.betting as betting
+import nammaoe2bot.features.betting.flow as jobs_module
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _HOOKS = ("open_for_match", "restart_for_match", "resolve_for_match", "void_for_match")
@@ -38,27 +38,27 @@ _HOOKS = ("open_for_match", "restart_for_match", "resolve_for_match", "void_for_
 # ── what the package exports ─────────────────────────────────────────────
 
 def test_the_package_exports_every_match_lifecycle_hook():
-	""" The fix. `from bot.predictions import open_for_match` has exactly one
-	possible meaning; `from bot.predictions import jobs` does not. """
+	""" The fix. `from nammaoe2bot.features.betting import open_for_match` has exactly one
+	possible meaning; `from nammaoe2bot.features.betting import jobs` does not. """
 	for name in _HOOKS:
-		assert hasattr(predictions, name), f"bot.predictions no longer exports {name}"
-		assert inspect.iscoroutinefunction(getattr(predictions, name)), name
+		assert hasattr(betting, name), f"nammaoe2bot.features.betting no longer exports {name}"
+		assert inspect.iscoroutinefunction(getattr(betting, name)), name
 
 
 def test_the_exported_hooks_are_the_modules_functions_not_the_singletons():
 	""" The precise shape of the bug: the names must resolve to the functions in
-	bot/predictions/flow.py, never to attributes fetched off the
+	nammaoe2bot/features/betting/flow.py, never to attributes fetched off the
 	PredictionJobs instance. """
 	for name in _HOOKS:
-		assert getattr(predictions, name) is getattr(jobs_module, name), name
+		assert getattr(betting, name) is getattr(jobs_module, name), name
 
 
 def test_the_package_attribute_jobs_is_still_the_singleton():
 	""" bot/events.py drives every package as `bot.<pkg>.jobs.think(frame_time)`,
-	the convention bot/quiz, bot/lobby and bot/replay_stats all share. The fix
+	the convention nammaoe2bot/features/quiz, nammaoe2bot/features/lobby and bot/replay_stats all share. The fix
 	renamed the MODULE, not this export, so that call site is untouched. """
-	assert isinstance(predictions.jobs, jobs_module.PredictionJobs)
-	assert inspect.iscoroutinefunction(predictions.jobs.think)
+	assert isinstance(betting.jobs, jobs_module.PredictionJobs)
+	assert inspect.iscoroutinefunction(betting.jobs.think)
 
 
 def test_the_singleton_does_not_carry_the_lifecycle_hooks():
@@ -68,20 +68,20 @@ def test_the_singleton_does_not_carry_the_lifecycle_hooks():
 	these resolve, the shadowing has become harmless and this test should be
 	deleted rather than "fixed" — but until then it is the thing that broke. """
 	for name in _HOOKS:
-		assert not hasattr(predictions.jobs, name), (
+		assert not hasattr(betting.jobs, name), (
 			f"PredictionJobs now has {name}; the call sites' old import shape would "
 			f"appear to work, which is how this went unnoticed for 3312 matches")
 
 
 def test_the_submodule_name_no_longer_collides_with_the_singleton():
 	""" The root cause, closed. While the module was called jobs.py, BOTH
-	`from bot.predictions import jobs` and `import bot.predictions.jobs as m`
+	`from nammaoe2bot.features.betting import jobs` and `import nammaoe2bot.features.betting.jobs as m`
 	handed back the instance — the second one bit this very test file as it was
 	being written. A distinct module name makes the collision impossible rather
 	than something every future caller has to remember. """
-	assert not (_REPO_ROOT / "bot" / "predictions" / "jobs.py").exists()
-	assert isinstance(sys.modules["bot.predictions.flow"], types.ModuleType)
-	assert predictions.flow is sys.modules["bot.predictions.flow"]
+	assert not (_REPO_ROOT / "nammaoe2bot" / "features" / "betting" / "jobs.py").exists()
+	assert isinstance(sys.modules["nammaoe2bot.features.betting.flow"], types.ModuleType)
+	assert betting.flow is sys.modules["nammaoe2bot.features.betting.flow"]
 
 
 # ── what the call sites actually type ────────────────────────────────────
@@ -95,20 +95,20 @@ _CALL_SITE = "bot/wiring.py"
 
 
 def _prediction_imports(relative_path):
-	"""Every `from bot.predictions import ...` in a file, as {module: [names]}.
+	"""Every `from nammaoe2bot.features.betting import ...` in a file, as {module: [names]}.
 
 	Parsed rather than executed: importing bot.match pulls in the Discord client.
 	"""
 	source = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
 	out = []
 	for node in ast.walk(ast.parse(source)):
-		if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("bot.predictions"):
+		if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("nammaoe2bot.features.betting"):
 			out.append((node.module, [a.name for a in node.names]))
 	return out
 
 
 def _prediction_attributes(relative_path):
-	""" Every `predictions.<name>` reached in a file.
+	""" Every `betting.<name>` reached in a file.
 
 	wiring.py imports the PACKAGE and resolves each hook at call time — which is
 	what lets a test swap one — so the names it depends on are attribute
@@ -116,11 +116,11 @@ def _prediction_attributes(relative_path):
 	source = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
 	return {node.attr for node in ast.walk(ast.parse(source))
 			if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
-			and node.value.id == "predictions"}
+			and node.value.id == "betting"}
 
 
 def test_no_caller_imports_the_shadowed_name_again():
-	""" The regression guard. `from bot.predictions import jobs` in a module that
+	""" The regression guard. `from nammaoe2bot.features.betting import jobs` in a module that
 	then calls a lifecycle function is the exact line that broke this, and it
 	fails at runtime inside a guard that hides it — so it has to fail here
 	instead. """
@@ -136,7 +136,7 @@ def test_the_domain_no_longer_calls_betting_at_all():
 	a betting book exists. If this ever fails, the composition root has been
 	bypassed and the eleven imports are growing back. """
 	for path in ("nammaoe2bot/pickup/match/match.py", "nammaoe2bot/pickup/match/substitution.py", "nammaoe2bot/pickup/match/checkin.py"):
-		assert not _prediction_imports(path), f"{path} imports bot.predictions again"
+		assert not _prediction_imports(path), f"{path} imports nammaoe2bot.features.betting again"
 
 
 def test_every_lifecycle_call_site_names_a_hook_the_package_exports():
@@ -145,8 +145,8 @@ def test_every_lifecycle_call_site_names_a_hook_the_package_exports():
 	seen = set()
 	for name in _prediction_attributes(_CALL_SITE):
 		if name not in _HOOKS:
-			continue                      # `predictions.flow` etc., not a hook
-		assert hasattr(predictions, name), f"{_CALL_SITE} calls {name}, which is not exported"
+			continue                      # `betting.flow` etc., not a hook
+		assert hasattr(betting, name), f"{_CALL_SITE} calls {name}, which is not exported"
 		seen.add(name)
 	assert seen == set(_HOOKS), f"call sites cover {sorted(seen)}, expected all of {sorted(_HOOKS)}"
 
@@ -256,16 +256,16 @@ def test_a_store_failure_never_escapes_into_the_match_flow():
 def test_events_still_drives_the_singleton_through_the_package_attribute():
 	""" bot/events.py is the one caller that legitimately wants the instance.
 
-	It used to spell this `bot.predictions.jobs.think(...)`, reaching the
+	It used to spell this `nammaoe2bot.features.betting.jobs.think(...)`, reaching the
 	package through the re-export shelf in bot/__init__.py. That shelf is gone,
 	so the module imports the package by name and the attribute lookup is the
-	same one — `predictions.jobs` is still the PredictionJobs instance the
+	same one — `betting.jobs` is still the PredictionJobs instance the
 	package binds over its own submodule, which is the whole reason flow.py is
 	not called jobs.py. Both halves are asserted: the import that makes the
 	name resolve, and the call that drives the tick. """
 	source = (_REPO_ROOT / "bot" / "events.py").read_text(encoding="utf-8")
-	assert "from bot import predictions" in source
-	assert "predictions.jobs.think(" in source
+	assert "from nammaoe2bot.features import betting" in source
+	assert "betting.jobs.think(" in source
 
 
 assert "pytest_asyncio" not in sys.modules, (

@@ -128,7 +128,7 @@ already routes to `send_message` vs `followup.send` based on `interaction.respon
   much," and we moved to an **image**. Lesson: a long stat dump is better as a chart than as a
   wall of embed fields.
 - **Image attachments:** render with the **OO `Figure` API**, not `pyplot` — pyplot keeps global
-  state that's unsafe under the async bot. Pattern (mirrors `bot/player_profile.py`):
+  state that's unsafe under the async bot. Pattern (mirrors `nammaoe2bot/features/scouting/profile.py`):
   `matplotlib.use("Agg")` → `Figure(...)` → `fig.savefig(io.BytesIO(), format="png", dpi=…)` →
   `File(fp=buf, filename="…png")` → `ctx.reply(file=…)`. Keep the matplotlib import lazy (CI has
   no matplotlib; importing it at module load would break the test collection).

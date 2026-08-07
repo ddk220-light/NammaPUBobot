@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """Match lifecycle events: the domain announces, features subscribe.
 
-A Match used to call `bot.predictions.open_for_match`, `resolve_for_match` and
+A Match used to call `nammaoe2bot.features.betting.open_for_match`, `resolve_for_match` and
 `void_for_match` directly, and `Draft` called `restart_for_match`; both also
-reached into `bot.lobby.watcher`, `bot.team_insights` and
-`bot.storyline_payoff`. Eleven function-local imports, all of them the pickup
+reached into `nammaoe2bot.features.lobby.watcher`, `nammaoe2bot.features.storylines.insights` and
+`nammaoe2bot.features.storylines.payoff`. Eleven function-local imports, all of them the pickup
 domain depending on a feature built on top of it.
 
 That direction is wrong regardless of whether it happens to compile. **A match

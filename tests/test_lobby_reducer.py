@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pure unit tests for the lobby socket delta reducer (bot/lobby/reducer.py).
+"""Pure unit tests for the lobby socket delta reducer (nammaoe2bot/features/lobby/reducer.py).
 
 The fixture events mirror the real shapes captured live in Phase 0 (see
 utils/lobby_spike.py and the PHASE 0 results in
@@ -7,7 +7,7 @@ docs/aoe2-lobby-replication-plan.md): each is ``{"type", "data"}`` with
 ``slot.matchId`` linking back to ``lobby.matchId``. Small and curated — the 1MB
 ambient scratch capture is gitignored; this is the committed golden lifecycle.
 """
-from bot.lobby import reducer
+from nammaoe2bot.features.lobby import reducer
 
 MID = 485355768
 

@@ -4,12 +4,12 @@ committed game queue it draws from.
 The alternation these tests pin — day 1/3/5/7 player, day 2/4/6 game, player
 first, keyed on day-within-week — is the rule stage 5b preserved when the
 player half went live. It used to be baked into data/quiz_schedule.json; it is
-now stated once in bot/quiz/schedule.source_for_day.
+now stated once in nammaoe2bot/features/quiz/schedule.source_for_day.
 """
 import json
 import os
 
-from bot.quiz import schedule as sched
+from nammaoe2bot.features.quiz import schedule as sched
 from utils.quiz_gen.sample_weeks import draw
 
 

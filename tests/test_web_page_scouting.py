@@ -151,7 +151,7 @@ FULL = {
 	"window_games": 93,
 	"medals": {"military_per_game": 0.34, "villager_per_game": 0.18, "games_ranked": 50},
 	"apm": {"median_avg": 62.5, "games_avg": 38},
-	# Chosen server-side by bot/scouting_report.highlights — the page phrases
+	# Chosen server-side by nammaoe2bot/features/scouting/report.highlights — the page phrases
 	# them and must never re-rank.
 	"highlights": {
 		"wins_most": [

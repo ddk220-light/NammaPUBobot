@@ -5,7 +5,7 @@ team-insight signals (vs. the current stale all-time head-to-head counts).
 For the busiest channel, it replays the last N matches and, using only history
 *before* each match, computes candidate insight types and prints concrete real
 examples + a frequency summary, so we can see which signals actually fire (and
-how often) before redesigning bot/team_insights.py.
+how often) before redesigning nammaoe2bot/features/storylines/insights.py.
 
 Candidate types probed:
   - H2H recent streak   : opposing pair where one won the last K meetings

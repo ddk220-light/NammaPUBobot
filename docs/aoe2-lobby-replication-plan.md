@@ -45,12 +45,12 @@ Decisions locked 2026-06-13 (supersede the standalone /lobby plan below, which r
 | Result reaction handling | bot.waiting_reactions + on_reaction_add (bot/events.py:184) - same as check-in |
 | Auto loss report | match.report_loss (nammaoe2bot/pickup/match/match.py:347), unchanged |
 | Record game + ratings | finish_match -> register_match_ranked (nammaoe2bot/pickup/match/match.py:453) |
-| Winner/profile mapping | bot/civ_matcher.py _load_profile_map + data/*.csv |
+| Winner/profile mapping | nammaoe2bot/features/civs/matcher.py _load_profile_map + data/*.csv |
 | Live lobby feed | wss socket (Phase 0 spike confirms name field) |
 | Completed result | GET data.aoe2companion.com/api/matches/{id} |
 
 ### Player <-> AoE2 profile mapping (DB-backed, self-healing)
-- CSV's ONLY job today is civ attribution (which civ each Discord player played). Consumers: bot/civ_matcher.py (runtime), bot/civ_sync.py (runtime), utils/civ_analysis.py (offline). It is NOT used by ratings/identity/queue/matchmaking.
+- CSV's ONLY job today is civ attribution (which civ each Discord player played). Consumers: nammaoe2bot/features/civs/matcher.py (runtime), nammaoe2bot/features/civs/sync.py (runtime), utils/civ_analysis.py (offline). It is NOT used by ratings/identity/queue/matchmaking.
 - Current state is unreliable: data/player_profile_map.csv has ~37 rows (4 blank) vs ~87 players (~40%), keyed on `nick` (renames break it) despite carrying the stable `user_id`. civ_sync.py:412 already auto-APPENDS new bindings, but (a) it learns them from AOE2LobbyBOT embeds (the dependency being replaced) and (b) it writes a FILE, lost on Railway redeploys unless a volume is mounted.
 - New source of truth = the roster-confirmed lobby query. On link, each slot's (profileId, name) is authoritative for that match's Discord players. Persist discord_id <-> profile_id to a DB table (durable), backfilling unmapped slots by elimination; add a one-time /register <profile_id> fallback. The map self-heals every game; the CSV becomes a derived/seed artifact.
 - The results/ratings loop never uses the map (Discord identity only). The map only powers the optional winner-name hint + per-player civ attribution, both best-effort and improving automatically.
@@ -68,7 +68,7 @@ FEASIBLE end-to-end, including the make-or-break live-lobby fill — but the liv
 
 LIVE LOBBY FILL (the load-bearing unknown) — CONFIRMED FEASIBLE via a public, unauthenticated WebSocket: wss://socket.aoe2companion.com/listen?handler=lobbies&match_ids=<gameId>. Adversarial verification connected anonymously and received only the requested lobby (1 lobbyAdded + N slotAdded), with per-slot profileId/name/civName/slot/team/color. The aoe2de://0/<id> numeric id IS the matchId. This is event-driven push (subscribe once, reassemble state from slotAdded/slotUpdated/slotRemoved/lobbyUpdated/lobbyRemoved deltas), NOT a few-second poll. The bot's existing aiohttp 3.13.5 supports ws_connect, so NO new dependency is needed. Caveat: undocumented/unofficial socket ("no public API yet") that can break on patches — isolate and degrade gracefully.
 
-MATCH-COMPLETED EMBED — CONFIRMED FEASIBLE and largely already built. data.aoe2companion.com/api/matches/{matchId} (path param) returns the full match object in ONE call (teams, per-player civName/won/color/team/rating, mapName, started/finished → duration). Verified HTTP 200 live. A non-empty User-Agent is required (403 without; the bot already sends "NammaPUBobot/1.0"). Per-player replay links are deterministic (https://aoe.ms/replay/?gameId=...&profileId=...) and already constructed in bot/civ_matcher.py:185.
+MATCH-COMPLETED EMBED — CONFIRMED FEASIBLE and largely already built. data.aoe2companion.com/api/matches/{matchId} (path param) returns the full match object in ONE call (teams, per-player civName/won/color/team/rating, mapName, started/finished → duration). Verified HTTP 200 live. A non-empty User-Agent is required (403 without; the bot already sends "NammaPUBobot/1.0"). Per-player replay links are deterministic (https://aoe.ms/replay/?gameId=...&profileId=...) and already constructed in nammaoe2bot/features/civs/matcher.py:185.
 
 MATCH-END RESOLUTION CONSTRAINT: REST cannot fetch a live/open lobby by id (/api/matches?match_ids= → HTTP 422 "profile_ids must be specified"; /api/matches/<openId> → 404 until finished). You MUST capture every slot's profileId from the live socket WHILE the lobby is open, then after game-end query by-id (/api/matches/{id}) — and if that 404s during the lag window, fall back to /api/matches?profile_ids=<captured pids> + time/overlap pick, exactly as civ_matcher.py already does.
 
@@ -84,9 +84,9 @@ Replicate AOE2LobbyBOT in NammaPUBobot: a `/lobby <aoe2_gameid>` slash command t
 Four cooperating pieces, all on infrastructure that already exists in this repo:
 
 1. **`/lobby <gameid>` slash command** — registered in `bot/context/slash/commands.py`, delegates via `run_slash()` to a new handler `bot/commands/lobby.py:lobby_cmd`. Defers immediately, validates the id, creates a `LobbyWatcher`, posts the initial LOBBY embed, persists a row to `qc_lobbies`.
-2. **`LobbyWatcher`** (new `bot/lobby/watcher.py`) — owns one lobby's lifecycle: a state machine (CREATED → FILLING → IN_PROGRESS → COMPLETED, plus EXPIRED), the in-memory slot map, the editable `nextcord.Message` handle, and the captured profileIds. One persistent WebSocket subscription per active lobby reassembles slot state from socket deltas and edits the Discord message only when the roster changes.
-3. **`LobbyJobs.think(frame_time)`** (new `bot/lobby/jobs.py`) — a recurring-job singleton copying `StatsJobs.think` (nammaoe2bot/pickup/stats.py:401-407). Registered with ONE line in `bot/events.py:on_think` (alongside `bot.stats.jobs.think`). Drives: (a) the completed-match REST poll/backoff once a lobby reaches IN_PROGRESS, (b) reaping watchers that timed out / never filled, (c) on boot, rehydrating watchers from `qc_lobbies` and re-fetching their messages.
-4. **Completed-match renderer** (new `bot/lobby/completed.py`) — fetches the finished match (reusing civ_matcher.py client + the by-id endpoint), assembles the two-team / civ / winner / duration / rec-links embed, posts a NEW message, marks the watcher COMPLETED.
+2. **`LobbyWatcher`** (new `nammaoe2bot/features/lobby/watcher.py`) — owns one lobby's lifecycle: a state machine (CREATED → FILLING → IN_PROGRESS → COMPLETED, plus EXPIRED), the in-memory slot map, the editable `nextcord.Message` handle, and the captured profileIds. One persistent WebSocket subscription per active lobby reassembles slot state from socket deltas and edits the Discord message only when the roster changes.
+3. **`LobbyJobs.think(frame_time)`** (new `nammaoe2bot/features/lobby/jobs.py`) — a recurring-job singleton copying `StatsJobs.think` (nammaoe2bot/pickup/stats.py:401-407). Registered with ONE line in `bot/events.py:on_think` (alongside `bot.stats.jobs.think`). Drives: (a) the completed-match REST poll/backoff once a lobby reaches IN_PROGRESS, (b) reaping watchers that timed out / never filled, (c) on boot, rehydrating watchers from `qc_lobbies` and re-fetching their messages.
+4. **Completed-match renderer** (new `nammaoe2bot/features/lobby/completed.py`) — fetches the finished match (reusing civ_matcher.py client + the by-id endpoint), assembles the two-team / civ / winner / duration / rec-links embed, posts a NEW message, marks the watcher COMPLETED.
 
 The live socket runs as its own long-lived asyncio task per watcher (fire-and-forget, tracked in a module set to prevent GC — same pattern as `civ_matcher._pending`). The 1s `think()` tick is used only for slow/periodic work so a slow socket never blocks the tick.
 
@@ -131,14 +131,14 @@ async def _lobby(
 
 **Register** in `bot/events.py:on_think` near events.py:95, after `await bot.stats.jobs.think(frame_time)`:
 ```python
-await bot.lobby.jobs.think(frame_time)
+await nammaoe2bot.features.lobby.jobs.think(frame_time)
 ```
 Wrap lobby work in try/except inside `LobbyJobs.think` so a lobby error never breaks the tick (events.py already isolates match.think errors at 81-92).
 
 ---
 
 ## API client(s) + exact endpoints
-Create `bot/lobby/api.py` reusing the civ_matcher.py pattern (ClientSession `User-Agent: NammaPUBobot/1.0`, `asyncio.Semaphore(5)`, `ClientTimeout(total=15)`, status guard, `(aiohttp.ClientError, TimeoutError, ValueError)` catch).
+Create `nammaoe2bot/features/lobby/api.py` reusing the civ_matcher.py pattern (ClientSession `User-Agent: NammaPUBobot/1.0`, `asyncio.Semaphore(5)`, `ClientTimeout(total=15)`, status guard, `(aiohttp.ClientError, TimeoutError, ValueError)` catch).
 
 **LIVE LOBBY (WebSocket — the new piece):**
 - `wss://socket.aoe2companion.com/listen?handler=lobbies&match_ids=<gameId>` — anonymous. On connect: lobbyAdded + per-slot slotAdded snapshot, then deltas: `lobbyAdded|lobbyUpdated|lobbyRemoved|slotAdded|slotUpdated|slotRemoved`. Use `aiohttp.ClientSession().ws_connect(url)` (aiohttp 3.13.5 in requirements — no new dep). Skip `type=='pong'` keepalives. Reassemble with a Python reducer ported from denniske/aoe2companion `src/api/socket/lobbies.ts`. Lobby fields: matchId, mapName, mapImageUrl, server (raw Azure region), totalSlotCount, blockedSlotCount, averageRating, gameModeName, leaderboardName, speedName, started(null open), finished(null). Slot fields: slot, profileId, name, civ/civName/civImageUrl(null pre-pick), rating, rank, color, colorHex, team, country, won.
@@ -175,7 +175,7 @@ Create `bot/lobby/api.py` reusing the civ_matcher.py pattern (ClientSession `Use
 ---
 
 ## DB schema — `qc_lobbies`
-Declare via `db.ensure_table` (auto-creates + ALTERs new columns at import) at the top of `bot/lobby/__init__.py` (imported from `bot/__init__.py`), mirroring civ_sync.py:15-33:
+Declare via `db.ensure_table` (auto-creates + ALTERs new columns at import) at the top of `nammaoe2bot/features/lobby/__init__.py` (imported from `bot/__init__.py`), mirroring civ_sync.py:15-33:
 ```python
 db.ensure_table(dict(
     tname="qc_lobbies",
@@ -206,15 +206,15 @@ db.ensure_table(dict(
 
 | Need | Reuse from | What |
 |---|---|---|
-| Async API client | bot/civ_matcher.py:69-83,106-108 | UA + Semaphore + timeout + status guard |
-| Completed resolution (fallback) | bot/civ_matcher.py:85-166 | _find_and_record overlap by-pids |
-| Retry/backoff + task set | bot/civ_matcher.py:38,203-225 | _RETRY_DELAYS + _pending |
-| Replay/join/watch links | bot/civ_matcher.py:184-185 | aoe.ms + visualizer URLs |
-| Completed-embed layout | bot/civ_sync.py:80-234, tests/test_civ_sync.py | field map + golden fixture |
+| Async API client | nammaoe2bot/features/civs/matcher.py:69-83,106-108 | UA + Semaphore + timeout + status guard |
+| Completed resolution (fallback) | nammaoe2bot/features/civs/matcher.py:85-166 | _find_and_record overlap by-pids |
+| Retry/backoff + task set | nammaoe2bot/features/civs/matcher.py:38,203-225 | _RETRY_DELAYS + _pending |
+| Replay/join/watch links | nammaoe2bot/features/civs/matcher.py:184-185 | aoe.ms + visualizer URLs |
+| Completed-embed layout | nammaoe2bot/features/civs/sync.py:80-234, tests/test_civ_sync.py | field map + golden fixture |
 | Post-once/edit-on-change | nammaoe2bot/pickup/match/checkin.py:48-49,90-92 | channel.send + edit + DiscordException guard |
 | Recurring-job idiom | nammaoe2bot/pickup/stats.py:401-407 | LobbyJobs.think; register events.py:95 |
 | Tick driver | PUBobot2.py:133-145, bot/events.py:72-113 | tick + error isolation + 30s save |
-| Table + migration | bot/civ_sync.py:15-33, mysql.py:161-244 | ensure_table + insert/update/select |
+| Table + migration | nammaoe2bot/features/civs/sync.py:15-33, mysql.py:161-244 | ensure_table + insert/update/select |
 | Slash reg + defer | commands.py:534-541, :778 | /subauto template, explicit defer |
 | Context helpers | bot/context/slash/context.py:10-47 | reply/notice/success/error after defer |
 | Config var (3 places) | nammaoe2bot/runtime/config.py:25-46, start.py:18-21, config.example.cfg | any LOBBY_* var in all three |
@@ -224,7 +224,7 @@ db.ensure_table(dict(
 ## Error / edge cases
 - **Lobby never fills / closed pre-launch:** socket says gone without launch → EXPIRED; grey footer, stop, no completed embed.
 - **Lobby not found at /lobby time** (private/started): no lobbyAdded in snapshot timeout → error, no watcher.
-- **Socket down/changed:** isolate bot/lobby/api.py; fall back to poll-style snapshot or findAdvertisements; even if all live sources fail, still do the completed half via by-id REST.
+- **Socket down/changed:** isolate nammaoe2bot/features/lobby/api.py; fall back to poll-style snapshot or findAdvertisements; even if all live sources fail, still do the completed half via by-id REST.
 - **API/socket slow:** /lobby deferred immediately (no "Unknown interaction"); FILLING tolerates "no message = no change".
 - **Bot restart (Railway redeploy):** in-flight watchers are memory-only; qc_lobbies is the durable store. On boot rehydrate non-terminal rows, channel.fetch_message handles, re-open sockets/resume polls. Do NOT shoehorn lobbies into saved_state.json (bot/main.py:54-99 doesn't know about them) — qc_lobbies survives crashes the same way.
 - **Duplicate /lobby for same id:** dedup on in-memory registry + non-terminal qc_lobbies row; reply with jump link.
@@ -247,8 +247,8 @@ db.ensure_table(dict(
 
 ## Phased milestones (concrete files)
 - **Phase 0 — Spike (½ day):** throwaway aiohttp ws_connect to `...&match_ids=<live id>`, capture exact event JSON into a fixture; confirm by-id REST on a finished id. De-risks the only unproven surface.
-- **Phase 1 — MVP completed-only (1–2 days):** /lobby posts a "tracking" message; LobbyJobs polls /api/matches/{id} on the ladder; on finish post MATCH-COMPLETED (reuse civ_matcher links + civ_sync layout). Files: commands.py (+/lobby), bot/commands/lobby.py, bot/lobby/__init__.py (table), bot/lobby/api.py (REST), bot/lobby/completed.py, bot/lobby/jobs.py, register events.py:95 + bot/commands/__init__.py. Test tests/test_lobby_completed.py.
-- **Phase 2 — Live lobby fill (2–3 days):** bot/lobby/watcher.py (state machine), bot/lobby/socket.py (ws client + reducer from lobbies.ts), live LOBBY embed + slot fill + "+N remaining", lobbyRemoved→IN_PROGRESS, profileId capture, dedup, boot rehydration, reconnect/cleanup. Test tests/test_lobby_reducer.py.
+- **Phase 1 — MVP completed-only (1–2 days):** /lobby posts a "tracking" message; LobbyJobs polls /api/matches/{id} on the ladder; on finish post MATCH-COMPLETED (reuse civ_matcher links + civ_sync layout). Files: commands.py (+/lobby), bot/commands/lobby.py, nammaoe2bot/features/lobby/__init__.py (table), nammaoe2bot/features/lobby/api.py (REST), nammaoe2bot/features/lobby/completed.py, nammaoe2bot/features/lobby/jobs.py, register events.py:95 + bot/commands/__init__.py. Test tests/test_lobby_completed.py.
+- **Phase 2 — Live lobby fill (2–3 days):** nammaoe2bot/features/lobby/watcher.py (state machine), nammaoe2bot/features/lobby/socket.py (ws client + reducer from lobbies.ts), live LOBBY embed + slot fill + "+N remaining", lobbyRemoved→IN_PROGRESS, profileId capture, dedup, boot rehydration, reconnect/cleanup. Test tests/test_lobby_reducer.py.
 - **Phase 3 — richer/fallbacks (optional 1–2 days):** findAdvertisements + poll-style socket fallback; live win-probability; civ matchup context; mgz parsing offloaded to the Railway visualizer (never on the asyncio loop). Add LOBBY_* config vars in nammaoe2bot/runtime/config.py _SCHEMA, start.py TEMPLATE, config.example.cfg.
 
 **CI:** `ruff check .` (tabs, line-length 120) + `pytest tests/` per PR (.github/workflows/ci.yml). Keep pure logic (renderer, reducer, id parsing) test-covered like elo_sync/civ_sync.
@@ -260,7 +260,7 @@ Extra data these sources expose, and how to BEAT AOE2LobbyBOT — prioritized by
 
 ### Tier 1 — High value, low/medium effort (do these)
 - **Win-probability + balance on the LIVE lobby (killer feature).** The socket gives every slot's rating/rank/team in real time. Feed them into the bot's existing rating systems (bot/stats/ Flat/Glicko2/TrueSkill) to show a live "Team 1 62% favoured (avg 1180 vs 1095)" line that updates as players join. AOE2LobbyBOT shows raw names; NammaPUBobot can show predicted balance. Effort: low — ratings already in the payload; reuse existing math. **Best single differentiator.**
-- **Civ matchup / win-rate context on the COMPLETED embed.** bot/civ_stats.py already loads data/player_civ_stats.csv + data/civ_elo_stats.csv and exposes lookups. Annotate each player's civ with its win-rate / a matchup note. Effort: low — data and loader exist.
+- **Civ matchup / win-rate context on the COMPLETED embed.** nammaoe2bot/features/civs/pools.py already loads data/player_civ_stats.csv + data/civ_elo_stats.csv and exposes lookups. Annotate each player's civ with its win-rate / a matchup note. Effort: low — data and loader exist.
 - **Post-game rating deltas posted back.** The completed match object carries per-player ratingDiff. Surface "+18 / −15" per player (AOE2LobbyBOT shows the bracket but not deltas). Effort: low — field already present.
 - **Recent-form / head-to-head.** While FILLING, fetch each captured profileId's recent matches (/api/matches?profile_ids= — already used by civ_matcher) to show "last 5: W-W-L-W-L" and H2H between opposing players. Effort: medium — cache per profileId, reuse client.
 
@@ -283,9 +283,9 @@ AOE2LobbyBOT is closed-source, breaks on patches needing manual fixes, and has o
 # PHASES
 
 - [0.5 day] **Phase 0 — Live-socket + by-id REST spike** — Throwaway aiohttp ws_connect script subscribing to wss://socket.aoe2companion.com/listen?handler=lobbies&match_ids=<id>; captures exact lobbyAdded/slotAdded/Updated/Removed JSON shapes into a fixture; confirms GET /api/matches/{id} returns a finished match. De-risks the only unproven surface.
-- [1-2 days] **Phase 1 — MVP: completed-match embed only** — /lobby <gameid> registered (commands.py + bot/commands/lobby.py); qc_lobbies table (bot/lobby/__init__.py); REST client (bot/lobby/api.py); completed renderer (bot/lobby/completed.py) reusing civ_matcher links + civ_sync layout; LobbyJobs backoff poll (bot/lobby/jobs.py) wired into events.py:95. Posts the two-team/civ/winner/duration/rec-links embed on game-end. Pure-function renderer test (tests/test_lobby_completed.py).
-- [2-3 days] **Phase 2 — Live lobby fill embed** — bot/lobby/watcher.py (CREATED→FILLING→IN_PROGRESS→COMPLETED/EXPIRED state machine) + bot/lobby/socket.py (ws client + delta reducer ported from lobbies.ts). Live LOBBY embed with slot fill, '+N remaining', aoe2de://0/<id> join code; lobbyRemoved→IN_PROGRESS handoff; profileId capture; dedup; reconnect/cleanup; boot rehydration from qc_lobbies. Pure reducer test (tests/test_lobby_reducer.py).
-- [2-4 days] **Phase 3 — Richer data, fallbacks & differentiators** — findAdvertisements + poll-style socket fallbacks; live win-probability from bot/stats ratings; civ matchup context from bot/civ_stats.py; post-game rating deltas; optional mgz replay parsing offloaded to the Railway visualizer. New LOBBY_* config vars added in nammaoe2bot/runtime/config.py, start.py, config.example.cfg.
+- [1-2 days] **Phase 1 — MVP: completed-match embed only** — /lobby <gameid> registered (commands.py + bot/commands/lobby.py); qc_lobbies table (nammaoe2bot/features/lobby/__init__.py); REST client (nammaoe2bot/features/lobby/api.py); completed renderer (nammaoe2bot/features/lobby/completed.py) reusing civ_matcher links + civ_sync layout; LobbyJobs backoff poll (nammaoe2bot/features/lobby/jobs.py) wired into events.py:95. Posts the two-team/civ/winner/duration/rec-links embed on game-end. Pure-function renderer test (tests/test_lobby_completed.py).
+- [2-3 days] **Phase 2 — Live lobby fill embed** — nammaoe2bot/features/lobby/watcher.py (CREATED→FILLING→IN_PROGRESS→COMPLETED/EXPIRED state machine) + nammaoe2bot/features/lobby/socket.py (ws client + delta reducer ported from lobbies.ts). Live LOBBY embed with slot fill, '+N remaining', aoe2de://0/<id> join code; lobbyRemoved→IN_PROGRESS handoff; profileId capture; dedup; reconnect/cleanup; boot rehydration from qc_lobbies. Pure reducer test (tests/test_lobby_reducer.py).
+- [2-4 days] **Phase 3 — Richer data, fallbacks & differentiators** — findAdvertisements + poll-style socket fallbacks; live win-probability from bot/stats ratings; civ matchup context from nammaoe2bot/features/civs/pools.py; post-game rating deltas; optional mgz replay parsing offloaded to the Railway visualizer. New LOBBY_* config vars added in nammaoe2bot/runtime/config.py, start.py, config.example.cfg.
 
 
 # OPEN QUESTIONS

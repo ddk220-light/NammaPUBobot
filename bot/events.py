@@ -9,12 +9,12 @@ from nammaoe2bot.runtime.database import db
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.paths import data as data_path
 from nammaoe2bot.runtime.config import cfg
-from bot import civ_reconcile
+from nammaoe2bot.features.civs import reconcile
 from bot import commands
 from bot import derived
-from bot import lobby
-from bot import predictions
-from bot import quiz
+from nammaoe2bot.features import lobby
+from nammaoe2bot.features import betting
+from nammaoe2bot.features import quiz
 from bot import replay_stats
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.expire import expire
@@ -22,10 +22,10 @@ from bot.main import load_state, save_state, save_state_db
 from nammaoe2bot.pickup.channel import QueueChannel
 from nammaoe2bot.pickup import stats
 from nammaoe2bot.pickup.noadds import noadds
-from bot.elo_sync import process_elo_sync
-from bot.civ_sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
-from bot.message_logger import log_channel_message, log_bot_message
-from bot.community import enroll_channel
+from nammaoe2bot.features.elo_sync import process_elo_sync
+from nammaoe2bot.features.civs.sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
+from nammaoe2bot.features.message_log import log_channel_message, log_bot_message
+from nammaoe2bot.community import enroll_channel
 
 
 async def seed_ratings_from_csv():
@@ -121,11 +121,11 @@ async def on_think(frame_time):
 	await expire.think(frame_time)
 	await noadds.think(frame_time)
 	await stats.jobs.think(frame_time)
-	await civ_reconcile.reconcile.think(frame_time)
+	await reconcile.reconcile.think(frame_time)
 	await lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
 	await quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
 	await replay_stats.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
-	await predictions.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
+	await betting.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
 	# Reconciles game_stats/game_labels against the raw rows they are derived from.
 	# think() only schedules (the batch runs off-tick) and is self-isolating; the loop
 	# converges to zero work and then stays permanently as repair — see bot/derived/backfill.py.
@@ -316,7 +316,7 @@ async def on_ready():
 		# Enroll every successfully-initialised queue channel into a community
 		# (one per Discord guild). Guild objects only exist once Discord is
 		# connected, which is why this is a runtime hook here rather than a
-		# migration — see bot/community.py. Never let a failure here stop
+		# migration — see nammaoe2bot/community.py. Never let a failure here stop
 		# the bot from booting.
 		try:
 			enrolled_communities = set()

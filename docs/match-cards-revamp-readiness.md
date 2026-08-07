@@ -102,7 +102,7 @@ Tale of the Tape embed) changes.
 | Unit | Responsibility |
 |---|---|
 | `bot/replay_stats/card_scoring.py` (new) | Two-component model (army/eco with tech terms), medal allocation, shape-tag allocation, continuity. Pure — no DB, no `core` imports |
-| `bot/post_game.py` (modify) | `build_match_cards_embed` switches to `card_scoring`; new render for medals / strategy / stats line / spawn. **Uses TABS** |
+| `nammaoe2bot/features/postgame/card.py` (modify) | `build_match_cards_embed` switches to `card_scoring`; new render for medals / strategy / stats line / spawn. **Uses TABS** |
 | Card-side queries | Reads for `cls_results`, `rs_player_techs`, `rs_player_buildings`, `rs_player_events`, `cls_result_metrics`, `rs_player_apm` |
 | `utils/tag_calibration.py` (modify) | Currently imports `scoring.py` **by path** ([line 34](../utils/tag_calibration.py:34)); needs a parameter or variant to target `card_scoring.py` |
 | Tests | Medal allocation, tag allocation, component mixes, continuity, plus the `REQUIRED_COLUMNS` guard |

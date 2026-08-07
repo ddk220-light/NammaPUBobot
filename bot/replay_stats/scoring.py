@@ -2,7 +2,7 @@
 """Single source of truth for replay impact scores and impact-tag derivation.
 
 Consumed by bot/replay_stats/player_tags.py (stored rs_player_game_tags rows),
-bot/post_game.py (Match Cards / Tale of the Tape embeds), and bot/web.py
+nammaoe2bot/features/postgame/card.py (Match Cards / Tale of the Tape embeds), and bot/web.py
 (player profile + match stats API). Pure functions, no DB and no core imports,
 so tests and offline calibration tooling can import this file standalone.
 
@@ -38,7 +38,7 @@ TIMING_MIX = (("feudal_s", 0.30), ("castle_s", 0.40), ("imperial_s", 0.30))  # i
 IMPACT_WEIGHTS = (("army", 0.45), ("eco", 0.32), ("timing", 0.23))
 
 # Every replay_players column the mixes read. Callers that SELECT explicit
-# column lists (bot/web.py, bot/post_game.py) must include all of these —
+# column lists (bot/web.py, nammaoe2bot/features/postgame/card.py) must include all of these —
 # _z() silently scores a missing column as match-average, which flattens the
 # component for every player (tests/test_replay_scoring.py enforces this).
 REQUIRED_COLUMNS = tuple(dict.fromkeys(

@@ -33,17 +33,18 @@ async def _scouting_report(ctx, user_id):
 
 	  channel not enrolled in a community -> None. Nothing was ever measured
 	    here and nothing is pending; an unenrolled channel is the ordinary
-	    state for most channels (bot/community.py), not a linking gap.
+	    state for most channels (nammaoe2bot/community.py), not a linking gap.
 	  no rollup row                       -> "Statistics pending linking".
 	    The absence IS the signal: an unlinked player gets no row rather than
 	    a row of zeros (bot/derived/rollups.py delete(), identity v2 §5).
 	  a rollup                            -> its measured lines, each one
-	    carrying the sample it rests on (bot/scouting_report.py).
+	    carrying the sample it rests on (nammaoe2bot/features/scouting/report.py).
 
 	Split out of _rank_profile so the wiring between those three states is
 	testable without driving a two-hundred-line command, its leaderboard
 	reads, its prediction lookup and its chart render. """
-	from bot import community, scouting_report
+	from nammaoe2bot import community
+	from nammaoe2bot.features.scouting import report as scouting_report
 	from bot.derived import rollups
 
 	community_id = await community.community_for_channel(ctx.channel.id)
@@ -78,13 +79,13 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	if not p:
 		raise Exc.ValueError(ctx.qc.gt("No rating data found."))
 
-	from bot import player_profile
-	profile_url = player_profile.web_profile_url(getattr(cfg, "WS_ROOT_URL", ""), target.id)
+	from nammaoe2bot.features.scouting import profile
+	profile_url = profile.web_profile_url(getattr(cfg, "WS_ROOT_URL", ""), target.id)
 
 	# Rich profile bits (best-effort — any piece with no data is simply omitted).
 	prof = {}
 	try:
-		prof = await player_profile.gather_profile(ctx.qc.rating.channel_id, target.id)
+		prof = await profile.gather_profile(ctx.qc.rating.channel_id, target.id)
 	except Exception as e:
 		log.error(f"gather_profile failed for {target.id}: {e}")
 
@@ -117,8 +118,8 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	# profile doesn't grow a "0/0" field for most players. Best-effort: a
 	# predictions hiccup must not cost the whole profile.
 	try:
-		from bot.predictions import store as predictions_store
-		from bot.predictions.view import rank_field
+		from nammaoe2bot.features.betting import store as predictions_store
+		from nammaoe2bot.features.betting.view import rank_field
 		correct, total = await predictions_store.user_stats(target.id, ctx.qc.id)
 		if (summary := rank_field(correct, total)) is not None:
 			embed.add_field(name="🔮 " + ctx.qc.gt("Predictions"), value=summary, inline=True)
@@ -212,7 +213,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	if sum(1 for c in candles if c["games"]) >= 2:
 		try:
 			png = await asyncio.get_running_loop().run_in_executor(
-				None, player_profile.render_elo_candles, candles, get_nick(target)
+				None, profile.render_elo_candles, candles, get_nick(target)
 			)
 			file = File(io.BytesIO(png), filename="elo.png")
 			embed.set_image(url="attachment://elo.png")
@@ -236,7 +237,7 @@ async def leaderboard(ctx, page: int = 1):
 
 	# Always an embed: profile links and rank emojis only render there (the old
 	# md-table mode lived inside a code block where neither can work).
-	from bot import player_profile
+	from nammaoe2bot.features.scouting import profile
 	root_url = getattr(cfg, "WS_ROOT_URL", "")
 
 	medals = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -244,7 +245,7 @@ async def leaderboard(ctx, page: int = 1):
 	for n, row in enumerate(data):
 		place = (page * 10) + n + 1
 		marker = medals.get(place, f"**{place}.**")
-		nick = player_profile.web_profile_link(root_url, row['user_id'], row['nick'].strip()[:14])
+		nick = profile.web_profile_link(root_url, row['user_id'], row['nick'].strip()[:14])
 		names.append(f"{marker} {nick}")
 
 		streak = row['streak'] or 0

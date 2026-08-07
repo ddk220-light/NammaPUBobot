@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time as dtime, timedelta
 
-from bot.player_profile import (
+from nammaoe2bot.features.scouting.profile import (
 	IST, bucket_candles, civ_breakdown, form_from_results, web_profile_link, web_profile_url,
 )
 

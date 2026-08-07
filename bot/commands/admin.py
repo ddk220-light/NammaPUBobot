@@ -8,12 +8,12 @@ from nextcord.utils import escape_markdown
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.utils import seconds_to_str, get_nick
 
-from bot import identity
+from nammaoe2bot.features.identity import resolver
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup import stats
 from nammaoe2bot.pickup.noadds import noadds
 
-# What each of identity.CONFIDENCE_ORDER's tiers MEANS to the human reading
+# What each of resolver.CONFIDENCE_ORDER's tiers MEANS to the human reading
 # `/identity show`. The bare lattice value is internal jargon, and the one
 # question an admin is asking of it -- did a person decide this, or did a
 # program guess it? -- is exactly what the raw word does not answer.
@@ -103,7 +103,7 @@ async def undo_match(ctx, match_id: int):
 async def identity_link(ctx, member: Member, profile_id: int, additional: bool = False):
 	""" The admin correction: bind `profile_id` to `member` at confidence
 	`manual`, the tier no automated writer (seed, replay ingest, the deduction
-	solver) can ever overwrite -- see identity.learn's docstring.
+	solver) can ever overwrite -- see resolver.learn's docstring.
 
 	Two shapes, and `additional` is the whole difference:
 
@@ -118,7 +118,7 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 	    give somebody a second account: the only reassignment path released
 	    their others.
 
-	Both go through identity.relink() rather than identity.learn(), and both
+	Both go through resolver.relink() rather than resolver.learn(), and both
 	work on a profile that currently belongs to somebody ELSE -- that is what
 	an admin correction IS, and it needs no confirmation flag. learn() would
 	refuse it (equal tier, different user, identity v2's tie rule), file an
@@ -132,7 +132,7 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 	needs the ids back to undo it.
 
 	The id is validated against the AoE2 API BEFORE anything is written, exactly
-	as the player's `/link` validates it (bot/commands/identity.py). This is the
+	as the player's `/link` validates it (bot/commands/resolver.py). This is the
 	higher-privilege command and it writes at the top tier, so it needs MORE
 	checking, not less: a `manual` binding to a profile id that does not exist
 	is one no automated writer can ever displace, and -- because the default
@@ -170,7 +170,7 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 			"aoe2insights.com page."
 		).format(profile_id=profile_id))
 
-	from bot.lobby import api as lobby_api
+	from nammaoe2bot.features.lobby import api as lobby_api
 
 	status, data = await lobby_api.fetch_profile(profile_id)
 	if status == "not_found":
@@ -195,11 +195,11 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 
 	# Both reads happen BEFORE the write -- afterwards the previous owner is
 	# gone and the released profiles are no longer the member's.
-	previous_owner = await identity.user_for_profile(profile_id)
-	owned = await identity.profiles_for_users([member.id])
+	previous_owner = await resolver.user_for_profile(profile_id)
+	owned = await resolver.profiles_for_users([member.id])
 	others = sorted(pid for pid in owned.get(member.id, []) if pid != profile_id)
 
-	await identity.relink(profile_id, member.id, additional=additional, aoe2_name=observed_name)
+	await resolver.relink(profile_id, member.id, additional=additional, aoe2_name=observed_name)
 
 	# The in-game name is echoed because it is the ONLY part of this reply an
 	# admin can check against the person in front of them: a wrong-but-real id
@@ -238,9 +238,9 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 	# but the link has LANDED by this point, so nothing that happens here may
 	# ever reach the admin as a failed command.
 	try:
-		from bot import identity_solver
+		from nammaoe2bot.features.identity import solver
 
-		await identity_solver.run_for_channel(ctx.qc.id)
+		await solver.run_for_channel(ctx.qc.id)
 	except Exception as e:
 		log.error(f"identity solver trigger failed after an admin link of profile {profile_id}: {e}")
 
@@ -269,7 +269,7 @@ async def identity_unlink(ctx, member: Member, profile_id: int):
 	ctx.check_perms(ctx.Perms.ADMIN)
 	profile_id = int(profile_id)
 
-	owner = await identity.user_for_profile(profile_id)
+	owner = await resolver.user_for_profile(profile_id)
 	if owner is None:
 		raise Exc.ValueError(ctx.qc.gt(
 			"Profile `{profile_id}` isn't linked to anyone, so there's nothing to unlink."
@@ -280,10 +280,10 @@ async def identity_unlink(ctx, member: Member, profile_id: int):
 			"Nothing was changed — re-run with the right member if you meant to remove that link."
 		).format(profile_id=profile_id, owner_id=owner, member=get_nick(member)))
 
-	await identity.unlink(profile_id)
+	await resolver.unlink(profile_id)
 
 	# Deliberately does NOT say "they can claim it back with `/link`". `/link` is
-	# view-only for anybody who already owns a profile (bot/commands/identity.py
+	# view-only for anybody who already owns a profile (bot/commands/resolver.py
 	# -- players may never CHANGE a link), so that advice is false for exactly
 	# the population an admin unlinks most: multi-account players. The remedy
 	# that always works is another admin link.
@@ -298,10 +298,10 @@ async def identity_conflicts(ctx):
 	""" Read-only lookup: every open profile_id<->user_id claim that was not
 	applied -- recorded instead of silently discarded by learn()/link_self()
 	losing a lattice comparison, by migration 003_seed_identities, or by
-	bot/identity_solver.py refusing to auto-apply its own conclusion (an unstable
+	nammaoe2bot/features/identity/solver.py refusing to auto-apply its own conclusion (an unstable
 	one, or one that would hand a member a second profile; those two show with no
 	current owner, and `identity link ... additional: True` is how a genuine
-	second account is granted). See bot/identity.py's identity_conflicts
+	second account is granted). See nammaoe2bot/features/identity/resolver.py's identity_conflicts
 	declaration and open_conflicts(). There is no resolution UI yet -- this just
 	surfaces what open_conflicts() already tracks so a moderator isn't blind to
 	it in the meantime; nothing here changes `status`.
@@ -314,7 +314,7 @@ async def identity_conflicts(ctx):
 	first twenty-four". """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 
-	conflicts = await identity.open_conflicts()
+	conflicts = await resolver.open_conflicts()
 	if not conflicts:
 		await ctx.reply(ctx.qc.gt("no open identity conflicts"))
 		return

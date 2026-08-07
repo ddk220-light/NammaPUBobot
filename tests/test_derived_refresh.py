@@ -11,7 +11,7 @@ Three things shape this file.
    (stdlib, never a real server), translating only MySQL's %s placeholders and
    its REPLACE/INSERT IGNORE spellings.
 
-2. THE IDENTITY HOOK IS DRIVEN THROUGH bot/identity.py, never simulated by
+2. THE IDENTITY HOOK IS DRIVEN THROUGH nammaoe2bot/features/identity/resolver.py, never simulated by
    writing an `identities` row by hand. The hook IS `bound_at` being stamped by
    link_self/relink/unlink; a test that wrote the column itself would still pass
    with every one of those stamps deleted.
@@ -28,7 +28,7 @@ import sqlite3
 
 import pytest
 
-import bot.identity as identity
+import nammaoe2bot.features.identity.resolver as identity
 import bot.derived.boards as boards
 import bot.derived.civ_stats as civ_stats
 import bot.derived.game_stats as game_stats_mod
@@ -259,7 +259,7 @@ def _community(db, community_id=1, channel_id=900):
 
 def _link(db, profile_id, user_id, bound_at=T0):
 	"""Seed a binding directly. Only for SETUP -- every test about the identity
-	hook itself goes through bot/identity.py's own write paths."""
+	hook itself goes through nammaoe2bot/features/identity/resolver.py's own write paths."""
 	db.add("identities", profile_id=profile_id, user_id=user_id, aoe2_name=f"p{profile_id}",
 	       confidence="learned", first_seen_at=T0, last_seen_at=T0, bound_at=bound_at)
 	identity.invalidate_cache()
@@ -412,7 +412,7 @@ def test_one_replay_linked_by_two_bot_matches_is_counted_once():
 # ── the identity hook ─────────────────────────────────────────────────────────
 
 def test_a_late_link_makes_an_already_computed_rollup_pending(monkeypatch):
-	"""MUTANT GUARD (c): deleting bound_at from bot/identity.py's write paths.
+	"""MUTANT GUARD (c): deleting bound_at from nammaoe2bot/features/identity/resolver.py's write paths.
 
 	This is the headline promise of identity v2 -- link late, get your whole
 	history -- and it is exactly the case a comparison built on game data alone
@@ -440,7 +440,7 @@ def test_a_late_link_makes_an_already_computed_rollup_pending(monkeypatch):
 def test_an_unlink_makes_the_departing_owner_pending(monkeypatch):
 	"""The LOSING side of a binding move, which the user's own profiles can no
 	longer report: once profile 22 is gone, `identities` holds no trace that user
-	1 ever owned it. identity_conflicts does -- bot/identity.py records every
+	1 ever owned it. identity_conflicts does -- nammaoe2bot/features/identity/resolver.py records every
 	removal there -- and that is what the watermark's UNION half reads."""
 	db, _log = _fresh()
 	_community(db)

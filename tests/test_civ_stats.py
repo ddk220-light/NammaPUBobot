@@ -1,4 +1,4 @@
-"""Unit tests for the civ-pool reader (bot/civ_stats.py) after stage 5c moved it off
+"""Unit tests for the civ-pool reader (nammaoe2bot/features/civs/pools.py) after stage 5c moved it off
 its CSV seed and onto the derived-community civ_stats table.
 
 Not to be confused with tests/test_derived_civ_stats.py, which covers the module that
@@ -12,7 +12,7 @@ import asyncio
 
 import pytest
 
-import bot.civ_stats as civ_stats
+import nammaoe2bot.features.civs.pools as civ_stats
 
 
 class _RecordingDB:
@@ -88,7 +88,7 @@ def test_a_zero_games_row_is_skipped_rather_than_dividing_by_zero():
 def test_no_csv_seed_survives_anywhere_in_the_module():
     for gone in ("csv", "Path", "_ELO_DATA_PATH", "_civ_elo_data",
                  "load_civ_elo_stats", "get_all_civs", "civ_elo_from_db"):
-        assert not hasattr(civ_stats, gone), f"{gone} is back in bot/civ_stats.py"
+        assert not hasattr(civ_stats, gone), f"{gone} is back in nammaoe2bot/features/civs/pools.py"
 
 
 def test_pick_balanced_teams_has_no_data_source_of_its_own():

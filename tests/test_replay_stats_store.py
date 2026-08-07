@@ -2,7 +2,7 @@
 write paths.
 
 Ingest reads and writes identity in exactly one place now: the resolver
-(bot/identity.py). load_profile_user_map is the read, scoped to the profile_ids
+(nammaoe2bot/features/identity/resolver.py). load_profile_user_map is the read, scoped to the profile_ids
 in the match being written; _learn_from_ingest is the write, feeding back the
 in-game name and last-seen time this replay just observed. The legacy
 replay-side profile table that ingest used to upsert alongside them is no
@@ -31,7 +31,7 @@ class _FakeIdentity:
 
 def test_load_profile_user_map_consults_identity_resolver(monkeypatch):
     fake = _FakeIdentity({101: 10, 103: 30})
-    monkeypatch.setattr(store, "identity", fake)
+    monkeypatch.setattr(store, "resolver", fake)
 
     result = asyncio.run(store.load_profile_user_map([101, 102, 103]))
 
@@ -41,14 +41,14 @@ def test_load_profile_user_map_consults_identity_resolver(monkeypatch):
 
 def test_load_profile_user_map_omits_profiles_with_no_known_owner(monkeypatch):
     fake = _FakeIdentity({})
-    monkeypatch.setattr(store, "identity", fake)
+    monkeypatch.setattr(store, "resolver", fake)
 
     assert asyncio.run(store.load_profile_user_map([1, 2])) == {}
 
 
 def test_load_profile_user_map_empty_input_makes_no_calls(monkeypatch):
     fake = _FakeIdentity({1: 2})
-    monkeypatch.setattr(store, "identity", fake)
+    monkeypatch.setattr(store, "resolver", fake)
 
     assert asyncio.run(store.load_profile_user_map([])) == {}
     assert fake.calls == []
@@ -88,7 +88,7 @@ class _FakeLog:
 
 def test_learn_from_ingest_learns_every_resolved_profile(monkeypatch):
     fake = _FakeIdentityWithLearn()
-    monkeypatch.setattr(store, "identity", fake)
+    monkeypatch.setattr(store, "resolver", fake)
     players = [
         {"profile_id": 101, "identity": "PlayerA"},
         {"profile_id": 102, "identity": "PlayerB"},
@@ -108,7 +108,7 @@ def test_learn_from_ingest_skips_profiles_with_no_resolved_owner(monkeypatch):
     # resolved (see load_profile_user_map above) -- a profile_id absent from
     # it is not "learned" from thin air.
     fake = _FakeIdentityWithLearn()
-    monkeypatch.setattr(store, "identity", fake)
+    monkeypatch.setattr(store, "resolver", fake)
     players = [{"profile_id": 101, "identity": "PlayerA"}, {"profile_id": 999, "identity": "Unknown"}]
     profmap = {101: 10}
 
@@ -119,7 +119,7 @@ def test_learn_from_ingest_skips_profiles_with_no_resolved_owner(monkeypatch):
 
 def test_learn_from_ingest_treats_blank_identity_as_no_name(monkeypatch):
     fake = _FakeIdentityWithLearn()
-    monkeypatch.setattr(store, "identity", fake)
+    monkeypatch.setattr(store, "resolver", fake)
     players = [{"profile_id": 101, "identity": ""}]
     profmap = {101: 10}
 
@@ -135,7 +135,7 @@ def test_learn_from_ingest_is_best_effort_across_players(monkeypatch):
     so an identity write failing can never be allowed to break ingest."""
     fake = _FakeIdentityWithLearn(learn_error_for={101})
     fake_log = _FakeLog()
-    monkeypatch.setattr(store, "identity", fake)
+    monkeypatch.setattr(store, "resolver", fake)
     monkeypatch.setattr(store, "log", fake_log)
     players = [
         {"profile_id": 101, "identity": "PlayerA"},
@@ -209,7 +209,7 @@ def _run_write_match(monkeypatch, game_stats_write, played_at_epoch=None):
     fake_log = _FakeLog()
     monkeypatch.setattr(store, "db", fake_db)
     monkeypatch.setattr(store, "log", fake_log)
-    monkeypatch.setattr(store, "identity", _FakeIdentityWithLearn())
+    monkeypatch.setattr(store, "resolver", _FakeIdentityWithLearn())
     monkeypatch.setattr(game_stats, "write", game_stats_write)
     written = asyncio.run(store.write_match(_extracted(), None, 1700000000, "v1",
                                             played_at_epoch=played_at_epoch))
@@ -264,7 +264,7 @@ def _run_write_match_recording_classifications(monkeypatch, write_extracted_matc
     fake_log = _FakeLog()
     monkeypatch.setattr(store, "db", fake_db)
     monkeypatch.setattr(store, "log", fake_log)
-    monkeypatch.setattr(store, "identity", _FakeIdentityWithLearn())
+    monkeypatch.setattr(store, "resolver", _FakeIdentityWithLearn())
     written = asyncio.run(store.write_match(_extracted(), None, 1700000000, "v1",
                                             played_at_epoch=1699999999))
     return written, fake_log

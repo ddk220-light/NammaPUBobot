@@ -73,8 +73,8 @@ class Log:
 			self.log(data, 'INFO')
 
 	def warning(self, data):
-		# Callers have been writing log.warning(...) for a long time — bot/lobby,
-		# bot/predictions — and every one of them raised AttributeError from
+		# Callers have been writing log.warning(...) for a long time — nammaoe2bot/features/lobby,
+		# nammaoe2bot/features/betting — and every one of them raised AttributeError from
 		# inside an `except` block, so the failure they were reporting was
 		# replaced by a failure to report it.
 		#

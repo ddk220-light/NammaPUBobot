@@ -28,7 +28,7 @@ Two kinds of module-level import are deliberately NOT edges:
 * `if TYPE_CHECKING:` blocks, which never execute at runtime. bot/context/
   uses one to annotate a QueueChannel without importing it, which is the only
   thing keeping channel <-> context acyclic.
-* A submodule importing its own ancestor package (`bot.quiz.jobs` -> `bot.quiz`).
+* A submodule importing its own ancestor package (`nammaoe2bot.features.quiz.jobs` -> `nammaoe2bot.features.quiz`).
   Python runs a package's `__init__` before any submodule of it can be reached,
   so this edge exists for every package whose `__init__` imports its own
   submodules -- the normal case, not a defect. Cross-package loops are what

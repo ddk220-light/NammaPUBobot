@@ -78,7 +78,7 @@ civ_stats   -- PK (community_id, civ). Per-civ win/loss tallies for one
              see that module's docstring for why that asymmetry with
              player_rollups/metric_boards is deliberate. Name deliberately
              collides in spelling only with the pre-existing
-             `bot/civ_stats.py` (CSV-backed civ pool randomiser, retired
+             `nammaoe2bot/features/civs/pools.py` (CSV-backed civ pool randomiser, retired
              stage 5c) -- the two are unrelated and neither imports the
              other.
 
@@ -244,7 +244,7 @@ from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)
 # replacing `jobs`: the two loops are independent and bot/events.py drives both.
 # `jobs` keeps the bare name it has had since stage 3 so that call site (and the
 # tests pinning it) do not have to move for a rename that buys nothing.
-# refresh imports bot.identity, which is already imported by this point --
+# refresh imports nammaoe2bot.features.identity.resolver, which is already imported by this point --
 # bot/__init__.py pulls in bot.replay_stats (whose store.py imports it) before
 # this package.
 from .refresh import jobs as refresh_jobs  # noqa: E402,F401  (DerivedRefresh singleton)

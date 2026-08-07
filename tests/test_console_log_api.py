@@ -2,11 +2,11 @@
 actually defines.
 
 WHY THIS FILE EXISTS. `Log` shipped chat / debug / command / info / error and no
-`warning`, while fifteen call sites across bot/lobby/, bot/predictions/ and
+`warning`, while fifteen call sites across nammaoe2bot/features/lobby/, nammaoe2bot/features/betting/ and
 nammaoe2bot/runtime/migrations.py called `log.warning(...)`. Every one of them raised
 AttributeError — and every one of them sits INSIDE an `except` block, so the
 exception it was trying to report was replaced by a different, uglier one
-escaping the handler. `bot/predictions/interactions.py::_refresh_card` was the
+escaping the handler. `nammaoe2bot/features/betting/interactions.py::_refresh_card` was the
 worst case: a best-effort card refresh that could take the whole bet handler
 down with it.
 
@@ -126,7 +126,7 @@ def test_the_sweep_actually_reaches_the_files_that_were_broken():
 	pre-existing log.warning calls; a walk that quietly stopped covering a
 	directory would still report green, on fewer files. """
 	seen = {path for path, _line, _attr in _log_calls()}
-	for path in ("bot/lobby/api.py", "bot/lobby/completed.py", "bot/lobby/watcher.py",
-				 "bot/lobby/announce.py", "bot/predictions/flow.py",
-				 "bot/predictions/interactions.py"):
+	for path in ("nammaoe2bot/features/lobby/api.py", "nammaoe2bot/features/lobby/completed.py", "nammaoe2bot/features/lobby/watcher.py",
+				 "nammaoe2bot/features/lobby/announce.py", "nammaoe2bot/features/betting/flow.py",
+				 "nammaoe2bot/features/betting/interactions.py"):
 		assert path in seen, f"{path} is outside the log-call sweep"

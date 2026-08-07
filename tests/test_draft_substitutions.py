@@ -17,7 +17,7 @@ the post-match report would not even name them as a participant.
 
 Nothing here mocks Draft, and nothing mocks the lifecycle either: the fake
 queue channel carries a real Application, bot/wiring.py subscribes the real
-handlers to it, and only bot.predictions' hook is swapped for a recorder. One
+handlers to it, and only nammaoe2bot.features.betting' hook is swapped for a recorder. One
 test leaves even that alone and drives the REAL restart_for_match, to prove a
 book failure cannot break a substitution.
 
@@ -32,7 +32,7 @@ from __future__ import annotations
 import asyncio
 import types
 
-import bot.predictions as predictions
+import nammaoe2bot.features.betting as predictions
 from nammaoe2bot.pickup.match.substitution import Draft
 from bot.wiring import wire_match_lifecycle
 
@@ -132,7 +132,7 @@ def wire(monkeypatch, match):
 	was restarted.
 
 	The swap is on the PACKAGE attribute, not on wiring: wiring._restart_book
-	looks the function up at call time, so patching bot.predictions is what a
+	looks the function up at call time, so patching nammaoe2bot.features.betting is what a
 	test can reach and what production actually resolves.
 
 	It used to also patch `remove_players`, `active_matches` and `Exc` onto the
@@ -203,7 +203,7 @@ class TestSubForRestartsTheBook:
 
 		monkeypatch.setattr(predictions.flow, "store", _Exploding())
 		match = FakeMatch()
-		# The real handlers, and bot.predictions deliberately NOT swapped —
+		# The real handlers, and nammaoe2bot.features.betting deliberately NOT swapped —
 		# wiring's _restart_book calls the genuine restart_for_match, which
 		# reaches the store above and raises inside itself.
 		wire_match_lifecycle(match.qc.app)

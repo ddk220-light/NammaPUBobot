@@ -138,7 +138,7 @@ def has_known_outcome(stat_row):
 	scored as a LOSS -- silently, in every split it touches.
 
 	The rule is therefore the same one four sibling modules already take
-	(bot/civ_matcher.py, bot/civ_sync.py, bot/lobby/completed.py and this
+	(nammaoe2bot/features/civs/matcher.py, nammaoe2bot/features/civs/sync.py, nammaoe2bot/features/lobby/completed.py and this
 	package's civ_stats.py, all spelled `winner is not None`): an unresolved
 	outcome is DROPPED from the split rather than scored into it. civ_stats'
 	docstring argues the case in full -- counting an unknown into `games` alone
@@ -358,7 +358,7 @@ def compute_rollup(stat_rows, label_rows, split_min_games=SPLIT_MIN_GAMES,
 		# rollup covers all of history.
 		window_days=(None if now is None else window_days),
 		# The player's OWN record over the same window: the prior that
-		# bot/scouting_report.py regresses each split's win rate toward when it
+		# nammaoe2bot/features/scouting/report.py regresses each split's win rate toward when it
 		# picks the wins-most and loses-most clauses. Stored as counts rather than
 		# a rate so the renderer can choose its own shrinkage without the blob
 		# having pre-rounded the evidence away, and so `games` doubles as the
@@ -425,7 +425,7 @@ async def fetch(community_id, user_id):
 
 	THE ABSENCE IS THE SIGNAL (see delete() above and this package's __init__):
 	None means the player is unlinked, or owns no game this community can
-	reach, and bot/scouting_report.py renders "Statistics pending linking"
+	reach, and nammaoe2bot/features/scouting/report.py renders "Statistics pending linking"
 	from it. Never return an empty blob for a missing row -- that is a report
 	of zeros standing in for a measurement nobody took.
 

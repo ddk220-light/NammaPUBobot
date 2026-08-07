@@ -1,4 +1,4 @@
-"""Unit tests for the pure rendering helpers in bot.post_game.
+"""Unit tests for the pure rendering helpers in nammaoe2bot.features.postgame.card.
 
 Covers the Match Cards line and field rendering, the replay-to-roster merge, and
 post_match_analysis' send fallbacks. The DB read and the Discord send are kept
@@ -7,7 +7,7 @@ conftest's fakes).
 """
 from __future__ import annotations
 
-import bot.post_game as pg
+import nammaoe2bot.features.postgame.card as pg
 
 
 # ── Match Cards ────────────────────────────────────────────────────────

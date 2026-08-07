@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 
-from bot.predictions import gold
+from nammaoe2bot.features.betting import gold
 
 
 class OutsideTransaction(AssertionError):

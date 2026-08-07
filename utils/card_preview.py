@@ -107,7 +107,7 @@ async def main(limit, bot_match):
     try:
         db = ReadOnlyDB(conn)
         _install_stubs(db)
-        from bot import post_game as pg
+        from nammaoe2bot.features.postgame import card as pg
 
         if bot_match:
             metas = await db.fetchall(

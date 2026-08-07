@@ -4,7 +4,7 @@ scoring every category generator must use.
 This is the *contract* the per-category generators (gen_*.py) build against, so the
 pool stays consistent no matter which generator (or which agent) produced a question.
 Pure functions only — no DB, no IO. Distractor selection is randomised through an
-injected random.Random for reproducibility (the bot/team_insights.py convention).
+injected random.Random for reproducibility (the nammaoe2bot/features/storylines/insights.py convention).
 
 A candidate question dict:
     {

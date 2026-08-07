@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Live replay-stats subsystem — strictly additive, opt-in (off unless the
-REPLAY_INGEST_ENABLED config var is set). Mirrors bot/quiz/ isolation: dedicated replay_*
+REPLAY_INGEST_ENABLED config var is set). Mirrors nammaoe2bot/features/quiz/ isolation: dedicated replay_*
 tables declared here via ensure_table at import, imported by bot/__init__.py for that side
 effect and the ReplayStatsJobs singleton. Heavy imports (mgz, requests) stay lazy inside
 fetch.py/parse.py so importing this package is test-safe under the conftest stubs."""

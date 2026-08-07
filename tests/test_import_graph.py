@@ -27,8 +27,8 @@ list to grow and nothing about a missing optional dependency can hide a missing
 repo module.
 
 `_module_level_names` deliberately answers "every name this module binds",
-which includes names it imported itself: `from bot import identity` is
-satisfied by `bot/identity.py`, and `from utils.db_helpers import create_pool`
+which includes names it imported itself: `from nammaoe2bot.features.identity import resolver` is
+satisfied by `nammaoe2bot/features/identity/resolver.py`, and `from utils.db_helpers import create_pool`
 by the def in that file. A module containing a star-import is treated as
 binding anything, because resolving `from x import *` statically means
 importing x, which is the thing this file will not do.

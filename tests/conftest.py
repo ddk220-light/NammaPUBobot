@@ -3,7 +3,7 @@ test files can import the bot's parser helpers without a live MySQL
 connection, a Discord client, or a real ``config.cfg``.
 
 Why this is needed: the bot's module-load wiring is aggressive.
-``bot/elo_sync.py`` does ``from nammaoe2bot.runtime.database import db`` at module
+``nammaoe2bot/features/elo_sync.py`` does ``from nammaoe2bot.runtime.database import db`` at module
 load, and ``nammaoe2bot/runtime/database/__init__.py`` in turn does
 ``db = init_db(cfg.DB_URI)`` at module load — constructing the DB
 adapter from ``config.cfg`` the moment anything reaches into the core
@@ -13,7 +13,7 @@ doesn't exist in CI) and dial MySQL.
 
 pytest imports ``conftest.py`` before it imports any test module, so
 as long as the fakes here land in ``sys.modules`` before
-``from bot.elo_sync import ...`` executes, every downstream ``import``
+``from nammaoe2bot.features.elo_sync import ...`` executes, every downstream ``import``
 of the real module is short-circuited and gets the fake back.
 
 This file intentionally does NOT import from the real ``core`` package
@@ -32,7 +32,7 @@ from pathlib import Path
 import pytest
 
 
-# Make the repo root importable so ``from bot.elo_sync import ...``
+# Make the repo root importable so ``from nammaoe2bot.features.elo_sync import ...``
 # works regardless of which directory pytest was invoked from.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -133,7 +133,7 @@ sys.modules['nammaoe2bot.runtime.database'] = _fake_core_database
 
 
 # ─── aiohttp (stub) ──────────────────────────────────────────────────
-# bot/civ_matcher.py does `import aiohttp` at module load, but only USES it
+# nammaoe2bot/features/civs/matcher.py does `import aiohttp` at module load, but only USES it
 # (ClientSession, ClientError, ...) inside async functions the unit tests never
 # run. CI's pytest job installs only pytest, so a bare stub lets civ_matcher
 # import for its pure-helper tests (_load_profile_uid_map) without pulling in
@@ -333,7 +333,7 @@ class _InteractionType:
 	""" The component-interaction discriminator, and the ONE piece of nextcord a
 	button router needs at runtime.
 
-	`bot/predictions/interactions.py` (and `bot/quiz/interactions.py`, and
+	`nammaoe2bot/features/betting/interactions.py` (and `nammaoe2bot/features/quiz/interactions.py`, and
 	`bot/classifications/interactions.py`) all open with
 
 	    if interaction.type != nextcord.InteractionType.component: return
@@ -357,7 +357,7 @@ class _FakeButton:
 	""" The three attributes a bet button IS: which side and stake it stakes
 	(carried in `custom_id`, the only thing that survives a redeploy), which row
 	it sits on, and what it says. Kept faithful because `custom_id` is the wire
-	protocol between bot/predictions/embeds.bet_view and the router that parses
+	protocol between nammaoe2bot/features/betting/embeds.bet_view and the router that parses
 	it back — a stub that swallowed it would let the two drift apart. """
 
 	def __init__(self, *, style=None, row=None, label=None, emoji=None, custom_id=None, **_kw):
@@ -370,7 +370,7 @@ class _FakeButton:
 
 class _FakeView:
 	""" `timeout` and `auto_defer` are recorded rather than swallowed for the
-	same reason bot/predictions/embeds.py sets them explicitly: timeout=None is
+	same reason nammaoe2bot/features/betting/embeds.py sets them explicitly: timeout=None is
 	what makes the buttons outlive the process, and auto_defer=False is what
 	stops nextcord acking a press before the global router sees it. """
 
@@ -395,7 +395,7 @@ class _ButtonStyleStub:
 class _FakeSelectOption:
 	""" nextcord.SelectOption, one per lettered choice on a multi-answer quiz
 	vote. `label` is the thing a test can actually see ("A. Knight"); kept
-	faithful for the same reason _FakeButton is — bot/quiz/embeds.vote_view's
+	faithful for the same reason _FakeButton is — nammaoe2bot/features/quiz/embeds.vote_view's
 	StringSelect IS its options, so a stub that swallowed them would make the
 	multi-answer path untestable rather than merely unasserted. """
 
@@ -409,7 +409,7 @@ class _FakeSelectOption:
 
 class _FakeStringSelect:
 	""" nextcord.ui.StringSelect — the multi-answer quiz vote control
-	(bot/quiz/embeds.vote_view, multi=True). `custom_id` is the wire protocol
+	(nammaoe2bot/features/quiz/embeds.vote_view, multi=True). `custom_id` is the wire protocol
 	back to the router exactly as it is for _FakeButton, and `max_values` is
 	what proves "select ALL that apply" actually allows more than one pick. """
 
@@ -424,8 +424,8 @@ class _FakeStringSelect:
 
 
 class _UiStub:
-	""" `nextcord.ui`, reached because bot/predictions/embeds.py and
-	bot/quiz/embeds.py import it at module level to build their views. View,
+	""" `nextcord.ui`, reached because nammaoe2bot/features/betting/embeds.py and
+	nammaoe2bot/features/quiz/embeds.py import it at module level to build their views. View,
 	Button and StringSelect are real enough to assert on (see above) so
 	bet_view()/vote_view() can be DRIVEN rather than merely imported — the card
 	shipping with no buttons at all was invisible to the suite while this was a
@@ -519,9 +519,9 @@ def _get(iterable, **attrs):
 
 class _FakeColour:
 	""" nextcord.Colour, in BOTH calling conventions this repo actually uses:
-	`Colour(0xRRGGBB)` directly (bot/predictions/embeds.py) and the named
+	`Colour(0xRRGGBB)` directly (nammaoe2bot/features/betting/embeds.py) and the named
 	classmethods — `.blurple()` / `.gold()` / `.green()` / `.purple()` —
-	bot/quiz/embeds.py calls to pick each embed kind's colour. The plain
+	nammaoe2bot/features/quiz/embeds.py calls to pick each embed kind's colour. The plain
 	`lambda value=0: value` this used to be answered `Colour(x)` fine but had
 	no `.blurple` etc., so the first test to actually drive a quiz embed
 	(rather than merely import the module) AttributeError'd before Embed() was
@@ -579,7 +579,7 @@ class _MissingSentinel:
 	""" Stands in for nextcord.utils.MISSING — the "argument not supplied at
 	all" sentinel real nextcord tests with `is not MISSING` before touching an
 	optional kwarg like `view`. `None` is a real, different value to that
-	check, which is exactly the distinction bot/predictions/interactions.py's
+	check, which is exactly the distinction nammaoe2bot/features/betting/interactions.py's
 	`_eph` depends on: a caller that means "no view" must pass this sentinel
 	(the default), because passing `None` crashes in production the same way
 	FakeResponse/FakeFollowup below are written to crash on it too. """
@@ -671,7 +671,7 @@ sys.modules['nammaoe2bot.runtime.client'] = _fake_core_client
 
 # ─── bot (package shim) ──────────────────────────────────────────────
 # Pre-register an empty `bot` package in sys.modules with an explicit
-# __path__, so `from bot.elo_sync import X` resolves the submodule without
+# __path__, so `from nammaoe2bot.features.elo_sync import X` resolves the submodule without
 # running bot/__init__.py.
 #
 # THE REASON CHANGED, AND THE SHIM STAYED. It used to be load-bearing:
@@ -682,8 +682,8 @@ sys.modules['nammaoe2bot.runtime.client'] = _fake_core_client
 # only the entrypoint calls — so importing it for real would be harmless.
 #
 # It is kept because tests monkeypatch submodules ONTO this object:
-# `monkeypatch.setattr(sys.modules["bot"], "community", fake)` is what makes a
-# function-local `from bot import community` hand back a stub instead of
+# `monkeypatch.setattr(sys.modules["nammaoe2bot"], "community", fake)` is what makes a
+# function-local `from nammaoe2bot import community` hand back a stub instead of
 # opening a DB connection (see tests/test_predictions_flow.py). Patching a
 # package attribute is the supported way to do that, and it wants a package
 # object that belongs to the test run rather than to the import system.
@@ -716,7 +716,7 @@ def adapter_module(monkeypatch):
 
 	# DISTINCT classes, not five aliases of Exception. Adapter.wrap_exc is a
 	# chain of `e.__class__ == mysqlErr.X` tests whose whole job is to map one
-	# driver error to one of the adapter's own types — and bot/predictions/gold.py
+	# driver error to one of the adapter's own types — and nammaoe2bot/features/betting/gold.py
 	# catches exactly one of them (IntegrityError) to implement the side lock, so
 	# "which branch fired" is a money question. Aliased to Exception, every
 	# branch matched every error and the mapping was unassertable; two of the

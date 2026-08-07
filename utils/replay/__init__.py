@@ -5,7 +5,7 @@ outside `bot/` and `core/`.
 This package is the surviving half of the retired `utils/replay_quiz/`. That
 directory mixed two unrelated things under one name: the offline quiz corpus
 (SQLite build, question generation, weekly sampling -- all deleted along with
-the offline player bank, now generated live by bot/quiz/player_bank.py) and the
+the offline player bank, now generated live by nammaoe2bot/features/quiz/player_bank.py) and the
 replay parser the bot itself runs on every ingested match. Only the second is
 here, and the name no longer claims it has anything to do with the quiz.
 

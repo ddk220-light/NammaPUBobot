@@ -6,7 +6,7 @@ job (see test_persona_store.py's PERIODS comparison for the established
 workaround of parsing the source with ast instead of importing it).
 
 These assert that every Discord-user -> AoE2-profile lookup in the web layer
-goes through the identity resolver (bot/identity.py), and that the legacy
+goes through the identity resolver (nammaoe2bot/features/identity/resolver.py), and that the legacy
 three-store union it replaced — two now-retired profile tables plus a
 hand-maintained CSV — is gone from the file entirely. The two table names
 themselves are guarded globally by tests/test_naming.py's OLD_NAMES, which is
@@ -56,19 +56,19 @@ def _string_constants(node):
 
 def test_mapped_player_identity_consults_identity_resolver():
 	calls = _attr_calls(_function("_mapped_player_identity"))
-	assert ("identity", "profiles_for_users") in calls
-	assert ("identity", "names_for_profiles") in calls
+	assert ("resolver", "profiles_for_users") in calls
+	assert ("resolver", "names_for_profiles") in calls
 
 
 def test_player_directory_reads_only_the_identity_resolver():
 	node = _function("_match_stat_players")
-	assert ("identity", "profiles_and_names_by_user") in _attr_calls(node)
+	assert ("resolver", "profiles_and_names_by_user") in _attr_calls(node)
 	assert "_mapped_profiles_by_user" not in _bare_calls(node)
 
 
 def test_public_stats_check_reads_only_the_identity_resolver():
 	node = _function("_player_has_public_stats")
-	assert ("identity", "profiles_for_users") in _attr_calls(node)
+	assert ("resolver", "profiles_for_users") in _attr_calls(node)
 	assert "_mapped_profiles_by_user" not in _bare_calls(node)
 
 

@@ -1,22 +1,22 @@
-"""Unit tests for bot/civ_matcher's player -> AoE2-profile resolution.
+"""Unit tests for nammaoe2bot/features/civs/matcher's player -> AoE2-profile resolution.
 
 The civ recorder used to read data/player_profile_map.csv from disk on every
 civ-match attempt, keyed on Discord user_id with a nick fallback for rows the
-CSV lacked a user_id for. Task 2.3 re-points this at bot/identity.py (the
+CSV lacked a user_id for. Task 2.3 re-points this at nammaoe2bot/features/identity/resolver.py (the
 single identity resolver seeded from all known sources at boot) and drops the
 nick fallback: every row in the CSV already carried a user_id, and every live
-caller (nammaoe2bot/pickup/stats.py, bot/civ_reconcile.py) always supplies one, so the
+caller (nammaoe2bot/pickup/stats.py, nammaoe2bot/features/civs/reconcile.py) always supplies one, so the
 fallback could never resolve anyone the user_id path couldn't.
 """
 from __future__ import annotations
 
 import asyncio
 
-import bot.civ_matcher as cm
+import nammaoe2bot.features.civs.matcher as cm
 
 
 class _FakeIdentity:
-	"""Fakes bot.identity.profiles_for_users — records the call and returns a
+	"""Fakes nammaoe2bot.features.identity.resolver.profiles_for_users — records the call and returns a
 	canned {user_id: [profile_id, ...]} map."""
 
 	def __init__(self, mapping):
@@ -31,7 +31,7 @@ class _FakeIdentity:
 
 def test_map_players_to_profiles_consults_identity_resolver(monkeypatch):
 	fake = _FakeIdentity({111: [612690]})
-	monkeypatch.setattr(cm, "identity", fake)
+	monkeypatch.setattr(cm, "resolver", fake)
 
 	player_info, active_pids = asyncio.run(
 		cm._map_players_to_profiles([(111, "ddk", 0)])
@@ -44,7 +44,7 @@ def test_map_players_to_profiles_consults_identity_resolver(monkeypatch):
 
 def test_map_players_to_profiles_drops_unmapped_players(monkeypatch):
 	fake = _FakeIdentity({111: [612690]})
-	monkeypatch.setattr(cm, "identity", fake)
+	monkeypatch.setattr(cm, "resolver", fake)
 
 	player_info, active_pids = asyncio.run(
 		cm._map_players_to_profiles([(111, "ddk", 0), (222, "nobody", 1)])
@@ -59,7 +59,7 @@ def test_map_players_to_profiles_no_nick_fallback(monkeypatch):
 	# A player with no known profile must stay unmapped even if their nick
 	# happens to collide with something — there is no nick-keyed lookup left.
 	fake = _FakeIdentity({})
-	monkeypatch.setattr(cm, "identity", fake)
+	monkeypatch.setattr(cm, "resolver", fake)
 
 	player_info, active_pids = asyncio.run(
 		cm._map_players_to_profiles([(333, "ddk", 0)])
@@ -71,7 +71,7 @@ def test_map_players_to_profiles_no_nick_fallback(monkeypatch):
 
 def test_map_players_to_profiles_combines_alt_accounts(monkeypatch):
 	fake = _FakeIdentity({222: [17841676, 2885693]})
-	monkeypatch.setattr(cm, "identity", fake)
+	monkeypatch.setattr(cm, "resolver", fake)
 
 	player_info, active_pids = asyncio.run(
 		cm._map_players_to_profiles([(222, "thelivi", 1)])
@@ -105,7 +105,7 @@ class _FakeLog:
 def test_find_and_record_logs_when_fewer_than_two_players_resolve(monkeypatch):
 	fake_identity = _FakeIdentity({111: [612690]})  # only one of two players resolves
 	fake_log = _FakeLog()
-	monkeypatch.setattr(cm, "identity", fake_identity)
+	monkeypatch.setattr(cm, "resolver", fake_identity)
 	monkeypatch.setattr(cm, "log", fake_log)
 
 	result = asyncio.run(cm._find_and_record(
@@ -124,7 +124,7 @@ def test_find_and_record_logs_when_fewer_than_two_players_resolve(monkeypatch):
 def test_find_and_record_logs_when_zero_players_resolve(monkeypatch):
 	fake_identity = _FakeIdentity({})
 	fake_log = _FakeLog()
-	monkeypatch.setattr(cm, "identity", fake_identity)
+	monkeypatch.setattr(cm, "resolver", fake_identity)
 	monkeypatch.setattr(cm, "log", fake_log)
 
 	result = asyncio.run(cm._find_and_record(

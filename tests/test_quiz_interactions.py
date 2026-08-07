@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""nextcord assembly for the quiz poll (bot.quiz.embeds) — Task 7.
+"""nextcord assembly for the quiz poll (nammaoe2bot.features.quiz.embeds) — Task 7.
 
 Exercised against the conftest nextcord STUB, not real nextcord (not
 installed in CI). The stub's recording surface is plain attributes on the
@@ -20,7 +20,7 @@ import types
 import nextcord
 import pytest
 
-from bot.quiz import embeds, interactions
+from nammaoe2bot.features.quiz import embeds, interactions
 
 
 def _post(**over):
@@ -132,14 +132,14 @@ def test_result_embed_gold_note_passthrough():
 # tests/test_quiz_store.py.
 
 class _FakeStore:
-	"""Stands in for bot.quiz.store: an in-memory posts dict and a votes dict
+	"""Stands in for nammaoe2bot.features.quiz.store: an in-memory posts dict and a votes dict
 	keyed (post_id, user_id) — the shape the real (post_id, user_id) PRIMARY
 	KEY enforces. record_vote/record_vote_multi overwrite the whole row, same
 	as the real REPLACE upsert; answers_for_post returns only cast votes.
 
 	The two writers reproduce the real ones' TRANSACTIONAL CONTRACT, not just
 	their storage: they re-evaluate the gate for themselves and return True
-	only when the vote landed (bot/quiz/store.py takes that re-check under a
+	only when the vote landed (nammaoe2bot/features/quiz/store.py takes that re-check under a
 	`SELECT ... FOR UPDATE` on the post row).
 
 	THEY ALSO OWN THEIR OWN CLOCK — `self.now`, the reading the real gate takes
@@ -307,7 +307,7 @@ def test_press_on_closed_status_is_refused(quiz_env):
 
 # ── a write refused under the row lock ──────────────────────────────────
 # The pre-read gate above is a fast path, not the authority: the row it reads
-# can be flipped a millisecond later by bot/quiz/jobs.py::_reveal's clamp, and
+# can be flipped a millisecond later by nammaoe2bot/features/quiz/jobs.py::_reveal's clamp, and
 # the write is a separate round-trip. store.record_vote redoes the check inside
 # its own transaction, under a FOR UPDATE lock on the post row and against a
 # clock it reads itself once it has that lock, and returns False when the vote

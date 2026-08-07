@@ -2,8 +2,8 @@
 """The composition root: the ONE module that imports both the domain and the
 features built on it, and the one place their connection is written down.
 
-Everything below used to be a function-local `from bot.predictions import ...`
-or `from bot.lobby import watcher` inside bot/match/. Eleven of them, scattered
+Everything below used to be a function-local `from nammaoe2bot.features.betting import ...`
+or `from nammaoe2bot.features.lobby import watcher` inside bot/match/. Eleven of them, scattered
 across five methods, each with its own hand-rolled try/except — which meant the
 answer to "what happens when a match finishes?" could only be assembled by
 reading the domain and grepping for imports. It is this file.
@@ -21,11 +21,11 @@ import time
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.utils import get_nick
 
-from bot import civ_matcher
-from bot import predictions
-from bot.lobby import watcher as lobby_watcher
-from bot import storyline_payoff
-from bot import team_insights
+from nammaoe2bot.features.civs import matcher
+from nammaoe2bot.features import betting
+from nammaoe2bot.features.lobby import watcher as lobby_watcher
+from nammaoe2bot.features.storylines import payoff
+from nammaoe2bot.features.storylines import insights
 
 
 # ── lobby: the opt-in live-game watcher ──────────────────────────────────
@@ -43,7 +43,7 @@ async def _stop_lobby_watcher(match, _ctx):
 # ── storylines: the pre-game tease and its post-game payoff ──────────────
 async def _post_team_insights(match, ctx):
 	try:
-		embed = await team_insights.build_insights_embed(match)
+		embed = await insights.build_insights_embed(match)
 		if embed is not None:
 			await ctx.notice(embed=embed)
 	except Exception as e:
@@ -60,14 +60,14 @@ async def _post_storyline_payoff(match, ctx):
 	"""Purely win/loss, so it posts the instant the match reports — no replay
 	needed."""
 	if match.ranked:
-		embed = await storyline_payoff.build_payoff_embed(match)
+		embed = await payoff.build_payoff_embed(match)
 		if embed is not None:
 			await ctx.notice(embed=embed)
 
 
 # ── civs: background recording of what each player picked ────────────────
 async def _record_civs(match, _ctx):
-	"""Fire-and-forget: civ_matcher.schedule() hands the work to a background
+	"""Fire-and-forget: matcher.schedule() hands the work to a background
 	task and returns.
 
 	On `result_recorded` rather than `finished`, and the difference is real —
@@ -77,35 +77,35 @@ async def _record_civs(match, _ctx):
 		(p.id, get_nick(p), 0 if p in match.teams[0] else (1 if p in match.teams[1] else None))
 		for p in match.players
 	]
-	civ_matcher.schedule(match.qc.id, match.id, players,
+	matcher.schedule(match.qc.id, match.id, players,
 						 getattr(match, "winner", None), int(time.time()))
 
 
 # ── betting: the audience book ───────────────────────────────────────────
 # Each of these looks up the function on the package at call time rather than
 # binding it at import. That is what lets a test swap one out, and it costs
-# nothing: they are all module-level names on bot/predictions/__init__.py.
+# nothing: they are all module-level names on nammaoe2bot/features/betting/__init__.py.
 async def _open_book(match, _ctx):
 	"""Unranked matches never report a winner to score against, and a queue can
 	turn the feature off outright."""
 	if match.ranked and match.cfg['predictions_enabled']:
-		await predictions.open_for_match(match)
+		await betting.open_for_match(match)
 
 
 async def _restart_book(match, _ctx):
 	if match.ranked:
-		await predictions.restart_for_match(match)
+		await betting.restart_for_match(match)
 
 
 async def _settle_book(match, _ctx):
 	"""A match that ends without a clean win/loss (a draw) is voided inside
 	resolve_for_match rather than settled."""
 	if match.ranked:
-		await predictions.resolve_for_match(match)
+		await betting.resolve_for_match(match)
 
 
 async def _void_book(match, _ctx):
-	await predictions.void_for_match(match.id)
+	await betting.void_for_match(match.id)
 
 
 def wire_match_lifecycle(app):

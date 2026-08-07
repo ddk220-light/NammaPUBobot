@@ -3,7 +3,7 @@ later tasks re-point the four fragmented readers (player_profile_map.csv,
 the two generated CSVs and the two retired profile tables) at.
 
 Pure-logic tests against a fake adapter, same pattern as test_community.py:
-no MySQL involved. bot.identity.db is monkeypatched per test so nothing here
+no MySQL involved. nammaoe2bot.features.identity.resolver.db is monkeypatched per test so nothing here
 touches the real nammaoe2bot.runtime.database fake conftest.py installs for every other
 test file.
 """
@@ -16,8 +16,8 @@ import types
 from enum import IntEnum
 from pathlib import Path
 
-import bot.identity as identity
-import bot.community as community
+import nammaoe2bot.features.identity.resolver as identity
+import nammaoe2bot.community as community
 # `/identity status`' gated-features half counts off this community's rollups.
 # Imported for real (pure aggregation + DB reads, no Discord) so the tests
 # monkeypatch the module the command actually resolves at call time.
@@ -26,16 +26,16 @@ import bot.derived.rollups as rollups
 # convention for an admin-facing refusal), so the tests need the real class to
 # assert on. Importable under CI: nammaoe2bot/exceptions.py is pure stdlib.
 from nammaoe2bot.exceptions import Exceptions as _Exc
-# The shared pure module both bot/identity.py and nammaoe2bot/runtime/migrations.py read
+# The shared pure module both nammaoe2bot/features/identity/resolver.py and nammaoe2bot/runtime/migrations.py read
 # their CSV parsing from. Imported directly because parse_name_repairs is a
-# migration-side reader only — bot/identity.py deliberately does not re-export
+# migration-side reader only — nammaoe2bot/features/identity/resolver.py deliberately does not re-export
 # it the way it does parse_seed_csv.
 import nammaoe2bot.runtime.identity_seed as identity_seed
 # /link validates an id through this module before it writes anything. Imported
 # for real (it is pure + lazy-imports aiohttp, see tests/test_lobby_api.py) so
 # the tests below can monkeypatch fetch_profile on the actual dependency the
 # handler resolves at call time -- no network, ever.
-from bot.lobby import api as lobby_api
+from nammaoe2bot.features.lobby import api as lobby_api
 
 
 class FakeDb:
@@ -703,7 +703,7 @@ def test_learn_reports_false_when_it_is_refused(monkeypatch):
 
 def test_record_refused_claim_opens_a_conflict(monkeypatch):
 	""" The deduction solver's door onto identity_conflicts for the conclusions
-	it stops itself from writing (bot/identity_solver.py rules 1 and 2). """
+	it stops itself from writing (nammaoe2bot/features/identity/solver.py rules 1 and 2). """
 	fake = _setup(monkeypatch)
 
 	asyncio.run(identity.record_refused_claim(111, 222, "learned"))
@@ -1354,10 +1354,10 @@ def _coverage_setup(monkeypatch):
 # (tests/test_match_final_message.py's established trick) and load
 # admin.py directly by file path (tests/test_replay_scoring.py's
 # `player_tags_standalone_test` trick), bypassing bot/commands/__init__.py
-# entirely. bot.identity and bot.community are imported for real above
+# entirely. nammaoe2bot.features.identity.resolver and nammaoe2bot.community are imported for real above
 # (both are pure DB-only modules, already proven importable under CI) and
 # their functions are monkeypatched directly per test -- admin.py reaches
-# them as `bot.identity.X` / `bot.community.X` at call time, so patching
+# them as `nammaoe2bot.features.identity.resolver.X` / `nammaoe2bot.community.X` at call time, so patching
 # the real modules *is* patching admin.py's actual dependency.
 
 class _Perms(IntEnum):
@@ -1500,7 +1500,7 @@ def test_identity_link_triggers_the_deduction_solver(monkeypatch):
 	""" Spec section 4: an admin's binding is a new constraint that can resolve
 	other profiles in the same games immediately, so the solver runs on the
 	spot. A solver failure must never turn a completed link into an error. """
-	import bot.identity_solver as identity_solver
+	import nammaoe2bot.features.identity.solver as identity_solver
 
 	admin = _load_admin_module(monkeypatch)
 	_setup(monkeypatch)
@@ -2029,7 +2029,7 @@ def test_identity_conflicts_reports_unknown_current_owner_without_erroring(monke
 # above; fetch_profile is faked per test so nothing here touches the network.
 
 def _fake_fetch_profile(monkeypatch, result):
-	""" Stand in for bot.lobby.api.fetch_profile. Returns the list of profile
+	""" Stand in for nammaoe2bot.features.lobby.api.fetch_profile. Returns the list of profile
 	ids it was called with, so a test can assert it was NOT called at all. """
 	calls = []
 
@@ -2269,7 +2269,7 @@ def test_link_triggers_the_deduction_solver_for_the_channels_community(monkeypat
 	""" Spec section 4: a fresh link is a new constraint that can immediately
 	resolve this player's teammates, so the solver runs on the spot rather than
 	waiting for the next ingest. """
-	import bot.identity_solver as identity_solver
+	import nammaoe2bot.features.identity.solver as identity_solver
 
 	link_mod = _load_link_module(monkeypatch)
 	_setup(monkeypatch)
@@ -2292,7 +2292,7 @@ def test_link_triggers_the_deduction_solver_for_the_channels_community(monkeypat
 def test_link_still_replies_when_the_deduction_solver_blows_up(monkeypatch):
 	""" run_for_channel swallows its own failures, but the command must not
 	depend on that: the link has already landed and the player must be told. """
-	import bot.identity_solver as identity_solver
+	import nammaoe2bot.features.identity.solver as identity_solver
 
 	link_mod = _load_link_module(monkeypatch)
 	fake = _setup(monkeypatch)

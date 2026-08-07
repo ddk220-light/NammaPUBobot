@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Preview / replay the team-insights storyline for recent matches.
 
-Reconstructs what ``bot/team_insights.build_insights_embed`` WOULD have posted
+Reconstructs what ``nammaoe2bot/features/storylines/insights.build_insights_embed`` WOULD have posted
 when each of the last N matches' teams were formed — using only the ranked
 history that existed *before* that match (``match_id`` strictly less than the
 target), so it's a faithful replay rather than hindsight.
@@ -25,7 +25,7 @@ import types
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, ".."))
 
-# Load the analysis helpers from bot/team_insights WITHOUT dragging in the bot's
+# Load the analysis helpers from nammaoe2bot/features/storylines/insights WITHOUT dragging in the bot's
 # DB/Discord import chain. team_insights only imports `nammaoe2bot.runtime.database` (at load)
 # and `nammaoe2bot.runtime.utils.join_and` (lazily, inside _phrase) — stub both so the pure
 # scoring/selection/phrasing functions load with just aiomysql present.
@@ -42,19 +42,19 @@ sys.path.insert(0, _REPO_ROOT)       # repo root (for the `bot` package path)
 import importlib.util  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location(
-    "team_insights", os.path.join(_REPO_ROOT, "bot", "team_insights.py")
+    "team_insights", os.path.join(_REPO_ROOT, "bot", "insights.py")
 )
 ti = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ti)
 
-# Load bot/storyline_payoff.py the same way, without dragging in bot/__init__.py
-# (which imports nextcord). storyline_payoff does `from bot import team_insights`,
+# Load nammaoe2bot/features/storylines/payoff.py the same way, without dragging in bot/__init__.py
+# (which imports nextcord). storyline_payoff does `from nammaoe2bot.features.storylines import insights`,
 # so register a bare `bot` package in sys.modules pointing at the already-loaded
 # `ti` module — that satisfies the import without executing bot/__init__.py.
 sys.modules["bot"] = types.ModuleType("bot")
 sys.modules["bot"].__path__ = [os.path.join(_REPO_ROOT, "bot")]
 sys.modules["bot"].team_insights = ti
-sys.modules["bot.team_insights"] = ti
+sys.modules["nammaoe2bot.features.storylines.insights"] = ti
 
 _sp_spec = importlib.util.spec_from_file_location(
     "storyline_payoff", os.path.join(_REPO_ROOT, "bot", "storyline_payoff.py")
@@ -127,8 +127,8 @@ async def preview_one(pool, mrow):
     # section above and the payoff section below off that single hist/rng. The live
     # bot reads twice -- once at team-formation, once at report time -- and the
     # window, roster and seed can all drift between those two reads (that drift is
-    # exactly what bot/team_insights.py's storyline_ctx stash and
-    # bot/storyline_payoff.py's module docstring exist to pin down). So a clean run
+    # exactly what nammaoe2bot/features/storylines/insights.py's storyline_ctx stash and
+    # nammaoe2bot/features/storylines/payoff.py's module docstring exist to pin down). So a clean run
     # through this harness is evidence about the copy reading well; it is not
     # evidence that the tease and payoff will agree live, because this harness
     # cannot reproduce that drift by construction.

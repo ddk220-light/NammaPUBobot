@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """Slash-command handlers for the opt-in AoE2 quiz. Thin: scheduling/posting lives
-in bot.quiz.jobs, persistence in bot.quiz.store, rendering in bot.quiz.embeds. All
-bot.quiz imports are lazy (inside the handlers) so this module loads during the
+in nammaoe2bot.features.quiz.jobs, persistence in nammaoe2bot.features.quiz.store, rendering in nammaoe2bot.features.quiz.embeds. All
+nammaoe2bot.features.quiz imports are lazy (inside the handlers) so this module loads during the
 `from . import commands` step without pulling nextcord-heavy quiz modules early."""
 
 __all__ = ['quiz_leaderboard', 'quiz_disable']
 
 
 async def quiz_leaderboard(ctx):
-	from bot.quiz import embeds, schedule, scoring, store
+	from nammaoe2bot.features.quiz import embeds, schedule, scoring, store
 	cfg = await store.get_config()
 	channel_id = (cfg or {}).get("channel_id") or ctx.channel.id
 	# Show the current CALENDAR week (the week the latest post fell in) so the
@@ -31,7 +31,7 @@ async def quiz_disable(ctx):
 	worth knowing before you press it rather than after.
 	"""
 	ctx.check_perms(ctx.Perms.ADMIN)
-	from bot.quiz import store
+	from nammaoe2bot.features.quiz import store
 	await store.disable_all()
 	await ctx.success(
 		"Daily quiz disabled. Any open quiz will still resolve.\n"

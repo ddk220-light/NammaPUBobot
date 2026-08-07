@@ -39,7 +39,7 @@ with no melee armor"), not trivial cost lookups — and every correct answer mus
 
 This feature is **strictly additive and opt-in**, mirroring the lobby work:
 
-- It lives in a new isolated `bot/quiz/` package plus an offline generator under
+- It lives in a new isolated `nammaoe2bot/features/quiz/` package plus an offline generator under
   `utils/quiz_gen/`. No existing match / civ / rating / lobby / reconcile flow is
   modified. With the quiz disabled (the default), the bot behaves byte-for-byte as
   it does today.
@@ -119,7 +119,7 @@ carries `category` + `difficulty` so the daily picker rotates variety. Generic
 (civ-agnostic) units are preferred for cross-civ facts; civ-specific questions are
 allowed where the fact is inherently civ-bound (unique units).
 
-### 4.3 Bot runtime (`bot/quiz/`)
+### 4.3 Bot runtime (`nammaoe2bot/features/quiz/`)
 
 A new isolated package consuming only the pool JSON + MySQL:
 
@@ -191,7 +191,7 @@ The bot redeploys on Railway, so no in-memory-only state:
 - Scoring: **1 point per correct answer** within the player's window. The weekly
   leaderboard ranks by correct count (with answered count + accuracy shown).
 - Config lives in the dedicated **`qc_quiz_config`** table (§7), one row per
-  channel, managed entirely inside `bot/quiz/` — the lobby precedent (`qc_lobbies`
+  channel, managed entirely inside `nammaoe2bot/features/quiz/` — the lobby precedent (`qc_lobbies`
   has its own tables and never touched the core config). This keeps
   `queue_channel.py` and its CfgFactory **byte-for-byte untouched** (strongest
   do-no-harm). Admins configure via a `/quiz` admin subcommand group. Fields,

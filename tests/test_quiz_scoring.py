@@ -1,7 +1,7 @@
-"""Pure-function tests for bot.quiz.scoring (no DB, no nextcord — see conftest)."""
+"""Pure-function tests for nammaoe2bot.features.quiz.scoring (no DB, no nextcord — see conftest)."""
 from __future__ import annotations
 
-import bot.quiz.scoring as s
+import nammaoe2bot.features.quiz.scoring as s
 
 
 def test_parse_custom_id_reveal_and_answer():
@@ -46,7 +46,7 @@ def test_daily_due_fires_once_per_day_at_hour():
 	assert s.daily_due(now_ts=at, hour=10, last_post_ymd="2024-06-12") is False  # before hour
 
 
-from bot.quiz.scoring import grade_multi, parse_custom_id
+from nammaoe2bot.features.quiz.scoring import grade_multi, parse_custom_id
 
 
 def test_grade_multi_exact_match_is_correct():

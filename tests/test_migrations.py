@@ -23,7 +23,7 @@ import nammaoe2bot.runtime.migrations as mig
 # emulation below. Only tables this suite actually writes via insert_many need
 # an entry. A tuple means a composite key. For identity_conflicts that is the
 # UNIQUE claim index migration 005 installs — NOT the primary key, which is a
-# surrogate `id` the writers never supply (see bot/identity.py's declaration).
+# surrogate `id` the writers never supply (see nammaoe2bot/features/identity/resolver.py's declaration).
 _PRIMARY_KEYS = {
 	"identities": "profile_id",
 	"identity_conflicts": ("profile_id", "claimed_user_id", "status"),
@@ -1191,7 +1191,7 @@ def test_m004_backfill_is_idempotent(tmp_path, monkeypatch):
 
 
 def test_m004_backfill_does_not_overwrite_a_link_the_live_path_already_wrote(tmp_path, monkeypatch):
-	"""bot/community.py's link_match_replay is the authoritative forward
+	"""nammaoe2bot/community.py's link_match_replay is the authoritative forward
 	writer. INSERT IGNORE (not REPLACE) means this one-shot backfill can never
 	stomp a row that writer produced."""
 	monkeypatch.setattr(mig, "_ROOT", str(tmp_path))
@@ -1721,18 +1721,18 @@ def test_m005_is_a_noop_after_003_created_the_table_in_the_new_shape(tmp_path, m
 
 
 def test_the_conflicts_ddl_matches_the_ensure_table_declaration():
-	""" identity_conflicts is declared TWICE — bot/identity.py's ensure_table
+	""" identity_conflicts is declared TWICE — nammaoe2bot/features/identity/resolver.py's ensure_table
 	and this module's raw CREATE TABLE (a migration cannot import bot.*) — and
 	they are kept in sync by hand. Drift is not theoretical: 005 exists because
 	the key was wrong, and a fresh install gets its schema from the raw DDL
 	while every runtime write assumes the declaration. Compare them here so the
 	build fails instead of production diverging.
 
-	Parses bot/identity.py's declaration as text rather than importing it:
-	`import bot.identity` executes db.ensure_table() against conftest's fake. """
+	Parses nammaoe2bot/features/identity/resolver.py's declaration as text rather than importing it:
+	`import nammaoe2bot.features.identity.resolver` executes db.ensure_table() against conftest's fake. """
 	import os
 
-	path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bot", "identity.py")
+	path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nammaoe2bot", "features", "identity", "resolver.py")
 	with open(path, encoding="utf-8") as f:
 		src = f.read()
 	block = src.split('tname="identity_conflicts"', 1)[1].split("))", 1)[0]
@@ -1902,7 +1902,7 @@ def test_m007_is_idempotent():
 
 def test_m007_is_a_noop_on_a_fresh_install():
 	""" Migrations run before `import bot`, so on a first-ever boot none of
-	these tables exists yet — bot/replay_stats and bot/civ_sync create them,
+	these tables exists yet — bot/replay_stats and nammaoe2bot/features/civs/sync create them,
 	already correctly named, moments later. """
 	db = FakeDb()
 	asyncio.run(mig._m007(db))
@@ -2431,7 +2431,7 @@ def test_m009_seeds_an_unowned_row_too():
 def test_m009_does_not_clobber_values_the_running_bot_has_since_written():
 	# MUTANT GUARD: the UPDATE dropping its `WHERE bound_at = 0`. The repair
 	# runbook is "drop the schema_migrations ledger and reboot", so this body
-	# genuinely re-runs against a database bot/identity.py has been stamping for
+	# genuinely re-runs against a database nammaoe2bot/features/identity/resolver.py has been stamping for
 	# days. An unguarded UPDATE would rewind every real bound_at to last_seen_at,
 	# which is ALWAYS >= it — silently marking every rollup stale.
 	db = _m009_db([_m009_identity(11, 1, 9000)])
@@ -2459,7 +2459,7 @@ def test_m009_still_seeds_when_the_column_already_exists():
 
 
 def test_m009_is_a_noop_on_a_fresh_install():
-	# identities is declared by bot/identity.py AND created by 003 — but a
+	# identities is declared by nammaoe2bot/features/identity/resolver.py AND created by 003 — but a
 	# database where neither has happened must not have a table invented for it.
 	db = _SqliteMigrationDb(schema="CREATE TABLE unrelated (x INTEGER);")
 
@@ -2474,7 +2474,7 @@ def test_m009_is_registered_once_under_the_next_free_number():
 
 
 def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
-	""" bound_at is declared in THREE places — bot/identity.py's ensure_table,
+	""" bound_at is declared in THREE places — nammaoe2bot/features/identity/resolver.py's ensure_table,
 	this module's _ensure_identities_table CREATE (for a fresh install) and 009's
 	ALTER (for every database that already has the table) — because a migration
 	cannot import bot.*. Drift is not cosmetic: _ensure_table never alters an
@@ -2488,10 +2488,10 @@ def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "identity.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "features", "identity", "resolver.py"), encoding="utf-8") as f:
 		block = f.read().split('tname="identities"', 1)[1].split("primary_keys=", 1)[0]
 	decl = re.search(r'dict\(cname="bound_at"[^\n]*', block)
-	assert decl, "bot/identity.py no longer declares identities.bound_at"
+	assert decl, "nammaoe2bot/features/identity/resolver.py no longer declares identities.bound_at"
 	assert "ctype=db.types.int" in decl.group(0), "column type drifted"
 	assert "notnull=True" in decl.group(0), "nullability drifted"
 	assert "default=0" in decl.group(0), (

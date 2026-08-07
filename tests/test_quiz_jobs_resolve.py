@@ -8,10 +8,10 @@ retry mechanism this feature has is `_close_due`, a sweep that re-enters
 open" IS the retry ticket. Close the post and then fail to pay, and that
 voter's gold is beyond the sweep forever: nothing will ever pay it and nothing
 will ever notice. Re-running the whole resolve is always safe (grading is
-deterministic, every grant is idem-keyed in bot/predictions/gold.py, the card
+deterministic, every grant is idem-keyed in nammaoe2bot/features/betting/gold.py, the card
 edit is harmless to repeat), so the correct failure mode is "do it again", not
 "give up quietly". This is the same money-first / terminal-status-last rule
-bot/predictions/flow.py follows.
+nammaoe2bot/features/betting/flow.py follows.
 
 Every fake here appends to ONE shared `calls` list, so the order assertions are
 global across store, bank and channel rather than per-object — a close that
@@ -32,18 +32,18 @@ import types
 
 import pytest
 
-import bot.predictions  # noqa: F401 — the package whose `gold` attribute the fixture swaps
-import bot.quiz.jobs  # noqa: F401 — for the sys.modules lookup below
-from bot.quiz import embeds
+import nammaoe2bot.features.betting  # noqa: F401 — the package whose `gold` attribute the fixture swaps
+import nammaoe2bot.features.quiz.jobs  # noqa: F401 — for the sys.modules lookup below
+from nammaoe2bot.features.quiz import embeds
 
-# NOT `import bot.quiz.jobs as jobs` / `from bot.quiz import jobs`. Both of
-# those resolve the PACKAGE attribute `bot.quiz.jobs`, and bot/quiz/__init__.py
+# NOT `import nammaoe2bot.features.quiz.jobs as jobs` / `from nammaoe2bot.features.quiz import jobs`. Both of
+# those resolve the PACKAGE attribute `nammaoe2bot.features.quiz.jobs`, and nammaoe2bot/features/quiz/__init__.py
 # ends with `from .jobs import jobs` — so that attribute is the QuizJobs
 # INSTANCE, not the module, and every monkeypatch below would land on the
 # singleton instead. This is the same shadowing that left the predictions
-# feature dead for 3312 matches (see bot/predictions/__init__.py's tail);
+# feature dead for 3312 matches (see nammaoe2bot/features/betting/__init__.py's tail);
 # sys.modules is the unambiguous handle.
-jobs = sys.modules["bot.quiz.jobs"]
+jobs = sys.modules["nammaoe2bot.features.quiz.jobs"]
 
 
 # ── the rows ─────────────────────────────────────────────────────────────
@@ -69,7 +69,7 @@ GHOST = dict(post_id=41, user_id=3, nick="Ghost", choice_index=None,
 
 # ── the fakes ────────────────────────────────────────────────────────────
 class FakeStore:
-	"""bot.quiz.store, in memory. `answers_for_post` reproduces the real
+	"""nammaoe2bot.features.quiz.store, in memory. `answers_for_post` reproduces the real
 	query's `answered_at IS NOT NULL` filter rather than handing back every
 	row — the contract this module consumes is "cast votes only", and a fake
 	that leaked ghosts would let the payroll widen without a test noticing."""
@@ -122,7 +122,7 @@ class FakeStore:
 		return [dict(p) for p in self.posts.values()
 				if p["status"] == "open" and int(p["closes_at"]) <= now_ts]
 
-	# — the vote half (drives bot.quiz.interactions against the same rows) —
+	# — the vote half (drives nammaoe2bot.features.quiz.interactions against the same rows) —
 	async def record_vote(self, post_id, user_id, nick, choice_index):
 		"""The real one re-reads the post row FOR UPDATE inside its own
 		transaction, reads the clock UNDER THAT LOCK, and writes only if the
@@ -187,7 +187,7 @@ class FakeStore:
 
 
 class FakeBank:
-	"""bot.predictions.gold, with a real (tiny) ledger behind it.
+	"""nammaoe2bot.features.betting.gold, with a real (tiny) ledger behind it.
 
 	`ledger` is keyed (quiz_post_id, user_id) exactly like the real
 	`quiz:{post}:{user}` idem_key, so a repeated grant is a no-op returning 0 —
@@ -271,16 +271,16 @@ def env(monkeypatch):
 		chan = FakeChannel(calls, fetch_raises=fetch_raises) if channel else None
 
 		monkeypatch.setattr(jobs, "store", store)
-		# `from bot.predictions import gold as gold_bank` resolves the package
+		# `from nammaoe2bot.features.betting import gold as gold_bank` resolves the package
 		# attribute before it would import the submodule, so setting it here
 		# keeps the real bank (and its DB) out of the run.
-		monkeypatch.setattr(sys.modules["bot.predictions"], "gold", bank, raising=False)
+		monkeypatch.setattr(sys.modules["nammaoe2bot.features.betting"], "gold", bank, raising=False)
 
 		async def _community_for_channel(_channel_id):
 			calls.append("community_for_channel")
 			return community_id
 
-		monkeypatch.setattr(sys.modules["bot"], "community",
+		monkeypatch.setattr(sys.modules["nammaoe2bot"], "community",
 				types.SimpleNamespace(community_for_channel=_community_for_channel),
 				raising=False)
 
@@ -343,7 +343,7 @@ def test_resolve_grades_pays_then_closes_in_order(env):
 # _close_due only ever feeds _reveal posts already past closes_at, so that path
 # was never racy. _reveal_previous is the hole: /quiz reveal_now and the daily
 # cadence both reach _reveal while `now < closes_at`, and the vote gate in
-# bot/quiz/interactions.py refuses a press only when `status != 'open' or now >=
+# nammaoe2bot/features/quiz/interactions.py refuses a press only when `status != 'open' or now >=
 # closes_at`. Mid-resolve the row still says open on BOTH counts — status flips
 # last by design (money first, terminal status last) — so a press in that window
 # was accepted and written AFTER the snapshot, then shut out by the close
@@ -415,7 +415,7 @@ def test_a_press_during_the_resolve_is_refused(env, monkeypatch):
 	by equality and the ROUTER refuses the press before the store is ever
 	asked — green, and blind to a gate that judges a clamped deadline against
 	the caller's older reading."""
-	from bot.quiz import interactions
+	from nammaoe2bot.features.quiz import interactions
 	from tests.test_quiz_interactions import FakeInteraction
 
 	clock = _Clock(50_000)
@@ -826,13 +826,13 @@ def test_jobs_no_longer_references_the_deleted_builders():
 
 def test_the_deleted_builders_are_actually_gone():
 	for gone in ("card_embed", "card_view", "question_embed", "answer_view"):
-		assert not hasattr(embeds, gone), "bot.quiz.embeds still exports {}".format(gone)
-	from bot.quiz import store as quiz_store
+		assert not hasattr(embeds, gone), "nammaoe2bot.features.quiz.embeds still exports {}".format(gone)
+	from nammaoe2bot.features.quiz import store as quiz_store
 	for gone in ("record_reveal", "record_answer", "record_answer_multi", "get_answer"):
-		assert not hasattr(quiz_store, gone), "bot.quiz.store still exports {}".format(gone)
-	from bot.quiz import view as quiz_view
+		assert not hasattr(quiz_store, gone), "nammaoe2bot.features.quiz.store still exports {}".format(gone)
+	from nammaoe2bot.features.quiz import view as quiz_view
 	# letter_options went with question_lines, its only caller — tally_lines
 	# builds the (richer) lettered line the poll card actually renders.
 	for gone in ("card_lines", "question_lines", "too_late_notice",
 			"already_answered_notice", "letter_options"):
-		assert not hasattr(quiz_view, gone), "bot.quiz.view still exports {}".format(gone)
+		assert not hasattr(quiz_view, gone), "nammaoe2bot.features.quiz.view still exports {}".format(gone)

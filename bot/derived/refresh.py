@@ -16,7 +16,7 @@ additional: True` exists because the flagship community has genuine
 multi-account players, so resolving a single profile per user would silently
 halve their history -- and both halves would then fall under
 rollups.SPLIT_MIN_GAMES and vanish from the report entirely, with no error
-anywhere. Profiles are therefore resolved through identity.profiles_for_users,
+anywhere. Profiles are therefore resolved through resolver.profiles_for_users,
 which returns the whole set, and every query below binds the whole set.
 
 An UNLINKED profile aggregates into no rollup at all: `_IMPLIED_SQL` joins
@@ -73,7 +73,7 @@ game_stats.computed_at. An identity change announces itself through NOTHING: a
 game_stats row, so a comparison built on game data alone would never fire and
 the headline promise of identity v2 -- link late, get everything -- would
 silently not happen. 009_identities_bound_at adds `identities.bound_at`, stamped
-by exactly the three paths in bot/identity.py that MOVE a binding
+by exactly the three paths in nammaoe2bot/features/identity/resolver.py that MOVE a binding
 (_insert_binding, _overwrite_binding when the owner actually changes, and
 unlink) and by none of the paths that merely re-observe one. `last_seen_at` was
 rejected for this: it is an observation timestamp that every replay ingest and
@@ -88,7 +88,7 @@ move, and A's own game_stats rows never change. A would keep P's games in their
 rollup forever. `_IDENTITY_WATERMARK_SQL` closes that by taking the watermark
 over every profile a user has EVER been associated with: the profiles they own
 now, UNION the profiles they appear against in `identity_conflicts`. That second
-half costs nothing to maintain because bot/identity.py already records every
+half costs nothing to maintain because nammaoe2bot/features/identity/resolver.py already records every
 displacement and every removal there (`superseded` / `unlinked`) -- the audit
 trail identity v2 built for humans turns out to be exactly the record this
 comparison needs. The union is over-approximate in one direction only (a
@@ -156,7 +156,7 @@ already there and must NOT be added:
   match report  -- nammaoe2bot/pickup/stats.py's register_match_* schedules civ recording,
                    whose civ_picks rows carry `at`. That IS the hook.
   identity      -- the one that had nothing to observe, and now does:
-                   bot/identity.py stamps `bound_at`.
+                   nammaoe2bot/features/identity/resolver.py stamps `bound_at`.
 
 Adding mark_dirty() calls beside those writes would create a second, weaker
 source of truth that can disagree with the data, which is the failure this
@@ -172,7 +172,7 @@ import time
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 
-from bot import identity
+from nammaoe2bot.features.identity import resolver
 
 from . import boards, civ_stats, rollups
 
@@ -385,7 +385,7 @@ async def refresh_user(community_id, user_id, now):
 	Both queries bind the user's WHOLE profile set. A single-profile assumption
 	here is invisible: it produces a smaller, entirely plausible rollup for the
 	multi-account players this community actually has."""
-	profiles = (await identity.profiles_for_users([user_id])).get(user_id) or []
+	profiles = (await resolver.profiles_for_users([user_id])).get(user_id) or []
 	if not profiles:
 		# Unlinked since the last pass (or never linked and holding a row from
 		# before they were unlinked). No row at all is the correct state --
@@ -412,7 +412,7 @@ async def refresh_user(community_id, user_id, now):
 	# from an unlinked one: their row would be deleted, and /rank would tell them
 	# "Statistics pending linking" when they are linked and their games are right
 	# there. compute_rollup drops the out-of-window games; the row survives, and
-	# bot/scouting_report.py renders the dormant case in its own words.
+	# nammaoe2bot/features/scouting/report.py renders the dormant case in its own words.
 	#
 	# `games` therefore stays len(stat_rows) — the LIFETIME count, which is what
 	# task 4.7's COUNT(*) reconciliation checks. The windowed count is
@@ -530,7 +530,7 @@ async def refresh_community(community_id, now):
 	replay_players for it. Deliberately not a Discord nickname: a display name
 	belongs to a guild member and changes with it, while the name on a board
 	entry has to describe the account that played the game (see
-	bot/identity.py's profiles_and_names_by_user docstring for the same rule).
+	nammaoe2bot/features/identity/resolver.py's profiles_and_names_by_user docstring for the same rule).
 
 	Every metric is isolated from every other and civ_stats from all of them: a
 	catalog entry naming a column that a schema change removed must not cost the

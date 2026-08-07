@@ -13,7 +13,7 @@ as much as its happy path:
 A mistyped or nonexistent id must never reach storage, and "no such profile"
 must never be conflated with "the AoE2 service is down" -- only the first is
 something the player can fix, and telling them the wrong one sends them hunting
-for a number that was already correct. bot.lobby.api.fetch_profile's three-way
+for a number that was already correct. nammaoe2bot.features.lobby.api.fetch_profile's three-way
 result exists for exactly that distinction.
 
 Players can never CHANGE a link -- only an admin can, via `/identity link`.
@@ -30,11 +30,11 @@ so this module loads under a pytest-only CI.
 """
 __all__ = ['link']
 
-from bot import identity
+from nammaoe2bot.features.identity import resolver
 from nammaoe2bot.runtime.console import log
 
 # The player-verifiable profile page. This exact shape is proven in production
-# by bot/civ_sync.py:295, which parses it back out of live LobbyBOT embeds --
+# by nammaoe2bot/features/civs/sync.py:295, which parses it back out of live LobbyBOT embeds --
 # which is also why a lobby card is a second place a player can read their id.
 INSIGHTS_URL = "https://www.aoe2insights.com/user/relic/{profile_id}/"
 
@@ -48,7 +48,7 @@ EXAMPLE_PROFILE_ID = 612690
 
 async def link(ctx, profile_id: int = None):
 	""" Show, explain, or create the caller's AoE2 profile link. """
-	owned = (await identity.profiles_for_users([ctx.author.id])).get(ctx.author.id) or []
+	owned = (await resolver.profiles_for_users([ctx.author.id])).get(ctx.author.id) or []
 	if owned:
 		# View only -- deliberately before any use of `profile_id`. A player who
 		# passes an id here has not made an error, they just cannot act on it.
@@ -69,7 +69,7 @@ async def link(ctx, profile_id: int = None):
 		await _refuse(ctx, "Couldn't find that profile", _unknown_id_message(ctx, profile_id))
 		return
 
-	from bot.lobby import api as lobby_api
+	from nammaoe2bot.features.lobby import api as lobby_api
 
 	status, data = await lobby_api.fetch_profile(profile_id)
 	if status == "not_found":
@@ -90,7 +90,7 @@ async def link(ctx, profile_id: int = None):
 
 	# `or None` matters: link_self reads None as "not observed, keep the stored
 	# name", while "" would blank a name somebody else's replay had recorded.
-	if not await identity.link_self(profile_id, ctx.author.id, data["name"] or None):
+	if not await resolver.link_self(profile_id, ctx.author.id, data["name"] or None):
 		# link_self has already recorded the losing claim in identity_conflicts.
 		await _refuse(ctx, "That profile is already linked", ctx.qc.gt(
 			"Profile `{profile_id}` is already linked to another player, so I haven't "
@@ -117,9 +117,9 @@ async def link(ctx, profile_id: int = None):
 	# player IS linked and has been told so, so nothing here may turn their
 	# successful /link into a red error embed.
 	try:
-		from bot import identity_solver
+		from nammaoe2bot.features.identity import solver
 
-		await identity_solver.run_for_channel(ctx.qc.id)
+		await solver.run_for_channel(ctx.qc.id)
 	except Exception as e:
 		log.error(f"identity solver trigger failed after /link of profile {profile_id}: {e}")
 
@@ -165,7 +165,7 @@ async def _current_link_embed(ctx, profile_ids):
 	others had been lost. """
 	from nextcord import Embed, Colour
 
-	names = await identity.names_for_profiles(profile_ids)
+	names = await resolver.names_for_profiles(profile_ids)
 	embed = Embed(
 		title=ctx.qc.gt("Your AoE2 link"),
 		description=ctx.qc.gt(

@@ -22,7 +22,7 @@ import pytest
 
 import bot.web as web
 from bot.derived import rollups
-from bot.scouting_report import PENDING
+from nammaoe2bot.features.scouting.report import PENDING
 
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -393,7 +393,7 @@ def test_a_player_with_no_rollup_row_yields_exactly_the_pending_string(monkeypat
 
 
 def test_the_pending_string_is_the_one_discord_prints():
-	""" Spelled once, in bot/scouting_report.py, so `/rank` and the web page
+	""" Spelled once, in nammaoe2bot/features/scouting/report.py, so `/rank` and the web page
 	cannot drift into two slightly different sentences. """
 	src = Path(_REPO_ROOT, "bot", "web.py").read_text()
 	assert "scouting_report.PENDING" in src

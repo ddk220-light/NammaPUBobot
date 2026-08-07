@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Slash-command handlers for audience predictions and the gold economy. Thin:
-the vote lifecycle lives in bot.predictions.flow, persistence in
-bot.predictions.store, rendering in bot.predictions.embeds. All bot.predictions
+the vote lifecycle lives in nammaoe2bot.features.betting.flow, persistence in
+nammaoe2bot.features.betting.store, rendering in nammaoe2bot.features.betting.embeds. All nammaoe2bot.features.betting
 imports are lazy (inside the handlers) so this module loads during the
 `from . import commands` step without pulling nextcord-heavy modules early —
 the bot.commands.quiz pattern.
@@ -41,9 +41,10 @@ async def _eligible_user_ids(ctx):
 
 async def predictions_leaderboard(ctx, page: int = 1):
 	""" Audience standings — one point per correctly called match, plus gold held. """
-	from bot import community, identity
-	from bot.predictions import embeds, store
-	from bot.predictions import gold as bank
+	from nammaoe2bot import community
+	from nammaoe2bot.features.identity import resolver as identity
+	from nammaoe2bot.features.betting import embeds, store
+	from nammaoe2bot.features.betting import gold as bank
 
 	rows = await store.leaderboard(ctx.qc.id)
 
@@ -72,9 +73,9 @@ async def predictions_me(ctx, player: Member = None):
 	""" Your prediction record, gold balance and recent movements (or another member's). """
 	import time
 
-	from bot import community
-	from bot.predictions import embeds, store
-	from bot.predictions import gold as bank
+	from nammaoe2bot import community
+	from nammaoe2bot.features.betting import embeds, store
+	from nammaoe2bot.features.betting import gold as bank
 
 	target = ctx.author if not player else await ctx.get_member(player)
 	if not target:

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """The storyline-stash clearing contract, in the two places it now lives.
 
-bot/team_insights.py's build_insights_embed stashes match.storyline_ctx the
+nammaoe2bot/features/storylines/insights.py's build_insights_embed stashes match.storyline_ctx the
 moment it *computes* a tease -- but "computed" is not "posted". If the
 subsequent ctx.notice(embed=insights_embed) send then fails, nobody in the
 channel ever saw the tease, and the stash must be dropped so
-bot/storyline_payoff.py's build_payoff_embed -- which trusts the stash to mean
+nammaoe2bot/features/storylines/payoff.py's build_payoff_embed -- which trusts the stash to mean
 "a tease was shown" -- never answers a tease nobody saw.
 
 tests/test_storyline_payoff.py's test_no_storyline_ctx_at_all_builds_no_embed
@@ -27,7 +27,7 @@ environment (CI installs only pytest; nextcord and prettytable are absent).
 This module fakes just enough of that chain -- the same sys.modules-injection
 trick tests/conftest.py already uses for nammaoe2bot.runtime.config/console/database -- to
 import the real match.py and exercise the real final_message body end to end.
-bot.team_insights itself is NOT faked: it is imported for real, and only its
+nammaoe2bot.features.storylines.insights itself is NOT faked: it is imported for real, and only its
 build_insights_embed function is monkeypatched, so the test exercises the
 actual handshake between the two modules rather than a re-description of it.
 """
@@ -111,7 +111,7 @@ class _RaisingNotice:
 
 def _post_team_insights(monkeypatch, *, tease_send_fails):
 	"""Drive the REAL storyline handler out of bot/wiring.py."""
-	import bot.team_insights as ti
+	import nammaoe2bot.features.storylines.insights as ti
 	import bot.wiring as wiring
 
 	match = types.SimpleNamespace(id=42, storyline_ctx=None)
@@ -120,7 +120,7 @@ def _post_team_insights(monkeypatch, *, tease_send_fails):
 	async def _fake_build_insights_embed(m):
 		# Mirrors the real function's contract: the stash lands on the match
 		# the moment a tease is computed, before the caller ever tries to
-		# send it (bot/team_insights.py build_insights_embed's own docstring).
+		# send it (nammaoe2bot/features/storylines/insights.py build_insights_embed's own docstring).
 		m.storyline_ctx = stashed_ctx
 		return "tease-embed"
 

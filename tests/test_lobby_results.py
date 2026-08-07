@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Pure unit tests for bot/lobby/results.py (post-game results card text)."""
-from bot.lobby import results
+"""Pure unit tests for nammaoe2bot/features/lobby/results.py (post-game results card text)."""
+from nammaoe2bot.features.lobby import results
 
 _MATCH = {
 	"matchId": 486986844,

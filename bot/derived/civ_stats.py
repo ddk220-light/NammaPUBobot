@@ -3,7 +3,7 @@
 aggregated once by a refresh pass over `civ_picks` instead of scanned live
 every time stage-5's civ-stats page renders.
 
-NAME COLLISION, DELIBERATE AND NOT A BUG: `bot/civ_stats.py` also exists, for
+NAME COLLISION, DELIBERATE AND NOT A BUG: `nammaoe2bot/features/civs/pools.py` also exists, for
 a completely different purpose (civ pools for randomised team balancing). It
 is NOT retired — stage 5c repointed it at the table this module writes,
 deleting the two sources it used to rank on (a frozen `data/civ_elo_stats.csv`
@@ -56,7 +56,7 @@ def compute_civ_stats(pick_rows, channel_rows):
 	business to invent a home for an orphaned pick.
 
 	A pick row whose `result` is neither 'W' nor 'L' -- a game whose outcome
-	was never resolved (see bot/civ_sync.py's `result=None` branch for when
+	was never resolved (see nammaoe2bot/features/civs/sync.py's `result=None` branch for when
 	that happens) -- is dropped from every count on every civ it touches.
 	This table's contract is exactly three numeric columns with no "unknown"
 	bucket, so the invariant `games == wins + losses` must hold for every row

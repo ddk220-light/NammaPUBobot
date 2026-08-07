@@ -20,8 +20,8 @@ depended on every feature -- 34 modules in ONE import cycle, worked around by
 Two of those re-exports were actively dangerous rather than merely awkward:
 `from .stats import stats` and `from .expire import expire` rebound a package
 name to an object inside it. That is the exact shadowing that killed audience
-predictions for months (`bot.predictions.jobs` resolving to the singleton
-rather than the module -- see bot/predictions/__init__.py), sitting unfired in
+predictions for months (`nammaoe2bot.features.betting.jobs` resolving to the singleton
+rather than the module -- see nammaoe2bot/features/betting/__init__.py), sitting unfired in
 two more places.
 
 So: import from the module that defines the thing.
