@@ -52,7 +52,8 @@ class QueueChannel:
 
 	cfg_factory = CfgFactory(
 		table=FactoryTable(name='channel_settings', p_key="channel_id"),
-		name="qc_config",
+		# A VALUE in channel_settings.cfg_name — see the note in pickup/queue.py.
+		name="channel_config",
 		sections=["General", "Auto-remove", "Rating", "Leaderboard"],
 		variables=[
 			Variables.StrVar(

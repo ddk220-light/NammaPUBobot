@@ -10,6 +10,12 @@ import os
 OLD_NAMES = [
 	"qc_matches", "qc_player_matches", "qc_players", "qc_rating_history",
 	"qc_match_id_counter", "qc_configs", "pq_configs", "qc_saved_state",
+	# Retired by 011_config_factory_rename. `qc_config`/`pq_config` are the
+	# cfg_name VALUES CfgFactory.spawn selects on and `pq_id` was
+	# queue_settings' primary key; a stray one anywhere in live code means a
+	# factory pointing at rows nothing will ever match. Guarded here because
+	# they are string literals, which no import test can resolve.
+	"qc_config", "pq_config", "pq_id",
 	"qc_phrases", "qc_douche", "qc_match_civs", "qc_civ_reconcile",
 	"qc_lobbies", "qc_quiz_posts", "qc_quiz_answers", "qc_quiz_config",
 	"qc_prediction_posts", "qc_prediction_votes", "on_dublicate",

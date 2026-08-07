@@ -173,7 +173,65 @@ async def _assert_boot_post_conditions(db):
 	await _assert_renames_landed(db, _CORE_RENAMES_LEDGER_NAME, _STAGE1_RENAMES)
 	await _assert_renames_landed(db, _RAW_RENAMES_LEDGER_NAME, _STAGE3_RENAMES)
 	await _assert_identities_seeded(db)
+	await _assert_config_factories_renamed(db)
 
+
+
+_CONFIG_RENAME_LEDGER_NAME = "011_config_factory_rename"
+
+
+async def _assert_config_factories_renamed(db):
+	"""Post-condition for 011: if the ledger says it ran, no config row may
+	still carry an old `cfg_name` and `queue_settings` may not still have
+	`pq_id`.
+
+	This exists because BOTH failures here are silent, and in the same
+	direction — a bot that starts, logs nothing, and has forgotten its
+	configuration.
+
+	* `cfg_name` is a value CfgFactory.spawn SELECTs on. A row still saying
+	  'qc_config' when the factory says 'channel_config' matches nothing, so
+	  spawn takes its "no config yet" branch and INSERTs a blank row over the
+	  top. Every channel setting and the `namma_nomad` queue definition are
+	  gone, with a healthy-looking bot.
+	* `pq_id` surviving means ensure_table has ADDed a second, plain `queue_id`
+	  column (it adds declared columns it cannot find and never alters keys),
+	  so `row[p_key]` reads NULL on every queue while inserts keep succeeding
+	  against the real auto-increment.
+
+	The restore case is the one that makes this necessary rather than
+	decorative: run_all decides what to run purely from the ledger, and a
+	database restored from a pre-011 backup keeps the ledger (mysqldump does
+	not drop tables absent from the dump) while losing the renames. Every
+	migration then reads as applied and the loop skips all of them.
+
+	Ledger-gated, so on a database that legitimately has not reached 011 this
+	is a no-op — which is what lets run_all call it BEFORE the loop as well as
+	after, ahead of anything irreversible.
+	"""
+	applied = await db.fetchone(
+		f"SELECT 1 AS x FROM {LEDGER} WHERE name = %s", [_CONFIG_RENAME_LEDGER_NAME])
+	if applied is None:
+		return
+
+	for table, stale in (("channel_settings", "qc_config"), ("queue_settings", "pq_config")):
+		if not await table_exists(db, table):
+			continue
+		row = await db.fetchone(
+			f"SELECT COUNT(*) AS n FROM {table} WHERE cfg_name = %s", [stale])
+		if row and int(row["n"] or 0):
+			raise RuntimeError(
+				f"migrations: {_CONFIG_RENAME_LEDGER_NAME} is recorded as applied but "
+				f"{table} still holds {row['n']} row(s) with cfg_name='{stale}'. The bot "
+				f"would boot and rebuild that config BLANK rather than crash. Drop the "
+				f"`{LEDGER}` table and reboot so the migration re-runs.")
+
+	if await table_exists(db, "queue_settings") and await column_exists(db, "queue_settings", "pq_id"):
+		raise RuntimeError(
+			f"migrations: {_CONFIG_RENAME_LEDGER_NAME} is recorded as applied but "
+			f"queue_settings still has a `pq_id` column. ensure_table will add a second, "
+			f"keyless `queue_id` beside it and every queue will load with a NULL primary "
+			f"key. Drop the `{LEDGER}` table and reboot so the migration re-runs.")
 
 _CORE_RENAMES_LEDGER_NAME = "001_core_renames"
 _RAW_RENAMES_LEDGER_NAME = "007_raw_renames"
@@ -1674,3 +1732,82 @@ async def _m010(db):
 	await db.execute(_M010_BACKFILL_PLAYED_AT)
 	log.info("migrations: 010_game_stats_played_at: seeded game_stats.played_at from "
 	         "replay_matches.played_at")
+
+
+# ── 011: the config factories stop carrying the old class abbreviations ──
+_M011_RENAME_CHANNEL_CFG = (
+	"UPDATE channel_settings SET cfg_name = 'channel_config' WHERE cfg_name = 'qc_config'")
+_M011_RENAME_QUEUE_CFG = (
+	"UPDATE queue_settings SET cfg_name = 'queue_config' WHERE cfg_name = 'pq_config'")
+# CHANGE, not RENAME COLUMN: `pq_id` is the primary key and carries
+# AUTO_INCREMENT, and MySQL's RENAME COLUMN form keeps neither on 5.7. The type
+# is restated exactly as DESCRIBE reports it.
+_M011_RENAME_QUEUE_PK = (
+	"ALTER TABLE queue_settings CHANGE `pq_id` `queue_id` BIGINT NOT NULL AUTO_INCREMENT")
+
+
+@migration("011_config_factory_rename")
+async def _m011(db):
+	"""Retire `qc_config` / `pq_config` / `pq_id` — the last places the schema
+	still spelled QueueChannel and PickupQueue as the abbreviations the
+	inherited codebase used.
+
+	THE FAILURE MODE HERE IS A CLEAN BOOT, WHICH IS WHY IT NEEDS A MIGRATION AND
+	A POST-CONDITION RATHER THAN JUST A RENAME. `cfg_name` is a VALUE, not an
+	identifier: CfgFactory.spawn does
+
+	    SELECT * FROM channel_settings WHERE cfg_name = %s AND channel_id = %s
+
+	with its own `name` as the parameter. Rename the factory in Python without
+	updating the rows and that SELECT matches nothing, so spawn takes its
+	"no config yet" branch and INSERTs a blank one. The bot starts, logs
+	nothing, joins the channel, and has forgotten every setting and the
+	`namma_nomad` queue. There is one row in each table on production, so there
+	is no partial state to reconcile — but there is also nothing to notice.
+
+	`pq_id` is worse, because import order hides it. Migrations run BEFORE the
+	feature packages import, and importing nammaoe2bot/pickup/queue.py runs
+	`FactoryTable(name="queue_settings", p_key="queue_id")` -> ensure_table,
+	which ADDs any declared column it cannot find and never alters keys. So a
+	database where this ALTER did not run gets a second, plain `queue_id`
+	column: inserts still succeed (the real auto-increment is still `pq_id`),
+	`row[p_key]` comes back NULL, and every queue loads with no primary key.
+
+	Both are answered the same way — _assert_config_factories_renamed below,
+	ledger-gated on this migration and asserted before AND after the loop, so a
+	database restored from a backup taken before this shipped stops the boot
+	instead of quietly rebuilding itself blank.
+
+	IDEMPOTENT PER STATEMENT. The two UPDATEs are already no-ops once applied
+	(they filter on the old value). The ALTER is guarded on information_schema
+	because MySQL has no `CHANGE COLUMN IF EXISTS`; the guard is check-then-act,
+	so two containers booting at once can both pass it and the loser's ALTER
+	fails on an unknown column — the same tolerance 005/006/008/009/010 rely on.
+	The loser crashes, Railway restarts it, and the retry finds the column
+	already renamed.
+
+	A missing table is not a state to invent: nammaoe2bot/pickup/channel.py and
+	queue.py CREATE both tables on first import with the new names already on
+	them, so skipping is correct on a fresh install and is logged rather than
+	passed over.
+	"""
+	if await table_exists(db, "channel_settings"):
+		await db.execute(_M011_RENAME_CHANNEL_CFG)
+		log.info("migrations: 011_config_factory_rename: channel_settings.cfg_name "
+		         "qc_config -> channel_config")
+	else:
+		log.info("migrations: 011_config_factory_rename: channel_settings does not exist, "
+		         "skipping (nammaoe2bot/pickup/channel.py creates it named correctly)")
+
+	if not await table_exists(db, "queue_settings"):
+		log.info("migrations: 011_config_factory_rename: queue_settings does not exist, "
+		         "skipping (nammaoe2bot/pickup/queue.py creates it named correctly)")
+		return
+
+	await db.execute(_M011_RENAME_QUEUE_CFG)
+	log.info("migrations: 011_config_factory_rename: queue_settings.cfg_name "
+	         "pq_config -> queue_config")
+
+	if await column_exists(db, "queue_settings", "pq_id"):
+		await db.execute(_M011_RENAME_QUEUE_PK)
+		log.info("migrations: 011_config_factory_rename: queue_settings.pq_id -> queue_id")

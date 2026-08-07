@@ -136,6 +136,18 @@ class FakeDb:
 			cols = self.columns.setdefault(table, set())
 			cols.discard(old)
 			cols.add(new)
+		if sql.startswith("ALTER TABLE") and " CHANGE " in sql:
+			# `ALTER TABLE t CHANGE `old` `new` TYPE ...` — 011's form, which
+			# exists because RENAME COLUMN drops AUTO_INCREMENT off a primary
+			# key. Modelled for the same reason RENAME COLUMN is: without it
+			# column_exists keeps answering True for the old name and 011's
+			# idempotency guard becomes untestable.
+			parts = sql.split("`")
+			table = sql.split("ALTER TABLE", 1)[1].split("CHANGE")[0].strip().strip("`")
+			old, new = parts[1], parts[3]
+			cols = self.columns.setdefault(table, set())
+			cols.discard(old)
+			cols.add(new)
 		is_ledger_insert = sql.startswith("INSERT INTO schema_migrations") or sql.startswith(
 			"INSERT IGNORE INTO schema_migrations")
 		if is_ledger_insert and args[0] not in self.applied:
@@ -155,6 +167,12 @@ class FakeDb:
 			return {"x": 1} if args[0] in self.applied else None
 		if "FROM identities" in sql:
 			return {"x": 1} if self.rows.get("identities") else None
+		if "COUNT(*) AS n FROM" in sql:
+			# 011's post-condition: `SELECT COUNT(*) AS n FROM t WHERE cfg_name = %s`
+			table = sql.split("FROM", 1)[1].split()[0]
+			stale = args[0]
+			return {"n": sum(1 for r in self.rows.get(table, [])
+							 if r.get("cfg_name") == stale)}
 		return None
 
 	async def fetchall(self, sql, args=None):
@@ -2335,15 +2353,22 @@ def test_m008_raises_rather_than_recording_a_backfill_it_could_not_do():
 		raise AssertionError("a backfill that cannot run must not be recorded as applied")
 
 
-def test_m008_is_registered_once_under_the_next_free_number():
+def test_the_migration_list_is_a_gapless_ordered_sequence():
+	""" run_all applies MIGRATIONS in list order and records each by name, so a
+	duplicate name silently skips a migration and a number out of order applies
+	one before its prerequisite.
+
+	Stated as a property rather than as the expected list. The literal list this
+	replaced had to be edited by every migration that shipped, which makes it a
+	chore rather than a check — and a chore gets updated by pasting whatever the
+	failure message printed, which is not a review. """
 	names = [name for name, _fn in mig.MIGRATIONS]
-	assert names.count("008_game_stats_has_production") == 1
-	assert names == [
-		"001_core_renames", "002_drop_retired", "003_seed_identities", "004_identity_v2",
-		"005_identity_conflict_history", "006_derived_indexes", "007_raw_renames",
-		"008_game_stats_has_production", "009_identities_bound_at",
-		"010_game_stats_played_at",
-	]
+	assert len(set(names)) == len(names), f"duplicate migration name: {names}"
+	numbers = [int(n.split("_", 1)[0]) for n in names]
+	assert numbers == list(range(1, len(numbers) + 1)), (
+		f"migration numbers must run 1..N with no gaps and no reordering: {names}")
+	for name in names:
+		assert name[:3].isdigit() and name[3] == "_", f"malformed migration name: {name}"
 
 
 def test_the_has_production_ddl_matches_the_ensure_table_declaration():
@@ -2511,10 +2536,14 @@ def test_the_bound_at_ddl_matches_the_ensure_table_declaration():
 		"_ensure_identities_table's CREATE drifted from the declaration")
 
 
-def test_m010_is_registered_once_under_the_next_free_number():
-	names = [name for name, _fn in mig.MIGRATIONS]
-	assert names.count("010_game_stats_played_at") == 1
-	assert names[-1] == "010_game_stats_played_at"
+def test_every_migration_this_file_exercises_is_still_registered():
+	""" The tests below drive migration bodies directly. If one is renamed or
+	dropped from MIGRATIONS, those tests would keep passing against a function
+	nothing runs. """
+	names = {name for name, _fn in mig.MIGRATIONS}
+	for expected in ("008_game_stats_has_production", "009_identities_bound_at",
+					 "010_game_stats_played_at", "011_config_factory_rename"):
+		assert expected in names, f"{expected} is no longer registered"
 
 
 def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
@@ -2591,3 +2620,149 @@ def test_the_played_at_backfill_is_timezone_free_and_guarded():
 	assert "TIMESTAMPDIFF" in mig._M010_BACKFILL_PLAYED_AT
 	assert "UNIX_TIMESTAMP" not in mig._M010_BACKFILL_PLAYED_AT
 	assert "WHERE gs.played_at IS NULL" in mig._M010_BACKFILL_PLAYED_AT
+
+
+# ── 011: the config factories stop carrying the old class abbreviations ──
+
+class TestConfigFactoryRename:
+	""" `cfg_name` is a VALUE CfgFactory.spawn SELECTs on, not an identifier.
+	Rename the factory in Python without moving the rows and that SELECT
+	matches nothing, so spawn takes its "no config yet" branch and INSERTs a
+	blank row over the top: every channel setting and the queue definition gone,
+	with a bot that starts clean and logs nothing.
+
+	`pq_id` fails the same way one layer down. Migrations run BEFORE the feature
+	packages import, and importing pickup/queue.py runs ensure_table, which ADDs
+	any declared column it cannot find and never alters keys — so a database
+	that missed the ALTER gets a second, keyless `queue_id` beside the real
+	auto-increment `pq_id`, and every queue loads with a NULL primary key. """
+
+	def _db(self, **kw):
+		return FakeDb(
+			tables=("channel_settings", "queue_settings"),
+			columns={"queue_settings": {"pq_id", "channel_id", "cfg_name"},
+					 "channel_settings": {"channel_id", "cfg_name"}},
+			rows={"channel_settings": [{"cfg_name": "qc_config"}],
+				  "queue_settings": [{"cfg_name": "pq_config"}]},
+			**kw)
+
+	def test_it_renames_both_cfg_names_and_the_queue_primary_key(self):
+		db = self._db()
+		asyncio.run(mig._m011(db))
+		sql = " | ".join(db.executed)
+		assert "channel_settings SET cfg_name = 'channel_config'" in sql
+		assert "queue_settings SET cfg_name = 'queue_config'" in sql
+		assert "CHANGE `pq_id` `queue_id`" in sql
+
+	def test_the_primary_key_rename_keeps_auto_increment(self):
+		""" MySQL's RENAME COLUMN form drops AUTO_INCREMENT off a primary key,
+		which is why this migration uses CHANGE and restates the type. Without
+		it the next queue created gets primary key 0 and the one after it
+		collides. """
+		db = self._db()
+		asyncio.run(mig._m011(db))
+		alter = next(s for s in db.executed if "CHANGE" in s)
+		assert "BIGINT NOT NULL AUTO_INCREMENT" in alter
+
+	def test_a_re_run_does_not_re_issue_the_alter(self):
+		""" The two UPDATEs filter on the old value and are no-ops once applied.
+		The ALTER is not self-guarding — CHANGE on a column that is already
+		renamed is an error — so it is guarded on information_schema. """
+		db = self._db()
+		asyncio.run(mig._m011(db))
+		db.executed.clear()
+		asyncio.run(mig._m011(db))
+		assert not any("CHANGE" in s for s in db.executed), (
+			"the ALTER re-ran against a column that no longer exists")
+		assert any("SET cfg_name" in s for s in db.executed), (
+			"the UPDATEs should still run — see the migration docstring on why "
+			"short-circuiting on the ALTER's guard would be wrong")
+
+	def test_a_fresh_install_with_no_tables_is_a_no_op(self):
+		""" pickup/channel.py and queue.py CREATE both tables with the new names
+		already on them, so there is nothing to migrate and nothing to invent. """
+		db = FakeDb(tables=())
+		asyncio.run(mig._m011(db))
+		assert db.executed == []
+
+
+class TestConfigFactoryRenamePostCondition:
+	""" The check that turns the silent rebuild into a crash. Ledger-gated, so
+	it is a no-op on a database that has not reached 011 — which is what lets
+	run_all call it BEFORE the migration loop, ahead of anything irreversible. """
+
+	def test_it_passes_once_the_migration_has_run(self):
+		db = FakeDb(
+			tables=("channel_settings", "queue_settings"), applied=("011_config_factory_rename",),
+			columns={"queue_settings": {"queue_id", "cfg_name"}},
+			rows={"channel_settings": [{"cfg_name": "channel_config"}],
+				  "queue_settings": [{"cfg_name": "queue_config"}]})
+		asyncio.run(mig._assert_config_factories_renamed(db))
+
+	def test_it_is_silent_when_the_ledger_has_not_reached_011(self):
+		""" A database legitimately behind is not a disagreement with anything.
+		Old cfg_names and pq_id are the ordinary state there. """
+		db = FakeDb(
+			tables=("channel_settings", "queue_settings"), applied=("010_game_stats_played_at",),
+			columns={"queue_settings": {"pq_id", "cfg_name"}},
+			rows={"channel_settings": [{"cfg_name": "qc_config"}]})
+		asyncio.run(mig._assert_config_factories_renamed(db))
+
+	def test_a_stale_channel_cfg_name_stops_the_boot(self):
+		""" THE RESTORED-BACKUP CASE. run_all decides what to run purely from
+		the ledger, and a restore keeps the ledger while losing the rename — so
+		every migration reads as applied and the loop skips all of them. """
+		db = FakeDb(
+			tables=("channel_settings",), applied=("011_config_factory_rename",),
+			columns={}, rows={"channel_settings": [{"cfg_name": "qc_config"}]})
+		try:
+			asyncio.run(mig._assert_config_factories_renamed(db))
+		except RuntimeError as e:
+			assert "channel_settings" in str(e) and "qc_config" in str(e)
+			assert "BLANK" in str(e), "the message must say what the bot would do, not just what is wrong"
+		else:
+			raise AssertionError("a stale cfg_name must stop the boot, not be repaired silently")
+
+	def test_a_stale_queue_cfg_name_stops_the_boot(self):
+		db = FakeDb(
+			tables=("queue_settings",), applied=("011_config_factory_rename",),
+			columns={"queue_settings": {"queue_id"}},
+			rows={"queue_settings": [{"cfg_name": "pq_config"}]})
+		try:
+			asyncio.run(mig._assert_config_factories_renamed(db))
+		except RuntimeError as e:
+			assert "queue_settings" in str(e) and "pq_config" in str(e)
+		else:
+			raise AssertionError("a stale cfg_name must stop the boot")
+
+	def test_a_surviving_pq_id_stops_the_boot(self):
+		""" Distinct from the cfg_name checks: the rows can be perfectly renamed
+		while the column rename was lost, and that state produces queues with a
+		NULL primary key rather than blank config. """
+		db = FakeDb(
+			tables=("queue_settings",), applied=("011_config_factory_rename",),
+			columns={"queue_settings": {"pq_id", "queue_id", "cfg_name"}},
+			rows={"queue_settings": [{"cfg_name": "queue_config"}]})
+		try:
+			asyncio.run(mig._assert_config_factories_renamed(db))
+		except RuntimeError as e:
+			assert "pq_id" in str(e) and "NULL primary key" in str(e)
+		else:
+			raise AssertionError("a surviving pq_id must stop the boot")
+
+	def test_run_all_asserts_it_before_the_loop(self):
+		""" Same reasoning as the identity seed check: post-conditions describe
+		a database repaired by dropping the ledger, and migrations drop tables.
+		Checking only afterwards lets an irreversible body run first. """
+		db = FakeDb(
+			tables=("channel_settings",), applied=("011_config_factory_rename",),
+			rows={"channel_settings": [{"cfg_name": "qc_config"}]})
+		try:
+			asyncio.run(mig.run_all(db))
+		except RuntimeError as e:
+			assert "qc_config" in str(e)
+		else:
+			raise AssertionError("run_all must refuse to proceed")
+		assert not any("DROP TABLE" in s for s in db.executed), (
+			"run_all executed a destructive statement on a database its own "
+			"post-condition rejects")

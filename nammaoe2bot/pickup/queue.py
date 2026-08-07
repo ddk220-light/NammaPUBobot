@@ -13,10 +13,15 @@ from nammaoe2bot.pickup.responses import QueueResponses as Qr
 class PickupQueue:
 
 	cfg_factory = CfgFactory(
-		table=FactoryTable(name="queue_settings", p_key="pq_id", f_key="channel_id"),
-		name="pq_config",
+		# `name` is a VALUE in queue_settings.cfg_name, not an identifier —
+		# CfgFactory.spawn SELECTs on it. Changing it without migration 011 makes
+		# that SELECT match nothing, and spawn's "no config yet" branch then
+		# INSERTs a blank row over the top of the real one. See migrations.py's
+		# _assert_config_factories_renamed, which turns that silent rebuild into
+		# a crash.
+		table=FactoryTable(name="queue_settings", p_key="queue_id", f_key="channel_id"),
+		name="queue_config",
 		sections=["General", "Teams", "Appearance", "Maps"],
-		icon='pq.png',
 		variables=[
 			Variables.StrVar(
 				"name",

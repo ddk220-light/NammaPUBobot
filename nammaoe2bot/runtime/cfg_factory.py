@@ -104,12 +104,11 @@ class CfgFactory:
 
 	def __init__(
 			self, table: FactoryTable, name: str, variables: List[Variable],  # noqa: UP006
-			display: Optional[str] = None, icon: Optional[str] = "star.png", sections: Optional[List[str]] = None  # noqa: UP006, UP045
+			display: Optional[str] = None, sections: Optional[List[str]] = None  # noqa: UP006, UP045
 	):
 		self.table = table
 		self.name = name
 		self.display = display or name
-		self.icon = icon
 		self.sections = sections
 		self.variables = {v.name: v for v in variables}
 		self.blank = {v.name: v.default for v in self.variables.values()}
