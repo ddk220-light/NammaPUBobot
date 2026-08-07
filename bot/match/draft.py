@@ -96,11 +96,7 @@ class Draft:
 		# even correct it, because the composite-PK side lock refuses the
 		# other side. `is_player` would stay stale at 0 as well, so the
 		# post-match report would not name them either.
-		# Best-effort, like every other prediction call site: restart_for_match
-		# swallows its own failures so a book can never break a match.
-		if self.m.ranked:
-			from bot.predictions import restart_for_match
-			await restart_for_match(self.m)
+		await self.m.qc.app.match_events.emit("roster_changed", self.m, ctx)
 
 		if self.m.state == self.m.CHECK_IN:
 			await self.m.check_in.refresh()
@@ -146,9 +142,7 @@ class Draft:
 
 		# Both teams just changed, so the sides the audience voted on no longer
 		# exist — discard those ballots and re-open voting on the new teams.
-		if self.m.ranked:
-			from bot.predictions import restart_for_match
-			await restart_for_match(self.m)
+		await self.m.qc.app.match_events.emit("roster_changed", self.m, ctx)
 
 		if self.m.state == self.m.WAITING_REPORT:
 			await ctx.notice(embed=self.m.embeds.final_message())

@@ -30,8 +30,9 @@ Discord client connects.
 """
 
 
-def bootstrap():
-	"""Import every module whose import is itself the wiring."""
+def bootstrap(app):
+	"""Import every module whose import is itself the wiring, then connect the
+	features to the domain."""
 	# The domain. Also declares bot_state (main) and the queue/match tables.
 	from bot import main                            # noqa: F401  (bot_state ensure_table)
 	from bot import queue_channel                   # noqa: F401  (qc/pq config factories)
@@ -50,3 +51,10 @@ def bootstrap():
 
 	# The event handlers (on_ready, on_message, on_interaction, the tick).
 	from bot import events                          # noqa: F401
+
+	# Subscribe the features to the match lifecycle. Unlike everything above
+	# this is a real call, not an import for its side effect: a Match announces
+	# that it went live / changed roster / finished, and betting, the lobby
+	# watcher and the storylines listen. Nothing under bot/match/ imports them.
+	from bot.wiring import wire_match_lifecycle
+	wire_match_lifecycle(app)

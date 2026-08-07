@@ -86,6 +86,14 @@ def test_the_submodule_name_no_longer_collides_with_the_singleton():
 
 # ── what the call sites actually type ────────────────────────────────────
 
+# THE CALL SITES MOVED. bot/match/ used to import these four hooks directly;
+# the domain now announces a lifecycle event and bot/wiring.py answers it, so
+# wiring.py IS the call site and is the only file scanned below. The bug this
+# section guards against is unchanged: a name that does not resolve to what the
+# caller thinks it does, failing inside a best-effort guard where nobody sees it.
+_CALL_SITE = "bot/wiring.py"
+
+
 def _prediction_imports(relative_path):
 	"""Every `from bot.predictions import ...` in a file, as {module: [names]}.
 
@@ -99,29 +107,47 @@ def _prediction_imports(relative_path):
 	return out
 
 
+def _prediction_attributes(relative_path):
+	""" Every `predictions.<name>` reached in a file.
+
+	wiring.py imports the PACKAGE and resolves each hook at call time — which is
+	what lets a test swap one — so the names it depends on are attribute
+	accesses, not import targets. """
+	source = (_REPO_ROOT / relative_path).read_text(encoding="utf-8")
+	return {node.attr for node in ast.walk(ast.parse(source))
+			if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+			and node.value.id == "predictions"}
+
+
 def test_no_caller_imports_the_shadowed_name_again():
 	""" The regression guard. `from bot.predictions import jobs` in a module that
 	then calls a lifecycle function is the exact line that broke this, and it
 	fails at runtime inside a guard that hides it — so it has to fail here
 	instead. """
-	for path in ("bot/match/match.py", "bot/match/draft.py"):
-		for module, names in _prediction_imports(path):
-			assert "jobs" not in names, (
-				f"{path} imports the shadowed name `jobs` from {module}; that resolves to "
-				f"the PredictionJobs instance, not the module, and every lifecycle call "
-				f"on it raises AttributeError into a best-effort guard")
+	for module, names in _prediction_imports(_CALL_SITE):
+		assert "jobs" not in names, (
+			f"{_CALL_SITE} imports the shadowed name `jobs` from {module}; that resolves "
+			f"to the PredictionJobs instance, not the module, and every lifecycle call "
+			f"on it raises AttributeError into a best-effort guard")
 
 
-def test_every_lifecycle_call_site_imports_a_hook_the_package_exports():
-	""" Both halves together: the call sites name real exports, and the package
+def test_the_domain_no_longer_calls_betting_at_all():
+	""" The direction. A match announces that it finished; it does not know that
+	a betting book exists. If this ever fails, the composition root has been
+	bypassed and the eleven imports are growing back. """
+	for path in ("bot/match/match.py", "bot/match/draft.py", "bot/match/check_in.py"):
+		assert not _prediction_imports(path), f"{path} imports bot.predictions again"
+
+
+def test_every_lifecycle_call_site_names_a_hook_the_package_exports():
+	""" Both halves together: the call site names real exports, and the package
 	really exports them. Either alone passes while the feature is dead. """
 	seen = set()
-	for path in ("bot/match/match.py", "bot/match/draft.py"):
-		for _module, names in _prediction_imports(path):
-			for name in names:
-				assert name in _HOOKS, f"{path} imports unexpected {name} from bot.predictions"
-				assert hasattr(predictions, name), f"{path} imports {name}, which is not exported"
-				seen.add(name)
+	for name in _prediction_attributes(_CALL_SITE):
+		if name not in _HOOKS:
+			continue                      # `predictions.flow` etc., not a hook
+		assert hasattr(predictions, name), f"{_CALL_SITE} calls {name}, which is not exported"
+		seen.add(name)
 	assert seen == set(_HOOKS), f"call sites cover {sorted(seen)}, expected all of {sorted(_HOOKS)}"
 
 

@@ -71,7 +71,7 @@ dc.app = Application(client=dc)
 # handler can be registered against a world that does not exist yet, and after
 # migrations because those packages CREATE the tables they declare.
 from bot.bootstrap import bootstrap
-bootstrap()
+bootstrap(dc.app)
 
 from bot.main import save_state
 

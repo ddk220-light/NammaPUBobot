@@ -19,6 +19,8 @@ direction — the fix is to move the code, not to add an accessor.
 """
 import time
 
+from bot.match.events import MatchLifecycle
+
 
 class TTLReactionDict(dict):
 	"""Dict with a TTL sweep for check-in reaction callbacks.
@@ -77,6 +79,10 @@ class Application:
 		self.waiting_reactions = TTLReactionDict()   # {message_id: callback}
 		self.ready = False
 		self.was_ready = False
+		# Empty until bot/wiring.py subscribes the features. A Match announces
+		# through this rather than importing betting, the lobby watcher or the
+		# storyline builders — see bot/match/events.py.
+		self.match_events = MatchLifecycle()
 
 	async def remove_players(self, *users, reason=None):
 		"""Drop these users from every queue that currently holds anyone.

@@ -347,20 +347,10 @@ class Match:
 		else:
 			await self.final_message(ctx)
 
-		# Opt-in live-lobby watcher (ranked only). Best-effort + fully isolated —
-		# a watcher failure must never affect the match or the report flow.
-		if self.ranked:
-			try:
-				from bot.lobby import watcher as lobby_watcher
-				lobby_watcher.start_for(self, ctx.channel)
-			except Exception as e:
-				log.error(f"Lobby watcher start failed for match {self.id}: {e}")
-
-		# Teams are final and the match is live — open audience voting (ranked
-		# only; unranked matches never report a winner to score against).
-		if self.ranked and self.cfg['predictions_enabled']:
-			from bot.predictions import open_for_match
-			await open_for_match(self)
+		# Teams are final and the match is being played. Whatever wants to act
+		# on that — the live-lobby watcher, the betting book — subscribes in
+		# bot/wiring.py, including the `ranked` test each of them applies.
+		await self.qc.app.match_events.emit("live", self, ctx)
 
 	async def report_loss(self, ctx, member, draw_flag):
 		if self.state != self.WAITING_REPORT:
@@ -458,23 +448,14 @@ class Match:
 		except DiscordException:
 			pass
 
-		# Teams are formed — post fun synergy/rivalry storylines from match history.
-		# Best-effort: never let an insights hiccup affect the match flow.
-		try:
-			from bot.team_insights import build_insights_embed
-			insights_embed = await build_insights_embed(self)
-			if insights_embed is not None:
-				await ctx.notice(embed=insights_embed)
-		except Exception as e:
-			# The stash means "a tease was computed". If the send failed, nobody
-			# saw it, and a payoff answering an invisible tease is worse than
-			# silence — so drop the context.
-			self.storyline_ctx = None
-			log.error(f"Storyline insights failed for match {self.id}: {e}")
+		# The teams are on screen. The storyline teaser hangs off this.
+		await self.qc.app.match_events.emit("teams_posted", self, ctx)
 
 	async def finish_match(self, ctx):
 		self.qc.app.active_matches.remove(self)
-		await self._stop_lobby_watcher()
+		# The match is over but the result is NOT stored yet. Teardown only —
+		# anything that needs the outcome waits for 'finished' below.
+		await self.qc.app.match_events.emit("ending", self, ctx)
 		self.queue.last_maps += self.maps
 		self.queue.last_maps = self.queue.last_maps[-len(self.maps)*self.queue.cfg.map_cooldown:]
 
@@ -483,23 +464,12 @@ class Match:
 		else:
 			await stats.register_match_unranked(ctx, self)
 
-		# Close the loop on the pre-game storylines. Purely win/loss, so it can
-		# post the instant the match reports — no replay needed. Best-effort:
-		# a payoff failure must never touch the report or rating flow.
-		if self.ranked:
-			try:
-				from bot.storyline_payoff import build_payoff_embed
-				payoff = await build_payoff_embed(self)
-				if payoff is not None:
-					await ctx.notice(embed=payoff)
-			except Exception as e:
-				log.error(f"Storyline payoff failed for match {self.id}: {e}")
-
-		# Pay out audience predictions now the winner is known. A match that ends
-		# without a clean win/loss (draw) is voided inside resolve_for_match.
-		if self.ranked:
-			from bot.predictions import resolve_for_match
-			await resolve_for_match(self)
+		# THE RESULT IS NOW IN THE `matches` TABLE — register_match_* above wrote
+		# it. That is why settlement fires here and not on 'ending': the betting
+		# resume sweep finds a stranded book by JOINing prediction_posts to that
+		# row (bot/predictions/store.py::unsettled_books), so a payout attempted
+		# before it exists could not be recovered if it died half-way.
+		await self.qc.app.match_events.emit("finished", self, ctx)
 
 	def print(self):
 		return f"> *({self.id})* **{self.queue.name}** | `{join_and([get_nick(p) for p in self.players])}`"
@@ -514,17 +484,6 @@ class Match:
 		except DiscordException:
 			pass
 		self.qc.app.active_matches.remove(self)
-		await self._stop_lobby_watcher()
-
-		# Aborted match — nothing to score, so any live vote is discarded.
-		from bot.predictions import void_for_match
-		await void_for_match(self.id)
-
-	async def _stop_lobby_watcher(self):
-		# Best-effort teardown of the opt-in lobby watcher; never raises into the
-		# match flow. A linked+launched watcher has already stopped itself.
-		try:
-			from bot.lobby import watcher as lobby_watcher
-			await lobby_watcher.stop_for(self.id)
-		except Exception as e:
-			log.error(f"Lobby watcher stop failed for match {self.id}: {e}")
+		# Aborted: there will never be a result, so anything holding state for
+		# this match has to let go of it. Nothing to score.
+		await self.qc.app.match_events.emit("cancelled", self, ctx)

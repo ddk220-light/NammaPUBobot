@@ -15,9 +15,15 @@ primary key on prediction_bets IS the side lock, so the other side is refused.
 And `is_player` stays at the value captured when the bet was placed — 0 — so
 the post-match report would not even name them as a participant.
 
-Nothing here mocks Draft. The real class runs against a fake match, a fake
-queue channel and a fake ctx; only bot.predictions is swapped, and one test
-drives the REAL restart_for_match to prove the call site is best-effort.
+Nothing here mocks Draft, and nothing mocks the lifecycle either: the fake
+queue channel carries a real Application, bot/wiring.py subscribes the real
+handlers to it, and only bot.predictions' hook is swapped for a recorder. One
+test leaves even that alone and drives the REAL restart_for_match, to prove a
+book failure cannot break a substitution.
+
+The call is one step further away than it was -- Draft emits `roster_changed`
+and wiring's _restart_book answers it -- so these tests are also what pins that
+the emit reaches betting at all.
 
 No pytest-asyncio in this repo, so every coroutine is driven with asyncio.run().
 """
@@ -28,6 +34,7 @@ import types
 
 import bot.predictions as predictions
 from bot.match.draft import Draft
+from bot.wiring import wire_match_lifecycle
 
 
 # ── the fake match ───────────────────────────────────────────────────────
@@ -119,22 +126,27 @@ class FakeMatch:
 		self.rebalanced += 1
 
 
-def wire(monkeypatch):
-	"""Swap bot.predictions' lifecycle hook for a recorder. Returns the list of
-	matches whose book was restarted.
+def wire(monkeypatch, match):
+	"""Subscribe the real features to this match's Application, with betting's
+	restart hook swapped for a recorder. Returns the list of matches whose book
+	was restarted.
+
+	The swap is on the PACKAGE attribute, not on wiring: wiring._restart_book
+	looks the function up at call time, so patching bot.predictions is what a
+	test can reach and what production actually resolves.
 
 	It used to also patch `remove_players`, `active_matches` and `Exc` onto the
 	`bot` package shim, because draft.py reached all three through
 	bot/__init__.py. It reaches none of them that way now — Exc is a direct
 	import, active_matches is Application state, and remove_players is an
-	Application method the fake channel's real Application answers — so those
-	three patches became no-ops that still looked load-bearing."""
+	Application method the fake channel's real Application answers."""
 	restarted = []
 
-	async def _restart_for_match(match):
-		restarted.append(match)
+	async def _restart_for_match(m):
+		restarted.append(m)
 
 	monkeypatch.setattr(predictions, "restart_for_match", _restart_for_match)
+	wire_match_lifecycle(match.qc.app)
 	return restarted
 
 
@@ -147,8 +159,8 @@ class TestSubForRestartsTheBook:
 	def test_a_swap_under_a_live_book_refunds_and_re_opens_it(self, monkeypatch):
 		""" THE DEFECT. sub_for rewrote the roster and made no prediction call
 		at all, so the book kept running on teams that no longer existed. """
-		restarted = wire(monkeypatch)
 		match = FakeMatch()
+		restarted = wire(monkeypatch, match)
 		out_player, sub_in = match.teams[0][1], FakeMember(9)
 
 		asyncio.run(draft_for(match).sub_for(FakeCtx(), out_player, sub_in, force=True))
@@ -163,8 +175,8 @@ class TestSubForRestartsTheBook:
 		""" sub_for is legal in CHECK_IN, DRAFT and WAITING_REPORT, and the book
 		is open for ten minutes — it can be live in any of them. """
 		for state in (FakeMatch.CHECK_IN, FakeMatch.DRAFT, FakeMatch.WAITING_REPORT):
-			restarted = wire(monkeypatch)
 			match = FakeMatch(state=state)
+			restarted = wire(monkeypatch, match)
 			asyncio.run(draft_for(match).sub_for(
 				FakeCtx(), match.teams[1][0], FakeMember(9), force=True))
 			assert restarted == [match], f"no book restart in state {state}"
@@ -172,25 +184,29 @@ class TestSubForRestartsTheBook:
 	def test_an_unranked_match_has_no_book_to_restart(self, monkeypatch):
 		""" Unranked matches never get a card posted, so there is nothing to
 		refund — and the guard has to match the one open_for_match applies. """
-		restarted = wire(monkeypatch)
 		match = FakeMatch(ranked=False)
+		restarted = wire(monkeypatch, match)
 		asyncio.run(draft_for(match).sub_for(
 			FakeCtx(), match.teams[0][0], FakeMember(9), force=True))
 		assert restarted == []
 
 	def test_the_substitution_still_completes_when_the_book_fails(self, monkeypatch):
-		""" Best-effort, like every other prediction call site: the guard lives
-		inside restart_for_match, so this drives the REAL function with a store
-		that raises rather than asserting the property on a stand-in. A sub that
-		died half-way would leave the roster inconsistent with the queue. """
-		# bot.predictions is deliberately NOT swapped: this drives the real one.
-
+		""" A sub that died half-way would leave the roster inconsistent with the
+		queue, so a betting failure must not reach it. Two things now stop it --
+		restart_for_match swallows its own errors, and MatchLifecycle.emit
+		isolates every handler -- and this drives the whole path with a store
+		that raises rather than asserting the property against a stand-in, so it
+		holds whichever of the two is doing the work. """
 		class _Exploding:
 			async def live_for_match(self, _match_id):
 				raise RuntimeError("database down")
 
 		monkeypatch.setattr(predictions.flow, "store", _Exploding())
 		match = FakeMatch()
+		# The real handlers, and bot.predictions deliberately NOT swapped —
+		# wiring's _restart_book calls the genuine restart_for_match, which
+		# reaches the store above and raises inside itself.
+		wire_match_lifecycle(match.qc.app)
 		sub_in = FakeMember(9)
 		ctx = FakeCtx()
 		asyncio.run(draft_for(match).sub_for(ctx, match.teams[0][0], sub_in, force=True))
@@ -204,8 +220,8 @@ class TestSubAutoStillRestartsTheBook:
 	def test_a_rebalance_refunds_and_re_opens(self, monkeypatch):
 		""" The behaviour /subfor was missing, pinned so the pair cannot drift
 		apart again. """
-		restarted = wire(monkeypatch)
 		match = FakeMatch()
+		restarted = wire(monkeypatch, match)
 		match.queue.queue = [FakeMember(9)]
 		asyncio.run(draft_for(match).sub_auto(FakeCtx(), match.teams[0][0]))
 
@@ -213,8 +229,8 @@ class TestSubAutoStillRestartsTheBook:
 		assert match.rebalanced == 1, "both teams are re-cut, which is why the book cannot survive"
 
 	def test_an_unranked_rebalance_touches_no_book(self, monkeypatch):
-		restarted = wire(monkeypatch)
 		match = FakeMatch(ranked=False)
+		restarted = wire(monkeypatch, match)
 		match.queue.queue = [FakeMember(9)]
 		asyncio.run(draft_for(match).sub_auto(FakeCtx(), match.teams[0][0]))
 		assert restarted == []

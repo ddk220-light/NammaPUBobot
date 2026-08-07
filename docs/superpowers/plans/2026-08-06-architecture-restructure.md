@@ -488,6 +488,32 @@ down. Nothing under `pickup/` may import a feature after this task.
 - [ ] **Step 6:** `ruff check . && pytest tests/ -q`
 - [ ] **Step 7:** Commit — `refactor(pickup): the domain announces, features subscribe`
 
+#### Task 2.2 outcome
+
+`bot/match/` now imports `bot.context`, `bot.exceptions` and `bot.stats` and
+nothing else — no feature, in any file. The eleven imports are one
+`bot/wiring.py`, and `tests/test_match_lifecycle.py` checks the direction with
+an AST sweep rather than a docstring, so it cannot quietly grow back.
+
+Three things the split turned up:
+
+* **Nothing forced the inversion.** Feeding the deferred imports into the cycle
+  detector as if hoisted showed `bot/match/match.py → bot.predictions` was not
+  in any cycle: it would have imported cleanly at module scope. It was still
+  wrong, and the reason to fix it is the direction, not the mechanics.
+* **`cancel()` and `finish_match()` differed** in a way neither comment
+  mentioned: both stop the lobby watcher, but only `cancel` voids the book.
+  That is why `ending` and `cancelled` are two events rather than one.
+* **The storyline handler owns its own `except`.** Everything else relies on
+  the dispatcher's isolation, but a failed insights *send* has to clear
+  `match.storyline_ctx` — only the storyline feature knows its own failure
+  invalidates state it stored earlier, and the dispatcher cannot know that.
+
+Behaviour is unchanged, including the two orderings that carry weight:
+`finished` still fires after `register_match_*` has written the `matches` row
+(`store.unsettled_books` JOINs on it — that join is the whole resume
+mechanism), and `ending` still fires before it.
+
 ### Tasks 2.3 – 2.9: the moves
 
 Mechanical once 2.1 and 2.2 land. Each one: `git mv`, rewrite the import paths
