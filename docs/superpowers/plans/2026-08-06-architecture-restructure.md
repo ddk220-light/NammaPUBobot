@@ -586,38 +586,62 @@ Where a mistake is silent rather than loud. Small, and none of it is optional.
 
 ### Task 3.1: Migrate `cfg_name`
 
-- [ ] Write migration `00N_config_factory_rename`: `UPDATE channel_settings SET
-      cfg_name='channel_config' WHERE cfg_name='qc_config'` and `UPDATE
-      queue_settings SET cfg_name='queue_config' WHERE cfg_name='pq_config'`.
-- [ ] Rename the factories to match, in the same commit.
-- [ ] **Verify against a copy of production, not an empty database.** The failure
-      mode is a clean boot with blank config, which an empty test DB cannot show.
+- [x] Migration `011_config_factory_rename`, plus `pq_id` -> `queue_id`, which
+      the plan had not spotted: it is `queue_settings`' primary key, and
+      `ensure_table` ADDs any declared column it cannot find while never
+      altering keys — so a database that missed the ALTER gets a second,
+      keyless `queue_id` and every queue loads with a NULL primary key.
+- [x] Factories renamed in the same commit; `CfgFactory.icon` deleted (set,
+      never read, defaulting to a `star.png` that does not exist here).
+- [x] **Verified against production**: one row in each table, both still on the
+      old names, `pq_id` still the primary key. Added
+      `_assert_config_factories_renamed`, ledger-gated and asserted BEFORE and
+      after the migration loop, so a restore from a pre-011 backup — ledger
+      intact, renames lost — stops the boot instead of rebuilding blank.
 
 ### Task 3.2: Entrypoint
 
-- [ ] `PUBobot2.py` → `nammaoe2bot/__main__.py`; `start.py` execs
-      `python -m nammaoe2bot`; update `Dockerfile`, `railway.toml`, `ruff.toml`
-      (its `"PUBobot2.py"` per-file ignore), CI.
+- [x] `PUBobot2.py` → `nammaoe2bot/__main__.py`; `start.py` execs
+      `python -m nammaoe2bot` (the module form, not the file path — running the
+      file puts `nammaoe2bot/` on `sys.path` instead of the repo root and every
+      intra-package import fails). `ruff.toml` and the CI image tag updated;
+      `Dockerfile` needed none, it runs `start.py`.
+- [x] The dashboard session cookie `pubobot_session` renamed WITHOUT logging
+      anyone out: the old name is still read, since the session lives in MySQL
+      and the cookie only carries its id.
 
 ### Task 3.3: Wire-format compatibility
 
-- [ ] Confirm `quiz:`, `bet:`, `betcancel:` parse identically after the router
-      moves. Add a test that pins the exact strings — the failure is a live
-      message whose buttons stop responding, with no error anywhere.
+- [x] `tests/test_wire_format.py` pins all six live shapes as literal strings
+      — including `insights:full:`, whose command is gone but whose cards are
+      still in channel history — and both halves: what each builder emits and
+      what each parser accepts. Literals rather than shared constants, because
+      deriving both sides from one constant lets a rename pass untouched.
 
 ---
 
 ## Phase 4 — tests and docs
 
-- [ ] 4.1 Fix the ~20 test files hard-coding source paths and the 8 parsing source
-      with `ast`. **These break progressively through Phase 2** — fix each as its
-      package moves, not in a batch at the end, or the safety net is down for the
-      whole restructure.
-- [ ] 4.2 `CLAUDE.md` rewritten around the new structure.
-- [ ] 4.3 `README.md`, `COMMANDS.md`, `RAILWAY_SETUP.md` renamed and re-pathed;
-      GPL attribution to Leshaka retained in credits.
-- [ ] 4.4 Repo rename `NammaPUBobot` → `NammaAoe2Bot` (GitHub redirects the old
-      URL, but update the Railway source and any local clones).
+- [x] 4.1 Fix the test files hard-coding source paths and the ones parsing source
+      with `ast`. **These break progressively through Phase 2** — fixed as each
+      package moved, not in a batch at the end, so the safety net stayed up.
+- [x] 4.2 `CLAUDE.md` rewritten around the new structure.
+- [x] 4.3 `README.md`, `RAILWAY_SETUP.md` re-pathed; GPL attribution to Leshaka
+      retained and given its own section. `MESSAGE_COMMANDS.md` deleted — every
+      `!` command in it was removed two cleanups ago and nothing linked to it.
+      `COMMANDS.md` needed no change; it was rewritten during the consolidation.
+- [ ] 4.4 Repo rename `NammaPUBobot` → `NammaAoe2Bot`. **NOT DONE — this one is
+      yours.** GitHub redirects the old URL, but the Railway service's source
+      link and any local clones need updating by hand, and doing it while a
+      deploy is in flight is how a redeploy picks up nothing.
+
+### Phase 4 outcome
+
+The blanket rewrite that moved files had corrupted three docs on its way past:
+`PUBobot2` -> `nammaoe2bot/__main__` hit UPSTREAM's project name, its GitHub
+URL and the `STATUS` env default, which turned the GPL attribution into
+nonsense. Restored by hand. Naming Leshaka's project correctly is a licence
+obligation, not a courtesy, and a find-and-replace does not know that.
 
 ---
 
