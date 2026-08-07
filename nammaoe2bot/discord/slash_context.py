@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
 	from nammaoe2bot.pickup.channel import QueueChannel
 
-from ..context import Context
+from .context import Context
 
 
 class SlashContext(Context):

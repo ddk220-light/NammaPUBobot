@@ -57,7 +57,7 @@ def _install_fakes(monkeypatch):
 	fake_nextcord_errors = types.ModuleType("nextcord.errors")
 	fake_nextcord_errors.DiscordException = _DiscordException
 	fake_nextcord.errors = fake_nextcord_errors
-	# match.py now imports SystemContext from bot.context.context, which
+	# match.py now imports SystemContext from nammaoe2bot.discord.context, which
 	# annotates against nextcord.abc.GuildChannel. Annotation only -- that file
 	# declares `from __future__ import annotations` -- but the import is real.
 	fake_nextcord_abc = types.ModuleType("nextcord.abc")

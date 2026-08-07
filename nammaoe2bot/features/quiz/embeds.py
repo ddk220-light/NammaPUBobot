@@ -50,7 +50,7 @@ def poll_embed(post, votes):
 def vote_view(post_id, options, multi):
 	# auto_defer=False is REQUIRED: these components carry no per-View callback
 	# (every press routes through the global on_interaction handler in
-	# bot.events, so the buttons keep working across a Railway redeploy). With
+	# nammaoe2bot.discord.events, so the buttons keep working across a Railway redeploy). With
 	# nextcord's default auto_defer=True, the View's dispatch would silently ACK
 	# (type-6 deferred update) the press after the no-op callback, and our
 	# handler's response.edit_message/send_message would then raise

@@ -106,7 +106,7 @@ declare the same columns two ways; **keep them in sync**.
 3. Add pure unit tests in `tests/test_classifications_<key>.py` (synthetic game dicts — no DB,
    no mgz).
 4. Run the runner; it auto-registers the classification + ledger and stores results. Add the new
-   key to the `/insights` command's `use_case` choices (`bot/context/slash/commands.py`) to surface it.
+   key to the `/insights` command's `use_case` choices (`nammaoe2bot/discord/slash.py`) to surface it.
 
 No schema migration is needed — metrics are stored long-form.
 

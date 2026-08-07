@@ -562,7 +562,7 @@ _fake_nextcord.SelectOption = _FakeSelectOption
 _fake_nextcord.InteractionType = _InteractionType
 _fake_nextcord.ui = _UiStub()
 _fake_nextcord.ButtonStyle = _ButtonStyleStub()
-# `nextcord.abc`, reached by bot/context/context.py for the abc.GuildChannel
+# `nextcord.abc`, reached by nammaoe2bot/discord/context.py for the abc.GuildChannel
 # annotation on Context.__init__. Annotation only — that file declares
 # `from __future__ import annotations`, so the attribute is never evaluated —
 # but `from nextcord import abc` is a real module-level import and has to
@@ -635,7 +635,7 @@ class _FakeDiscordClient:
 class _FakeMember:
 	""" nammaoe2bot.runtime.client.FakeMember — the stand-in the bot builds for a player who
 	is named by `name@id` rather than by a real Discord mention. Only
-	bot/context/context.py imports it, and only inside Context.get_member. """
+	nammaoe2bot/discord/context.py imports it, and only inside Context.get_member. """
 
 	def __init__(self, guild, user_id, name):
 		self.id = user_id

@@ -4,7 +4,7 @@
 Pure -- no DB, no Discord, no I/O -- for the same reason
 nammaoe2bot/derived/rollups.py's compute is: every copy rule below is a claim about
 what is honest to SHOW, and a claim you cannot test without a database is a
-claim nobody tests. The caller (bot/commands/stats.py) resolves the community,
+claim nobody tests. The caller (nammaoe2bot/discord/commands/stats.py) resolves the community,
 reads the row and owns the embed; this module turns a blob into text and
 nothing else.
 

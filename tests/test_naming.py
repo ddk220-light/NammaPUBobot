@@ -63,7 +63,7 @@ def _scrub_csv_filenames(src):
 	table names, because the files themselves were never renamed — a
 	`qc_players.csv` literal is a filename, not a table reference. Exempting
 	the whole file would blind the guard to a genuine stale table name
-	appearing in it later (bot/events.py alone is 300+ lines), so only the
+	appearing in it later (nammaoe2bot/discord/events.py alone is 300+ lines), so only the
 	filename occurrences are removed and the rest of the file is still
 	checked.
 	"""

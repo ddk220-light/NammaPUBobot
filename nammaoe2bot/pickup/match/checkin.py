@@ -3,7 +3,7 @@ import mmap  # noqa: F401
 import random
 from time import time
 
-from bot.context.context import SystemContext
+from nammaoe2bot.discord.context import SystemContext
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nextcord.errors import DiscordException
 

@@ -10,7 +10,7 @@ from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.paths import data as data_path
 from nammaoe2bot.runtime.config import cfg
 from nammaoe2bot.features.civs import reconcile
-from bot import commands
+from nammaoe2bot.discord.commands import queues as queue_commands
 from nammaoe2bot import derived
 from nammaoe2bot.features import lobby
 from nammaoe2bot.features import betting
@@ -187,13 +187,13 @@ async def on_message(message):
 	# (add with no args -> default/active queues; remove with no args -> all).
 	if message.content in ('++', '--'):
 		if (qc := dc.app.channels.get(message.channel.id)) is not None and dc.app.ready:
-			from bot.context.message.context import MessageContext
+			from nammaoe2bot.discord.message_context import MessageContext
 			ctx = MessageContext(qc, message)
 			try:
 				if message.content == '++':
-					await commands.add(ctx)
+					await queue_commands.add(ctx)
 				else:
-					await commands.remove(ctx)
+					await queue_commands.remove(ctx)
 			except Exc.BotException as e:
 				await ctx.error(str(e), title=e.__class__.__name__)
 			except Exception as e:

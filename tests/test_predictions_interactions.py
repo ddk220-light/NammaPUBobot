@@ -593,7 +593,7 @@ class TestFailureAfterTheCharge:
 		assert i.all_ephemeral
 
 	def test_the_handler_never_raises_even_when_it_cannot_speak(self, monkeypatch):
-		""" Self-isolating: this runs inside bot/events.py's on_interaction, ahead
+		""" Self-isolating: this runs inside nammaoe2bot/discord/events.py's on_interaction, ahead
 		of nothing but after every other router — an exception escaping here is a
 		traceback in the event loop for a button press. """
 		log = wire(monkeypatch, place_bet=("ok", 440),
@@ -769,7 +769,7 @@ class TestFailureAfterTheRefund:
 		assert "already back" in interactions.CANCEL_LANDED_NOTICE
 
 	def test_the_cancel_route_never_raises_even_when_it_cannot_speak(self, monkeypatch):
-		""" Self-isolating, like the bet route: this runs inside bot/events.py's
+		""" Self-isolating, like the bet route: this runs inside nammaoe2bot/discord/events.py's
 		on_interaction, and an exception escaping is a traceback in the event
 		loop for a button press. """
 		log = wire(monkeypatch, cancel_bet=("ok", 60))

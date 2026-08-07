@@ -75,7 +75,7 @@ def main():
     if owner_id == "0":
         print("WARNING: DC_OWNER_ID not set. Bot owner commands won't work.")
 
-    # Fail-closed on these two: they're used by bot/events.py on_message
+    # Fail-closed on these two: they're used by nammaoe2bot/discord/events.py on_message
     # to gate ELO sync and civ sync. Silently defaulting to hardcoded
     # Discord user IDs (as we used to) means a misconfigured deployment
     # would either attribute every random bot's messages to Pubobot or

@@ -21,7 +21,7 @@ impure orchestration only.
 import time
 
 from nammaoe2bot.features.identity import resolver
-from bot.context.context import SystemContext
+from nammaoe2bot.discord.context import SystemContext
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.console import log

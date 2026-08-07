@@ -10,14 +10,23 @@ from nammaoe2bot.runtime.utils import error_embed, ok_embed, parse_duration, get
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.config import cfg
 
-from bot import commands
+# THE COMMAND SURFACE, spelled out. This used to be `import bot.commands`
+# against a package whose __init__ star-imported nine modules, so every call
+# below read `commands.something` and said nothing about where that handler
+# lived or which subsystem it belonged to. Naming the module makes the surface
+# self-describing: a reader sees at a glance that /rank is a stats command and
+# /quiz a quiz one, and a feature's commands live WITH the feature.
+from nammaoe2bot.discord.commands import admin, config, matches, queues, stats
+from nammaoe2bot.features.betting import commands as betting_commands
+from nammaoe2bot.features.identity import commands as identity_commands
+from nammaoe2bot.features.quiz import commands as quiz_commands
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.channel import QueueChannel
 from nammaoe2bot.community import enroll_channel
 
 
 from . import autocomplete, groups
-from .context import SlashContext
+from .slash_context import SlashContext
 
 
 guild_kwargs = dict(guild_ids=cfg.DC_SLASH_SERVERS) if len(cfg.DC_SLASH_SERVERS) else dict()
@@ -88,7 +97,7 @@ async def _create_pickup(
 		required=False,
 		default=8
 	)
-): await run_slash(commands.create_pickup, interaction=interaction, name=name, size=size)
+): await run_slash(config.create_pickup, interaction=interaction, name=name, size=size)
 
 
 # queue -> ...
@@ -96,14 +105,14 @@ async def _create_pickup(
 @groups.admin_queue.subcommand(name='list', description='List all queues on the channel.')
 async def _show_queues(
 	interaction: Interaction
-): await run_slash(commands.show_queues, interaction=interaction)
+): await run_slash(config.show_queues, interaction=interaction)
 
 
 @groups.admin_queue.subcommand(name='show', description='Show a queue configuration.')
 async def _cfg_queue(
 		interaction: Interaction,
 		queue: str
-): await run_slash(commands.cfg_queue, interaction=interaction, queue=queue)
+): await run_slash(config.cfg_queue, interaction=interaction, queue=queue)
 _cfg_queue.on_autocomplete("queue")(autocomplete.queues)
 
 
@@ -113,7 +122,7 @@ async def _set_queue(
 		queue: str,
 		variable: str,
 		value: str
-): await run_slash(commands.set_queue, interaction=interaction, queue=queue, variable=variable, value=value)
+): await run_slash(config.set_queue, interaction=interaction, queue=queue, variable=variable, value=value)
 _set_queue.on_autocomplete("queue")(autocomplete.queues)
 _set_queue.on_autocomplete("variable")(autocomplete.queue_variables)
 
@@ -122,7 +131,7 @@ _set_queue.on_autocomplete("variable")(autocomplete.queue_variables)
 async def _delete_queue(
 	interaction: Interaction,
 	queue: str = SlashOption(name="queue", description="Queue name.")
-): await run_slash(commands.delete_queue, interaction=interaction, queue=queue)
+): await run_slash(config.delete_queue, interaction=interaction, queue=queue)
 _delete_queue.on_autocomplete("queue")(autocomplete.queues)
 
 
@@ -131,7 +140,7 @@ async def _add_player(
 	interaction: Interaction,
 	player: Member = SlashOption(name="player", description="Member to add to the queue", verify=False),
 	queue: str = SlashOption(name="queue", description="Queue to add to.")
-): await run_slash(commands.add_player, interaction=interaction, player=player, queue=queue)
+): await run_slash(queues.add_player, interaction=interaction, player=player, queue=queue)
 
 
 @groups.admin_queue.subcommand(name='remove_player', description='Remove a player from queues.')
@@ -139,14 +148,14 @@ async def _remove_player(
 	interaction: Interaction,
 	player: Member = SlashOption(name="player", description="Member to remove from the queues", verify=False),
 	queues: str = SlashOption(name="queues", description="Queues to remove the player from.", required=False)
-): await run_slash(commands.remove_player, interaction=interaction, player=player, queues=queues)
+): await run_slash(queues.remove_player, interaction=interaction, player=player, queues=queues)
 
 
 @groups.admin_queue.subcommand(name='clear', description='Remove players from the queues.')
 async def _reset(
 		interaction: Interaction,
 		queue: str = SlashOption(name="queue", description="Only clear this queue.", required=False)
-): await run_slash(commands.reset, interaction=interaction, queue=queue)
+): await run_slash(queues.reset, interaction=interaction, queue=queue)
 _reset.on_autocomplete("queue")(autocomplete.queues)
 
 
@@ -154,7 +163,7 @@ _reset.on_autocomplete("queue")(autocomplete.queues)
 async def _start_queue(
 	interaction: Interaction,
 	queue: str
-): await run_slash(commands.start, interaction=interaction, queue=queue)
+): await run_slash(queues.start, interaction=interaction, queue=queue)
 _start_queue.on_autocomplete("queue")(autocomplete.queues)
 
 
@@ -164,7 +173,7 @@ async def _split_queue(
 	queue: str = SlashOption(),
 	group_size: int = SlashOption(description="Amount of players per match", required=False),
 	sort_by_rating: bool = SlashOption(description="Sort groups by players ratings", required=False)
-): await run_slash(commands.split, interaction=interaction, queue=queue, group_size=group_size, sort_by_rating=sort_by_rating)
+): await run_slash(queues.split, interaction=interaction, queue=queue, group_size=group_size, sort_by_rating=sort_by_rating)
 _split_queue.on_autocomplete("queue")(autocomplete.queues)
 
 
@@ -236,7 +245,7 @@ async def delete_channel(
 @groups.admin_channel.subcommand(name='show', description='List channel configuration.')
 async def cfg_qc(
 		interaction: Interaction
-): await run_slash(commands.cfg_qc, interaction=interaction)
+): await run_slash(config.cfg_qc, interaction=interaction)
 
 
 @groups.admin_channel.subcommand(name='set', description='Configure a channel variable.')
@@ -244,7 +253,7 @@ async def _set_qc(
 		interaction: Interaction,
 		variable: str,
 		value: str
-): await run_slash(commands.set_qc, interaction=interaction, variable=variable, value=value)
+): await run_slash(config.set_qc, interaction=interaction, variable=variable, value=value)
 _set_qc.on_autocomplete("variable")(autocomplete.qc_variables)
 
 
@@ -258,7 +267,7 @@ async def _report_admin(
 		draw: bool = SlashOption(required=False, default=False),
 		abort: bool = SlashOption(required=False, default=False)
 ): await run_slash(
-	commands.report_admin, interaction=interaction, match_id=match_id, winner_team=winner_team, draw=draw, abort=abort
+	matches.report_admin, interaction=interaction, match_id=match_id, winner_team=winner_team, draw=draw, abort=abort
 )
 _report_admin.on_autocomplete('winner_team')(autocomplete.teams_by_match_id)
 _report_admin.on_autocomplete('match_id')(autocomplete.match_ids)
@@ -277,7 +286,7 @@ async def _report_manual(
 		_losers = [await ctx.get_member(i) for i in _losers.split(" ")]
 		if None in _winners or None in _losers:
 			raise Exc.ValueError("Failed to parse teams arguments.")
-		await commands.report_manual(ctx, *args, winners=_winners, losers=_losers, **kwargs)
+		await matches.report_manual(ctx, *args, winners=_winners, losers=_losers, **kwargs)
 	await run_slash(_run, interaction=interaction, queue=queue, _winners=winners, _losers=losers, draw=draw)
 
 
@@ -286,7 +295,7 @@ async def _sub_force(
 		interaction: Interaction,
 		player1: Member = SlashOption(name="player1", description="The player to substitute for.", verify=False),
 		player2: Member = SlashOption(name="player2", description="The player to substitute with.", verify=False)
-): await run_slash(commands.sub_force, interaction=interaction, player1=player1, player2=player2)
+): await run_slash(matches.sub_force, interaction=interaction, player1=player1, player2=player2)
 
 
 @groups.admin_match.subcommand(name='put', description='Put a player in a team.')
@@ -295,7 +304,7 @@ async def _put(
 		match_id: int,
 		player: Member,
 		team_name: str = SlashOption(name='team', description='Team name or unpicked')
-): await run_slash(commands.put, interaction=interaction, match_id=match_id, player=player, team_name=team_name)
+): await run_slash(matches.put, interaction=interaction, match_id=match_id, player=player, team_name=team_name)
 _put.on_autocomplete('team_name')(autocomplete.teams_by_match_id)
 _put.on_autocomplete('match_id')(autocomplete.match_ids)
 
@@ -306,7 +315,7 @@ _put.on_autocomplete('match_id')(autocomplete.match_ids)
 async def _undo_match(
 		interaction: Interaction,
 		match_id: int
-): await run_slash(commands.undo_match, interaction=interaction, match_id=match_id)
+): await run_slash(admin.undo_match, interaction=interaction, match_id=match_id)
 
 
 # noadds -> ...
@@ -314,7 +323,7 @@ async def _undo_match(
 @groups.admin_noadds.subcommand(name='list', description='Show noadds list.')
 async def _noadds(
 		interaction: Interaction
-): await run_slash(commands.show_noadds, interaction=interaction)
+): await run_slash(admin.show_noadds, interaction=interaction)
 
 
 @groups.admin_noadds.subcommand(name='add', description='Ban a player from participating in the queues.')
@@ -327,7 +336,7 @@ async def _noadd(
 	async def _run(ctx, *args, _duration=None, **kwargs):
 		if _duration:
 			_duration = _parse_duration(ctx, _duration)
-		await commands.noadd(ctx, *args, duration=_duration, **kwargs)
+		await admin.noadd(ctx, *args, duration=_duration, **kwargs)
 
 	await run_slash(_run, interaction=interaction, player=player, _duration=duration, reason=reason)
 
@@ -336,7 +345,7 @@ async def _noadd(
 async def _forgive(
 		interaction: Interaction,
 		player: Member = SlashOption(verify=False)
-): await run_slash(commands.forgive, interaction=interaction, player=player)
+): await run_slash(admin.forgive, interaction=interaction, player=player)
 
 
 # phrases -> ...
@@ -353,7 +362,7 @@ async def _identity_link(
 			required=False, default=False
 		)
 ): await run_slash(
-	commands.identity_link, interaction=interaction, member=member, profile_id=profile_id,
+	admin.identity_link, interaction=interaction, member=member, profile_id=profile_id,
 	additional=additional
 )
 
@@ -365,7 +374,7 @@ async def _identity_unlink(
 		interaction: Interaction,
 		member: Member = SlashOption(verify=False),
 		profile_id: int = SlashOption(description='AoE2 profile id.')
-): await run_slash(commands.identity_unlink, interaction=interaction, member=member, profile_id=profile_id)
+): await run_slash(admin.identity_unlink, interaction=interaction, member=member, profile_id=profile_id)
 
 
 @groups.admin_profile_identity.subcommand(
@@ -373,7 +382,7 @@ async def _identity_unlink(
 )
 async def _identity_conflicts(
 		interaction: Interaction,
-): await run_slash(commands.identity_conflicts, interaction=interaction)
+): await run_slash(admin.identity_conflicts, interaction=interaction)
 
 
 # rating -> ...
@@ -384,14 +393,14 @@ async def _rating_seed(
 		player: str = SlashOption(verify=False),
 		rating: int = SlashOption(),
 		deviation: int = SlashOption(required=False)
-): await run_slash(commands.rating_seed, interaction=interaction, player=player, rating=rating, deviation=deviation)
+): await run_slash(admin.rating_seed, interaction=interaction, player=player, rating=rating, deviation=deviation)
 
 
 @groups.admin_rating.subcommand(name='hide_player', description='Hide player from the leaderboard.')
 async def _rating_hide(
 		interaction: Interaction,
 		player: str = SlashOption(),
-): await run_slash(commands.rating_hide, interaction=interaction, player=player, hide=True)
+): await run_slash(admin.rating_hide, interaction=interaction, player=player, hide=True)
 
 
 @dc.slash_command(
@@ -402,7 +411,7 @@ async def _profile_link(
 		profile_id: int = SlashOption(
 			description='Your AoE2 profile id. Leave empty and I will show you how to find it.',
 			required=False, default=None)
-): await run_slash(commands.link, interaction=interaction, profile_id=profile_id)
+): await run_slash(identity_commands.link, interaction=interaction, profile_id=profile_id)
 
 
 @dc.slash_command(name='add', description='Add yourself to the channel queues.', **guild_kwargs)
@@ -412,7 +421,7 @@ async def _add(
 		name="queues",
 		description="Queues you want to add to.",
 		required=False)
-): await run_slash(commands.add, interaction=interaction, queues=queues)
+): await run_slash(queues.add, interaction=interaction, queues=queues)
 _add.on_autocomplete("queues")(autocomplete.queues)
 
 
@@ -423,20 +432,20 @@ async def _remove(
 		name="queues",
 		description="Queues you want to add to.",
 		required=False)
-): await run_slash(commands.remove, interaction=interaction, queues=queues)
+): await run_slash(queues.remove, interaction=interaction, queues=queues)
 _remove.on_autocomplete("queues")(autocomplete.queues)
 
 
 @dc.slash_command(name='teams', description='Show teams on your current match.', **guild_kwargs)
 async def _teams(
 		interaction: Interaction
-): await run_slash(commands.show_teams, interaction=interaction)
+): await run_slash(matches.show_teams, interaction=interaction)
 
 
 @dc.slash_command(name='subme', description='Request a substitute', **guild_kwargs)
 async def _sub_me(
 		interaction: Interaction
-): await run_slash(commands.sub_me, interaction=interaction)
+): await run_slash(matches.sub_me, interaction=interaction)
 
 
 @dc.slash_command(
@@ -450,7 +459,7 @@ async def _sub_auto(
 			name="player", description="Player to replace (defaults to you).",
 			required=False, default=None, verify=False
 		)
-): await run_slash(commands.sub_auto, interaction=interaction, player=player)
+): await run_slash(matches.sub_auto, interaction=interaction, player=player)
 
 
 @dc.slash_command(
@@ -461,21 +470,21 @@ async def _sub_auto(
 async def _lobby2(
 		interaction: Interaction,
 		gameid: str = SlashOption(name="gameid", description="AoE2 game id (the number in aoe2de://0/<id>)")
-): await run_slash(commands.lobby2, interaction=interaction, gameid=gameid)
+): await run_slash(matches.lobby2, interaction=interaction, gameid=gameid)
 
 
 @dc.slash_command(name='subfor', description='Become a substitute', **guild_kwargs)
 async def _sub_for(
 		interaction: Interaction,
 		player: Member = SlashOption(name="player", description="The player to substitute for.", verify=False)
-): await run_slash(commands.sub_for, interaction=interaction, player=player)
+): await run_slash(matches.sub_for, interaction=interaction, player=player)
 
 
 @dc.slash_command(name='report', description='Report match result.', **guild_kwargs)
 async def _report(
 		interaction: Interaction,
 		result: str = SlashOption(choices=['loss', 'draw', 'abort'])
-): await run_slash(commands.report, interaction=interaction, result=result)
+): await run_slash(matches.report, interaction=interaction, result=result)
 
 
 @dc.slash_command(name='rank', description='Show rating profile.', **guild_kwargs)
@@ -485,45 +494,45 @@ async def _rank(
 		detailed: bool = SlashOption(
 			required=False, default=False,
 			description='Also show streak, peak, civs, duos & rivals and recent rating changes.'),
-): await run_slash(commands.rank, interaction=interaction, player=player, detailed=detailed)
+): await run_slash(stats.rank, interaction=interaction, player=player, detailed=detailed)
 
 
 @dc.slash_command(name='leaderboard', description='Show rating leaderboard.', **guild_kwargs)
 async def _leaderboard(
 		interaction: Interaction,
 		page: int = SlashOption(required=False),
-): await run_slash(commands.leaderboard, interaction=interaction, page=page)
+): await run_slash(stats.leaderboard, interaction=interaction, page=page)
 
 
 @groups.admin_rating.subcommand(name='unhide_player', description='Unhide player from the leaderboard.')
 async def _rating_unhide(
 		interaction: Interaction,
 		player: str = SlashOption(verify=False)
-): await run_slash(commands.rating_hide, interaction=interaction, player=player, hide=False)
+): await run_slash(admin.rating_hide, interaction=interaction, player=player, hide=False)
 
 
 @groups.predictions.subcommand(name='leaderboard', description='Audience prediction standings.')
 async def _predictions_leaderboard(
 		interaction: Interaction,
 		page: int = SlashOption(required=False, description="Page number.")
-): await run_slash(commands.predictions_leaderboard, interaction=interaction, page=page or 1)
+): await run_slash(betting_commands.predictions_leaderboard, interaction=interaction, page=page or 1)
 
 
 @groups.predictions.subcommand(name='me', description='Your audience prediction record.')
 async def _predictions_me(
 		interaction: Interaction,
 		player: Member = SlashOption(required=False, description="Whose record to show.")
-): await run_slash(commands.predictions_me, interaction=interaction, player=player)
+): await run_slash(betting_commands.predictions_me, interaction=interaction, player=player)
 
 
 @dc.slash_command(name='quiz_leaderboard', description="Show this week's AoE2 quiz leaderboard.", **guild_kwargs)
 async def _quiz_leaderboard(
 		interaction: Interaction
-): await run_slash(commands.quiz_leaderboard, interaction=interaction)
+): await run_slash(quiz_commands.quiz_leaderboard, interaction=interaction)
 
 
 @groups.admin_quiz.subcommand(name='disable', description='Disable the daily AoE2 quiz.')
 async def _quiz_disable(
 		interaction: Interaction
-): await run_slash(commands.quiz_disable, interaction=interaction)
+): await run_slash(quiz_commands.quiz_disable, interaction=interaction)
 

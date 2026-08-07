@@ -694,7 +694,7 @@ def test_fetch_decodes_the_stored_json_blob(monkeypatch):
 
 # ── /identity status' gated-features list ────────────────────────────────
 
-# ── the /rank wiring (bot/commands/stats.py) ─────────────────────────────
+# ── the /rank wiring (nammaoe2bot/discord/commands/stats.py) ─────────────────────────────
 # stats.py does `from nextcord import Member, Embed, Colour, File` and
 # `import bot`; under CI none of that resolves, and importing it normally
 # would first run bot/commands/__init__.py and star-import every other command
@@ -720,7 +720,7 @@ def _load_stats_module(monkeypatch):
 	fake_nextcord_utils.escape_markdown = lambda s: s
 	monkeypatch.setitem(sys.modules, "nextcord.utils", fake_nextcord_utils)
 
-	path = _REPO_ROOT / "bot" / "commands" / "stats.py"
+	path = _REPO_ROOT / "nammaoe2bot" / "discord" / "commands" / "stats.py"
 	spec = importlib.util.spec_from_file_location("stats_standalone_test", path)
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)
@@ -929,7 +929,7 @@ def test_rank_no_longer_renders_a_generated_persona_or_scout_read():
 	""" Parsed rather than grepped: the persona stack has to be gone from the
 	CODE, while the comments explaining what replaced it are exactly what a
 	future reader needs. """
-	tree = ast.parse(_source("bot", "commands", "stats.py"))
+	tree = ast.parse(_source("nammaoe2bot", "discord", "commands", "stats.py"))
 	strings = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
 	names = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
 	names |= {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
@@ -959,7 +959,7 @@ def test_the_ingest_path_no_longer_refreshes_personas():
 
 
 def test_rank_still_builds_its_scouting_field_from_the_rollup_helper():
-	tree = ast.parse(_source("bot", "commands", "stats.py"))
+	tree = ast.parse(_source("nammaoe2bot", "discord", "commands", "stats.py"))
 	profile = next(n for n in ast.walk(tree)
 	               if isinstance(n, ast.AsyncFunctionDef) and n.name == "_rank_profile")
 	called = {n.func.id for n in ast.walk(profile)

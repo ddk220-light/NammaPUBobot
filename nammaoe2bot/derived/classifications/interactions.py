@@ -11,7 +11,7 @@ into nothing.
 
 DB-driven (re-queries game_labels on click) so it survives a Railway redeploy,
 mirroring the quiz router. Registered as an extra on_interaction listener in
-bot/events.py. Only acts on custom_ids starting with 'insights:'; everything
+nammaoe2bot/discord/events.py. Only acts on custom_ids starting with 'insights:'; everything
 else falls through. Runtime-only (imports nextcord)."""
 import traceback
 

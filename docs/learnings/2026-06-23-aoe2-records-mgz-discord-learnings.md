@@ -107,7 +107,7 @@ bump the gate + `PARSER_VERSION`, redeploy.
 ## 3. Discord / nextcord — slash commands, embeds, files
 
 ### 3.1 Command wiring (this codebase's pattern)
-- Slash commands are declared in `bot/context/slash/commands.py` with
+- Slash commands are declared in `nammaoe2bot/discord/slash.py` with
   `@dc.slash_command(name=…, **guild_kwargs)` (root) or `@group.subcommand(…)`, each delegating to
   `run_slash(bot.commands.<handler>, interaction=…, **opts)`.
 - `run_slash` builds a `SlashContext` and calls `await handler(ctx, **kwargs)`. Handlers live in

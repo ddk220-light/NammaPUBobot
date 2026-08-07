@@ -1123,7 +1123,7 @@ def test_the_board_queries_only_read_catalogued_columns():
 
 
 def test_the_module_exposes_a_job_singleton_the_tick_can_drive():
-	# bot/events.py's on_think awaits `nammaoe2bot.derived.refresh_jobs.think(frame_time)`
+	# nammaoe2bot/discord/events.py's on_think awaits `nammaoe2bot.derived.refresh_jobs.think(frame_time)`
 	# and nammaoe2bot/derived/__init__.py exports it under that name.
 	assert isinstance(refresh.jobs, refresh.DerivedRefresh)
 	assert inspect.iscoroutinefunction(refresh.jobs.think)

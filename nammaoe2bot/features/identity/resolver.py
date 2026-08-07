@@ -621,7 +621,7 @@ async def relink(profile_id, user_id, additional=False, aoe2_name=None) -> None:
 	already owns.
 
 	`aoe2_name` is the in-game name the CALLER observed while validating this
-	profile id (bot/commands/admin.py validates against the AoE2 profile API
+	profile id (nammaoe2bot/discord/commands/admin.py validates against the AoE2 profile API
 	before ever calling here, exactly as `/link` does). None means "not observed
 	by this call" and keeps whatever name is stored — never blanks it. It is
 	accepted for the same reason link_self accepts one: the API's name comes

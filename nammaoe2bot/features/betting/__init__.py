@@ -127,7 +127,7 @@ db.ensure_table(dict(
 	primary_keys=["post_id", "user_id"],
 ))
 
-# The singleton bot/events.py drives as `nammaoe2bot.features.betting.jobs.think(frame_time)`,
+# The singleton nammaoe2bot/discord/events.py drives as `nammaoe2bot.features.betting.jobs.think(frame_time)`,
 # the same shape nammaoe2bot/features/quiz, nammaoe2bot/features/lobby and nammaoe2bot/ingest all use.
 #
 # IT COMES FROM flow.py, AND THAT MODULE IS NOT CALLED jobs.py FOR A REASON.

@@ -14,7 +14,7 @@ matches). A small civ_reconcile table tracks attempts so permanently
 un-linkable matches (e.g. too few mapped players, or an old game no longer in the
 API's recent window) aren't re-fetched forever.
 
-Registered on the 1s think() tick (bot/events.py). Each sweep runs as a
+Registered on the 1s think() tick (nammaoe2bot/discord/events.py). Each sweep runs as a
 background task so a slow batch never blocks the tick.
 """
 import asyncio

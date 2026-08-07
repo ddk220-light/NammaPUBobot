@@ -236,12 +236,12 @@ db.ensure_table(dict(
 # Imported last, after every ensure_table declaration above, exactly like
 # nammaoe2bot/ingest/__init__.py's trailing `from .jobs import jobs`: backfill
 # reads and writes the two derived-global tables, so their schemas must be
-# settled before the job singleton it exposes can ever run. bot/events.py's
+# settled before the job singleton it exposes can ever run. nammaoe2bot/discord/events.py's
 # on_think drives it as `nammaoe2bot.derived.jobs.think(frame_time)`.
 from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)
 
 # The derived-COMMUNITY counterpart, exported under its own name rather than
-# replacing `jobs`: the two loops are independent and bot/events.py drives both.
+# replacing `jobs`: the two loops are independent and nammaoe2bot/discord/events.py drives both.
 # `jobs` keeps the bare name it has had since stage 3 so that call site (and the
 # tests pinning it) do not have to move for a rename that buys nothing.
 # refresh imports nammaoe2bot.features.identity.resolver, which is already imported by this point --

@@ -856,7 +856,7 @@ def test_think_schedules_at_most_once_a_day():
 def test_the_sweeper_is_wired_into_the_think_tick():
 	import nammaoe2bot.derived as derived
 	assert isinstance(derived.sweeper_jobs, sweeper.RetentionSweeper)
-	events = open(_repo_path("bot/events.py"), encoding="utf-8").read()  # noqa: SIM115
+	events = open(_repo_path("nammaoe2bot/discord/events.py"), encoding="utf-8").read()  # noqa: SIM115
 	assert "derived.sweeper_jobs.think(frame_time)" in events
 
 

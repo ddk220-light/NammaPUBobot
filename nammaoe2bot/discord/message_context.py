@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 	from nammaoe2bot.pickup.channel import QueueChannel
 from nammaoe2bot.runtime.utils import error_embed, ok_embed
 
-from ..context import Context
+from .context import Context
 
 
 class MessageContext(Context):

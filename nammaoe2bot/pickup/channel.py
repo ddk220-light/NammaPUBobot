@@ -11,7 +11,7 @@ from nammaoe2bot.runtime.locales import locales
 from nammaoe2bot.runtime.utils import join_and, seconds_to_str, get_nick
 from nammaoe2bot.runtime.database import db
 
-from bot.context.context import SystemContext
+from nammaoe2bot.discord.context import SystemContext
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.expire import expire
 from nammaoe2bot.pickup.queue import PickupQueue

@@ -35,7 +35,7 @@ REGISTRY = {
 	"player_ratings": dict(
 		layer="core",
 		tenancy="channel",
-		writers=("nammaoe2bot/features/elo_sync.py", "bot/events.py", "nammaoe2bot/pickup/rating.py", "nammaoe2bot/pickup/stats.py"),
+		writers=("nammaoe2bot/features/elo_sync.py", "nammaoe2bot/discord/events.py", "nammaoe2bot/pickup/rating.py", "nammaoe2bot/pickup/stats.py"),
 		retention="forever",
 	),
 	"rating_history": dict(

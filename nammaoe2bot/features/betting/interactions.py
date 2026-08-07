@@ -4,7 +4,7 @@ additional on_interaction listener (the client supports multiple handlers per
 event). DB-driven — never relies on a live View object, so the buttons keep
 working across a Railway redeploy. Foreign interactions fall straight through:
 we only act on custom_ids starting with 'bet:'. Imported at runtime by
-bot.events, and directly by tests/test_predictions_interactions.py, which runs
+nammaoe2bot.discord.events, and directly by tests/test_predictions_interactions.py, which runs
 the handler for real against fake collaborators."""
 import time
 import traceback

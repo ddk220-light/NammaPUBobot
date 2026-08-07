@@ -42,7 +42,7 @@ Decisions locked 2026-06-13 (supersede the standalone /lobby plan below, which r
 |---|---|
 | Announce lobby name | nammaoe2bot/pickup/match/embeds.py:122 final_message (add field) |
 | Watcher start / teardown | tied to WAITING_REPORT in nammaoe2bot/pickup/match/match.py:332 (start_waiting_report) and finish_match:453 |
-| Result reaction handling | bot.waiting_reactions + on_reaction_add (bot/events.py:184) - same as check-in |
+| Result reaction handling | bot.waiting_reactions + on_reaction_add (nammaoe2bot/discord/events.py:184) - same as check-in |
 | Auto loss report | match.report_loss (nammaoe2bot/pickup/match/match.py:347), unchanged |
 | Record game + ratings | finish_match -> register_match_ranked (nammaoe2bot/pickup/match/match.py:453) |
 | Winner/profile mapping | nammaoe2bot/features/civs/matcher.py _load_profile_map + data/*.csv |
@@ -83,9 +83,9 @@ Replicate AOE2LobbyBOT in NammaPUBobot: a `/lobby <aoe2_gameid>` slash command t
 ## High-level architecture
 Four cooperating pieces, all on infrastructure that already exists in this repo:
 
-1. **`/lobby <gameid>` slash command** — registered in `bot/context/slash/commands.py`, delegates via `run_slash()` to a new handler `bot/commands/lobby.py:lobby_cmd`. Defers immediately, validates the id, creates a `LobbyWatcher`, posts the initial LOBBY embed, persists a row to `qc_lobbies`.
+1. **`/lobby <gameid>` slash command** — registered in `nammaoe2bot/discord/slash.py`, delegates via `run_slash()` to a new handler `bot/commands/lobby.py:lobby_cmd`. Defers immediately, validates the id, creates a `LobbyWatcher`, posts the initial LOBBY embed, persists a row to `qc_lobbies`.
 2. **`LobbyWatcher`** (new `nammaoe2bot/features/lobby/watcher.py`) — owns one lobby's lifecycle: a state machine (CREATED → FILLING → IN_PROGRESS → COMPLETED, plus EXPIRED), the in-memory slot map, the editable `nextcord.Message` handle, and the captured profileIds. One persistent WebSocket subscription per active lobby reassembles slot state from socket deltas and edits the Discord message only when the roster changes.
-3. **`LobbyJobs.think(frame_time)`** (new `nammaoe2bot/features/lobby/jobs.py`) — a recurring-job singleton copying `StatsJobs.think` (nammaoe2bot/pickup/stats.py:401-407). Registered with ONE line in `bot/events.py:on_think` (alongside `bot.stats.jobs.think`). Drives: (a) the completed-match REST poll/backoff once a lobby reaches IN_PROGRESS, (b) reaping watchers that timed out / never filled, (c) on boot, rehydrating watchers from `qc_lobbies` and re-fetching their messages.
+3. **`LobbyJobs.think(frame_time)`** (new `nammaoe2bot/features/lobby/jobs.py`) — a recurring-job singleton copying `StatsJobs.think` (nammaoe2bot/pickup/stats.py:401-407). Registered with ONE line in `nammaoe2bot/discord/events.py:on_think` (alongside `bot.stats.jobs.think`). Drives: (a) the completed-match REST poll/backoff once a lobby reaches IN_PROGRESS, (b) reaping watchers that timed out / never filled, (c) on boot, rehydrating watchers from `qc_lobbies` and re-fetching their messages.
 4. **Completed-match renderer** (new `nammaoe2bot/features/lobby/completed.py`) — fetches the finished match (reusing civ_matcher.py client + the by-id endpoint), assembles the two-team / civ / winner / duration / rec-links embed, posts a NEW message, marks the watcher COMPLETED.
 
 The live socket runs as its own long-lived asyncio task per watcher (fire-and-forget, tracked in a module set to prevent GC — same pattern as `civ_matcher._pending`). The 1s `think()` tick is used only for slow/periodic work so a slow socket never blocks the tick.
@@ -93,7 +93,7 @@ The live socket runs as its own long-lived asyncio task per watcher (fire-and-fo
 ---
 
 ## The `/lobby <gameid>` command
-**Modify** `bot/context/slash/commands.py` — add (template copied from `/subauto`, commands.py:534-541):
+**Modify** `nammaoe2bot/discord/slash.py` — add (template copied from `/subauto`, commands.py:534-541):
 ```python
 @dc.slash_command(name='lobby', description='Post a live-updating AoE2 lobby embed by game id', **guild_kwargs)
 async def _lobby(
@@ -129,7 +129,7 @@ async def _lobby(
 - IN_PROGRESS result poll reuses `civ_matcher._RETRY_DELAYS = (60, 180, 420)` (civ_matcher.py:38) as the by-id backoff ladder (data lags minutes post-game). Driven from `LobbyJobs.think` via a per-watcher `next_poll_at` timestamp (the StatsJobs next_run idiom).
 - Watcher TTL caps total life (e.g. 90 min) so a stuck id never polls forever.
 
-**Register** in `bot/events.py:on_think` near events.py:95, after `await bot.stats.jobs.think(frame_time)`:
+**Register** in `nammaoe2bot/discord/events.py:on_think` near events.py:95, after `await bot.stats.jobs.think(frame_time)`:
 ```python
 await nammaoe2bot.features.lobby.jobs.think(frame_time)
 ```
@@ -213,10 +213,10 @@ db.ensure_table(dict(
 | Completed-embed layout | nammaoe2bot/features/civs/sync.py:80-234, tests/test_civ_sync.py | field map + golden fixture |
 | Post-once/edit-on-change | nammaoe2bot/pickup/match/checkin.py:48-49,90-92 | channel.send + edit + DiscordException guard |
 | Recurring-job idiom | nammaoe2bot/pickup/stats.py:401-407 | LobbyJobs.think; register events.py:95 |
-| Tick driver | PUBobot2.py:133-145, bot/events.py:72-113 | tick + error isolation + 30s save |
+| Tick driver | PUBobot2.py:133-145, nammaoe2bot/discord/events.py:72-113 | tick + error isolation + 30s save |
 | Table + migration | nammaoe2bot/features/civs/sync.py:15-33, mysql.py:161-244 | ensure_table + insert/update/select |
 | Slash reg + defer | commands.py:534-541, :778 | /subauto template, explicit defer |
-| Context helpers | bot/context/slash/context.py:10-47 | reply/notice/success/error after defer |
+| Context helpers | nammaoe2bot/discord/slash_context.py:10-47 | reply/notice/success/error after defer |
 | Config var (3 places) | nammaoe2bot/runtime/config.py:25-46, start.py:18-21, config.example.cfg | any LOBBY_* var in all three |
 
 ---

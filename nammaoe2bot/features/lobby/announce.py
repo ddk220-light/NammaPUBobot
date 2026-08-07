@@ -9,7 +9,7 @@ lobby by id. On launch it leaves an `in_progress` lobbies row (match_id NULL) so
 LobbyJobs posts the post-game results card. Strictly best-effort and fully isolated:
 every Discord/socket/DB error is logged, never raised.
 
-Imports nextcord, so it is imported lazily (by bot.commands.matches.lobby2), never at
+Imports nextcord, so it is imported lazily (by nammaoe2bot.discord.commands.matches.lobby2), never at
 package import or under the unit tests.
 """
 import asyncio

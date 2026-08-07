@@ -6,10 +6,10 @@ dropped the balance, the movements, or the seeding path would otherwise pass
 every other test in the suite, because nothing else reads them.
 
 None of the touched modules are cheap to import under the conftest stubs:
-bot/commands/predictions.py is fine on its own, but it is only ever reached
+nammaoe2bot/features/betting/commands.py is fine on its own, but it is only ever reached
 through bot/commands/__init__.py's `from .predictions import *`, which also
 imports every OTHER bot/commands/* module and pulls in nextcord names the fakes
-don't provide. bot/context/slash/commands.py and bot/events.py pull in the rest
+don't provide. nammaoe2bot/discord/slash.py and nammaoe2bot/discord/events.py pull in the rest
 of the (unstubbed) bot/core import graph. So -- same technique as
 tests/test_predictions_wiring.py's `_prediction_imports` -- all of them are
 checked by parsing source with `ast`, never by importing them.
@@ -23,7 +23,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _predictions_source():
-	return (_REPO_ROOT / "bot" / "commands" / "predictions.py").read_text(encoding="utf-8")
+	return (_REPO_ROOT / "nammaoe2bot" / "features" / "betting" / "commands.py").read_text(encoding="utf-8")
 
 
 def _predictions_tree():
@@ -31,7 +31,7 @@ def _predictions_tree():
 
 
 def _slash_source():
-	return (_REPO_ROOT / "bot" / "context" / "slash" / "commands.py").read_text(encoding="utf-8")
+	return (_REPO_ROOT / "nammaoe2bot" / "discord" / "slash.py").read_text(encoding="utf-8")
 
 
 def _slash_command_names():
@@ -65,7 +65,7 @@ def test_the_module_exports_only_the_two_prediction_handlers():
 		if isinstance(node, ast.Assign) and any(
 				isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
 			all_values = [elt.value for elt in node.value.elts if isinstance(elt, ast.Constant)]
-	assert all_values is not None, "bot/commands/predictions.py has no __all__"
+	assert all_values is not None, "nammaoe2bot/features/betting/commands.py has no __all__"
 	assert set(all_values) == {"predictions_leaderboard", "predictions_me"}
 
 
@@ -113,7 +113,7 @@ def test_leaderboard_filters_through_the_channels_own_eligibility():
 
 
 def _events_source():
-	return (_REPO_ROOT / "bot" / "events.py").read_text(encoding="utf-8")
+	return (_REPO_ROOT / "nammaoe2bot" / "discord" / "events.py").read_text(encoding="utf-8")
 
 
 def test_events_imports_time():

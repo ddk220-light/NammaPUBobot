@@ -9,9 +9,9 @@ imported:
   `db.ensure_table(...)` at module scope. Nothing calls those declarations;
   importing the package IS the declaration.
 * **Job singletons.** `quiz.jobs`, `betting.jobs`, `lobby.jobs`,
-  `ingest.jobs` are module-level instances the tick in bot/events.py
+  `ingest.jobs` are module-level instances the tick in nammaoe2bot/discord/events.py
   drives. They construct on import.
-* **The command surface.** Importing `bot.context.slash.commands` runs a file
+* **The command surface.** Importing `nammaoe2bot.discord.slash` runs a file
   of `@group.subcommand`-decorated functions, which is what registers all 44
   slash commands with the Discord client.
 
@@ -47,10 +47,10 @@ def bootstrap(app):
 	from nammaoe2bot import derived                         # noqa: F401
 
 	# The Discord front end. Importing this module registers the slash surface.
-	from bot.context.slash import commands          # noqa: F401
+	from nammaoe2bot.discord import slash          # noqa: F401
 
 	# The event handlers (on_ready, on_message, on_interaction, the tick).
-	from bot import events                          # noqa: F401
+	from nammaoe2bot.discord import events                          # noqa: F401
 
 	# Subscribe the features to the match lifecycle. Unlike everything above
 	# this is a real call, not an import for its side effect: a Match announces

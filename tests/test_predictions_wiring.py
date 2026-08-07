@@ -54,7 +54,7 @@ def test_the_exported_hooks_are_the_modules_functions_not_the_singletons():
 
 
 def test_the_package_attribute_jobs_is_still_the_singleton():
-	""" bot/events.py drives every package as `bot.<pkg>.jobs.think(frame_time)`,
+	""" nammaoe2bot/discord/events.py drives every package as `bot.<pkg>.jobs.think(frame_time)`,
 	the convention nammaoe2bot/features/quiz, nammaoe2bot/features/lobby and nammaoe2bot/ingest all share. The fix
 	renamed the MODULE, not this export, so that call site is untouched. """
 	assert isinstance(betting.jobs, jobs_module.PredictionJobs)
@@ -254,7 +254,7 @@ def test_a_store_failure_never_escapes_into_the_match_flow():
 
 
 def test_events_still_drives_the_singleton_through_the_package_attribute():
-	""" bot/events.py is the one caller that legitimately wants the instance.
+	""" nammaoe2bot/discord/events.py is the one caller that legitimately wants the instance.
 
 	It used to spell this `nammaoe2bot.features.betting.jobs.think(...)`, reaching the
 	package through the re-export shelf in bot/__init__.py. That shelf is gone,
@@ -263,7 +263,7 @@ def test_events_still_drives_the_singleton_through_the_package_attribute():
 	package binds over its own submodule, which is the whole reason flow.py is
 	not called jobs.py. Both halves are asserted: the import that makes the
 	name resolve, and the call that drives the tick. """
-	source = (_REPO_ROOT / "bot" / "events.py").read_text(encoding="utf-8")
+	source = (_REPO_ROOT / "nammaoe2bot" / "discord" / "events.py").read_text(encoding="utf-8")
 	assert "from nammaoe2bot.features import betting" in source
 	assert "betting.jobs.think(" in source
 

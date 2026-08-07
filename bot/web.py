@@ -393,7 +393,7 @@ async def handle_health(request):
 	"""
 	import asyncio as _asyncio
 	from nammaoe2bot.runtime.database import db as _db
-	from bot import events as _events
+	from nammaoe2bot.discord import events as _events
 	from nammaoe2bot.features import elo_sync as _elo_sync
 
 	discord_ok = bool(getattr(bot, 'bot_ready', False)) and dc.is_ready()
@@ -1594,7 +1594,7 @@ async def _player_scouting_report(user_id):
 	""" The scouting-report block for `user_id`, or None when there is no
 	community to read one from.
 
-	Three outcomes, the same three bot/commands/stats.py's _scouting_report
+	Three outcomes, the same three nammaoe2bot/discord/commands/stats.py's _scouting_report
 	distinguishes, because they are three different statements:
 
 	  no community resolved -> None. Nothing was ever measured here; the page

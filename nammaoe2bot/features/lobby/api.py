@@ -50,7 +50,7 @@ async def fetch_profile(profile_id):
 	  "unavailable" -- anything else (non-200/404 status, timeout, network
 	                   error, unreadable body); data is None
 
-	The three-way result exists for `/link` (bot/commands/identity.py): "your id
+	The three-way result exists for `/link` (nammaoe2bot/features/identity/commands.py): "your id
 	is wrong" and "the AoE2 service is down" must never be conflated, because
 	only the first is the player's problem to fix. A bare None return could not
 	tell them apart. Lazy aiohttp import, same as fetch_match_by_id.

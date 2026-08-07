@@ -1341,11 +1341,11 @@ def _coverage_setup(monkeypatch):
 	return fake
 
 
-# ─── admin identity commands (bot/commands/admin.py) ────────────────────
-# bot/commands/admin.py does `from nextcord import Member, Embed, Colour`,
+# ─── admin identity commands (nammaoe2bot/discord/commands/admin.py) ────────────────────
+# nammaoe2bot/discord/commands/admin.py does `from nextcord import Member, Embed, Colour`,
 # `from nammaoe2bot.runtime.utils import seconds_to_str, get_nick` and `import bot`. Under
 # CI (pytest only, no nextcord/aiomysql/aiohttp) none of that resolves, and
-# importing it the normal way -- `import bot.commands.admin` -- would first
+# importing it the normal way -- `import nammaoe2bot.discord.commands.admin` -- would first
 # run bot/commands/__init__.py, which star-imports every other command
 # module (quiz, replay_stats, player_details, insights, ...) and pulls in
 # far more than this file needs to fake.
@@ -1406,7 +1406,7 @@ class _FakeCtx:
 		self.successes.append(content)
 
 
-def _load_command_module(monkeypatch, filename, modname):
+def _load_command_module(monkeypatch, relative, modname):
 	# The Embed fake comes from conftest rather than being redefined here.
 	# nammaoe2bot/runtime/utils.py builds Embeds at import time out of whatever
 	# sys.modules['nextcord'] holds, and it is imported during COLLECTION (via
@@ -1428,7 +1428,7 @@ def _load_command_module(monkeypatch, filename, modname):
 	fake_nextcord_utils.escape_markdown = lambda s: s
 	monkeypatch.setitem(sys.modules, "nextcord.utils", fake_nextcord_utils)
 
-	path = Path(__file__).resolve().parent.parent / "bot" / "commands" / filename
+	path = Path(__file__).resolve().parent.parent / relative
 	spec = importlib.util.spec_from_file_location(modname, path)
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)
@@ -1436,11 +1436,14 @@ def _load_command_module(monkeypatch, filename, modname):
 
 
 def _load_admin_module(monkeypatch):
-	return _load_command_module(monkeypatch, "admin.py", "admin_standalone_test")
+	return _load_command_module(
+		monkeypatch, "nammaoe2bot/discord/commands/admin.py", "admin_standalone_test")
 
 
 def _load_link_module(monkeypatch):
-	return _load_command_module(monkeypatch, "identity.py", "commands_identity_standalone_test")
+	return _load_command_module(
+		monkeypatch, "nammaoe2bot/features/identity/commands.py",
+		"commands_identity_standalone_test")
 
 
 def _echo_fetch_profile(monkeypatch, name="Someone"):
@@ -2021,7 +2024,7 @@ def test_identity_conflicts_reports_unknown_current_owner_without_erroring(monke
 	assert embed.fields[0]["value"]  # some "none known" placeholder, not blank
 
 
-# ─── the player /link command (bot/commands/identity.py) ─────────────────
+# ─── the player /link command (nammaoe2bot/features/identity/commands.py) ─────────────────
 # The ONLY way a player in a brand-new community gets linked without an admin,
 # so its refusals are tested as hard as its happy path: a wrong id must never
 # write, and "your id is wrong" must never be conflated with "the AoE2 service

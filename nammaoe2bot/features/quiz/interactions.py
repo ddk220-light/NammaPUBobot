@@ -5,7 +5,7 @@ handlers per event). DB-driven: it never relies on a live View object, so
 vote buttons keep working across a Railway redeploy. Foreign interactions
 (slash commands, other features) fall straight through — we only act on
 custom_ids starting with 'quiz:'.
-Only imported at runtime (by bot.events), never during unit tests."""
+Only imported at runtime (by nammaoe2bot.discord.events), never during unit tests."""
 import json
 import time
 import traceback

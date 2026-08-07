@@ -4,7 +4,7 @@ the vote lifecycle lives in nammaoe2bot.features.betting.flow, persistence in
 nammaoe2bot.features.betting.store, rendering in nammaoe2bot.features.betting.embeds. All nammaoe2bot.features.betting
 imports are lazy (inside the handlers) so this module loads during the
 `from . import commands` step without pulling nextcord-heavy modules early —
-the bot.commands.quiz pattern.
+the nammaoe2bot.features.quiz.commands pattern.
 
 These two commands absorbed /gold and /gold_top, which were deleted: the four
 formed a 2x2 of {personal, community} x {gold, accuracy} over one activity.

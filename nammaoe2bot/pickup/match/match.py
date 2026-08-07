@@ -4,7 +4,7 @@ from itertools import combinations
 import random
 from nextcord import DiscordException
 
-from bot.context.context import SystemContext
+from nammaoe2bot.discord.context import SystemContext
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup import stats
 from nammaoe2bot.runtime.utils import find, get, iter_to_dict, join_and, get_nick  # noqa: F401
