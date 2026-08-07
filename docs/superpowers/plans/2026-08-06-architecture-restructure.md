@@ -335,26 +335,125 @@ every `git blame` for nothing.
 
 ### Task sequence
 
-One package per task, leaves first so nothing moves under a dependent:
+**The order changed once Phase 1 reported.** The original sequence moved files
+first and left `bot/__init__.py`'s re-export block for last. That is backwards.
+Every `bot.Exc`, `bot.stats`, `bot.Match` in the tree — 250 attribute accesses —
+resolves through that block, so moving files underneath it means rewriting each
+access twice: once when its module moves, once when the block dies. Worse, the
+block is *why* the 25 deferred imports exist, so moving files while it stands
+carries the cycles into the new tree and invites re-creating them there.
 
-- [ ] 2.1 `core/` → `nammaoe2bot/runtime/`
-- [ ] 2.2 `core/client.py` + `bot/context/` + `bot/events.py` → `discord/`
-- [ ] 2.3 `bot/queue_channel.py`, `bot/queues/`, `bot/match/`, `bot/stats/` → `pickup/`
-- [ ] 2.4 the loose `bot/civ_*.py`, `identity*.py`, `scouting_report.py`,
-      `player_profile.py`, `team_insights.py`, `storyline_payoff.py`,
-      `tag_leaderboard.py` → `features/civs|identity|scouting/`
-- [ ] 2.5 `bot/quiz/`, `bot/predictions/` → `features/quiz/`, `features/betting/`
-- [ ] 2.6 `bot/lobby/` → `features/lobby/`; `bot/replay_stats/` → `ingest/`
-- [ ] 2.7 `bot/derived/`, `bot/classifications/` → `derived/`
+So: **dissolve the module first, then move files.** The dissolve is the only
+part that needs judgement; once it lands, every remaining task is a path rename
+a script can do and `tests/test_import_graph.py` can verify.
+
+- [ ] 2.1 dissolve the re-export module — `bot.X` becomes a real import
+- [ ] 2.2 the match-lifecycle inversion — a composition root, not a deferred import
+- [ ] 2.3 `core/` → `nammaoe2bot/runtime/`
+- [ ] 2.4 `bot/queue_channel.py`, `queues/`, `match/`, `stats/`, `expire.py` → `pickup/`
+- [ ] 2.5 `bot/quiz/`, `predictions/`, `lobby/` and the loose feature modules → `features/`
+- [ ] 2.6 `bot/replay_stats/` → `ingest/`; `bot/derived/` + `classifications/` → `derived/`
+- [ ] 2.7 `core/client.py`, `bot/context/`, `bot/events.py`, `bot/commands/` → `discord/`
 - [ ] 2.8 `bot/web.py`, `bot/web_page.html` → `web/`
-- [ ] 2.9 fold each `bot/commands/*.py` handler into its owning feature
+- [ ] 2.9 `bot/` is empty — `app.py`, `bootstrap.py`, `wiring.py`, `main.py` take
+      their places at the package root, and the tests follow the code
 
-Each task: `git mv` (preserves history — never delete-and-create), fix imports,
-`ruff check .`, full suite, commit.
+Each task: `git mv` (preserves history — never delete-and-create), rewrite
+imports, `ruff check .`, full suite, commit.
 
-**Detail these tasks after Phase 1 lands.** Task 1.8 reports which cycles survive,
-and that list may change where a boundary belongs. Writing exact file moves now
-would be guessing.
+### Task 2.1: dissolve the re-export module
+
+**Files:** `bot/__init__.py` (emptied), `bot/bootstrap.py` (new), plus every
+module that reaches through `bot.`
+
+`bot/__init__.py` does two unrelated jobs and both have to move:
+
+1. **Re-exports** — `bot.Exc`, `bot.Match`, `bot.stats`, `bot.Qr`, … Each
+   becomes a direct import in the module that uses it. Two of these were
+   actively dangerous: `from .stats import stats` and `from .expire import
+   expire` rebind a package/module name to the object inside it, which is
+   exactly the shadowing that killed the predictions feature for months
+   (`bot.predictions.jobs` — see `bot/predictions/__init__.py`). A direct
+   `from bot.stats import stats` in the consuming module has no such ambiguity.
+2. **Side-effect imports** — the `from . import quiz / predictions / lobby / …`
+   block that exists so `ensure_table` runs and the job singletons construct.
+   That is *boot wiring*, not package definition, and putting it in
+   `__init__.py` is what makes the import ORDER load-bearing. It moves to
+   `bot/bootstrap.py`, called explicitly from the entrypoint.
+
+- [ ] **Step 1:** For each re-exported name, add the real import to every module
+      that uses it and drop the `import bot` where it becomes unused.
+- [ ] **Step 2:** Move the side-effect block to `bot/bootstrap.py` with a
+      docstring naming what each import is there for; call it from `PUBobot2.py`
+      before the client starts.
+- [ ] **Step 3:** `bot/__init__.py` keeps a docstring and nothing else.
+- [ ] **Step 4:** `grep -rn '\bbot\.[A-Z]' bot/ core/` returns nothing.
+- [ ] **Step 5:** `ruff check . && pytest tests/ -q`
+- [ ] **Step 6:** Commit — `refactor: dissolve the re-export module`
+
+### Task 2.2: the match-lifecycle inversion
+
+**Files:** `bot/match/events.py` (new), `bot/wiring.py` (new), `bot/app.py`,
+`bot/match/match.py`, `bot/match/draft.py`
+
+This is the eleven deferred imports Phase 1 measured, and the only place in
+Phase 2 that changes a dependency direction rather than a path. `Match` calls
+`bot.predictions.open_for_match`, `resolve_for_match`, `void_for_match`;
+`Draft` calls `restart_for_match`; both reach into `bot.lobby.watcher`,
+`bot.team_insights` and `bot.storyline_payoff`. **A match should not know that
+betting exists.**
+
+`MatchLifecycle` — a dispatcher on `Application`, so it is reached the same way
+every other piece of application state is (`self.qc.app.match_events`) and no
+new global appears. Five events, matching the five points the domain currently
+reaches out from:
+
+| Event | Emitted | Subscribers, in order |
+|---|---|---|
+| `teams_posted` | end of `final_message` | team insights |
+| `live` | end of `start_waiting_report` | lobby watcher start, betting open |
+| `roster_changed` | `sub_for`, `sub_auto` | betting restart |
+| `ending` | `finish_match`, after the drop from `active_matches` | lobby watcher stop |
+| `finished` | `finish_match`, **after** stats registration | storyline payoff, betting settle |
+| `cancelled` | `cancel`, after the drop | lobby watcher stop, betting void |
+
+**Two ordering facts are load-bearing and must survive verbatim.** `finished`
+fires after `bot.stats` has written the `matches` row, because
+`store.unsettled_books` JOINs on it — that join is the entire resume mechanism.
+And `ending` fires separately from `finished` only because the watcher stop
+currently runs *before* stats; collapsing them would move it after.
+
+Guards (`ranked`, `predictions_enabled`) move from the emit site into the
+subscriber. The domain announces unconditionally; the feature decides whether
+it cares. Every handler is dispatched inside a try/except that logs — which is
+what all six sites already do by hand, and what all four `*_for_match`
+functions already do internally.
+
+`bot/wiring.py` is the composition root: the one module that imports both the
+domain and the features, and the one place the subscription order is written
+down. Nothing under `pickup/` may import a feature after this task.
+
+- [ ] **Step 1:** Write `tests/test_match_lifecycle.py`: registration order is
+      dispatch order; a raising handler does not stop the ones after it; every
+      event name in `wiring` exists on the dispatcher (a typo'd `on()` would
+      otherwise silently never fire).
+- [ ] **Step 2:** `bot/match/events.py` — `MatchLifecycle` with `on`/`emit`.
+- [ ] **Step 3:** `Application` gains `self.match_events = MatchLifecycle()`.
+- [ ] **Step 4:** Replace the six call sites with `emit`; write `bot/wiring.py`.
+- [ ] **Step 5:** Update `tests/test_draft_substitutions.py` and
+      `tests/test_predictions_wiring.py` — both pin the old call shape.
+- [ ] **Step 6:** `ruff check . && pytest tests/ -q`
+- [ ] **Step 7:** Commit — `refactor(pickup): the domain announces, features subscribe`
+
+### Tasks 2.3 – 2.9: the moves
+
+Mechanical once 2.1 and 2.2 land. Each one: `git mv`, rewrite the import paths
+across `bot/`, `core/`, `utils/`, `tests/` and the two root scripts, then
+`ruff check . && pytest tests/ -q`. `tests/test_import_graph.py` resolves every
+repo-internal import statically, so a missed rewrite fails the suite rather
+than waiting for a runtime `ModuleNotFoundError` — it is the safety net that
+makes a restructure of this size safe without a running bot. Update its
+`_PACKAGES` tuple in 2.3, when the new root first exists.
 
 ---
 
