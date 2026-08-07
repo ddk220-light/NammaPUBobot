@@ -6,38 +6,39 @@ from functools import wraps
 
 from core.utils import get, find  # noqa: F401
 
-import bot
+from bot.exceptions import Exceptions as Exc
+from bot.match.match import Match
 
 
 def author_match(coro):
 	@wraps(coro)
 	async def wrapper(ctx, *args, **kwargs):
 		if (match := find(lambda m: m.qc == ctx.qc and ctx.author in m.players, ctx.qc.app.active_matches)) is None:
-			raise bot.Exc.NotFoundError(ctx.qc.gt("You are not in an active match."))
+			raise Exc.NotFoundError(ctx.qc.gt("You are not in an active match."))
 		return await coro(ctx, match, *args, **kwargs)
 	return wrapper
 
 
 @author_match
-async def show_teams(ctx, match: bot.Match):
-	if match.state not in [bot.Match.DRAFT, bot.Match.WAITING_REPORT]:
-		raise bot.Exc.MatchStateError('Match must be on draft or waiting report state.')
+async def show_teams(ctx, match: Match):
+	if match.state not in [Match.DRAFT, Match.WAITING_REPORT]:
+		raise Exc.MatchStateError('Match must be on draft or waiting report state.')
 	await match.draft.print(ctx)
 
 
 @author_match
-async def sub_me(ctx, match: bot.Match):
+async def sub_me(ctx, match: Match):
 	await match.draft.sub_me(ctx, ctx.author)
 
 
 async def sub_auto(ctx, player: Member = None):
 	who = player or ctx.author
 	if (match := find(lambda m: m.qc == ctx.qc and who in m.players, ctx.qc.app.active_matches)) is None:
-		raise bot.Exc.NotInMatchError(ctx.qc.gt("Specified user is not in an active match."))
-	if match.state == bot.Match.CHECK_IN:
+		raise Exc.NotInMatchError(ctx.qc.gt("Specified user is not in an active match."))
+	if match.state == Match.CHECK_IN:
 		swapped = await match.check_in.replace_player(ctx, who)
 		if swapped is None:
-			raise bot.Exc.NotFoundError(ctx.qc.gt("There are no available players in the queue to substitute in."))
+			raise Exc.NotFoundError(ctx.qc.gt("There are no available players in the queue to substitute in."))
 		await ctx.notice(match.qc.gt("{out} was substituted by {sub}. {sub}, please check in!").format(
 			out=who.mention, sub=swapped.mention
 		))
@@ -48,7 +49,7 @@ async def sub_auto(ctx, player: Member = None):
 
 async def sub_for(ctx, player: Member):
 	if (match := find(lambda m: m.qc == ctx.qc and player in m.players, ctx.qc.app.active_matches)) is None:
-		raise bot.Exc.NotInMatchError(ctx.qc.gt("Specified user is not in a match."))
+		raise Exc.NotInMatchError(ctx.qc.gt("Specified user is not in a match."))
 	await ctx.qc.check_allowed_to_add(ctx, ctx.author, queue=match.queue)
 	await match.draft.sub_for(ctx, player, ctx.author)
 
@@ -56,9 +57,9 @@ async def sub_for(ctx, player: Member):
 async def sub_force(ctx, player1: Member, player2: Member):
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (match := find(lambda m: m.qc == ctx.qc and player1 in m.players, ctx.qc.app.active_matches)) is None:
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Specified user is not in a match."))
+		raise Exc.NotFoundError(ctx.qc.gt("Specified user is not in a match."))
 	if any((player2 in m.players for m in ctx.qc.app.active_matches)):
-		raise bot.Exc.InMatchError(ctx.qc.gt("Specified user is in an active match."))
+		raise Exc.InMatchError(ctx.qc.gt("Specified user is in an active match."))
 
 	await match.draft.sub_for(ctx, player1, player2, force=True)
 
@@ -66,16 +67,16 @@ async def sub_force(ctx, player1: Member, player2: Member):
 async def put(ctx, match_id: int, player: Member, team_name: str):
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (match := find(lambda m: m.qc == ctx.qc and m.id == match_id, ctx.qc.app.active_matches)) is None:
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id. Check `/matches`."))
+		raise Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id. Check `/matches`."))
 	await match.draft.put(ctx, player, team_name)
 
 
 async def report_admin(ctx, match_id: int, winner_team=None, draw=False, abort=False):
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (match := find(lambda m: m.qc == ctx.qc and m.id == match_id, ctx.qc.app.active_matches)) is None:
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id. Check `/matches`."))
+		raise Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id. Check `/matches`."))
 	if winner_team is None and not draw and not abort:
-		raise bot.Exc.SyntaxError(ctx.qc.gt("Please specify a team name or draw."))
+		raise Exc.SyntaxError(ctx.qc.gt("Please specify a team name or draw."))
 
 	if abort:
 		await match.cancel(ctx)
@@ -84,7 +85,7 @@ async def report_admin(ctx, match_id: int, winner_team=None, draw=False, abort=F
 
 
 @author_match
-async def report(ctx, match: bot.Match, result):
+async def report(ctx, match: Match, result):
 	if result == 'loss':
 		await match.report_loss(ctx, ctx.author, draw_flag=False)
 	elif result == 'draw':
@@ -92,20 +93,20 @@ async def report(ctx, match: bot.Match, result):
 	elif result == 'abort':
 		await match.report_loss(ctx, ctx.author, draw_flag=2)
 	else:
-		raise bot.Exc.ValueError("Invalid result value.")
+		raise Exc.ValueError("Invalid result value.")
 
 
 async def report_manual(ctx, queue: str, winners: List[Member], losers: List[Member], draw: bool = False):  # noqa: UP006
 	""" Report a fake match """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-		raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
+		raise Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
 	if any((winners.count(p) != 1 or p in losers for p in winners)):
-		raise bot.Exc.ValueError(f"Teams can not contain duplicate players.")  # noqa: F541
+		raise Exc.ValueError(f"Teams can not contain duplicate players.")  # noqa: F541
 	if any((losers.count(p) != 1 or p in winners for p in losers)):
-		raise bot.Exc.ValueError(f"Teams can not contain duplicate players.")  # noqa: F541
+		raise Exc.ValueError(f"Teams can not contain duplicate players.")  # noqa: F541
 	if not len(winners) or not len(losers):
-		raise bot.Exc.ValueError(f"Teams can not be empty.")  # noqa: F541
+		raise Exc.ValueError(f"Teams can not be empty.")  # noqa: F541
 	await q.fake_ranked_match(ctx, winners, losers, draw=draw)
 
 
@@ -119,7 +120,7 @@ async def lobby2(ctx, gameid: str):
 
 	game_id = completed.parse_game_id(gameid)
 	if game_id is None:
-		raise bot.Exc.SyntaxError(ctx.qc.gt(
+		raise Exc.SyntaxError(ctx.qc.gt(
 			"Provide a numeric AoE2 game id (the number in `aoe2de://0/<id>`)."
 		))
 
@@ -127,7 +128,7 @@ async def lobby2(ctx, gameid: str):
 	# game so the result posts automatically. Never errors the command if not. Done
 	# first so the ranked row exists before the announcer's launch-time persist check.
 	match = find(
-		lambda m: m.qc == ctx.qc and m.ranked and m.state == bot.Match.WAITING_REPORT and ctx.author in m.players,
+		lambda m: m.qc == ctx.qc and m.ranked and m.state == Match.WAITING_REPORT and ctx.author in m.players,
 		ctx.qc.app.active_matches,
 	)
 	if match is not None:

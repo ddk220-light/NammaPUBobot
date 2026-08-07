@@ -1428,9 +1428,6 @@ def _load_command_module(monkeypatch, filename, modname):
 	fake_nextcord_utils.escape_markdown = lambda s: s
 	monkeypatch.setitem(sys.modules, "nextcord.utils", fake_nextcord_utils)
 
-	import bot.exceptions as exceptions
-	monkeypatch.setattr(sys.modules["bot"], "Exc", exceptions.Exceptions, raising=False)
-
 	path = Path(__file__).resolve().parent.parent / "bot" / "commands" / filename
 	spec = importlib.util.spec_from_file_location(modname, path)
 	module = importlib.util.module_from_spec(spec)
@@ -1812,7 +1809,7 @@ def test_identity_unlink_refuses_when_the_profile_belongs_to_someone_else(monkey
 
 	try:
 		asyncio.run(admin.identity_unlink(ctx, _FakeMember(222), 111))
-	except admin.bot.Exc.ValueError as e:
+	except admin.Exc.ValueError as e:
 		assert "999" in str(e), "name who actually owns it"
 		assert "111" in str(e)
 	else:
@@ -1832,7 +1829,7 @@ def test_identity_unlink_refuses_an_unowned_profile(monkeypatch):
 
 	try:
 		asyncio.run(admin.identity_unlink(ctx, _FakeMember(222), 111))
-	except admin.bot.Exc.ValueError as e:
+	except admin.Exc.ValueError as e:
 		assert "111" in str(e)
 	else:
 		raise AssertionError("identity_unlink must refuse a profile nobody owns")

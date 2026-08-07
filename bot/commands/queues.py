@@ -2,7 +2,9 @@ __all__ = ['add', 'remove', 'add_player', 'remove_player', 'start', 'split', 're
 
 from nextcord import Member
 from core.utils import error_embed, join_and, find
-import bot
+from bot.exceptions import Exceptions as Exc
+from bot.expire import expire
+from bot.queues.common import QueueResponses as Qr
 
 
 async def add(ctx, queues: str = None):
@@ -29,16 +31,16 @@ async def add(ctx, queues: str = None):
 	qr = dict()  # get queue responses
 	for q in t_queues:
 		qr[q] = await q.add_member(ctx, ctx.author)
-		if qr[q] == bot.Qr.QueueStarted:
+		if qr[q] == Qr.QueueStarted:
 			await ctx.notice(ctx.qc.topic)
 			return
 
-	if len(not_allowed := [q for q in qr.keys() if qr[q] == bot.Qr.NotAllowed]):
+	if len(not_allowed := [q for q in qr.keys() if qr[q] == Qr.NotAllowed]):
 		await ctx.error(ctx.qc.gt("You are not allowed to add to {queues} queues.".format(
 			queues=join_and([f"**{q.name}**" for q in not_allowed])
 		)))
 
-	if bot.Qr.Success in qr.values():
+	if Qr.Success in qr.values():
 		await ctx.qc.update_expire(ctx.author)
 		await ctx.notice(ctx.qc.topic)
 	else:  # have to give some response for slash commands
@@ -63,7 +65,7 @@ async def remove(ctx, queues: str = None):
 			q.pop_members(ctx.author)
 
 		if not any((q.is_added(ctx.author) for q in ctx.qc.queues)):
-			bot.expire.cancel(ctx.qc, ctx.author)
+			expire.cancel(ctx.qc, ctx.author)
 
 		await ctx.notice(ctx.qc.topic)
 	else:
@@ -74,15 +76,15 @@ async def add_player(ctx, player: Member, queue: str):
 	""" Add a player to a queue """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (p := await ctx.get_member(player)) is None:
-		raise bot.Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
+		raise Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
 	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-		raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
+		raise Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
 
 	resp = await q.add_member(ctx, p)
-	if resp == bot.Qr.Success:
+	if resp == Qr.Success:
 		await ctx.qc.update_expire(p)
 		await ctx.reply(ctx.qc.topic)
-	elif resp == bot.Qr.QueueStarted:
+	elif resp == Qr.QueueStarted:
 		await ctx.reply(ctx.qc.topic)
 	else:
 		await ctx.error(f"Got bad queue response: {resp.__name__}.")
@@ -93,7 +95,7 @@ async def remove_player(ctx, player: Member, queues: str = None):
 	ctx.check_perms(ctx.Perms.MODERATOR)
 
 	if (p := await ctx.get_member(player)) is None:
-		raise bot.Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
+		raise Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
 	ctx.author = p
 	await remove(ctx, queues=queues)
 
@@ -102,7 +104,7 @@ async def start(ctx, queue: str = None):
 	""" Manually start a queue """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-		raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
+		raise Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
 	await q.start(ctx)
 	await ctx.reply(ctx.qc.topic)
 
@@ -111,7 +113,7 @@ async def split(ctx, queue: str, group_size: int = None, sort_by_rating: bool = 
 	""" Split queue players into X separate matches """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-		raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
+		raise Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
 	await q.split(ctx, group_size=group_size, sort_by_rating=sort_by_rating)
 	await ctx.reply(ctx.qc.topic)
 
@@ -121,7 +123,7 @@ async def reset(ctx, queue: str = None):
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if queue:
 		if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
-			raise bot.Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
+			raise Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
 		await q.reset()
 	else:
 		for q in ctx.qc.queues:

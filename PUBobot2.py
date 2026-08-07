@@ -53,9 +53,6 @@ loop.run_until_complete(database.db.connect())
 from core import migrations
 loop.run_until_complete(migrations.run_all(database.db))
 
-# Load bot
-import bot
-
 # The one Application for this process. Everything that used to be a
 # module-level global in bot/__init__.py lives here.
 #
@@ -67,6 +64,16 @@ import bot
 # a method. See bot/app.py.
 from bot.app import Application
 dc.app = Application(client=dc)
+
+# Boot wiring. Every import inside bootstrap() exists for a side effect —
+# ensure_table declarations, the job singletons the tick drives, and the
+# registration of the 44 slash commands. It runs AFTER dc.app is built, so no
+# handler can be registered against a world that does not exist yet, and after
+# migrations because those packages CREATE the tables they declare.
+from bot.bootstrap import bootstrap
+bootstrap()
+
+from bot.main import save_state
 
 # Load web server
 from bot.web import start_web_server
@@ -109,7 +116,7 @@ def _task_done_callback(task):
 	# Best-effort state save before exit — we have periodic snapshots too
 	# but an extra save here loses at most a few seconds of in-flight state.
 	try:
-		bot.save_state()
+		save_state(dc.app)
 	except Exception as save_exc:
 		log.error(f"Failed to save state during crash: {save_exc}")
 	log.error("Stopping event loop — process will exit, Railway will restart the container.")
@@ -136,7 +143,7 @@ original_SIGTERM_handler = signal.getsignal(signal.SIGTERM)
 
 def ctrl_c(sig, frame):
 	log.info(f"Received signal {sig}, shutting down gracefully...")
-	bot.save_state()
+	save_state(dc.app)
 	console.terminate()
 	# Restore original handlers so a second signal kills immediately
 	signal.signal(signal.SIGINT, original_SIGINT_handler)

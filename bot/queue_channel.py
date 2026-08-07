@@ -10,7 +10,13 @@ from core.locales import locales
 from core.utils import join_and, seconds_to_str, get_nick
 from core.database import db
 
-import bot
+from bot.context.context import SystemContext
+from bot.exceptions import Exceptions as Exc
+from bot.expire import expire
+from bot.main import update_qc_lang
+from bot.main import update_rating_system
+from bot.queues.pickup_queue import PickupQueue
+from bot.stats.noadds import noadds
 from bot.stats.rating import FlatRating, Glicko2Rating, TrueSkillRating, AoE2Rating
 
 MAX_EXPIRE_TIME = 12*60*60
@@ -55,7 +61,7 @@ class QueueChannel:
 				options=locales.keys(),
 				default="en",
 				notnull=True,
-				on_change=bot.update_qc_lang
+				on_change=update_qc_lang
 			),
 			Variables.RoleVar(
 				"admin_role",
@@ -130,14 +136,14 @@ class QueueChannel:
 				options=rating_names.keys(),
 				default="AoE2",
 				notnull=True,
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.TextChanVar(
 				"rating_channel",
 				display="Rating host channel",
 				section="Rating",
 				description="Use rating data from another channel.",
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.IntVar(
 				"rating_initial",
@@ -148,7 +154,7 @@ class QueueChannel:
 				verify=lambda x: 0 <= x <= 10000,
 				verify_message="Initial rating must be between 0 and 10000",
 				notnull=True,
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.IntVar(
 				"rating_deviation",
@@ -159,7 +165,7 @@ class QueueChannel:
 				verify=lambda x: 1 <= x <= 3000,
 				verify_message="Rating deviation must be between 1 and 3000",
 				notnull=True,
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.IntVar(
 				"rating_min_deviation",
@@ -169,7 +175,7 @@ class QueueChannel:
 				default=100,
 				verify=lambda x: 1 <= x <= 3000,
 				verify_message="Rating minimum deviation must be between 1 and 3000",
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.SliderVar(
 				"rating_scale",
@@ -177,7 +183,7 @@ class QueueChannel:
 				section="Rating",
 				max_val=1000,
 				description="Scale all rating changes, 100% = x1.",
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.SliderVar(
 				"rating_loss_scale",
@@ -188,7 +194,7 @@ class QueueChannel:
 					"Warning: changing this will break ratings balance."
 				]),
 				max_val=500,
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.SliderVar(
 				"rating_win_scale",
@@ -199,7 +205,7 @@ class QueueChannel:
 					"Warning: changing this will break ratings balance."
 				]),
 				max_val=500,
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.SliderVar(
 				"rating_draw_bonus",
@@ -212,7 +218,7 @@ class QueueChannel:
 				]),
 				max_val=500,
 				min_val=-500,
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.BoolVar(
 				"rating_ws_boost",
@@ -221,7 +227,7 @@ class QueueChannel:
 				description="Apply rating boost from 1.5x to 3x from 3 to 6 won matches in a row.",
 				notnull=True,
 				default=0,
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.BoolVar(
 				"rating_ls_boost",
@@ -230,7 +236,7 @@ class QueueChannel:
 				description="Apply rating boost from 1.5x to 3x from 3 to 6 lost matches in a row.",
 				notnull=True,
 				default=0,
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.IntVar(
 				"rating_decay",
@@ -240,7 +246,7 @@ class QueueChannel:
 				default=10,
 				verify=lambda x: 0 <= x <= 100,
 				verify_message="Rating decay must be between 0 and 100",
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.IntVar(
 				"rating_deviation_decay",
@@ -250,7 +256,7 @@ class QueueChannel:
 				default=15,
 				verify=lambda x: 0 <= x <= 500,
 				verify_message="Rating deviation decay must be between 0 and 500",
-				on_change=bot.update_rating_system
+				on_change=update_rating_system
 			),
 			Variables.IntVar(
 				"lb_min_matches",
@@ -316,8 +322,8 @@ class QueueChannel:
 		qc_cfg = await cls.cfg_factory.spawn(text_channel.guild, p_key=text_channel.id)
 		self = cls(text_channel, qc_cfg, app)
 
-		for pq_cfg in await bot.PickupQueue.cfg_factory.select(text_channel.guild, {"channel_id": self.id}):
-			self.queues.append(bot.PickupQueue(self, pq_cfg))
+		for pq_cfg in await PickupQueue.cfg_factory.select(text_channel.guild, {"channel_id": self.id}):
+			self.queues.append(PickupQueue(self, pq_cfg))
 
 		return self
 
@@ -408,12 +414,12 @@ class QueueChannel:
 		if len(affected):
 			if not ctx:
 				try:
-					ctx = bot.SystemContext(self)
+					ctx = SystemContext(self)
 				except IndexError:
 					return
 
 			for m in affected:
-				bot.expire.cancel(self, m)
+				expire.cancel(self, m)
 			if reason:
 				await ctx.notice(self.topic)
 				if highlight:
@@ -484,7 +490,7 @@ class QueueChannel:
 		went, the feature did not.
 		"""
 		if self.cfg.expire_time:
-			bot.expire.set(self, member, self.cfg.expire_time)
+			expire.set(self, member, self.cfg.expire_time)
 
 	async def _update_rating_roles(self, *members):
 		table = self._ranks_table
@@ -512,24 +518,24 @@ class QueueChannel:
 
 	async def queue_started(self, ctx, members):
 		await self.remove_members(*members, ctx=ctx)
-		await bot.remove_players(self.app, *members, reason="pickup started")
+		await self.app.remove_players(*members, reason="pickup started")
 
 	async def check_allowed_to_add(self, ctx, member, queue=None):
 		""" raises if this member may not add; returns nothing """
 
 		if self.cfg.blacklist_role and self.cfg.blacklist_role in member.roles:
-			raise bot.Exc.PermissionError(self.gt("You are not allowed to add to queues on this channel."))
+			raise Exc.PermissionError(self.gt("You are not allowed to add to queues on this channel."))
 		if self.cfg.whitelist_role and self.cfg.whitelist_role not in member.roles:
-			raise bot.Exc.PermissionError(self.gt("You are not allowed to add to queues on this channel."))
+			raise Exc.PermissionError(self.gt("You are not allowed to add to queues on this channel."))
 
-		ban_left = await bot.noadds.get_user(ctx, member)
+		ban_left = await noadds.get_user(ctx, member)
 		if ban_left:
-			raise bot.Exc.PermissionError(self.gt("You have been banned, `{duration}` left.").format(
+			raise Exc.PermissionError(self.gt("You have been banned, `{duration}` left.").format(
 				duration=seconds_to_str(ban_left)
 			))
 
 		if any((member in m.players for m in self.app.active_matches)):
-			raise bot.Exc.InMatchError(self.gt("You are already in an active match."))
+			raise Exc.InMatchError(self.gt("You are already in an active match."))
 
 		if queue:
 			await queue.check_allowed_to_add(member)

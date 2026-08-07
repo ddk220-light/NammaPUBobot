@@ -1,4 +1,4 @@
-__all__ = ['noadds', 'noadd', 'forgive', 'rating_seed', 'rating_hide', 'undo_match', 'identity_link', 'identity_unlink', 'identity_conflicts']
+__all__ = ['show_noadds', 'noadd', 'forgive', 'rating_seed', 'rating_hide', 'undo_match', 'identity_link', 'identity_unlink', 'identity_conflicts']
 
 from time import time
 from datetime import timedelta
@@ -8,7 +8,10 @@ from nextcord.utils import escape_markdown
 from core.console import log
 from core.utils import seconds_to_str, get_nick
 
-import bot
+from bot import identity
+from bot.exceptions import Exceptions as Exc
+from bot.stats import stats
+from bot.stats.noadds import noadds
 
 # What each of identity.CONFIDENCE_ORDER's tiers MEANS to the human reading
 # `/identity show`. The bare lattice value is internal jargon, and the one
@@ -28,8 +31,8 @@ CONFIDENCE_GLOSS = {
 MAX_CONFLICT_FIELDS = 24
 
 
-async def noadds(ctx):
-	data = await bot.noadds.get_noadds(ctx)
+async def show_noadds(ctx):
+	data = await noadds.get_noadds(ctx)
 	now = int(time())
 	s = "```markdown\n"
 	s += ctx.qc.gt(" ID | Prisoner | Left | Reason")
@@ -49,8 +52,8 @@ async def noadd(ctx, player: Member, duration: timedelta, reason: str = None):
 	if not duration:
 		duration = timedelta(hours=2)
 	if duration > timedelta(days=365*100):
-		raise bot.Exc.ValueError(ctx.qc.gt("Specified duration time is too long."))
-	await bot.noadds.noadd(
+		raise Exc.ValueError(ctx.qc.gt("Specified duration time is too long."))
+	await noadds.noadd(
 		ctx=ctx, member=player, duration=int(duration.total_seconds()), moderator=ctx.author, reason=reason
 	)
 	await ctx.success(ctx.qc.gt("Banned **{member}** for `{duration}`.").format(
@@ -61,18 +64,18 @@ async def noadd(ctx, player: Member, duration: timedelta, reason: str = None):
 
 async def forgive(ctx, player: Member):
 	ctx.check_perms(ctx.Perms.MODERATOR)
-	if await bot.noadds.forgive(ctx=ctx, member=player, moderator=ctx.author):
+	if await noadds.forgive(ctx=ctx, member=player, moderator=ctx.author):
 		await ctx.success(ctx.qc.gt("Done."))
 	else:
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Specified member is not banned."))
+		raise Exc.NotFoundError(ctx.qc.gt("Specified member is not banned."))
 
 
 async def rating_seed(ctx, player: str, rating: int, deviation: int = None):
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (player := await ctx.get_member(player)) is None:
-		raise bot.Exc.SyntaxError(f"Specified member not found on the server.")  # noqa: F541
+		raise Exc.SyntaxError(f"Specified member not found on the server.")  # noqa: F541
 	if not 0 < rating < 10000 or not 0 < (deviation or 1) < 3000:
-		raise bot.Exc.ValueError("Bad rating or deviation value.")
+		raise Exc.ValueError("Bad rating or deviation value.")
 
 	await ctx.qc.rating.set_rating(player, rating=rating, deviation=deviation, reason="manual seeding")
 	await ctx.qc.update_rating_roles(player)
@@ -82,7 +85,7 @@ async def rating_seed(ctx, player: str, rating: int, deviation: int = None):
 async def rating_hide(ctx, player: str, hide: bool = True):
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (player := await ctx.get_member(player)) is None:
-		raise bot.Exc.SyntaxError(f"Specified member not found on the server.")  # noqa: F541
+		raise Exc.SyntaxError(f"Specified member not found on the server.")  # noqa: F541
 	await ctx.qc.rating.hide_player(player.id, hide=hide)
 	await ctx.success(ctx.qc.gt("Done."))
 
@@ -90,11 +93,11 @@ async def rating_hide(ctx, player: str, hide: bool = True):
 async def undo_match(ctx, match_id: int):
 	ctx.check_perms(ctx.Perms.MODERATOR)
 
-	result = await bot.stats.undo_match(ctx, match_id)
+	result = await stats.undo_match(ctx, match_id)
 	if result:
 		await ctx.success(ctx.qc.gt("Done."))
 	else:
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id."))
+		raise Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id."))
 
 
 async def identity_link(ctx, member: Member, profile_id: int, additional: bool = False):
@@ -161,7 +164,7 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 		# 400 the service answers a negative id with to "unavailable", so
 		# without this a number that cannot exist would be reported as the
 		# SERVICE being broken (verified live 2026-07-30, see /link's guard).
-		raise bot.Exc.ValueError(ctx.qc.gt(
+		raise Exc.ValueError(ctx.qc.gt(
 			"`{profile_id}` isn't a valid AoE2 profile id, so nothing was changed. "
 			"Profile ids are positive numbers — check it on the player's "
 			"aoe2insights.com page."
@@ -171,14 +174,14 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 
 	status, data = await lobby_api.fetch_profile(profile_id)
 	if status == "not_found":
-		raise bot.Exc.ValueError(ctx.qc.gt(
+		raise Exc.ValueError(ctx.qc.gt(
 			"There's no AoE2 profile with the id `{profile_id}`, so nothing was changed. "
 			"Check the number on the player's aoe2insights.com page and try again."
 		).format(profile_id=profile_id))
 	if status != "ok":
 		# Deliberately does NOT blame the id: nothing here proves anything about
 		# it, and saying otherwise would send an admin looking for a new number.
-		raise bot.Exc.ValueError(ctx.qc.gt(
+		raise Exc.ValueError(ctx.qc.gt(
 			"I couldn't reach the AoE2 profile service just now, so nothing was changed. "
 			"This isn't a problem with the id — please try again in a minute."
 		))
@@ -192,11 +195,11 @@ async def identity_link(ctx, member: Member, profile_id: int, additional: bool =
 
 	# Both reads happen BEFORE the write -- afterwards the previous owner is
 	# gone and the released profiles are no longer the member's.
-	previous_owner = await bot.identity.user_for_profile(profile_id)
-	owned = await bot.identity.profiles_for_users([member.id])
+	previous_owner = await identity.user_for_profile(profile_id)
+	owned = await identity.profiles_for_users([member.id])
 	others = sorted(pid for pid in owned.get(member.id, []) if pid != profile_id)
 
-	await bot.identity.relink(profile_id, member.id, additional=additional, aoe2_name=observed_name)
+	await identity.relink(profile_id, member.id, additional=additional, aoe2_name=observed_name)
 
 	# The in-game name is echoed because it is the ONLY part of this reply an
 	# admin can check against the person in front of them: a wrong-but-real id
@@ -266,18 +269,18 @@ async def identity_unlink(ctx, member: Member, profile_id: int):
 	ctx.check_perms(ctx.Perms.ADMIN)
 	profile_id = int(profile_id)
 
-	owner = await bot.identity.user_for_profile(profile_id)
+	owner = await identity.user_for_profile(profile_id)
 	if owner is None:
-		raise bot.Exc.ValueError(ctx.qc.gt(
+		raise Exc.ValueError(ctx.qc.gt(
 			"Profile `{profile_id}` isn't linked to anyone, so there's nothing to unlink."
 		).format(profile_id=profile_id))
 	if owner != member.id:
-		raise bot.Exc.ValueError(ctx.qc.gt(
+		raise Exc.ValueError(ctx.qc.gt(
 			"Profile `{profile_id}` is linked to <@{owner_id}>, not to **{member}**. "
 			"Nothing was changed — re-run with the right member if you meant to remove that link."
 		).format(profile_id=profile_id, owner_id=owner, member=get_nick(member)))
 
-	await bot.identity.unlink(profile_id)
+	await identity.unlink(profile_id)
 
 	# Deliberately does NOT say "they can claim it back with `/link`". `/link` is
 	# view-only for anybody who already owns a profile (bot/commands/identity.py
@@ -311,7 +314,7 @@ async def identity_conflicts(ctx):
 	first twenty-four". """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 
-	conflicts = await bot.identity.open_conflicts()
+	conflicts = await identity.open_conflicts()
 	if not conflicts:
 		await ctx.reply(ctx.qc.gt("no open identity conflicts"))
 		return

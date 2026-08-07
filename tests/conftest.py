@@ -555,6 +555,13 @@ _fake_nextcord.SelectOption = _FakeSelectOption
 _fake_nextcord.InteractionType = _InteractionType
 _fake_nextcord.ui = _UiStub()
 _fake_nextcord.ButtonStyle = _ButtonStyleStub()
+# `nextcord.abc`, reached by bot/context/context.py for the abc.GuildChannel
+# annotation on Context.__init__. Annotation only — that file declares
+# `from __future__ import annotations`, so the attribute is never evaluated —
+# but `from nextcord import abc` is a real module-level import and has to
+# resolve to something.
+_fake_nextcord.abc = types.ModuleType('nextcord.abc')
+_fake_nextcord.abc.GuildChannel = _NextcordStub
 _fake_nextcord_utils = types.ModuleType('nextcord.utils')
 _fake_nextcord_utils.get = _get
 _fake_nextcord_utils.find = _find
@@ -618,8 +625,22 @@ class _FakeDiscordClient:
 		return False
 
 
+class _FakeMember:
+	""" core.client.FakeMember — the stand-in the bot builds for a player who
+	is named by `name@id` rather than by a real Discord mention. Only
+	bot/context/context.py imports it, and only inside Context.get_member. """
+
+	def __init__(self, guild, user_id, name):
+		self.id = user_id
+		self.name = name
+		self.nick = None
+		self.roles = []
+		self.bot = True
+
+
 _fake_core_client = types.ModuleType('core.client')
 _fake_core_client.dc = _FakeDiscordClient()
+_fake_core_client.FakeMember = _FakeMember
 
 # The real entrypoint does `dc.app = Application(client=dc)` at boot, and the
 # live state that used to be bot/__init__.py globals now lives there. Without
@@ -642,16 +663,23 @@ sys.modules['core.client'] = _fake_core_client
 
 
 # ─── bot (package shim) ──────────────────────────────────────────────
-# Importing any submodule of `bot` normally runs `bot/__init__.py`,
-# which pulls in nextcord and dozens of other runtime-only deps. The
-# parsers (bot.elo_sync.parse_elo_message, bot.civ_sync.parse_*) don't
-# need any of that, but Python doesn't know.
+# Pre-register an empty `bot` package in sys.modules with an explicit
+# __path__, so `from bot.elo_sync import X` resolves the submodule without
+# running bot/__init__.py.
 #
-# Trick: pre-register an empty `bot` package in sys.modules with an
-# explicit __path__. Now `from bot.elo_sync import X` sees `bot`
-# already-imported (so __init__.py is skipped) but can still resolve
-# submodules via the __path__ list. This is the same shim pattern
-# numpy/scipy use in their own test suites for heavy import graphs.
+# THE REASON CHANGED, AND THE SHIM STAYED. It used to be load-bearing:
+# bot/__init__.py re-exported half the codebase and imported every feature
+# package for its ensure_table side effects, so reaching one parser pulled in
+# nextcord, aiomysql and the whole graph. That file is now a docstring and
+# nothing else — the side-effect imports moved to bot/bootstrap.py, which
+# only the entrypoint calls — so importing it for real would be harmless.
+#
+# It is kept because tests monkeypatch submodules ONTO this object:
+# `monkeypatch.setattr(sys.modules["bot"], "community", fake)` is what makes a
+# function-local `from bot import community` hand back a stub instead of
+# opening a DB connection (see tests/test_predictions_flow.py). Patching a
+# package attribute is the supported way to do that, and it wants a package
+# object that belongs to the test run rather than to the import system.
 _fake_bot = types.ModuleType('bot')
 _fake_bot.__path__ = [str(_REPO_ROOT / 'bot')]
 sys.modules['bot'] = _fake_bot

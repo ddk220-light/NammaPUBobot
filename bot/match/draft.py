@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import bot
+from bot.exceptions import Exceptions as Exc
 from core.utils import find
 from nextcord import DiscordException
 
@@ -40,9 +40,9 @@ class Draft:
 
 	async def put(self, ctx, player, team_name):
 		if (team := find(lambda t: t.name.lower() == team_name.lower(), self.m.teams)) is None:
-			raise bot.Exc.SyntaxError(self.m.gt("Specified team name not found."))
+			raise Exc.SyntaxError(self.m.gt("Specified team name not found."))
 		if self.m.state not in [self.m.DRAFT, self.m.WAITING_REPORT]:
-			raise bot.Exc.MatchStateError(self.m.gt("The match must be on the draft or waiting report stage."))
+			raise Exc.MatchStateError(self.m.gt("The match must be on the draft or waiting report stage."))
 
 		if (old_team := find(lambda t: player in t, self.m.teams)) is not None:
 			old_team.remove(player)
@@ -58,7 +58,7 @@ class Draft:
 
 	async def sub_me(self, ctx, author):
 		if self.m.state not in [self.m.DRAFT, self.m.WAITING_REPORT]:
-			raise bot.Exc.MatchStateError(self.m.gt("The match must be on the draft or waiting report stage."))
+			raise Exc.MatchStateError(self.m.gt("The match must be on the draft or waiting report stage."))
 
 		if author in self.sub_queue:
 			self.sub_queue.remove(author)
@@ -69,9 +69,9 @@ class Draft:
 
 	async def sub_for(self, ctx, player1, player2, force=False):
 		if self.m.state not in [self.m.CHECK_IN, self.m.DRAFT, self.m.WAITING_REPORT]:
-			raise bot.Exc.MatchStateError(self.m.gt("The match must be on the check-in, draft or waiting report stage."))
+			raise Exc.MatchStateError(self.m.gt("The match must be on the check-in, draft or waiting report stage."))
 		elif not force and player1 not in self.sub_queue:
-			raise bot.Exc.PermissionError(self.m.gt("Specified player is not looking for a substitute."))
+			raise Exc.PermissionError(self.m.gt("Specified player is not looking for a substitute."))
 
 		team = find(lambda t: player1 in t, self.m.teams)
 		team[team.index(player1)] = player2
@@ -83,7 +83,7 @@ class Draft:
 			p['user_id']: p['rating'] for p in await self.m.qc.rating.get_players((p.id for p in self.m.players))
 		}
 		await self.m.qc.remove_members(player2, ctx=ctx)
-		await bot.remove_players(self.m.qc.app, player2, reason="pickup started")
+		await self.m.qc.app.remove_players(player2, reason="pickup started")
 
 		# A ROSTER CHANGE UNDER A LIVE BOOK IS A CHANGE TO THE SIDES PEOPLE
 		# STAKED ON — the same reason /subauto refunds and re-opens, and no
@@ -111,7 +111,7 @@ class Draft:
 
 	async def sub_auto(self, ctx, out_member):
 		if self.m.state not in [self.m.DRAFT, self.m.WAITING_REPORT]:
-			raise bot.Exc.MatchStateError(self.m.gt("The match must be on the draft or waiting report stage."))
+			raise Exc.MatchStateError(self.m.gt("The match must be on the draft or waiting report stage."))
 
 		# Grab the next queued player who isn't already committed to another
 		# active match. busy_ids spans every active match, so it also excludes
@@ -119,7 +119,7 @@ class Draft:
 		busy_ids = {p.id for m in self.m.qc.app.active_matches for p in m.players}
 		candidate = pick_available(self.m.queue.queue, busy_ids)
 		if candidate is None:
-			raise bot.Exc.NotFoundError(self.m.gt("There are no available players in the queue to substitute in."))
+			raise Exc.NotFoundError(self.m.gt("There are no available players in the queue to substitute in."))
 
 		# Swap the caller out for the candidate and recompute ratings for the
 		# new roster so the rebalance below sees correct ELOs.
@@ -133,7 +133,7 @@ class Draft:
 
 		# Pull the candidate out of the queue and expire timers, like /subfor.
 		await self.m.qc.remove_members(candidate, ctx=ctx)
-		await bot.remove_players(self.m.qc.app, candidate, reason="pickup started")
+		await self.m.qc.app.remove_players(candidate, reason="pickup started")
 
 		# Full re-matchmaking: re-split everyone into the two most ELO-balanced
 		# teams. Reuses the proven matchmaking path; teams[0][0]/teams[1][0]

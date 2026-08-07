@@ -21,6 +21,8 @@ impure orchestration only.
 import time
 
 from bot import identity
+from bot.context.context import SystemContext
+from bot.exceptions import Exceptions as Exc
 from core.client import dc
 from core.console import log
 from core.database import db
@@ -220,7 +222,6 @@ async def _post_result_and_gate(match, row, winner_idx, losing_captain):
 	"""Post the result message, add ✅, register the loss-confirm handler, and move
 	the row to awaiting_confirm. Best-effort; a failure leaves the row in_progress
 	to be retried (or it expires)."""
-	import bot
 	from nextcord import DiscordException
 
 	row_id = row.get("id")
@@ -230,7 +231,7 @@ async def _post_result_and_gate(match, row, winner_idx, losing_captain):
 	await _reschedule(row_id, now)
 
 	try:
-		ctx = bot.SystemContext(match.queue.qc)
+		ctx = SystemContext(match.queue.qc)
 	except Exception as e:
 		log.error(f"Flow2 ctx build failed (match {match.id}): {e}")
 		return
@@ -291,7 +292,6 @@ class LossConfirm:
 		self.losing_captain = losing_captain
 
 	async def process_reaction(self, reaction, user, remove=False):
-		import bot
 		from core.client import dc
 
 		if remove:
@@ -309,10 +309,10 @@ class LossConfirm:
 			self.m.qc.app.waiting_reactions.pop(self.message.id, None)   # stale -> unsubscribe
 			return
 		try:
-			ctx = bot.SystemContext(self.m.queue.qc)
+			ctx = SystemContext(self.m.queue.qc)
 			await self.m.report_loss(ctx, user, False)
 			self.m.qc.app.waiting_reactions.pop(self.message.id, None)   # success -> unsubscribe
-		except (bot.Exc.PermissionError, bot.Exc.MatchStateError):
+		except (Exc.PermissionError, Exc.MatchStateError):
 			pass   # wrong reactor / stale state — stay live for the real captain
 		except Exception as e:
 			log.error(f"LossConfirm report_loss failed (match {self.m.id}): {e}")

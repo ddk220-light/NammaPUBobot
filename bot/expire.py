@@ -2,7 +2,7 @@ import time
 
 from core.client import dc
 
-import bot
+from bot.exceptions import Exceptions as Exc
 
 from core.console import log
 
@@ -21,7 +21,7 @@ class ExpireTimer:
 			try:
 				task = await self.ExpireTask.from_json(task_data)
 				self.tasks[task.hash] = task
-			except bot.Exc.ValueError as e:
+			except Exc.ValueError as e:
 				log.error(f"Failed to load expire task '{data}': {str(e)}")
 		self._define_next()
 
@@ -39,11 +39,11 @@ class ExpireTimer:
 		@classmethod
 		async def from_json(cls, data):
 			if (qc := dc.app.channels.get(data['channel_id'])) is None:
-				raise bot.Exc.ValueError(f"QueueChannel is not found.")  # noqa: F541
+				raise Exc.ValueError(f"QueueChannel is not found.")  # noqa: F541
 			if (guild := dc.get_guild(qc.guild_id)) is None:
-				raise bot.Exc.ValueError(f"Guild is not reachable.")  # noqa: F541
+				raise Exc.ValueError(f"Guild is not reachable.")  # noqa: F541
 			if (member := guild.get_member(data['member'])) is None:
-				raise bot.Exc.ValueError(f"Member is not found.")  # noqa: F541
+				raise Exc.ValueError(f"Member is not found.")  # noqa: F541
 			return cls(qc, member, data['at'])
 
 	def set(self, qc, member, delay):

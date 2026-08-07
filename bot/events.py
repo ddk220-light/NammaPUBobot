@@ -8,7 +8,19 @@ from core.client import dc
 from core.database import db
 from core.console import log
 from core.config import cfg
-import bot
+from bot import civ_reconcile
+from bot import commands
+from bot import derived
+from bot import lobby
+from bot import predictions
+from bot import quiz
+from bot import replay_stats
+from bot.exceptions import Exceptions as Exc
+from bot.expire import expire
+from bot.main import load_state, save_state, save_state_db
+from bot.queue_channel import QueueChannel
+from bot.stats import stats
+from bot.stats.noadds import noadds
 from bot.elo_sync import process_elo_sync
 from bot.civ_sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
 from bot.message_logger import log_channel_message, log_bot_message
@@ -64,7 +76,7 @@ async def seed_ratings_from_csv():
 
 @dc.event
 async def on_init():
-	await bot.stats.check_match_id_counter()
+	await stats.check_match_id_counter()
 
 
 _last_state_save = 0
@@ -105,29 +117,29 @@ async def on_think(frame_time):
 				log.error(f"Removing match {match.id} after {match._think_errors} consecutive think errors.")
 				dc.app.active_matches.remove(match)
 			continue
-	await bot.expire.think(frame_time)
-	await bot.noadds.think(frame_time)
-	await bot.stats.jobs.think(frame_time)
-	await bot.civ_reconcile.reconcile.think(frame_time)
-	await bot.lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
-	await bot.quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
-	await bot.replay_stats.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
-	await bot.predictions.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
+	await expire.think(frame_time)
+	await noadds.think(frame_time)
+	await stats.jobs.think(frame_time)
+	await civ_reconcile.reconcile.think(frame_time)
+	await lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
+	await quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
+	await replay_stats.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
+	await predictions.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
 	# Reconciles game_stats/game_labels against the raw rows they are derived from.
 	# think() only schedules (the batch runs off-tick) and is self-isolating; the loop
 	# converges to zero work and then stays permanently as repair — see bot/derived/backfill.py.
-	await bot.derived.jobs.think(frame_time)
+	await derived.jobs.think(frame_time)
 	# Rebuilds the derived-COMMUNITY layer (player_rollups / metric_boards / civ_stats)
 	# for whoever is out of date. Same self-isolating shape as the backfill above, and
 	# the same stateless convergence: it derives its own work list on every pass rather
 	# than keeping one, so a deploy mid-pass loses nothing — see bot/derived/refresh.py.
-	await bot.derived.refresh_jobs.think(frame_time)
+	await derived.refresh_jobs.think(frame_time)
 	# Ages the bulky per-match replay detail out for LEAN communities once their
 	# summary provably exists — daily, off-tick, self-isolating like the two above.
 	# The only job in this bot that permanently destroys data, so it ships with
 	# DRY_RUN = True and deletes nothing until that constant is flipped in a commit
 	# of its own — see bot/derived/sweeper.py before touching it.
-	await bot.derived.sweeper_jobs.think(frame_time)
+	await derived.sweeper_jobs.think(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See TTLReactionDict
 	# docstring in bot/app.py — entries older than 30 minutes are
@@ -141,8 +153,8 @@ async def on_think(frame_time):
 	# disk for unexpected exits.
 	if frame_time - _last_state_save >= _STATE_SAVE_INTERVAL:
 		try:
-			bot.save_state(dc.app)
-			await bot.save_state_db(dc.app)   # durable copy on the MySQL volume
+			save_state(dc.app)
+			await save_state_db(dc.app)   # durable copy on the MySQL volume
 			_last_state_save = frame_time
 		except Exception as e:
 			log.error(f"Periodic save_state failed: {e}\n{traceback.format_exc()}")
@@ -174,14 +186,14 @@ async def on_message(message):
 	# (add with no args -> default/active queues; remove with no args -> all).
 	if message.content in ('++', '--'):
 		if (qc := dc.app.channels.get(message.channel.id)) is not None and dc.app.ready:
-			from bot.context.message import MessageContext
+			from bot.context.message.context import MessageContext
 			ctx = MessageContext(qc, message)
 			try:
 				if message.content == '++':
-					await bot.commands.add(ctx)
+					await commands.add(ctx)
 				else:
-					await bot.commands.remove(ctx)
-			except bot.Exc.BotException as e:
+					await commands.remove(ctx)
+			except Exc.BotException as e:
 				await ctx.error(str(e), title=e.__class__.__name__)
 			except Exception as e:
 				log.error(f"Error processing '{message.content}': {e}\n{traceback.format_exc()}")
@@ -234,11 +246,11 @@ async def on_interaction(interaction):
 	# self-isolating (never raises). Lazy import keeps quiz's nextcord modules out of
 	# events' import path until first use.
 	await dc.process_application_commands(interaction)
-	from bot.quiz import interactions as quiz_interactions
+	from quiz import interactions as quiz_interactions
 	await quiz_interactions.on_quiz_interaction(interaction)
 	from bot.classifications import interactions as cls_interactions
 	await cls_interactions.on_insights_interaction(interaction)
-	from bot.predictions import interactions as bet_interactions
+	from predictions import interactions as bet_interactions
 	await bet_interactions.on_bet_interaction(interaction)
 
 
@@ -291,10 +303,10 @@ async def on_ready():
 	if not dc.app.was_ready:  # Connected for the first time, load everything
 		log.info(f"Logged in discord as '{dc.user.name}#{dc.user.discriminator}'.")
 		log.info("Loading queue channels...")
-		for channel_id in await bot.QueueChannel.cfg_factory.p_keys():
+		for channel_id in await QueueChannel.cfg_factory.p_keys():
 			channel = dc.get_channel(channel_id)
 			if channel:
-				dc.app.channels[channel_id] = await bot.QueueChannel.create(channel, dc.app)
+				dc.app.channels[channel_id] = await QueueChannel.create(channel, dc.app)
 				await dc.app.channels[channel_id].update_info(channel)
 				log.info(f"\tInit channel {channel.guild.name}>#{channel.name} successful.")
 			else:
@@ -327,14 +339,14 @@ async def on_ready():
 		# every community; after the first boot this inserts nothing. Newcomers
 		# are seeded lazily on their first gold touch instead.
 		try:
-			from bot.predictions import gold as gold_bank
+			from predictions import gold as gold_bank
 			seeded = await gold_bank.bulk_seed(int(time.time()))
 			if seeded:
 				log.info(f"\tSeeded {seeded} player(s) with starting gold.")
 		except Exception:
 			log.error(f"Gold bulk seed failed:\n{traceback.format_exc()}")
 
-		await bot.load_state()
+		await load_state()
 		dc.app.was_ready = True
 		dc.app.ready = True
 		log.info("Done.")
@@ -364,7 +376,7 @@ async def on_presence_update(before, after):
 		if after.raw_status == "offline" and qc.cfg.remove_offline:
 			await qc.remove_members(after, reason="offline")
 
-		if after.raw_status == "idle" and qc.cfg.remove_afk and bot.expire.get(qc, after) is None:
+		if after.raw_status == "idle" and qc.cfg.remove_afk and expire.get(qc, after) is None:
 			await qc.remove_members(after, reason="afk", highlight=True)
 
 

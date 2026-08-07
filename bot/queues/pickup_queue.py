@@ -5,7 +5,9 @@ from core.cfg_factory import FactoryTable, CfgFactory, Variables, VariableTable
 from core.utils import get_nick, get, SafeTemplateDict
 from core.client import dc
 
-import bot
+from bot.exceptions import Exceptions as Exc
+from bot.match.match import Match
+from bot.queues.common import QueueResponses as Qr
 
 
 class PickupQueue:
@@ -282,15 +284,15 @@ class PickupQueue:
 	@classmethod
 	async def from_json(cls, data):
 		if (qc := dc.app.channels.get(data['channel_id'])) is None:
-			raise bot.Exc.ValueError("QueueChannel not found.")
+			raise Exc.ValueError("QueueChannel not found.")
 		if (q := get(qc.queues, id=data['queue_id'])) is None:
-			raise bot.Exc.ValueError("Queue not found.")
+			raise Exc.ValueError("Queue not found.")
 		if (guild := dc.get_guild(qc.guild_id)) is None:
-			raise bot.Exc.ValueError("Guild not found.")
+			raise Exc.ValueError("Guild not found.")
 
 		players = [guild.get_member(user_id) for user_id in data['players']]
 		if None in players:
-			raise bot.Exc.ValueError(f"Error fetching guild members.")  # noqa: F541
+			raise Exc.ValueError(f"Error fetching guild members.")  # noqa: F541
 
 		q.queue = players
 		if q.length and q not in qc.app.active_queues:
@@ -347,7 +349,7 @@ class PickupQueue:
 			promotion_role and not promotion_role.mentionable and
 			ctx.channel.guild.me and not ctx.channel.guild.me.guild_permissions.mention_everyone
 		):
-			raise bot.Exc.PermissionError("Insufficient permissions to ping the promotion role.")
+			raise Exc.PermissionError("Insufficient permissions to ping the promotion role.")
 		else:
 			# answers on /slash commands do not ping, so have to answer sth on /slash command first before sending ctx.notice
 			await ctx.ignore(ctx.qc.gt("Sending **{queue}** promotion...").format(queue=self.name))
@@ -363,7 +365,7 @@ class PickupQueue:
 			self.cfg.blacklist_role and self.cfg.blacklist_role in member.roles
 			or self.cfg.whitelist_role and self.cfg.whitelist_role not in member.roles
 		):
-			raise bot.Exc.PermissionError(
+			raise Exc.PermissionError(
 				self.qc.gt("You are not allowed to add to {queues} queues.".format(queues=self.name))
 			)
 
@@ -372,10 +374,10 @@ class PickupQueue:
 			self.cfg.blacklist_role and self.cfg.blacklist_role in member.roles
 			or self.cfg.whitelist_role and self.cfg.whitelist_role not in member.roles
 		):
-			return bot.Qr.NotAllowed
+			return Qr.NotAllowed
 
 		if len(self.queue) >= self.cfg.size:
-			return bot.Qr.QueueFull
+			return Qr.QueueFull
 
 		if member not in self.queue:
 			self.queue.append(member)
@@ -385,11 +387,11 @@ class PickupQueue:
 
 			if len(self.queue) == self.cfg.size and self.cfg.autostart:
 				await self.start(ctx)
-				return bot.Qr.QueueStarted
+				return Qr.QueueStarted
 
-			return bot.Qr.Success
+			return Qr.Success
 		else:
-			return bot.Qr.Duplicate
+			return Qr.Duplicate
 
 	def is_added(self, member):
 		return member in self.queue
@@ -403,7 +405,7 @@ class PickupQueue:
 
 	async def start(self, ctx):
 		if len(self.queue) < 2:
-			raise bot.Exc.BotException(self.qc.gt("Not enough players to start the queue."))
+			raise Exc.BotException(self.qc.gt("Not enough players to start the queue."))
 
 		players = list(self.queue)
 		await self.qc.queue_started(ctx, members=players)
@@ -412,13 +414,13 @@ class PickupQueue:
 		else:
 			team_size = int(self.cfg.size / 2)
 
-		await bot.Match.new(ctx, self, players, team_size=team_size, **self._match_cfg())
+		await Match.new(ctx, self, players, team_size=team_size, **self._match_cfg())
 
 	async def split(self, ctx, group_size: int = None, sort_by_rating: bool = False):
 		group_size = group_size or len(self.queue)//2
 
 		if len(self.queue) < group_size or group_size < 2:
-			raise bot.Exc.BotException(self.qc.gt("Not enough players to start the queue."))
+			raise Exc.BotException(self.qc.gt("Not enough players to start the queue."))
 
 		if sort_by_rating:
 			ratings = {p['user_id']: p['rating'] for p in await ctx.qc.rating.get_players((p.id for p in self.queue))}
@@ -428,13 +430,13 @@ class PickupQueue:
 		for group in groups:
 			await self.qc.queue_started(ctx, members=group)
 
-			await bot.Match.new(ctx, self, group, team_size=group_size//2, **self._match_cfg())
+			await Match.new(ctx, self, group, team_size=group_size//2, **self._match_cfg())
 
 	async def fake_ranked_match(self, ctx, winners, losers, draw=False):
 		if not self.cfg.ranked:
-			raise bot.Exc.ValueError("Specified queue is not ranked.")
+			raise Exc.ValueError("Specified queue is not ranked.")
 
-		await bot.Match.fake_ranked_match(
+		await Match.fake_ranked_match(
 			ctx, self, self.qc, winners, losers, draw=draw,
 			team_names=self.cfg.team_names.split(" ") if self.cfg.team_names else None,
 		)

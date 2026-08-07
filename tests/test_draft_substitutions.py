@@ -24,7 +24,6 @@ No pytest-asyncio in this repo, so every coroutine is driven with asyncio.run().
 from __future__ import annotations
 
 import asyncio
-import sys
 import types
 
 import bot.predictions as predictions
@@ -57,7 +56,7 @@ class FakeQueueChannel:
 		self.removed = []
 		self.rating = types.SimpleNamespace(get_players=self._get_players)
 		# Every real QueueChannel carries the Application, and the substitution
-		# path reaches live queue state through it (bot.remove_players sweeps
+		# path reaches live queue state through it (app.remove_players sweeps
 		# app.active_queues). A fake without one is a different shape from
 		# production and the AttributeError it raises here is the fixture's
 		# fault, not the code's.
@@ -121,37 +120,22 @@ class FakeMatch:
 
 
 def wire(monkeypatch):
-	"""Swap bot.predictions' lifecycle hook for a recorder and give the `bot`
-	package shim the two attributes draft.py reaches for. Returns the list of
-	matches whose book was restarted."""
+	"""Swap bot.predictions' lifecycle hook for a recorder. Returns the list of
+	matches whose book was restarted.
+
+	It used to also patch `remove_players`, `active_matches` and `Exc` onto the
+	`bot` package shim, because draft.py reached all three through
+	bot/__init__.py. It reaches none of them that way now — Exc is a direct
+	import, active_matches is Application state, and remove_players is an
+	Application method the fake channel's real Application answers — so those
+	three patches became no-ops that still looked load-bearing."""
 	restarted = []
 
 	async def _restart_for_match(match):
 		restarted.append(match)
 
 	monkeypatch.setattr(predictions, "restart_for_match", _restart_for_match)
-
-	async def _remove_players(*_members, **_kw):
-		return None
-
-	monkeypatch.setattr(sys.modules["bot"], "remove_players", _remove_players, raising=False)
-	monkeypatch.setattr(sys.modules["bot"], "active_matches", [], raising=False)
-	monkeypatch.setattr(sys.modules["bot"], "Exc", types.SimpleNamespace(
-		MatchStateError=type("MatchStateError", (Exception,), {}),
-		PermissionError=type("PermissionError", (Exception,), {}),
-		NotFoundError=type("NotFoundError", (Exception,), {}),
-		SyntaxError=type("SyntaxError", (Exception,), {})), raising=False)
 	return restarted
-
-
-def wire_bot_only(monkeypatch):
-	"""wire() without touching bot.predictions — for the test that wants the
-	real restart_for_match."""
-	async def _remove_players(*_members, **_kw):
-		return None
-
-	monkeypatch.setattr(sys.modules["bot"], "remove_players", _remove_players, raising=False)
-	monkeypatch.setattr(sys.modules["bot"], "active_matches", [], raising=False)
 
 
 def draft_for(match):
@@ -199,7 +183,7 @@ class TestSubForRestartsTheBook:
 		inside restart_for_match, so this drives the REAL function with a store
 		that raises rather than asserting the property on a stand-in. A sub that
 		died half-way would leave the roster inconsistent with the queue. """
-		wire_bot_only(monkeypatch)       # bot.predictions is deliberately NOT swapped
+		# bot.predictions is deliberately NOT swapped: this drives the real one.
 
 		class _Exploding:
 			async def live_for_match(self, _match_id):

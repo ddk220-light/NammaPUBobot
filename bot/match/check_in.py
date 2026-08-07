@@ -3,7 +3,8 @@ import mmap  # noqa: F401
 import random
 from time import time
 
-import bot
+from bot.context.context import SystemContext
+from bot.exceptions import Exceptions as Exc
 from nextcord.errors import DiscordException
 
 from core.utils import join_and
@@ -47,14 +48,14 @@ class CheckIn:
 		not_ready = [m for m in self.m.players if m not in self.ready_players]
 		if should_warn(frame_time, self.end_time, self.warned, len(not_ready)):
 			self.warned = True
-			ctx = bot.SystemContext(self.m.qc)
+			ctx = SystemContext(self.m.qc)
 			await ctx.notice(self.m.gt(
 				"⏳ 1 minute left to check in, {members}! If you don't ready up you'll be removed "
 				"and replaced by the next queued player, or the queue reverts to gathering."
 			).format(members=join_and([m.mention for m in not_ready])))
 
 		if frame_time > self.end_time:
-			ctx = bot.SystemContext(self.m.qc)
+			ctx = SystemContext(self.m.qc)
 			if self.allow_discard:
 				await self.abort_timeout(ctx)
 			else:
@@ -117,28 +118,28 @@ class CheckIn:
 				else:
 					self.map_votes[idx].add(user.id)
 					self.ready_players.add(user)
-				await self.refresh(bot.SystemContext(self.m.queue.qc))
+				await self.refresh(SystemContext(self.m.queue.qc))
 
 		elif str(reaction) == self.READY_EMOJI:
 			if remove:
 				self.ready_players.discard(user)
 			else:
 				self.ready_players.add(user)
-			await self.refresh(bot.SystemContext(self.m.queue.qc))
+			await self.refresh(SystemContext(self.m.queue.qc))
 
 		elif str(reaction) == self.NOT_READY_EMOJI and self.allow_discard:
 			if not remove:
-				return await self.back_out(bot.SystemContext(self.m.queue.qc), user)
+				return await self.back_out(SystemContext(self.m.queue.qc), user)
 
 	async def set_ready(self, ctx, member, ready):
 		if self.m.state != self.m.CHECK_IN:
-			raise bot.Exc.MatchStateError(self.m.gt("The match is not on the check-in stage."))
+			raise Exc.MatchStateError(self.m.gt("The match is not on the check-in stage."))
 		if ready:
 			self.ready_players.add(member)
 			await self.refresh(ctx)
 		else:
 			if not self.allow_discard:
-				raise bot.Exc.PermissionError(self.m.gt("Discarding check-in is not allowed."))
+				raise Exc.PermissionError(self.m.gt("Discarding check-in is not allowed."))
 			return await self.back_out(ctx, member)
 
 	async def replace_player(self, ctx, out_member):
@@ -158,7 +159,7 @@ class CheckIn:
 		self.ready_players.discard(out_member)
 
 		await self.m.qc.remove_members(candidate, ctx=ctx)
-		await bot.remove_players(self.m.qc.app, candidate, reason="pickup started")
+		await self.m.qc.app.remove_players(candidate, reason="pickup started")
 
 		# Teams and captains are built once in Match.new and never rebuilt on a
 		# state change, so swapping only m.players leaves every embed rendering

@@ -1,6 +1,15 @@
+from __future__ import annotations
+
 from nextcord import Message, Embed
 
-from bot import QueueChannel
+from typing import TYPE_CHECKING
+
+# Annotation only. Importing QueueChannel for real closes a cycle -- a channel
+# builds contexts, so queue_channel imports this module -- and the name is
+# never touched at runtime here: `from __future__ import annotations` leaves
+# every annotation in this file as a string.
+if TYPE_CHECKING:
+	from bot.queue_channel import QueueChannel
 from core.utils import error_embed, ok_embed
 
 from ..context import Context

@@ -4,7 +4,7 @@ from nextcord import Interaction
 from core.client import dc
 from core.utils import find, get
 
-import bot
+from bot.queue_channel import QueueChannel
 
 
 async def queues(interaction: Interaction, queue: str) -> List[str]:  # noqa: UP006
@@ -15,7 +15,7 @@ async def queues(interaction: Interaction, queue: str) -> List[str]:  # noqa: UP
 
 
 async def qc_variables(interaction: Interaction, variable: str) -> List[str]:  # noqa: UP006
-	return sorted([v for v in bot.QueueChannel.cfg_factory.variables.keys() if v.startswith(variable)])[:10]
+	return sorted([v for v in QueueChannel.cfg_factory.variables.keys() if v.startswith(variable)])[:10]
 
 
 async def queue_variables(interaction: Interaction, variable: str) -> List[str]:  # noqa: UP006

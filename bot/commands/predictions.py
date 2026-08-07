@@ -21,7 +21,7 @@ channel's own leaderboard, which is the authority for "who appears on a board".
 """
 from nextcord import Member
 
-import bot
+from bot.exceptions import Exceptions as Exc
 
 __all__ = ['predictions_leaderboard', 'predictions_me']
 
@@ -78,7 +78,7 @@ async def predictions_me(ctx, player: Member = None):
 
 	target = ctx.author if not player else await ctx.get_member(player)
 	if not target:
-		raise bot.Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
+		raise Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
 
 	correct, total = await store.user_stats(target.id, ctx.qc.id)
 

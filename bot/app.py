@@ -77,3 +77,17 @@ class Application:
 		self.waiting_reactions = TTLReactionDict()   # {message_id: callback}
 		self.ready = False
 		self.was_ready = False
+
+	async def remove_players(self, *users, reason=None):
+		"""Drop these users from every queue that currently holds anyone.
+
+		It lived in bot/main.py as a free function taking `app` as its first
+		argument, which is a method with extra steps — and an expensive one:
+		main.py is also the state-snapshot module, so check_in.py and draft.py
+		importing it for this one call put the whole snapshot chain into their
+		import graph and closed a cycle (main -> pickup_queue -> match ->
+		check_in -> main). Reaching it through the object whose list it walks
+		costs no import at all.
+		"""
+		for qc in set(q.qc for q in self.active_queues):
+			await qc.remove_members(*users, reason=reason)

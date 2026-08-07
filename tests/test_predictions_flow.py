@@ -263,7 +263,6 @@ def wire(monkeypatch, *, bets=(), the_post=None, community_id=5,
 	monkeypatch.setattr(sys.modules["bot"], "community",
 						types.SimpleNamespace(community_for_channel=_community_for_channel),
 						raising=False)
-	monkeypatch.setattr(sys.modules["bot"], "active_matches", [], raising=False)
 	return store, bank, channel, log
 
 

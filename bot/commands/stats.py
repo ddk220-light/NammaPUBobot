@@ -11,7 +11,7 @@ from core.database import db
 from core.console import log
 from core.config import cfg
 
-import bot
+from bot.exceptions import Exceptions as Exc
 
 
 async def rank(ctx, player: Member = None, detailed: bool = False):
@@ -61,7 +61,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 
 	target = ctx.author if not player else await ctx.get_member(player)
 	if not target:
-		raise bot.Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
+		raise Exc.SyntaxError(ctx.qc.gt("Specified user not found."))
 
 	data = await ctx.qc.get_lb()
 	if p := find(lambda i: i['user_id'] == target.id, data):
@@ -76,7 +76,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 		place = "?"
 
 	if not p:
-		raise bot.Exc.ValueError(ctx.qc.gt("No rating data found."))
+		raise Exc.ValueError(ctx.qc.gt("No rating data found."))
 
 	from bot import player_profile
 	profile_url = player_profile.web_profile_url(getattr(cfg, "WS_ROOT_URL", ""), target.id)
@@ -232,7 +232,7 @@ async def leaderboard(ctx, page: int = 1):
 	pages = ceil(len(full) / 10) or 1
 	data = full[page * 10:(page + 1) * 10]
 	if not len(data):
-		raise bot.Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
+		raise Exc.NotFoundError(ctx.qc.gt("Leaderboard is empty."))
 
 	# Always an embed: profile links and rank emojis only render there (the old
 	# md-table mode lived inside a code block where neither can work).

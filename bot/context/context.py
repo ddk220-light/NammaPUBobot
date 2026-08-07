@@ -1,9 +1,20 @@
+from __future__ import annotations
+
 from nextcord import abc
 from nextcord import Member, Embed
 from enum import IntEnum
 import re
 
-import bot
+from bot.exceptions import Exceptions as Exc
+
+from typing import TYPE_CHECKING
+
+# Annotation only. Importing QueueChannel for real closes a cycle -- a channel
+# builds contexts, so queue_channel imports this module -- and the name is
+# never touched at runtime here: `from __future__ import annotations` leaves
+# every annotation in this file as a string.
+if TYPE_CHECKING:
+	from bot.queue_channel import QueueChannel
 
 from core.config import cfg
 from core.utils import error_embed, ok_embed, find
@@ -24,7 +35,7 @@ class Context:
 		MODERATOR = 2
 		ADMIN = 3
 
-	def __init__(self, qc: bot.QueueChannel, channel: abc.GuildChannel, author: Member):
+	def __init__(self, qc: QueueChannel, channel: abc.GuildChannel, author: Member):
 		self.qc = qc
 		self.channel = channel
 		self.author = author
@@ -60,9 +71,9 @@ class Context:
 		""" Raise PermissionError if specified permissions is not met by the author """
 		if self.access_level.value < req_perms.value:
 			if req_perms == 2:
-				raise bot.Exc.PermissionError(self.qc.gt("You must possess admin permissions."))
+				raise Exc.PermissionError(self.qc.gt("You must possess admin permissions."))
 			else:
-				raise bot.Exc.PermissionError(self.qc.gt("You must possess moderator permissions."))
+				raise Exc.PermissionError(self.qc.gt("You must possess moderator permissions."))
 
 	async def reply(self, content: str = None, embed: Embed = None):
 		""" Reply in public chat """
@@ -92,7 +103,7 @@ class Context:
 class SystemContext(Context):
 	""" Context for background processes and console commands """
 
-	def __init__(self, qc: bot.QueueChannel, thread_id=None):
+	def __init__(self, qc: QueueChannel, thread_id=None):
 		if (channel := dc.get_channel(qc.id)) is None:
 			raise IndexError("Missing discord channel for {}>#{} ({}).".format(
 				qc.cfg.cfg_info.get('guild_name'), qc.cfg.cfg_info.get('channel_name'), qc.id
@@ -132,10 +143,10 @@ class WebContext(Context):
 
 	def __init__(self, user_id: int, channel_id: int):
 		if (qc := dc.app.channels.get(channel_id)) is None:
-			raise bot.Exc.NotFoundError(f"QueueChannel with id {channel_id} is not found.")
+			raise Exc.NotFoundError(f"QueueChannel with id {channel_id} is not found.")
 		if (channel := dc.get_channel(channel_id)) is None:
-			raise bot.Exc.NotFoundError(f"Discord Channel object with id {channel_id} is not reachable.")
+			raise Exc.NotFoundError(f"Discord Channel object with id {channel_id} is not reachable.")
 		if (author := channel.guild.get_member(user_id)) is None:
-			raise bot.Exc.NotFoundError(f"You are not a member of requested guild.")  # noqa: F541
+			raise Exc.NotFoundError(f"You are not a member of requested guild.")  # noqa: F541
 
 		super().__init__(qc, channel, author)

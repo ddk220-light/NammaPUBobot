@@ -391,6 +391,49 @@ module that reaches through `bot.`
 - [ ] **Step 5:** `ruff check . && pytest tests/ -q`
 - [ ] **Step 6:** Commit — `refactor: dissolve the re-export module`
 
+#### Task 2.1 outcome
+
+**34 modules in one import cycle → zero cycles.** `tests/test_import_cycles.py`
+now resolves the module-level import graph statically and fails on any
+strongly-connected component. It is the guard that makes the rest of this
+restructure safe without a running bot: conftest stubs `core.*` and `nextcord`
+is not installed, so nothing in the suite ever executes the real import graph,
+and a circular import is a boot crash rather than a test failure.
+
+Only 20 files actually reached through the shelf (a raw grep suggested 250; most
+were prose). Three defects fell out of the conversion:
+
+* **`PUBobot2.py` called `save_state()` with no argument**, twice. Phase 1 gave
+  it an `app` parameter and updated `bot/events.py`'s callers but not the
+  entrypoint's. One site is inside a `try/except Exception` that logged and
+  moved on; the other is the SIGTERM handler, so **every Railway redeploy
+  raised TypeError instead of writing the snapshot** — the exact failure the
+  function's own docstring exists to prevent.
+* **`bot/commands/admin.py` shadowed the noadds tracker with its own handler.**
+  `async def noadds(ctx): data = await noadds.get_noadds(ctx)` — the name
+  resolved to the function, not the singleton. It only worked because
+  `bot.noadds` reached the shelf. Renamed to `show_noadds`, matching
+  `show_queues` next to it.
+* **`bot/context/__init__.py` re-exported `SlashContext`**, so
+  `from bot.context.context import SystemContext` ran the entire slash command
+  surface — which imports `QueueChannel`, which imports `SystemContext`. Both
+  context packages now re-export nothing; `QueueChannel` is a `TYPE_CHECKING`
+  annotation.
+
+`remove_players` moved from `bot/main.py` to `Application`. It took `app` as its
+first argument, which is a method with extra steps — and an expensive one:
+`main.py` is also the state-snapshot module, so `check_in.py` and `draft.py`
+importing it for that one call closed `main → pickup_queue → match → check_in →
+main`.
+
+**What the deferred imports are now.** 63 remain, and the count is beside the
+point: none of them is still *required*. Feeding every one of them into the
+cycle detector as if hoisted leaves **two** cycles in `bot/`, and only one is
+real — `derived ↔ replay_stats ↔ post_game`. That one is Task 2.6's problem and
+bigger than the plan assumed: `derived.game_stats` reads `replay_stats.card_scoring`
+while `replay_stats.store` writes `derived.game_stats`, so it is a genuine
+two-way dependency, not the one-way ordering slip recorded after Phase 1.
+
 ### Task 2.2: the match-lifecycle inversion
 
 **Files:** `bot/match/events.py` (new), `bot/wiring.py` (new), `bot/app.py`,

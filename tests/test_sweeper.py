@@ -857,7 +857,7 @@ def test_the_sweeper_is_wired_into_the_think_tick():
 	import bot.derived as derived
 	assert isinstance(derived.sweeper_jobs, sweeper.RetentionSweeper)
 	events = open(_repo_path("bot/events.py"), encoding="utf-8").read()  # noqa: SIM115
-	assert "bot.derived.sweeper_jobs.think(frame_time)" in events
+	assert "derived.sweeper_jobs.think(frame_time)" in events
 
 
 def _repo_path(relative):

@@ -9,7 +9,10 @@ from core.console import log
 from core.database import db
 from core.utils import error_embed, ok_embed, get  # noqa: F401
 
-import bot
+from bot.exceptions import Exceptions as Exc
+from bot.expire import expire
+from bot.match.match import Match
+from bot.queues.pickup_queue import PickupQueue
 
 # Durable snapshot of in-flight state (queues + active matches + expire timers)
 # in MySQL. The bot service disk is ephemeral (only MySQL has a volume), so
@@ -42,7 +45,7 @@ def _serialize_state(app):
 			if q.length > 0:
 				queues.append(q.serialize())
 	matches = [match.serialize() for match in app.active_matches]
-	return dict(queues=queues, matches=matches, expire=bot.expire.serialize())
+	return dict(queues=queues, matches=matches, expire=expire.serialize())
 
 
 def save_state(app):
@@ -92,23 +95,19 @@ async def load_state():
 	for qd in data['queues']:
 		if qd.get('queue_type') in ['PickupQueue', None]:
 			try:
-				await bot.PickupQueue.from_json(qd)
-			except bot.Exc.ValueError as e:
+				await PickupQueue.from_json(qd)
+			except Exc.ValueError as e:
 				log.error(f"Failed to load queue state ({qd.get('queue_id')}): {str(e)}")
 		else:
 			log.error(f"Got unknown queue type '{qd.get('queue_type')}'.")
 
 	for md in data['matches']:
 		try:
-			await bot.Match.from_json(md)
-		except bot.Exc.ValueError as e:
+			await Match.from_json(md)
+		except Exc.ValueError as e:
 			log.error(f"Failed to load match {md['match_id']}: {str(e)}")
 
 	if 'expire' in data.keys():
-		await bot.expire.load_json(data['expire'])
+		await expire.load_json(data['expire'])
 
-
-async def remove_players(app, *users, reason=None):
-	for qc in set((q.qc for q in app.active_queues)):
-		await qc.remove_members(*users, reason=reason)
 

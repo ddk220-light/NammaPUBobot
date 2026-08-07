@@ -4,7 +4,9 @@ from itertools import combinations
 import random
 from nextcord import DiscordException
 
-import bot
+from bot.context.context import SystemContext
+from bot.exceptions import Exceptions as Exc
+from bot.stats import stats
 from core.utils import find, get, iter_to_dict, join_and, get_nick  # noqa: F401
 from core.console import log  # noqa: F401
 from core.client import dc
@@ -61,7 +63,7 @@ class Match:
 	async def new(cls, ctx, queue, players, **kwargs):
 		# Create the Match object
 		ratings = {p['user_id']: p['rating'] for p in await ctx.qc.rating.get_players((p.id for p in players))}
-		match_id = await bot.stats.next_match()
+		match_id = await stats.next_match()
 		match = cls(match_id, queue, ctx.qc, players, ratings, **kwargs)
 		# Prepare the Match object
 		match.maps = match.random_maps(match.cfg['maps'], match.cfg['map_count'], queue.last_maps)
@@ -75,9 +77,9 @@ class Match:
 	async def fake_ranked_match(cls, ctx, queue, qc, winners, losers, draw=False, **kwargs):
 		players = winners + losers
 		if len(set(players)) != len(players):
-			raise bot.Exc.ValueError("Players list can not contains duplicates.")
+			raise Exc.ValueError("Players list can not contains duplicates.")
 		ratings = {p['user_id']: p['rating'] for p in await qc.rating.get_players((p.id for p in players))}
-		match_id = await bot.stats.next_match()
+		match_id = await stats.next_match()
 		match = cls(match_id, queue, qc, players, ratings, pick_teams="premade", **kwargs)
 		match.teams[0].set(winners)
 		match.teams[1].set(losers)
@@ -86,7 +88,7 @@ class Match:
 		else:
 			match.winner = 0
 			match.scores[match.winner] = 1
-		await bot.stats.register_match_ranked(ctx, match)
+		await stats.register_match_ranked(ctx, match)
 
 	def serialize(self):
 		return dict(
@@ -105,15 +107,15 @@ class Match:
 	@classmethod
 	async def from_json(cls, data):
 		if (qc := dc.app.channels.get(data['channel_id'])) is None:
-			raise bot.Exc.ValueError('QueueChannel not found.')
+			raise Exc.ValueError('QueueChannel not found.')
 		if (queue := get(qc.queues, id=data['queue_id'])) is None:
-			raise bot.Exc.ValueError('Queue not found.')
+			raise Exc.ValueError('Queue not found.')
 		if (guild := dc.get_guild(qc.guild_id)) is None:
-			raise bot.Exc.ValueError('Guild not found.')
+			raise Exc.ValueError('Guild not found.')
 
 		data['players'] = [guild.get_member(user_id) for user_id in data['players']]
 		if None in data['players']:
-			raise bot.Exc.ValueError(f"Error fetching guild members.")  # noqa: F541
+			raise Exc.ValueError(f"Error fetching guild members.")  # noqa: F541
 
 		# Fill data with discord objects
 		for i in range(len(data['teams'])):
@@ -122,7 +124,7 @@ class Match:
 
 		# Create the Match object
 		ratings = {p['user_id']: p['rating'] for p in await qc.rating.get_players((p.id for p in data['players']))}
-		match_id = await bot.stats.next_match()
+		match_id = await stats.next_match()
 		match = cls(match_id, queue, qc, data['players'], ratings, **data['cfg'])
 
 		# Set state data
@@ -133,7 +135,7 @@ class Match:
 		match.state = data['state']
 		match.states = data['states']
 		if match.state == match.CHECK_IN:
-			ctx = bot.SystemContext(qc)
+			ctx = SystemContext(qc)
 			await match.check_in.start(ctx)  # Spawn a new check_in message
 
 		match.qc.app.active_matches.append(match)
@@ -297,13 +299,13 @@ class Match:
 
 	async def think(self, frame_time):
 		if self.state == self.INIT:
-			await self.next_state(bot.SystemContext(self.qc))
+			await self.next_state(SystemContext(self.qc))
 
 		elif self.state == self.CHECK_IN:
 			await self.check_in.think(frame_time)
 
 		elif frame_time > self.lifetime + self.start_time:
-			ctx = bot.SystemContext(self.qc)
+			ctx = SystemContext(self.qc)
 			try:
 				await ctx.error(self.gt("Match {queue} ({id}) has timed out.").format(
 					queue=self.queue.name,
@@ -362,11 +364,11 @@ class Match:
 
 	async def report_loss(self, ctx, member, draw_flag):
 		if self.state != self.WAITING_REPORT:
-			raise bot.Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
+			raise Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
 
 		team = find(lambda team: member in team[:1], self.teams[:2])
 		if team is None:
-			raise bot.Exc.PermissionError(self.gt("You must be a team captain to report a loss or draw."))
+			raise Exc.PermissionError(self.gt("You must be a team captain to report a loss or draw."))
 
 		enemy_team = self.teams[1-team.idx]
 		if draw_flag and not enemy_team.draw_flag == draw_flag:  # noqa: SIM201
@@ -395,7 +397,7 @@ class Match:
 
 	async def report_win(self, ctx, team_name, draw=False):  # version for admins/mods
 		if self.state != self.WAITING_REPORT:
-			raise bot.Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
+			raise Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
 
 		if draw:
 			self.winner = None
@@ -403,13 +405,13 @@ class Match:
 			self.winner = team.idx
 			self.scores[self.winner] = 1
 		else:
-			raise bot.Exc.SyntaxError(self.gt("Specified team name not found."))
+			raise Exc.SyntaxError(self.gt("Specified team name not found."))
 
 		await self.finish_match(ctx)
 
 	async def report_scores(self, ctx, scores):
 		if self.state != self.WAITING_REPORT:
-			raise bot.Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
+			raise Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
 
 		if scores[0] > scores[1]:
 			self.winner = 0
@@ -477,9 +479,9 @@ class Match:
 		self.queue.last_maps = self.queue.last_maps[-len(self.maps)*self.queue.cfg.map_cooldown:]
 
 		if self.ranked:
-			await bot.stats.register_match_ranked(ctx, self)
+			await stats.register_match_ranked(ctx, self)
 		else:
-			await bot.stats.register_match_unranked(ctx, self)
+			await stats.register_match_unranked(ctx, self)
 
 		# Close the loop on the pre-game storylines. Purely win/loss, so it can
 		# post the instant the match reports — no replay needed. Best-effort:

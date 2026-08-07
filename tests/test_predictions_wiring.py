@@ -228,9 +228,18 @@ def test_a_store_failure_never_escapes_into_the_match_flow():
 
 
 def test_events_still_drives_the_singleton_through_the_package_attribute():
-	""" bot/events.py is the one caller that legitimately wants the instance. """
+	""" bot/events.py is the one caller that legitimately wants the instance.
+
+	It used to spell this `bot.predictions.jobs.think(...)`, reaching the
+	package through the re-export shelf in bot/__init__.py. That shelf is gone,
+	so the module imports the package by name and the attribute lookup is the
+	same one — `predictions.jobs` is still the PredictionJobs instance the
+	package binds over its own submodule, which is the whole reason flow.py is
+	not called jobs.py. Both halves are asserted: the import that makes the
+	name resolve, and the call that drives the tick. """
 	source = (_REPO_ROOT / "bot" / "events.py").read_text(encoding="utf-8")
-	assert "bot.predictions.jobs.think(" in source
+	assert "from bot import predictions" in source
+	assert "predictions.jobs.think(" in source
 
 
 assert "pytest_asyncio" not in sys.modules, (

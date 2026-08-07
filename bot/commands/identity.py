@@ -30,7 +30,7 @@ so this module loads under a pytest-only CI.
 """
 __all__ = ['link']
 
-import bot
+from bot import identity
 from core.console import log
 
 # The player-verifiable profile page. This exact shape is proven in production
@@ -48,7 +48,7 @@ EXAMPLE_PROFILE_ID = 612690
 
 async def link(ctx, profile_id: int = None):
 	""" Show, explain, or create the caller's AoE2 profile link. """
-	owned = (await bot.identity.profiles_for_users([ctx.author.id])).get(ctx.author.id) or []
+	owned = (await identity.profiles_for_users([ctx.author.id])).get(ctx.author.id) or []
 	if owned:
 		# View only -- deliberately before any use of `profile_id`. A player who
 		# passes an id here has not made an error, they just cannot act on it.
@@ -90,7 +90,7 @@ async def link(ctx, profile_id: int = None):
 
 	# `or None` matters: link_self reads None as "not observed, keep the stored
 	# name", while "" would blank a name somebody else's replay had recorded.
-	if not await bot.identity.link_self(profile_id, ctx.author.id, data["name"] or None):
+	if not await identity.link_self(profile_id, ctx.author.id, data["name"] or None):
 		# link_self has already recorded the losing claim in identity_conflicts.
 		await _refuse(ctx, "That profile is already linked", ctx.qc.gt(
 			"Profile `{profile_id}` is already linked to another player, so I haven't "
@@ -165,7 +165,7 @@ async def _current_link_embed(ctx, profile_ids):
 	others had been lost. """
 	from nextcord import Embed, Colour
 
-	names = await bot.identity.names_for_profiles(profile_ids)
+	names = await identity.names_for_profiles(profile_ids)
 	embed = Embed(
 		title=ctx.qc.gt("Your AoE2 link"),
 		description=ctx.qc.gt(
