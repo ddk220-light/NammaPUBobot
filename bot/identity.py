@@ -727,7 +727,7 @@ COVERAGE_WINDOW_DAYS = 90
 # _DISCORD_ROSTERS_SQL — match_players stores channel_id denormalised and its
 # primary key is (match_id, user_id).
 #
-# `matches` / `match_players` are bot/stats/stats.py's tables and
+# `matches` / `match_players` are nammaoe2bot/pickup/stats.py's tables and
 # `community_channels` is bot/community.py's; this module only ever READS
 # them. Keeping the read here rather than in the command handler is the point
 # of the function (see coverage_for_community).

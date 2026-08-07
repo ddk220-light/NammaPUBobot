@@ -41,9 +41,17 @@ class MatchLifecycle:
 		"live",             # teams are final, the match is being played
 		"roster_changed",   # a substitution rewrote the teams
 		"ending",           # dropped from active_matches, result not yet stored
-		"finished",         # the result IS stored — see wiring.py, this matters
+		"result_recorded",  # a result reached `matches` — NOT the same as finished
+		"finished",         # the match itself is over — see wiring.py, order matters
 		"cancelled",        # aborted; there will never be a result
 	)
+
+	# `result_recorded` and `finished` look redundant and are not.
+	# Match.fake_ranked_match — what /report_manual builds for a game played
+	# outside the bot — writes a result and never enters finish_match, so it
+	# records without finishing. Anything that cares about the RESULT (civ
+	# recording) hangs off the first; anything that cares about the MATCH
+	# (settlement, storylines) hangs off the second.
 
 	def __init__(self):
 		self._handlers = {name: [] for name in self.EVENTS}

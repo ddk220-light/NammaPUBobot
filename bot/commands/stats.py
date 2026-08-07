@@ -11,7 +11,7 @@ from nammaoe2bot.runtime.database import db
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.config import cfg
 
-from bot.exceptions import Exceptions as Exc
+from nammaoe2bot.exceptions import Exceptions as Exc
 
 
 async def rank(ctx, player: Member = None, detailed: bool = False):

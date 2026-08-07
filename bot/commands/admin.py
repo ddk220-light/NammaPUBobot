@@ -9,9 +9,9 @@ from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.utils import seconds_to_str, get_nick
 
 from bot import identity
-from bot.exceptions import Exceptions as Exc
-from bot.stats import stats
-from bot.stats.noadds import noadds
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup import stats
+from nammaoe2bot.pickup.noadds import noadds
 
 # What each of identity.CONFIDENCE_ORDER's tiers MEANS to the human reading
 # `/identity show`. The bare lattice value is internal jargon, and the one

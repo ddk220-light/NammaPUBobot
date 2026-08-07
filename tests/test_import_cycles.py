@@ -8,7 +8,7 @@ installed in CI. The failure mode is therefore invisible until the bot starts
 in production and dies with
 
     ImportError: cannot import name 'QueueChannel' from partially
-    initialized module 'bot.queue_channel' (most likely due to a circular
+    initialized module 'nammaoe2bot.pickup.channel' (most likely due to a circular
     import)
 
 ...which is a redeploy, not a test run.
@@ -112,7 +112,7 @@ def _module_level_imports(module, path, tree):
 def _resolve(dotted, modules):
 	""" The first-party module `dotted` names, or None.
 
-	`from bot.stats import stats` names bot.stats.stats; bot/stats/ is a
+	`from nammaoe2bot.pickup import stats` names nammaoe2bot.pickup.stats; bot/stats/ is a
 	namespace package with no __init__.py, so there is no bot.stats module to
 	fall back to and the walk must stop at the directory rather than blaming
 	the grandparent. """
@@ -224,4 +224,4 @@ def test_the_graph_is_not_empty():
 	walk would make the cycle check vacuously pass. """
 	graph = _graph()
 	assert len(graph) > 100, f"only found {len(graph)} modules"
-	assert graph["bot.match.match"], "bot.match.match imports nothing?"
+	assert graph["nammaoe2bot.pickup.match.match"], "nammaoe2bot.pickup.match.match imports nothing?"

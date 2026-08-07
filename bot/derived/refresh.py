@@ -153,7 +153,7 @@ already there and must NOT be added:
 
   replay ingest -- bot/replay_stats/store.write_match already writes game_stats
                    with a fresh computed_at. That IS the hook.
-  match report  -- bot/stats/stats.py's register_match_* schedules civ recording,
+  match report  -- nammaoe2bot/pickup/stats.py's register_match_* schedules civ recording,
                    whose civ_picks rows carry `at`. That IS the hook.
   identity      -- the one that had nothing to observe, and now does:
                    bot/identity.py stamps `bound_at`.

@@ -50,7 +50,7 @@ from nammaoe2bot.runtime.cfg_factory import (
 	RoleVar, TextChanVar, MemberVar, VariableTable,
 	BoolVar, IntVar, SliderVar, OptionVar, DurationVar, TextVar
 )
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.database import db
 import bot
 from bot import identity, scouting_report

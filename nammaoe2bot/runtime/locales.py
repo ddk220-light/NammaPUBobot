@@ -30,7 +30,7 @@ class _IdentityTranslator:
 
 	# Only English is supported by the passthrough stub. This is surfaced as
 	# the option list for the `lang` channel variable, which is evaluated at
-	# import time in bot/queue_channel.py (QueueChannel.cfg_factory). Without
+	# import time in nammaoe2bot/pickup/channel.py (QueueChannel.cfg_factory). Without
 	# keys() that call raised AttributeError and crashed the whole bot on
 	# startup — the cause of the failed deploys since the Layer 5 commit.
 	_LANGS = ("en",)

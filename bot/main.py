@@ -4,15 +4,15 @@ import json
 import time
 from nextcord import Interaction  # noqa: F401
 
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 from nammaoe2bot.runtime.utils import error_embed, ok_embed, get  # noqa: F401
 
-from bot.exceptions import Exceptions as Exc
-from bot.expire import expire
-from bot.match.match import Match
-from bot.queues.pickup_queue import PickupQueue
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.expire import expire
+from nammaoe2bot.pickup.match.match import Match
+from nammaoe2bot.pickup.queue import PickupQueue
 
 # Durable snapshot of in-flight state (queues + active matches + expire timers)
 # in MySQL. The bot service disk is ephemeral (only MySQL has a volume), so
@@ -28,14 +28,6 @@ db.ensure_table(dict(
 	],
 	primary_keys=["id"]
 ))
-
-
-def update_qc_lang(qc_cfg):
-	dc.app.channels[qc_cfg.p_key].update_lang()
-
-
-def update_rating_system(qc_cfg):
-	dc.app.channels[qc_cfg.p_key].update_rating_system()
 
 
 def _serialize_state(app):

@@ -20,9 +20,9 @@ that final_message really announces, and that the handler really clears. The
 third link, that wiring subscribes something to `teams_posted` at all, is
 tests/test_match_lifecycle.py.
 
-Importing the real bot.match.match module pulls in nextcord and the rest of
-its transitive import chain (nammaoe2bot.discord.client, nammaoe2bot.runtime.utils, bot.match.check_in,
-bot.match.draft, bot.match.embeds), none of which is installed in this test
+Importing the real nammaoe2bot.pickup.match.match module pulls in nextcord and the rest of
+its transitive import chain (nammaoe2bot.runtime.client, nammaoe2bot.runtime.utils, nammaoe2bot.pickup.match.checkin,
+nammaoe2bot.pickup.match.substitution, nammaoe2bot.pickup.match.embeds), none of which is installed in this test
 environment (CI installs only pytest; nextcord and prettytable are absent).
 This module fakes just enough of that chain -- the same sys.modules-injection
 trick tests/conftest.py already uses for nammaoe2bot.runtime.config/console/database -- to
@@ -40,9 +40,9 @@ import types
 
 def _install_fakes(monkeypatch):
 	"""Minimal stand-ins for match.py's import chain, registered in
-	sys.modules so ``import bot.match.match`` (and the check_in/draft/embeds
+	sys.modules so ``import nammaoe2bot.pickup.match.match`` (and the check_in/draft/embeds
 	submodules it pulls in) succeed without the real nextcord/prettytable
-	packages installed. bot.match.subbing has no external imports of its own
+	packages installed. nammaoe2bot.pickup.match.subbing has no external imports of its own
 	and is left to import for real."""
 
 	class _DiscordException(Exception):
@@ -67,10 +67,10 @@ def _install_fakes(monkeypatch):
 	monkeypatch.setitem(sys.modules, "nextcord.errors", fake_nextcord_errors)
 	monkeypatch.setitem(sys.modules, "nextcord.abc", fake_nextcord_abc)
 
-	fake_core_client = types.ModuleType("nammaoe2bot.discord.client")
+	fake_core_client = types.ModuleType("nammaoe2bot.runtime.client")
 	fake_core_client.dc = types.SimpleNamespace(user=None)
 	fake_core_client.FakeMember = object      # Context.get_member's `name@id` path
-	monkeypatch.setitem(sys.modules, "nammaoe2bot.discord.client", fake_core_client)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.client", fake_core_client)
 
 	fake_core_config = types.ModuleType("nammaoe2bot.runtime.config")
 	fake_core_config.cfg = types.SimpleNamespace(DC_OWNER_ID=0)
@@ -153,8 +153,8 @@ def test_final_message_posts_the_teams_then_announces(monkeypatch):
 	post into. Emitting first would put the tease above the teams it teases."""
 	_install_fakes(monkeypatch)
 
-	import bot.match.match as match_mod
-	from bot.match.events import MatchLifecycle
+	import nammaoe2bot.pickup.match.match as match_mod
+	from nammaoe2bot.pickup.match.events import MatchLifecycle
 
 	announced = []
 
@@ -185,8 +185,8 @@ def test_a_failed_teams_embed_still_announces(monkeypatch):
 	storyline too."""
 	_install_fakes(monkeypatch)
 
-	import bot.match.match as match_mod
-	from bot.match.events import MatchLifecycle
+	import nammaoe2bot.pickup.match.match as match_mod
+	from nammaoe2bot.pickup.match.events import MatchLifecycle
 
 	announced = []
 	events = MatchLifecycle()

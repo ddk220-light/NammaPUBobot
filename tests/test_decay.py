@@ -7,12 +7,12 @@ The policy now mirrors the rating decay: BOTH rating and deviation decay apply
 only to players inactive for at least the grace window (1 month), and a single
 game inside that window cancels the decay entirely.
 
-These tests pin the pure decision logic in ``bot.stats.decay`` so it can be
+These tests pin the pure decision logic in ``nammaoe2bot.pickup.decay`` so it can be
 verified without importing the rating engines (glicko2/trueskill) or the DB.
 """
 from __future__ import annotations
 
-import bot.stats.decay as decay
+import nammaoe2bot.pickup.decay as decay
 
 DAY = 60 * 60 * 24
 NOW = 1_700_000_000

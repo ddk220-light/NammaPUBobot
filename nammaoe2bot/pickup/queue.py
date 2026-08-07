@@ -3,11 +3,11 @@
 from nammaoe2bot.runtime.console import log  # noqa: F401
 from nammaoe2bot.runtime.cfg_factory import FactoryTable, CfgFactory, Variables, VariableTable
 from nammaoe2bot.runtime.utils import get_nick, get, SafeTemplateDict
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 
-from bot.exceptions import Exceptions as Exc
-from bot.match.match import Match
-from bot.queues.common import QueueResponses as Qr
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.match.match import Match
+from nammaoe2bot.pickup.responses import QueueResponses as Qr
 
 
 class PickupQueue:

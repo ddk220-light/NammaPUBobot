@@ -26,9 +26,9 @@ two more places.
 
 So: import from the module that defines the thing.
 
-	from bot.exceptions import Exceptions as Exc
-	from bot.match.match import Match
-	from bot.stats import stats
+	from nammaoe2bot.exceptions import Exceptions as Exc
+	from nammaoe2bot.pickup.match.match import Match
+	from nammaoe2bot.pickup import stats
 
 The imports that exist only for their side effects -- ensure_table, job
 singletons, slash registration -- are boot wiring and live in bot/bootstrap.py,

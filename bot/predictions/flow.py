@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Open / freeze / resolve jobs for audience betting, on the shared 1-s think()
 tick. Bulletproof and cadence-gated like QuizJobs — a failure here can never
-break the tick or the match flow it hangs off. nextcord / nammaoe2bot.discord.client / embeds
+break the tick or the match flow it hangs off. nextcord / nammaoe2bot.runtime.client / embeds
 are imported lazily inside the methods so importing bot.predictions (hence this
 module) stays test-safe under the conftest stubs.
 
@@ -36,7 +36,7 @@ rather than about tidiness:
 import asyncio
 import time
 
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.console import log
 
 from . import gold, scoring, store
@@ -160,7 +160,7 @@ async def open_for_match(match):
 			now, now + VOTE_WINDOW)
 
 		from . import embeds
-		from nammaoe2bot.discord.client import dc
+		from nammaoe2bot.runtime.client import dc
 
 		channel = dc.get_channel(match.qc.id)
 		if channel is None:
@@ -489,7 +489,7 @@ async def void_for_match(match_id, reason="Match cancelled — all bets refunded
 # ── discord helpers ──────────────────────────────────────────────────────
 async def _announce_report(post, winner_idx, bets, paid):
 	from . import embeds
-	from nammaoe2bot.discord.client import dc
+	from nammaoe2bot.runtime.client import dc
 
 	channel = dc.get_channel(post["channel_id"])
 	if channel is None:
@@ -504,7 +504,7 @@ async def _announce_report(post, winner_idx, bets, paid):
 async def _edit_message(post, embed):
 	"""Best-effort rewrite of a post's card; a deleted message is not an error.
 	view=None strips the bet buttons — every caller is a terminal state."""
-	from nammaoe2bot.discord.client import dc
+	from nammaoe2bot.runtime.client import dc
 
 	channel = dc.get_channel(post["channel_id"])
 	if channel is None or not post.get("message_id"):

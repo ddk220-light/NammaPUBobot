@@ -4,7 +4,7 @@ import os
 
 # Only names that cannot collide with ordinary identifiers. `players` and
 # `noadds` are deliberately absent: both are live command/module names
-# ("/noadds", bot/stats/noadds.py, team['players']), so a substring guard on
+# ("/noadds", nammaoe2bot/pickup/noadds.py, team['players']), so a substring guard on
 # them fires on legitimate code. Their renames are enforced by
 # tests/test_data_registry.py instead, which compares actual declarations.
 OLD_NAMES = [

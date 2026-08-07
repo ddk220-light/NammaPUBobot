@@ -21,7 +21,7 @@ channel's own leaderboard, which is the authority for "who appears on a board".
 """
 from nextcord import Member
 
-from bot.exceptions import Exceptions as Exc
+from nammaoe2bot.exceptions import Exceptions as Exc
 
 __all__ = ['predictions_leaderboard', 'predictions_me']
 

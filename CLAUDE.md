@@ -58,9 +58,9 @@ The bottom layer, and the first part of `core/` to move into the new package roo
 - **`bot/bootstrap.py`** — every import that exists for a side effect, in one readable place, called once by the entrypoint. Putting this block in a package `__init__` is what made the import order load-bearing and put 34 modules into a single cycle
 - **`bot/wiring.py`** — the composition root. `bot/match/` announces six lifecycle events (`teams_posted`, `live`, `roster_changed`, `ending`, `finished`, `cancelled`) and betting, the lobby watcher and the storylines subscribe here. **Nothing under `bot/match/` may import a feature** — `tests/test_match_lifecycle.py` checks it. `finished` fires only after `register_match_*` has written the `matches` row, because `store.unsettled_books` JOINs on it
 - **`bot/events.py`** — Discord event handlers: `on_ready` loads queue channels from DB, `on_think` runs match/expire/noadds ticks, `on_presence_update` removes offline/afk players when the channel sets `remove_offline` (there is no per-player exemption any more — `/allow_offline` and the `bot.allow_offline` list went with the command consolidation)
-- **`bot/queue_channel.py`** — `QueueChannel` class: represents a Discord channel with pickup queues. Manages its own `CfgFactory` config and list of `PickupQueue` instances
-- **`bot/queues/pickup_queue.py`** — `PickupQueue`: player queue that starts a `Match` when full
-- **`bot/match/match.py`** — `Match` lifecycle: INIT → CHECK_IN → DRAFT → WAITING_REPORT. Contains `Team`, `CheckIn`, `Draft`, `Embeds` helpers
+- **`nammaoe2bot/pickup/channel.py`** — `QueueChannel` class: represents a Discord channel with pickup queues. Manages its own `CfgFactory` config and list of `PickupQueue` instances
+- **`nammaoe2bot/pickup/queue.py`** — `PickupQueue`: player queue that starts a `Match` when full
+- **`nammaoe2bot/pickup/match/match.py`** — `Match` lifecycle: INIT → CHECK_IN → DRAFT → WAITING_REPORT. Contains `Team`, `CheckIn`, `Draft`, `Embeds` helpers
 - **`bot/commands/`** — Command implementations (config, queues, matches, stats, admin, misc). Imported via `__init__.py` star imports
 - **`bot/context/`** — Command context abstraction:
   - `slash/` — Slash command definitions in `commands.py`, autocomplete in `autocomplete.py`, command groups in `groups.py`

@@ -5,7 +5,7 @@ from nextcord import Member, Embed
 from enum import IntEnum
 import re
 
-from bot.exceptions import Exceptions as Exc
+from nammaoe2bot.exceptions import Exceptions as Exc
 
 from typing import TYPE_CHECKING
 
@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING
 # never touched at runtime here: `from __future__ import annotations` leaves
 # every annotation in this file as a string.
 if TYPE_CHECKING:
-	from bot.queue_channel import QueueChannel
+	from nammaoe2bot.pickup.channel import QueueChannel
 
 from nammaoe2bot.runtime.config import cfg
 from nammaoe2bot.runtime.utils import error_embed, ok_embed, find
-from nammaoe2bot.discord.client import FakeMember, dc
+from nammaoe2bot.runtime.client import FakeMember, dc
 from nammaoe2bot.runtime.console import log  # noqa: F401
 
 

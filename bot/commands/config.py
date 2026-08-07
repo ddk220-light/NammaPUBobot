@@ -3,8 +3,8 @@ __all__ = ['create_pickup', 'delete_queue', 'show_queues', 'set_qc', 'set_queue'
 import json
 from nammaoe2bot.runtime.utils import find, get, split_big_text
 from nammaoe2bot.runtime.console import log  # noqa: F401
-from bot.exceptions import Exceptions as Exc
-from bot.queues.pickup_queue import PickupQueue
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.queue import PickupQueue
 
 
 async def create_pickup(ctx, name: str, size: int = 8):

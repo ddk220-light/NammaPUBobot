@@ -4,7 +4,7 @@ import time
 import traceback
 from nextcord import ChannelType, Activity, ActivityType
 
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.database import db
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.paths import data as data_path
@@ -16,12 +16,12 @@ from bot import lobby
 from bot import predictions
 from bot import quiz
 from bot import replay_stats
-from bot.exceptions import Exceptions as Exc
-from bot.expire import expire
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.expire import expire
 from bot.main import load_state, save_state, save_state_db
-from bot.queue_channel import QueueChannel
-from bot.stats import stats
-from bot.stats.noadds import noadds
+from nammaoe2bot.pickup.channel import QueueChannel
+from nammaoe2bot.pickup import stats
+from nammaoe2bot.pickup.noadds import noadds
 from bot.elo_sync import process_elo_sync
 from bot.civ_sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
 from bot.message_logger import log_channel_message, log_bot_message
@@ -238,7 +238,7 @@ async def on_message(message):
 
 @dc.event
 async def on_interaction(interaction):
-	# CRITICAL: nammaoe2bot.discord.client's @dc.event system replaces nextcord's built-in
+	# CRITICAL: nammaoe2bot.runtime.client's @dc.event system replaces nextcord's built-in
 	# Client.on_interaction (which is just `process_application_commands`), so we MUST
 	# call it here or EVERY slash command + autocomplete silently stops working.
 	# Then route quiz component clicks (type 3, custom_id 'quiz:*'). The two handle

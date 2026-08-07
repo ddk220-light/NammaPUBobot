@@ -24,8 +24,8 @@ import bot.community as community
 import bot.derived.rollups as rollups
 # The command handlers refuse by raising bot.Exc.ValueError (the file's own
 # convention for an admin-facing refusal), so the tests need the real class to
-# assert on. Importable under CI: bot/exceptions.py is pure stdlib.
-from bot.exceptions import Exceptions as _Exc
+# assert on. Importable under CI: nammaoe2bot/exceptions.py is pure stdlib.
+from nammaoe2bot.exceptions import Exceptions as _Exc
 # The shared pure module both bot/identity.py and nammaoe2bot/runtime/migrations.py read
 # their CSV parsing from. Imported directly because parse_name_repairs is a
 # migration-side reader only — bot/identity.py deliberately does not re-export

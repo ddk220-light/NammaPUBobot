@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from bot.exceptions import Exceptions as Exc
+from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.runtime.utils import find
 from nextcord import DiscordException
 

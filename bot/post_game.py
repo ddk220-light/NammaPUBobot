@@ -454,7 +454,7 @@ async def _apm_chart_file(bot_match_id):
 async def post_match_analysis(bot_match_id):
 	"""Best-effort Discord post once replay analysis is stored."""
 	try:
-		from nammaoe2bot.discord.client import dc
+		from nammaoe2bot.runtime.client import dc
 		from nammaoe2bot.runtime.console import log
 
 		channel_id = await _match_channel_id(bot_match_id)

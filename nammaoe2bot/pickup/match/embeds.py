@@ -1,5 +1,5 @@
 from nextcord import Embed, Colour, Streaming, Member
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.utils import get_nick, join_and
 
 

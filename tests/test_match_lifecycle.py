@@ -2,7 +2,7 @@
 
 The pickup domain used to call into betting, the lobby watcher and the
 storyline builders directly — eleven function-local imports across five
-methods of bot/match/. It now announces six moments and bot/wiring.py
+methods of the domain. It now announces six moments and bot/wiring.py
 subscribes the features. Three things have to hold for that to be an
 improvement rather than a layer of indirection:
 
@@ -20,7 +20,7 @@ import asyncio
 import os
 import types
 
-from bot.match.events import MatchLifecycle
+from nammaoe2bot.pickup.match.events import MatchLifecycle
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -146,7 +146,7 @@ class TestWiring:
 		exists could not be recovered if it died half-way — and 'ending' has to
 		stay on the near side of that write, because the lobby-watcher teardown
 		it carries ran there before this indirection existed. """
-		body = _function_source("bot/match/match.py", "finish_match")
+		body = _function_source("nammaoe2bot/pickup/match/match.py", "finish_match")
 		register = body.index("register_match_ranked")
 		assert body.index('emit("ending"') < register, "'ending' moved past the result write"
 		assert register < body.index('emit("finished"'), (
@@ -156,25 +156,33 @@ class TestWiring:
 
 	def test_the_domain_imports_no_feature(self):
 		""" The direction claim, checked rather than asserted in a docstring.
-		bot/match/ is the pickup domain; betting, the lobby and the storylines
-		are built on top of it. """
-		features = ("bot.predictions", "bot.lobby", "bot.quiz", "bot.team_insights",
-					"bot.storyline_payoff", "bot.replay_stats", "bot.derived")
+		nammaoe2bot/pickup/ is the domain; betting, the quiz, the lobby watcher,
+		the storylines and the replay pipeline are built on top of it.
+
+		Stated as an ALLOWLIST rather than a list of banned features, so a
+		feature added later is caught by default instead of being invisible
+		until someone remembers to add it here. """
+		allowed_roots = ("nammaoe2bot.pickup", "nammaoe2bot.runtime",
+						 "nammaoe2bot.exceptions", "nammaoe2bot.discord",
+						 # Still in bot/ until Phase 2 finishes; the context
+						 # classes are the Discord adapter, not a feature.
+						 "bot.context")
 		offenders = []
-		match_dir = os.path.join(_REPO_ROOT, "bot", "match")
-		for filename in sorted(os.listdir(match_dir)):
-			if not filename.endswith(".py"):
-				continue
-			tree = ast.parse(_read(f"bot/match/{filename}"))
-			for node in ast.walk(tree):
-				if isinstance(node, ast.ImportFrom) and node.module:
-					target = node.module
+		for relative in _domain_modules():
+			for node in ast.walk(ast.parse(_read(relative))):
+				if isinstance(node, ast.ImportFrom):
+					if node.level:
+						continue                       # relative: inside the domain
+					target = node.module or ""
 				elif isinstance(node, ast.Import):
 					target = node.names[0].name
 				else:
 					continue
-				if any(target == f or target.startswith(f + ".") for f in features):
-					offenders.append(f"bot/match/{filename}: {target}")
+				if target.split(".")[0] not in ("bot", "nammaoe2bot"):
+					continue                           # stdlib or third party
+				if not any(target == root or target.startswith(root + ".")
+						   for root in allowed_roots):
+					offenders.append(f"{relative}: {target}")
 		assert not offenders, "the pickup domain imports a feature:\n  " + "\n  ".join(offenders)
 
 
@@ -193,22 +201,34 @@ def _function_source(rel, name):
 	raise AssertionError(f"{name}() not found in {rel}")
 
 
+_DOMAIN = os.path.join("nammaoe2bot", "pickup")
+
+
+def _domain_modules():
+	""" Every module under nammaoe2bot/pickup/, repo-relative. """
+	found = []
+	for dirpath, dirnames, filenames in os.walk(os.path.join(_REPO_ROOT, _DOMAIN)):
+		dirnames[:] = [d for d in dirnames if d != "__pycache__"]
+		for filename in sorted(filenames):
+			if filename.endswith(".py"):
+				found.append(os.path.relpath(os.path.join(dirpath, filename), _REPO_ROOT))
+	assert found, "no modules found under " + _DOMAIN
+	return found
+
+
 def _emitted_events():
-	""" Event names passed to match_events.emit(...) anywhere under bot/match/.
+	""" Event names passed to match_events.emit(...) anywhere in the domain.
 
 	Read out of the source rather than by running a match: constructing one
 	needs a Discord channel, a queue and a rating system, and the question here
 	is only which names the two files agree on. """
 	found = set()
-	match_dir = os.path.join(_REPO_ROOT, "bot", "match")
-	for filename in sorted(os.listdir(match_dir)):
-		if not filename.endswith(".py"):
-			continue
-		tree = ast.parse(_read(f"bot/match/{filename}"))
+	for relative in _domain_modules():
+		tree = ast.parse(_read(relative))
 		for node in ast.walk(tree):
 			if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
 					and node.func.attr == "emit" and node.args
 					and isinstance(node.args[0], ast.Constant)):
 				found.add(node.args[0].value)
-	assert found, "no emit() calls found under bot/match/ — has the walk broken?"
+	assert found, "no emit() calls found in the domain — has the walk broken?"
 	return found

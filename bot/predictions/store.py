@@ -44,7 +44,7 @@ async def unsettled_books(reported_before):
 	THE JOIN IS THE CONDITION. A post sitting at 'frozen' is the normal state
 	for as long as the match is being played, so "stale" can never be a clock
 	reading on the post alone. What makes one unsettled is `matches` already
-	holding a row for it — bot/stats/stats.py writes that row inside
+	holding a row for it — nammaoe2bot/pickup/stats.py writes that row inside
 	finish_match, BEFORE the match flow calls resolve_for_match — while the
 	post has still not left 'frozen'. That combination means settlement started
 	and did not finish (a redeploy mid-sweep, a process kill, a payout that

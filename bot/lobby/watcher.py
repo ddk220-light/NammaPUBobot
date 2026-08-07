@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """LobbyWatcher — per-(ranked)-match live lobby detection + link.
 
-Created when a ranked match enters WAITING_REPORT (bot/match/match.py). It
+Created when a ranked match enters WAITING_REPORT (nammaoe2bot/pickup/match/match.py). It
 subscribes to the unfiltered lobby socket, keeps only lobbies named ``NammaNomad``,
 shows a live-fill embed, and — when a full lobby with the right player count
 appears — confirms the LINK: captures the gameId + slot profileIds and persists a

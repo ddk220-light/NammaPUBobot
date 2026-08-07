@@ -495,9 +495,9 @@ def _wire_post_match_analysis(monkeypatch, channel, chart_file):
 	import types
 
 	cards = _FakeEmbed()
-	fake_client = types.ModuleType("nammaoe2bot.discord.client")
+	fake_client = types.ModuleType("nammaoe2bot.runtime.client")
 	fake_client.dc = types.SimpleNamespace(get_channel=lambda _cid: channel)
-	monkeypatch.setitem(sys.modules, "nammaoe2bot.discord.client", fake_client)
+	monkeypatch.setitem(sys.modules, "nammaoe2bot.runtime.client", fake_client)
 
 	async def _channel_id(_bot_match_id):
 		return 123

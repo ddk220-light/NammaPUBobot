@@ -7,7 +7,7 @@ built all the historical civ data — we query the aoe2companion API for the
 match participants' recent games, find the one that lines up by time + player
 overlap, and store each player's civ in civ_picks (linked to the bot match).
 
-Triggered from bot/stats/stats.py when a match is reported/completed. Because
+Triggered from nammaoe2bot/pickup/stats.py when a match is reported/completed. Because
 the API lags a few minutes behind a finished game, we retry on a short backoff
 until it appears (or give up). Runs as a background task — the /report command
 returns immediately.
@@ -41,7 +41,7 @@ async def _map_players_to_profiles(players):
 
 	No nick fallback: the old CSV-only nick-keyed lookup never resolved anyone
 	the user_id path couldn't (every row in the hand-maintained profile-map CSV
-	already carried a user_id), and both live callers (bot/stats/stats.py's Discord
+	already carried a user_id), and both live callers (nammaoe2bot/pickup/stats.py's Discord
 	member ids, bot/civ_reconcile.py's match_players.user_id) always supply a
 	real user_id, never None.
 	"""

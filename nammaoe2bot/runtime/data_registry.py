@@ -24,33 +24,33 @@ must say which:
 REGISTRY = {
 	# core — irreplaceable
 	"matches": dict(
-		layer="core", tenancy="channel", writers=("bot/elo_sync.py", "bot/stats/stats.py"), retention="forever"
+		layer="core", tenancy="channel", writers=("bot/elo_sync.py", "nammaoe2bot/pickup/stats.py"), retention="forever"
 	),
 	"match_players": dict(
-		layer="core", tenancy="channel", writers=("bot/elo_sync.py", "bot/stats/stats.py"), retention="forever"
+		layer="core", tenancy="channel", writers=("bot/elo_sync.py", "nammaoe2bot/pickup/stats.py"), retention="forever"
 	),
-	# bot/stats/rating.py writes this through `self.table` (set to the literal
+	# nammaoe2bot/pickup/rating.py writes this through `self.table` (set to the literal
 	# name once, at the top of the class), which is why a grep for the table name
 	# beside a db.insert/update call does not find it.
 	"player_ratings": dict(
 		layer="core",
 		tenancy="channel",
-		writers=("bot/elo_sync.py", "bot/events.py", "bot/stats/rating.py", "bot/stats/stats.py"),
+		writers=("bot/elo_sync.py", "bot/events.py", "nammaoe2bot/pickup/rating.py", "nammaoe2bot/pickup/stats.py"),
 		retention="forever",
 	),
 	"rating_history": dict(
 		layer="core",
 		tenancy="channel",
-		writers=("bot/elo_sync.py", "bot/stats/rating.py", "bot/stats/stats.py"),
+		writers=("bot/elo_sync.py", "nammaoe2bot/pickup/rating.py", "nammaoe2bot/pickup/stats.py"),
 		retention="forever",
 	),
 	"match_counter": dict(
-		layer="core", tenancy="global", writers=("bot/stats/stats.py",), retention="forever"
+		layer="core", tenancy="global", writers=("nammaoe2bot/pickup/stats.py",), retention="forever"
 	),
 	"channel_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/runtime/cfg_factory.py",), retention="forever"),
 	"queue_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/runtime/cfg_factory.py",), retention="forever"),
 	"bot_state": dict(layer="core", tenancy="global", writers=("bot/main.py",), retention="forever"),
-	"queue_bans": dict(layer="core", tenancy="channel", writers=("bot/stats/noadds.py",), retention="forever"),
+	"queue_bans": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/pickup/noadds.py",), retention="forever"),
 	# feature state (core contract)
 	"quiz_posts": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),
 	"quiz_answers": dict(layer="core", tenancy="channel", writers=("bot/quiz/store.py",), retention="forever"),

@@ -2,7 +2,7 @@
 """Daily-post / close-and-reveal / weekly-leaderboard job on the shared 1-s think()
 tick. Bulletproof and cadence-gated like LobbyJobs — a failure here can never break
 the tick or any existing flow. Does nothing unless a quiz_settings row has
-enabled=1. nextcord / nammaoe2bot.discord.client / embeds are imported lazily inside the methods so
+enabled=1. nextcord / nammaoe2bot.runtime.client / embeds are imported lazily inside the methods so
 importing bot.quiz (hence this module) stays test-safe under the conftest stubs."""
 import asyncio
 import json
@@ -116,7 +116,7 @@ class QuizJobs:
 		if not q:
 			log.info(f"Quiz game bank exhausted at seq {seq} — regenerate quiz_schedule.json.")
 			return None
-		from nammaoe2bot.discord.client import dc
+		from nammaoe2bot.runtime.client import dc
 		from . import embeds
 		channel = dc.get_channel(channel_id)
 		if channel is None:
@@ -168,7 +168,7 @@ class QuizJobs:
 		await store.clamp_closes_at(post["id"], now)
 		post["closes_at"] = min(int(post["closes_at"]), now)   # keep later renders honest
 		import nextcord
-		from nammaoe2bot.discord.client import dc
+		from nammaoe2bot.runtime.client import dc
 		from bot import community
 		from bot.predictions import gold as gold_bank
 		from . import embeds
@@ -260,7 +260,7 @@ class QuizJobs:
 			return
 		cfg = await store.get_config(channel_id)
 		last = int((cfg or {}).get("last_leaderboard_week") or 0)
-		from nammaoe2bot.discord.client import dc
+		from nammaoe2bot.runtime.client import dc
 		from . import embeds
 		for week in done_weeks:
 			if week <= last:

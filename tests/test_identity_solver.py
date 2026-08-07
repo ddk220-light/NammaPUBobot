@@ -396,7 +396,7 @@ def test_build_matches_drops_a_match_with_a_null_replay_winner():
 
 
 def test_build_matches_drops_a_match_with_a_null_team():
-	# bot/stats/stats.py writes team=None for a player on neither team. Without
+	# nammaoe2bot/pickup/stats.py writes team=None for a player on neither team. Without
 	# the guard, `None == winner` is False and they read as a loser — and the
 	# roster still looks complete, so the size guard cannot catch it either.
 	replay, discord = _raw_rows()

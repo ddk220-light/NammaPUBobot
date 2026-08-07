@@ -16,8 +16,12 @@ READ THE ORDER NOTES BEFORE REORDERING ANYTHING. Handlers run in registration
 order, and two of these sequences encode a real constraint rather than a
 preference.
 """
-from nammaoe2bot.runtime.console import log
+import time
 
+from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.utils import get_nick
+
+from bot import civ_matcher
 from bot import predictions
 from bot.lobby import watcher as lobby_watcher
 from bot import storyline_payoff
@@ -61,6 +65,22 @@ async def _post_storyline_payoff(match, ctx):
 			await ctx.notice(embed=embed)
 
 
+# ── civs: background recording of what each player picked ────────────────
+async def _record_civs(match, _ctx):
+	"""Fire-and-forget: civ_matcher.schedule() hands the work to a background
+	task and returns.
+
+	On `result_recorded` rather than `finished`, and the difference is real —
+	/report_manual writes a result for a game played outside the bot without
+	ever running a match, and that game's civs were always recorded too."""
+	players = [
+		(p.id, get_nick(p), 0 if p in match.teams[0] else (1 if p in match.teams[1] else None))
+		for p in match.players
+	]
+	civ_matcher.schedule(match.qc.id, match.id, players,
+						 getattr(match, "winner", None), int(time.time()))
+
+
 # ── betting: the audience book ───────────────────────────────────────────
 # Each of these looks up the function on the package at call time rather than
 # binding it at import. That is what lets a test swap one out, and it costs
@@ -100,6 +120,8 @@ def wire_match_lifecycle(app):
 	events.on("roster_changed", _restart_book)
 
 	events.on("ending", _stop_lobby_watcher)
+
+	events.on("result_recorded", _record_civs)
 
 	# ORDER IS LOAD-BEARING HERE. The payoff is a chat message; settlement moves
 	# gold. Settling last means a payoff that fails cannot take the payout with

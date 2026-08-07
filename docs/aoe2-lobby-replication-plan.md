@@ -15,7 +15,7 @@ Decisions locked 2026-06-13 (supersede the standalone /lobby plan below, which r
 - **Sub-15-min games:** silent (no message).
 
 ### Flow 1 - announce + auto-detect (on ranked match start)
-- Trigger: ranked match enters WAITING_REPORT (teams formed, the "... has started!" embed at bot/match/embeds.py:122).
+- Trigger: ranked match enters WAITING_REPORT (teams formed, the "... has started!" embed at nammaoe2bot/pickup/match/embeds.py:122).
 - Add a field to that embed: "Create your AoE2 lobby named `test123`."
 - Start a LobbyWatcher for the match: subscribe to the ALL-lobbies socket (wss://socket.aoe2companion.com/listen?handler=lobbies, no match_ids filter), filter incoming lobbies for name == "test123", for up to N minutes (config LOBBY_DETECT_WINDOW, default 10).
 - Candidate -> roster-confirmed link: a `test123` lobby is only a CANDIDATE. Confirm the link when the lobby is full AND its player set matches the ranked match's player set (the bot owns both sides). This survives stray duplicate lobbies, cancel-and-restart, and two-people-create-one - none has the matching full roster at the right time. Confidence stacks: name + exactly-full count + timing window + any confirmed-player overlap (near-certain in single-active-match mode).
@@ -40,11 +40,11 @@ Decisions locked 2026-06-13 (supersede the standalone /lobby plan below, which r
 ### Mapping to existing code
 | Piece | Reuse |
 |---|---|
-| Announce lobby name | bot/match/embeds.py:122 final_message (add field) |
-| Watcher start / teardown | tied to WAITING_REPORT in bot/match/match.py:332 (start_waiting_report) and finish_match:453 |
+| Announce lobby name | nammaoe2bot/pickup/match/embeds.py:122 final_message (add field) |
+| Watcher start / teardown | tied to WAITING_REPORT in nammaoe2bot/pickup/match/match.py:332 (start_waiting_report) and finish_match:453 |
 | Result reaction handling | bot.waiting_reactions + on_reaction_add (bot/events.py:184) - same as check-in |
-| Auto loss report | match.report_loss (bot/match/match.py:347), unchanged |
-| Record game + ratings | finish_match -> register_match_ranked (bot/match/match.py:453) |
+| Auto loss report | match.report_loss (nammaoe2bot/pickup/match/match.py:347), unchanged |
+| Record game + ratings | finish_match -> register_match_ranked (nammaoe2bot/pickup/match/match.py:453) |
 | Winner/profile mapping | bot/civ_matcher.py _load_profile_map + data/*.csv |
 | Live lobby feed | wss socket (Phase 0 spike confirms name field) |
 | Completed result | GET data.aoe2companion.com/api/matches/{id} |
@@ -85,7 +85,7 @@ Four cooperating pieces, all on infrastructure that already exists in this repo:
 
 1. **`/lobby <gameid>` slash command** — registered in `bot/context/slash/commands.py`, delegates via `run_slash()` to a new handler `bot/commands/lobby.py:lobby_cmd`. Defers immediately, validates the id, creates a `LobbyWatcher`, posts the initial LOBBY embed, persists a row to `qc_lobbies`.
 2. **`LobbyWatcher`** (new `bot/lobby/watcher.py`) — owns one lobby's lifecycle: a state machine (CREATED → FILLING → IN_PROGRESS → COMPLETED, plus EXPIRED), the in-memory slot map, the editable `nextcord.Message` handle, and the captured profileIds. One persistent WebSocket subscription per active lobby reassembles slot state from socket deltas and edits the Discord message only when the roster changes.
-3. **`LobbyJobs.think(frame_time)`** (new `bot/lobby/jobs.py`) — a recurring-job singleton copying `StatsJobs.think` (bot/stats/stats.py:401-407). Registered with ONE line in `bot/events.py:on_think` (alongside `bot.stats.jobs.think`). Drives: (a) the completed-match REST poll/backoff once a lobby reaches IN_PROGRESS, (b) reaping watchers that timed out / never filled, (c) on boot, rehydrating watchers from `qc_lobbies` and re-fetching their messages.
+3. **`LobbyJobs.think(frame_time)`** (new `bot/lobby/jobs.py`) — a recurring-job singleton copying `StatsJobs.think` (nammaoe2bot/pickup/stats.py:401-407). Registered with ONE line in `bot/events.py:on_think` (alongside `bot.stats.jobs.think`). Drives: (a) the completed-match REST poll/backoff once a lobby reaches IN_PROGRESS, (b) reaping watchers that timed out / never filled, (c) on boot, rehydrating watchers from `qc_lobbies` and re-fetching their messages.
 4. **Completed-match renderer** (new `bot/lobby/completed.py`) — fetches the finished match (reusing civ_matcher.py client + the by-id endpoint), assembles the two-team / civ / winner / duration / rec-links embed, posts a NEW message, marks the watcher COMPLETED.
 
 The live socket runs as its own long-lived asyncio task per watcher (fire-and-forget, tracked in a module set to prevent GC — same pattern as `civ_matcher._pending`). The 1s `think()` tick is used only for slow/periodic work so a slow socket never blocks the tick.
@@ -211,8 +211,8 @@ db.ensure_table(dict(
 | Retry/backoff + task set | bot/civ_matcher.py:38,203-225 | _RETRY_DELAYS + _pending |
 | Replay/join/watch links | bot/civ_matcher.py:184-185 | aoe.ms + visualizer URLs |
 | Completed-embed layout | bot/civ_sync.py:80-234, tests/test_civ_sync.py | field map + golden fixture |
-| Post-once/edit-on-change | bot/match/check_in.py:48-49,90-92 | channel.send + edit + DiscordException guard |
-| Recurring-job idiom | bot/stats/stats.py:401-407 | LobbyJobs.think; register events.py:95 |
+| Post-once/edit-on-change | nammaoe2bot/pickup/match/checkin.py:48-49,90-92 | channel.send + edit + DiscordException guard |
+| Recurring-job idiom | nammaoe2bot/pickup/stats.py:401-407 | LobbyJobs.think; register events.py:95 |
 | Tick driver | PUBobot2.py:133-145, bot/events.py:72-113 | tick + error isolation + 30s save |
 | Table + migration | bot/civ_sync.py:15-33, mysql.py:161-244 | ensure_table + insert/update/select |
 | Slash reg + defer | commands.py:534-541, :778 | /subauto template, explicit defer |
@@ -265,7 +265,7 @@ Extra data these sources expose, and how to BEAT AOE2LobbyBOT — prioritized by
 - **Recent-form / head-to-head.** While FILLING, fetch each captured profileId's recent matches (/api/matches?profile_ids= — already used by civ_matcher) to show "last 5: W-W-L-W-L" and H2H between opposing players. Effort: medium — cache per profileId, reuse client.
 
 ### Tier 2 — High value, higher effort
-- **Auto-create a NammaPUBobot ranked match from a lobby (and auto-report).** When a tracked lobby launches, spin up a bot Match pre-filled with the captured players/teams, then on completion auto-report the result (completed object has per-player won). Closes the loop between the live lobby and the bot's own ELO/Glicko ledger — something AOE2LobbyBOT fundamentally cannot do (no rating ledger). Effort: medium-high — touches bot/match/match.py + bot/stats/. **Highest strategic value.**
+- **Auto-create a NammaPUBobot ranked match from a lobby (and auto-report).** When a tracked lobby launches, spin up a bot Match pre-filled with the captured players/teams, then on completion auto-report the result (completed object has per-player won). Closes the loop between the live lobby and the bot's own ELO/Glicko ledger — something AOE2LobbyBOT fundamentally cannot do (no rating ledger). Effort: medium-high — touches nammaoe2bot/pickup/match/match.py + bot/stats/. **Highest strategic value.**
 - **mgz replay analysis (build orders / APM / eco).** pip install mgz>=1.8.46 (prefer the AoEInsights/aoc-mgz fork for current DE patches); download via aoe.ms (cache by matchId, honor 429 Retry-After — proven code in /d/AI/aoe2record/visualizer/server.py:1421-1474). Post "build order: Fast Castle, 27 pop, APM 142" after the completed embed. MUST run off the asyncio loop (thread/process pool) or offload to the Railway visualizer. Effort: high; header/summary robust, full action-stream lags new patches.
 - **No-show / AFK / dodge detection.** The lobby socket shows who occupied a slot pre-launch; if a lobby fills then collapses (lobbyRemoved without a finished match in a window), flag a dodge. Cross-reference captured profileIds vs the completed roster to detect drops/subs. Effort: medium — pure state-machine logic over data already tracked.
 

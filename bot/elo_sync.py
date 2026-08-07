@@ -1,7 +1,7 @@
 import re
 import time
 import zlib
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.database import db
 from nammaoe2bot.runtime.console import log
 from bot.civ_sync import find_matching_lobby, find_matching_lobby_from_history, link_and_write

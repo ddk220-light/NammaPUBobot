@@ -39,10 +39,10 @@ else:
 # Layer 5: `locales` used to be in this import for its side effect
 # (it listdir'd locales/compiled/ and built a gettext translation
 # table at import time). With the Layer 5 stub, nammaoe2bot/runtime/locales.py does
-# no I/O and needs no eager load — bot/queue_channel.py imports it
+# no I/O and needs no eager load — nammaoe2bot/pickup/channel.py imports it
 # lazily on its own. Dropped from this line.
 from core import config, console, database, cfg_factory
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(database.db.connect())

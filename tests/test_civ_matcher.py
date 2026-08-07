@@ -5,7 +5,7 @@ civ-match attempt, keyed on Discord user_id with a nick fallback for rows the
 CSV lacked a user_id for. Task 2.3 re-points this at bot/identity.py (the
 single identity resolver seeded from all known sources at boot) and drops the
 nick fallback: every row in the CSV already carried a user_id, and every live
-caller (bot/stats/stats.py, bot/civ_reconcile.py) always supplies one, so the
+caller (nammaoe2bot/pickup/stats.py, bot/civ_reconcile.py) always supplies one, so the
 fallback could never resolve anyone the user_id path couldn't.
 """
 from __future__ import annotations

@@ -6,7 +6,7 @@ import json
 from nextcord import Guild
 
 from nammaoe2bot.runtime.database import db
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.utils import format_emoji, parse_duration, seconds_to_str  # noqa: F401
 from nammaoe2bot.runtime.console import log
 

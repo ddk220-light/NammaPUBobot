@@ -360,7 +360,7 @@ def _build_matches(replay_rows, discord_rows) -> list:
 
 	All four NULLs are genuinely reachable: `matches.winner` is NULL for 8
 	production rows, `replay_players.winner` is declared notnull=False,
-	`match_players.team` is written as None by bot/stats/stats.py for a player
+	`match_players.team` is written as None by nammaoe2bot/pickup/stats.py for a player
 	on neither team, and `match_players.user_id` is nullable.
 
 	Pure, like deduce(), so the "what counts as usable" rule is testable

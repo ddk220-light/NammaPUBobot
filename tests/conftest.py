@@ -96,7 +96,7 @@ class _RaisingDB:
 		dict = 'MEDIUMTEXT'
 
 	def ensure_table(self, *_a, **_k):
-		# No-op: bot/stats/stats.py calls this at import time. In a
+		# No-op: nammaoe2bot/pickup/stats.py calls this at import time. In a
 		# production boot this actually creates tables; in tests we just
 		# let the call pass so the module-level statements succeed.
 		return None
@@ -441,7 +441,7 @@ class _UiStub:
 
 class _FakeDiscordException(Exception):
 	""" nextcord.DiscordException, the base of every error the library raises.
-	bot/match/draft.py imports it at module load to swallow a failed embed
+	nammaoe2bot/pickup/match/substitution.py imports it at module load to swallow a failed embed
 	send, so without it that module — and everything reachable through it —
 	cannot be imported by a test at all. """
 
@@ -490,7 +490,7 @@ def _find(predicate, seq):
 	""" The REAL nextcord.utils.find, not a rubber stamp.
 
 	`lambda *_a, **_k: None` was cheap while nothing under test called it, but
-	bot/match/draft.py resolves a player's team with it on every /subfor
+	nammaoe2bot/pickup/match/substitution.py resolves a player's team with it on every /subfor
 	(`find(lambda t: player1 in t, self.m.teams)`), and a version that always
 	answers None turns "which team is this player on" into an unconditional
 	crash — which would make the sub paths untestable rather than merely
@@ -606,7 +606,7 @@ _fake_emoji.EMOJI_DATA = {}
 sys.modules['emoji'] = _fake_emoji
 
 
-# ─── nammaoe2bot.discord.client (stub) ──────────────────────────────────────────────
+# ─── nammaoe2bot.runtime.client (stub) ──────────────────────────────────────────────
 # The real module subclasses nextcord.Client and builds an Intents object at
 # import time, so it is faked outright rather than run against the permissive
 # nextcord stub above. bot/web.py reaches `dc` for three things only: looking up
@@ -633,7 +633,7 @@ class _FakeDiscordClient:
 
 
 class _FakeMember:
-	""" nammaoe2bot.discord.client.FakeMember — the stand-in the bot builds for a player who
+	""" nammaoe2bot.runtime.client.FakeMember — the stand-in the bot builds for a player who
 	is named by `name@id` rather than by a real Discord mention. Only
 	bot/context/context.py imports it, and only inside Context.get_member. """
 
@@ -645,7 +645,7 @@ class _FakeMember:
 		self.bot = True
 
 
-_fake_core_client = types.ModuleType('nammaoe2bot.discord.client')
+_fake_core_client = types.ModuleType('nammaoe2bot.runtime.client')
 _fake_core_client.dc = _FakeDiscordClient()
 _fake_core_client.FakeMember = _FakeMember
 
@@ -666,7 +666,7 @@ _app_mod = importlib.util.module_from_spec(_app_spec)
 _app_spec.loader.exec_module(_app_mod)
 _fake_core_client.dc.app = _app_mod.Application(client=_fake_core_client.dc)
 
-sys.modules['nammaoe2bot.discord.client'] = _fake_core_client
+sys.modules['nammaoe2bot.runtime.client'] = _fake_core_client
 
 
 # ─── bot (package shim) ──────────────────────────────────────────────

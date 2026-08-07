@@ -17,7 +17,7 @@ press is committed to prediction_bets (inside the transaction that moves the
 gold) and the freeze sweep reads the book back out of the DB — which makes the
 whole flow restart-safe for free.
 
-flow.py keeps its nextcord / nammaoe2bot.discord.client imports lazy so importing this package
+flow.py keeps its nextcord / nammaoe2bot.runtime.client imports lazy so importing this package
 stays safe under the unit-test conftest stubs (ensure_table is a no-op there).
 """
 from nammaoe2bot.runtime.database import db

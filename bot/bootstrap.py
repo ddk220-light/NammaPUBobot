@@ -35,7 +35,7 @@ def bootstrap(app):
 	features to the domain."""
 	# The domain. Also declares bot_state (main) and the queue/match tables.
 	from bot import main                            # noqa: F401  (bot_state ensure_table)
-	from bot import queue_channel                   # noqa: F401  (qc/pq config factories)
+	from nammaoe2bot.pickup import channel                   # noqa: F401  (qc/pq config factories)
 	from bot import civ_reconcile                   # noqa: F401  (civ_reconcile table + job)
 
 	# Features, each self-contained: tables + its job singleton.

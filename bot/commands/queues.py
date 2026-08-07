@@ -2,9 +2,9 @@ __all__ = ['add', 'remove', 'add_player', 'remove_player', 'start', 'split', 're
 
 from nextcord import Member
 from nammaoe2bot.runtime.utils import error_embed, join_and, find
-from bot.exceptions import Exceptions as Exc
-from bot.expire import expire
-from bot.queues.common import QueueResponses as Qr
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.expire import expire
+from nammaoe2bot.pickup.responses import QueueResponses as Qr
 
 
 async def add(ctx, queues: str = None):

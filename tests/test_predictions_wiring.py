@@ -135,7 +135,7 @@ def test_the_domain_no_longer_calls_betting_at_all():
 	""" The direction. A match announces that it finished; it does not know that
 	a betting book exists. If this ever fails, the composition root has been
 	bypassed and the eleven imports are growing back. """
-	for path in ("bot/match/match.py", "bot/match/draft.py", "bot/match/check_in.py"):
+	for path in ("nammaoe2bot/pickup/match/match.py", "nammaoe2bot/pickup/match/substitution.py", "nammaoe2bot/pickup/match/checkin.py"):
 		assert not _prediction_imports(path), f"{path} imports bot.predictions again"
 
 

@@ -62,7 +62,7 @@ happened: drop `schema_migrations` and reboot.
 
 Redeploying an older commit without restoring does the same thing from the other
 direction — the old code's `ensure_table` recreates the old names empty. Worse,
-`bot/stats/stats.py`'s `check_match_id_counter()` runs on the first think tick,
+`nammaoe2bot/pickup/stats.py`'s `check_match_id_counter()` runs on the first think tick,
 before `on_ready` and before anyone reads a log; against an empty match table it
 resets the counter to 0, so every match played during the rollback window takes an
 id that collides with real history. Rolling forward afterwards does not fail

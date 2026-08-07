@@ -4,12 +4,12 @@ import random
 from time import time
 
 from bot.context.context import SystemContext
-from bot.exceptions import Exceptions as Exc
+from nammaoe2bot.exceptions import Exceptions as Exc
 from nextcord.errors import DiscordException
 
 from nammaoe2bot.runtime.utils import join_and
 from nammaoe2bot.runtime.console import log  # noqa: F401
-from bot.match.subbing import pick_available, should_warn
+from nammaoe2bot.pickup.match.subbing import pick_available, should_warn
 
 
 class CheckIn:

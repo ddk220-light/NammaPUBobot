@@ -6,8 +6,8 @@ import time
 from nammaoe2bot.runtime.database import db
 from nammaoe2bot.runtime.utils import find, get_nick
 
-from bot.stats import stats
-from bot.stats.decay import compute_decay
+from nammaoe2bot.pickup import stats
+from nammaoe2bot.pickup.decay import compute_decay
 
 
 class BaseRating:
@@ -152,7 +152,7 @@ class BaseRating:
 		Both the rating decay (toward the nearest rank floor) and the deviation
 		decay (toward the initial deviation) apply ONLY to players who have not
 		played a ranked game within the grace window — a single recent game
-		cancels the decay. The policy itself lives in bot.stats.decay.
+		cancels the decay. The policy itself lives in nammaoe2bot.pickup.decay.
 		"""
 		now = int(time.time())
 		ranks = [i['rating'] for i in ranks_table if i['rating'] != 0]

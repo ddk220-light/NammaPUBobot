@@ -6,8 +6,8 @@ from functools import wraps
 
 from nammaoe2bot.runtime.utils import get, find  # noqa: F401
 
-from bot.exceptions import Exceptions as Exc
-from bot.match.match import Match
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.match.match import Match
 
 
 def author_match(coro):

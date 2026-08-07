@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Background safety-net that fills in civs for matches the live recorder missed.
 
-The live path (bot/stats/stats.py -> civ_matcher.schedule) records civs when a
+The live path (nammaoe2bot/pickup/stats.py -> civ_matcher.schedule) records civs when a
 match is reported, but misses matches whose result was never reported (e.g. the
 match was lost from active_matches), whose AoE2 API data wasn't ready inside the
 ~11-minute retry window, or that errored. Result: civ_picks only ever held a
@@ -123,7 +123,7 @@ class CivReconcile:
 				)
 				if not done:
 					try:
-						from nammaoe2bot.discord.client import dc
+						from nammaoe2bot.runtime.client import dc
 						channel = dc.get_channel(r["channel_id"])
 						done = await find_and_record_lobby_from_history(
 							channel, r["channel_id"], match_id, players, r["winner"], r["at"]

@@ -1,10 +1,10 @@
 from typing import List  # noqa: UP035
 from nextcord import Interaction
 
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.utils import find, get
 
-from bot.queue_channel import QueueChannel
+from nammaoe2bot.pickup.channel import QueueChannel
 
 
 async def queues(interaction: Interaction, queue: str) -> List[str]:  # noqa: UP006

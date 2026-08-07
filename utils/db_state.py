@@ -73,7 +73,7 @@ def main():
 		if 'ranked' in mcols:
 			print(f"matches: ranked={scalar('SELECT COUNT(*) FROM matches WHERE ranked=1')} / total={scalar('SELECT COUNT(*) FROM matches')}")
 
-		# Recent activity. `reported_at` is an INT epoch (see bot/stats/stats.py), so the
+		# Recent activity. `reported_at` is an INT epoch (see nammaoe2bot/pickup/stats.py), so the
 		# window boundaries are computed here rather than with MySQL's NOW() —
 		# that keeps the numbers independent of the server's session timezone.
 		now = int(datetime.now(timezone.utc).timestamp())

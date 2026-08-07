@@ -6,18 +6,17 @@ from enum import Enum
 from nextcord import Forbidden
 
 from nammaoe2bot.runtime.cfg_factory import FactoryTable, CfgFactory, Variables, VariableTable
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.locales import locales
 from nammaoe2bot.runtime.utils import join_and, seconds_to_str, get_nick
 from nammaoe2bot.runtime.database import db
 
 from bot.context.context import SystemContext
-from bot.exceptions import Exceptions as Exc
-from bot.expire import expire
-from bot.main import update_qc_lang
-from bot.main import update_rating_system
-from bot.queues.pickup_queue import PickupQueue
-from bot.stats.noadds import noadds
-from bot.stats.rating import FlatRating, Glicko2Rating, TrueSkillRating, AoE2Rating
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.expire import expire
+from nammaoe2bot.pickup.queue import PickupQueue
+from nammaoe2bot.pickup.noadds import noadds
+from nammaoe2bot.pickup.rating import FlatRating, Glicko2Rating, TrueSkillRating, AoE2Rating
 
 MAX_EXPIRE_TIME = 12*60*60
 MAX_PROMOTION_DELAY = 12*60*60
@@ -27,6 +26,19 @@ class Perms(Enum):
 	MEMBER = 0
 	MODERATOR = 1
 	ADMIN = 2
+
+
+# CfgFactory fires these when the variable they are attached to changes; it
+# hands the callback the config object, which carries the channel id as its
+# primary key. They lived in bot/main.py, the state-snapshot module, for no
+# reason except that it was where loose functions went — and importing it from
+# here made the domain depend on a feature-adjacent module for two one-liners.
+def update_qc_lang(qc_cfg):
+	dc.app.channels[qc_cfg.p_key].update_lang()
+
+
+def update_rating_system(qc_cfg):
+	dc.app.channels[qc_cfg.p_key].update_rating_system()
 
 
 class QueueChannel:

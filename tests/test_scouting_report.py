@@ -917,7 +917,7 @@ def test_rank_survives_a_scouting_read_that_blows_up_and_shows_no_field(monkeypa
 
 # ── what stage 5a removed ────────────────────────────────────────────────
 # Source-level, because bot/web.py cannot be imported under CI (aiohttp.web +
-# nammaoe2bot.discord.client's nextcord) -- the same approach tests/test_web_identity.py
+# nammaoe2bot.runtime.client's nextcord) -- the same approach tests/test_web_identity.py
 # takes. These pin the deletion half of the cutover: the generated persona and
 # scout read are gone from /rank, and nothing recomputes a persona on ingest.
 

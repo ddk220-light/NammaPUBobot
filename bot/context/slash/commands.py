@@ -5,14 +5,14 @@ from nextcord import Interaction, SlashOption, Member, TextChannel
 import traceback
 import time
 
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.utils import error_embed, ok_embed, parse_duration, get_nick
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.config import cfg
 
 from bot import commands
-from bot.exceptions import Exceptions as Exc
-from bot.queue_channel import QueueChannel
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup.channel import QueueChannel
 from bot.community import enroll_channel
 
 

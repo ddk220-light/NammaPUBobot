@@ -19,7 +19,7 @@ direction — the fix is to move the code, not to add an accessor.
 """
 import time
 
-from bot.match.events import MatchLifecycle
+from nammaoe2bot.pickup.match.events import MatchLifecycle
 
 
 class TTLReactionDict(dict):
@@ -28,7 +28,7 @@ class TTLReactionDict(dict):
 	Call sites do `waiting_reactions[msg.id] = cb` and `.pop(msg.id)`, both of
 	which route through __setitem__/pop and update the expiry table.
 
-	Why this exists: the check-in flow (bot/match/check_in.py) subscribes a
+	Why this exists: the check-in flow (nammaoe2bot/pickup/match/checkin.py) subscribes a
 	callback when the check-in message goes up and unsubscribes on every exit
 	path — success, timeout, abort, discard-all. If any of those raises before
 	reaching the pop(), the callback stays here forever, leaking slowly. Over
@@ -81,7 +81,7 @@ class Application:
 		self.was_ready = False
 		# Empty until bot/wiring.py subscribes the features. A Match announces
 		# through this rather than importing betting, the lobby watcher or the
-		# storyline builders — see bot/match/events.py.
+		# storyline builders — see nammaoe2bot/pickup/match/events.py.
 		self.match_events = MatchLifecycle()
 
 	async def remove_players(self, *users, reason=None):

@@ -7,7 +7,7 @@ quiz_settings row with enabled=1 -> the think() job does nothing). Mirrors the
 bot/lobby/ isolation: dedicated tables declared here via ensure_table at import,
 imported by bot/__init__.py for that side effect and the QuizJobs singleton.
 
-jobs.py keeps nextcord/nammaoe2bot.discord.client/embeds imports lazy, so `from .jobs import jobs`
+jobs.py keeps nextcord/nammaoe2bot.runtime.client/embeds imports lazy, so `from .jobs import jobs`
 below stays safe under the unit-test conftest stubs (ensure_table is a no-op there)."""
 from nammaoe2bot.runtime.database import db
 

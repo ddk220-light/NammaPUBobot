@@ -236,7 +236,7 @@ The set is *ranked NammaNomad pickup matches only*. Casual games shared in the l
 outside the group — no captains, no ranking — are excluded.
 
 **The authoritative filter is `qc_matches.ranked`.** That boolean column exists in the live
-schema ([bot/stats/stats.py:66](../bot/stats/stats.py:66)) but is **not** in the committed
+schema ([nammaoe2bot/pickup/stats.py:66](../bot/stats/stats.py:66)) but is **not** in the committed
 export: `data/qc_matches.csv` carries only `match_id, at, queue, winner_team, maps`.
 
 **Action required:** one-time query, or re-export `qc_matches.csv` including `ranked` and

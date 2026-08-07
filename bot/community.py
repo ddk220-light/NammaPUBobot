@@ -29,7 +29,7 @@ the bot from booting.
 CI installs only pytest (no nextcord/aiomysql/aiohttp), so this module must
 import cleanly with nothing but the stdlib and nammaoe2bot.runtime.database/nammaoe2bot.runtime.config
 (plus nammaoe2bot.runtime.console, which is equally dependency-free and fully faked by
-conftest.py). Do not add a nextcord or nammaoe2bot.discord.client import at module level;
+conftest.py). Do not add a nextcord or nammaoe2bot.runtime.client import at module level;
 keep any such import lazy inside a function if one is ever needed here.
 """
 import time

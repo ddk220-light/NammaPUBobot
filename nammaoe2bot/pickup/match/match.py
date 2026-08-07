@@ -5,14 +5,14 @@ import random
 from nextcord import DiscordException
 
 from bot.context.context import SystemContext
-from bot.exceptions import Exceptions as Exc
-from bot.stats import stats
+from nammaoe2bot.exceptions import Exceptions as Exc
+from nammaoe2bot.pickup import stats
 from nammaoe2bot.runtime.utils import find, get, iter_to_dict, join_and, get_nick  # noqa: F401
 from nammaoe2bot.runtime.console import log  # noqa: F401
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 
-from .check_in import CheckIn
-from .draft import Draft
+from .checkin import CheckIn
+from .substitution import Draft
 from .embeds import Embeds
 
 

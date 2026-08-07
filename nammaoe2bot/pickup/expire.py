@@ -1,8 +1,8 @@
 import time
 
-from nammaoe2bot.discord.client import dc
+from nammaoe2bot.runtime.client import dc
 
-from bot.exceptions import Exceptions as Exc
+from nammaoe2bot.exceptions import Exceptions as Exc
 
 from nammaoe2bot.runtime.console import log
 

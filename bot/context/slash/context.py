@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 # never touched at runtime here: `from __future__ import annotations` leaves
 # every annotation in this file as a string.
 if TYPE_CHECKING:
-	from bot.queue_channel import QueueChannel
+	from nammaoe2bot.pickup.channel import QueueChannel
 
 from ..context import Context
 

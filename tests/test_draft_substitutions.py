@@ -1,7 +1,7 @@
 """Substitutions under a live betting book.
 
 /subauto has refunded and re-opened the book since the day it shipped
-(bot/match/draft.py). /subfor and /subforce — which route to the same
+(nammaoe2bot/pickup/match/substitution.py). /subfor and /subforce — which route to the same
 `Draft.sub_for` — did not, and that is not a race: sub_for is permitted in
 CHECK_IN, DRAFT and WAITING_REPORT, and the book stays open for ten minutes,
 so it is ordinary operation.
@@ -33,7 +33,7 @@ import asyncio
 import types
 
 import bot.predictions as predictions
-from bot.match.draft import Draft
+from nammaoe2bot.pickup.match.substitution import Draft
 from bot.wiring import wire_match_lifecycle
 
 
