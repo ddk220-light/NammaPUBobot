@@ -255,6 +255,38 @@ balance cache still agreeing, so `reconcile()` will not see it.
 the six names returns only `app.` attribute access; the deferred-import count is
 reported, with any survivors documented.
 
+### Phase 1 outcome — measured, and it changes Phase 2
+
+All six globals are gone; `bot/__init__.py` is 31 lines of re-exports holding
+nothing mutable. Deferred imports went from **65 to 62** — and that small number
+is the finding, not a disappointment.
+
+**Removing the state was necessary but not sufficient.** The remaining cycles are
+not caused by shared state at all; they are caused by `bot/__init__.py`'s
+re-export block and the ORDER it imports in:
+
+```
+main → queue_channel → queues → match → expire → stats → exceptions →
+context → commands → events → utils → civ_reconcile → lobby → quiz →
+predictions → replay_stats → classifications → derived
+```
+
+**25 deferred imports are provably forced by that order** — a module needs a
+package that loads later in the sequence, so importing it at module scope would
+fail. They fall into three groups, and each has a different Phase 2 answer:
+
+| Group | Count | Why | Phase 2 answer |
+|---|---|---|---|
+| `bot/commands/*` → `quiz`, `predictions`, `lobby`, `derived` | 10 | handlers load at position 8, their features at 12-17 | **Dissolved.** Task 2.9 folds each handler into the feature that owns it, so there is no cross-package edge left to defer. |
+| `bot/match/*`, `bot/events.py` → `predictions`, `lobby`, `quiz` | 11 | the domain and the tick reaching into features | **A real inversion, not an ordering accident.** A match should not know that betting exists; it should announce that it finished and let a feature subscribe. This is the one place Phase 2 should change a dependency direction rather than move a file. |
+| `replay_stats` → `derived` | 2 | ingest loads before the layer it feeds | **Ordering only** — correct direction, fixed by the `ingest/` → `derived/` split. |
+
+The middle row is the substantive discovery of this phase: `Match.finish_match`
+calls into `bot.predictions`, and `Draft.sub_for`/`sub_auto` call
+`restart_for_match`. Those are the domain depending on a feature. Phase 2 should
+introduce a match-lifecycle event the betting and lobby features subscribe to,
+rather than relocating the call.
+
 ---
 
 ## Phase 2 — layer the packages
