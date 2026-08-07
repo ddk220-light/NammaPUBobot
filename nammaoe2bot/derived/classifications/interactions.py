@@ -1,8 +1,18 @@
 # -*- coding: utf-8 -*-
-"""Global component-interaction router for /insights — the 'Show all players' button.
-DB-driven (re-queries game_labels on click) so it survives a Railway redeploy, mirroring the
-quiz router. Registered as an extra on_interaction listener in bot.events. Only acts on custom_ids
-starting with 'insights:'; everything else falls through. Runtime-only (imports nextcord)."""
+"""Global component-interaction router for the /insights 'Show all players' button.
+
+THE COMMAND IS GONE and this router is not. /insights was removed in the
+command consolidation, so nothing posts these buttons any more — but the ones
+already sitting in channel history still work, and a press on one has to be
+answered. Same reason the quiz reveal button survives as a transition
+converter: a custom_id written into a live Discord message is a wire format,
+and deleting its handler turns an old card into a silent failure rather than
+into nothing.
+
+DB-driven (re-queries game_labels on click) so it survives a Railway redeploy,
+mirroring the quiz router. Registered as an extra on_interaction listener in
+bot/events.py. Only acts on custom_ids starting with 'insights:'; everything
+else falls through. Runtime-only (imports nextcord)."""
 import traceback
 
 import nextcord
@@ -33,7 +43,7 @@ async def on_insights_interaction(interaction):
 		except (ValueError, IndexError):
 			return
 		use_case = cid[len("insights:full:"):cid.rfind(":")]
-		from bot.classifications import query
+		from nammaoe2bot.derived.classifications import query
 		from utils.classifications.registry import REGISTRY
 		results = await query.fetch_results(use_case, days)
 		board = query.roster(results)

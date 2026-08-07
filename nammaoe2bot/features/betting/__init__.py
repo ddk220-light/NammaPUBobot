@@ -128,7 +128,7 @@ db.ensure_table(dict(
 ))
 
 # The singleton bot/events.py drives as `nammaoe2bot.features.betting.jobs.think(frame_time)`,
-# the same shape nammaoe2bot/features/quiz, nammaoe2bot/features/lobby and bot/replay_stats all use.
+# the same shape nammaoe2bot/features/quiz, nammaoe2bot/features/lobby and nammaoe2bot/ingest all use.
 #
 # IT COMES FROM flow.py, AND THAT MODULE IS NOT CALLED jobs.py FOR A REASON.
 # It used to be, and binding the singleton onto the package under its own

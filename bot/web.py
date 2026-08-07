@@ -8,7 +8,7 @@ the stores stage 6 drops:
   * the strategy leaderboards, the per-player strategy tags and the per-match
     strategy chips read `game_labels` (kind='strategy'), joined to `game_stats`
     for the profile/winner/civ and to `replay_players` for the in-game name —
-    the same three-table join bot/classifications/query.py uses, for the same
+    the same three-table join nammaoe2bot/derived/classifications/query.py uses, for the same
     reasons (see fetch_results' docstring). The `cls_*` tables are gone from
     this file.
   * `/api/civ-stats` reads the derived-community `civ_stats` table. It used to
@@ -29,7 +29,7 @@ the stores stage 6 drops:
 
 The luck page went with them rather than being repointed: its data source was
 `luck_baseline`, which fires for every player in every valid Nomad game and is
-deliberately stored in no table (bot/derived/game_labels.py's kind_for).
+deliberately stored in no table (nammaoe2bot/derived/game_labels.py's kind_for).
 
 The viewing layer is allowed to be thinner for it — the design says so in as
 many words (§1.5) — and the community-first web redesign is a separate future
@@ -55,8 +55,8 @@ from nammaoe2bot.runtime.database import db
 import bot
 from nammaoe2bot.features.identity import resolver
 from nammaoe2bot.features.scouting import report as scouting_report
-from bot.derived import game_labels, rollups
-from bot.replay_stats import scoring as rs_scoring
+from nammaoe2bot.derived import game_labels, rollups
+from nammaoe2bot.ingest import scoring as rs_scoring
 from nammaoe2bot.features.scouting.tag_leaderboard import tag_leaderboard_score
 
 # --- Paths ---
@@ -461,7 +461,7 @@ async def handle_civ_stats(request):
 	""" Per-civ win rates for this community, from the derived `civ_stats` table.
 
 	games == wins + losses holds on every stored row by construction (see
-	bot/derived/civ_stats.py's compute_civ_stats: a game whose outcome was never
+	nammaoe2bot/derived/civ_stats.py's compute_civ_stats: a game whose outcome was never
 	resolved is counted into none of the three), so the quotient below is a real
 	win rate rather than one deflated by games nobody won.
 
@@ -494,7 +494,7 @@ async def handle_civ_stats(request):
 # ─── Strategy insights API (public) ───
 
 # The join every strategy read in this file makes, and why each table is in it
-# (bot/classifications/query.py's fetch_results argues the same three in full):
+# (nammaoe2bot/derived/classifications/query.py's fetch_results argues the same three in full):
 #
 #   game_labels    — which (game, player) earned the label, and when. Its `kind`
 #                    column is the stored answer to "is this a strategy or a
@@ -502,13 +502,13 @@ async def handle_civ_stats(request):
 #                    own copy of the 17-key allowlist.
 #   game_stats     — the profile behind that slot, whether it won, and the civ it
 #                    played. game_labels stores none of the three by design (see
-#                    bot/derived/__init__.py); its PK is exactly game_labels'
+#                    nammaoe2bot/derived/__init__.py); its PK is exactly game_labels'
 #                    grain minus the label, so this join can neither drop a
 #                    labelled player nor duplicate one.
 #   replay_players — the in-game name to print, LEFT JOINed on its own PK
 #                    (match, profile_id). Deliberately NOT joined on
 #                    player_number: that PK does not constrain player_number
-#                    (bot/derived/backfill.py says so explicitly), so joining on
+#                    (nammaoe2bot/derived/backfill.py says so explicitly), so joining on
 #                    it could duplicate rows.
 _LABEL_JOIN = (
 	"FROM game_labels gl "
@@ -542,7 +542,7 @@ async def handle_strategies(request):
 	The luck category is absent from this payload, and that is the reason the luck page went
 	rather than being repointed. Its rows rested on `luck_baseline`, which fires for every
 	player in every valid Nomad game and is stored in no table by design
-	(bot/derived/game_labels.kind_for) — so the "% of valid starts" denominator every luck
+	(nammaoe2bot/derived/game_labels.kind_for) — so the "% of valid starts" denominator every luck
 	figure was quoted against does not exist any more. `kind='strategy'` is now the whole
 	filter, which also retires the old NOT IN (luck keys) exclusion the categorized count
 	needed."""
@@ -1228,7 +1228,7 @@ def _strategy_label(key):
 	""" A stored strategy key as a display name.
 
 	The hand-written map first, then the same `archer_rush` -> `Archer Rush`
-	fallback nammaoe2bot/features/scouting/report.py and bot/replay_stats/card_query.py apply.
+	fallback nammaoe2bot/features/scouting/report.py and nammaoe2bot/ingest/card_query.py apply.
 	The fallback is what makes this safe against a new classifier key: it renders
 	as its own name rather than as nothing at all. """
 	return STRATEGY_TAG_LABELS.get(key, str(key or "").replace("_", " ").title())
@@ -1378,7 +1378,7 @@ def _player_impact_profile(impacts, civs=None, durations=None):
 	"""The per-match impact scores this page shows, averaged over the window.
 
 	These are render-time numbers computed from the match's own replay_players
-	rows (bot/replay_stats/scoring.py) — the same component scores the match
+	rows (nammaoe2bot/ingest/scoring.py) — the same component scores the match
 	cards compute, never stored, and explicitly kept that way by the design.
 
 	What stage 5d removed from this dict is the NARRATION built on top of them:
@@ -2807,7 +2807,7 @@ def create_app():
 	#
 	# `/luck` is deliberately absent and must not come back: the luck page's rows
 	# rested on `luck_baseline`, which fires for every player in every valid Nomad
-	# game and is stored in no table (bot/derived/game_labels.kind_for), so the
+	# game and is stored in no table (nammaoe2bot/derived/game_labels.kind_for), so the
 	# "% of valid starts" denominator every figure on it was quoted against no
 	# longer exists. An unregistered route 404s, which is the honest answer to a
 	# bookmarked link — re-adding it would serve the SPA shell for a page whose

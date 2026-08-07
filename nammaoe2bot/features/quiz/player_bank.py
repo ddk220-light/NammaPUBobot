@@ -8,14 +8,14 @@ leaderboards computed there, ~1400 questions pre-written into
 data/question_bank.json, converted into data/quiz_bank_player.json and
 interleaved into a 26-week schedule -- all of it recomputed by hand and
 re-committed whenever it went stale. Stage 4 already builds the same
-leaderboards live and per community (bot/derived/boards.py), so the offline
+leaderboards live and per community (nammaoe2bot/derived/boards.py), so the offline
 half was a second, slowly-rotting copy of data the bot recomputes on a timer.
 It is deleted; this module is what took its place.
 
 THE BOARD IS THE ONLY SOURCE. compute_board has already applied the sample
 floor (BOARD_MIN_GAMES) and already sorted `leaders` best-first for the
 metric's own direction -- "fastest to Feudal" ascends, "highest eAPM"
-descends. Neither is re-derived here: bot/derived/boards.py's docstring says
+descends. Neither is re-derived here: nammaoe2bot/derived/boards.py's docstring says
 direction knowledge lives in exactly one place, and a second copy that drifted
 would silently invert an answer rather than fail.
 
@@ -47,7 +47,7 @@ replay (see refresh_community's docstring) -- none of which may decide which
 button is right.
 
 The generator is pure over already-fetched rows; `fetch_inputs` is the small
-async shell around it, the same split every bot/derived/* module uses and the
+async shell around it, the same split every nammaoe2bot/derived/* module uses and the
 reason this file is testable with neither a database nor Discord.
 """
 import json
@@ -67,7 +67,7 @@ _HARD, _MEDIUM = 0.85, 0.6
 
 # metric_id -> the card's category line. A display grouping, not a data
 # boundary: several metrics deliberately share one. Every id in
-# bot/derived/boards.METRICS must appear here (test_metric_categories_cover_the
+# nammaoe2bot/derived/boards.METRICS must appear here (test_metric_categories_cover_the
 # _whole_catalog enforces it) so adding a board cannot quietly ship a question
 # labelled with the fallback.
 CATEGORIES = {
@@ -144,7 +144,7 @@ def _difficulty(window, answer_index):
 
 def build_question(metric_id, board, elos, rng, seq, ask=None, exclude_user_ids=()):
 	"""One question from ONE board, or None when this board cannot carry a fair
-	one. Pure: `board` is the blob bot/derived/boards.py wrote, `elos` a
+	one. Pure: `board` is the blob nammaoe2bot/derived/boards.py wrote, `elos` a
 	{user_id: rating} map, `rng` a seeded random.Random.
 
 	`ask` ("best"/"worst") is drawn from `rng` when not given. Both directions

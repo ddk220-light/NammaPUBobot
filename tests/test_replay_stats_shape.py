@@ -1,4 +1,4 @@
-import bot.replay_stats.shape as shape
+import nammaoe2bot.ingest.shape as shape
 
 # Minimal extract_match()-shaped fixture: 1 match, 2 players.
 EXTRACTED = {

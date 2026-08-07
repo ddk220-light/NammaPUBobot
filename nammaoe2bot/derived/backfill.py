@@ -4,7 +4,7 @@ computed from — a permanent loop, not a one-shot migration.
 
 It cannot be a migration at all: nammaoe2bot/runtime/migrations.py runs before `import bot`
 and may not import bot.*, while the medal maths game_stats stores lives in
-bot/replay_stats/card_scoring.py. Recomputing medals in SQL to dodge that would
+nammaoe2bot/ingest/card_scoring.py. Recomputing medals in SQL to dodge that would
 fork the logic, the exact divergence identity v2 spent a stage repairing.
 
 CONVERGENCE IS THE WHOLE DESIGN. The obvious predicate — "process matches that
@@ -94,10 +94,10 @@ processed match leaves the pending set immediately and permanently.
 
 PLAYED_AT comes from the match's own cls_results rows, never from
 replay_matches.played_at. replay_matches.played_at is a VARCHAR date STRING out of the
-replay extract — bot/replay_stats/query.py compares it against an ISO date
+replay extract — nammaoe2bot/ingest/query.py compares it against an ISO date
 string — while game_labels.played_at is a BIGINT epoch, and every row the live
 path writes carries the bot match's reported_at epoch (see
-bot/replay_stats/classification_sync.py's played_at_epoch).
+nammaoe2bot/ingest/classification_sync.py's played_at_epoch).
 cls_results.played_at is that same epoch, written from matches.reported_at by
 both the offline runner (utils/classifications/dbio.window_matches) and the
 live sync. Reading it there makes a backfilled row identical to the row the
@@ -152,7 +152,7 @@ LABEL_KEYS = tuple(game_labels.STRATEGY_KEYS) + tuple(game_labels.SPAWN_KEYS)
 # rewrite the two versions agree, the group has size 2, and the match leaves the
 # pending set permanently.
 #
-# See bot/derived/game_stats.COMPUTE_VERSION for why this exists at all, and why
+# See nammaoe2bot/derived/game_stats.COMPUTE_VERSION for why this exists at all, and why
 # 008's "a migration beats a column-level predicate" is not contradicted by it.
 #
 # An INTEGER tag, not a string: the two comparisons are separate queries, so
@@ -283,7 +283,7 @@ def played_at_of(result_rows):
 # (POLL_INTERVAL seconds later) rewrites the match from the settled rows. The
 # alternatives (a lock, or making the adapter transactional) cost far more than
 # a derived row being stale for ten seconds.
-# What bot/replay_stats/jobs._date_str writes into replay_matches.played_at:
+# What nammaoe2bot/ingest/jobs._date_str writes into replay_matches.played_at:
 # time.strftime("%Y-%m-%d %H:%M", time.gmtime(epoch)). UTC, to the minute.
 _PLAYED_AT_FORMAT = "%Y-%m-%d %H:%M"
 
@@ -298,7 +298,7 @@ def parse_played_at(value):
 	timegm is the exact inverse of gmtime and is timezone-free by construction.
 
 	A malformed or empty value returns None rather than raising. The column is a
-	free-text VARCHAR that predates any of this (bot/replay_stats/query.py
+	free-text VARCHAR that predates any of this (nammaoe2bot/ingest/query.py
 	compares it against ISO date strings), 19 production rows are empty, and the
 	right answer for "this match's date is unknown" is an undated stat row —
 	which rollups.in_window reads as outside every window. Raising would instead
@@ -392,7 +392,7 @@ async def _source_is_trustworthy(match_id):
 	permanently, on a table nothing else rebuilds.
 
 	That is not hypothetical. cls_results has exactly one live writer,
-	bot/replay_stats/classifications.write_extracted_match, called from
+	nammaoe2bot/ingest/classifications.write_extracted_match, called from
 	store.write_match inside a catch-and-log guard — so a transient DB error
 	there leaves a freshly ingested match with zero cls_results while
 	classification_sync.sync_match goes on to write its game_labels from the
@@ -520,7 +520,7 @@ async def drain_game_labels():
 
 
 class DerivedBackfill:
-	"""Self-isolating tick job, same discipline as bot/replay_stats/jobs.py: think()
+	"""Self-isolating tick job, same discipline as nammaoe2bot/ingest/jobs.py: think()
 	only schedules and can never raise into on_think, the work runs off the tick so
 	a ~250-query pass cannot stall in-flight matches, and _running keeps two passes
 	from overlapping."""

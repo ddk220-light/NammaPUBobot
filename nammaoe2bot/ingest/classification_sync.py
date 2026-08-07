@@ -11,8 +11,8 @@ cls_result_metrics here as well -- a deliberate dual-write, kept while /insights
 match cards still read them. They read game_labels now, so the write is gone.
 
 That does NOT make cls_results dead, and nothing here should treat it as such:
-bot/derived/backfill.py reconciles game_labels against cls_results on every pass, and
-bot/replay_stats/classifications.py's write_extracted_match -- called from
+nammaoe2bot/derived/backfill.py reconciles game_labels against cls_results on every pass, and
+nammaoe2bot/ingest/classifications.py's write_extracted_match -- called from
 store.write_match on the same ingest, strictly before this runs -- is what keeps that
 source populated for a freshly ingested match. Deleting that writer without moving the
 backfill off cls_results would make every new match's cls_results set EMPTY while its
@@ -43,9 +43,9 @@ async def sync_match(extracted, played_at_epoch, db_adapter=None):
     fired: label_rows drops every key outside game_labels' two allowlists (luck_baseline
     above all). The caller logs it, so it has to be the count of what was stored.
 
-    Raises rather than swallowing: bot/replay_stats/jobs.py's ingest already wraps this
+    Raises rather than swallowing: nammaoe2bot/ingest/jobs.py's ingest already wraps this
     call, logs the failure against the match id, and carries on to mark the ingest done --
-    and bot/derived/backfill.py writes the match's labels from its cls_results within
+    and nammaoe2bot/derived/backfill.py writes the match's labels from its cls_results within
     POLL_INTERVAL. A second guard here could only turn a failure into a silent "0 labels"
     success line.
 
@@ -62,10 +62,10 @@ async def sync_match(extracted, played_at_epoch, db_adapter=None):
     write fall back to its module-global `db` would send it to a different database.
 
     game_labels is imported inside the function, not at module scope: jobs.py imports this
-    module from inside a running coroutine, and bot/derived/__init__.py's ensure_table
+    module from inside a running coroutine, and nammaoe2bot/derived/__init__.py's ensure_table
     calls drive the loop with run_until_complete (see that package's docstring).
     """
-    from bot.derived import game_labels
+    from nammaoe2bot.derived import game_labels
 
     aoe2_match_id = extracted["match"]["aoe2_match_id"]
     result_rows, metric_rows = classification_rows(extracted, aoe2_match_id, played_at_epoch)

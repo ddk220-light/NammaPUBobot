@@ -90,7 +90,7 @@ def _resolve(node, module_dotted, is_package):
 	""" The absolute module an ImportFrom names, or None for an unresolvable
 	relative level.
 
-	`from . import x` inside bot/derived/game_labels.py means bot.derived, so
+	`from . import x` inside nammaoe2bot/derived/game_labels.py means nammaoe2bot.derived, so
 	the anchor for a non-package module is its PARENT; for a package's
 	__init__.py it is the package itself. """
 	if not node.level:

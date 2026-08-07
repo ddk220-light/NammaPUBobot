@@ -11,7 +11,7 @@ join, so joining on it silently drops players.
 FOUR OF THE SIX SIGNALS BELOW READ A SWEEPABLE TABLE, and that is an accepted,
 deliberate trade rather than an oversight. replay_events, replay_buildings and
 replay_apm are all retention="sweepable" (nammaoe2bot/runtime/data_registry.py):
-bot/derived/sweeper.py deletes their rows for a community that opted out of
+nammaoe2bot/derived/sweeper.py deletes their rows for a community that opted out of
 keeping raw replay detail, once the derived summaries that stand in for them
 have been computed. When that happens these queries return no rows and the
 card renders WITHOUT those elements — _stats_text omits each one silently
@@ -32,7 +32,7 @@ gone.
 from nammaoe2bot.runtime.database import db
 
 # The 3 spawn facts worth rendering as a sentence on a card — a DISPLAY subset,
-# and emphatically not a copy of what game_labels stores. bot/derived/
+# and emphatically not a copy of what game_labels stores. nammaoe2bot/derived/
 # game_labels.py's SPAWN_KEYS holds all 11 spawn classifications, because what to
 # STORE and what to SAY are different questions; "re-syncing" the two would throw
 # 8 stored labels away in one direction or put 8 unsayable ones on the card in the
@@ -138,7 +138,7 @@ async def _strategies(replay_match_id):
 	"""Every strategy label the player earned, per player, as display labels.
 
 	Read from game_labels, whose `kind` column IS the strategy allowlist: the 17
-	keys were decided once, at ingest, by bot/derived/game_labels.py's
+	keys were decided once, at ingest, by nammaoe2bot/derived/game_labels.py's
 	STRATEGY_KEYS, so asking for kind='strategy' asks that same question back
 	instead of restating the list here. This file used to carry a verbatim copy of
 	those 17 keys to constrain the old cls_results read (that table mixed strategy

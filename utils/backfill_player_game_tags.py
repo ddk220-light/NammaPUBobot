@@ -18,7 +18,7 @@ from nammaoe2bot.runtime.database import db
 
 
 def _load_player_tags_module():
-	path = os.path.join(ROOT, "bot", "replay_stats", "player_tags.py")
+	path = os.path.join(ROOT, "nammaoe2bot", "ingest", "player_tags.py")
 	spec = importlib.util.spec_from_file_location("player_tags_backfill", path)
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)

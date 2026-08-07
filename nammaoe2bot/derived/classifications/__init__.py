@@ -9,7 +9,7 @@ by design (see nammaoe2bot/runtime/database/mysql.py's table_blank). An existing
 same indexes from migration 006_derived_indexes instead. Both halves are required:
 neither one covers the other's case, so an index added here must be added there too.
 
-The indexes themselves are the per-match access path bot/derived/backfill.py's
+The indexes themselves are the per-match access path nammaoe2bot/derived/backfill.py's
 reconciliation loop needs: it reads one match's rows at a time (WHERE aoe2_match_id=%s)
 and both primary keys lead with `key`, so without them every read is a full table scan.
 Index names are written out literally rather than via a shared constant so

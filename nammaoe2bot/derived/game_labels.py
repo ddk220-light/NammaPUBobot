@@ -3,7 +3,7 @@
 in one game, computed once at ingest instead of re-derived every time a card
 renders. label_rows is pure -- no DB, no I/O -- so the exact same function
 drives both the live write below (called from
-bot/replay_stats/classification_sync.py's sync_match, right after the
+nammaoe2bot/ingest/classification_sync.py's sync_match, right after the
 classifier runs) and the stage-3.4 reconciliation loop that backfills the
 already-ingested historical matches out of the legacy cls_results table.
 Neither caller teaches the function anything about where its input rows came
@@ -18,7 +18,7 @@ from nammaoe2bot.runtime.database import db
 # provenance, and conflating them silently drops labels:
 #
 #   STRATEGY_KEYS is the 17 strategy classifications. It is the ONLY copy of that
-#   list now: bot/replay_stats/card_query.py used to keep an identical one to
+#   list now: nammaoe2bot/ingest/card_query.py used to keep an identical one to
 #   constrain its own cls_results query, and stage 5c deleted it when the cards
 #   moved to this table -- a reader asks for `kind`, which is this allowlist's
 #   answer, already stored.
@@ -59,7 +59,7 @@ SPAWN_KEYS = (
 # map generator, not the player.
 #
 # The SAME three keys, in the same priority order, back
-# bot/replay_stats/card_query.SPAWN_PHRASES, which pairs them with card-specific
+# nammaoe2bot/ingest/card_query.SPAWN_PHRASES, which pairs them with card-specific
 # wording. Deliberately two tuples and not one import: the card picks ONE phrase
 # per player and needs a priority order, while the scouting report ranks all
 # three on their records and needs none. tests/test_game_labels.py pins the two
@@ -134,7 +134,7 @@ async def write(replay_match_id, rows, db_adapter=None):
 	label_rows returned, stamping replay_match_id onto each row (the pure
 	function above deliberately never sees it -- see its docstring).
 
-	Mirrors bot/derived/game_stats.py's write for the same reason: a match
+	Mirrors nammaoe2bot/derived/game_stats.py's write for the same reason: a match
 	can be re-ingested (parser bump, manual retry, or the stage-3.4 backfill
 	correcting a stale row) and the stored set must exactly match the latest
 	compute, never accumulate leftovers from a run with a different label
@@ -142,7 +142,7 @@ async def write(replay_match_id, rows, db_adapter=None):
 
 	`db_adapter` overrides the module-global adapter for callers that write a
 	whole match through one specific connection --
-	bot/replay_stats/classification_sync.py's sync_match takes one and passes it
+	nammaoe2bot/ingest/classification_sync.py's sync_match takes one and passes it
 	straight down, so a caller that owns a connection has this match's labels
 	written through it rather than through the bot's global adapter.
 
@@ -150,7 +150,7 @@ async def write(replay_match_id, rows, db_adapter=None):
 	transaction, because the adapter runs in autocommit (see
 	nammaoe2bot/runtime/database/mysql.py's connect) and has no transaction surface to reach
 	for. If the insert fails after the delete succeeded, this match is briefly
-	label-less -- and bot/derived/backfill.py's reconciliation loop notices the
+	label-less -- and nammaoe2bot/derived/backfill.py's reconciliation loop notices the
 	set difference and rewrites it within POLL_INTERVAL. Making this atomic
 	means giving the adapter transactions, which is a change to every writer in
 	the bot, for a window that already self-heals. Do not "fix" it here.

@@ -78,7 +78,7 @@ written so that missing or unexpected data fails CLOSED (keeps the rows):
 
      The freshness figure is MIN(computed_at) over all three derived-community
      tables for that community, and the EXISTENCE proof is metric_boards
-     specifically. Same reasoning bot/derived/refresh.py gives for using
+     specifically. Same reasoning nammaoe2bot/derived/refresh.py gives for using
      metric_boards as its marker: a refresh pass always writes one board per
      catalogued metric, while player_rollups can be empty (a community whose
      players are all unlinked) and civ_stats can be empty (no resolved picks).
@@ -102,8 +102,8 @@ written so that missing or unexpected data fails CLOSED (keeps the rows):
 
 -- CADENCE AND ISOLATION ----------------------------------------------------
 
-Daily, off-tick, and self-isolating in exactly the shape bot/derived/backfill.py
-and bot/derived/refresh.py established: think() only schedules and can never
+Daily, off-tick, and self-isolating in exactly the shape nammaoe2bot/derived/backfill.py
+and nammaoe2bot/derived/refresh.py established: think() only schedules and can never
 raise into on_think, _running keeps two passes from overlapping, and the pass
 itself catches everything. Deletes are chunked (CHUNK ids per statement, BATCH
 replays per pass) with a yield between chunks, so a first live sweep of a large
@@ -381,8 +381,8 @@ async def sweep(now=None):
 
 
 class RetentionSweeper:
-	"""Self-isolating tick job, same discipline as bot/derived/backfill.py and
-	bot/derived/refresh.py: think() only schedules and can never raise into
+	"""Self-isolating tick job, same discipline as nammaoe2bot/derived/backfill.py and
+	nammaoe2bot/derived/refresh.py: think() only schedules and can never raise into
 	on_think, the work runs off the tick, and _running keeps two passes from
 	overlapping.
 

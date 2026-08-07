@@ -8,7 +8,7 @@ test with asyncio.run(...), against fakes — never a real database.
 import asyncio
 import random
 
-from bot.derived import boards as derived_boards
+from nammaoe2bot.derived import boards as derived_boards
 from nammaoe2bot.features.quiz import player_bank as pb
 from nammaoe2bot.features.quiz import schedule as sched
 
@@ -152,7 +152,7 @@ def test_best_asks_for_the_head_of_the_window_and_worst_for_its_tail():
 
 def test_direction_is_taken_from_the_boards_own_ordering_not_re_derived():
     """A 'low' metric's leaders ascend. compute_board already applied that;
-    this module must not sort again (bot/derived/boards.py keeps direction in
+    this module must not sort again (nammaoe2bot/derived/boards.py keeps direction in
     one place)."""
     low = _board(n=pb.MIN_LEADERS, direction="low", unit="seconds",
                  label="Fastest to Castle Age")
@@ -180,7 +180,7 @@ def test_the_record_matches_what_the_store_and_the_card_read():
 
 
 def test_metric_categories_cover_the_whole_catalog():
-    """A metric added to bot/derived/boards.METRICS with no category here would
+    """A metric added to nammaoe2bot/derived/boards.METRICS with no category here would
     ship questions labelled with the fallback and nobody would notice."""
     assert set(derived_boards.METRICS) <= set(pb.CATEGORIES)
 

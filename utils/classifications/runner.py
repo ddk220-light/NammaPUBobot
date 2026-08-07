@@ -126,7 +126,7 @@ async def run(days, only_key=None, no_download=False):
                     stats[c.key] += len(result_rows)
                     match_result_rows += len(result_rows)
             # Provenance for the match as a whole, written even when it matched
-            # nothing: bot/derived/backfill.py may only believe an empty
+            # nothing: nammaoe2bot/derived/backfill.py may only believe an empty
             # cls_results (and so delete a match's game_labels) when this row
             # certifies the classifier completed with zero results. Writing it
             # only for matches that produced rows would leave every zero-row

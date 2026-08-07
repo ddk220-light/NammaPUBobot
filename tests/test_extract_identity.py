@@ -26,7 +26,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
-from bot.replay_stats import store
+from nammaoe2bot.ingest import store
 from utils.replay.extract import extract_match
 
 REPLAY_NAME = "TheInGameName"

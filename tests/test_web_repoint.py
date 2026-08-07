@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 import bot.web as web
-from bot.derived import rollups
+from nammaoe2bot.derived import rollups
 from nammaoe2bot.features.scouting.report import PENDING
 
 
@@ -860,4 +860,4 @@ def test_importing_this_file_leaves_the_shared_adapter_alone():
 	from nammaoe2bot.runtime.database import db as real_db
 
 	assert web.db is real_db, "bot.web.db was left pointing at a test double"
-	assert rollups.db is real_db, "bot.derived.rollups.db was left pointing at a test double"
+	assert rollups.db is real_db, "nammaoe2bot.derived.rollups.db was left pointing at a test double"

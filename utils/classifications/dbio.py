@@ -91,7 +91,7 @@ async def upsert_results(pool, key, aoe2_match_id, result_rows, metric_rows):
 async def mark_match_classified(pool, aoe2_match_id, result_rows):
     """Stamp cls_match_ingest for one fully-classified match.
 
-    NOT bookkeeping. bot/derived/backfill.py's reconciler treats an empty
+    NOT bookkeeping. nammaoe2bot/derived/backfill.py's reconciler treats an empty
     cls_results set for a match as authoritative -- and therefore deletes that
     match's game_labels -- ONLY when this row exists and says the classifier
     produced zero results. Without it, an empty cls_results is indistinguishable
@@ -101,7 +101,7 @@ async def mark_match_classified(pool, aoe2_match_id, result_rows):
     the case the row exists to certify.
 
     `result_rows` counts EVERY classifier hit for the match, luck_baseline
-    included -- the same figure bot/replay_stats/classifications.py records --
+    included -- the same figure nammaoe2bot/ingest/classifications.py records --
     not just the ones game_labels allowlists.
     """
     await _exec(pool,

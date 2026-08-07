@@ -10,16 +10,16 @@ replay parser the bot itself runs on every ingested match. Only the second is
 here, and the name no longer claims it has anything to do with the quiz.
 
 WHY IT IS NOT UNDER `bot/`. `extract_match` is a dependency-light library
-(stdlib plus a lazy `mgz` import) with four importers: bot/replay_stats/parse.py
+(stdlib plus a lazy `mgz` import) with four importers: nammaoe2bot/ingest/parse.py
 (live), utils/classifications/runner.py,
 utils/classifications/pipeline/ingester.py and utils/backfill_strategy_tags.py
 (offline). Importing anything under `bot/` executes bot/__init__.py, which boots
 the whole Discord bot -- nextcord, config.cfg, the MySQL adapter. The offline
 pipelines have neither; utils/validate_apm.py shows what importing
-`bot.replay_stats.*` from a script actually costs (a 40-line fake-package and
+`nammaoe2bot.ingest.*` from a script actually costs (a 40-line fake-package and
 fake-core shim). Three more copies of that shim, to relocate a parser that needs
 none of it, would be the wrong trade. The rule `utils/` = "never imported by the
-bot" is already untrue (bot/web.py and bot/replay_stats/classifications.py both
+bot" is already untrue (bot/web.py and nammaoe2bot/ingest/classifications.py both
 import utils/classifications/); the fix for that is a real shared-library
 boundary, not the move of one file.
 

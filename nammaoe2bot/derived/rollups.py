@@ -130,7 +130,7 @@ def _median(values):
 def has_known_outcome(stat_row):
 	"""Whether this game's result is resolved, i.e. belongs in a win/loss split.
 
-	game_stats.winner is NULLABLE (bot/derived/__init__.py), passed straight
+	game_stats.winner is NULLABLE (nammaoe2bot/derived/__init__.py), passed straight
 	through from replay_players.winner, which is itself nullable because mgz
 	genuinely cannot determine a winner on some replays. NULL means "nobody
 	knows", and this is the one place that distinction has to be honoured:
@@ -453,7 +453,7 @@ async def delete(community_id, user_id):
 	about their game_stats rows changes, so without a delete they would keep
 	rendering somebody else's history forever.
 
-	Lives here rather than in bot/derived/refresh.py, which is the only
+	Lives here rather than in nammaoe2bot/derived/refresh.py, which is the only
 	caller, so `player_rollups` keeps exactly one writing module --
 	nammaoe2bot/runtime/data_registry.py's stated target of one dedicated writer per table,
 	and the reason the registry does not have to grow a second entry for the

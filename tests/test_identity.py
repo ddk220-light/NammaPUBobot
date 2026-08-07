@@ -21,7 +21,7 @@ import nammaoe2bot.community as community
 # `/identity status`' gated-features half counts off this community's rollups.
 # Imported for real (pure aggregation + DB reads, no Discord) so the tests
 # monkeypatch the module the command actually resolves at call time.
-import bot.derived.rollups as rollups
+import nammaoe2bot.derived.rollups as rollups
 # The command handlers refuse by raising bot.Exc.ValueError (the file's own
 # convention for an admin-facing refusal), so the tests need the real class to
 # assert on. Importable under CI: nammaoe2bot/exceptions.py is pure stdlib.

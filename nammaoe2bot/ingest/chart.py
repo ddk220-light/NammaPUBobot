@@ -29,7 +29,7 @@ def _interp(grid, ys, t):
 
 
 def render_timeline(name, data, days):
-    """Render bot.replay_stats.query.build_timeline() output to a PNG. Returns an io.BytesIO."""
+    """Render nammaoe2bot.ingest.query.build_timeline() output to a PNG. Returns an io.BytesIO."""
     import matplotlib
     matplotlib.use("Agg")
     from matplotlib.figure import Figure
@@ -234,7 +234,7 @@ def rolling_mean(values, window):
 def render_apm_curve(series, teams, smooth=3):
     """Per-minute eAPM over the course of a match, one line per player.
 
-    `series` is bot.replay_stats.apm_query.apm_series output; `teams` maps
+    `series` is nammaoe2bot.ingest.apm_query.apm_series output; `teams` maps
     player_number -> 0/1. Lines are smoothed with a trailing rolling mean because a
     1-minute-resolution 8-player chart is unreadable raw -- peaks are reported as
     numbers on the card instead. Colour is the player's in-game slot colour so they can

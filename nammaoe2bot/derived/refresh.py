@@ -36,7 +36,7 @@ dirty-set table fixes that and was the other candidate. This module does neither
 
 There is no work list. Pendingness is DERIVED, on every pass, from a comparison
 between what the data implies and what is stored -- the same discipline
-bot/derived/backfill.py uses for the derived-global layer, and chosen here for
+nammaoe2bot/derived/backfill.py uses for the derived-global layer, and chosen here for
 the same three properties: nothing to leak (a dirty row for a user that can
 never be computed occupies a slot forever), nothing to lose (a restart mid-pass
 resumes exactly where it was, because there was never any state to resume), and
@@ -143,7 +143,7 @@ game_stats and therefore move no rollup at all. metric_boards is the marker for
 both tables rather than each having its own, because a pass always writes one
 row per catalogued metric while civ_stats can legitimately write ZERO rows (a
 community with no resolved picks) -- and a marker that can be empty is the exact
-shape of non-termination bot/derived/backfill.py's docstring dissects.
+shape of non-termination nammaoe2bot/derived/backfill.py's docstring dissects.
 
 -- HOOKS --------------------------------------------------------------------
 
@@ -151,7 +151,7 @@ The brief for this task called for dirty-marking hooks in replay ingest, match
 report and every identity path. Under a derived work list two of those three are
 already there and must NOT be added:
 
-  replay ingest -- bot/replay_stats/store.write_match already writes game_stats
+  replay ingest -- nammaoe2bot/ingest/store.write_match already writes game_stats
                    with a fresh computed_at. That IS the hook.
   match report  -- nammaoe2bot/pickup/stats.py's register_match_* schedules civ recording,
                    whose civ_picks rows carry `at`. That IS the hook.
@@ -186,7 +186,7 @@ MAX_AGE = 86400         # nothing derived-community may be older than this (see 
 # matches in one community can legitimately point at the same replay (a
 # re-report, a corrected pairing), and without the DISTINCT every game_stats row
 # of that replay would be counted twice into the same user's rollup. Same
-# property, same fix, and the same reasoning as bot/derived/backfill.py's
+# property, same fix, and the same reasoning as nammaoe2bot/derived/backfill.py's
 # DISTINCT over replay_players.
 _REPLAYS = "(SELECT DISTINCT community_id, replay_match_id FROM match_replays) mr"
 
@@ -229,7 +229,7 @@ _USER_STATS_SQL = (
 # Labels are scoped through game_stats rather than read on the label table
 # alone, because game_labels carries no profile_id (a label is a fact about a
 # slot; the profile behind that slot is recorded once, on game_stats -- see
-# bot/derived/__init__.py). The join is on the PAIR (replay_match_id,
+# nammaoe2bot/derived/__init__.py). The join is on the PAIR (replay_match_id,
 # player_number), never the match alone: a match holds up to eight slots and two
 # of them can belong to the same user.
 _USER_LABELS_SQL = (
@@ -258,7 +258,7 @@ _COMMUNITY_CHANNELS_SQL = "SELECT channel_id, community_id FROM community_channe
 
 # Rows that failed MAX_ATTEMPTS times in THIS process, keyed the same way the
 # work they stand for is. Process-local on purpose, exactly as in
-# bot/derived/backfill.py: a restart clears it, so a transient DB blip is retried
+# nammaoe2bot/derived/backfill.py: a restart clears it, so a transient DB blip is retried
 # on the next deploy, while a genuinely uncomputable row stops occupying a slot
 # in every future batch. Without it a handful of permanently-failing users
 # sorted to the front of the batch would stall everything behind them forever --
@@ -427,7 +427,7 @@ async def drain_rollups(now):
 	single log line carrying the outcome. Returns how many were processed.
 
 	The pending total is recomputed AFTER the batch and always reported, even on
-	a pass that picked up nothing, for the reason bot/derived/backfill.py's
+	a pass that picked up nothing, for the reason nammaoe2bot/derived/backfill.py's
 	_drain spells out: an empty batch has two completely different causes --
 	converged, or everything still pending is quarantined in this process -- and
 	a line that cannot distinguish them turns a permanent hole into silence.
@@ -487,7 +487,7 @@ async def pending_communities(now):
 	exactly one board per catalogued metric while civ_stats can legitimately
 	write ZERO rows -- a community with no resolved picks. A marker that can be
 	empty is indistinguishable from a marker that was never written, which is
-	the shape that never terminates (bot/derived/backfill.py's docstring
+	the shape that never terminates (nammaoe2bot/derived/backfill.py's docstring
 	dissects the same trap on the derived-global side).
 
 	Uncatalogued metric_ids are excluded from the marker deliberately: a board
@@ -626,7 +626,7 @@ async def drain_communities(now):
 
 
 class DerivedRefresh:
-	"""Self-isolating tick job, same discipline as bot/derived/backfill.py:
+	"""Self-isolating tick job, same discipline as nammaoe2bot/derived/backfill.py:
 	think() only schedules and can never raise into on_think, the work runs off
 	the tick so a pass cannot stall in-flight matches, and _running keeps two
 	passes from overlapping."""

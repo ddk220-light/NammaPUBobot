@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def _load(name):
-    path = ROOT / "bot" / "replay_stats" / f"{name}.py"
+    path = ROOT / "nammaoe2bot" / "ingest" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(f"persona_cal_{name}", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

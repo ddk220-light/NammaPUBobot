@@ -1,5 +1,5 @@
-"""Unit tests for the pure aggregation in bot/replay_stats/persona_store.py."""
-from bot.replay_stats.persona_store import PERIODS, aggregate_player_stats
+"""Unit tests for the pure aggregation in nammaoe2bot/ingest/persona_store.py."""
+from nammaoe2bot.ingest.persona_store import PERIODS, aggregate_player_stats
 
 
 def _row(uid, pnum, team, **kw):
@@ -88,7 +88,7 @@ def test_multi_profile_user_counts_match_once():
 
 
 def test_feeds_derive_persona():
-	from bot.replay_stats.persona import derive_persona
+	from nammaoe2bot.ingest.persona import derive_persona
 	groups = [_match(at=1000 + i, focus_kw={"villagers": 130, "military": 120}) for i in range(12)]
 	stats = aggregate_player_stats(groups, 1, None)
 	p = derive_persona(stats)

@@ -2,7 +2,7 @@
 player_rollups readers behind it, and the `/rank` wiring that chooses between
 a report, the pending-linking notice and no field at all.
 
-Most of the assertions below run the REAL aggregation (bot/derived/rollups.
+Most of the assertions below run the REAL aggregation (nammaoe2bot/derived/rollups.
 compute_rollup) over game_stats/game_labels-shaped rows and render its output,
 rather than hand-writing a tidy blob. Every copy rule this task exists to
 enforce is a rule about the relationship between a number and the rows behind
@@ -26,10 +26,10 @@ from pathlib import Path
 
 import nammaoe2bot.community as community
 import nammaoe2bot.features.identity.resolver as identity
-import bot.derived.rollups as rollups
+import nammaoe2bot.derived.rollups as rollups
 from nammaoe2bot.runtime.database import db
 import nammaoe2bot.features.scouting.report as scouting_report
-from bot.derived.rollups import SPLIT_MIN_GAMES, compute_rollup
+from nammaoe2bot.derived.rollups import SPLIT_MIN_GAMES, compute_rollup
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -949,7 +949,7 @@ def test_the_ingest_path_no_longer_refreshes_personas():
 	""" rs_player_personas stops being written here. The module itself stays
 	until stage 6 drops the table, so this asserts the CALL is gone rather
 	than the file. """
-	src = _source("bot", "replay_stats", "store.py")
+	src = _source("nammaoe2bot", "ingest", "store.py")
 	tree = ast.parse(src)
 	calls = [n for n in ast.walk(tree)
 	         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)

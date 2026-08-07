@@ -1,4 +1,4 @@
-"""Unit tests for bot/replay_stats/store.py's identity-resolver read and
+"""Unit tests for nammaoe2bot/ingest/store.py's identity-resolver read and
 write paths.
 
 Ingest reads and writes identity in exactly one place now: the resolver
@@ -16,7 +16,7 @@ tests/test_extract_identity.py pins the fixed expression.
 """
 import asyncio
 
-from bot.replay_stats import store
+from nammaoe2bot.ingest import store
 
 
 class _FakeIdentity:
@@ -203,7 +203,7 @@ def _extracted():
 
 def _run_write_match(monkeypatch, game_stats_write, played_at_epoch=None):
     """write_match with everything stubbed except the game_stats step under test."""
-    from bot.derived import game_stats
+    from nammaoe2bot.derived import game_stats
 
     fake_db = _FakeDB()
     fake_log = _FakeLog()
@@ -251,8 +251,8 @@ def test_write_match_writes_game_stats_for_the_match_it_just_parsed(monkeypatch)
 # is the executable half of those warnings.
 
 def _run_write_match_recording_classifications(monkeypatch, write_extracted_match):
-    from bot.derived import game_stats
-    from bot.replay_stats import classifications
+    from nammaoe2bot.derived import game_stats
+    from nammaoe2bot.ingest import classifications
 
     async def _noop_game_stats(_replay_match_id, _rows):
         return None
@@ -272,10 +272,10 @@ def _run_write_match_recording_classifications(monkeypatch, write_extracted_matc
 
 def test_the_ingest_path_still_writes_cls_results_for_every_match(monkeypatch):
     """ DO NOT DELETE THIS TEST OR THE CALL IT PINS without first moving
-    bot/derived/backfill.py off cls_results.
+    nammaoe2bot/derived/backfill.py off cls_results.
 
     write_match calling classifications.write_extracted_match is the ONLY thing
-    that populates cls_results for a freshly ingested match. bot/derived/
+    that populates cls_results for a freshly ingested match. nammaoe2bot/derived/
     backfill.py reconciles game_labels against cls_results on every pass, so a
     match with game_labels and no cls_results is permanently pending — and the
     reconciler's answer to a pending match is to rewrite it from its source,
@@ -297,7 +297,7 @@ def test_the_ingest_path_still_writes_cls_results_for_every_match(monkeypatch):
     assert seen == [(4242, 1699999999)], (
         "write_match must call classifications.write_extracted_match with the match it "
         "just parsed and that match's played_at epoch — it is the sole writer of "
-        "cls_results, which bot/derived/backfill.py reconciles game_labels against")
+        "cls_results, which nammaoe2bot/derived/backfill.py reconciles game_labels against")
     assert not any("classification write failed" in m for m in fake_log.error_calls)
 
 

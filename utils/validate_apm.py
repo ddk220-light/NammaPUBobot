@@ -17,7 +17,7 @@ import types
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-# `from bot.replay_stats...` below would normally import the `bot` package first, which runs
+# `from nammaoe2bot.ingest...` below would normally import the `bot` package first, which runs
 # bot/__init__.py -- pulling in ~10 feature modules purely for their ensure_table() side effects
 # (schema-DDL-capable CREATE TABLE / ALTER TABLE ADD COLUMN checks) against a live
 # nammaoe2bot.runtime.database.db handle. This script is validation-only and must never open a database
@@ -28,13 +28,13 @@ sys.path.insert(0, ROOT)
 # (conftest.py additionally fakes nammaoe2bot.runtime.config and aiohttp, which neither needs).
 #
 # Pre-registering `bot` with an explicit __path__ means bot/__init__.py itself never runs --
-# only the real bot.replay_stats package (and the apm_query / chart submodules we need) do -- so
+# only the real nammaoe2bot.ingest package (and the apm_query / chart submodules we need) do -- so
 # every ensure_table() call the import chain makes hits the no-op below instead of a live schema
 # check. Neither apm_series (pure) nor render_apm_curve (pure rendering) touches the DB at all.
 
 
 class _NullLog:
-    """Swallows every nammaoe2bot.runtime.console.log call (bot.replay_stats.jobs/store log through it)."""
+    """Swallows every nammaoe2bot.runtime.console.log call (nammaoe2bot.ingest.jobs/store log through it)."""
 
     def __getattr__(self, _name):
         return lambda *_a, **_k: None
@@ -47,7 +47,7 @@ sys.modules["nammaoe2bot.runtime.console"] = _fake_core_console
 
 
 class _NoDB:
-    """Stands in for nammaoe2bot.runtime.database.db. `ensure_table` is the only method the bot.replay_stats
+    """Stands in for nammaoe2bot.runtime.database.db. `ensure_table` is the only method the nammaoe2bot.ingest
     import chain calls at module scope (schema declarations), so it's a genuine no-op here. Any
     other attribute access means something is trying to touch a real database -- which this
     validation-only script must never do -- so it raises immediately instead of connecting."""
@@ -75,8 +75,8 @@ _fake_bot = types.ModuleType("bot")
 _fake_bot.__path__ = [os.path.join(ROOT, "bot")]
 sys.modules["bot"] = _fake_bot
 
-from bot.replay_stats.apm_query import apm_series          # noqa: E402
-from bot.replay_stats.chart import render_apm_curve        # noqa: E402
+from nammaoe2bot.ingest.apm_query import apm_series          # noqa: E402
+from nammaoe2bot.ingest.chart import render_apm_curve        # noqa: E402
 from utils.replay.extract import extract_match   # noqa: E402
 
 

@@ -1,4 +1,4 @@
-"""Unit tests for the derived-community refresh job (bot/derived/refresh.py).
+"""Unit tests for the derived-community refresh job (nammaoe2bot/derived/refresh.py).
 
 Three things shape this file.
 
@@ -29,11 +29,11 @@ import sqlite3
 import pytest
 
 import nammaoe2bot.features.identity.resolver as identity
-import bot.derived.boards as boards
-import bot.derived.civ_stats as civ_stats
-import bot.derived.game_stats as game_stats_mod
-import bot.derived.refresh as refresh
-import bot.derived.rollups as rollups
+import nammaoe2bot.derived.boards as boards
+import nammaoe2bot.derived.civ_stats as civ_stats
+import nammaoe2bot.derived.game_stats as game_stats_mod
+import nammaoe2bot.derived.refresh as refresh
+import nammaoe2bot.derived.rollups as rollups
 
 _SCHEMA = """
 CREATE TABLE communities (
@@ -209,7 +209,7 @@ def _restore_module_adapters():
 	"""Put every module's `db` back after each test.
 
 	_install below rebinds a module-level attribute on five shipped modules and
-	used to leave them rebound: after this file ran, bot/derived/rollups.py's
+	used to leave them rebound: after this file ran, nammaoe2bot/derived/rollups.py's
 	`db` was still this file's sqlite double for the rest of the session, so a
 	later file patching only the shared adapter would silently miss it. That is
 	the kind of leak that makes a suite pass in one order and fail in another,
@@ -1123,7 +1123,7 @@ def test_the_board_queries_only_read_catalogued_columns():
 
 
 def test_the_module_exposes_a_job_singleton_the_tick_can_drive():
-	# bot/events.py's on_think awaits `bot.derived.refresh_jobs.think(frame_time)`
-	# and bot/derived/__init__.py exports it under that name.
+	# bot/events.py's on_think awaits `nammaoe2bot.derived.refresh_jobs.think(frame_time)`
+	# and nammaoe2bot/derived/__init__.py exports it under that name.
 	assert isinstance(refresh.jobs, refresh.DerivedRefresh)
 	assert inspect.iscoroutinefunction(refresh.jobs.think)

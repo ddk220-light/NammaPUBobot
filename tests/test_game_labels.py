@@ -1,11 +1,11 @@
 """Unit tests for the derived-global game_labels pure compute + write
-(bot/derived/game_labels.py)."""
+(nammaoe2bot/derived/game_labels.py)."""
 
 import asyncio
 import json
 
-import bot.derived.game_labels as game_labels
-from bot.derived import game_labels as gl
+import nammaoe2bot.derived.game_labels as game_labels
+from nammaoe2bot.derived import game_labels as gl
 
 
 # ── label_rows() -- brief's verbatim fixtures ───────────────────────────
@@ -106,7 +106,7 @@ def test_no_upstream_classification_key_is_silently_dropped():
 	unhandled = sorted(set(REGISTRY) - handled)
 	assert unhandled == [], (
 		f"classification key(s) {unhandled} exist in utils/classifications/registry.py but are in "
-		f"neither allowlist in bot/derived/game_labels.py nor _DOCUMENTED_EXCLUSIONS here. "
+		f"neither allowlist in nammaoe2bot/derived/game_labels.py nor _DOCUMENTED_EXCLUSIONS here. "
 		f"label_rows drops them, so their cls_results rows are stored nowhere. Add each one to "
 		f"STRATEGY_KEYS or SPAWN_KEYS, or to _DOCUMENTED_EXCLUSIONS with the reason.")
 
@@ -133,7 +133,7 @@ def test_strategy_keys_is_the_only_copy_of_the_list():
 	# the cards onto game_labels, where `kind` already answers "is this a strategy?"
 	# -- so the copy went, and what is worth pinning now is that it stays gone. A
 	# reader re-introducing a key list is re-introducing the drift.
-	from bot.replay_stats import card_query
+	from nammaoe2bot.ingest import card_query
 
 	assert not hasattr(card_query, "STRATEGY_KEYS")
 
@@ -142,7 +142,7 @@ def test_spawn_keys_are_deliberately_wider_than_card_querys_display_subset():
 	# SPAWN_KEYS is NOT card_query.SPAWN_PHRASES, and must never be "re-synced"
 	# with it: what to STORE and what to SAY are different questions, and
 	# SPAWN_PHRASES answers only the second one (3 of the 11).
-	from bot.replay_stats import card_query
+	from nammaoe2bot.ingest import card_query
 
 	phrase_keys = {key for key, _phrase in card_query.SPAWN_PHRASES}
 	assert phrase_keys < set(game_labels.SPAWN_KEYS)
@@ -268,20 +268,20 @@ def test_position_keys_are_a_subset_of_the_stored_spawn_keys():
 
 
 def test_position_keys_match_the_cards_spawn_phrases_exactly():
-	""" bot/replay_stats/card_query.SPAWN_PHRASES pairs the SAME three keys with
+	""" nammaoe2bot/ingest/card_query.SPAWN_PHRASES pairs the SAME three keys with
 	card-specific wording, in the same priority order. Deliberately two tuples
 	and not one import -- the card picks ONE phrase per player and needs a
 	priority, the scouting report ranks all three on their records and needs
 	none -- so this test is the only thing stopping them drifting into two
 	different ideas of what "position" means.
 
-	Parsed as text rather than imported: bot/replay_stats/card_query.py reaches
+	Parsed as text rather than imported: nammaoe2bot/ingest/card_query.py reaches
 	the database on import. """
 	import ast
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "replay_stats", "card_query.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "ingest", "card_query.py"), encoding="utf-8") as f:
 		block = f.read().split("SPAWN_PHRASES = ", 1)[1]
 	# Up to and including the closing paren of the literal.
 	depth, end = 0, 0

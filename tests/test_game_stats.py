@@ -1,10 +1,10 @@
-"""Unit tests for the derived-global game_stats pure compute (bot/derived/game_stats.py)."""
+"""Unit tests for the derived-global game_stats pure compute (nammaoe2bot/derived/game_stats.py)."""
 
 import asyncio
 import json
 
-import bot.derived.game_stats as game_stats
-from bot.derived.game_stats import compute_game_stats
+import nammaoe2bot.derived.game_stats as game_stats
+from nammaoe2bot.derived.game_stats import compute_game_stats
 
 
 def _p(pnum, profile_id, **kw):
@@ -429,7 +429,7 @@ def test_no_other_unit_name_is_caught_by_the_word_boundary_rule():
 
 
 def test_the_compute_version_is_ahead_of_what_production_holds():
-	""" The version is the ONLY thing that makes bot/derived/backfill.py rewrite
+	""" The version is the ONLY thing that makes nammaoe2bot/derived/backfill.py rewrite
 	rows whose values changed but whose row set did not -- so a change to what
 	top_units contains that forgets to bump this converges to zero work with
 	every stored row still holding the old answer. """

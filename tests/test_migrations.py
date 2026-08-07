@@ -1281,7 +1281,7 @@ def test_m004_backfills_the_same_rows_from_either_schema_generation(tmp_path, mo
 
 def test_m004_backfill_is_skipped_only_when_neither_source_table_exists(tmp_path, monkeypatch):
 	"""The genuine fresh install, and the ONLY case that may skip: the raw
-	replay tables are declared by bot/replay_stats and created once `import bot`
+	replay tables are declared by nammaoe2bot/ingest and created once `import bot`
 	runs — well after migrations. The log line must name both spellings, so it
 	can never be mistaken for "the table is there under the other name", which
 	is exactly how the pre-fix skip read."""
@@ -1768,7 +1768,7 @@ def test_the_conflicts_ddl_matches_the_ensure_table_declaration():
 
 
 # ─── 006_derived_indexes ──────────────────────────────────────────────────
-# bot/derived/backfill.py reads one match at a time out of cls_results and
+# nammaoe2bot/derived/backfill.py reads one match at a time out of cls_results and
 # cls_result_metrics. Both primary keys lead with `key`, so `WHERE
 # aoe2_match_id=%s` cannot use them and every read is a full scan of 32k / 112k
 # rows — ~2,250 times over on the first deploy of stage 3a.
@@ -1811,7 +1811,7 @@ def test_m006_finishes_the_job_after_a_body_that_died_between_the_two():
 
 def test_m006_skips_tables_that_do_not_exist_yet():
 	# The fresh-install case: migrations run BEFORE `import bot`, so the tables
-	# bot/classifications declares are genuinely absent here. It must not create
+	# nammaoe2bot/derived/classifications declares are genuinely absent here. It must not create
 	# them (that declaration owns their shape) and must not raise.
 	db = FakeDb(tables=())
 	asyncio.run(mig._m006(db))
@@ -1826,7 +1826,7 @@ def test_m006_runs_in_the_ledger_after_005(monkeypatch):
 
 def test_the_index_names_match_the_ensure_table_declaration():
 	""" These indexes are declared in THREE places, by necessity: this module (for
-	an existing database), bot/classifications/__init__.py's ensure_table (for a
+	an existing database), nammaoe2bot/derived/classifications/__init__.py's ensure_table (for a
 	fresh install, which this migration deliberately skips), and
 	utils/classifications/schema.py's raw DDL (for the offline runner's own
 	database). Nothing but agreement on the name makes the idempotency guard work
@@ -1837,12 +1837,12 @@ def test_the_index_names_match_the_ensure_table_declaration():
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "classifications", "__init__.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "derived", "classifications", "__init__.py"), encoding="utf-8") as f:
 		declared = dict(re.findall(r'indexes=\[\("(\w+)", \["(\w+)"\]\)\]', f.read()))
 	with open(os.path.join(root, "utils", "classifications", "schema.py"), encoding="utf-8") as f:
 		offline = f.read()
 
-	assert declared, "bot/classifications/__init__.py no longer declares any index"
+	assert declared, "nammaoe2bot/derived/classifications/__init__.py no longer declares any index"
 	for _table, index, column in mig._DERIVED_MATCH_INDEXES:
 		assert declared.get(index) == column, f"{index} drifted from the ensure_table declaration"
 		assert f"INDEX {index} ({column})" in offline, f"{index} drifted from the offline DDL"
@@ -1902,7 +1902,7 @@ def test_m007_is_idempotent():
 
 def test_m007_is_a_noop_on_a_fresh_install():
 	""" Migrations run before `import bot`, so on a first-ever boot none of
-	these tables exists yet — bot/replay_stats and nammaoe2bot/features/civs/sync create them,
+	these tables exists yet — nammaoe2bot/ingest and nammaoe2bot/features/civs/sync create them,
 	already correctly named, moments later. """
 	db = FakeDb()
 	asyncio.run(mig._m007(db))
@@ -2278,7 +2278,7 @@ def test_m008_still_backfills_when_the_column_already_exists():
 def test_m008_leaves_an_orphaned_derived_row_not_measured():
 	# A game_stats row whose raw rows are gone: MAX over no rows is NULL, the
 	# column is NOT NULL, and "not measured" is the honest reading of a slot
-	# with no surviving source. (bot/derived/backfill.py's set comparison
+	# with no surviving source. (nammaoe2bot/derived/backfill.py's set comparison
 	# deletes the row on its next pass regardless.)
 	db = _m008_db(players=[_raw(1, 1, 100, 20)], stats=[(1, 1), (9, 9)])
 
@@ -2289,7 +2289,7 @@ def test_m008_leaves_an_orphaned_derived_row_not_measured():
 
 def test_m008_takes_the_measured_row_when_a_slot_has_two_raw_rows():
 	# replay_players' primary key is (replay_match_id, profile_id) and does NOT
-	# constrain player_number -- the same property bot/derived/backfill.py's
+	# constrain player_number -- the same property nammaoe2bot/derived/backfill.py's
 	# DISTINCT exists for -- so two raw rows CAN share a slot. A plain scalar
 	# subquery would raise ER_SUBQUERY_NO_1_ROW on the whole statement the first
 	# time it met one; the aggregate makes the answer deterministic instead of
@@ -2305,7 +2305,7 @@ def test_m008_takes_the_measured_row_when_a_slot_has_two_raw_rows():
 
 
 def test_m008_is_a_noop_on_a_fresh_install():
-	# game_stats is declared by bot/derived, which is only imported AFTER
+	# game_stats is declared by nammaoe2bot/derived, which is only imported AFTER
 	# migrations run -- so on a first boot the table genuinely does not exist
 	# yet and is created moments later with has_production already on it.
 	db = _SqliteMigrationDb(schema="CREATE TABLE replay_players (replay_match_id INTEGER);")
@@ -2347,7 +2347,7 @@ def test_m008_is_registered_once_under_the_next_free_number():
 
 
 def test_the_has_production_ddl_matches_the_ensure_table_declaration():
-	""" has_production is declared twice — bot/derived/__init__.py's ensure_table
+	""" has_production is declared twice — nammaoe2bot/derived/__init__.py's ensure_table
 	and this module's raw ALTER (a migration cannot import bot.*) — and they are
 	kept in sync by hand, exactly like identity_conflicts above. Drift here is
 	not cosmetic: production's column comes from the ALTER and a fresh install's
@@ -2358,15 +2358,15 @@ def test_the_has_production_ddl_matches_the_ensure_table_declaration():
 	hardcoded here, so changing what `db.types.bool` means fails this test
 	instead of silently leaving the migration on the old type.
 
-	Parsed as text rather than imported: `import bot.derived` executes
+	Parsed as text rather than imported: `import nammaoe2bot.derived` executes
 	db.ensure_table() against conftest's fake. """
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "derived", "__init__.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "derived", "__init__.py"), encoding="utf-8") as f:
 		block = f.read().split('tname="game_stats"', 1)[1].split("primary_keys=", 1)[0]
 	decl = re.search(r'dict\(cname="has_production"[^\n]*', block)
-	assert decl, "bot/derived/__init__.py no longer declares game_stats.has_production"
+	assert decl, "nammaoe2bot/derived/__init__.py no longer declares game_stats.has_production"
 	assert "ctype=db.types.bool" in decl.group(0), "column type drifted"
 	assert "notnull=True" in decl.group(0), "nullability drifted"
 	assert "default=" not in decl.group(0), (
@@ -2381,7 +2381,7 @@ def test_the_has_production_ddl_matches_the_ensure_table_declaration():
 
 
 # ── 009_identities_bound_at ───────────────────────────────────────────────────
-# The column bot/derived/refresh.py's staleness comparison needs in order to see
+# The column nammaoe2bot/derived/refresh.py's staleness comparison needs in order to see
 # an identity change at all: a /link makes a player's whole history attributable
 # without touching one game_stats row, so nothing else in the database moves.
 
@@ -2518,7 +2518,7 @@ def test_m010_is_registered_once_under_the_next_free_number():
 
 
 def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
-	""" Both columns are declared twice — bot/derived/__init__.py's ensure_table
+	""" Both columns are declared twice — nammaoe2bot/derived/__init__.py's ensure_table
 	and this module's raw ALTERs (a migration cannot import bot.*) — and are kept
 	in sync by hand, exactly like has_production and bound_at above. Drift is not
 	cosmetic: production's columns come from the ALTERs and a fresh install's
@@ -2529,23 +2529,23 @@ def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
 	hardcoded, so changing what `db.types.int` means fails this test instead of
 	silently leaving the migration on the old type.
 
-	Parsed as text rather than imported: `import bot.derived` executes
+	Parsed as text rather than imported: `import nammaoe2bot.derived` executes
 	db.ensure_table() against conftest's fake. """
 	import os
 
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-	with open(os.path.join(root, "bot", "derived", "__init__.py"), encoding="utf-8") as f:
+	with open(os.path.join(root, "nammaoe2bot", "derived", "__init__.py"), encoding="utf-8") as f:
 		block = f.read().split('tname="game_stats"', 1)[1].split("primary_keys=", 1)[0]
 
 	played_at = re.search(r'dict\(cname="played_at"[^\n]*', block)
-	assert played_at, "bot/derived/__init__.py no longer declares game_stats.played_at"
+	assert played_at, "nammaoe2bot/derived/__init__.py no longer declares game_stats.played_at"
 	assert "ctype=db.types.int" in played_at.group(0)
 	assert "notnull=False" in played_at.group(0), (
 		"played_at must stay nullable: 19 production matches have no recorded date, and "
 		"rollups.in_window reads NULL as outside every window")
 
 	version = re.search(r'dict\(cname="compute_version"[^\n]*', block)
-	assert version, "bot/derived/__init__.py no longer declares game_stats.compute_version"
+	assert version, "nammaoe2bot/derived/__init__.py no longer declares game_stats.compute_version"
 	assert "ctype=db.types.int" in version.group(0)
 	assert "notnull=True" in version.group(0), (
 		"compute_version must stay NOT NULL: a NULL would be a third value meaning "
@@ -2566,14 +2566,14 @@ def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():
 def test_the_version_column_defaults_to_zero_so_every_existing_row_is_pending():
 	""" THE MECHANISM, not an incidental default. 0 means "written by a compute
 	older than this deploy's", which is exactly true of every row already in the
-	table — and bot/derived/backfill.py tags its source side with the CURRENT
+	table — and nammaoe2bot/derived/backfill.py tags its source side with the CURRENT
 	version, so a 0 row is a plain set difference and gets rewritten by the
 	ordinary reconciliation loop. Without the default the seed would have to be a
 	separate UPDATE, and an old container's inserts during a rolling deploy would
 	fail rather than landing a value that self-corrects. """
 	assert "DEFAULT '0'" in mig._M010_ADD_VERSION
 
-	import bot.derived.game_stats as game_stats
+	import nammaoe2bot.derived.game_stats as game_stats
 	assert game_stats.COMPUTE_VERSION > 0, (
 		"the current version must differ from the 0 this migration seeds, or nothing "
 		"becomes pending and top_units is never recomputed")

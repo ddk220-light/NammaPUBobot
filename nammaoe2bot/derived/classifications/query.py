@@ -55,7 +55,7 @@ def metrics_of(label_row):
 	SELECT returns or as the dict label_rows built.
 
 	A malformed blob RAISES rather than degrading to {}, the same call as
-	bot/derived/rollups.py's _decode and for a sharper reason here: this dict feeds the
+	nammaoe2bot/derived/rollups.py's _decode and for a sharper reason here: this dict feeds the
 	winners-vs-losers averages, and a row that quietly contributes no metric is not a
 	missing row — it is a row silently dropped from a denominator nobody was told about."""
 	raw = label_row.get("evidence")
@@ -77,16 +77,16 @@ async def fetch_results(use_case, days, profile_ids=None):
 	Three tables, each for exactly one thing it alone can answer:
 	  game_labels    — which (game, player) earned this label, when, and its evidence.
 	  game_stats     — the profile behind that slot and whether it won. game_labels
-	                   deliberately stores neither (see bot/derived/__init__.py), and this
+	                   deliberately stores neither (see nammaoe2bot/derived/__init__.py), and this
 	                   is the join that gets them: its PK is (replay_match_id,
 	                   player_number), exactly game_labels' grain minus the label, so the
 	                   join can neither drop nor duplicate a row.
 	  replay_players — the in-game name to print. Joined on (match, profile_id), its own
-	                   PK. Same source and same reason as bot/derived/refresh.py's board
+	                   PK. Same source and same reason as nammaoe2bot/derived/refresh.py's board
 	                   queries: the name on a leaderboard row has to describe the account
 	                   that played the game, not a Discord nickname that moves with a guild
 	                   membership."""
-	from bot.derived.game_labels import kind_for
+	from nammaoe2bot.derived.game_labels import kind_for
 
 	kind = kind_for(use_case)
 	if kind is None:
@@ -121,7 +121,7 @@ async def fetch_results(use_case, days, profile_ids=None):
 
 async def resolve_profile_ids(user_id):
 	"""Reuse the replay-stats resolver: discord user_id -> the AoE2 profile_ids linked to it."""
-	from bot.replay_stats import query as rs_query
+	from nammaoe2bot.ingest import query as rs_query
 	return await rs_query.resolve_profile_ids(user_id)
 
 

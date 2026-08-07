@@ -53,7 +53,7 @@ _fake_core_config.cfg = types.SimpleNamespace(
 	STATUS='',
 	HELP='',
 	FLAGSHIP_GUILD_IDS=[],
-	# bot/replay_stats/store.is_enabled() reads this (it replaced the single-row
+	# nammaoe2bot/ingest/store.is_enabled() reads this (it replaced the single-row
 	# ops table 007_raw_renames dropped). Its own getattr default is True, so this
 	# is here to make the test environment's answer explicit, not incidental.
 	REPLAY_INGEST_ENABLED=True,
@@ -334,7 +334,7 @@ class _InteractionType:
 	button router needs at runtime.
 
 	`nammaoe2bot/features/betting/interactions.py` (and `nammaoe2bot/features/quiz/interactions.py`, and
-	`bot/classifications/interactions.py`) all open with
+	`nammaoe2bot/derived/classifications/interactions.py`) all open with
 
 	    if interaction.type != nextcord.InteractionType.component: return
 

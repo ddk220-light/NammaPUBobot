@@ -216,7 +216,7 @@ def test_analysis_rows_selects_every_column_the_card_needs():
 def test_required_card_columns_are_all_selected():
 	import inspect
 
-	from bot.replay_stats import card_scoring
+	from nammaoe2bot.ingest import card_scoring
 
 	src = inspect.getsource(pg._analysis_rows)
 	for column in card_scoring.REQUIRED_COLUMNS:
@@ -573,7 +573,7 @@ def test_post_match_analysis_sends_the_file_when_it_is_accepted(monkeypatch):
 
 
 # ── a swept community's card ─────────────────────────────────────────────
-# bot/derived/sweeper.py deletes replay_events / replay_buildings / replay_apm
+# nammaoe2bot/derived/sweeper.py deletes replay_events / replay_buildings / replay_apm
 # rows for a community that opted out of keeping raw replay detail, so
 # card_query hands the renderer empty dicts for four of its six signals. This
 # pins what the card does then: it renders the facts that survive and omits the

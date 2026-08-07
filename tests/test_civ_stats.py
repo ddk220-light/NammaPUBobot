@@ -2,7 +2,7 @@
 its CSV seed and onto the derived-community civ_stats table.
 
 Not to be confused with tests/test_derived_civ_stats.py, which covers the module that
-WRITES that table (bot/derived/civ_stats.py). The two modules share a name and nothing
+WRITES that table (nammaoe2bot/derived/civ_stats.py). The two modules share a name and nothing
 else.
 
 No pytest-asyncio in this repo, so the async reads are driven with asyncio.run() from

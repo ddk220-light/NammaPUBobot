@@ -2,7 +2,7 @@
 """Derived-global game_stats: per-player facts computed once at ingest instead
 of re-derived every time a card renders. compute_game_stats is pure -- no DB,
 no I/O -- so the exact same function drives both the live write below (called
-from bot/replay_stats/store.py right after a match parses) and the stage-3.4
+from nammaoe2bot/ingest/store.py right after a match parses) and the stage-3.4
 reconciliation loop that backfills the 1126 already-ingested historical
 matches. Neither caller teaches the function anything about where its input
 rows came from, which is what lets one implementation serve both."""
@@ -12,7 +12,7 @@ import re
 from nammaoe2bot.runtime.database import db
 
 # Bumped whenever THIS function's output changes for unchanged input. Stored on
-# every row, and bot/derived/backfill.py's pending predicate compares the stored
+# every row, and nammaoe2bot/derived/backfill.py's pending predicate compares the stored
 # version against this constant -- so changing the compute below and bumping this
 # is all it takes for the reconciliation loop to rewrite every stale row on its
 # own.
@@ -96,7 +96,7 @@ def compute_game_stats(players, units, apm, computed_at, played_at=None):
 
 	`played_at` is the match's epoch, stamped onto every row so a stat row can
 	be placed in time WITHOUT a join. player_rollups windows the scouting report
-	to the last WINDOW_DAYS (bot/derived/rollups.py), and the two obvious
+	to the last WINDOW_DAYS (nammaoe2bot/derived/rollups.py), and the two obvious
 	alternatives both decide that window with the wrong thing: joining
 	game_labels means a game is dated only if some classifier happened to fire on
 	it, and joining replay_matches means parsing a VARCHAR date string on every
@@ -107,15 +107,15 @@ def compute_game_stats(players, units, apm, computed_at, played_at=None):
 	rollups treats an undated game as outside every window rather than inside the
 	current one.
 
-	Precondition, not enforced here: `bot.replay_stats` must already be
+	Precondition, not enforced here: `nammaoe2bot.ingest` must already be
 	imported somewhere in the process before the first call, because the lazy
-	`from bot.replay_stats import card_scoring` below runs that package's
+	`from nammaoe2bot.ingest import card_scoring` below runs that package's
 	`db.ensure_table` side effect on its first import -- fine from the bot's
 	synchronous boot phase, but an offline `utils/` script (e.g. task 3.4's
-	backfill) that imports this module standalone must import bot.replay_stats
+	backfill) that imports this module standalone must import nammaoe2bot.ingest
 	itself first, or hit "event loop is already running".
 	"""
-	from bot.replay_stats import card_scoring
+	from nammaoe2bot.ingest import card_scoring
 
 	# `has_production` is defined HERE and nowhere else. It decides two things
 	# at once -- whether assign_medals ranks this player, and whether the game
@@ -167,7 +167,7 @@ def compute_game_stats(players, units, apm, computed_at, played_at=None):
 			# replay_players.eapm passed through unchanged -- never a mean of
 			# the buckets above. Bucket rows are absent for zero-action
 			# minutes, so averaging only the buckets that exist overstates;
-			# bot/replay_stats/apm_query.py computes a deliberately different
+			# nammaoe2bot/ingest/apm_query.py computes a deliberately different
 			# `mean_active` for charts and documents that the two must not be
 			# conflated.
 			avg_eapm=p.get("eapm"),
@@ -187,7 +187,7 @@ def compute_game_stats(players, units, apm, computed_at, played_at=None):
 
 
 # The column order every payload row is emitted in -- see the identical note in
-# bot/derived/game_labels.py: insert_many builds its column list from the FIRST
+# nammaoe2bot/derived/game_labels.py: insert_many builds its column list from the FIRST
 # row's keys and zips every other row's .values() against it, so rows whose keys
 # are in a different order write values into the wrong columns with no error.
 _COLUMNS = ("replay_match_id", "player_number", "profile_id", "civ", "team", "winner",
@@ -200,7 +200,7 @@ async def write(replay_match_id, rows):
 	compute_game_stats returned, stamping replay_match_id onto each row (the
 	pure function above deliberately never sees it -- see its docstring).
 
-	Mirrors bot/replay_stats/store.py's write_match delete-then-insert for the
+	Mirrors nammaoe2bot/ingest/store.py's write_match delete-then-insert for the
 	same reason: a match can be re-ingested (parser bump, manual retry, or the
 	stage-3.4 backfill correcting a stale row) and the stored set must exactly
 	match the latest compute, never accumulate leftovers from a run with a
@@ -210,7 +210,7 @@ async def write(replay_match_id, rows):
 	transaction, because the adapter runs in autocommit (see
 	nammaoe2bot/runtime/database/mysql.py's connect) and has no transaction surface to reach
 	for. If the insert fails after the delete succeeded, this match briefly has
-	no stored medals and its card renders bare -- and bot/derived/backfill.py's
+	no stored medals and its card renders bare -- and nammaoe2bot/derived/backfill.py's
 	reconciliation loop notices the set difference and rewrites it within
 	POLL_INTERVAL. Making this atomic means giving the adapter transactions,
 	which is a change to every writer in the bot, for a window that already

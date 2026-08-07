@@ -2,7 +2,7 @@
 """The scouting report `/rank` prints, rendered from one player_rollups blob.
 
 Pure -- no DB, no Discord, no I/O -- for the same reason
-bot/derived/rollups.py's compute is: every copy rule below is a claim about
+nammaoe2bot/derived/rollups.py's compute is: every copy rule below is a claim about
 what is honest to SHOW, and a claim you cannot test without a database is a
 claim nobody tests. The caller (bot/commands/stats.py) resolves the community,
 reads the row and owns the embed; this module turns a blob into text and
@@ -92,7 +92,7 @@ PENDING = "Statistics pending linking"
 # rollups.SPLIT_MIN_GAMES by intent -- one report should not report a strategy
 # over 5 games and a medal rate over 2 -- and pinned equal by
 # tests/test_scouting_report.py rather than imported, because importing
-# bot.derived.rollups drags in nammaoe2bot.runtime.database and costs this module the purity
+# nammaoe2bot.derived.rollups drags in nammaoe2bot.runtime.database and costs this module the purity
 # its whole test suite rests on.
 MIN_GAMES = 5
 
@@ -138,7 +138,7 @@ _SPLIT_BLOCKS = (
 	("units", "unit", "unit", "massing {name}"),
 )
 
-# The three spawn labels the report can reach (bot/derived/game_labels.
+# The three spawn labels the report can reach (nammaoe2bot/derived/game_labels.
 # POSITION_KEYS), as they read inside "wins most when ...". Written out rather
 # than derived from the key, because "Spawn Isolated" is not English and the
 # sentence has to be: the clause is the only one of the three that is a phrase
@@ -166,7 +166,7 @@ def _num(value):
 def _label(key):
 	""" A stored label key as a human name: `archer_rush` -> `Archer Rush`.
 
-	The same fallback bot/web.py and bot/replay_stats/card_query.py already
+	The same fallback bot/web.py and nammaoe2bot/ingest/card_query.py already
 	apply to these keys. Deliberately NOT a hand-written display map: there
 	are 17 strategy keys, a map would have to be kept in step with a classifier
 	registry that lives in another package, and a key missing from it would
@@ -293,7 +293,7 @@ def render(rollup, gt=None):
 	""" The scouting-report field's text for one player, or None when there is
 	no field to render.
 
-	`rollup` is the blob bot/derived/rollups.py wrote (see its compute_rollup),
+	`rollup` is the blob nammaoe2bot/derived/rollups.py wrote (see its compute_rollup),
 	or None when the player has no row at all. `gt` is the caller's translator
 	(`ctx.qc.gt`); it defaults to the identity function so this module stays
 	testable and importable with no Discord context.

@@ -3,11 +3,11 @@
 Only the schema-rendering half of the adapter is exercised — create_table builds
 one CREATE TABLE string and hands it to execute(), so a fake execute is enough
 and no MySQL is involved. The point is the `indexes=` declaration added for
-bot/classifications/__init__.py: on a FRESH install the tables cls_results and
+nammaoe2bot/derived/classifications/__init__.py: on a FRESH install the tables cls_results and
 cls_result_metrics are created here rather than by migration 006_derived_indexes
 (which runs before `import bot` and finds nothing to alter), so if create_table
 silently dropped the declaration those installs would get no per-match index at
-all and bot/derived/backfill.py would full-scan forever, with nothing anywhere
+all and nammaoe2bot/derived/backfill.py would full-scan forever, with nothing anywhere
 saying so.
 
 The adapter module arrives through the `adapter_module` fixture in conftest.py,

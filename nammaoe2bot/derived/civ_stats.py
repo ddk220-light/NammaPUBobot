@@ -97,7 +97,7 @@ async def write(community_id, civ_counts, computed_at):
 	returned for it (i.e. one value of the outer dict compute_civ_stats
 	returns, keyed by this same community_id).
 
-	Mirrors bot/derived/game_stats.py's write() for the same reason: the row
+	Mirrors nammaoe2bot/derived/game_stats.py's write() for the same reason: the row
 	SET for one key can shrink between recomputes (a civ that had picks last
 	pass but none since -- a channel un-enrolled, a correction landing on
 	`civ_picks` -- must not leave a stale row behind), so a delete is the

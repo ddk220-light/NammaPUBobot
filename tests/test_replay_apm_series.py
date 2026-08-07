@@ -1,5 +1,5 @@
-from bot.replay_stats.apm_query import apm_series
-from bot.replay_stats.chart import rolling_mean
+from nammaoe2bot.ingest.apm_query import apm_series
+from nammaoe2bot.ingest.chart import rolling_mean
 
 
 ROWS = [

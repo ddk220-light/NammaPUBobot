@@ -35,7 +35,7 @@ exclude = [
     "export-apr10",
     # `utils/replay_quiz` used to be excluded here, on the grounds that it was
     # vendored offline tooling the bot never imported. That was already only
-    # half true — bot/replay_stats/{fetch,parse}.py have imported its
+    # half true — nammaoe2bot/ingest/{fetch,parse}.py have imported its
     # download/extract modules for as long as live ingest has existed — and the
     # offline half is now deleted. What survived is utils/replay/, live ingest
     # code, and it is linted with everything else rather than exempted.

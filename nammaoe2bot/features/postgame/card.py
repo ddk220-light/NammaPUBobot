@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Replay-derived post-game analysis: the Match Cards embed and the APM chart.
 
-Once bot/replay_stats/ has parsed a finished match's replay, post_match_analysis
+Once nammaoe2bot/ingest/ has parsed a finished match's replay, post_match_analysis
 posts one embed field per team — each player's civ, strategy labels, production
 and activity counts, and match-wide medals — with the APM chart attached.
 
@@ -28,7 +28,7 @@ def _card_payload(row, group, signals):
 	are internal — they drive sort order, the carry crown and tag thresholds,
 	and are never displayed.
 	"""
-	from bot.replay_stats import card_scoring
+	from nammaoe2bot.ingest import card_scoring
 
 	pnum = row.get("player_number")
 	scores = card_scoring.component_scores(row, group)
@@ -65,7 +65,7 @@ def _card_payload(row, group, signals):
 
 async def _card_signals_for(rows):
 	"""Card-only signals for the match these rows belong to, or empty dicts."""
-	from bot.replay_stats.card_query import fetch_card_signals
+	from nammaoe2bot.ingest.card_query import fetch_card_signals
 
 	aoe2_id = next((r.get("replay_match_id") for r in rows if r.get("replay_match_id")), None)
 	if aoe2_id is None:
@@ -85,7 +85,7 @@ async def _medals_for(rows):
 	{} when there is no known match id, or when the match has no stored rows
 	yet. The second case is not expected to happen in steady state --
 	jobs.ingest_one writes game_stats inside store.write_match strictly before
-	this renders, and bot/derived/backfill.py heals any gap within a tick --
+	this renders, and nammaoe2bot/derived/backfill.py heals any gap within a tick --
 	but there is deliberately no live-computation fallback here (see this
 	file's module doc), so a genuinely absent row must render medal-less
 	rather than raise.
@@ -283,7 +283,7 @@ def _team_card_fields(player_rows, team_names=None, medals_by_player=None):
 	(player_number -> {"military_medal", "villager_medal"}, see _medals_for --
 	they are match-wide facts computed once at ingest, not re-ranked here).
 	Tags are still computed here and are team-scoped."""
-	from bot.replay_stats import card_scoring
+	from nammaoe2bot.ingest import card_scoring
 
 	team_names = team_names or {0: "Alpha", 1: "Beta"}
 	medals_by_player = medals_by_player or {}
@@ -414,8 +414,8 @@ async def _apm_chart_file(bot_match_id):
 	returns None so the cards still post without an image."""
 	try:
 		from nammaoe2bot.runtime.database import db
-		from bot.replay_stats import render
-		from bot.replay_stats.apm_query import apm_series, fetch_match_apm
+		from nammaoe2bot.ingest import render
+		from nammaoe2bot.ingest.apm_query import apm_series, fetch_match_apm
 
 		row = await db.fetchone(
 			"SELECT replay_match_id FROM replay_matches WHERE bot_match_id=%s", [bot_match_id])

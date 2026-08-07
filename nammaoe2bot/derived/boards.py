@@ -3,7 +3,7 @@
 aggregated once by a refresh pass instead of scanned live every time stage-5
 renders a leaderboard command. compute_board is pure -- no DB, no I/O, and no
 idea where its rows came from or how they were resolved to a community and a
-user -- same discipline as bot/derived/rollups.py's compute_rollup, and for
+user -- same discipline as nammaoe2bot/derived/rollups.py's compute_rollup, and for
 the same reason: attribution is a job with its own failure modes (a user may
 own several AoE2 profiles, and a community's boundary is its enrolled
 channels), and neither belongs inside a pure aggregation that has to be
@@ -29,7 +29,7 @@ first_tc_s is ascending" -- that knowledge lives exactly once, here.
 import json
 
 from nammaoe2bot.runtime.database import db
-from bot.derived.rollups import BOARD_MIN_GAMES  # noqa: F401  (re-exported: see docstring below)
+from nammaoe2bot.derived.rollups import BOARD_MIN_GAMES  # noqa: F401  (re-exported: see docstring below)
 
 # Kept top single-game performances per board. 3, not an arbitrary round
 # number: the retired old quiz catalog's `metric_top_games` table kept

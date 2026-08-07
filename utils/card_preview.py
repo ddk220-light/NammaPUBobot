@@ -9,7 +9,7 @@ Discord.
 Two things this script deliberately does, both mirroring tests/conftest.py:
 
 * It stubs ``nammaoe2bot.runtime.database.db`` with a wrapper whose ``ensure_table`` is a no-op.
-  Importing bot.replay_stats normally runs a dozen ensure_table calls, which
+  Importing nammaoe2bot.ingest normally runs a dozen ensure_table calls, which
   create tables and add columns — writes. This script must never write, so the
   schema calls are swallowed and only SELECT reaches the server.
 * It pre-registers a bare ``bot`` package so bot/__init__.py never runs, which
@@ -31,7 +31,7 @@ from utils.db_helpers import load_config, parse_db_uri  # noqa: E402
 class ReadOnlyDB:
     """SELECT-only adapter with the subset of the db interface the card path uses."""
 
-    # bot/replay_stats/__init__.py reads db.types.* while declaring its tables.
+    # nammaoe2bot/ingest/__init__.py reads db.types.* while declaring its tables.
     # The values are irrelevant here because ensure_table is a no-op.
     types = types.SimpleNamespace(int="BIGINT", str="VARCHAR(191)", bool="TINYINT(1)",
                                   float="FLOAT", dict="MEDIUMTEXT")

@@ -549,7 +549,7 @@ async def _m003(db):
 
 	Every source is independently guarded and never allowed to crash the
 	boot on its own: rs_profiles may not exist yet on a genuinely fresh
-	install (it is declared by bot/replay_stats, only imported AFTER
+	install (it is declared by nammaoe2bot/ingest, only imported AFTER
 	migrations run — see this module's docstring), and either CSV may be
 	absent from a given deploy image. A missing source (file/table not
 	found) is logged and skipped so the others still get a chance to seed —
@@ -871,7 +871,7 @@ async def _m004_backfill_match_replays(db):
 	_M004_SOURCE_TABLES for why 004 must handle both.
 
 	This is load-bearing, and it must run before part (c) and long before
-	stage 6 drops `replay_matches.bot_match_id`. bot/replay_stats/store.py only
+	stage 6 drops `replay_matches.bot_match_id`. nammaoe2bot/ingest/store.py only
 	dual-writes match_replays going FORWARD (stage 1.6 on), so every pairing
 	made before that lives in the single nullable column and nowhere else.
 	Those pairings are the identity deduction solver's entire input and the
@@ -894,7 +894,7 @@ async def _m004_backfill_match_replays(db):
 
 	Skips, loudly, if any table involved is missing — and each skip says WHICH
 	case it is, because they have completely different meanings. NEITHER source
-	table existing is the fresh install (bot/replay_stats declares the table, and
+	table existing is the fresh install (nammaoe2bot/ingest declares the table, and
 	that is only imported after migrations run) and is logged at info naming both
 	spellings. A source table that exists but carries neither match-id column is
 	a schema nobody ships and is logged at error. Missing
@@ -1114,7 +1114,7 @@ async def _m005(db):
 
 
 # (table, index name, column) for 006_derived_indexes. The names are duplicated in
-# bot/classifications/__init__.py's ensure_table declarations — which is the half of
+# nammaoe2bot/derived/classifications/__init__.py's ensure_table declarations — which is the half of
 # this that covers a FRESH install, where these tables do not exist yet when
 # migrations run — and in utils/classifications/schema.py's raw DDL for the offline
 # runner. All three must name the same index on the same column; keep them in step.
@@ -1140,7 +1140,7 @@ async def _m006(db):
 	`metric`), and a leading-column mismatch means `WHERE aoe2_match_id=%s`
 	cannot use them at all.
 
-	bot/derived/backfill.py issues exactly that lookup, twice per match, and has
+	nammaoe2bot/derived/backfill.py issues exactly that lookup, twice per match, and has
 	~2,250 of them to do on the first deploy against 32k and 112k rows. Without
 	this migration every one of them is a full table scan.
 
@@ -1155,7 +1155,7 @@ async def _m006(db):
 	and does nothing, and the previous container serves throughout.
 
 	A table that is absent is skipped, not created. That is the fresh-install
-	case — bot/classifications declares these tables and is only imported AFTER
+	case — nammaoe2bot/derived/classifications declares these tables and is only imported AFTER
 	migrations run, so at this point they genuinely do not exist yet — and the
 	ensure_table declaration there carries the same `indexes=` entries, so the
 	table is created WITH them moments later and needs nothing from here.
@@ -1163,7 +1163,7 @@ async def _m006(db):
 	for table, index, column in _DERIVED_MATCH_INDEXES:
 		if not await table_exists(db, table):
 			log.info(f"migrations: 006_derived_indexes: {table} does not exist yet, skipping "
-			         f"(bot/classifications/__init__.py creates it with {index} already on it)")
+			         f"(nammaoe2bot/derived/classifications/__init__.py creates it with {index} already on it)")
 			continue
 		if await index_exists(db, table, index):
 			continue
@@ -1223,7 +1223,7 @@ async def _m007(db):
 	first would find nothing on a database that has not been renamed yet, and
 	the migration would record itself having renamed no columns at all. Across
 	the boot, this whole migration runs before `import bot` for the reason the
-	module docstring gives: bot/replay_stats/__init__.py now declares
+	module docstring gives: nammaoe2bot/ingest/__init__.py now declares
 	`replay_matches` and friends, and ensure_table CREATEs any declared name it
 	does not find — so renaming after the import would leave the populated
 	rs_* tables stranded beside eight empty replay_* ones.
@@ -1248,7 +1248,7 @@ async def _m007(db):
 
 
 # 008's ADD COLUMN, kept beside the backfill it precedes. The type and the
-# NOT NULL must match bot/derived/__init__.py's `has_production` declaration
+# NOT NULL must match nammaoe2bot/derived/__init__.py's `has_production` declaration
 # exactly — duplicated by hand rather than imported, for the reason in this
 # module's docstring — and no DEFAULT, for the reason given there: the sole
 # writer supplies the column on every row and validates its whole key set, so a
@@ -1265,7 +1265,7 @@ async def _m007(db):
 _M008_ADD_COLUMN = "ALTER TABLE `game_stats` ADD COLUMN `has_production` TINYINT(1) NOT NULL"
 
 # The backfill. `has_production` is true iff the parser measured this slot's
-# production at all — the same predicate bot/derived/game_stats.py's
+# production at all — the same predicate nammaoe2bot/derived/game_stats.py's
 # compute_game_stats feeds to card_scoring.assign_medals, expressed in SQL
 # because a migration may not import bot.* (see this module's docstring).
 #
@@ -1276,7 +1276,7 @@ _M008_ADD_COLUMN = "ALTER TABLE `game_stats` ADD COLUMN `has_production` TINYINT
 # MAX(CASE ...) rather than a bare comparison, so the subquery returns exactly
 # one row for every driving row. replay_players' primary key is
 # (replay_match_id, profile_id) and does NOT constrain player_number — the same
-# property bot/derived/backfill.py's DISTINCT exists for — so two source rows
+# property nammaoe2bot/derived/backfill.py's DISTINCT exists for — so two source rows
 # CAN share a slot, and a plain scalar subquery would raise ER_SUBQUERY_NO_1_ROW
 # on the whole 8885-row statement the first time it met one. Aggregating makes
 # the result deterministic and total instead of dependent on row order.
@@ -1284,7 +1284,7 @@ _M008_ADD_COLUMN = "ALTER TABLE `game_stats` ADD COLUMN `has_production` TINYINT
 # COALESCE(..., 0) covers a derived row whose source rows are gone: MAX over no
 # rows is NULL, the column is NOT NULL, and "not measured" is the honest reading
 # of a slot with no surviving raw row. Such a row is already orphaned and
-# bot/derived/backfill.py's set comparison deletes it on its next pass.
+# nammaoe2bot/derived/backfill.py's set comparison deletes it on its next pass.
 #
 # Idempotent by construction: it recomputes every row's value from the raw layer
 # rather than mutating what is there, so a re-run after a body that died partway
@@ -1311,12 +1311,12 @@ async def _m008(db):
 	assign_medals and then threw it away. From a stored row, "no medal because
 	nobody measured me" and "no medal because I placed fourth" were
 	indistinguishable, and player_rollups' medal_rates divides by the number of
-	games the player was ELIGIBLE for a medal in. bot/derived/rollups.py used to
+	games the player was ELIGIBLE for a medal in. nammaoe2bot/derived/rollups.py used to
 	infer that from indirect evidence (a medal on either axis, or a non-empty
 	top_units) and silently missed the player who built villagers, no military,
 	and placed outside the top three. This migration makes the denominator exact.
 
-	WHY A MIGRATION AND NOT THE RECONCILIATION LOOP. bot/derived/backfill.py
+	WHY A MIGRATION AND NOT THE RECONCILIATION LOOP. nammaoe2bot/derived/backfill.py
 	self-heals game_stats against the raw layer on every tick, and it will NOT
 	heal this. Its pending predicate is a set comparison of
 	(replay_match_id, player_number) triples between source and derived: adding
@@ -1328,7 +1328,7 @@ async def _m008(db):
 	bypassed: it cannot see this, by construction.
 
 	WHY PURE SQL. This module runs before `import bot` (see the docstring at the
-	top of this file), so it cannot call into bot/derived/ to recompute rows —
+	top of this file), so it cannot call into nammaoe2bot/derived/ to recompute rows —
 	db.ensure_table's sync wrapper would drive loop.run_until_complete on an
 	already-running loop and crash the boot. The predicate is duplicated into
 	SQL instead, which is safe precisely because it is trivial and total:
@@ -1352,7 +1352,7 @@ async def _m008(db):
 	"nobody has ever been measured" forever — every player's games_ranked 0 and
 	every medal rate null — with a healthy-looking bot.
 
-	A missing game_stats is the fresh install and needs nothing: bot/derived
+	A missing game_stats is the fresh install and needs nothing: nammaoe2bot/derived
 	declares the table and is only imported AFTER migrations run, so the table
 	is CREATEd moments later with this column already on it.
 
@@ -1365,14 +1365,14 @@ async def _m008(db):
 	(above), so the wrong denominator would be permanent until somebody noticed
 	that every medal rate in the product was null. The state is also not
 	reachable in normal operation: both tables are created in the same
-	`import bot` phase, and bot/derived/backfill.py queries replay_players every
+	`import bot` phase, and nammaoe2bot/derived/backfill.py queries replay_players every
 	POLL_INTERVAL seconds, so a database missing it is already loudly broken.
 	Not recording the migration means the next boot retries it; the runbook's
 	repair applies as usual.
 	"""
 	if not await table_exists(db, "game_stats"):
 		log.info("migrations: 008_game_stats_has_production: game_stats does not exist yet, skipping "
-		         "(bot/derived/__init__.py creates it with has_production already on it)")
+		         "(nammaoe2bot/derived/__init__.py creates it with has_production already on it)")
 		return
 
 	if not await column_exists(db, "game_stats", "has_production"):
@@ -1398,7 +1398,7 @@ async def _m008(db):
 # from `last_seen_at` ("when was this profile last observed at all"). The two
 # genuinely differ: learn() bumps last_seen_at on every replay ingest that sees
 # a linked profile, on a name-only refresh, and even on a REFUSED claim, none of
-# which move the binding. bot/derived/refresh.py's staleness comparison needs the
+# which move the binding. nammaoe2bot/derived/refresh.py's staleness comparison needs the
 # narrow question — see that module's docstring for why an observation timestamp
 # cannot answer it without recomputing every rollup on every ingest.
 #
@@ -1453,9 +1453,9 @@ async def _m009(db):
 	"""Give `identities` a binding-mutation timestamp, and seed it for every row
 	already there.
 
-	WHY THE COLUMN. bot/derived/refresh.py decides what to recompute by comparing
+	WHY THE COLUMN. nammaoe2bot/derived/refresh.py decides what to recompute by comparing
 	each stored derived row's computed_at against the newest INPUT that feeds it —
-	the same stateless, converging discipline bot/derived/backfill.py uses for the
+	the same stateless, converging discipline nammaoe2bot/derived/backfill.py uses for the
 	derived-global layer, and for the same reasons (no marker table to leak, and a
 	pass that resumes correctly after a restart mid-run). Game data answers that
 	comparison through game_stats.computed_at. An IDENTITY change does not: a
@@ -1520,7 +1520,7 @@ async def _m009(db):
 
 # Nullable, and no DEFAULT, because "this match has no recorded date" is a real
 # state: 19 production matches carry an empty replay_matches.played_at, and
-# bot/derived/rollups.in_window deliberately reads a NULL as OUTSIDE every
+# nammaoe2bot/derived/rollups.in_window deliberately reads a NULL as OUTSIDE every
 # window. A DEFAULT of 0 would say the same thing (0 is before every window
 # start) but would say it as data rather than as an absence, and the next reader
 # to write `COALESCE(played_at, NOW())` would have nothing to warn them off.
@@ -1529,7 +1529,7 @@ _M010_ADD_PLAYED_AT = "ALTER TABLE `game_stats` ADD COLUMN `played_at` BIGINT NU
 # NOT NULL WITH A DEFAULT OF 0, and unlike 008 the default here carries meaning
 # rather than hiding a bug. 0 means "written by a compute older than this
 # deploy's", which is exactly true of every row already in the table and exactly
-# what makes them all pending for bot/derived/backfill.py — whose source side
+# what makes them all pending for nammaoe2bot/derived/backfill.py — whose source side
 # tags rows with `v{game_stats.COMPUTE_VERSION}` while the derived side tags them
 # with their own stored version, so a 0 row is a plain set difference and gets
 # rewritten by the ordinary reconciliation loop.
@@ -1543,7 +1543,7 @@ _M010_ADD_VERSION = ("ALTER TABLE `game_stats` "
 
 # The date backfill, from the raw match row rather than from game_labels.
 #
-# PROVISIONAL, AND DELIBERATELY REDUNDANT. bot/derived/backfill.played_at_epoch_of
+# PROVISIONAL, AND DELIBERATELY REDUNDANT. nammaoe2bot/derived/backfill.played_at_epoch_of
 # is the authoritative writer of this column and overwrites every row here within
 # minutes — the compute_version seed above makes all of them pending, and the
 # reconciliation loop stamps played_at as it rewrites each one. This statement
@@ -1553,7 +1553,7 @@ _M010_ADD_VERSION = ("ALTER TABLE `game_stats` "
 #
 # So these two are NOT a pair of implementations to be kept in sync, and unifying
 # them is not an improvement available to this module (a migration runs before
-# `import bot` and cannot call into bot/derived/ at all). If they ever disagreed,
+# `import bot` and cannot call into nammaoe2bot/derived/ at all). If they ever disagreed,
 # the Python one wins by construction and a 60-day window could not tell.
 #
 # WHY NOT game_labels, which already holds a BIGINT epoch and would need no
@@ -1563,7 +1563,7 @@ _M010_ADD_VERSION = ("ALTER TABLE `game_stats` "
 # two matches with no labels at all would be undateable forever. replay_matches
 # has a row for every ingested match, which is the population being dated.
 #
-# STR_TO_DATE parses what bot/replay_stats/jobs._date_str wrote — UTC,
+# STR_TO_DATE parses what nammaoe2bot/ingest/jobs._date_str wrote — UTC,
 # "%Y-%m-%d %H:%M" — and returns NULL on the empty strings, which is the value
 # those rows should have anyway.
 #
@@ -1595,7 +1595,7 @@ async def _m010(db):
 	date of the game, and the version of the compute that wrote the row.
 
 	WHY played_at. player_rollups now covers the last WINDOW_DAYS rather than all
-	of history (bot/derived/rollups.py), because a scouting report is a claim
+	of history (nammaoe2bot/derived/rollups.py), because a scouting report is a claim
 	about how somebody plays NOW and the busiest production player has games
 	going back years. Windowing needs every stat row to know its own date, and
 	the two ways of getting one without a column are both wrong: joining
@@ -1604,7 +1604,7 @@ async def _m010(db):
 	of every rollup recompute.
 
 	WHY compute_version, AND WHY THIS ONE IS NOT 008 AGAIN. 008's docstring
-	explains that bot/derived/backfill.py's set-comparison predicate cannot see a
+	explains that nammaoe2bot/derived/backfill.py's set-comparison predicate cannot see a
 	change to what a row CONTAINS — adding a column changes neither side's row
 	set — and concludes that a migration beats "a second, column-level
 	predicate". This migration ships in the same deploy as a change to what
@@ -1618,7 +1618,7 @@ async def _m010(db):
 	proof. What that buys is precisely what a migration could not: recomputing
 	top_units in SQL would mean a second implementation of the style-unit rules —
 	a window function, a JSON_ARRAYAGG, and a category list kept in step by hand
-	with bot/derived/game_stats.py. Seeding a version column instead leaves the
+	with nammaoe2bot/derived/game_stats.py. Seeding a version column instead leaves the
 	one implementation in Python and lets the loop that already exists apply it.
 
 	So this migration deliberately does NOT recompute anything. It seeds
@@ -1628,7 +1628,7 @@ async def _m010(db):
 	table, using the same code the live ingest path uses.
 
 	WHY PURE SQL, as ever: this module runs before `import bot` (see the docstring
-	at the top of this file), so it cannot call into bot/derived/ at all —
+	at the top of this file), so it cannot call into nammaoe2bot/derived/ at all —
 	db.ensure_table's sync wrapper would drive loop.run_until_complete on an
 	already-running loop and crash the boot.
 
@@ -1647,13 +1647,13 @@ async def _m010(db):
 	would leave that database with a scouting report whose window contains no
 	game at all — every player reading "No games in the last 60 days" forever.
 
-	A missing `game_stats` is not a state to invent: bot/derived/__init__.py
+	A missing `game_stats` is not a state to invent: nammaoe2bot/derived/__init__.py
 	creates it with both columns on first import, so skipping is correct here and
 	is logged rather than passed over silently.
 	"""
 	if not await table_exists(db, "game_stats"):
 		log.info("migrations: 010_game_stats_played_at: game_stats does not exist, skipping "
-		         "(bot/derived/__init__.py creates it with both columns already on it)")
+		         "(nammaoe2bot/derived/__init__.py creates it with both columns already on it)")
 		return
 
 	if not await column_exists(db, "game_stats", "played_at"):
@@ -1664,7 +1664,7 @@ async def _m010(db):
 		await db.execute(_M010_ADD_VERSION)
 		log.info("migrations: 010_game_stats_played_at: added game_stats.compute_version "
 		         "(0 on every existing row, which is what makes them all pending for "
-		         "bot/derived/backfill.py)")
+		         "nammaoe2bot/derived/backfill.py)")
 
 	if not await table_exists(db, "replay_matches"):
 		log.info("migrations: 010_game_stats_played_at: replay_matches does not exist, "

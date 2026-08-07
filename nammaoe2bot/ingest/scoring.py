@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Single source of truth for replay impact scores and impact-tag derivation.
 
-Consumed by bot/replay_stats/player_tags.py (stored rs_player_game_tags rows),
+Consumed by nammaoe2bot/ingest/player_tags.py (stored rs_player_game_tags rows),
 nammaoe2bot/features/postgame/card.py (Match Cards / Tale of the Tape embeds), and bot/web.py
 (player profile + match stats API). Pure functions, no DB and no core imports,
 so tests and offline calibration tooling can import this file standalone.

@@ -36,7 +36,7 @@ async def _scouting_report(ctx, user_id):
 	    state for most channels (nammaoe2bot/community.py), not a linking gap.
 	  no rollup row                       -> "Statistics pending linking".
 	    The absence IS the signal: an unlinked player gets no row rather than
-	    a row of zeros (bot/derived/rollups.py delete(), identity v2 §5).
+	    a row of zeros (nammaoe2bot/derived/rollups.py delete(), identity v2 §5).
 	  a rollup                            -> its measured lines, each one
 	    carrying the sample it rests on (nammaoe2bot/features/scouting/report.py).
 
@@ -45,7 +45,7 @@ async def _scouting_report(ctx, user_id):
 	reads, its prediction lookup and its chart render. """
 	from nammaoe2bot import community
 	from nammaoe2bot.features.scouting import report as scouting_report
-	from bot.derived import rollups
+	from nammaoe2bot.derived import rollups
 
 	community_id = await community.community_for_channel(ctx.channel.id)
 	if community_id is None:

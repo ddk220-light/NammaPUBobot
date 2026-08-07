@@ -1,4 +1,4 @@
-from bot.replay_stats.player_tags import derive_tags
+from nammaoe2bot.ingest.player_tags import derive_tags
 
 
 def _player(**kw):

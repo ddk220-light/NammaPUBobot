@@ -9,7 +9,7 @@ imported:
   `db.ensure_table(...)` at module scope. Nothing calls those declarations;
   importing the package IS the declaration.
 * **Job singletons.** `quiz.jobs`, `betting.jobs`, `lobby.jobs`,
-  `replay_stats.jobs` are module-level instances the tick in bot/events.py
+  `ingest.jobs` are module-level instances the tick in bot/events.py
   drives. They construct on import.
 * **The command surface.** Importing `bot.context.slash.commands` runs a file
   of `@group.subcommand`-decorated functions, which is what registers all 44
@@ -42,9 +42,9 @@ def bootstrap(app):
 	from nammaoe2bot.features import lobby                           # noqa: F401
 	from nammaoe2bot.features import quiz                            # noqa: F401
 	from nammaoe2bot.features import betting                     # noqa: F401
-	from bot import replay_stats                    # noqa: F401
-	from bot import classifications                 # noqa: F401
-	from bot import derived                         # noqa: F401
+	from nammaoe2bot import ingest                    # noqa: F401
+	from nammaoe2bot.derived import classifications                 # noqa: F401
+	from nammaoe2bot import derived                         # noqa: F401
 
 	# The Discord front end. Importing this module registers the slash surface.
 	from bot.context.slash import commands          # noqa: F401

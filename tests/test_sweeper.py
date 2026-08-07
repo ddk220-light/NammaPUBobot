@@ -1,4 +1,4 @@
-"""Unit tests for the retention sweeper (bot/derived/sweeper.py).
+"""Unit tests for the retention sweeper (nammaoe2bot/derived/sweeper.py).
 
 The bar here is deliberately higher than anywhere else in this repo, because
 this is the only module whose failure mode is data that cannot be got back. Four
@@ -29,7 +29,7 @@ things shape the file.
 import asyncio
 import sqlite3
 
-import bot.derived.sweeper as sweeper
+import nammaoe2bot.derived.sweeper as sweeper
 from nammaoe2bot.runtime.data_registry import REGISTRY
 
 _SCHEMA = """
@@ -457,7 +457,7 @@ def test_a_community_with_no_summary_at_all_is_kept():
 
 
 def test_a_community_with_rollups_but_no_boards_is_kept():
-	"""metric_boards is the existence proof (bot/derived/refresh.py uses the same
+	"""metric_boards is the existence proof (nammaoe2bot/derived/refresh.py uses the same
 	marker for the same reason): player_rollups and civ_stats can each
 	legitimately be empty, so neither can distinguish "computed, nothing to say"
 	from "never computed"."""
@@ -854,7 +854,7 @@ def test_think_schedules_at_most_once_a_day():
 # ── wiring ────────────────────────────────────────────────────────────────────
 
 def test_the_sweeper_is_wired_into_the_think_tick():
-	import bot.derived as derived
+	import nammaoe2bot.derived as derived
 	assert isinstance(derived.sweeper_jobs, sweeper.RetentionSweeper)
 	events = open(_repo_path("bot/events.py"), encoding="utf-8").read()  # noqa: SIM115
 	assert "derived.sweeper_jobs.think(frame_time)" in events

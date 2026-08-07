@@ -76,7 +76,7 @@ window. Practical pacing that avoids the 429 spiral: **~10s between fetches** (2
 `mgz/fast/header.py:parse()` only rejects unknown **game_version** enums (`USERPATCH15/DE/HD`) —
 **there is no `save_version` ceiling** in the parser. Save 68 is a DE replay and reuses the
 `save >= 66.6` header branches, so it parses. The thing that shelved 68 games was *our own*
-`bot/replay_stats/policy.py` gate (`MAX_SUPPORTED_SAVE`), set too conservatively.
+`nammaoe2bot/ingest/policy.py` gate (`MAX_SUPPORTED_SAVE`), set too conservatively.
 
 ### 2.2 The save-68 lesson (verified empirically)
 We first concluded a fork/rewrite was needed — **wrong**, because we tested `happyleavesaoc`
@@ -96,9 +96,9 @@ bump the gate + `PARSER_VERSION`, redeploy.
   `mgz @ git+…AoEInsights…` line silently gives you the wrong parser. Pin by repo+sha, then verify
   `mgz.model` exists at runtime.
 - **`ProcessPoolExecutor` is fork-vs-spawn sensitive.** The live ingest runs `extract_match` in a
-  one-worker pool (`bot/replay_stats/parse.py`) so the event loop never blocks. On Linux/Railway
+  one-worker pool (`nammaoe2bot/ingest/parse.py`) so the event loop never blocks. On Linux/Railway
   (`fork`) the worker inherits the already-imported, DB-connected parent — fine. On Windows
-  (`spawn`) the worker re-imports `bot.replay_stats`, which runs `ensure_table` against a
+  (`spawn`) the worker re-imports `nammaoe2bot.ingest`, which runs `ensure_table` against a
   not-yet-connected `db` and crashes. **For a local one-off, call `extract_match` in-process**
   (skip the pool) — same output, no spawn headache.
 

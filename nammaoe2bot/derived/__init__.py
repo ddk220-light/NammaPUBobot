@@ -18,13 +18,13 @@ Derived-global:
 
 game_stats  -- PK (replay_match_id, player_number). Medal places, avg/peak
              eAPM, top units. Table declared and written by this package
-             (task 3.2, bot/derived/game_stats.py).
+             (task 3.2, nammaoe2bot/derived/game_stats.py).
 game_labels -- PK (replay_match_id, player_number, label): one row per label a
              player earned, so the grain is finer than game_stats' by exactly
              one column. Strategy/spawn labels, replacing cls_results (one
              namespace, a `kind` column instead of separate tables). Table
              declared here so its schema lands in the same deploy as
-             game_stats, and written by bot/derived/game_labels.py (task 3.3).
+             game_stats, and written by nammaoe2bot/derived/game_labels.py (task 3.3).
 
 Neither table carries a `user_id` column (identity v2 §5). game_stats reaches
 a Discord user through its nullable `profile_id`, resolved via `identities` at
@@ -38,7 +38,7 @@ the raw replay_* tables this data is computed from now call the same column:
 these two were written that way from the start and 007_raw_renames brought the
 raw side into line, so neither derived table ever needed a rename of its own.
 The legacy cls_* tables still spell it `aoe2_match_id` -- they are retired
-outright in stage 6 rather than renamed, and bot/derived/backfill.py is the one
+outright in stage 6 rather than renamed, and nammaoe2bot/derived/backfill.py is the one
 module that reads across both spellings.
 
 Derived-community:
@@ -46,7 +46,7 @@ Derived-community:
 player_rollups -- PK (community_id, user_id). One blob per player per
              community: medal rates, eAPM medians, and the strategy/spawn/unit
              splits /rank reads in stage 5a. Written by
-             bot/derived/rollups.py (task 4.2) and driven by task 4.5's
+             nammaoe2bot/derived/rollups.py (task 4.2) and driven by task 4.5's
              refresh job, which is where identity resolution happens: a user's
              profile set is resolved through `identities` and their
              profile-keyed game_stats/game_labels rows aggregated across it.
@@ -61,7 +61,7 @@ metric_boards -- PK (community_id, metric_id). One leaderboard blob per
              metric per community: label/unit/direction plus a leaders list
              (BOARD_MIN_GAMES-gated averages) and a top_games list (single
              best performances, uncapped by the floor). Written by
-             bot/derived/boards.py (task 4.3), whose module docstring carries
+             nammaoe2bot/derived/boards.py (task 4.3), whose module docstring carries
              the metric catalog and the retention boundary that shapes it:
              only replay_players/game_stats fields, never a replay_techs or
              replay_buildings field the task-4.6 sweeper can delete out from
@@ -71,7 +71,7 @@ metric_boards -- PK (community_id, metric_id). One leaderboard blob per
 
 civ_stats   -- PK (community_id, civ). Per-civ win/loss tallies for one
              community, aggregated from `civ_picks` by
-             bot/derived/civ_stats.py (task 4.4). Unlike the two tables
+             nammaoe2bot/derived/civ_stats.py (task 4.4). Unlike the two tables
              above, this one performs its own community join (civ_picks
              carries no community_id column; the join is a single
              community_channels lookup, not an identities graph walk) --
@@ -83,7 +83,7 @@ civ_stats   -- PK (community_id, civ). Per-civ win/loss tallies for one
              other.
 
 Imported by bot/__init__.py for the db.ensure_table side effect below, the
-same as bot/replay_stats/__init__.py: ensure_table's sync wrapper drives the
+same as nammaoe2bot/ingest/__init__.py: ensure_table's sync wrapper drives the
 event loop with `loop.run_until_complete(...)`, which only works from the
 synchronous import phase before the bot's persistent event loop starts
 running (see PUBobot2.py's boot order). Calling it from a lazy import inside
@@ -102,7 +102,7 @@ db.ensure_table(dict(
 		dict(cname="team", ctype=db.types.str, notnull=False),
 		dict(cname="winner", ctype=db.types.bool, notnull=False),
 		# replay_players.eapm passed through, never a mean of replay_apm's
-		# buckets -- see bot/derived/game_stats.py's docstring for why the two
+		# buckets -- see nammaoe2bot/derived/game_stats.py's docstring for why the two
 		# must not be conflated.
 		dict(cname="avg_eapm", ctype=db.types.int, notnull=False),
 		dict(cname="peak_eapm", ctype=db.types.int, notnull=False),
@@ -113,7 +113,7 @@ db.ensure_table(dict(
 		# columns above are None both for "ranked and placed fourth" and for
 		# "never ranked", and those are different claims. Stored rather than
 		# inferred because it is the denominator of player_rollups' medal_rates
-		# (bot/derived/rollups.py), and inferring it from a medal or a non-empty
+		# (nammaoe2bot/derived/rollups.py), and inferring it from a medal or a non-empty
 		# top_units silently drops the player who built villagers, no military,
 		# and placed outside the top three.
 		#
@@ -137,7 +137,7 @@ db.ensure_table(dict(
 		dict(cname="has_production", ctype=db.types.bool, notnull=True),
 		# [{unit, category, total}], top 3 STYLE units by total, JSON-encoded --
 		# gold-costing, non-ubiquitous military units, filtered BEFORE the top-3
-		# cut (bot/derived/game_stats.is_style_unit).
+		# cut (nammaoe2bot/derived/game_stats.is_style_unit).
 		dict(cname="top_units", ctype=db.types.dict, notnull=False),
 		dict(cname="computed_at", ctype=db.types.int, notnull=True),
 		# The match's own epoch, so a stat row can be placed in time with no
@@ -193,7 +193,7 @@ db.ensure_table(dict(
 		# parsing JSON, and so a later "who has enough games?" query does not
 		# have to.
 		dict(cname="games", ctype=db.types.int, notnull=True),
-		# The five-block contract in bot/derived/rollups.py, JSON-encoded.
+		# The five-block contract in nammaoe2bot/derived/rollups.py, JSON-encoded.
 		dict(cname="rollup", ctype=db.types.dict, notnull=True),
 		dict(cname="computed_at", ctype=db.types.int, notnull=True),
 	],
@@ -207,7 +207,7 @@ db.ensure_table(dict(
 	columns=[
 		dict(cname="community_id", ctype=db.types.int),
 		dict(cname="metric_id", ctype=db.types.str),
-		# The board contract in bot/derived/boards.py -- {label, unit,
+		# The board contract in nammaoe2bot/derived/boards.py -- {label, unit,
 		# direction, leaders, top_games} -- JSON-encoded.
 		dict(cname="board", ctype=db.types.dict, notnull=True),
 		dict(cname="computed_at", ctype=db.types.int, notnull=True),
@@ -218,7 +218,7 @@ db.ensure_table(dict(
 db.ensure_table(dict(
 	tname="civ_stats",
 	# Every non-key column is notnull: a row exists only because
-	# bot/derived/civ_stats.py's write() put it there for a civ that had at
+	# nammaoe2bot/derived/civ_stats.py's write() put it there for a civ that had at
 	# least one resolved-result pick, and games/wins/losses are always
 	# knowable once that is true (unlike, say, replay_players' avg_eapm,
 	# which can genuinely be absent from a replay).
@@ -234,10 +234,10 @@ db.ensure_table(dict(
 ))
 
 # Imported last, after every ensure_table declaration above, exactly like
-# bot/replay_stats/__init__.py's trailing `from .jobs import jobs`: backfill
+# nammaoe2bot/ingest/__init__.py's trailing `from .jobs import jobs`: backfill
 # reads and writes the two derived-global tables, so their schemas must be
 # settled before the job singleton it exposes can ever run. bot/events.py's
-# on_think drives it as `bot.derived.jobs.think(frame_time)`.
+# on_think drives it as `nammaoe2bot.derived.jobs.think(frame_time)`.
 from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)
 
 # The derived-COMMUNITY counterpart, exported under its own name rather than
@@ -245,7 +245,7 @@ from .backfill import jobs  # noqa: E402,F401  (DerivedBackfill singleton)
 # `jobs` keeps the bare name it has had since stage 3 so that call site (and the
 # tests pinning it) do not have to move for a rename that buys nothing.
 # refresh imports nammaoe2bot.features.identity.resolver, which is already imported by this point --
-# bot/__init__.py pulls in bot.replay_stats (whose store.py imports it) before
+# bot/__init__.py pulls in nammaoe2bot.ingest (whose store.py imports it) before
 # this package.
 from .refresh import jobs as refresh_jobs  # noqa: E402,F401  (DerivedRefresh singleton)
 
@@ -254,5 +254,5 @@ from .refresh import jobs as refresh_jobs  # noqa: E402,F401  (DerivedRefresh si
 # derived-community tables declared above as its proof that a lean community's
 # summary exists before the raw detail behind it is destroyed, so it is imported
 # last for the same reason the other two are. Ships with DRY_RUN = True; read
-# bot/derived/sweeper.py before changing that.
+# nammaoe2bot/derived/sweeper.py before changing that.
 from .sweeper import jobs as sweeper_jobs  # noqa: E402,F401  (RetentionSweeper singleton)

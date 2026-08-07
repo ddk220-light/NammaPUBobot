@@ -53,7 +53,7 @@ bot runs registered classifications automatically.)
         ▼
  MySQL  cls_classifications · cls_data_requirements · cls_results · cls_result_metrics
         ▲ read
- bot/classifications/query.py (roster + winners_vs_losers + fetch_results) ──► bot/commands/insights.py
+ nammaoe2bot/derived/classifications/query.py (roster + winners_vs_losers + fetch_results) ──► bot/commands/insights.py
         ▲ slash
  /insights <use_case> [days] [player]
 ```
@@ -70,8 +70,8 @@ bot runs registered classifications automatically.)
 | `cls_*` schema (raw SQL, offline) | `utils/classifications/schema.py` | — |
 | Async DB I/O (aiomysql) | `utils/classifications/dbio.py` | I/O |
 | Runner CLI (orchestration) | `utils/classifications/runner.py` | I/O |
-| `cls_*` schema for the bot (`ensure_table`) | `bot/classifications/__init__.py` | I/O |
-| Read aggregation (`roster`/`winners_vs_losers` pure, `fetch_results` DB) | `bot/classifications/query.py` | mixed |
+| `cls_*` schema for the bot (`ensure_table`) | `nammaoe2bot/derived/classifications/__init__.py` | I/O |
+| Read aggregation (`roster`/`winners_vs_losers` pure, `fetch_results` DB) | `nammaoe2bot/derived/classifications/query.py` | mixed |
 | Slash command | `bot/commands/insights.py` | I/O |
 
 > Indentation: `utils/` uses **4 spaces**; `bot/` uses **tabs** (`ruff.toml` `indent-style = "tab"`).
@@ -87,7 +87,7 @@ bot runs registered classifications automatically.)
 | `cls_results` | per matched player-game | `key`, `aoe2_match_id`, `player_number`, `profile_id`, `identity`, `civ`, `team`, `winner`, `played_at` (epoch). **A row exists only if the trigger fired** (presence = matched). |
 | `cls_result_metrics` | per classification × player-game × metric | generic long-form (`metric`, `value`) — **new classifications add rows, never columns** |
 
-The bot (`bot/classifications/__init__.py`) and the offline runner (`utils/classifications/schema.py`)
+The bot (`nammaoe2bot/derived/classifications/__init__.py`) and the offline runner (`utils/classifications/schema.py`)
 declare the same columns two ways; **keep them in sync**.
 
 ---
@@ -135,7 +135,7 @@ PYTHONPATH=.replay_scratch python -m utils.classifications.runner --days 90 [--k
 ## Operating it in production (populating the bot's DB)
 
 The bot **creates the empty `cls_*` tables** in the Railway MySQL at startup (`ensure_table` in
-`bot/classifications/__init__.py`) and only ever **reads** them. The **offline runner fills them**,
+`nammaoe2bot/derived/classifications/__init__.py`) and only ever **reads** them. The **offline runner fills them**,
 and it must run **where the replays + mgz fork live** (locally) — those are gitignored and not in the
 Railway image.
 

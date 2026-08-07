@@ -3,7 +3,7 @@
 today".
 
 WHAT CHANGED IN STAGE 5c: the per-civ win-rates this module ranks on come from the
-derived-community `civ_stats` table, which bot/derived/civ_stats.py aggregates from
+derived-community `civ_stats` table, which nammaoe2bot/derived/civ_stats.py aggregates from
 `civ_picks` once per refresh pass. Two sources were deleted to get there:
 
   * data/civ_elo_stats.csv, loaded into a module-global dict at import and used as a
@@ -30,7 +30,7 @@ its caller with /test_random_civs. The module is kept (not deleted) because the 
 is expected back and this is the correct shape for it; it is exercised by
 tests/test_civ_stats.py alone until then.
 
-NAME COLLISION, DELIBERATE: bot/derived/civ_stats.py is a completely different module
+NAME COLLISION, DELIBERATE: nammaoe2bot/derived/civ_stats.py is a completely different module
 — it WRITES the table this one reads. Neither imports the other.
 """
 import random
@@ -53,7 +53,7 @@ async def civ_winrates(community_id):
     caller must treat that as "no pools", never as "every civ is 50%".
 
     `games` is the row's own games count, and games == wins + losses holds by
-    construction on every stored row (see bot/derived/civ_stats.py's
+    construction on every stored row (see nammaoe2bot/derived/civ_stats.py's
     compute_civ_stats): an unresolved outcome is counted into none of the three, so
     this division never quietly averages in a game nobody won.
     """

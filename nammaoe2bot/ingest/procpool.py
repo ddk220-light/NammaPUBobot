@@ -25,7 +25,7 @@ class WorkerPool:
     module-level function, which pickles by reference -- the child resolves it by
     re-importing the module unless it inherited sys.modules. Under `spawn` /
     `forkserver` (the macOS default, and the Linux default from Python 3.14) that
-    re-import pulls bot/replay_stats/__init__.py, whose module-scope db.ensure_table()
+    re-import pulls nammaoe2bot/ingest/__init__.py, whose module-scope db.ensure_table()
     calls need a live database handle the child does not have, and the worker dies.
     Forking inherits the parent's already-imported modules, so nothing is re-run.
     """

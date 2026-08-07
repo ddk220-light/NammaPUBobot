@@ -82,7 +82,7 @@ db.ensure_table(dict(
 		# REFUSED claim) and therefore moves constantly without the binding
 		# moving at all.
 		#
-		# bot/derived/refresh.py is the reader. It decides what to recompute by
+		# nammaoe2bot/derived/refresh.py is the reader. It decides what to recompute by
 		# a stateless staleness comparison, and an identity change is the one
 		# input that comparison cannot see any other way: a `/link` makes a
 		# player's whole game_stats history attributable without touching a
@@ -376,7 +376,7 @@ async def _overwrite_binding(profile_id, user_id, confidence, aoe2_name, existin
 	the path for two rewrites that leave the binding exactly where it was —
 	link_self refreshing a profile its caller already owns, and relink
 	re-asserting one at `manual` — and stamping those would report a binding
-	change to bot/derived/refresh.py that did not happen, costing a full
+	change to nammaoe2bot/derived/refresh.py that did not happen, costing a full
 	recompute of every rollup that user has. Confidence and aoe2_name moving
 	are deliberately NOT binding changes: no derived row reads either. """
 	if existing["user_id"] is not None and existing["user_id"] != user_id:
@@ -582,7 +582,7 @@ async def unlink(profile_id, status="unlinked") -> None:
 	await _record_conflict(profile_id, existing["user_id"], "manual", now, status=status)
 
 	# bound_at moves here: losing an owner IS a binding change, and it is the
-	# half bot/derived/refresh.py would otherwise be blindest to — the departing
+	# half nammaoe2bot/derived/refresh.py would otherwise be blindest to — the departing
 	# owner's own game_stats rows do not move, so nothing else would ever tell
 	# the refresh job to shrink their rollup.
 	await db.update("identities", dict(

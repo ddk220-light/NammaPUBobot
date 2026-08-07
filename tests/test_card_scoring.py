@@ -1,6 +1,6 @@
-"""Unit tests for the Match Cards scoring fork (bot/replay_stats/card_scoring.py)."""
+"""Unit tests for the Match Cards scoring fork (nammaoe2bot/ingest/card_scoring.py)."""
 
-import bot.replay_stats.card_scoring as cs
+import nammaoe2bot.ingest.card_scoring as cs
 
 
 def _row(**kw):
@@ -39,13 +39,13 @@ def test_no_tech_terms_in_either_mix():
 
 def test_mixes_are_identical_to_the_calibrated_scoring_module():
     """Thresholds are inherited, which is only valid while the mixes match."""
-    import bot.replay_stats.scoring as legacy
+    import nammaoe2bot.ingest.scoring as legacy
     assert cs.ECO_MIX == legacy.ECO_MIX
     assert cs.ARMY_MIX == legacy.ARMY_MIX
 
 
 def test_inherited_thresholds_match_the_legacy_values():
-    import bot.replay_stats.scoring as legacy
+    import nammaoe2bot.ingest.scoring as legacy
     for key in ("all_in_army", "all_in_eco_max", "reboom_score",
                 "reboom_early_eco_max", "reboom_eco_min"):
         assert cs.TH[key] == legacy.TH[key], key

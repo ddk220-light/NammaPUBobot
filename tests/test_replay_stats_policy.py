@@ -1,4 +1,4 @@
-import bot.replay_stats.policy as p
+import nammaoe2bot.ingest.policy as p
 
 
 def test_save_version_supported():

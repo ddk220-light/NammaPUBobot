@@ -11,11 +11,11 @@ from nammaoe2bot.runtime.paths import data as data_path
 from nammaoe2bot.runtime.config import cfg
 from nammaoe2bot.features.civs import reconcile
 from bot import commands
-from bot import derived
+from nammaoe2bot import derived
 from nammaoe2bot.features import lobby
 from nammaoe2bot.features import betting
 from nammaoe2bot.features import quiz
-from bot import replay_stats
+from nammaoe2bot import ingest
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.expire import expire
 from bot.main import load_state, save_state, save_state_db
@@ -124,22 +124,22 @@ async def on_think(frame_time):
 	await reconcile.reconcile.think(frame_time)
 	await lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
 	await quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
-	await replay_stats.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
+	await ingest.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
 	await betting.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
 	# Reconciles game_stats/game_labels against the raw rows they are derived from.
 	# think() only schedules (the batch runs off-tick) and is self-isolating; the loop
-	# converges to zero work and then stays permanently as repair — see bot/derived/backfill.py.
+	# converges to zero work and then stays permanently as repair — see nammaoe2bot/derived/backfill.py.
 	await derived.jobs.think(frame_time)
 	# Rebuilds the derived-COMMUNITY layer (player_rollups / metric_boards / civ_stats)
 	# for whoever is out of date. Same self-isolating shape as the backfill above, and
 	# the same stateless convergence: it derives its own work list on every pass rather
-	# than keeping one, so a deploy mid-pass loses nothing — see bot/derived/refresh.py.
+	# than keeping one, so a deploy mid-pass loses nothing — see nammaoe2bot/derived/refresh.py.
 	await derived.refresh_jobs.think(frame_time)
 	# Ages the bulky per-match replay detail out for LEAN communities once their
 	# summary provably exists — daily, off-tick, self-isolating like the two above.
 	# The only job in this bot that permanently destroys data, so it ships with
 	# DRY_RUN = True and deletes nothing until that constant is flipped in a commit
-	# of its own — see bot/derived/sweeper.py before touching it.
+	# of its own — see nammaoe2bot/derived/sweeper.py before touching it.
 	await derived.sweeper_jobs.think(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See TTLReactionDict
@@ -249,7 +249,7 @@ async def on_interaction(interaction):
 	await dc.process_application_commands(interaction)
 	from quiz import interactions as quiz_interactions
 	await quiz_interactions.on_quiz_interaction(interaction)
-	from bot.classifications import interactions as cls_interactions
+	from nammaoe2bot.derived.classifications import interactions as cls_interactions
 	await cls_interactions.on_insights_interaction(interaction)
 	from predictions import interactions as bet_interactions
 	await bet_interactions.on_bet_interaction(interaction)

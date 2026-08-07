@@ -1,8 +1,8 @@
 import asyncio
 import concurrent.futures
 
-from bot.replay_stats import render as render_module
-from bot.replay_stats.render import MIN_MINUTES, render_apm, should_render
+from nammaoe2bot.ingest import render as render_module
+from nammaoe2bot.ingest.render import MIN_MINUTES, render_apm, should_render
 
 
 def _series(n_minutes, n_players=2):

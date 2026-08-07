@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-import bot.classifications.query as q
-from bot.classifications.query import roster, winners_vs_losers, leaderboard_line, leaderboard_text
+import nammaoe2bot.derived.classifications.query as q
+from nammaoe2bot.derived.classifications.query import roster, winners_vs_losers, leaderboard_line, leaderboard_text
 
 
 def _r(identity, pid, winner, metrics):

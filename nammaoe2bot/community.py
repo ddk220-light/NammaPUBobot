@@ -91,7 +91,7 @@ db.ensure_table(dict(
 		# both writers always supply a value. It was nullable only because
 		# nammaoe2bot/runtime/database/mysql.py's column_blank defaults notnull=False, and a
 		# NULL would be a third meaning ("linked, at an unknown time") that
-		# bot/derived/sweeper.py's retention window has to defend against.
+		# nammaoe2bot/derived/sweeper.py's retention window has to defend against.
 		#
 		# This does NOT tighten the live column: _ensure_table only ever ADDs
 		# missing columns and never alters nullability, so production's

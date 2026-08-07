@@ -1,9 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Live replay-stats subsystem — strictly additive, opt-in (off unless the
-REPLAY_INGEST_ENABLED config var is set). Mirrors nammaoe2bot/features/quiz/ isolation: dedicated replay_*
-tables declared here via ensure_table at import, imported by bot/__init__.py for that side
-effect and the ReplayStatsJobs singleton. Heavy imports (mgz, requests) stay lazy inside
-fetch.py/parse.py so importing this package is test-safe under the conftest stubs."""
+"""INGEST: replays in, raw facts out. Strictly additive, opt-in (off unless the
+REPLAY_INGEST_ENABLED config var is set).
+
+The one layer that talks to the outside world for data rather than for
+presentation — it downloads a finished game's replay from aoe2companion,
+parses it with the vendored mgz fork, and writes the replay_* tables. What it
+does NOT do is interpret any of that: aggregation, ranking and labelling are
+nammaoe2bot/derived/, which reads what this writes.
+
+That direction is not yet clean in both halves. derived/game_stats.py imports
+ingest's card_scoring while ingest/store.py writes derived's game_stats, so the
+two genuinely depend on each other and only function-local imports keep it
+loading. See the plan's Task 2.6 note: it is a real two-way dependency, not an
+ordering accident, and splitting the shared scoring helpers out is its own
+change.
+
+Dedicated replay_* tables are declared here via ensure_table at import and
+bot/bootstrap.py imports this package for that side effect and the
+ReplayStatsJobs singleton. Heavy imports (mgz, requests) stay lazy inside
+fetch.py/parse.py so importing this package is test-safe under the conftest
+stubs."""
 from nammaoe2bot.runtime.database import db
 
 # Bumped whenever the mgz pin or SUPPORTED_SAVE_VERSIONS policy changes (see policy.py),

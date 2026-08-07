@@ -55,7 +55,7 @@ def test_the_exported_hooks_are_the_modules_functions_not_the_singletons():
 
 def test_the_package_attribute_jobs_is_still_the_singleton():
 	""" bot/events.py drives every package as `bot.<pkg>.jobs.think(frame_time)`,
-	the convention nammaoe2bot/features/quiz, nammaoe2bot/features/lobby and bot/replay_stats all share. The fix
+	the convention nammaoe2bot/features/quiz, nammaoe2bot/features/lobby and nammaoe2bot/ingest all share. The fix
 	renamed the MODULE, not this export, so that call site is untouched. """
 	assert isinstance(betting.jobs, jobs_module.PredictionJobs)
 	assert inspect.iscoroutinefunction(betting.jobs.think)

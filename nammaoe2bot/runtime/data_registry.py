@@ -18,7 +18,7 @@ must say which:
 2. The table is declared ahead of its writer: its `ensure_table`/
    `FactoryTable` landed in this deploy so its schema ships early, but the
    module that writes to it is a later task. The entry's comment must name
-   that task (e.g. "task 3.3 adds bot/derived/game_labels.py as its
+   that task (e.g. "task 3.3 adds nammaoe2bot/derived/game_labels.py as its
    writer"), so the empty tuple reads as "not yet" rather than "never"."""
 
 REGISTRY = {
@@ -113,14 +113,14 @@ REGISTRY = {
 	# was dropped by the same migration, its one boolean replaced by the
 	# REPLAY_INGEST_ENABLED config var.
 	"replay_matches": dict(
-		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"
+		layer="raw", tenancy="global", writers=("nammaoe2bot/ingest/store.py",), retention="forever"
 	),
 	"replay_players": dict(
-		layer="raw", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"
+		layer="raw", tenancy="global", writers=("nammaoe2bot/ingest/store.py",), retention="forever"
 	),
 	# The five bulky per-match child tables, and the only rows in this database
 	# that anything ever deletes for good. `sweepable` stopped being an aspiration
-	# in task 4.6: bot/derived/sweeper.py now acts on exactly this set, and
+	# in task 4.6: nammaoe2bot/derived/sweeper.py now acts on exactly this set, and
 	# targets() there fails closed unless these five entries and its own
 	# TARGET_TABLES agree in BOTH directions — so retagging one of them here (or
 	# tagging a sixth table sweepable) turns the sweeper off rather than silently
@@ -130,39 +130,39 @@ REGISTRY = {
 	"replay_units": dict(
 		layer="raw",
 		tenancy="global",
-		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
 		retention="sweepable",
 	),
 	"replay_techs": dict(
 		layer="raw",
 		tenancy="global",
-		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
 		retention="sweepable",
 	),
 	"replay_buildings": dict(
 		layer="raw",
 		tenancy="global",
-		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
 		retention="sweepable",
 	),
 	"replay_events": dict(
 		layer="raw",
 		tenancy="global",
-		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
 		retention="sweepable",
 	),
 	"replay_apm": dict(
 		layer="raw",
 		tenancy="global",
-		writers=("bot/derived/sweeper.py", "bot/replay_stats/store.py"),
+		writers=("nammaoe2bot/derived/sweeper.py", "nammaoe2bot/ingest/store.py"),
 		retention="sweepable",
 	),
 	"replay_ingest": dict(
-		layer="ops", tenancy="global", writers=("bot/replay_stats/store.py",), retention="forever"
+		layer="ops", tenancy="global", writers=("nammaoe2bot/ingest/store.py",), retention="forever"
 	),
 	# derived — rebuildable (legacy generation, retired across stages 3-6)
 	"rs_player_game_tags": dict(
-		layer="derived", tenancy="global", writers=("bot/replay_stats/player_tags.py",), retention="forever"
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/player_tags.py",), retention="forever"
 	),
 	# NO WRITER IN THE RUNNING BOT since stage 5a. `/rank` stopped printing the
 	# generated persona (nammaoe2bot/features/scouting/report.py renders measured facts out of
@@ -170,7 +170,7 @@ REGISTRY = {
 	# with it and nothing on the ingest path touches this table any more. The stored
 	# rows have been frozen since that deploy — a reader finding one is reading
 	# whatever the persona generator last said, not current data.
-	# bot/replay_stats/persona_store.py survives only as the module
+	# nammaoe2bot/ingest/persona_store.py survives only as the module
 	# utils/backfill_personas.py loads by path, an offline script; it is listed here
 	# because a table with no writer at all is indistinguishable in this registry
 	# from a table somebody forgot to declare one for. Migration 009 drops the table
@@ -179,15 +179,15 @@ REGISTRY = {
 		layer="derived", tenancy="global", writers=("utils/backfill_personas.py",), retention="forever"
 	),
 	"cls_classifications": dict(
-		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/classifications.py",), retention="forever"
 	),
 	"cls_data_requirements": dict(
-		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/classifications.py",), retention="forever"
 	),
-	# Stage 5c dropped bot/replay_stats/classification_sync.py from both entries: it
+	# Stage 5c dropped nammaoe2bot/ingest/classification_sync.py from both entries: it
 	# dual-wrote these two alongside game_labels while /insights and the match cards
 	# still read them, and both readers moved to game_labels. ONE writer is left, and
-	# it is load-bearing rather than vestigial — bot/derived/backfill.py reconciles
+	# it is load-bearing rather than vestigial — nammaoe2bot/derived/backfill.py reconciles
 	# game_labels against cls_results every pass, so write_extracted_match keeping
 	# these populated at ingest is what stops every new match from being permanently
 	# pending. It used to stop something worse: the reconciler answered an empty
@@ -199,27 +199,27 @@ REGISTRY = {
 	"cls_results": dict(
 		layer="derived",
 		tenancy="global",
-		writers=("bot/replay_stats/classifications.py",),
+		writers=("nammaoe2bot/ingest/classifications.py",),
 		retention="forever",
 	),
 	"cls_result_metrics": dict(
 		layer="derived",
 		tenancy="global",
-		writers=("bot/replay_stats/classifications.py",),
+		writers=("nammaoe2bot/ingest/classifications.py",),
 		retention="forever",
 	),
 	"cls_player_totals": dict(
-		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/classifications.py",), retention="forever"
 	),
 	# Promoted from bookkeeping to a correctness dependency in stage 5c's follow-up:
 	# it is the ONLY thing that distinguishes "the classifier ran and matched nothing"
 	# from "the classifier never ran / its write failed", both of which cls_results
-	# spells as zero rows. bot/derived/backfill.py may delete a match's game_labels on
+	# spells as zero rows. nammaoe2bot/derived/backfill.py may delete a match's game_labels on
 	# an empty cls_results only when this table certifies the former. Every writer of
 	# cls_results must therefore write this too, for zero-result matches above all —
 	# utils/classifications/dbio.mark_match_classified is the offline runner's half.
 	"cls_match_ingest": dict(
-		layer="derived", tenancy="global", writers=("bot/replay_stats/classifications.py",), retention="forever"
+		layer="derived", tenancy="global", writers=("nammaoe2bot/ingest/classifications.py",), retention="forever"
 	),
 	# core — multi-tenancy root (stage 1.5)
 	"communities": dict(
@@ -243,10 +243,10 @@ REGISTRY = {
 	# rollups, a later stage). Neither table carries a user_id; both key on
 	# profile_id only (identity v2 §5).
 	"game_stats": dict(
-		layer="derived", tenancy="global", writers=("bot/derived/game_stats.py",), retention="forever"
+		layer="derived", tenancy="global", writers=("nammaoe2bot/derived/game_stats.py",), retention="forever"
 	),
 	"game_labels": dict(
-		layer="derived", tenancy="global", writers=("bot/derived/game_labels.py",), retention="forever"
+		layer="derived", tenancy="global", writers=("nammaoe2bot/derived/game_labels.py",), retention="forever"
 	),
 	# derived-community (stage 4) — aggregates OF the derived-global rows above,
 	# keyed on (community_id, user_id) rather than on a slot in a match — the
@@ -254,13 +254,13 @@ REGISTRY = {
 	# happens in the task-4.5 refresh job that calls the writer, never in the
 	# writer and never in the table.
 	"player_rollups": dict(
-		layer="derived", tenancy="community", writers=("bot/derived/rollups.py",), retention="forever"
+		layer="derived", tenancy="community", writers=("nammaoe2bot/derived/rollups.py",), retention="forever"
 	),
 	"metric_boards": dict(
-		layer="derived", tenancy="community", writers=("bot/derived/boards.py",), retention="forever"
+		layer="derived", tenancy="community", writers=("nammaoe2bot/derived/boards.py",), retention="forever"
 	),
 	"civ_stats": dict(
-		layer="derived", tenancy="community", writers=("bot/derived/civ_stats.py",), retention="forever"
+		layer="derived", tenancy="community", writers=("nammaoe2bot/derived/civ_stats.py",), retention="forever"
 	),
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),

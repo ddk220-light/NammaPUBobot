@@ -1,12 +1,12 @@
-"""Unit tests for the pure aggregations in bot.replay_stats. build_timeline buckets upgrades into
+"""Unit tests for the pure aggregations in nammaoe2bot.ingest. build_timeline buckets upgrades into
 phases (quiz-style); build_growth_curve averages each game's cumulative villager/military count
 onto a common time grid over the games still live at each t, with a 95% CI and per-point n;
 event_rows (shape) turns the per-action timeline into replay_events rows with a per-player seq."""
 import asyncio
 
-import bot.replay_stats.query as rsq
-from bot.replay_stats.query import build_growth_curve, build_timeline, phase_bucket
-from bot.replay_stats.shape import event_rows
+import nammaoe2bot.ingest.query as rsq
+from nammaoe2bot.ingest.query import build_growth_curve, build_timeline, phase_bucket
+from nammaoe2bot.ingest.shape import event_rows
 
 
 def test_phase_bucket_boundaries():
@@ -138,7 +138,7 @@ def test_event_rows_assigns_per_player_seq_in_time_order():
 
 
 # ── the growth curve's swept sources ─────────────────────────────────────
-# replay_events and replay_techs are retention="sweepable": bot/derived/sweeper.py
+# replay_events and replay_techs are retention="sweepable": nammaoe2bot/derived/sweeper.py
 # deletes their rows for a lean community once its derived summaries exist, and no
 # summary reconstructs a per-second series. These pin what /player_details does
 # then -- returns None, which the command renders as "No replay stats" -- rather

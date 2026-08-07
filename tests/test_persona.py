@@ -1,5 +1,5 @@
-"""Unit tests for bot/replay_stats/persona.py — persona derivation contract."""
-from bot.replay_stats.persona import derive_persona
+"""Unit tests for nammaoe2bot/ingest/persona.py — persona derivation contract."""
+from nammaoe2bot.ingest.persona import derive_persona
 
 
 def _stats(**kw):
@@ -31,7 +31,7 @@ def test_aggressive_carry_is_army_printer():
 def test_no_name_or_tagline_claims_kills_or_wins():
 	"""The parser records units created, never kills; impact carries no win
 	term. Nothing player-facing may imply either."""
-	from bot.replay_stats.persona import ROLES, STYLES
+	from nammaoe2bot.ingest.persona import ROLES, STYLES
 	banned = ("villager menace", "kill", "raid", "carries", "hard-carry",
 	          "hard-carries", "donates", "elo", "wins", "won", "victory")
 	blobs = [f"{v['name']} {v['tagline']}" for v in STYLES.values()]
