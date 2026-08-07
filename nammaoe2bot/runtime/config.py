@@ -118,7 +118,7 @@ for _key, (_typ, _default) in _SCHEMA.items():
 		setattr(cfg, _key, _val)
 
 # Soft validation — warn (don't crash) on missing essentials. start.py and
-# PUBobot2.py already hard-validate these on the Railway path; this catches
+# nammaoe2bot/__main__.py already hard-validate these on the Railway path; this catches
 # env-only or local misconfigurations without changing crash behaviour.
 _missing = [k for k in ('DC_BOT_TOKEN', 'DB_URI') if not getattr(cfg, k)]
 if _missing:

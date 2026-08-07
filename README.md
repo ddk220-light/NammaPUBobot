@@ -1,6 +1,6 @@
 # NammaPUBobot
 
-**NammaPUBobot** is a fork of [PUBobot2](https://github.com/Leshaka/PUBobot2) built
+**NammaPUBobot** is a fork of [nammaoe2bot.__main__](https://github.com/Leshaka/nammaoe2bot.__main__) built
 for organising Age of Empires II pickup games. Everything upstream does — queues,
 rating matches, drafts, rank roles — still works; the sections below the fold are
 upstream's own README and remain accurate for setup, credits and licensing.
@@ -29,8 +29,8 @@ described below.
 
 ---
 
-# PUBobot2 (upstream)
-**PUBobot2** is a Discord bot for pickup games organisation. PUBobot2 have a remarkable list of features such as rating matches, rank roles, drafts, map votepolls and more!
+# nammaoe2bot.__main__ (upstream)
+**nammaoe2bot.__main__** is a Discord bot for pickup games organisation. nammaoe2bot.__main__ have a remarkable list of features such as rating matches, rank roles, drafts, map votepolls and more!
 
 ### Some screenshots
 ![screenshots](https://cdn.discordapp.com/attachments/824935426228748298/836978698321395712/screenshots.png)
@@ -38,7 +38,7 @@ described below.
 ### Using the public bot instance
 If you want to test the bot, feel free to join [**Pubobot2-dev** discord server](https://discord.gg/rjNt9nC).  
 All the bot settings can be found and configured on the [Web interface](https://pubobot.leshaka.xyz/).  
-For the complete list of commands see [COMMANDS.md](https://github.com/Leshaka/PUBobot2/blob/main/COMMANDS.md).  
+For the complete list of commands see [COMMANDS.md](https://github.com/Leshaka/nammaoe2bot.__main__/blob/main/COMMANDS.md).  
 You can invite the bot to your discord server from the [web interface](https://pubobot.leshaka.xyz/) or use the direct [invite link](https://discord.com/oauth2/authorize?client_id=177021948935667713&scope=bot).
 
 ### Support
@@ -52,19 +52,19 @@ Hosting the service for everyone is not free, not mentioning the actual time and
 * **gettext** for multilanguage support.
 
 ### Installing
-* Create mysql user and database for PUBobot2:
+* Create mysql user and database for nammaoe2bot.__main__:
 * * `sudo mysql`
 * * `CREATE USER 'pubobot'@'localhost' IDENTIFIED BY 'your-password';`
 * * `CREATE DATABASE pubodb CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;`
 * * `GRANT ALL PRIVILEGES ON pubodb.* TO 'pubobot'@'localhost';`
-* Install required modules and configure PUBobot2:
-* * `git clone https://github.com/Leshaka/PUBobot2`
-* * `cd PUBobot2`
+* Install required modules and configure nammaoe2bot.__main__:
+* * `git clone https://github.com/Leshaka/nammaoe2bot.__main__`
+* * `cd nammaoe2bot.__main__`
 * * `pip3 install -r requirements.txt`
 * * `cp config.example.cfg config.cfg`
 * * `nano config.cfg` - Fill config file with your discord bot instance credentials and mysql settings and save.
 * * Optionally, if you want to use other languages, run script to compile translations: `./compile_locales.sh`.
-* * `python3 PUBobot2.py` - If everything is installed correctly the bot should launch without any errors and give you CLI.
+* * `python3 nammaoe2bot/__main__.py` - If everything is installed correctly the bot should launch without any errors and give you CLI.
 
 ## Credits
 Developer: **Leshaka**. Contact: leshkajm@ya.ru.  

@@ -90,11 +90,11 @@ def _scrub_csv_filenames(src):
 _EXTENSIONS = (".py", ".html")
 
 # Files outside the four package directories that must still be guarded.
-# PUBobot2.py is the entrypoint (it drives migrations.run_all and imports every
+# nammaoe2bot/__main__.py is the entrypoint (it drives migrations.run_all and imports every
 # bot package) and start.py generates config.cfg — both can name a table, and
 # neither lives under bot/, core/, utils/ or tests/, so the walk alone would
 # leave them unguarded.
-_ROOT_FILES = ("start.py", "PUBobot2.py")
+_ROOT_FILES = ("start.py", "nammaoe2bot/__main__.py")
 
 
 def _scanned_files(root):
@@ -138,7 +138,7 @@ def test_the_guard_covers_the_files_outside_the_package_directories():
 	actually checked" are asserted. """
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	checked = {rel for _path, rel in _scanned_files(root) if rel not in _ALLOW}
-	for rel in ("start.py", "PUBobot2.py", os.path.join("nammaoe2bot", "web", "page.html")):
+	for rel in ("start.py", "nammaoe2bot/__main__.py", os.path.join("nammaoe2bot", "web", "page.html")):
 		assert rel in checked, f"{rel} is not covered by the stale-name guard"
 
 

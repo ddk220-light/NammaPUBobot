@@ -21,7 +21,7 @@ sys.path.insert(0, ROOT)
 # bot/__init__.py -- pulling in ~10 feature modules purely for their ensure_table() side effects
 # (schema-DDL-capable CREATE TABLE / ALTER TABLE ADD COLUMN checks) against a live
 # nammaoe2bot.runtime.database.db handle. This script is validation-only and must never open a database
-# connection, so instead of connecting for real (the way PUBobot2.py's own boot sequence does)
+# connection, so instead of connecting for real (the way nammaoe2bot/__main__.py's own boot sequence does)
 # we pre-register minimal fakes for nammaoe2bot.runtime.console / nammaoe2bot.runtime.database / bot in sys.modules, the same
 # shim tests/conftest.py uses so unit tests can import bot.* parsers with no live DB. This is a
 # trimmed-down copy: only what apm_series + render_apm_curve's import chain actually touches

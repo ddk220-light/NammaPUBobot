@@ -86,7 +86,7 @@ Imported by bot/__init__.py for the db.ensure_table side effect below, the
 same as nammaoe2bot/ingest/__init__.py: ensure_table's sync wrapper drives the
 event loop with `loop.run_until_complete(...)`, which only works from the
 synchronous import phase before the bot's persistent event loop starts
-running (see PUBobot2.py's boot order). Calling it from a lazy import inside
+running (see nammaoe2bot/__main__.py's boot order). Calling it from a lazy import inside
 an already-running coroutine -- e.g. only ever importing this package from
 inside store.write_match -- would raise "event loop is already running" on
 every single ingest."""

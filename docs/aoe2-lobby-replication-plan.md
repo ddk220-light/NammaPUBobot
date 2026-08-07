@@ -213,7 +213,7 @@ db.ensure_table(dict(
 | Completed-embed layout | nammaoe2bot/features/civs/sync.py:80-234, tests/test_civ_sync.py | field map + golden fixture |
 | Post-once/edit-on-change | nammaoe2bot/pickup/match/checkin.py:48-49,90-92 | channel.send + edit + DiscordException guard |
 | Recurring-job idiom | nammaoe2bot/pickup/stats.py:401-407 | LobbyJobs.think; register events.py:95 |
-| Tick driver | PUBobot2.py:133-145, nammaoe2bot/discord/events.py:72-113 | tick + error isolation + 30s save |
+| Tick driver | nammaoe2bot/__main__.py:133-145, nammaoe2bot/discord/events.py:72-113 | tick + error isolation + 30s save |
 | Table + migration | nammaoe2bot/features/civs/sync.py:15-33, mysql.py:161-244 | ensure_table + insert/update/select |
 | Slash reg + defer | commands.py:534-541, :778 | /subauto template, explicit defer |
 | Context helpers | nammaoe2bot/discord/slash_context.py:10-47 | reply/notice/success/error after defer |

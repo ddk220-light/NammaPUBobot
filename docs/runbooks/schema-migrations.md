@@ -5,7 +5,7 @@
 
 ## How migrations run
 
-`PUBobot2.py` calls `migrations.run_all(db)` **after** `database.db.connect()` and
+`nammaoe2bot/__main__.py` calls `migrations.run_all(db)` **after** `database.db.connect()` and
 **before** `import bot`. That ordering is load-bearing: every bot package declares
 its tables with `db.ensure_table()` at import time, and `ensure_table` CREATEs any
 name it does not find and cannot rename. Renaming first lets the updated

@@ -65,4 +65,4 @@ jobs:
         # Validates the Dockerfile still produces a clean image. This
         # is what Railway runs on every deploy — catching breakage
         # here saves a failed deploy round-trip.
-        run: docker build -t nammapubobot:ci .
+        run: docker build -t nammaoe2bot:ci .

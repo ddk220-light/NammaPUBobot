@@ -62,7 +62,7 @@ def _py_files():
 				if parts[-1] == "__init__":
 					parts = parts[:-1]
 				yield ".".join(parts), path
-	for filename in ("PUBobot2.py", "start.py"):
+	for filename in ("nammaoe2bot/__main__.py", "start.py"):
 		path = os.path.join(_REPO_ROOT, filename)
 		if os.path.exists(path):
 			yield filename[:-3], path
@@ -199,7 +199,7 @@ def test_nothing_imports_a_package_that_no_longer_exists():
 	resolves imports whose first segment is a first-party package; once a
 	package stops existing, an import of it stops looking first-party and gets
 	skipped as third party. Five `from core import ...` lines survived the
-	move exactly that way — including PUBobot2.py's, the entrypoint's first
+	move exactly that way — including nammaoe2bot/__main__.py's, the entrypoint's first
 	real import, which would have failed on the first line of the first boot.
 
 	`import bot` / `from bot import` is the same shape and the same risk, so
@@ -271,3 +271,24 @@ def test_the_guard_catches_a_move_that_forgets_a_sibling(tmp_path, monkeypatch):
 	assert any("stale.py" in b and "utils.replay_quiz" in b for b in broken)
 	assert any("missing_name.py" in b and "no_such_function" in b for b in broken)
 	assert not any("fine.py" in b for b in broken)
+
+
+def test_the_module_entrypoint_is_where_start_py_says_it_is():
+	""" start.py execs `python -m nammaoe2bot`, which needs
+	nammaoe2bot/__main__.py to exist. Nothing else in the suite touches either
+	file — the entrypoint cannot be imported under the conftest stubs (it
+	connects to MySQL and Discord on the way down) — so this is the only check
+	that the two agree.
+
+	`-m` and not the file path, deliberately: running nammaoe2bot/__main__.py
+	directly puts that DIRECTORY on sys.path instead of the repo root, and
+	every `import nammaoe2bot.x` inside it then fails. Both halves are pinned
+	because a fix to either one alone is silent until a deploy. """
+	assert os.path.isfile(os.path.join(_REPO_ROOT, "nammaoe2bot", "__main__.py"))
+	with open(os.path.join(_REPO_ROOT, "start.py"), encoding="utf-8") as f:
+		start = f.read()
+	assert '"-m", "nammaoe2bot"' in start, (
+		"start.py no longer execs `python -m nammaoe2bot`")
+	assert '"nammaoe2bot/__main__.py"' not in start, (
+		"start.py execs the file path — that puts nammaoe2bot/ on sys.path "
+		"instead of the repo root and every intra-package import fails")

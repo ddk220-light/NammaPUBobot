@@ -149,7 +149,7 @@ async def on_think(frame_time):
 	dc.app.waiting_reactions.sweep_expired(frame_time)
 
 	# Periodic state snapshot — if the process crashes before a clean
-	# shutdown, SIGTERM (or the crash supervisor in PUBobot2.py) can only
+	# shutdown, SIGTERM (or the crash supervisor in nammaoe2bot/__main__.py) can only
 	# save state best-effort. This keeps a rolling ≤30s-old backup on
 	# disk for unexpected exits.
 	if frame_time - _last_state_save >= _STATE_SAVE_INTERVAL:
@@ -163,7 +163,7 @@ async def on_think(frame_time):
 
 # Answering a DM. Was cfg.HELP, an env-driven string that defaulted to
 # upstream's one-liner naming the wrong bot — so anyone who DMed us was told
-# "PUBobot2 is a discord bot for pickup games organisation." The bot only works
+# "nammaoe2bot.__main__ is a discord bot for pickup games organisation." The bot only works
 # inside its pickup channel, so the useful answer is to say exactly that.
 _DM_REPLY = (
 	"I'm **NammaAoe2Bot** — I run the AoE2 pickup queue.\n\n"

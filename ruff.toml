@@ -56,7 +56,7 @@ ignore = [
     # Tab indentation — the project uses tabs. E101/W191 complaints
     # are noise, not bugs.
     "E101", "W191",
-    # PUBobot2.py and start.py deliberately import bot AFTER the DB
+    # nammaoe2bot/__main__.py and start.py deliberately import bot AFTER the DB
     # adapter connect completes, so some imports sit below top-level
     # statements. This is the bootstrap ordering, not a style error.
     "E402",
@@ -109,10 +109,10 @@ ignore = [
 # start.py generates config via string templating; unused imports and
 # star-import tricks in the config loader are tolerated.
 "start.py" = ["F401"]
-# PUBobot2.py imports `locales` and `cfg_factory` for their side
+# nammaoe2bot/__main__.py imports `locales` and `cfg_factory` for their side
 # effects (translation registration + config factory class loading),
 # so F401 looks like a false positive here.
-"PUBobot2.py" = ["F401"]
+"nammaoe2bot/__main__.py" = ["F401"]
 # nammaoe2bot/runtime/locales.py is the gettext passthrough stub and keeps its
 # star imports. The two entries that used to sit here — bot/__init__.py and
 # bot/commands/__init__.py — were exemptions for re-export shelves, and both

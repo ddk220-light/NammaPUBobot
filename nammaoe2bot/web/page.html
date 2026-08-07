@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
-<title>PUBobot2 web-ui</title>
+<title>nammaoe2bot.__main__ web-ui</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500&family=Outfit:wght@300;400;500;600;700&display=swap');
 
@@ -997,7 +997,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <button id="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Menu">
     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
   </button>
-  <div id="tb-botinfo">PUBobot2</div>
+  <div id="tb-botinfo">nammaoe2bot.__main__</div>
   <div id="tb-botinfo-version">v0.8-Beta</div>
 
   <div class="tb-link" onclick="showPage('leaderboard')" style="cursor:pointer;">
@@ -1013,7 +1013,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
     <span>Strategies</span>
   </div>
   <div class="tb-link" onclick="showPage('dashboard')" style="cursor:pointer;">
-    <span>PUBobot2 Config</span>
+    <span>nammaoe2bot.__main__ Config</span>
   </div>
 
   <div id="tb-whitespace"></div>
@@ -3745,7 +3745,7 @@ function renderGuildMenu() {
 function renderBreadcrumb() {
   var bc = document.getElementById('dash-breadcrumb');
   if (!dashGuildId) { bc.innerHTML = ''; return; }
-  var parts = ['<a onclick="resetDashboard();return false" href="#">PUBobot2 Config</a>'];
+  var parts = ['<a onclick="resetDashboard();return false" href="#">nammaoe2bot.__main__ Config</a>'];
   if (dashGuildId && !dashChannelId) {
     parts.push('<span class="current">'+esc(dashGuildName)+'</span>');
   } else if (dashChannelId && !dashQueueName) {

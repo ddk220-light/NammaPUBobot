@@ -147,7 +147,10 @@ def main():
           f"(REPLAY_INGEST_ENABLED={replay_ingest_enabled!r}{_origin})")
 
     # Launch the bot
-    os.execvp(sys.executable, [sys.executable, "PUBobot2.py"])
+    # `-m`, not the file path: running nammaoe2bot/__main__.py directly puts
+    # that DIRECTORY on sys.path instead of the repo root, so every
+    # `import nammaoe2bot.x` fails. -m imports the package properly.
+    os.execvp(sys.executable, [sys.executable, "-m", "nammaoe2bot"])
 
 
 if __name__ == "__main__":

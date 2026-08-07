@@ -836,7 +836,7 @@ def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
 	fake = install_db(monkeypatch, FakeDB())
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_ID", 1234, raising=False)
-	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://pubobot.test/", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://nammaoe2bot.test/", raising=False)
 
 	with pytest.raises(web.web.HTTPFound) as raised:
 		asyncio.run(web.handle_auth_login(request()))
@@ -846,7 +846,7 @@ def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
 	stored = [row for table, row in fake.inserted if table == "web_oauth_states"]
 	assert len(stored) == 1, "the state must be persisted before the user is sent to Discord"
 	assert f"state={stored[0]['state']}" in location
-	assert "redirect_uri=https%3A%2F%2Fpubobot.test%2Fauth%2Fcallback" in location
+	assert "redirect_uri=https%3A%2F%2Fnammaoe2bot.test%2Fauth%2Fcallback" in location
 
 
 def test_the_callback_rejects_a_request_with_no_code(monkeypatch):

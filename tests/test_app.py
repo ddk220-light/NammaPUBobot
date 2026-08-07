@@ -77,7 +77,7 @@ def test_waiting_reactions_still_sweeps_by_ttl():
 def test_application_is_constructed_exactly_once_at_boot():
 	"""Two Applications in one process would be two worlds, and whichever one
 	the event handlers got would silently be the only real one."""
-	source = (_REPO_ROOT / "PUBobot2.py").read_text(encoding="utf-8")
+	source = (_REPO_ROOT / "nammaoe2bot/__main__.py").read_text(encoding="utf-8")
 	tree = ast.parse(source)
 	constructions = [
 		n for n in ast.walk(tree)

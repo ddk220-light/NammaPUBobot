@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Startup schema migrations.
 
-Runs in PUBobot2.py AFTER database.db.connect() and BEFORE `import bot`. That
+Runs in nammaoe2bot/__main__.py AFTER database.db.connect() and BEFORE `import bot`. That
 ordering is load-bearing: every bot package declares its tables via
 db.ensure_table() at import time, and ensure_table CREATEs any name it does not
 find — so a rename that has not happened yet would strand the old table and

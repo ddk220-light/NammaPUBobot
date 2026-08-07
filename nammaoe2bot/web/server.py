@@ -130,7 +130,19 @@ IMPACT_TAG_LABELS = {
 # DELETE in _get_session keeps the tables self-cleaning without a cron.
 SESSION_LIFETIME = 86400  # 24 hours
 OAUTH_STATE_LIFETIME = 300  # 5 minutes
-COOKIE_NAME = "pubobot_session"
+COOKIE_NAME = "nammaoe2bot_session"
+# The name this cookie used to carry, still READ so the rename does not log
+# every dashboard admin out. A session lives in MySQL keyed on session_id; the
+# cookie only carries that id, so an old cookie names a perfectly valid row.
+# Written under the new name only — a browser that presents the old one gets
+# the new one set on its next login, and _LEGACY_COOKIE_NAME can be deleted
+# once SESSION_LIFETIME (24h) has passed with no old cookies arriving.
+_LEGACY_COOKIE_NAME = "pubobot_session"
+
+
+def _session_cookie(request):
+	"""The session id this request carries, under either name."""
+	return request.cookies.get(COOKIE_NAME) or request.cookies.get(_LEGACY_COOKIE_NAME)
 
 # Opportunistic cleanup — run a single DELETE of expired rows at most once
 # every 5 minutes. Gated on a module-level timestamp so a burst of requests
@@ -231,7 +243,7 @@ async def _get_session(request):
 	sessions/oauth states at most once every 5 minutes.
 	"""
 	await _cleanup_expired_sessions()
-	session_id = request.cookies.get(COOKIE_NAME)
+	session_id = _session_cookie(request)
 	if not session_id:
 		return None
 	row = await db.select_one(
@@ -2470,7 +2482,7 @@ async def handle_auth_callback(request):
 
 
 async def handle_auth_logout(request):
-	session_id = request.cookies.get(COOKIE_NAME)
+	session_id = _session_cookie(request)
 	if session_id:
 		try:
 			await db.delete('web_sessions', where={'session_id': session_id})
@@ -2478,6 +2490,7 @@ async def handle_auth_logout(request):
 			pass
 	resp = web.HTTPFound("/")
 	resp.del_cookie(COOKIE_NAME)
+	resp.del_cookie(_LEGACY_COOKIE_NAME)
 	raise resp
 
 
