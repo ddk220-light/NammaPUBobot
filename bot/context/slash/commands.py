@@ -35,7 +35,7 @@ async def run_slash(coro: Callable, interaction: Interaction, **kwargs):
 		log.error('Skipping an outdated interaction.')
 		return
 
-	if not bot.bot_ready:
+	if not dc.app.ready:
 		await interaction.response.send_message(
 			embed=error_embed("Bot is under connection, please try agian later...", title="Error")
 		)

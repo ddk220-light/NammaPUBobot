@@ -79,8 +79,6 @@ class _TTLReactionDict(dict):
 		return len(expired)
 
 
-bot_was_ready = False
-bot_ready = False
 queue_channels = dict()  # {channel.id: QueueChannel()}
 active_queues = []
 active_matches = []

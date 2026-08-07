@@ -619,6 +619,21 @@ class _FakeDiscordClient:
 
 _fake_core_client = types.ModuleType('core.client')
 _fake_core_client.dc = _FakeDiscordClient()
+
+# The real entrypoint does `dc.app = Application(client=dc)` at boot, and the
+# live state that used to be bot/__init__.py globals now lives there. Without
+# this the stub is a DIFFERENT SHAPE from production: any code path a test
+# reaches that touches dc.app raises AttributeError, which reads as a broken
+# test rather than as the missing wiring it would be in production.
+#
+# Imported lazily inside a try so conftest still loads if bot/app.py is being
+# moved — this file has to survive the restructure that is renaming it.
+try:
+	from bot.app import Application as _Application
+	_fake_core_client.dc.app = _Application(client=_fake_core_client.dc)
+except Exception:  # pragma: no cover - only during a move of bot/app.py
+	pass
+
 sys.modules['core.client'] = _fake_core_client
 
 

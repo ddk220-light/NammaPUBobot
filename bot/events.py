@@ -173,7 +173,7 @@ async def on_message(message):
 	# only shorthands kept. They reuse the existing add/remove command handlers
 	# (add with no args -> default/active queues; remove with no args -> all).
 	if message.content in ('++', '--'):
-		if (qc := bot.queue_channels.get(message.channel.id)) is not None and bot.bot_ready:
+		if (qc := bot.queue_channels.get(message.channel.id)) is not None and dc.app.ready:
 			from bot.context.message import MessageContext
 			ctx = MessageContext(qc, message)
 			try:
@@ -288,7 +288,7 @@ async def on_raw_reaction_remove(payload):
 @dc.event
 async def on_ready():
 	await dc.change_presence(activity=Activity(type=ActivityType.watching, name=cfg.STATUS))
-	if not bot.bot_was_ready:  # Connected for the first time, load everything
+	if not dc.app.was_ready:  # Connected for the first time, load everything
 		log.info(f"Logged in discord as '{dc.user.name}#{dc.user.discriminator}'.")
 		log.info("Loading queue channels...")
 		for channel_id in await bot.QueueChannel.cfg_factory.p_keys():
@@ -335,25 +335,25 @@ async def on_ready():
 			log.error(f"Gold bulk seed failed:\n{traceback.format_exc()}")
 
 		await bot.load_state()
-		bot.bot_was_ready = True
-		bot.bot_ready = True
+		dc.app.was_ready = True
+		dc.app.ready = True
 		log.info("Done.")
 	else:  # Reconnected, fetch new channel objects
-		bot.bot_ready = True
+		dc.app.ready = True
 		log.info("Reconnected to discord.")
 
 
 @dc.event
 async def on_disconnect():
 	log.info("Connection to discord is lost.")
-	bot.bot_ready = False
+	dc.app.ready = False
 
 
 @dc.event
 async def on_resumed():
 	log.info("Connection to discord is resumed.")
-	if bot.bot_was_ready:
-		bot.bot_ready = True
+	if dc.app.was_ready:
+		dc.app.ready = True
 
 
 @dc.event
