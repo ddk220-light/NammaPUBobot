@@ -10,7 +10,7 @@ A persona is Style x Team-Role:
     impact chart and how volatile their game-to-game impact is
     (carry / engine / wildcard / support / anchor).
 
-Pure module (no DB, no Discord): bot/web.py feeds it aggregates from
+Pure module (no DB, no Discord): nammaoe2bot/web/server.py feeds it aggregates from
 _player_impact_profile, and anything else (e.g. Discord embeds) can reuse it.
 Thresholds are calibrated against the live history via
 utils/persona_calibration.py — the axis scale factors roughly equalize the

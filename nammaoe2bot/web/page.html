@@ -1332,7 +1332,7 @@ async function authFetch(url, opts) {
   // captured once per login from /api/me and lives on currentUser; every
   // POST/PUT/PATCH/DELETE must echo it back via X-CSRF-Token, or the
   // server returns 403. This is the dashboard half of the CSRF protection
-  // landed in 2026-04-11 — the server half is _check_csrf in bot/web.py.
+  // landed in 2026-04-11 — the server half is _check_csrf in nammaoe2bot/web/server.py.
   var method = ((opts.method || 'GET') + '').toUpperCase();
   if (method !== 'GET' && method !== 'HEAD' && currentUser && currentUser.csrf) {
     opts.headers = opts.headers || {};

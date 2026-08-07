@@ -263,8 +263,8 @@ REGISTRY = {
 		layer="derived", tenancy="community", writers=("nammaoe2bot/derived/civ_stats.py",), retention="forever"
 	),
 	# ops/web
-	"web_sessions": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
-	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("bot/web.py",), retention="forever"),
+	"web_sessions": dict(layer="ops", tenancy="global", writers=("nammaoe2bot/web/server.py",), retention="forever"),
+	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("nammaoe2bot/web/server.py",), retention="forever"),
 }
 
 ALL_TABLES = frozenset(REGISTRY)

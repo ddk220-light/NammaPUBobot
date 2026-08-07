@@ -72,8 +72,8 @@ def _scrub_csv_filenames(src):
 	return src
 
 
-# The extensions the walk below scans. `.html` is here for bot/web_page.html,
-# the self-contained dashboard SPA: 200KB of inline JS that calls bot/web.py's
+# The extensions the walk below scans. `.html` is here for nammaoe2bot/web/page.html,
+# the self-contained dashboard SPA: 200KB of inline JS that calls nammaoe2bot/web/server.py's
 # REST API, so it is exactly the kind of file a stale table or field name
 # survives in — and, being the only non-Python file that talks about the schema
 # at all, exactly the kind CI would never look at. Substring matching is safe on
@@ -127,12 +127,12 @@ def test_the_guard_covers_the_files_outside_the_package_directories():
 
 	This recomputes the walk AND applies _ALLOW, because the guard skips
 	allowlisted files before reading them: checking the walk alone left the
-	allowlist as an unguarded back door, so adding bot/web_page.html to _ALLOW
+	allowlist as an unguarded back door, so adding nammaoe2bot/web/page.html to _ALLOW
 	removed 200KB of coverage and passed green. Both halves of "is this file
 	actually checked" are asserted. """
 	root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 	checked = {rel for _path, rel in _scanned_files(root) if rel not in _ALLOW}
-	for rel in ("start.py", "PUBobot2.py", os.path.join("bot", "web_page.html")):
+	for rel in ("start.py", "PUBobot2.py", os.path.join("nammaoe2bot", "web", "page.html")):
 		assert rel in checked, f"{rel} is not covered by the stale-name guard"
 
 

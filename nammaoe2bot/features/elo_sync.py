@@ -6,7 +6,7 @@ from nammaoe2bot.runtime.database import db
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.features.civs.sync import find_matching_lobby, find_matching_lobby_from_history, link_and_write
 
-# Last successful ELO sync timestamp (unix). Read by bot/web.py handle_health as
+# Last successful ELO sync timestamp (unix). Read by nammaoe2bot/web/server.py handle_health as
 # a liveness signal — a long gap here, combined with no new Pubobot messages,
 # is just quiet; but a long gap while matches are happening means the
 # sync pipeline is broken.

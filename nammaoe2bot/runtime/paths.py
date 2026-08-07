@@ -19,9 +19,9 @@ Anchored on the PACKAGE instead. Every module inside nammaoe2bot is the same
 distance from nammaoe2bot/, which is zero — the package knows its own location
 regardless of how deeply the importer sits inside it.
 
-A path that is genuinely relative to one module — bot/web.py's web_page.html
-sits beside bot/web.py and moves with it — should stay `os.path.dirname(
-__file__)` and does not belong here.
+A path that is genuinely relative to one module — web/server.py's page.html
+sits beside it and moves with it — should stay `os.path.dirname(__file__)` and
+does not belong here.
 """
 import os
 

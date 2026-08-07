@@ -143,7 +143,7 @@ sys.modules['aiohttp'] = _fake_aiohttp
 
 
 # ─── aiohttp.web (stub) ──────────────────────────────────────────────
-# `bot/web.py` does `from aiohttp import web` and every handler in it ends in
+# `nammaoe2bot/web/server.py` does `from aiohttp import web` and every handler in it ends in
 # `web.json_response(...)`. Until stage 5d the only way to test that file was to
 # parse it with `ast` and assert on its source (see test_web_identity.py), which
 # is how a web endpoint could read a retired table for two stages without a test
@@ -212,12 +212,12 @@ _fake_aiohttp_web.TCPSite = object
 # These were ONE class wearing five names, which did not merely leave the OAuth
 # path untested — it made it untestable. `isinstance(HTTPFound('/x'),
 # HTTPNotFound)` was True, so pytest.raises could not fail on any of them;
-# `location` was read from kwargs while all three call sites in bot/web.py pass
+# `location` was read from kwargs while all three call sites in nammaoe2bot/web/server.py pass
 # it positionally, so it was always None; and set_cookie/del_cookie were absent
 # entirely, so login and logout AttributeError'd the moment a test touched them.
 #
 # In real aiohttp these exceptions ARE responses (HTTPException subclasses
-# Response), which is why bot/web.py does `resp = web.HTTPFound("/")`,
+# Response), which is why nammaoe2bot/web/server.py does `resp = web.HTTPFound("/")`,
 # `resp.set_cookie(...)`, `raise resp`. The shapes below keep that: distinct
 # types, the real positional signatures, a status per class, and the cookie jar.
 class _FakeHTTPException(_FakeResponse, Exception):
@@ -277,7 +277,7 @@ _fake_aiohttp.web = _fake_aiohttp_web
 # ─── nextcord (stub) ─────────────────────────────────────────────────
 # Reached only through nammaoe2bot/runtime/cfg_factory.py (`from nextcord import Guild`, for an
 # isinstance check) and nammaoe2bot/runtime/utils.py (Embed + three utils helpers), both of
-# which bot/web.py imports. Permissive on purpose: nothing under test calls into
+# which nammaoe2bot/web/server.py imports. Permissive on purpose: nothing under test calls into
 # it, so a stand-in class that accepts anything is enough, and pinning a fuller
 # shape would be inventing an API contract this repo does not own.
 class _NextcordStub:
@@ -295,7 +295,7 @@ class FakeEmbed:
 	This one is NOT a rubber stamp on purpose. nammaoe2bot/runtime/utils.py's error_embed /
 	ok_embed build an Embed at import-of-nammaoe2bot.runtime.utils time from whatever
 	sys.modules['nextcord'] holds, and nammaoe2bot.runtime.utils is imported (via
-	nammaoe2bot.runtime.cfg_factory, via bot/web.py) during collection of
+	nammaoe2bot.runtime.cfg_factory, via nammaoe2bot/web/server.py) during collection of
 	tests/test_web_repoint.py — before any test's own nextcord fake is
 	installed. A stub that swallowed the kwargs would make `embed.title` a stub
 	object and every copy assertion in tests/test_identity.py would compare a
@@ -609,7 +609,7 @@ sys.modules['emoji'] = _fake_emoji
 # ─── nammaoe2bot.runtime.client (stub) ──────────────────────────────────────────────
 # The real module subclasses nextcord.Client and builds an Intents object at
 # import time, so it is faked outright rather than run against the permissive
-# nextcord stub above. bot/web.py reaches `dc` for three things only: looking up
+# nextcord stub above. nammaoe2bot/web/server.py reaches `dc` for three things only: looking up
 # a user's avatar, walking the guild list, and the readiness flag the health
 # endpoint reports. All three answer "nothing" here, which is the state a test
 # with no Discord connection is actually in.
@@ -623,7 +623,7 @@ class _FakeDiscordClient:
 		return None
 
 	def get_guild(self, _guild_id):
-		# bot/web.py's dashboard-config endpoints call this; without it they
+		# nammaoe2bot/web/server.py's dashboard-config endpoints call this; without it they
 		# AttributeError on contact rather than taking their "Guild not found"
 		# branch, which is the branch a test with no Discord connection wants.
 		return None

@@ -1,7 +1,7 @@
 """Stage 5d: the web reads the derived layer, and nothing it retired.
 
-These drive the REAL handlers in bot/web.py against a fake adapter and assert on
-the payload they return. That distinction is the point of the file: bot/web.py's
+These drive the REAL handlers in nammaoe2bot/web/server.py against a fake adapter and assert on
+the payload they return. That distinction is the point of the file: nammaoe2bot/web/server.py's
 existing tests (test_web_identity.py) parse the source with `ast`, which can tell
 you a query mentions a table but never what an endpoint actually renders — and a
 source-level check is exactly what let a frozen persona blurb and a CSV snapshot
@@ -20,12 +20,28 @@ from pathlib import Path
 
 import pytest
 
-import bot.web as web
+import nammaoe2bot.web.server as web
 from nammaoe2bot.derived import rollups
 from nammaoe2bot.features.scouting.report import PENDING
 
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def test_the_server_can_actually_find_its_page():
+	""" HTML_PATH is built from __file__ and the dashboard has a FALLBACK for a
+	missing file — `_html_cache = "<h1>page.html not found</h1>"` — so a wrong
+	path serves that string with a 200 instead of raising. Moving web_page.html
+	to web/page.html left the filename in HTML_PATH untouched and every test in
+	this suite still passed, because they all read the page by their own
+	literal path rather than by the server's.
+
+	This asserts the server's own answer, which is the only one that matters at
+	runtime. """
+	assert os.path.isfile(web.HTML_PATH), (
+		f"nammaoe2bot/web/server.py points HTML_PATH at {web.HTML_PATH}, which does not "
+		f"exist — the dashboard would serve its not-found placeholder")
+
 
 
 class FakeDB:
@@ -248,7 +264,7 @@ def test_the_retired_civ_csv_is_gone_from_disk():
 def test_the_module_imports_no_csv_reader():
 	""" `import csv` was there for one reason. Left behind, it is a loaded gun
 	pointed at the next person who needs a quick data source. """
-	src = Path(_REPO_ROOT, "bot", "web.py").read_text()
+	src = Path(_REPO_ROOT, "nammaoe2bot", "web", "server.py").read_text()
 	assert "\nimport csv" not in src
 	assert "csv.DictReader" not in src
 	assert "civ_elo_stats.csv'" not in src and 'civ_elo_stats.csv"' not in src
@@ -395,7 +411,7 @@ def test_a_player_with_no_rollup_row_yields_exactly_the_pending_string(monkeypat
 def test_the_pending_string_is_the_one_discord_prints():
 	""" Spelled once, in nammaoe2bot/features/scouting/report.py, so `/rank` and the web page
 	cannot drift into two slightly different sentences. """
-	src = Path(_REPO_ROOT, "bot", "web.py").read_text()
+	src = Path(_REPO_ROOT, "nammaoe2bot", "web", "server.py").read_text()
 	assert "scouting_report.PENDING" in src
 	assert '"Statistics pending linking"' not in src
 
@@ -478,7 +494,7 @@ def test_a_malformed_rollup_blob_raises_rather_than_rendering_an_empty_report(mo
 
 def test_the_scouting_block_reaches_the_player_payload(monkeypatch):
 	""" _scouting_payload being right is worth nothing if the handler drops it. """
-	src = Path(_REPO_ROOT, "bot", "web.py").read_text()
+	src = Path(_REPO_ROOT, "nammaoe2bot", "web", "server.py").read_text()
 	assert src.count('"scouting_report": scouting') == 2, \
 		"both /api/player-stats and /api/match-stats?player_id= must carry the block"
 
@@ -605,7 +621,7 @@ def test_the_player_page_carries_no_generated_persona(monkeypatch):
 
 
 def test_the_persona_modules_are_no_longer_imported():
-	src = Path(_REPO_ROOT, "bot", "web.py").read_text()
+	src = Path(_REPO_ROOT, "nammaoe2bot", "web", "server.py").read_text()
 	assert "persona_store" not in src
 	assert "import persona" not in src
 	assert "rs_persona" not in src
@@ -615,7 +631,7 @@ def test_the_persona_modules_are_no_longer_imported():
 def test_the_spa_does_not_reference_a_removed_payload_field():
 	""" The page is the other half of every repoint above: a field the API stopped
 	sending, still read here, renders as undefined rather than as an error. """
-	page = Path(_REPO_ROOT, "bot", "web_page.html").read_text()
+	page = Path(_REPO_ROOT, "nammaoe2bot", "web", "page.html").read_text()
 	for gone in ("impact_profile.persona", "p.persona", "profile.scout_report",
 	             "luckProfileForPlayer(", "luckBaseline(", "res.player_threshold",
 	             "games_player_above", "winrate_team_below"):
@@ -624,7 +640,7 @@ def test_the_spa_does_not_reference_a_removed_payload_field():
 
 
 # ─── HTTP status codes are part of the contract, not decoration ───
-# ~30 responses in bot/web.py carry an explicit status (400/401/403/404/503) and
+# ~30 responses in nammaoe2bot/web/server.py carry an explicit status (400/401/403/404/503) and
 # not one was asserted, so rewriting the fake's json_response to DISCARD the
 # caller's status passed the whole suite. The SPA branches on status — a 401
 # sends it to the login screen — so an auth regression returning
@@ -715,7 +731,7 @@ def test_every_error_branch_in_the_module_carries_a_status(monkeypatch):
 	payload is an {"error": ...} literal must name a status. """
 	import ast
 
-	tree = ast.parse(Path(_REPO_ROOT, "bot", "web.py").read_text())
+	tree = ast.parse(Path(_REPO_ROOT, "nammaoe2bot", "web", "server.py").read_text())
 	naked = []
 	for node in ast.walk(tree):
 		if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
@@ -759,7 +775,7 @@ def test_login_without_oauth_configured_is_a_400(monkeypatch):
 
 def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
 	""" The redirect target is the whole point of the handler, and it was
-	unreachable: `location` came from kwargs while bot/web.py passes it
+	unreachable: `location` came from kwargs while nammaoe2bot/web/server.py passes it
 	positionally, so the fake reported None no matter what was raised. """
 	fake = install_db(monkeypatch, FakeDB())
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
@@ -822,7 +838,7 @@ def test_logout_clears_the_session_cookie_and_redirects_home(monkeypatch):
 
 
 # ─── this file must not change what another file sees ───
-# `import bot.web` at module scope runs during COLLECTION and pulls in
+# `import nammaoe2bot.web.server` at module scope runs during COLLECTION and pulls in
 # nammaoe2bot.runtime.cfg_factory -> nammaoe2bot.runtime.utils, which builds Embeds at import time out of
 # whatever sys.modules['nextcord'] holds. That cached nammaoe2bot.runtime.utils is then shared
 # with every later file, so a fake defined here can decide what an unrelated
@@ -859,5 +875,5 @@ def test_importing_this_file_leaves_the_shared_adapter_alone():
 	in one order and fail in another. """
 	from nammaoe2bot.runtime.database import db as real_db
 
-	assert web.db is real_db, "bot.web.db was left pointing at a test double"
+	assert web.db is real_db, "nammaoe2bot.web.server.db was left pointing at a test double"
 	assert rollups.db is real_db, "nammaoe2bot.derived.rollups.db was left pointing at a test double"

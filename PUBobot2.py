@@ -76,7 +76,7 @@ bootstrap(dc.app)
 from bot.main import save_state
 
 # Load web server
-from bot.web import start_web_server
+from nammaoe2bot.web.server import start_web_server
 web_runner = None
 
 log = console.log

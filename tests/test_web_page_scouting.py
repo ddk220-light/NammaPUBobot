@@ -1,7 +1,7 @@
 """The SPA's scouting-report render functions, EXECUTED.
 
-WHY THIS FILE EXISTS. bot/web_page.html is a self-contained SPA: 200KB of
-inline JS that renders everything bot/web.py's REST API returns. The scouting
+WHY THIS FILE EXISTS. nammaoe2bot/web/page.html is a self-contained SPA: 200KB of
+inline JS that renders everything nammaoe2bot/web/server.py's REST API returns. The scouting
 block (`scoutingLines`, `scoutingCard`, `scoutingSpawnText`) is the last mile of
 stage 5's honest-numbers contract -- every figure carries its own denominator, a
 missing measurement is omitted rather than zeroed, and a linked player with a
@@ -24,7 +24,7 @@ fails six tests). Only the render was unguarded.
 HOW. The functions are pure -- data in, HTML string out -- so they are pulled
 out of the page by name and run under node, and every assertion lives here in
 Python where pytest can report it. Extracting them into a separate .js file
-would mean the SPA stops being self-contained and bot/web.py grows a second
+would mean the SPA stops being self-contained and nammaoe2bot/web/server.py grows a second
 route to serve; reading them out of the page instead keeps one shipped artifact
 and still executes the real code. If a function is renamed or deleted, the
 extraction fails loudly rather than quietly covering nothing.
@@ -42,7 +42,7 @@ import textwrap
 import pytest
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_PAGE = os.path.join(_REPO_ROOT, "bot", "web_page.html")
+_PAGE = os.path.join(_REPO_ROOT, "nammaoe2bot", "web", "page.html")
 
 # The functions under test, plus the one page helper they call. `esc` is NOT
 # extracted: it reaches for `document` to escape via the DOM, and the harness
@@ -65,7 +65,7 @@ def _extract_function(source, name):
 	rather than returning something subtly wrong.
 	"""
 	start = source.find(f"function {name}(")
-	assert start != -1, f"bot/web_page.html no longer defines {name}() — coverage would be silently lost"
+	assert start != -1, f"nammaoe2bot/web/page.html no longer defines {name}() — coverage would be silently lost"
 	i = source.index("{", start)
 	depth, quote, k = 0, None, i
 	while k < len(source):
@@ -94,13 +94,13 @@ def _extract_function(source, name):
 			if depth == 0:
 				return source[start:k + 1]
 		k += 1
-	raise AssertionError(f"unbalanced braces while extracting {name}() from bot/web_page.html")
+	raise AssertionError(f"unbalanced braces while extracting {name}() from nammaoe2bot/web/page.html")
 
 
 def _node():
 	node = shutil.which("node")
 	assert node, (
-		"node is required to execute bot/web_page.html's render functions. This test "
+		"node is required to execute nammaoe2bot/web/page.html's render functions. This test "
 		"must never be skipped: skipping it restores the exact hole it was written to "
 		"close — three of stage 5's four honest-number rules rest on nothing else.")
 	return node
@@ -139,7 +139,7 @@ def _render(tmp_path, cases):
 	return json.loads(proc.stdout)
 
 
-# ── payloads, shaped exactly as bot/web.py's _scouting_payload emits ──
+# ── payloads, shaped exactly as nammaoe2bot/web/server.py's _scouting_payload emits ──
 # 0.34 military and 0.18 villager sum past a half, which is CORRECT: the two
 # medals are independent and a player earns neither in most games. That is the
 # number the denominator exists to make legible, and the number a "normalise to
@@ -207,7 +207,7 @@ def rendered(tmp_path_factory):
 # ── the peak, which is absent on every production row today ──────────────
 
 def test_the_apm_line_omits_the_peak_entirely_when_none_was_captured(rendered):
-	""" peak_eapm is NULL on every production row, so bot/web.py leaves the peak
+	""" peak_eapm is NULL on every production row, so nammaoe2bot/web/server.py leaves the peak
 	keys OUT of the payload rather than sending nulls. Reading them anyway
 	renders `peak undefined over undefined`, which is what shipped green. """
 	apm = [ln for ln in rendered["full"]["lines"] if ln.startswith("eAPM")]
@@ -384,7 +384,7 @@ def test_node_is_available_and_the_suite_never_skips_this_file():
 	""" Stated as its own assertion so a CI image losing node fails here, with
 	this message, rather than as four confusing render failures. """
 	assert shutil.which("node"), textwrap.dedent("""
-		node is not on PATH. These tests execute bot/web_page.html's real render
+		node is not on PATH. These tests execute nammaoe2bot/web/page.html's real render
 		functions; without a JS runtime the SPA's honest-number rules have no
 		executable coverage at all. Install node (CI does this explicitly in
 		.github/workflows/ci.yml) rather than skipping the file.""")

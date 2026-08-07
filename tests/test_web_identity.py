@@ -1,6 +1,6 @@
-"""AST-level tests for bot/web.py's identity reads.
+"""AST-level tests for nammaoe2bot/web/server.py's identity reads.
 
-bot/web.py can't be imported under CI — it pulls in aiohttp.web and
+nammaoe2bot/web/server.py can't be imported under CI — it pulls in aiohttp.web and
 nammaoe2bot.runtime.client's nextcord dependency, neither installed in the pytest-only CI
 job (see test_persona_store.py's PERIODS comparison for the established
 workaround of parsing the source with ast instead of importing it).
@@ -15,7 +15,7 @@ why they are not spelled out here.
 import ast
 from pathlib import Path
 
-_PATH = Path(__file__).resolve().parent.parent / "bot" / "web.py"
+_PATH = Path(__file__).resolve().parent.parent / "nammaoe2bot" / "web" / "server.py"
 _SRC = _PATH.read_text()
 _TREE = ast.parse(_SRC)
 
@@ -24,7 +24,7 @@ def _function(name):
 	for node in ast.walk(_TREE):
 		if isinstance(node, ast.AsyncFunctionDef) and node.name == name:
 			return node
-	raise AssertionError(f"{name} not found in bot/web.py")
+	raise AssertionError(f"{name} not found in nammaoe2bot/web/server.py")
 
 
 def _function_names():
@@ -85,4 +85,4 @@ def test_the_profile_map_csv_is_not_read_anywhere_in_web():
 	"""The whole file, not just the functions above. The retired TABLES are
 	covered by tests/test_naming.py (a global guard beats a per-file one); this
 	covers the CSV, which is not a table name and so is not in OLD_NAMES."""
-	assert "player_profile_map" not in _SRC, "bot/web.py still reads the profile-map CSV"
+	assert "player_profile_map" not in _SRC, "nammaoe2bot/web/server.py still reads the profile-map CSV"

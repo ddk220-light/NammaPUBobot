@@ -175,7 +175,7 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 			)
 
 		# Teammate/nemesis aggregation from gather_profile. The four dashboard
-		# duo/rival quadrant cards used to lead here, read off bot/web.py's
+		# duo/rival quadrant cards used to lead here, read off nammaoe2bot/web/server.py's
 		# player_overview_snapshot; that function was deleted with the persona
 		# stack it also carried (stage 5a), and the web overview page still
 		# renders the quadrants from its own handler.

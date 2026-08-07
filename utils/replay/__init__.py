@@ -19,7 +19,7 @@ pipelines have neither; utils/validate_apm.py shows what importing
 `nammaoe2bot.ingest.*` from a script actually costs (a 40-line fake-package and
 fake-core shim). Three more copies of that shim, to relocate a parser that needs
 none of it, would be the wrong trade. The rule `utils/` = "never imported by the
-bot" is already untrue (bot/web.py and nammaoe2bot/ingest/classifications.py both
+bot" is already untrue (nammaoe2bot/web/server.py and nammaoe2bot/ingest/classifications.py both
 import utils/classifications/); the fix for that is a real shared-library
 boundary, not the move of one file.
 

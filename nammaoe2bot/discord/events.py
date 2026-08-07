@@ -83,7 +83,7 @@ async def on_init():
 _last_state_save = 0
 _STATE_SAVE_INTERVAL = 30  # seconds; crash-survivability backstop for in-flight matches
 
-# Stamped every tick — read by bot/web.py handle_health as the "last_tick_age_seconds"
+# Stamped every tick — read by nammaoe2bot/web/server.py handle_health as the "last_tick_age_seconds"
 # liveness signal. If think() stops running (rare, but possible under a deep
 # deadlock or if the supervisor misses an exception) this value stops advancing
 # and /health reflects the stall.

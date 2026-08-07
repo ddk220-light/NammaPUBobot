@@ -34,7 +34,7 @@ def link_ready(entry, match_size):
 # ── join / spectate deep links ───────────────────────────────────────────
 # AoE2:DE registers an `aoe2de://` protocol handler. `0/<id>` joins the lobby,
 # `1/<id>` spectates. Discord link buttons only allow http(s)/discord schemes, so
-# the button points at an https redirect on our own web server (bot/web.py
+# the button points at an https redirect on our own web server (nammaoe2bot/web/server.py
 # /join|/spectate/<id>) which bounces the browser to the aoe2de:// link.
 
 def deep_link(game_id, mode="join"):

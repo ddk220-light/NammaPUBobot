@@ -225,7 +225,7 @@ async def user_for_profile(profile_id: int):
 async def names_for_profiles(profile_ids) -> dict:
 	""" {profile_id: aoe2_name} for every profile_id in `profile_ids` with a
 	known name. Profiles with no known name are simply absent — never mapped
-	to None. Used by bot/web.py's profile pages to match civ_picks rows
+	to None. Used by nammaoe2bot/web/server.py's profile pages to match civ_picks rows
 	recorded without a user_id (the un-linked lobby scrape, see
 	nammaoe2bot/features/civs/sync.persist_lobby_civs) back to a Discord user by AoE2 name. """
 	out = {}
@@ -247,7 +247,7 @@ async def profiles_and_names_by_user() -> dict:
 	Unowned profiles — user_id NULL — are absent entirely, the same rule
 	profiles_for_users follows.
 
-	This exists for bot/web.py's player directory, which needs the whole map at
+	This exists for nammaoe2bot/web/server.py's player directory, which needs the whole map at
 	once rather than per user: it lists every player the community has, and
 	per-user calls would be one query per row. It lives here, not as SQL in
 	web.py, because this module owns `identities` and is the single answer to

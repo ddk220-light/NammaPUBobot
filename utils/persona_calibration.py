@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Persona assignment report over a snapshot — sanity-check the taxonomy.
 
-Recomputes per-player aggregates (same shape bot/web.py feeds derive_persona)
+Recomputes per-player aggregates (same shape nammaoe2bot/web/server.py feeds derive_persona)
 from a replay_players snapshot and prints every player's persona with the
 axis evidence, plus the style/role distribution. Use it whenever persona
 thresholds or scoring weights change.

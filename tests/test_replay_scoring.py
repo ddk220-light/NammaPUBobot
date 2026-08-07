@@ -149,7 +149,7 @@ def test_early_aggressor_outranks_late_spam_turtle():
 
 
 def test_impact_queries_select_every_scoring_column():
-	"""bot/web.py and nammaoe2bot/features/postgame/card.py feed _impact_payload from hand-written
+	"""nammaoe2bot/web/server.py and nammaoe2bot/features/postgame/card.py feed _impact_payload from hand-written
 	SELECT column lists. A missing column silently zeroes that component for
 	every player (this shipped once: mil_pre_imperial was absent, flattening
 	the new army mix on the live site while the backfill — which uses
@@ -158,7 +158,7 @@ def test_impact_queries_select_every_scoring_column():
 	from nammaoe2bot.ingest.scoring import REQUIRED_COLUMNS
 
 	root = Path(__file__).resolve().parent.parent
-	for rel in ("bot/web.py", "nammaoe2bot/features/postgame/card.py"):
+	for rel in ("nammaoe2bot/web/server.py", "nammaoe2bot/features/postgame/card.py"):
 		src = (root / rel).read_text()
 		queries = [chunk for chunk in src.split('await db.fetchall(')
 		           if 'replay_players' in chunk.split('FROM')[0] + chunk[:600]

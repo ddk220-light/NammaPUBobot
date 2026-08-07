@@ -60,7 +60,7 @@ from nammaoe2bot.ingest import scoring as rs_scoring
 from nammaoe2bot.features.scouting.tag_leaderboard import tag_leaderboard_score
 
 # --- Paths ---
-HTML_PATH = os.path.join(os.path.dirname(__file__), 'web_page.html')
+HTML_PATH = os.path.join(os.path.dirname(__file__), 'page.html')
 # A civ needs this many recorded picks in the community before /api/civ-stats
 # lists it. Applied at read time and NOT shared with nammaoe2bot/features/civs/pools.py's
 # MIN_CIV_GAMES, which happens to hold the same number for a different question
@@ -205,7 +205,7 @@ def _load_html():
 		with open(HTML_PATH, 'r') as f:
 			_html_cache = f.read()
 	except FileNotFoundError:
-		_html_cache = "<h1>web_page.html not found</h1>"
+		_html_cache = "<h1>page.html not found</h1>"
 
 
 def _oauth_enabled():

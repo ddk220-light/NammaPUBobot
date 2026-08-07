@@ -31,7 +31,7 @@ WHAT MAKES A QUESTION FIT TO ASK (each one omits rather than degrades):
     is dropped. This is a real case, not a theoretical one: medal metrics are
     small integers averaged over few games.
   * HIDDEN PLAYERS ARE NEVER OPTIONS. `player_ratings.is_hidden` is how a
-    member opts out of being listed publicly (bot/web.py filters every public
+    member opts out of being listed publicly (nammaoe2bot/web/server.py filters every public
     listing on it); naming them in a channel-wide quiz would route around that.
 
 OPTIONS CARRY NAME + ELO, NEVER THE VALUE. The metric value is the answer --
@@ -255,7 +255,7 @@ def pick_elos(rows):
 
 	A user with rows in several of the community's channels gets the most
 	recently ranked one (then the higher rating, so the choice never depends on
-	row order). `is_hidden` is read as a per-user flag the same way bot/web.py
+	row order). `is_hidden` is read as a per-user flag the same way nammaoe2bot/web/server.py
 	reads it: hidden in any channel means hidden."""
 	best, hidden = {}, set()
 	for row in rows or []:

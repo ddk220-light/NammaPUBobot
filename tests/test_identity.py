@@ -862,7 +862,7 @@ def test_user_for_profile_returns_known_user(monkeypatch):
 
 
 # ─── names_for_profiles ──────────────────────────────────────────────────
-# bot/web.py's profile pages need a Discord user's known AoE2 in-game names
+# nammaoe2bot/web/server.py's profile pages need a Discord user's known AoE2 in-game names
 # (to match civ_picks rows recorded via the un-linked lobby scrape, which
 # carry no user_id — see persist_lobby_civs). identities.aoe2_name is the
 # resolver's own record of that, one per profile_id, so this is a thin
@@ -1410,7 +1410,7 @@ def _load_command_module(monkeypatch, relative, modname):
 	# The Embed fake comes from conftest rather than being redefined here.
 	# nammaoe2bot/runtime/utils.py builds Embeds at import time out of whatever
 	# sys.modules['nextcord'] holds, and it is imported during COLLECTION (via
-	# bot/web.py in tests/test_web_repoint.py) — so whether nammaoe2bot.runtime.utils sits on
+	# nammaoe2bot/web/server.py in tests/test_web_repoint.py) — so whether nammaoe2bot.runtime.utils sits on
 	# conftest's fake or this file's depended on collection order, and the two
 	# only agreed because a comment asked someone to keep them in step. One
 	# definition, nothing to drift, order irrelevant.

@@ -32,7 +32,7 @@ except ImportError:
 	scoring = _load("scoring")
 	persona = _load("persona")
 
-# Mirrors bot/web.py MATCH_STAT_PERIODS — every period the profile UI offers.
+# Mirrors nammaoe2bot/web/server.py MATCH_STAT_PERIODS — every period the profile UI offers.
 PERIODS = {
 	"all": None,
 	"year": 365,

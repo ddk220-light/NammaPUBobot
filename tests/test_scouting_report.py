@@ -916,7 +916,7 @@ def test_rank_survives_a_scouting_read_that_blows_up_and_shows_no_field(monkeypa
 
 
 # ── what stage 5a removed ────────────────────────────────────────────────
-# Source-level, because bot/web.py cannot be imported under CI (aiohttp.web +
+# Source-level, because nammaoe2bot/web/server.py cannot be imported under CI (aiohttp.web +
 # nammaoe2bot.runtime.client's nextcord) -- the same approach tests/test_web_identity.py
 # takes. These pin the deletion half of the cutover: the generated persona and
 # scout read are gone from /rank, and nothing recomputes a persona on ingest.
@@ -942,7 +942,7 @@ def test_rank_no_longer_renders_a_generated_persona_or_scout_read():
 
 
 def test_the_dashboard_overview_snapshot_is_gone_from_the_web_layer():
-	assert "player_overview_snapshot" not in _source("bot", "web.py")
+	assert "player_overview_snapshot" not in _source("nammaoe2bot", "web", "server.py")
 
 
 def test_the_ingest_path_no_longer_refreshes_personas():

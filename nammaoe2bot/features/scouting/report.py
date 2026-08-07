@@ -166,7 +166,7 @@ def _num(value):
 def _label(key):
 	""" A stored label key as a human name: `archer_rush` -> `Archer Rush`.
 
-	The same fallback bot/web.py and nammaoe2bot/ingest/card_query.py already
+	The same fallback nammaoe2bot/web/server.py and nammaoe2bot/ingest/card_query.py already
 	apply to these keys. Deliberately NOT a hand-written display map: there
 	are 17 strategy keys, a map would have to be kept in step with a classifier
 	registry that lives in another package, and a key missing from it would
@@ -245,7 +245,7 @@ def highlights(rollup, gt=None):
 	ordered strategy, spawn, unit.
 
 	SEPARATE FROM render() SO THE SELECTION HAS EXACTLY ONE IMPLEMENTATION.
-	`/rank` renders these as two sentences and bot/web.py's player page lays the
+	`/rank` renders these as two sentences and nammaoe2bot/web/server.py's player page lays the
 	same two out as a card, and the choice of WHICH strategy is a player's
 	strength is a shrunk-rate calculation against their own baseline (see the
 	module docstring) -- not a formatting detail either surface should be

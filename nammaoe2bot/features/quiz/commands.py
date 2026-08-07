@@ -25,7 +25,7 @@ async def quiz_disable(ctx):
 	"""Stop the daily quiz. ONE-WAY: nothing re-enables it.
 
 	/quiz enable went with the rest of the quiz config commands, and no env var
-	or web page sets enabled=1 -- bot/web.py has no quiz surface at all. Pulling
+	or web page sets enabled=1 -- nammaoe2bot/web/server.py has no quiz surface at all. Pulling
 	this leaves the quiz off until that page exists or someone runs SQL against
 	quiz_settings. That is the intended shape of an emergency stop, but it is
 	worth knowing before you press it rather than after.

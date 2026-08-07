@@ -6,7 +6,7 @@ Runtime-only (imports nextcord), so it is imported lazily by watcher.py and the
 builders live in nammaoe2bot/features/lobby/view.py so they unit-test without Discord.
 
 Discord only permits http(s)/discord schemes on link buttons, so the buttons point
-at our own https redirect (bot/web.py /join|/spectate/<id>) which bounces the
+at our own https redirect (nammaoe2bot/web/server.py /join|/spectate/<id>) which bounces the
 browser to the `aoe2de://` deep link that launches the game.
 """
 import nextcord
