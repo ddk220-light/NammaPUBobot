@@ -271,7 +271,7 @@ async def _post_result_and_gate(match, row, winner_idx, losing_captain):
 			pass
 		return
 
-	bot.waiting_reactions[message.id] = LossConfirm(match, message, losing_captain).process_reaction
+	match.qc.app.waiting_reactions[message.id] = LossConfirm(match, message, losing_captain).process_reaction
 	try:
 		await message.add_reaction("✅")
 	except DiscordException:
@@ -280,7 +280,7 @@ async def _post_result_and_gate(match, row, winner_idx, losing_captain):
 
 
 class LossConfirm:
-	"""✅-reaction handler registered in bot.waiting_reactions. Mirrors the
+	"""✅-reaction handler registered in app.waiting_reactions. Mirrors the
 	check-in reaction idiom: it relies on match.report_loss self-gating to
 	captains (a non-captain ✅ raises PermissionError and is swallowed), so the
 	right captain's click reports their team's loss while everyone else is inert."""
@@ -306,12 +306,12 @@ class LossConfirm:
 		if self.losing_captain is not None and user.id != self.losing_captain.id:
 			return
 		if self.m.state != self.m.WAITING_REPORT:
-			bot.waiting_reactions.pop(self.message.id, None)   # stale -> unsubscribe
+			self.m.qc.app.waiting_reactions.pop(self.message.id, None)   # stale -> unsubscribe
 			return
 		try:
 			ctx = bot.SystemContext(self.m.queue.qc)
 			await self.m.report_loss(ctx, user, False)
-			bot.waiting_reactions.pop(self.message.id, None)   # success -> unsubscribe
+			self.m.qc.app.waiting_reactions.pop(self.message.id, None)   # success -> unsubscribe
 		except (bot.Exc.PermissionError, bot.Exc.MatchStateError):
 			pass   # wrong reactor / stale state — stay live for the real captain
 		except Exception as e:

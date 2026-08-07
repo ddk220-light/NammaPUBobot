@@ -503,8 +503,8 @@ class Match:
 		return f"> *({self.id})* **{self.queue.name}** | `{join_and([get_nick(p) for p in self.players])}`"
 
 	async def cancel(self, ctx):
-		if self.check_in.message and self.check_in.message.id in bot.waiting_reactions.keys():
-			bot.waiting_reactions.pop(self.check_in.message.id)
+		if self.check_in.message and self.check_in.message.id in self.qc.app.waiting_reactions.keys():
+			self.qc.app.waiting_reactions.pop(self.check_in.message.id)
 		try:
 			await ctx.notice(
 				self.gt("{players} your match has been canceled.").format(players=join_and([p.mention for p in self.players]))

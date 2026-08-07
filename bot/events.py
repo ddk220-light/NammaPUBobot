@@ -129,11 +129,11 @@ async def on_think(frame_time):
 	# of its own — see bot/derived/sweeper.py before touching it.
 	await bot.derived.sweeper_jobs.think(frame_time)
 
-	# Sweep leaked check-in reaction callbacks. See _TTLReactionDict
-	# docstring in bot/__init__.py — entries older than 30 minutes are
+	# Sweep leaked check-in reaction callbacks. See TTLReactionDict
+	# docstring in bot/app.py — entries older than 30 minutes are
 	# guaranteed-dead leaks from check-in exit paths that raised before
 	# unsubscribing. Cheap (O(n), n ≈ 0-3) so no need to gate on interval.
-	bot.waiting_reactions.sweep_expired(frame_time)
+	dc.app.waiting_reactions.sweep_expired(frame_time)
 
 	# Periodic state snapshot — if the process crashes before a clean
 	# shutdown, SIGTERM (or the crash supervisor in PUBobot2.py) can only
@@ -244,8 +244,8 @@ async def on_interaction(interaction):
 
 @dc.event
 async def on_reaction_add(reaction, user):
-	if user.id != dc.user.id and reaction.message.id in bot.waiting_reactions:
-		await bot.waiting_reactions[reaction.message.id](reaction, user)
+	if user.id != dc.user.id and reaction.message.id in dc.app.waiting_reactions:
+		await dc.app.waiting_reactions[reaction.message.id](reaction, user)
 
 
 @dc.event
@@ -258,7 +258,7 @@ async def on_raw_reaction_remove(payload):
 	#      minutes but the cache turnover during a busy channel can evict them
 	#      before the user un-reacts, so the callback silently never ran.
 	#   2. Even when it did fire, the original code checked
-	#      `reaction.message.channel.id in bot.waiting_reactions` (channel vs
+	#      `reaction.message.channel.id in app.waiting_reactions` (channel vs
 	#      message id typo), so the lookup always failed. That's a 2022-vintage
 	#      bug that nobody caught because of (1).
 	#
@@ -269,7 +269,7 @@ async def on_raw_reaction_remove(payload):
 	# callback (`str(reaction) == self.READY_EMOJI`) continues to work.
 	if payload.user_id == dc.user.id:
 		return
-	if payload.message_id not in bot.waiting_reactions:
+	if payload.message_id not in dc.app.waiting_reactions:
 		return
 	# Resolve Member — the callback checks `user not in self.m.players`, so we
 	# need the actual Member object, not just the id.
@@ -280,7 +280,7 @@ async def on_raw_reaction_remove(payload):
 	if member is None:
 		return
 	try:
-		await bot.waiting_reactions[payload.message_id](payload.emoji, member, remove=True)
+		await dc.app.waiting_reactions[payload.message_id](payload.emoji, member, remove=True)
 	except Exception as e:
 		log.error(f"on_raw_reaction_remove callback error: {e}\n{traceback.format_exc()}")
 

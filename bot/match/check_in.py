@@ -80,7 +80,7 @@ class CheckIn:
 				f"Check-in for match {self.m.id} could not add its reactions ({e}). "
 				"Nobody can check in — verify the bot's Add Reactions permission."
 			)
-		bot.waiting_reactions[self.message.id] = self.process_reaction
+		self.m.qc.app.waiting_reactions[self.message.id] = self.process_reaction
 		await self.refresh(ctx)
 
 	async def refresh(self, ctx):
@@ -94,7 +94,7 @@ class CheckIn:
 			await self.finish(ctx)
 
 	async def finish(self, ctx):
-		bot.waiting_reactions.pop(self.message.id)
+		self.m.qc.app.waiting_reactions.pop(self.message.id)
 		self.ready_players = set()
 		if len(self.maps):
 			order = list(range(len(self.maps)))
@@ -197,7 +197,7 @@ class CheckIn:
 			await self.revert_single(ctx, member)
 
 	async def revert_single(self, ctx, member):
-		bot.waiting_reactions.pop(self.message.id, None)
+		self.m.qc.app.waiting_reactions.pop(self.message.id, None)
 		try:
 			await self.message.delete()
 		except DiscordException:
@@ -212,7 +212,7 @@ class CheckIn:
 	async def abort_timeout(self, ctx):
 		not_ready = [m for m in self.m.players if m not in self.ready_players]
 		if self.message:
-			bot.waiting_reactions.pop(self.message.id, None)
+			self.m.qc.app.waiting_reactions.pop(self.message.id, None)
 			try:
 				await self.message.delete()
 			except DiscordException:

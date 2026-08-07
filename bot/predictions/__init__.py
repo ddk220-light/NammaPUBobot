@@ -11,7 +11,7 @@ tables declared here via ensure_table at import, imported by bot/__init__.py for
 that side effect and the PredictionJobs singleton (see the export at the bottom
 for why the module holding it is called flow.py rather than jobs.py).
 
-Bets are never held in memory. bot.waiting_reactions is a 30-minute TTL dict
+Bets are never held in memory. app.waiting_reactions is a 30-minute TTL dict
 that a redeploy wipes, and matches routinely run longer than that, so every
 press is committed to prediction_bets (inside the transaction that moves the
 gold) and the freeze sweep reads the book back out of the DB — which makes the
