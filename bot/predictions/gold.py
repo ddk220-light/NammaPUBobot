@@ -86,7 +86,7 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_p
 
 	`is_player` says the bettor is on the side they just backed, decided by the
 	caller against the live roster and stored on the row. It is captured here
-	because it cannot be recovered later: the roster lives in bot.active_matches
+	because it cannot be recovered later: the roster lives in app.active_matches
 	and the match has left it by the time the result is reported.
 
 	Inside one transaction: the book re-read and row-locked (see below), the

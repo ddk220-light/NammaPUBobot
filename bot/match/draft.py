@@ -116,7 +116,7 @@ class Draft:
 		# Grab the next queued player who isn't already committed to another
 		# active match. busy_ids spans every active match, so it also excludes
 		# this match's own players (the caller included).
-		busy_ids = {p.id for m in bot.active_matches for p in m.players}
+		busy_ids = {p.id for m in self.m.qc.app.active_matches for p in m.players}
 		candidate = pick_available(self.m.queue.queue, busy_ids)
 		if candidate is None:
 			raise bot.Exc.NotFoundError(self.m.gt("There are no available players in the queue to substitute in."))

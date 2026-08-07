@@ -12,7 +12,7 @@ import bot
 def author_match(coro):
 	@wraps(coro)
 	async def wrapper(ctx, *args, **kwargs):
-		if (match := find(lambda m: m.qc == ctx.qc and ctx.author in m.players, bot.active_matches)) is None:
+		if (match := find(lambda m: m.qc == ctx.qc and ctx.author in m.players, ctx.qc.app.active_matches)) is None:
 			raise bot.Exc.NotFoundError(ctx.qc.gt("You are not in an active match."))
 		return await coro(ctx, match, *args, **kwargs)
 	return wrapper
@@ -32,7 +32,7 @@ async def sub_me(ctx, match: bot.Match):
 
 async def sub_auto(ctx, player: Member = None):
 	who = player or ctx.author
-	if (match := find(lambda m: m.qc == ctx.qc and who in m.players, bot.active_matches)) is None:
+	if (match := find(lambda m: m.qc == ctx.qc and who in m.players, ctx.qc.app.active_matches)) is None:
 		raise bot.Exc.NotInMatchError(ctx.qc.gt("Specified user is not in an active match."))
 	if match.state == bot.Match.CHECK_IN:
 		swapped = await match.check_in.replace_player(ctx, who)
@@ -47,7 +47,7 @@ async def sub_auto(ctx, player: Member = None):
 
 
 async def sub_for(ctx, player: Member):
-	if (match := find(lambda m: m.qc == ctx.qc and player in m.players, bot.active_matches)) is None:
+	if (match := find(lambda m: m.qc == ctx.qc and player in m.players, ctx.qc.app.active_matches)) is None:
 		raise bot.Exc.NotInMatchError(ctx.qc.gt("Specified user is not in a match."))
 	await ctx.qc.check_allowed_to_add(ctx, ctx.author, queue=match.queue)
 	await match.draft.sub_for(ctx, player, ctx.author)
@@ -55,9 +55,9 @@ async def sub_for(ctx, player: Member):
 
 async def sub_force(ctx, player1: Member, player2: Member):
 	ctx.check_perms(ctx.Perms.MODERATOR)
-	if (match := find(lambda m: m.qc == ctx.qc and player1 in m.players, bot.active_matches)) is None:
+	if (match := find(lambda m: m.qc == ctx.qc and player1 in m.players, ctx.qc.app.active_matches)) is None:
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Specified user is not in a match."))
-	if any((player2 in m.players for m in bot.active_matches)):
+	if any((player2 in m.players for m in ctx.qc.app.active_matches)):
 		raise bot.Exc.InMatchError(ctx.qc.gt("Specified user is in an active match."))
 
 	await match.draft.sub_for(ctx, player1, player2, force=True)
@@ -65,14 +65,14 @@ async def sub_force(ctx, player1: Member, player2: Member):
 
 async def put(ctx, match_id: int, player: Member, team_name: str):
 	ctx.check_perms(ctx.Perms.MODERATOR)
-	if (match := find(lambda m: m.qc == ctx.qc and m.id == match_id, bot.active_matches)) is None:
+	if (match := find(lambda m: m.qc == ctx.qc and m.id == match_id, ctx.qc.app.active_matches)) is None:
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id. Check `/matches`."))
 	await match.draft.put(ctx, player, team_name)
 
 
 async def report_admin(ctx, match_id: int, winner_team=None, draw=False, abort=False):
 	ctx.check_perms(ctx.Perms.MODERATOR)
-	if (match := find(lambda m: m.qc == ctx.qc and m.id == match_id, bot.active_matches)) is None:
+	if (match := find(lambda m: m.qc == ctx.qc and m.id == match_id, ctx.qc.app.active_matches)) is None:
 		raise bot.Exc.NotFoundError(ctx.qc.gt("Could not find match with specified id. Check `/matches`."))
 	if winner_team is None and not draw and not abort:
 		raise bot.Exc.SyntaxError(ctx.qc.gt("Please specify a team name or draw."))
@@ -128,7 +128,7 @@ async def lobby2(ctx, gameid: str):
 	# first so the ranked row exists before the announcer's launch-time persist check.
 	match = find(
 		lambda m: m.qc == ctx.qc and m.ranked and m.state == bot.Match.WAITING_REPORT and ctx.author in m.players,
-		bot.active_matches,
+		ctx.qc.app.active_matches,
 	)
 	if match is not None:
 		try:

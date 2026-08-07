@@ -52,7 +52,7 @@ async def unsettled_books(reported_before):
 	so re-running it is always safe.
 
 	`m.winner` rides along because the live Match object is long gone by then:
-	bot.active_matches dropped it at the top of finish_match, so the recorded
+	app.active_matches dropped it at the top of finish_match, so the recorded
 	result is the only surviving answer to "who won". NULL means the match
 	reported no clean win/loss, which the caller voids rather than settles.
 

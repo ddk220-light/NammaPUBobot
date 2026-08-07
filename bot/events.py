@@ -86,7 +86,7 @@ async def on_think(frame_time):
 	# doesn't skip the rest of the tick. Previously an exception in one
 	# match.think() broke the whole for-loop and starved every later
 	# match that tick.
-	for match in list(bot.active_matches):
+	for match in list(dc.app.active_matches):
 		try:
 			await match.think(frame_time)
 			match._think_errors = 0
@@ -101,9 +101,9 @@ async def on_think(frame_time):
 			# — that leaves the captain unable to /report and frees players to
 			# re-queue (the 1390237 incident). Only remove after repeated
 			# failures, so one persistently-broken match still can't starve the rest.
-			if match._think_errors >= 5 and match in bot.active_matches:
+			if match._think_errors >= 5 and match in dc.app.active_matches:
 				log.error(f"Removing match {match.id} after {match._think_errors} consecutive think errors.")
-				bot.active_matches.remove(match)
+				dc.app.active_matches.remove(match)
 			continue
 	await bot.expire.think(frame_time)
 	await bot.noadds.think(frame_time)
@@ -141,8 +141,8 @@ async def on_think(frame_time):
 	# disk for unexpected exits.
 	if frame_time - _last_state_save >= _STATE_SAVE_INTERVAL:
 		try:
-			bot.save_state()
-			await bot.save_state_db()   # durable copy on the MySQL volume
+			bot.save_state(dc.app)
+			await bot.save_state_db(dc.app)   # durable copy on the MySQL volume
 			_last_state_save = frame_time
 		except Exception as e:
 			log.error(f"Periodic save_state failed: {e}\n{traceback.format_exc()}")

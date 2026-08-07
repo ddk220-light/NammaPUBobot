@@ -528,7 +528,7 @@ class QueueChannel:
 				duration=seconds_to_str(ban_left)
 			))
 
-		if any((member in m.players for m in bot.active_matches)):
+		if any((member in m.players for m in self.app.active_matches)):
 			raise bot.Exc.InMatchError(self.gt("You are already in an active match."))
 
 		if queue:

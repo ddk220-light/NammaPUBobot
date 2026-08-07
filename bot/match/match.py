@@ -69,7 +69,7 @@ class Match:
 		match.init_teams(match.cfg['pick_teams'])
 		if match.ranked:
 			match.states.append(match.WAITING_REPORT)
-		bot.active_matches.append(match)
+		match.qc.app.active_matches.append(match)
 
 	@classmethod
 	async def fake_ranked_match(cls, ctx, queue, qc, winners, losers, draw=False, **kwargs):
@@ -136,7 +136,7 @@ class Match:
 			ctx = bot.SystemContext(qc)
 			await match.check_in.start(ctx)  # Spawn a new check_in message
 
-		bot.active_matches.append(match)
+		match.qc.app.active_matches.append(match)
 
 	def __init__(self, match_id, queue, qc, players, ratings, **cfg):
 
@@ -471,7 +471,7 @@ class Match:
 			log.error(f"Storyline insights failed for match {self.id}: {e}")
 
 	async def finish_match(self, ctx):
-		bot.active_matches.remove(self)
+		self.qc.app.active_matches.remove(self)
 		await self._stop_lobby_watcher()
 		self.queue.last_maps += self.maps
 		self.queue.last_maps = self.queue.last_maps[-len(self.maps)*self.queue.cfg.map_cooldown:]
@@ -511,7 +511,7 @@ class Match:
 			)
 		except DiscordException:
 			pass
-		bot.active_matches.remove(self)
+		self.qc.app.active_matches.remove(self)
 		await self._stop_lobby_watcher()
 
 		# Aborted match — nothing to score, so any live vote is discarded.

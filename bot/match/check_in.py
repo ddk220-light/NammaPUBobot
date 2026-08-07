@@ -148,7 +148,7 @@ class CheckIn:
 		available (the caller decides what to do with None). The new player
 		must check in themselves.
 		"""
-		busy_ids = {p.id for m in bot.active_matches for p in m.players}
+		busy_ids = {p.id for m in self.m.qc.app.active_matches for p in m.players}
 		candidate = pick_available(self.m.queue.queue, busy_ids)
 		if candidate is None:
 			return None
@@ -206,7 +206,7 @@ class CheckIn:
 			self.m.gt("{member} has aborted the check-in.").format(member=member.mention),
 			self.m.gt("Reverting {queue} to the gathering stage...").format(queue=f"**{self.m.queue.name}**")
 		)))
-		bot.active_matches.remove(self.m)
+		self.m.qc.app.active_matches.remove(self.m)
 		await self.m.queue.revert(ctx, [member], [m for m in self.m.players if m != member])
 
 	async def abort_timeout(self, ctx):
@@ -218,7 +218,7 @@ class CheckIn:
 			except DiscordException:
 				pass
 
-		bot.active_matches.remove(self.m)
+		self.m.qc.app.active_matches.remove(self.m)
 
 		await ctx.notice("\n".join((
 			self.m.gt("{members} was not ready in time.").format(members=join_and([m.mention for m in not_ready])),

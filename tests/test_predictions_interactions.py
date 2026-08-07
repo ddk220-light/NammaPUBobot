@@ -298,7 +298,12 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 			id=the_post["match_id"],
 			players=_roster([*team0, *team1, *unpicked]),
 			teams=[_roster(team0), _roster(team1), _roster(unpicked)])]
-	monkeypatch.setattr(sys.modules["bot"], "active_matches", matches, raising=False)
+	# Live match state hangs off the Application now, not off the bot module.
+	# flow._team_ids reads dc.app.active_matches, so patching the old module
+	# global would leave the roster empty and every own-team check would pass
+	# for the wrong reason — the participants would look like spectators.
+	from core.client import dc
+	monkeypatch.setattr(dc.app, "active_matches", matches, raising=False)
 	return wiring
 
 

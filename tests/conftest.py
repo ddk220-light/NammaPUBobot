@@ -24,6 +24,7 @@ bottom, which runs per-test and only after its own stubs are in place.
 """
 from __future__ import annotations
 
+import importlib.util
 import sys
 import types
 from pathlib import Path
@@ -622,17 +623,20 @@ _fake_core_client.dc = _FakeDiscordClient()
 
 # The real entrypoint does `dc.app = Application(client=dc)` at boot, and the
 # live state that used to be bot/__init__.py globals now lives there. Without
-# this the stub is a DIFFERENT SHAPE from production: any code path a test
-# reaches that touches dc.app raises AttributeError, which reads as a broken
-# test rather than as the missing wiring it would be in production.
+# this the stub is a DIFFERENT SHAPE from production: any path a test reaches
+# that touches dc.app raises AttributeError, which reads as a broken test
+# rather than as the missing wiring it would actually be.
 #
-# Imported lazily inside a try so conftest still loads if bot/app.py is being
-# moved — this file has to survive the restructure that is renaming it.
-try:
-	from bot.app import Application as _Application
-	_fake_core_client.dc.app = _Application(client=_fake_core_client.dc)
-except Exception:  # pragma: no cover - only during a move of bot/app.py
-	pass
+# Loaded BY PATH, not as `from bot.app import ...`: importing it through the
+# package runs bot/__init__.py, which pulls the whole nextcord-heavy import
+# graph and fails here. Deliberately NOT wrapped in try/except — if this stops
+# working the stub silently reverts to the wrong shape and every test that
+# touches app state starts passing for the wrong reason.
+_app_spec = importlib.util.spec_from_file_location(
+	"_bot_app_for_tests", Path(__file__).resolve().parent.parent / "bot" / "app.py")
+_app_mod = importlib.util.module_from_spec(_app_spec)
+_app_spec.loader.exec_module(_app_mod)
+_fake_core_client.dc.app = _app_mod.Application(client=_fake_core_client.dc)
 
 sys.modules['core.client'] = _fake_core_client
 

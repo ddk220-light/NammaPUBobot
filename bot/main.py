@@ -34,34 +34,34 @@ def update_rating_system(qc_cfg):
 	bot.queue_channels[qc_cfg.p_key].update_rating_system()
 
 
-def _serialize_state():
+def _serialize_state(app):
 	queues = []
 	for qc in bot.queue_channels.values():
 		for q in qc.queues:
 			if q.length > 0:
 				queues.append(q.serialize())
-	matches = [match.serialize() for match in bot.active_matches]
+	matches = [match.serialize() for match in app.active_matches]
 	return dict(queues=queues, matches=matches, expire=bot.expire.serialize())
 
 
-def save_state():
+def save_state(app):
 	"""Best-effort local snapshot to disk. Survives only same-container restarts
 	(the bot disk is ephemeral); the DURABLE copy is save_state_db(). Kept for
 	local dev and the sync signal/crash handlers, which can't await."""
 	log.info("Saving state...")
 	try:
 		with open("saved_state.json", "w") as f:
-			f.write(json.dumps(_serialize_state()))
+			f.write(json.dumps(_serialize_state(app)))
 	except Exception as e:
 		log.error(f"save_state (file) failed: {e}")
 
 
-async def save_state_db():
+async def save_state_db(app):
 	"""Durable state snapshot to MySQL — survives Railway redeploys/crashes."""
 	try:
 		await db.insert(
 			"bot_state",
-			dict(id=1, data=json.dumps(_serialize_state()), updated_at=int(time.time())),
+			dict(id=1, data=json.dumps(_serialize_state(app)), updated_at=int(time.time())),
 			on_duplicate="replace",
 		)
 	except Exception as e:

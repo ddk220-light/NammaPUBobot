@@ -21,6 +21,7 @@ impure orchestration only.
 import time
 
 from bot import identity
+from core.client import dc
 from core.console import log
 from core.database import db
 
@@ -112,7 +113,6 @@ async def resolve_row(row):
 	"""Per-row worker dispatched by LobbyJobs (the caller also guards). Resolves
 	one in_progress/awaiting_confirm lobbies row to a posted result or a no-op,
 	transitioning its status. Self-contained + guarded; never raises upward."""
-	import bot
 
 	now = int(time.time())
 	row_id = row.get("id")
@@ -130,7 +130,7 @@ async def resolve_row(row):
 
 	# 2) Resolve the live bot match FIRST. If it is gone or already past report
 	#    (reported manually / cancelled / timed out), do nothing but close the row.
-	match = next((m for m in bot.active_matches if m.id == row.get("match_id")), None)
+	match = next((m for m in dc.app.active_matches if m.id == row.get("match_id")), None)
 	if match is None or match.state != match.WAITING_REPORT:
 		await _set_status(row_id, "completed")   # resolved out-of-band: no message, no ratings
 		return

@@ -36,6 +36,7 @@ rather than about tidiness:
 import asyncio
 import time
 
+from core.client import dc
 from core.console import log
 
 from . import gold, scoring, store
@@ -260,8 +261,7 @@ def _team_ids(match_id):
 	[2] with idx=-1 — so this indexes the two real sides explicitly. Iterating
 	match.teams would turn unpicked players into a third side.
 	"""
-	import bot
-	for m in bot.active_matches:
+	for m in dc.app.active_matches:
 		if m.id == match_id:
 			return {p.id for p in m.teams[0]}, {p.id for p in m.teams[1]}
 	return set(), set()
@@ -301,7 +301,7 @@ async def _resume(post, now):
 
 	Everything it needs comes out of the database, because the Match object
 	this would otherwise read is gone: finish_match removes it from
-	bot.active_matches before it ever reaches settlement, and a redeploy takes
+	app.active_matches before it ever reaches settlement, and a redeploy takes
 	the process with it. The faucet is repeated too — it is an idempotent grant
 	keyed by (match, user), and a crash between the faucet and the payout
 	sweep leaves it half-applied exactly like the payouts.

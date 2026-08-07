@@ -29,5 +29,4 @@ from . import derived  # noqa: F401  (game_stats/game_labels ensure_table side e
 
 
 queue_channels = dict()  # {channel.id: QueueChannel()}
-active_matches = []
 
