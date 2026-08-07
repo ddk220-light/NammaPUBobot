@@ -24,8 +24,6 @@ REPLAY_INGEST_ENABLED = "{replay_ingest_enabled}"
 
 DB_URI = "{db_uri}"
 LOG_LEVEL = "{log_level}"
-COMMANDS_URL = "{commands_url}"
-HELP = """{help_text}"""
 STATUS = "{status}"
 
 WS_ENABLE = {ws_enable}
@@ -123,11 +121,7 @@ def main():
         replay_ingest_enabled=replay_ingest_enabled,
         db_uri=db_uri,
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
-        commands_url=os.environ.get("COMMANDS_URL",
-            "https://github.com/Leshaka/PUBobot2/blob/main/COMMANDS.md#avaible-commands"),
-        help_text=os.environ.get("HELP",
-            "PUBobot2 is a discord bot for pickup games organisation."),
-        status=os.environ.get("STATUS", "PUBobot2"),
+        status=os.environ.get("STATUS", "NammaAoe2Bot"),
         ws_enable=os.environ.get("WS_ENABLE", "False"),
         ws_port=os.environ.get("WS_PORT", os.environ.get("PORT", "8080")),
         ws_root_url=os.environ.get("WS_ROOT_URL", ""),

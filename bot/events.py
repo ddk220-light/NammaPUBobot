@@ -148,10 +148,22 @@ async def on_think(frame_time):
 			log.error(f"Periodic save_state failed: {e}\n{traceback.format_exc()}")
 
 
+# Answering a DM. Was cfg.HELP, an env-driven string that defaulted to
+# upstream's one-liner naming the wrong bot — so anyone who DMed us was told
+# "PUBobot2 is a discord bot for pickup games organisation." The bot only works
+# inside its pickup channel, so the useful answer is to say exactly that.
+_DM_REPLY = (
+	"I'm **NammaAoe2Bot** — I run the AoE2 pickup queue.\n\n"
+	"I only work inside the pickup channel, not in DMs. Head there and type "
+	"`/add` to join the queue, or `/profile_link` to connect your AoE2 profile "
+	"so your games get tracked."
+)
+
+
 @dc.event
 async def on_message(message):
 	if message.channel.type == ChannelType.private and message.author.id != dc.user.id:
-		await message.channel.send(cfg.HELP)
+		await message.channel.send(_DM_REPLY)
 
 	if message.channel.type != ChannelType.text:
 		return

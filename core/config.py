@@ -38,8 +38,6 @@ _SCHEMA = {
 	'REPLAY_INGEST_ENABLED': (bool, True),
 	'DB_URI': (str, ""),
 	'LOG_LEVEL': (str, "INFO"),
-	'COMMANDS_URL': (str, ""),
-	'HELP': (str, ""),
 	'STATUS': (str, ""),
 	'WS_ENABLE': (bool, False),
 	'WS_HOST': (str, ""),
