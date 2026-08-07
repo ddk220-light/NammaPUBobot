@@ -692,15 +692,6 @@ def test_fetch_decodes_the_stored_json_blob(monkeypatch):
 	assert asyncio.run(rollups.fetch(1, 42)) == _rich()
 
 
-def test_fetch_community_maps_every_user_to_their_blob(monkeypatch):
-	monkeypatch.setattr(rollups, "db", _FakeDb([
-		_stored(1, 42, _rich()), _stored(1, 43, _blob()), _stored(2, 44, _rich())]))
-
-	fetched = asyncio.run(rollups.fetch_community(1))
-	assert set(fetched) == {42, 43}
-	assert fetched[42]["medal_rates"]["games_ranked"] == 10
-
-
 # ── /identity status' gated-features list ────────────────────────────────
 
 # ── the /rank wiring (bot/commands/stats.py) ─────────────────────────────

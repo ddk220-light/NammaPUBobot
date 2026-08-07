@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import random
 import re
 from nextcord import Embed
 from nextcord.utils import get, find, escape_markdown  # noqa: F401
@@ -20,22 +19,9 @@ class EmojiFormatter(object):  # noqa: UP004
 			return ''
 
 
-def random_string(length):
-	letters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-	return ''.join(random.choice(letters) for i in range(length))
-
-
-def hl_user(user_id):
-	return '<@' + str(user_id) + '>'
-
-
 def join_and(names):
 	""" Generates 'item1, item2, item3 & item4' string from a list """
 	return ', '.join(names[:-1]) + f' & {names[-1]}' if len(names) > 1 else names[0]
-
-
-def hl_role(role_id):
-	return '<&' + str(role_id) + '>'
 
 
 def error_embed(description, title='Error'):
@@ -65,13 +51,6 @@ def format_role(string, guild):
 def format_emoji(string, guild):
 	emoji = get(guild.emojis, name=string)
 	return '<:{}:{}>'.format(emoji.name, emoji.id) if emoji else None
-
-
-def format_message(_string, _guild, **kwargs):
-	_string = re.sub('#([^ ,.!?]+)', lambda i: format_channel(i.group(1), _guild) or i.group(0), _string)
-	_string = re.sub('@([^ ,.!?]+)', lambda i: format_role(i.group(1), _guild) or i.group(0), _string)
-	_string = re.sub(':([^ ,.!?]+):', lambda i: format_emoji(i.group(1), _guild) or i.group(0), _string)
-	return _string.format(**kwargs)
 
 
 def escape(string):

@@ -161,28 +161,3 @@ async def refresh_match_users(replay_match_id):
 		await refresh_user(r["user_id"])
 	return len(rows or [])
 
-
-async def get_persona(user_id, period):
-	"""Stored persona payload for the API, or None if not materialized."""
-	if period not in PERIODS:
-		return None
-	row = await db.fetchone(
-		"SELECT * FROM rs_player_personas WHERE user_id=%s AND period=%s",
-		[user_id, period])
-	if not row:
-		return None
-	try:
-		evidence = json.loads(row.get("evidence_json") or "[]")
-	except (TypeError, ValueError):
-		evidence = []
-	return {
-		"key": row.get("persona_key"),
-		"name": row.get("name"),
-		"epithet": row.get("epithet"),
-		"tagline": row.get("tagline"),
-		"style": row.get("style"),
-		"role": row.get("role"),
-		"evidence": evidence,
-		"stored": True,
-		"computed_at": row.get("computed_at"),
-	}

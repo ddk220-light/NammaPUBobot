@@ -229,15 +229,3 @@ def carry_sort_key(payload):
 		str(payload.get("nick") or ""),
 	)
 
-
-def strength_glyphs(scores):
-	"""Compact qualitative read of army/eco/timing vs the match average —
-	no raw numbers (players shouldn't see internal component scores).
-	One-std-above -> up arrow, one-std-below -> down arrow, else a dot."""
-	def glyph(v):
-		if v >= 61:
-			return "▲"
-		if v <= 39:
-			return "▼"
-		return "·"
-	return "⚔{} 🌾{} ⏱{}".format(glyph(scores["army"]), glyph(scores["eco"]), glyph(scores["timing"]))

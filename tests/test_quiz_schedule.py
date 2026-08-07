@@ -47,22 +47,6 @@ def test_odd_days_are_player_days_and_even_days_are_game_days():
         "player", "game", "player", "game", "player", "game", "player"]
 
 
-def test_week_two_also_opens_on_a_player_question():
-    """7 days/week is odd, so GLOBAL parity flips every week: seq 8 is even.
-    Alternation keys on day-within-week precisely so week 2 still opens on
-    player — the exact bug the offline scheduler's docstring called out."""
-    assert sched.source_for_seq(8) == "player"
-    assert sched.source_for_seq(1) == "player"
-    assert sched.source_for_seq(2) == "game"
-
-
-def test_every_week_holds_three_game_days_and_four_player_days():
-    for week in (1, 2, 5):
-        sources = [sched.source_for_seq(s) for s in sched.seqs_of_week(week)]
-        assert sources.count("game") == 3
-        assert sources.count("player") == 4
-
-
 def test_week_is_complete_only_when_all_seven_seqs_are_posted():
     assert sched.week_is_complete(1, set(range(1, 8))) is True
     assert sched.week_is_complete(1, set(range(1, 7))) is False

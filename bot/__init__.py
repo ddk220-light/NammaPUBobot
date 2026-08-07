@@ -86,8 +86,3 @@ active_queues = []
 active_matches = []
 waiting_reactions = _TTLReactionDict()  # {message.id: function}
 
-
-def background_context(coro):
-	async def wrapper(qc, *args, **kwargs):
-		await coro(SystemContext(qc=qc), *args, **kwargs)
-	return wrapper

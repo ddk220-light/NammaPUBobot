@@ -50,13 +50,6 @@ async def recent_question_ids(channel_id, n=6):
 	return [r["question_id"] for r in (rows or [])]
 
 
-async def recent_categories(channel_id, n=3):
-	rows = await db.fetchall(
-		"SELECT category FROM quiz_posts WHERE channel_id=%s ORDER BY id DESC LIMIT %s",
-		[channel_id, n])
-	return [r["category"] for r in (rows or [])]
-
-
 async def create_post(channel_id, q, opened_at, closes_at):
 	"""Insert an open post. q is a schedule entry (carries seq/week/day/correct_indices)."""
 	return await db.insert("quiz_posts", dict(

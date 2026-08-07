@@ -105,12 +105,6 @@ def test_roster_sorted_by_slot():
 	assert [row[0] for row in reducer.roster(st[MID])] == [111, 222]  # slot 0 then 1
 
 
-def test_find_by_name_case_insensitive():
-	st = reducer.fold([_lobby_added(name="Test123 ")])
-	assert reducer.find_by_name(st, "test123") == [MID]
-	assert reducer.find_by_name(st, "other") == []
-
-
 def test_slot_before_lobby_meta_still_tracked():
 	# A slotAdded can arrive before its lobbyAdded; the entry is created lazily
 	# and capacity is unknown (open=0) until the lobby meta lands.

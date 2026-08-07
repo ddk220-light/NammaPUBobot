@@ -50,22 +50,6 @@ def test_pick_candidate_none_when_empty():
 	assert view.pick_candidate({}, 2) is None
 
 
-def test_fill_lines_lists_players_civs_and_open_slots():
-	st = reducer.fold([_lobby(total=4), _slot(0, 1, "Alice", civ="Mongols"), _slot(1, 2, "Bob")])
-	lines, filled, playable = view.fill_lines(st[MID])
-	assert (filled, playable) == (2, 4)
-	assert "`Alice` — Mongols" in lines
-	assert "`Bob`" in lines
-	assert any("open slot" in line for line in lines)
-
-
-def test_fill_lines_no_open_marker_when_full():
-	st = reducer.fold([_lobby(total=2), _slot(0, 1, "A"), _slot(1, 2, "B")])
-	lines, filled, playable = view.fill_lines(st[MID])
-	assert filled == playable == 2
-	assert not any("open slot" in line for line in lines)
-
-
 def test_deep_link_join_and_spectate():
 	assert view.deep_link(16072058) == "aoe2de://0/16072058"
 	assert view.deep_link(16072058, mode="spectate") == "aoe2de://1/16072058"

@@ -47,13 +47,6 @@ def is_multi_category(category):
 	return category == "techgaps"
 
 
-def iso_week_key(ts):
-	"""ISO (year, week) bucket for a unix timestamp, UTC."""
-	d = datetime.datetime.fromtimestamp(int(ts), datetime.timezone.utc)
-	iso = d.isocalendar()
-	return (iso[0], iso[1])
-
-
 def tally(rows):
 	"""Aggregate answer rows into a leaderboard, sorted by correct desc, then
 	answered asc, then user_id. Each row needs user_id, nick, is_correct."""

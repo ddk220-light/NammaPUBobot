@@ -251,13 +251,6 @@ async def link_match_replay(match_id: int, replay_match_id: int) -> bool:
 	return True
 
 
-async def retention_for(community_id: int) -> str:
-	""" 'full' or 'lean' for `community_id`. Defaults to 'lean' (the safe,
-	space-conserving choice) if the community_id is unknown. """
-	row = await db.select_one(["retention"], "communities", where={"community_id": community_id})
-	return row["retention"] if row else "lean"
-
-
 def invalidate_cache() -> None:
 	""" Clear the channel->community cache. Call after every write above. """
 	_channel_cache.clear()

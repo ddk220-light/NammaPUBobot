@@ -440,17 +440,6 @@ async def fetch(community_id, user_id):
 	return _decode(row["rollup"]) if row else None
 
 
-async def fetch_community(community_id):
-	"""Every rollup in one community as {user_id: blob}.
-
-	For `/identity status`'s gated-features list, which needs to count how
-	many players have no row and how many rows carry no split -- questions
-	about the whole community rather than one player. ~42 rows in production,
-	so this is a full read by design rather than a paginated one."""
-	rows = await db.select(["user_id", "rollup"], "player_rollups", where=dict(community_id=community_id))
-	return {row["user_id"]: _decode(row["rollup"]) for row in rows or []}
-
-
 async def delete(community_id, user_id):
 	"""Remove one user's rollup for one community. Idempotent (a DELETE that
 	matches nothing is not an error).

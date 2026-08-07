@@ -249,14 +249,6 @@ def test_community_for_channel_does_not_cache_a_miss(monkeypatch):
 	assert second == 9
 
 
-def test_retention_for_returns_stored_value(monkeypatch):
-	_setup(monkeypatch, flagship_ids=(1,))
-	guild = _Guild(1)
-	community_id = asyncio.run(community.ensure_community(guild))
-
-	assert asyncio.run(community.retention_for(community_id)) == "full"
-
-
 def test_invalidate_cache_clears_cached_lookups(monkeypatch):
 	fake = _setup(monkeypatch)
 	asyncio.run(community.attach_channel(1, 1))

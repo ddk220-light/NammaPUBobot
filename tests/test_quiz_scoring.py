@@ -23,12 +23,6 @@ def test_grade():
 	assert s.grade(0, 2) is False
 
 
-def test_iso_week_key_buckets_same_week():
-	mon = 1718236800   # 2024-06-13 (Thursday) UTC
-	later = mon + 24 * 3600
-	assert s.iso_week_key(mon) == s.iso_week_key(later)
-
-
 def test_tally_counts_correct_and_accuracy():
 	rows = [
 		{"user_id": 1, "nick": "a", "is_correct": 1},

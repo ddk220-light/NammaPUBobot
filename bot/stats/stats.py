@@ -270,38 +270,12 @@ async def undo_match(ctx, match_id):
 	return True
 
 
-async def reset_channel(channel_id):
-	where = {'channel_id': channel_id}
-	await db.delete("player_ratings", where=where)
-	await db.delete("rating_history", where=where)
-	await db.delete("matches", where=where)
-	await db.delete("match_players", where=where)
-
-
-async def reset_player(channel_id, user_id):
-	where = {'channel_id': channel_id, 'user_id': user_id}
-	await db.delete("player_ratings", where=where)
-	await db.delete("rating_history", where=where)
-	await db.delete("match_players", where=where)
-
-
 async def replace_player(channel_id, user_id1, user_id2, new_nick):
 	await db.delete("player_ratings", {'channel_id': channel_id, 'user_id': user_id2})
 	where = {'channel_id': channel_id, 'user_id': user_id1}
 	await db.update("player_ratings", {'user_id': user_id2, 'nick': new_nick}, where)
 	await db.update("rating_history", {'user_id': user_id2}, where)
 	await db.update("match_players", {'user_id': user_id2}, where)
-
-
-async def qc_stats(channel_id):
-	data = await db.fetchall(
-		"SELECT `queue_name`, COUNT(*) as count FROM `matches` WHERE `channel_id`=%s " +
-		"GROUP BY `queue_name` ORDER BY count DESC",
-		(channel_id,)
-	)
-	stats = dict(total=sum((i['count'] for i in data)))
-	stats['queues'] = data
-	return stats
 
 
 async def user_stats(channel_id, user_id):

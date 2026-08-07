@@ -58,10 +58,6 @@ def source_for_day(day):
 	return "player" if day % 2 == 1 else "game"
 
 
-def source_for_seq(seq):
-	return source_for_day(slot_for_seq(seq)[1])
-
-
 def seqs_of_week(week):
 	"""Every seq that belongs to `week`."""
 	first = (week - 1) * DAYS_PER_WEEK + 1

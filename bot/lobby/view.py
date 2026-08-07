@@ -31,35 +31,6 @@ def link_ready(entry, match_size):
 	return reducer.is_full(entry) and len(reducer.occupied_slots(entry)) == match_size
 
 
-def fill_lines(entry):
-	"""Return ``(lines, filled, playable)`` for the live-fill embed body.
-
-	``lines`` is one ``name [— civ]`` entry per occupied seat (slot order) plus a
-	trailing ``+N open slot(s)`` when seats remain. ``playable`` excludes blocked
-	(closed / AI / spectator) seats.
-	"""
-	lob = entry.get("lobby") or {}
-	total = lob.get("totalSlotCount") or 0
-	blocked = lob.get("blockedSlotCount") or 0
-	playable = max(0, total - blocked)
-
-	occupied = sorted(
-		reducer.occupied_slots(entry),
-		key=lambda s: (s.get("slot") if s.get("slot") is not None else 0),
-	)
-	lines = []
-	for s in occupied:
-		name = s.get("name") or "?"
-		civ = s.get("civName")
-		lines.append(f"`{name}`" + (f" — {civ}" if civ else ""))
-
-	filled = len(occupied)
-	open_count = max(0, playable - filled)
-	if open_count:
-		lines.append(f"*+{open_count} open slot(s)*")
-	return lines, filled, playable
-
-
 # ── join / spectate deep links ───────────────────────────────────────────
 # AoE2:DE registers an `aoe2de://` protocol handler. `0/<id>` joins the lobby,
 # `1/<id>` spectates. Discord link buttons only allow http(s)/discord schemes, so

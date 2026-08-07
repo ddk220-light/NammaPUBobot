@@ -5,7 +5,7 @@ a player who idles early and rebooms late must NOT out-impact a steady
 contributor, and the carry-style tags require a real early economy.
 """
 from bot.replay_stats.scoring import (
-	carry_sort_key, derive_impact_tags, impact_scores, impact_tag_names, strength_glyphs,
+	carry_sort_key, derive_impact_tags, impact_scores, impact_tag_names,
 )
 
 
@@ -211,12 +211,6 @@ def test_payload_names_always_return_at_least_one_tag():
 	scores = impact_scores(row, group)
 	names = impact_tag_names_with_fallback(scores, row)
 	assert len(names) >= 1
-
-
-def test_strength_glyphs_have_no_numbers():
-	text = strength_glyphs({"army": 70, "eco": 30, "timing": 50})
-	assert text == "⚔▲ 🌾▼ ⏱·"
-	assert not any(ch.isdigit() for ch in text)
 
 
 def test_player_tags_loads_standalone_like_the_backfill_script():

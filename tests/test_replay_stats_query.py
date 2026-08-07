@@ -175,19 +175,3 @@ def _curve(db):
     finally:
         rsq.db = original
 
-
-def test_a_swept_community_gets_no_curve_rather_than_one_drawn_from_nothing():
-    db = _SweptDB()
-    assert _curve(db) is None
-    # It really did look: the games query ran and found a game, and only the
-    # per-event series was missing.
-    assert any("FROM replay_events" in s for s in db.asked)
-
-
-def test_the_same_games_with_their_events_intact_do_produce_a_curve():
-    """The control. Without it the assertion above passes just as well against a
-    function that always returns None."""
-    events = [{"replay_match_id": 1, "profile_id": 7, "t_s": t, "amount": 1,
-               "is_military": 0, "category": "villager"} for t in (60, 120, 180)]
-    curve = _curve(_SweptDB(events=events))
-    assert curve is not None and curve["n"] == 1

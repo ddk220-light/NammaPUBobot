@@ -129,17 +129,3 @@ def is_full(entry):
 	filled, open_count = capacity(entry)
 	return open_count == 0 and filled > 0
 
-
-def find_by_name(state, name):
-	"""matchIds of lobbies whose name == ``name`` (case-insensitive, trimmed).
-
-	Drives the auto-search adapter: pick the configured lobby out of the
-	unfiltered feed without knowing its id in advance.
-	"""
-	target = (name or "").strip().lower()
-	out = []
-	for mid, entry in state.items():
-		lname = (entry.get("lobby") or {}).get("name") or ""
-		if lname.strip().lower() == target:
-			out.append(mid)
-	return out
