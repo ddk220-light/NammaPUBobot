@@ -3,7 +3,7 @@
 > `game_labels`, the factor specs, the troubleshooting — is still accurate and
 > still live: the post-game match cards read `cls_classifications` for their
 > labels, and the web dashboard's **Strategies** page serves what `/insights`
-> used to. Only the slash command and `bot/commands/insights.py` are gone;
+> used to. Only the slash command and its handler are gone;
 > read every `/insights` reference below as "the Strategies page".
 
 # Player Classification Framework
@@ -72,9 +72,9 @@ bot runs registered classifications automatically.)
 | Runner CLI (orchestration) | `utils/classifications/runner.py` | I/O |
 | `cls_*` schema for the bot (`ensure_table`) | `nammaoe2bot/derived/classifications/__init__.py` | I/O |
 | Read aggregation (`roster`/`winners_vs_losers` pure, `fetch_results` DB) | `nammaoe2bot/derived/classifications/query.py` | mixed |
-| Slash command | `bot/commands/insights.py` | I/O |
+| Slash command | removed in the command consolidation; the button router in `nammaoe2bot/derived/classifications/interactions.py` survives for cards already in channel history | I/O |
 
-> Indentation: `utils/` uses **4 spaces**; `bot/` uses **tabs** (`ruff.toml` `indent-style = "tab"`).
+> Indentation: `utils/` uses **4 spaces**; `nammaoe2bot/` uses **tabs** (`ruff.toml` `indent-style = "tab"`), except `features/civs/pools.py` and `ingest/`, which are 4-space. Match the file you edit.
 
 ---
 

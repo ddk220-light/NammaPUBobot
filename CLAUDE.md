@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-NammaPUBobot — a fork of nammaoe2bot.__main__, a Discord bot for organizing AoE2 pickup games. Built with Python 3.11 (Railway Dockerfile ships 3.11-slim, `ruff.toml` targets py311), nextcord (discord library), aiomysql, and MySQL.
+NammaAoe2Bot — a Discord bot for organizing AoE2 pickup games, originally forked from PUBobot2 by Leshaka (GPL-3; see README credits). Built with Python 3.11 (Railway Dockerfile ships 3.11-slim, `ruff.toml` targets py311), nextcord (discord library), aiomysql, and MySQL.
 
 ## Running the Bot
 
@@ -16,7 +16,7 @@ pip3 install -r requirements.txt
 cp config.example.cfg config.cfg
 
 # Run directly
-python3 nammaoe2bot/__main__.py
+python3 -m nammaoe2bot
 
 # Or via Railway wrapper (generates config.cfg from env vars, then runs the bot)
 python3 start.py
@@ -37,7 +37,7 @@ CI runs both on every PR via `.github/workflows/ci.yml`.
 ## Architecture
 
 ### Boot sequence
-`nammaoe2bot/__main__.py` is the entrypoint. It:
+`nammaoe2bot/__main__.py` is the entrypoint (`python -m nammaoe2bot`; `start.py` is the Railway wrapper that generates `config.cfg` and execs it). It:
 1. Loads `nammaoe2bot/runtime/config.py` (imports `config.cfg` as a Python module via `SourceFileLoader`)
 2. Connects to MySQL via `nammaoe2bot/runtime/database/__init__.py` → `nammaoe2bot/runtime/database/mysql.py` (aiomysql pool)
 3. Builds the one `Application` (`nammaoe2bot/app.py`) and hands it to `nammaoe2bot/bootstrap.py`, which imports every module whose import IS the wiring — `ensure_table` declarations, job singletons, the slash surface — and then calls `nammaoe2bot/wiring.py` to subscribe the features to the match lifecycle

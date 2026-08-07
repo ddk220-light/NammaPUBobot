@@ -38,7 +38,7 @@ In the **bot service** → **"Variables"** tab, add:
 | `DC_INVITE_LINK` | `""` | Bot invite URL |
 | `DC_SLASH_SERVERS` | `""` | Comma-separated server IDs for slash commands |
 | `LOG_LEVEL` | `INFO` | `CHAT`, `DEBUG`, `COMMANDS`, `INFO`, or `ERRORS` |
-| `STATUS` | `nammaoe2bot.__main__` | Bot presence/status text |
+| `STATUS` | `NammaAoe2Bot` | Bot presence/status text |
 
 ## 5. Deploy
 
