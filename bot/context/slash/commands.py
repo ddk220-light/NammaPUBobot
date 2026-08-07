@@ -185,7 +185,7 @@ async def enable_channel(
 		)
 
 	await interaction.response.send_message(embed=ok_embed('The bot has been enabled.'))
-	bot.queue_channels[interaction.channel.id] = await bot.QueueChannel.create(interaction.channel)
+	bot.queue_channels[interaction.channel.id] = await bot.QueueChannel.create(interaction.channel, dc.app)
 	# Enroll into a community right away — on_ready's enrollment loop only
 	# runs once at boot, so without this a channel enabled at runtime has
 	# no community_id (community_for_channel() returns None) until the

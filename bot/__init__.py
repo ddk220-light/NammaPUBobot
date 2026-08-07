@@ -80,7 +80,6 @@ class _TTLReactionDict(dict):
 
 
 queue_channels = dict()  # {channel.id: QueueChannel()}
-active_queues = []
 active_matches = []
 waiting_reactions = _TTLReactionDict()  # {message.id: function}
 

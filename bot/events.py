@@ -294,7 +294,7 @@ async def on_ready():
 		for channel_id in await bot.QueueChannel.cfg_factory.p_keys():
 			channel = dc.get_channel(channel_id)
 			if channel:
-				bot.queue_channels[channel_id] = await bot.QueueChannel.create(channel)
+				bot.queue_channels[channel_id] = await bot.QueueChannel.create(channel, dc.app)
 				await bot.queue_channels[channel_id].update_info(channel)
 				log.info(f"\tInit channel {channel.guild.name}>#{channel.name} successful.")
 			else:

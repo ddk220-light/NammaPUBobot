@@ -158,7 +158,7 @@ class CheckIn:
 		self.ready_players.discard(out_member)
 
 		await self.m.qc.remove_members(candidate, ctx=ctx)
-		await bot.remove_players(candidate, reason="pickup started")
+		await bot.remove_players(self.m.qc.app, candidate, reason="pickup started")
 
 		# Teams and captains are built once in Match.new and never rebuilt on a
 		# state change, so swapping only m.players leaves every embed rendering

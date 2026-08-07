@@ -56,6 +56,13 @@ class FakeQueueChannel:
 		self.id = 900
 		self.removed = []
 		self.rating = types.SimpleNamespace(get_players=self._get_players)
+		# Every real QueueChannel carries the Application, and the substitution
+		# path reaches live queue state through it (bot.remove_players sweeps
+		# app.active_queues). A fake without one is a different shape from
+		# production and the AttributeError it raises here is the fixture's
+		# fault, not the code's.
+		from bot.app import Application
+		self.app = Application(client=None)
 
 	async def _get_players(self, user_ids):
 		return [dict(user_id=uid, rating=1500) for uid in user_ids]

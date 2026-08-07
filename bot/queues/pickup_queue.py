@@ -293,8 +293,8 @@ class PickupQueue:
 			raise bot.Exc.ValueError(f"Error fetching guild members.")  # noqa: F541
 
 		q.queue = players
-		if q.length and q not in bot.active_queues:
-			bot.active_queues.append(q)
+		if q.length and q not in qc.app.active_queues:
+			qc.app.active_queues.append(q)
 
 	def __init__(self, qc, cfg):
 		self.qc = qc
@@ -355,8 +355,8 @@ class PickupQueue:
 
 	async def reset(self):
 		self.queue = []
-		if self in bot.active_queues:
-			bot.active_queues.remove(self)
+		if self in self.qc.app.active_queues:
+			self.qc.app.active_queues.remove(self)
 
 	async def check_allowed_to_add(self, member):
 		if (
@@ -380,8 +380,8 @@ class PickupQueue:
 		if member not in self.queue:
 			self.queue.append(member)
 
-			if self not in bot.active_queues:
-				bot.active_queues.append(self)
+			if self not in self.qc.app.active_queues:
+				self.qc.app.active_queues.append(self)
 
 			if len(self.queue) == self.cfg.size and self.cfg.autostart:
 				await self.start(ctx)
@@ -457,5 +457,5 @@ class PickupQueue:
 				await self.qc.update_expire(p)
 
 		await ctx.notice(self.qc.topic)
-		if self not in bot.active_queues and self.length:
-			bot.active_queues.append(self)
+		if self not in self.qc.app.active_queues and self.length:
+			self.qc.app.active_queues.append(self)

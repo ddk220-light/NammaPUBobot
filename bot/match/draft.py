@@ -83,7 +83,7 @@ class Draft:
 			p['user_id']: p['rating'] for p in await self.m.qc.rating.get_players((p.id for p in self.m.players))
 		}
 		await self.m.qc.remove_members(player2, ctx=ctx)
-		await bot.remove_players(player2, reason="pickup started")
+		await bot.remove_players(self.m.qc.app, player2, reason="pickup started")
 
 		# A ROSTER CHANGE UNDER A LIVE BOOK IS A CHANGE TO THE SIDES PEOPLE
 		# STAKED ON — the same reason /subauto refunds and re-opens, and no
@@ -133,7 +133,7 @@ class Draft:
 
 		# Pull the candidate out of the queue and expire timers, like /subfor.
 		await self.m.qc.remove_members(candidate, ctx=ctx)
-		await bot.remove_players(candidate, reason="pickup started")
+		await bot.remove_players(self.m.qc.app, candidate, reason="pickup started")
 
 		# Full re-matchmaking: re-split everyone into the two most ELO-balanced
 		# teams. Reuses the proven matchmaking path; teams[0][0]/teams[1][0]

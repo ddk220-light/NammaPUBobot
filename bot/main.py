@@ -107,7 +107,7 @@ async def load_state():
 		await bot.expire.load_json(data['expire'])
 
 
-async def remove_players(*users, reason=None):
-	for qc in set((q.qc for q in bot.active_queues)):
+async def remove_players(app, *users, reason=None):
+	for qc in set((q.qc for q in app.active_queues)):
 		await qc.remove_members(*users, reason=reason)
 

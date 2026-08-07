@@ -308,20 +308,24 @@ class QueueChannel:
 	)
 
 	@classmethod
-	async def create(cls, text_channel):
+	async def create(cls, text_channel, app):
 		"""
 		This method is used for creating new QueueChannel objects because __init__() cannot call async functions.
 		"""
 
 		qc_cfg = await cls.cfg_factory.spawn(text_channel.guild, p_key=text_channel.id)
-		self = cls(text_channel, qc_cfg)
+		self = cls(text_channel, qc_cfg, app)
 
 		for pq_cfg in await bot.PickupQueue.cfg_factory.select(text_channel.guild, {"channel_id": self.id}):
 			self.queues.append(bot.PickupQueue(self, pq_cfg))
 
 		return self
 
-	def __init__(self, text_channel, qc_cfg):
+	def __init__(self, text_channel, qc_cfg, app):
+		# The Application this channel belongs to. Held explicitly so the
+		# channel, its queues and its matches can reach live state without
+		# any of them importing the module that used to hold it.
+		self.app = app
 		self.cfg = qc_cfg
 		self.id = text_channel.id
 		self.guild_id = text_channel.guild.id
@@ -508,7 +512,7 @@ class QueueChannel:
 
 	async def queue_started(self, ctx, members):
 		await self.remove_members(*members, ctx=ctx)
-		await bot.remove_players(*members, reason="pickup started")
+		await bot.remove_players(self.app, *members, reason="pickup started")
 
 	async def check_allowed_to_add(self, ctx, member, queue=None):
 		""" raises if this member may not add; returns nothing """
