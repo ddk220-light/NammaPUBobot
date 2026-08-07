@@ -1,30 +1,30 @@
 
 class Exceptions:
 
-	class PubobotException(BaseException):
+	class BotException(BaseException):
 		pass
 
-	class PermissionError(PubobotException):
+	class PermissionError(BotException):
 		pass
 
-	class SyntaxError(PubobotException):
+	class SyntaxError(BotException):
 		pass
 
-	class ValueError(PubobotException):
+	class ValueError(BotException):
 		pass
 
-	class InMatchError(PubobotException):
+	class InMatchError(BotException):
 		pass
 
-	class NotInMatchError(PubobotException):
+	class NotInMatchError(BotException):
 		pass
 
-	class MatchStateError(PubobotException):
+	class MatchStateError(BotException):
 		pass
 
-	class NotFoundError(PubobotException):
+	class NotFoundError(BotException):
 		pass
 
-	class NoEffect(PubobotException):
+	class NoEffect(BotException):
 		""" A command have been executed successfully, but had no effect. """
 		pass

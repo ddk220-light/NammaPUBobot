@@ -60,7 +60,7 @@ async def run_slash_coro(ctx: SlashContext, coro: Callable, **kwargs):
 
 	try:
 		await coro(ctx, **kwargs)
-	except bot.Exc.PubobotException as e:
+	except bot.Exc.BotException as e:
 		await ctx.error(str(e), title=e.__class__.__name__)
 	except Exception as e:
 		await ctx.error(str(e), title="RuntimeError")

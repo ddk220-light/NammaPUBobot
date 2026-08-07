@@ -141,7 +141,7 @@ async def _refuse(ctx, title, message):
 	""" A player-facing refusal, private, under a human heading.
 
 	Deliberately not `raise bot.Exc.ValueError`: run_slash_coro renders a
-	PubobotException with title=e.__class__.__name__, so every one of these --
+	BotException with title=e.__class__.__name__, so every one of these --
 	the messages a first-time player is most likely to see -- would arrive under
 	a red "ValueError". Nothing here is an internal error; they are ordinary
 	answers, so the handler renders them itself. """

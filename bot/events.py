@@ -181,7 +181,7 @@ async def on_message(message):
 					await bot.commands.add(ctx)
 				else:
 					await bot.commands.remove(ctx)
-			except bot.Exc.PubobotException as e:
+			except bot.Exc.BotException as e:
 				await ctx.error(str(e), title=e.__class__.__name__)
 			except Exception as e:
 				log.error(f"Error processing '{message.content}': {e}\n{traceback.format_exc()}")

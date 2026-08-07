@@ -2205,7 +2205,7 @@ def test_link_reports_a_transient_api_failure_without_writing(monkeypatch):
 
 
 def test_link_failures_are_answers_not_raised_exceptions(monkeypatch):
-	""" run_slash_coro renders any bot.Exc.PubobotException with
+	""" run_slash_coro renders any bot.Exc.BotException with
 	title=e.__class__.__name__, so raising from here would greet a first-time
 	player with a red "ValueError" -- and its post-defer branch sends without
 	ephemeral=True, so on the slow path (fetch_profile waits up to 15s,
@@ -2229,7 +2229,7 @@ def test_link_failures_are_answers_not_raised_exceptions(monkeypatch):
 
 		try:
 			asyncio.run(link_mod.link(ctx, profile_id=profile_id))
-		except link_mod.bot.Exc.PubobotException as e:
+		except link_mod.bot.Exc.BotException as e:
 			raise AssertionError(
 				f"{label}: /link raised {e.__class__.__name__}, which run_slash_coro would "
 				f"render as the embed title"

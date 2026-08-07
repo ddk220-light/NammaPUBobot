@@ -403,7 +403,7 @@ class PickupQueue:
 
 	async def start(self, ctx):
 		if len(self.queue) < 2:
-			raise bot.Exc.PubobotException(self.qc.gt("Not enough players to start the queue."))
+			raise bot.Exc.BotException(self.qc.gt("Not enough players to start the queue."))
 
 		players = list(self.queue)
 		await self.qc.queue_started(ctx, members=players)
@@ -418,7 +418,7 @@ class PickupQueue:
 		group_size = group_size or len(self.queue)//2
 
 		if len(self.queue) < group_size or group_size < 2:
-			raise bot.Exc.PubobotException(self.qc.gt("Not enough players to start the queue."))
+			raise bot.Exc.BotException(self.qc.gt("Not enough players to start the queue."))
 
 		if sort_by_rating:
 			ratings = {p['user_id']: p['rating'] for p in await ctx.qc.rating.get_players((p.id for p in self.queue))}
