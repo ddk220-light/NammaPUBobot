@@ -165,7 +165,7 @@ def test_the_freeze_sweep_calls_the_module_function_not_a_method():
 		line.split("#", 1)[0] for line in inspect.getsource(jobs_module.PredictionJobs._run).split("\n"))
 
 	assert "await self._freeze(" not in code
-	assert "await _freeze(post, now)" in code
+	assert "await _freeze(post, now, headline)" in code
 	assert not hasattr(jobs_module.PredictionJobs, "_freeze"), (
 		"_freeze is a module function; a method of the same name would make both "
 		"spellings work and hide which one the sweep uses")
@@ -184,13 +184,16 @@ def test_the_sweep_freezes_every_due_post_and_survives_one_that_fails():
 	async def _empty(_before):
 		return []
 
-	async def _fake_freeze(post, now):
+	async def _fake_freeze(post, now, headline=None):
 		calls["n"] += 1
 		if post["id"] == 2:
 			raise RuntimeError("simulated freeze failure")
 		frozen.append(post["id"])
 
 	original_store, original_freeze = jobs_module.store, jobs_module._freeze
+	# No open_posts on this fake, deliberately: a PredictionJobs nobody wired a
+	# launch check into must not go looking for one. Adding it here would hide
+	# a sweep that reached for the lobby feature unconditionally.
 	jobs_module.store = types.SimpleNamespace(
 		due_to_freeze=_due_to_freeze, unsettled_books=_empty, abandoned_books=_empty)
 	jobs_module._freeze = _fake_freeze
@@ -201,6 +204,161 @@ def test_the_sweep_freezes_every_due_post_and_survives_one_that_fails():
 
 	assert calls["n"] == 3, "every due post is attempted"
 	assert frozen == [1, 3], "a failing post costs only itself"
+
+
+# ── the second reason a book closes: the game started ────────────────────
+
+def _sweep(due=(), open_posts=(), launched=None):
+	"""Run one _run() against fakes and return [(post_id, headline)] frozen.
+
+	`launched` is the provider nammaoe2bot/wiring.py injects — None means
+	nobody wired one, which is the pre-launch-cutoff bot.
+	"""
+	seen = []
+
+	async def _due_to_freeze(_now):
+		return [dict(p) for p in due]
+
+	async def _open_posts():
+		return [dict(p) for p in open_posts]
+
+	async def _empty(_before):
+		return []
+
+	async def _fake_freeze(post, _now, headline=None):
+		seen.append((post["id"], headline))
+
+	original_store, original_freeze = jobs_module.store, jobs_module._freeze
+	jobs_module.store = types.SimpleNamespace(
+		due_to_freeze=_due_to_freeze, open_posts=_open_posts,
+		unsettled_books=_empty, abandoned_books=_empty)
+	jobs_module._freeze = _fake_freeze
+	try:
+		jobs = jobs_module.PredictionJobs()
+		if launched is not None:
+			jobs.launched_among = launched
+		asyncio.run(jobs._run())
+	finally:
+		jobs_module.store, jobs_module._freeze = original_store, original_freeze
+	return seen
+
+
+def test_a_book_closes_the_moment_its_game_starts_even_with_time_left():
+	""" THE POINT OF THE WHOLE THING. A ten-minute window over a game that
+	starts at minute four leaves six minutes in which the civs, the starting
+	positions and the first fight are all on screen — on the bot's own lobby
+	card — while the buttons are still live. Nothing about `freezes_at` is due
+	here; the launch alone has to be enough. """
+	async def _launched(_ids):
+		return {77}
+
+	assert _sweep(due=[], open_posts=[{"id": 9, "match_id": 77}], launched=_launched) == [
+		(9, jobs_module.LAUNCH_HEADLINE)]
+
+
+def test_a_book_whose_game_has_not_started_keeps_taking_bets():
+	async def _launched(_ids):
+		return set()
+
+	assert _sweep(due=[], open_posts=[{"id": 9, "match_id": 77}], launched=_launched) == []
+
+
+def test_a_book_that_is_both_overdue_and_launched_is_frozen_exactly_once():
+	""" Both reasons can be true at once, and _freeze takes a snapshot of the
+	book: running it twice over one post would put two passes on one snapshot.
+	The timer wins the tie — a book past its own deadline closed on time
+	whatever else happened to be true of it — so the headline stays the plain
+	one. """
+	async def _launched(_ids):
+		return {77}
+
+	post = {"id": 9, "match_id": 77}
+	assert _sweep(due=[post], open_posts=[post], launched=_launched) == [(9, None)]
+
+
+def test_a_lobby_outage_still_lets_the_timer_close_books():
+	""" The lobby feature is best-effort by design — an unofficial websocket and
+	an unofficial API — and betting must not inherit its outages. A book that
+	cannot find out whether its game started still has a timer, which is
+	exactly the behaviour that existed before this cutoff. """
+	async def _boom(_ids):
+		raise RuntimeError("lobby socket down")
+
+	assert _sweep(due=[{"id": 1, "match_id": 5}],
+				  open_posts=[{"id": 2, "match_id": 6}], launched=_boom) == [(1, None)]
+
+
+def test_an_unwired_sweep_never_reaches_for_the_lobby_feature():
+	""" `launched_among` defaults to None, and betting has to work with the
+	lobby feature switched off entirely. The fake store here has no open_posts
+	at all, so a sweep that asked for one would raise rather than quietly
+	degrade. """
+	async def _due_to_freeze(_now):
+		return [{"id": 1, "match_id": 5}]
+
+	async def _empty(_before):
+		return []
+
+	seen = []
+
+	async def _fake_freeze(post, _now, headline=None):
+		seen.append((post["id"], headline))
+
+	original_store, original_freeze = jobs_module.store, jobs_module._freeze
+	jobs_module.store = types.SimpleNamespace(
+		due_to_freeze=_due_to_freeze, unsettled_books=_empty, abandoned_books=_empty)
+	jobs_module._freeze = _fake_freeze
+	try:
+		asyncio.run(jobs_module.PredictionJobs()._run())
+	finally:
+		jobs_module.store, jobs_module._freeze = original_store, original_freeze
+
+	assert seen == [(1, None)]
+
+
+def test_the_launch_check_is_only_asked_about_books_the_timer_did_not_claim():
+	""" A post the timer already owns has no second answer to be had about it,
+	and asking anyway means a query per sweep that can only produce a duplicate.
+	"""
+	asked = []
+
+	async def _launched(ids):
+		asked.append(sorted(ids))
+		return set()
+
+	_sweep(due=[{"id": 1, "match_id": 5}],
+		   open_posts=[{"id": 1, "match_id": 5}, {"id": 2, "match_id": 6}],
+		   launched=_launched)
+
+	assert asked == [[6]], "match 5's post was already claimed by its timer"
+
+
+def test_the_composition_root_actually_hands_betting_the_launch_check():
+	""" THE FAILURE THIS FILE EXISTS FOR, one layer up. `launched_among`
+	defaults to None and every path degrades silently to the timer when it is
+	— which is the right behaviour and also means a wiring line that never runs
+	produces no error, no log, and a cutoff that simply does not happen. The
+	only way to know it is wired is to check that it is. """
+	from nammaoe2bot import wiring
+	from nammaoe2bot.features.lobby import started as lobby_started
+
+	original = betting.jobs.launched_among
+	try:
+		betting.jobs.launched_among = None
+		wiring.wire_lobby_to_betting()
+		assert betting.jobs.launched_among is lobby_started.launched_among
+	finally:
+		betting.jobs.launched_among = original
+
+
+def test_boot_calls_the_lobby_wiring_and_not_only_the_lifecycle_one():
+	""" wire_match_lifecycle has been called from bootstrap since it existed;
+	the new one is a second call beside it, and a second call is exactly the
+	kind of line that gets written in the composition root and never added to
+	the boot sequence. """
+	source = (_REPO_ROOT / "nammaoe2bot" / "bootstrap.py").read_text()
+	assert "wire_lobby_to_betting()" in source
+	assert "wire_match_lifecycle(app)" in source
 
 
 # ── the gate the match flow applies ──────────────────────────────────────

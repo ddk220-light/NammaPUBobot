@@ -23,6 +23,7 @@ from nammaoe2bot.runtime.utils import get_nick
 
 from nammaoe2bot.features.civs import matcher
 from nammaoe2bot.features import betting
+from nammaoe2bot.features.lobby import started as lobby_started
 from nammaoe2bot.features.lobby import watcher as lobby_watcher
 from nammaoe2bot.features.storylines import payoff
 from nammaoe2bot.features.storylines import insights
@@ -134,3 +135,22 @@ def wire_match_lifecycle(app):
 	# stakes handed back; then the refund.
 	events.on("cancelled", _stop_lobby_watcher)
 	events.on("cancelled", _void_book)
+
+
+def wire_lobby_to_betting():
+	"""Teach the betting sweep to close a book when the game actually starts.
+
+	NOT a match lifecycle event, which is why it is not in the function above.
+	A launch is not a moment the pickup domain announces — a Match does not
+	know a lobby exists, let alone that one disappeared off a websocket — so
+	putting it on MatchLifecycle would be growing that dispatcher into the
+	general event bus its own docstring forbids. It is one feature observing
+	something and another feature needing it, and the composition root is
+	exactly where those two get introduced.
+
+	The direction still runs one way at the import level: betting never learns
+	the `lobbies` table exists, the lobby feature never learns betting exists,
+	and this line is the whole of their relationship. Leave it out and betting
+	falls back to its timer, which is what it did before.
+	"""
+	betting.jobs.launched_among = lobby_started.launched_among

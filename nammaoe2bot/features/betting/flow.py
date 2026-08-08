@@ -68,11 +68,26 @@ ABANDONED_REASON = "The match never reported a result — all bets refunded."
 # and the money — is recorded; only the phrasing generalises.
 VOID_RESUMED_REASON = "This book was voided before the match settled."
 
+# What the locked card leads with when the GAME is what closed the book rather
+# than the clock. Worth saying out loud: a card that closes four minutes into a
+# ten-minute window with no explanation reads like a bug to everyone who was
+# still deciding.
+LAUNCH_HEADLINE = "The game has started — betting is closed. The pots are locked:"
+
 _pending = set()           # keep create_task'd jobs from being GC'd mid-run
 
 
 class PredictionJobs:
 	POLL_INTERVAL = 15     # seconds between freeze sweeps
+
+	# "Which of these matches have already started?", injected by
+	# nammaoe2bot/wiring.py from the lobby feature — the only part of the bot
+	# that knows. None means nobody wired it (or the lobby feature is off), and
+	# the sweep falls back to the timer alone, which is exactly the behaviour
+	# that existed before. An attribute on the existing singleton rather than a
+	# module-level global: see nammaoe2bot/app.py's docstring on what the last
+	# set of those cost.
+	launched_among = None
 
 	def __init__(self):
 		self.next_run = 0
@@ -105,9 +120,9 @@ class PredictionJobs:
 		# reached "due to freeze": open_for_match was itself unreachable (see
 		# this package's __init__), so the two bugs hid each other exactly.
 		now = int(time.time())
-		for post in await store.due_to_freeze(now):
+		for post, headline in await self._posts_to_freeze(now):
 			try:
-				await _freeze(post, now)
+				await _freeze(post, now, headline)
 			except Exception as e:
 				log.error(f"Prediction freeze failed (post {post.get('id')}): {e}")
 
@@ -145,6 +160,55 @@ class PredictionJobs:
 				log.info(f"Refunded an abandoned book for match {post['match_id']} (post {post['id']}).")
 			except Exception as e:
 				log.error(f"Prediction abandon-refund failed (post {post.get('id')}): {e}")
+
+	async def _posts_to_freeze(self, now):
+		"""[(post, headline)] for every book that should stop taking money now.
+
+		TWO REASONS, ONE LIST. The timer is the original: `freezes_at` elapsed.
+		The second is that the game itself started, which the lobby feature
+		reports through `launched_among` (nammaoe2bot/features/lobby/started.py
+		holds the query, and the reason it lives there rather than here).
+		Betting past the launch is not predicting — the civs, the starting
+		positions and the first fight are all visible, on the bot's own lobby
+		card, while the buttons are still live.
+
+		THIS IS A PULL, on the sweep that already closes books, rather than a
+		callback fired at launch, and that is deliberate. `lobbies.status` is
+		durable, so a redeploy between the launch and the freeze changes
+		nothing: the very next sweep still sees a started game and still closes
+		the book. A one-shot in-memory signal would have died with the watcher
+		task that sent it, leaving the book open for the rest of its window —
+		the exact failure this exists to prevent. It costs up to one
+		POLL_INTERVAL of lateness, which is a tolerance the freeze already had.
+
+		Dedupes on post id, because a book can be both overdue AND launched and
+		freezing it twice would put two sweeps on one snapshot. The timer wins
+		that tie: a book past its own deadline closed on time whatever else
+		happened to be true of it.
+		"""
+		found = {}
+		for post in await store.due_to_freeze(now):
+			found[post["id"]] = (post, None)
+		if self.launched_among is None:
+			return list(found.values())
+		# Only ask about books the timer has not already claimed — there is no
+		# second answer to be had about those.
+		open_posts = [p for p in await store.open_posts() if p["id"] not in found]
+		if not open_posts:
+			return list(found.values())
+		try:
+			started = await self.launched_among([p["match_id"] for p in open_posts])
+		except Exception as e:
+			# The lobby side is best-effort by design and betting must not
+			# inherit its outages. A book that cannot find out whether its game
+			# started still has a timer, which is the whole pre-existing
+			# behaviour — so this degrades to it rather than skipping the sweep.
+			log.error(f"Launch check failed, freezing on the timer alone: {e}")
+			return list(found.values())
+		for post in open_posts:
+			if post["match_id"] in started:
+				found[post["id"]] = (post, LAUNCH_HEADLINE)
+		return list(found.values())
 
 
 # ── open ─────────────────────────────────────────────────────────────────
@@ -221,10 +285,15 @@ async def _close_book(post, intent):
 
 
 # ── freeze ───────────────────────────────────────────────────────────────
-async def _freeze(post, now):
+async def _freeze(post, now, headline=None):
 	"""Lock the book. One-sided (either pool empty) -> no_action: every stake
 	back immediately, because a book with no opposing gold has no odds to
 	settle. Otherwise the pots lock and the card shows the final multipliers.
+
+	`headline` is what the locked card leads with, and it is the ONLY thing
+	that differs between the two ways a book closes — the timer running out and
+	the game starting lock identical pots by identical rules, so nothing below
+	branches on it. None takes view.frozen_lines' own default.
 
 	The close here is deliberately NOT a terminal claim: a two-sided book
 	leaves this function alive, frozen and waiting for its match, so there is
@@ -250,8 +319,9 @@ async def _freeze(post, now):
 	bettors1 = len(bets) - bettors0
 	await store.freeze(post["id"], bettors0, bettors1)
 	await _edit_message(post, embeds.frozen_embed(
-		post["team0_name"], post["team1_name"], pool0, pool1, bettors0, bettors1))
-	log.info(f"Bets locked for match {post['match_id']}: {pool0}-{pool1} gold.")
+		post["team0_name"], post["team1_name"], pool0, pool1, bettors0, bettors1, headline))
+	log.info(f"Bets locked for match {post['match_id']}: {pool0}-{pool1} gold"
+			 f"{' (game started)' if headline else ''}.")
 
 
 def _team_ids(match_id):

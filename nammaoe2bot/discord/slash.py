@@ -511,11 +511,14 @@ async def _rating_unhide(
 ): await run_slash(admin.rating_hide, interaction=interaction, player=player, hide=False)
 
 
-@groups.predictions.subcommand(name='leaderboard', description='Audience prediction standings.')
+@groups.predictions.subcommand(name='leaderboard', description='Gold standings, or prediction accuracy.')
 async def _predictions_leaderboard(
 		interaction: Interaction,
-		page: int = SlashOption(required=False, description="Page number.")
-): await run_slash(betting_commands.predictions_leaderboard, interaction=interaction, page=page or 1)
+		sort: str = SlashOption(required=False, choices=['gold', 'accuracy'],
+								description="Gold held (default) or prediction accuracy."),
+		page: int = SlashOption(required=False, description="Page number (accuracy board only).")
+): await run_slash(betting_commands.predictions_leaderboard, interaction=interaction,
+				   sort=sort or 'gold', page=page or 1)
 
 
 @groups.predictions.subcommand(name='me', description='Your audience prediction record.')

@@ -178,6 +178,21 @@ class TestOpenLines:
 		assert "×1.5" in text and "×3" in text
 
 
+	def test_the_card_promises_the_earlier_of_the_two_deadlines(self):
+		""" The freeze sweep now closes a book the moment its game starts, which
+		is routinely minutes before `freezes_at`. A card still advertising only
+		the timer tells people they have time they do not have — on the very
+		information asymmetry the launch cutoff exists to remove. """
+		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33))
+		assert "when the game starts" in text
+		assert "10 min" in text, "the timer is still the outer bound and still stated"
+
+	def test_a_card_with_no_minutes_left_does_not_promise_zero_of_them(self):
+		text = "\n".join(view.open_lines("Alpha", "Beta", 0, 33))
+		assert "0 min" not in text
+		assert "when the game starts" in text
+
+
 class TestFrozenLines:
 	def test_names_the_bigger_pool_as_favourite(self):
 		text = "\n".join(view.frozen_lines("Alpha", "Beta", 300, 100, 3, 1))
@@ -186,6 +201,58 @@ class TestFrozenLines:
 	def test_no_bets_reads_plainly(self):
 		text = "\n".join(view.frozen_lines("Alpha", "Beta", 0, 0, 0, 0))
 		assert "no" in text.lower()
+
+	def test_the_headline_says_why_when_the_game_is_what_closed_it(self):
+		""" A book that closes four minutes into a ten-minute window with no
+		explanation reads as a bug to everyone who was still deciding. """
+		text = "\n".join(view.frozen_lines("Alpha", "Beta", 300, 100, 3, 1,
+										  "The game has started — betting is closed."))
+		assert "The game has started" in text
+		assert view.FROZEN_HEADLINE not in text, "one headline, not two"
+
+	def test_the_pots_read_identically_whichever_reason_closed_the_book(self):
+		""" The two closes lock identical pots by identical rules; only the
+		first line differs. A frozen card that computed anything differently
+		would mean the launch path had its own settlement maths. """
+		timer = view.frozen_lines("Alpha", "Beta", 300, 100, 3, 1)
+		launch = view.frozen_lines("Alpha", "Beta", 300, 100, 3, 1, "Game on.")
+		assert timer[1:] == launch[1:]
+
+
+class TestGoldBoardColumns:
+	@staticmethod
+	def _rows(n, start=1000):
+		return [dict(user_id=i, nick=f"p{i}", balance=start - i) for i in range(n)]
+
+	def test_the_two_columns_never_name_the_same_person(self):
+		""" With fewer than two full columns of holders the naive bottom slice
+		overlaps the top one, and a board listing somebody as both the richest
+		and the poorest is the board contradicting itself. """
+		for n in range(1, 26):
+			richest, poorest = view.gold_board_columns(self._rows(n), per_side=10)
+			assert not (set(richest) & set(poorest)), f"overlap at n={n}"
+
+	def test_a_small_community_gets_one_column_not_two_halves(self):
+		richest, poorest = view.gold_board_columns(self._rows(6), per_side=10)
+		assert len(richest) == 6
+		assert poorest == [], "one list IS the whole distribution"
+
+	def test_places_are_counted_from_the_top_in_both_columns(self):
+		""" The number is the person's standing. A second numbering restarting
+		at 1 in the right-hand column would mean something else entirely in the
+		same card. """
+		richest, poorest = view.gold_board_columns(self._rows(30), per_side=10)
+		assert richest[0].startswith("` 1.`")
+		assert poorest[0].startswith("`21.`")
+		assert poorest[-1].startswith("`30.`")
+
+	def test_the_poorest_column_is_the_actual_bottom(self):
+		rows = self._rows(30)
+		_richest, poorest = view.gold_board_columns(rows, per_side=10)
+		assert str(rows[-1]["balance"]) in poorest[-1]
+
+	def test_an_empty_community_yields_no_columns(self):
+		assert view.gold_board_columns([]) == ([], [])
 
 
 class TestNoActionLines:

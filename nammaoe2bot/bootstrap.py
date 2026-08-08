@@ -60,5 +60,9 @@ def bootstrap(app):
 	# this is a real call, not an import for its side effect: a Match announces
 	# that it went live, changed roster or finished, and betting, the lobby
 	# watcher and the storylines listen. Nothing under pickup/ imports them.
-	from nammaoe2bot.wiring import wire_match_lifecycle
+	from nammaoe2bot.wiring import wire_lobby_to_betting, wire_match_lifecycle
 	wire_match_lifecycle(app)
+
+	# And the one feature-to-feature introduction: a lobby knows when the game
+	# started, and a betting book needs to stop taking money when it does.
+	wire_lobby_to_betting()

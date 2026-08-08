@@ -30,6 +30,23 @@ async def due_to_freeze(now):
 		"SELECT * FROM prediction_posts WHERE status='open' AND freezes_at<=%s", [now]) or []
 
 
+async def open_posts():
+	"""Every book still taking money, timer or no timer.
+
+	The freeze sweep's OTHER question. `due_to_freeze` answers "has this book's
+	clock run out", which was the only way a book closed until the game itself
+	became a reason: a match that starts four minutes into a ten-minute window
+	leaves six minutes in which the civs, the starting positions and the first
+	fight are all on screen and the buttons are all still live.
+
+	Small by construction — a channel runs one match at a time, so this is one
+	or two rows — which is what makes it affordable to ask a second, external
+	question about each of them on every sweep.
+	"""
+	return await db.fetchall(
+		"SELECT * FROM prediction_posts WHERE status='open' ORDER BY id ASC") or []
+
+
 async def live_for_match(match_id):
 	"""The post still riding on this match (open or frozen), or None."""
 	rows = await db.fetchall(

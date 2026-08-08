@@ -39,7 +39,13 @@ def open_lines(team0, team1, minutes, match_id, pool0=0, pool1=0):
 		_side_line(TEAM_EMOJIS[0], team0, pool0, pool1),
 		_side_line(TEAM_EMOJIS[1], team1, pool1, pool0),
 		"",
-		f"Stake your gold with the buttons. Betting closes in {minutes} minutes.",
+		# THE DEADLINE THE CARD PROMISES IS NOW THE LATER OF TWO. The freeze
+		# sweep also closes a book the moment its game starts, and a card that
+		# advertises only the timer is telling people they have minutes they do
+		# not have — on the very information asymmetry the launch cutoff exists
+		# to remove.
+		f"Stake your gold with the buttons. Betting closes when the game starts"
+		f"{f', and in {minutes} min regardless' if minutes else ' — any moment now'}.",
 		# THE RULE, as Amendment 1 §A actually left it. This line said
 		# "Spectators only — players in this match cannot bet" long after the
 		# router stopped enforcing anything of the kind, on every ranked match
@@ -49,12 +55,19 @@ def open_lines(team0, team1, minutes, match_id, pool0=0, pool1=0):
 	]
 
 
-def frozen_lines(team0, team1, pool0, pool1, bettors0, bettors1):
+FROZEN_HEADLINE = "Betting closed. The pots are locked:"
+
+
+def frozen_lines(team0, team1, pool0, pool1, bettors0, bettors1, headline=None):
+	"""`headline` lets the caller say WHY the book closed — the game starting is
+	the other reason now, and it lands mid-window where an unexplained close
+	reads as a bug. Everything below it is identical either way, because the
+	two closes lock identical pots by identical rules."""
 	total = pool0 + pool1
 	if not total:
 		return [f"**Betting closed — no bets on {team0} vs {team1}.**"]
 	lines = [
-		"**Betting closed. The pots are locked:**",
+		f"**{headline or FROZEN_HEADLINE}**",
 		"",
 		f"{TEAM_EMOJIS[0]}  **{team0}** — **{pool0}** {GOLD} from {bettors0} bettor(s)"
 		f"{_mult_note(pool0, pool1)}",
@@ -162,6 +175,50 @@ def leaderboard_lines(rows, page=1, per_page=10):
 			line += f" · {r['balance']} {GOLD}"
 		lines.append(line)
 	return lines
+
+
+# Covers BOTH ways this board comes back empty, because it cannot tell them
+# apart and must not guess: nobody holds a balance yet, or nobody has reached
+# the channel's rating leaderboard, which is what this board is built from.
+# "Nobody holds any gold here yet" would be a flat lie in the second case —
+# people hold plenty, they are just not on a board yet.
+GOLD_BOARD_EMPTY = ("No gold standings yet — players appear here once they're on the "
+					"channel leaderboard.")
+
+# Per column. Two lists of ten fit a phone screen side by side; more turns the
+# thing everybody actually wants to see — who is top and who is broke — into
+# scrolling.
+GOLD_PER_SIDE = 10
+
+
+def _gold_line(place, row):
+	return f"`{place:>2}.` {row['nick']} — **{row['balance']}**"
+
+
+def gold_board_columns(rows, per_side=GOLD_PER_SIDE):
+	"""rows: [{user_id, nick, balance}] already sorted richest-first.
+	-> (richest_lines, poorest_lines), each ready to be one embed field.
+
+	THE TWO COLUMNS NEVER SHARE A NAME. With fewer than 2*per_side holders the
+	naive bottom slice overlaps the top one, and a board that lists the same
+	person as both the richest and the poorest is not a rounding error — it is
+	the board contradicting itself. The bottom slice therefore starts at
+	whichever is later, per_side or n-per_side, so it can only shrink into
+	nothing as the community gets small. At or below per_side holders there is
+	no second column at all: one list IS the whole distribution, and splitting
+	it would be pure decoration.
+
+	Places are counted from the top in both columns, so the poorest column
+	reads `23.` rather than restarting at 1 — the number is the person's
+	standing, and a second numbering that means something else in the same
+	card is a trap.
+	"""
+	if not rows:
+		return [], []
+	richest = [_gold_line(i + 1, r) for i, r in enumerate(rows[:per_side])]
+	start = max(per_side, len(rows) - per_side)
+	poorest = [_gold_line(start + i + 1, r) for i, r in enumerate(rows[start:])]
+	return richest, poorest
 
 
 def me_lines(display_name, correct, total, balance_amount, entries, seeded_now=False):

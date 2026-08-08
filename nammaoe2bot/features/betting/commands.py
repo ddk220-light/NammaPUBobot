@@ -9,7 +9,14 @@ the nammaoe2bot.features.quiz.commands pattern.
 These two commands absorbed /gold and /gold_top, which were deleted: the four
 formed a 2x2 of {personal, community} x {gold, accuracy} over one activity.
 /predictions me now carries the balance and the recent ledger movements,
-/predictions leaderboard a gold column.
+/predictions leaderboard the standings.
+
+/predictions leaderboard DEFAULTS TO GOLD, and shows it as two columns —
+richest and poorest — rather than one ranking. Once gold is the thing people
+spend, "who is up and who is broke" is the standing everybody is actually
+asking about, and it is a two-ended question: the bottom of a gold board is
+as interesting as the top, which is never true of an accuracy board. Accuracy
+did not go anywhere; it is `sort:accuracy`, unchanged and still paged.
 
 ELIGIBILITY IS DEFINED ONCE, by ctx.qc.get_lb(). The leaderboard SQL never
 joined player_ratings, so this board applied NONE of the three gates the rating
@@ -39,10 +46,73 @@ async def _eligible_user_ids(ctx):
 	return {r["user_id"] for r in rows}
 
 
-async def predictions_leaderboard(ctx, page: int = 1):
-	""" Audience standings — one point per correctly called match, plus gold held. """
-	from nammaoe2bot import community
+async def _display_names(rows):
+	"""{user_id: name}, preferring the player's linked AoE2 name over whatever
+	nick a Discord client happened to report — the same substitution the
+	accuracy board has always made, lifted out so both boards make it."""
 	from nammaoe2bot.features.identity import resolver as identity
+
+	names = await identity.profiles_and_names_by_user()
+	out = {}
+	for r in rows:
+		aoe2 = (names.get(r["user_id"]) or {}).get("aoe2_names") or []
+		if aoe2:
+			out[r["user_id"]] = aoe2[0]
+	return out
+
+
+async def predictions_leaderboard(ctx, sort: str = "gold", page: int = 1):
+	""" Audience standings — gold held by default, prediction accuracy on request. """
+	if (sort or "gold") == "gold":
+		return await _gold_leaderboard(ctx)
+	return await _accuracy_leaderboard(ctx, page)
+
+
+async def _gold_leaderboard(ctx):
+	"""Who is rich and who is broke, in two columns.
+
+	BUILT FROM THE CHANNEL'S OWN LEADERBOARD, not from the gold table, and the
+	direction matters. gold_balances holds a row for everyone the boot seed
+	ever touched — including ids that are not players at all — while get_lb() is
+	the channel's standing answer to "who may appear on a public board",
+	carrying is_hidden and the two activity gates with it. Starting from the
+	board and annotating it with gold cannot leak somebody the rating board
+	would have hidden; starting from the balances and filtering would depend on
+	the filter never being dropped.
+
+	A rated player with no balance row is left off rather than shown as zero:
+	they have never been seeded, and "holds nothing" and "has no account here"
+	are different statements — the same distinction me_lines already draws.
+	"""
+	from nammaoe2bot import community
+	from nammaoe2bot.features.betting import embeds
+	from nammaoe2bot.features.betting import gold as bank
+
+	community_id = await community.community_for_channel(ctx.channel.id)
+	if community_id is None:
+		raise Exc.NotFoundError(ctx.qc.gt("This channel keeps no stats — there is no gold here."))
+
+	eligible = await ctx.qc.get_lb()
+	balances = await bank.balances_by_user(community_id)
+	preferred = await _display_names(eligible)
+
+	rows = [
+		dict(user_id=r["user_id"],
+			 nick=preferred.get(r["user_id"]) or r["nick"],
+			 balance=balances[r["user_id"]])
+		for r in eligible if r["user_id"] in balances
+	]
+	# Nick as the tie-break, so the long flat band of players still sitting on
+	# the untouched 500 seed keeps a stable order between calls instead of
+	# reshuffling on every MySQL whim.
+	rows.sort(key=lambda r: (-r["balance"], str(r["nick"]).casefold()))
+
+	await ctx.reply(embed=embeds.gold_leaderboard_embed(rows))
+
+
+async def _accuracy_leaderboard(ctx, page: int = 1):
+	""" One point per correctly called match, plus gold held. """
+	from nammaoe2bot import community
 	from nammaoe2bot.features.betting import embeds, store
 	from nammaoe2bot.features.betting import gold as bank
 
@@ -59,11 +129,9 @@ async def predictions_leaderboard(ctx, page: int = 1):
 	if community_id is not None:
 		balances = await bank.balances_by_user(community_id)
 
-	names = await identity.profiles_and_names_by_user()
+	preferred = await _display_names(rows)
 	for r in rows:
-		aoe2 = (names.get(r["user_id"]) or {}).get("aoe2_names") or []
-		if aoe2:
-			r["nick"] = aoe2[0]
+		r["nick"] = preferred.get(r["user_id"]) or r["nick"]
 		r["balance"] = balances.get(r["user_id"])
 
 	await ctx.reply(embed=embeds.leaderboard_embed(rows, page=max(1, int(page or 1))))
