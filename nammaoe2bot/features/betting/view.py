@@ -23,9 +23,29 @@ _ENTRY_LABELS = {
 }
 
 
+def fmt_multiplier(m):
+	"""A payout multiplier as a punter reads it: at most two decimals, no
+	trailing zeros. ×2, ×1.5, ×1.44, ×3.25.
+
+	`{m:g}` gave six SIGNIFICANT digits, so a perfectly ordinary 450/200 book
+	advertised "pays ×1.44444" on every card. Odds are a number people compare
+	at a glance while deciding how much to stake, and five decimal places of
+	spurious precision is harder to read, not more honest.
+
+	PRESENTATION ONLY. scoring.multiplier keeps returning the exact float and
+	nothing else consumes it — scoring.payouts divides the real pools in
+	integer arithmetic and never sees this string, so what is displayed can
+	never drift into what is paid.
+
+	The `.` that `:.2f` always emits is what makes the rstrip pair safe: it
+	walls off the significant digits, so ×10 renders as "10" and not "1".
+	"""
+	return f"{m:.2f}".rstrip("0").rstrip(".")
+
+
 def _mult_note(pool_side, pool_other):
 	m = multiplier(pool_side, pool_other)
-	return f" · pays ×{m:g}" if m and m > 1 else ""
+	return f" · pays ×{fmt_multiplier(m)}" if m and m > 1 else ""
 
 
 def _side_line(emoji, team, pool_side, pool_other):

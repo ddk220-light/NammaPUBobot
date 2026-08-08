@@ -147,6 +147,45 @@ class TestMultiplier:
 	def test_empty_side_is_none(self):
 		assert scoring.multiplier(0, 100) is None
 
+	def test_the_stored_multiplier_stays_exact(self):
+		""" The rounding below is a rendering step and must never move back
+		here: this number is the odds, and scoring must keep answering with the
+		real one. """
+		assert scoring.multiplier(450, 200) == 650 / 450
+
+
+class TestFmtMultiplier:
+	""" `{m:g}` gave six SIGNIFICANT digits, so an ordinary 450/200 book
+	advertised "pays ×1.44444" on every ranked match's card. """
+
+	def test_a_whole_multiplier_shows_no_decimals(self):
+		assert view.fmt_multiplier(2.0) == "2"
+		assert view.fmt_multiplier(3.0) == "3"
+
+	def test_a_repeating_decimal_stops_at_two_places(self):
+		assert view.fmt_multiplier(650 / 450) == "1.44"
+
+	def test_two_real_decimals_are_kept(self):
+		assert view.fmt_multiplier(3.25) == "3.25"
+
+	def test_one_real_decimal_does_not_gain_a_trailing_zero(self):
+		assert view.fmt_multiplier(1.5) == "1.5"
+
+	def test_a_round_multiplier_of_ten_is_not_stripped_to_one(self):
+		""" THE TRAP IN THE STRIP. rstrip("0") on a bare "10" would eat the
+		significant zero; it is safe only because :.2f always emits a decimal
+		point, which walls the digits off. A formatter changed to drop the
+		point would fail here rather than start quoting ×1 on a 10x book. """
+		assert view.fmt_multiplier(10.0) == "10"
+		assert view.fmt_multiplier(100.0) == "100"
+		assert view.fmt_multiplier(20.5) == "20.5"
+
+	def test_the_card_renders_the_rounded_form_not_the_raw_float(self):
+		""" The formatter existing is not the same as the card using it. """
+		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33, pool0=450, pool1=200))
+		assert "×1.44" in text
+		assert "1.44444" not in text
+
 
 class TestOpenLines:
 	def test_shows_both_pools_and_the_buttons_copy(self):
