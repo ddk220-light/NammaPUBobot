@@ -63,6 +63,7 @@ def bootstrap(app):
 	from nammaoe2bot.wiring import wire_lobby_to_betting, wire_match_lifecycle
 	wire_match_lifecycle(app)
 
-	# And the one feature-to-feature introduction: a lobby knows when the game
-	# started, and a betting book needs to stop taking money when it does.
+	# And the one feature-to-feature introduction. It is currently configured
+	# in observation mode, which explicitly leaves betting timer-only while the
+	# lobby socket's real launch/cancellation events are captured.
 	wire_lobby_to_betting()

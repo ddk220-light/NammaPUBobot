@@ -71,6 +71,20 @@ The bottom layer, and the first part of `core/` to move into the new package roo
 
 ### Features (`nammaoe2bot/features/`)
 Each self-contained: its own tables, its own job singleton, its own commands. None is load-bearing — turn one off and queues still fill and matches still report. A feature may import `runtime/` and `pickup/`; **`pickup/` may not import a feature.**
+
+### Temporary lobby/betting observation mode (2026-08-08)
+
+Production betting is currently **timer-only**: a book closes ten minutes after
+teams form. `wire_lobby_to_betting()` explicitly clears the launch provider at
+boot. The launch-capable path and its invariants remain in the betting notes
+below, but it is dormant while `LOBBY_SOCKET_TRACE` records real launch and
+pre-launch-cancellation sequences. The manual `/lobby` path currently writes
+`lobbies.status='in_progress'` at link time, so that status must not be treated
+as proof of launch. See
+`docs/runbooks/lobby-launch-observation.md`. After the socket evidence is
+reviewed, store an explicit durable launch fact, add fixtures for launch versus
+cancellation, enable the provider, and only then remove the ten-minute cutoff.
+
 `betting/` (was `predictions/` — it is a gold economy, not a forecast; the `prediction_*` tables keep their names, which are a database contract), `quiz/`, `lobby/`, `civs/`, `identity/`, `scouting/`, `storylines/`, `postgame/`, plus `elo_sync.py` and `message_log.py`.
 
 ### Ingest and derived (`nammaoe2bot/ingest/`, `nammaoe2bot/derived/`)

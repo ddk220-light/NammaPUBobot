@@ -20,7 +20,7 @@ from nextcord import DiscordException
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 
-from . import buttons, embeds, reducer, socket, view
+from . import buttons, diagnostics, embeds, reducer, socket, view
 
 HARD_TTL = 90 * 60          # absolute cap on an announcer's life (seconds)
 NOT_FOUND_GRACE = 25        # if the lobby never appears in the feed within this, say so
@@ -67,9 +67,17 @@ class LobbyAnnouncer:
 	async def _run(self):
 		async for events in socket.iter_frames(match_id=self.game_id):
 			for ev in events:
+				data = ev.get("data") if isinstance(ev, dict) else None
+				mid = data.get("matchId") if isinstance(data, dict) else None
+				if mid != self.game_id:
+					continue
+				last_entry = self.state.get(self.game_id)
 				reducer.apply_event(self.state, ev)
+				diagnostics.trace_event(
+					f"manual:game={self.game_id}", ev,
+					last_entry if ev.get("type") == "lobbyRemoved" else self.state.get(self.game_id))
 				if (ev.get("type") == "lobbyRemoved"
-						and (ev.get("data") or {}).get("matchId") == self.game_id):
+						and mid == self.game_id):
 					self.launched = True
 			if self.game_id in self.state:
 				self.seen = True

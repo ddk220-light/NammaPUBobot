@@ -333,18 +333,32 @@ def test_the_launch_check_is_only_asked_about_books_the_timer_did_not_claim():
 	assert asked == [[6]], "match 5's post was already claimed by its timer"
 
 
-def test_the_composition_root_actually_hands_betting_the_launch_check():
-	""" THE FAILURE THIS FILE EXISTS FOR, one layer up. `launched_among`
-	defaults to None and every path degrades silently to the timer when it is
-	— which is the right behaviour and also means a wiring line that never runs
-	produces no error, no log, and a cutoff that simply does not happen. The
-	only way to know it is wired is to check that it is. """
+def test_observation_mode_explicitly_leaves_betting_timer_only():
+	"""The manual /lobby path currently calls a LINK `in_progress`, so handing
+	that status query to betting closes a ten-minute book as soon as the id is
+	pasted. Until live launch/cancel traces establish a truthful signal, boot
+	must actively clear the provider rather than merely forgetting to wire it."""
+	from nammaoe2bot import wiring
+
+	original = betting.jobs.launched_among
+	try:
+		betting.jobs.launched_among = object()  # prove configure clears stale state
+		wiring.wire_lobby_to_betting()
+		assert wiring.BETTING_LAUNCH_CUTOFF_ENABLED is False
+		assert betting.jobs.launched_among is None
+	finally:
+		betting.jobs.launched_among = original
+
+
+def test_the_launch_provider_is_still_ready_for_the_evidence_backed_cutover(monkeypatch):
+	"""Observation mode is a switch around the existing durable provider, not
+	a deletion of the path tomorrow's captured evidence is meant to validate."""
 	from nammaoe2bot import wiring
 	from nammaoe2bot.features.lobby import started as lobby_started
 
 	original = betting.jobs.launched_among
 	try:
-		betting.jobs.launched_among = None
+		monkeypatch.setattr(wiring, "BETTING_LAUNCH_CUTOFF_ENABLED", True)
 		wiring.wire_lobby_to_betting()
 		assert betting.jobs.launched_among is lobby_started.launched_among
 	finally:

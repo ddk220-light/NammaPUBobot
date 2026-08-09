@@ -55,7 +55,7 @@ player pages, civ stats and play-style breakdowns.
 | command | description |
 |---|---|
 | `/predictions me [player]` | Your prediction record, gold balance and recent gold movements |
-| `/predictions leaderboard [page]` | Prediction accuracy standings, with gold held |
+| `/predictions leaderboard [sort] [page]` | Gold standings by default; use `sort:accuracy` for the paged prediction record |
 | `/quiz_leaderboard` | This week's quiz standings |
 
 Gold is play money. Everyone starts with 500. Ranked matches and the daily quiz

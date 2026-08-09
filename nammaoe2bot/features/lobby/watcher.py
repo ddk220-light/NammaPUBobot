@@ -27,7 +27,7 @@ from nextcord import DiscordException
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 
-from . import buttons, embeds, reducer, socket, view
+from . import buttons, diagnostics, embeds, reducer, socket, view
 
 TARGET_NAME = "NammaNomad"  # the announce join key (v1: fixed, single active match)
 HARD_TTL = 90 * 60          # absolute cap on a watcher's life (seconds)
@@ -103,19 +103,35 @@ class LobbyWatcher:
 			if mid is None:
 				continue
 			if etype in ("lobbyAdded", "lobbyUpdated"):
-				name = (data.get("name") or "").strip().casefold()
-				if name == TARGET_NAME.casefold():
+				# lobbyUpdated is a delta and may omit `name`. An omitted field means
+				# "unchanged", not "this is no longer NammaNomad"; dropping the
+				# entry there would lose exactly the later started/removed evidence
+				# this watcher exists to observe. An explicitly changed name still
+				# removes it.
+				previous = self.state.get(mid)
+				name = data.get("name")
+				tracked = previous is not None and name is None
+				if name is not None:
+					tracked = str(name).strip().casefold() == TARGET_NAME.casefold()
+				if tracked:
 					reducer.apply_event(self.state, ev)
+					diagnostics.trace_event(
+						f"auto:match={self.match.id}", ev, self.state.get(mid))
 				else:
 					self.state.pop(mid, None)   # not (or no longer) one of ours
 			elif etype == "lobbyRemoved":
 				if mid in self.state:
+					last_entry = self.state.get(mid)
+					diagnostics.trace_event(
+						f"auto:match={self.match.id}", ev, last_entry)
 					reducer.apply_event(self.state, ev)
 					if mid == self.game_id:
 						self.launched = True
 			elif etype in ("slotAdded", "slotUpdated", "slotRemoved"):
 				if mid in self.state:           # only slots for a tracked lobby
 					reducer.apply_event(self.state, ev)
+					diagnostics.trace_event(
+						f"auto:match={self.match.id}", ev, self.state.get(mid))
 
 	# ── reactions ────────────────────────────────────────────────────────
 	async def _react(self):

@@ -84,13 +84,13 @@ def main():
     if not pubobot_user_id:
         print("ERROR: PUBOBOT_USER_ID environment variable is required.")
         print("       Set it to the Discord user ID of the Pubobot bot whose")
-        print("       ELO result messages NammaPUBobot should mirror.")
+        print("       ELO result messages NammaAoe2Bot should mirror.")
         sys.exit(1)
     lobbybot_user_id = os.environ.get("LOBBYBOT_USER_ID", "")
     if not lobbybot_user_id:
         print("ERROR: LOBBYBOT_USER_ID environment variable is required.")
         print("       Set it to the Discord user ID of the AOE2LobbyBOT whose")
-        print("       match embeds NammaPUBobot should scrape for civ data.")
+        print("       match embeds NammaAoe2Bot should scrape for civ data.")
         sys.exit(1)
 
     # Resolved once, here, so the value written into config.cfg and the value

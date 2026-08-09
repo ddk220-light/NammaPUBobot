@@ -29,6 +29,8 @@ In the **bot service** → **"Variables"** tab, add:
 | `DC_BOT_TOKEN` | Your full Discord bot token |
 | `DC_CLIENT_ID` | `1479682589374808166` |
 | `DC_OWNER_ID` | `622810653878648873` |
+| `PUBOBOT_USER_ID` | Discord user ID of the original Pubobot whose rating messages are synced |
+| `LOBBYBOT_USER_ID` | Discord user ID of AOE2LobbyBOT, used by the legacy civ-sync fallback |
 
 ### Optional Variables
 
@@ -39,6 +41,9 @@ In the **bot service** → **"Variables"** tab, add:
 | `DC_SLASH_SERVERS` | `""` | Comma-separated server IDs for slash commands |
 | `LOG_LEVEL` | `INFO` | `CHAT`, `DEBUG`, `COMMANDS`, `INFO`, or `ERRORS` |
 | `STATUS` | `NammaAoe2Bot` | Bot presence/status text |
+| `REPLAY_INGEST_ENABLED` | `True` | Download and parse completed-match replays |
+| `FLAGSHIP_GUILD_IDS` | `""` | Comma-separated guild IDs that retain full replay detail |
+| `WS_ROOT_URL` | `""` | Public dashboard base URL, required for lobby Join/Spectate buttons |
 
 ## 5. Deploy
 

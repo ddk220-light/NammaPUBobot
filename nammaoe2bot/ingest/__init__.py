@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
-"""INGEST: replays in, raw facts out. Strictly additive, opt-in (off unless the
-REPLAY_INGEST_ENABLED config var is set).
+"""INGEST: replays in, raw facts out. Strictly additive and enabled by default;
+set REPLAY_INGEST_ENABLED=False to turn it off for a deployment.
 
 The one layer that talks to the outside world for data rather than for
 presentation — it downloads a finished game's replay from aoe2companion,

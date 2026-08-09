@@ -29,6 +29,17 @@ from nammaoe2bot.features.storylines import payoff
 from nammaoe2bot.features.storylines import insights
 
 
+# TEMPORARY OBSERVATION MODE. The manual /lobby path currently writes
+# lobbies.status='in_progress' when it merely LINKS an open lobby, while the
+# automatic watcher writes the same value after lobbyRemoved. Until live traces
+# establish an honest launch signal and those meanings are separated, betting
+# must remain the pre-existing ten-minute book. Keep the provider disconnected
+# so a lobby link cannot close it early. This is deliberately a code constant,
+# not a deployment flag: turning real-money-like game rules on independently
+# per container during a rolling deploy would produce two answers at once.
+BETTING_LAUNCH_CUTOFF_ENABLED = False
+
+
 # ── lobby: the opt-in live-game watcher ──────────────────────────────────
 async def _start_lobby_watcher(match, ctx):
 	if match.ranked:
@@ -138,7 +149,7 @@ def wire_match_lifecycle(app):
 
 
 def wire_lobby_to_betting():
-	"""Teach the betting sweep to close a book when the game actually starts.
+	"""Configure the optional lobby-derived betting cutoff.
 
 	NOT a match lifecycle event, which is why it is not in the function above.
 	A launch is not a moment the pickup domain announces — a Match does not
@@ -150,7 +161,16 @@ def wire_lobby_to_betting():
 
 	The direction still runs one way at the import level: betting never learns
 	the `lobbies` table exists, the lobby feature never learns betting exists,
-	and this line is the whole of their relationship. Leave it out and betting
-	falls back to its timer, which is what it did before.
+	and this line is the whole of their relationship.
+
+	OBSERVATION MODE (2026-08-08): disabled. /lobby's manual link currently
+	uses `in_progress` before launch, and `lobbyRemoved` has not yet been
+	validated against both a real launch and a real cancellation. Structured
+	LOBBY_SOCKET_TRACE lines are collecting that evidence. Explicitly clear the
+	provider at boot so betting remains timer-only even if a test or a reused
+	interpreter set the singleton earlier.
 	"""
-	betting.jobs.launched_among = lobby_started.launched_among
+	betting.jobs.launched_among = (
+		lobby_started.launched_among if BETTING_LAUNCH_CUTOFF_ENABLED else None)
+	if not BETTING_LAUNCH_CUTOFF_ENABLED:
+		log.info("Betting launch cutoff is in observation mode; books close on the 10-minute timer.")

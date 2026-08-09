@@ -68,10 +68,10 @@ ABANDONED_REASON = "The match never reported a result — all bets refunded."
 # and the money — is recorded; only the phrasing generalises.
 VOID_RESUMED_REASON = "This book was voided before the match settled."
 
-# What the locked card leads with when the GAME is what closed the book rather
-# than the clock. Worth saying out loud: a card that closes four minutes into a
-# ten-minute window with no explanation reads like a bug to everyone who was
-# still deciding.
+# What the locked card will lead with when the GAME is what closed the book.
+# The provider is currently disabled in nammaoe2bot/wiring.py while live socket
+# evidence is collected, so production books remain timer-only; keeping the
+# rendering path here lets the evidence-backed cutover reuse the tested close.
 LAUNCH_HEADLINE = "The game has started — betting is closed. The pots are locked:"
 
 _pending = set()           # keep create_task'd jobs from being GC'd mid-run
@@ -164,10 +164,13 @@ class PredictionJobs:
 	async def _posts_to_freeze(self, now):
 		"""[(post, headline)] for every book that should stop taking money now.
 
-		TWO REASONS, ONE LIST. The timer is the original: `freezes_at` elapsed.
-		The second is that the game itself started, which the lobby feature
+		TWO SUPPORTED REASONS, ONE LIST. The timer is the production rule:
+		`freezes_at` elapsed. The optional second is that the game itself started,
+		which the lobby feature
 		reports through `launched_among` (nammaoe2bot/features/lobby/started.py
-		holds the query, and the reason it lives there rather than here).
+		holds the query, and the reason it lives there rather than here). That
+		provider is deliberately None during the 2026-08-08 observation period,
+		so only the timer contributes posts today.
 		Betting past the launch is not predicting — the civs, the starting
 		positions and the first fight are all visible, on the bot's own lobby
 		card, while the buttons are still live.

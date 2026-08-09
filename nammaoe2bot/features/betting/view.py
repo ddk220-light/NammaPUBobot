@@ -59,13 +59,11 @@ def open_lines(team0, team1, minutes, match_id, pool0=0, pool1=0):
 		_side_line(TEAM_EMOJIS[0], team0, pool0, pool1),
 		_side_line(TEAM_EMOJIS[1], team1, pool1, pool0),
 		"",
-		# THE DEADLINE THE CARD PROMISES IS NOW THE LATER OF TWO. The freeze
-		# sweep also closes a book the moment its game starts, and a card that
-		# advertises only the timer is telling people they have minutes they do
-		# not have — on the very information asymmetry the launch cutoff exists
-		# to remove.
-		f"Stake your gold with the buttons. Betting closes when the game starts"
-		f"{f', and in {minutes} min regardless' if minutes else ' — any moment now'}.",
+		# TEMPORARY OBSERVATION MODE (2026-08-08). Lobby launch detection is
+		# collecting live socket evidence but is not allowed to close a book yet;
+		# the ten-minute freezes_at deadline is the one rule players actually get.
+		f"Stake your gold with the buttons. Betting closes "
+		f"{f'in {minutes} min' if minutes else 'now'}.",
 		# THE RULE, as Amendment 1 §A actually left it. This line said
 		# "Spectators only — players in this match cannot bet" long after the
 		# router stopped enforcing anything of the kind, on every ranked match

@@ -217,19 +217,17 @@ class TestOpenLines:
 		assert "×1.5" in text and "×3" in text
 
 
-	def test_the_card_promises_the_earlier_of_the_two_deadlines(self):
-		""" The freeze sweep now closes a book the moment its game starts, which
-		is routinely minutes before `freezes_at`. A card still advertising only
-		the timer tells people they have time they do not have — on the very
-		information asymmetry the launch cutoff exists to remove. """
+	def test_observation_mode_promises_only_the_live_ten_minute_rule(self):
+		"""Launch detection is collecting evidence but cannot close production
+		books yet. The card must not advertise a cutoff boot explicitly disabled."""
 		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33))
-		assert "when the game starts" in text
-		assert "10 min" in text, "the timer is still the outer bound and still stated"
+		assert "when the game starts" not in text
+		assert "10 min" in text
 
 	def test_a_card_with_no_minutes_left_does_not_promise_zero_of_them(self):
 		text = "\n".join(view.open_lines("Alpha", "Beta", 0, 33))
 		assert "0 min" not in text
-		assert "when the game starts" in text
+		assert "closes now" in text
 
 
 class TestFrozenLines:

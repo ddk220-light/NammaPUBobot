@@ -35,6 +35,11 @@ When a ranked match's teams are settled, the bot posts a betting card with six
 buttons — 10 / 50 / 100 on each team. Betting stays open for **10 minutes**,
 then the book freezes and the card locks.
 
+The lobby tracker is currently recording the live socket events around real
+game launches, but those events do **not** close betting yet. Until launch and
+lobby-cancellation signals have been verified separately, the ten-minute timer
+above is the only automatic cutoff.
+
 **How the odds work (pari-mutuel).** There is no bookmaker and no fixed price.
 Every stake goes into one pot. When the match is reported, the whole pot is split
 among everyone who backed the winning team, in proportion to what they staked.
@@ -95,8 +100,9 @@ something.
   movements labelled by kind (Starting gold, Match played, Bet placed, Bet
   cancelled, Refund, Winnings, Quiz). Pass a `player` to look up someone else's
   record and balance; the movement list is only ever your own.
-- `/predictions leaderboard` — accuracy standings with gold held, blending the
-  old free-vote era with graded bets.
+- `/predictions leaderboard` — richest and poorest gold standings side by side.
+  Use `/predictions leaderboard sort:accuracy` for the paged accuracy record,
+  blending the old free-vote era with graded bets.
 
 There were once four commands here — `/gold` and `/gold_top` alongside these
 two — which was a 2×2 of {yours, everyone's} × {gold, accuracy} over a single
