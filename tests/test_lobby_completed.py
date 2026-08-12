@@ -2,9 +2,30 @@
 """Pure unit tests for nammaoe2bot/features/lobby/completed.py decision helpers — the winner ->
 losing-captain resolution and its degrade modes, plus poll/giveup arithmetic and
 pid parsing. No nextcord / DB / network touched."""
+import asyncio
 import types
 
 from nammaoe2bot.features.lobby import completed
+
+
+class _LinkDb:
+	def __init__(self):
+		self.inserted = []
+		self.updated = []
+		self.executed = []
+
+	async def select_one(self, *_args, **_kwargs):
+		return None
+
+	async def insert(self, table, row):
+		self.inserted.append((table, dict(row)))
+		return 8
+
+	async def update(self, *args, **kwargs):
+		self.updated.append((args, kwargs))
+
+	async def execute(self, sql, args=None):
+		self.executed.append((sql, args))
 
 
 def _member(uid):
@@ -42,6 +63,19 @@ def test_next_poll_at_and_should_giveup():
 	assert completed.should_giveup(0, completed.GIVEUP_AFTER + 1) is True
 	assert completed.should_giveup(0, completed.GIVEUP_AFTER - 1) is False
 	assert completed.should_giveup(None, 10) is False
+
+
+def test_manual_link_is_unconfirmed_and_does_not_supersede_other_lobbies(monkeypatch):
+	fake = _LinkDb()
+	monkeypatch.setattr(completed, "db", fake)
+
+	assert asyncio.run(completed.link_manual(10, 20, 30, 40)) == "linked"
+
+	row = fake.inserted[0][1]
+	assert row["status"] == "filling"
+	assert row["launched_at"] is None
+	assert row["created_at"] > 0, "the old completion-poll backdate is gone"
+	assert fake.executed == [], "a pasted id must not expire a replacement lobby"
 
 
 def test_resolve_result_confident_gates_losing_captain():

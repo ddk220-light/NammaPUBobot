@@ -2,6 +2,13 @@
 
 _Generated 2026-06-13 by a 10-agent research workflow (7 research + 2 adversarial verify + 1 synthesis). Both make-or-break feasibility claims were adversarially verified live._
 
+> **Launch correction (2026-08-11):** later production evidence disproved this
+> plan's `lobbyRemoved → IN_PROGRESS` assumption. Cancellation/remake emits the
+> same terminal socket shape. Current code treats removal as `verifying` and
+> persists `lobbies.launched_at` only from the match API's `started` timestamp.
+> See `docs/runbooks/lobby-launch-observation.md` for the evidence and runtime
+> checks. The older state tables below are historical design context.
+
 ---
 
 ## Agreed design (v2) — match-coupled lobby loop

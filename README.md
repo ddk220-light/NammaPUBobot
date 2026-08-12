@@ -20,9 +20,9 @@ software and remains so.
   — windowed to the last 60 days, because a scouting report is a claim about
   how somebody plays now.
 - **Gold, betting and a daily quiz.** Pari-mutuel betting on live matches with
-  a ten-minute window, where match participants may back only their own team,
-  and a public 24-hour AoE2 poll that pays gold for taking part. Full rules in
-  [docs/GOLD.md](docs/GOLD.md).
+  a book that stays open until the AoE2 match actually starts, where match
+  participants may back only their own team, and a public 24-hour AoE2 poll
+  that pays gold for taking part. Full rules in [docs/GOLD.md](docs/GOLD.md).
 - **Civ statistics and balanced random draws**, informed by measured per-civ
   win rates rather than a static list.
 - **A public web dashboard** — leaderboards, player pages, civ stats and

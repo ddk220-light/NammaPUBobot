@@ -52,18 +52,14 @@ def _side_line(emoji, team, pool_side, pool_other):
 	return f"{emoji}  **{team}** — pool **{pool_side}** {GOLD}{_mult_note(pool_side, pool_other)}"
 
 
-def open_lines(team0, team1, minutes, match_id, pool0=0, pool1=0):
+def open_lines(team0, team1, match_id, pool0=0, pool1=0):
 	return [
 		f"**Who takes match #{match_id}?**",
 		"",
 		_side_line(TEAM_EMOJIS[0], team0, pool0, pool1),
 		_side_line(TEAM_EMOJIS[1], team1, pool1, pool0),
 		"",
-		# TEMPORARY OBSERVATION MODE (2026-08-08). Lobby launch detection is
-		# collecting live socket evidence but is not allowed to close a book yet;
-		# the ten-minute freezes_at deadline is the one rule players actually get.
-		f"Stake your gold with the buttons. Betting closes "
-		f"{f'in {minutes} min' if minutes else 'now'}.",
+		"Stake your gold with the buttons. Betting closes when the game starts.",
 		# THE RULE, as Amendment 1 §A actually left it. This line said
 		# "Spectators only — players in this match cannot bet" long after the
 		# router stopped enforcing anything of the kind, on every ranked match

@@ -77,7 +77,7 @@ def use_fake(monkeypatch, **kwargs):
 class TestCloseBetting:
 	def test_it_is_a_compare_and_set_on_the_open_status(self, monkeypatch):
 		fake = use_fake(monkeypatch)
-		assert asyncio.run(store.close_betting(12)) is True
+		assert asyncio.run(store.close_betting(12, 1_700)) is True
 
 		kind, sql, args = fake.calls[0]
 		assert kind == "execute"
@@ -85,7 +85,8 @@ class TestCloseBetting:
 		assert "status='frozen'" in sql
 		assert "WHERE id=%s AND status='open'" in sql, (
 			"an unconditional flip lets two sweeps both believe they own the book")
-		assert args == [12]
+		assert "freezes_at=%s" in sql
+		assert args == [1_700, 12]
 		assert fake.committed
 
 	def test_a_post_that_was_not_open_answers_false(self, monkeypatch):
@@ -93,14 +94,14 @@ class TestCloseBetting:
 		that as "not mine" and does nothing, which is what stops a double
 		settlement and a duplicated betting report. """
 		use_fake(monkeypatch, rowcount=0)
-		assert asyncio.run(store.close_betting(12)) is False
+		assert asyncio.run(store.close_betting(12, 1_700)) is False
 
 	def test_it_runs_in_a_transaction_for_the_rowcount(self, monkeypatch):
 		""" The autocommit adapter's execute() answers lastrowid; only the
 		transaction handle answers affected rows, and the affected-row count is
 		the entire return value here. """
 		fake = use_fake(monkeypatch)
-		asyncio.run(store.close_betting(12))
+		asyncio.run(store.close_betting(12, 1_700))
 		assert [c[0] for c in fake.calls] == ["execute"], "no autocommit path"
 		assert fake.committed
 
@@ -115,7 +116,7 @@ class TestClaimTerminal:
 
 	def test_the_claim_and_the_close_are_one_compare_and_set(self, monkeypatch):
 		fake = use_fake(monkeypatch)
-		assert asyncio.run(store.claim_terminal(12, "void")) == "void"
+		assert asyncio.run(store.claim_terminal(12, "void", 1_700)) == "void"
 
 		assert len(fake.calls) == 1, "a second statement is a second chance to lose the race"
 		kind, sql, args = fake.calls[0]
@@ -126,7 +127,10 @@ class TestClaimTerminal:
 			"without this the second actor overwrites the first actor's branch")
 		assert "status IN ('open','frozen')" in sql, (
 			"a post that already went terminal must not be re-claimed")
-		assert args == ["void", 12]
+		assert "freezes_at=CASE WHEN status='open' THEN %s ELSE freezes_at END" in sql
+		assert sql.index("freezes_at=") < sql.index("status='frozen'"), (
+			"MySQL evaluates assignments left-to-right; inspect the pre-close status first")
+		assert args == [1_700, "void", 12]
 		assert fake.committed
 
 	def test_losing_the_claim_answers_the_branch_that_won(self, monkeypatch):
@@ -135,7 +139,7 @@ class TestClaimTerminal:
 		entire fix for the double payout. """
 		fake = use_fake(monkeypatch, rowcount=0,
 						rows=[{"status": "frozen", "terminal_intent": "void"}])
-		assert asyncio.run(store.claim_terminal(12, "settle")) == "void"
+		assert asyncio.run(store.claim_terminal(12, "settle", 1_700)) == "void"
 
 		_kind, sql, args = fake.calls[1]
 		assert "FOR UPDATE" in sql, (
@@ -144,11 +148,11 @@ class TestClaimTerminal:
 
 	def test_a_post_already_past_terminal_answers_nothing(self, monkeypatch):
 		use_fake(monkeypatch, rowcount=0, rows=[{"status": "resolved", "terminal_intent": "settle"}])
-		assert asyncio.run(store.claim_terminal(12, "void")) is None
+		assert asyncio.run(store.claim_terminal(12, "void", 1_700)) is None
 
 	def test_a_deleted_post_answers_nothing(self, monkeypatch):
 		use_fake(monkeypatch, rowcount=0, rows=[])
-		assert asyncio.run(store.claim_terminal(12, "void")) is None
+		assert asyncio.run(store.claim_terminal(12, "void", 1_700)) is None
 
 	def test_only_the_three_real_branches_can_be_staked(self, monkeypatch):
 		""" The value is dispatched on by every resume path, so a typo'd intent
@@ -156,7 +160,7 @@ class TestClaimTerminal:
 		use_fake(monkeypatch)
 		for bad in ("resolved", "voided", "", None):
 			try:
-				asyncio.run(store.claim_terminal(12, bad))
+				asyncio.run(store.claim_terminal(12, bad, 1_700))
 			except ValueError:
 				continue
 			raise AssertionError(f"{bad!r} was accepted as a terminal branch")

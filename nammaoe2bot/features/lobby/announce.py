@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Standalone lobby announcer for the /lobby2 command.
+"""Standalone lobby announcer for the /lobby command.
 
 Subscribes to the live lobby socket filtered to ONE game id and live-edits the
 command's own response message into a rich, self-updating lobby card (the
 AOE2LobbyBOT look) until the game launches or the watch expires. Independent of the
 ranked-match flow (no match, no roster-confirm, no profile heal) — it just renders a
-lobby by id. On launch it leaves an `in_progress` lobbies row (match_id NULL) so
-LobbyJobs posts the post-game results card. Strictly best-effort and fully isolated:
+lobby by id. On removal it verifies the match API's ``started`` timestamp; only
+then does it leave an `in_progress` row so LobbyJobs posts the result card.
+Strictly best-effort and fully isolated:
 every Discord/socket/DB error is logged, never raised.
 
 Imports nextcord, so it is imported lazily (by nammaoe2bot.discord.commands.matches.lobby2), never at
@@ -20,7 +21,7 @@ from nextcord import DiscordException
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 
-from . import buttons, diagnostics, embeds, reducer, socket, view
+from . import buttons, diagnostics, embeds, launch, reducer, socket, view
 
 HARD_TTL = 90 * 60          # absolute cap on an announcer's life (seconds)
 NOT_FOUND_GRACE = 25        # if the lobby never appears in the feed within this, say so
@@ -45,6 +46,8 @@ class LobbyAnnouncer:
 		self.state = reducer.new_state()
 		self.task = None
 		self.launched = False
+		self.removed = False
+		self.last_entry = None
 		self.seen = False               # have we received any data for this lobby?
 		self.started_at = time.monotonic()
 		self._last_edit = 0.0
@@ -78,11 +81,12 @@ class LobbyAnnouncer:
 					last_entry if ev.get("type") == "lobbyRemoved" else self.state.get(self.game_id))
 				if (ev.get("type") == "lobbyRemoved"
 						and mid == self.game_id):
-					self.launched = True
+					self.removed = True
+					self.last_entry = last_entry
 			if self.game_id in self.state:
 				self.seen = True
 			await self._render()
-			if self.launched or self._expired() or self._not_found():
+			if self.removed or self._expired() or self._not_found():
 				break
 		await self._finish()
 
@@ -108,15 +112,26 @@ class LobbyAnnouncer:
 		self._last_edit = now
 
 	async def _finish(self):
-		entry = self.state.get(self.game_id, {"lobby": {}, "slots": {}})
+		entry = self.last_entry or self.state.get(
+			self.game_id, {"lobby": {}, "slots": {}})
 		name = (entry.get("lobby") or {}).get("name") or self.game_id
-		if self.launched:
-			await self._persist_in_progress(entry)
+		if self.removed:
+			row_id = await self._persist_verifying(entry)
 			await self._safe_edit(embeds.simple_embed(
-				f"🎮 `{name}` — game in progress",
-				body="The result will be posted here when the game ends.",
-				footer=f"game {self.game_id}"),
-				view=buttons.link_view(self.game_id, join=False, spectate=True))
+				f"Checking whether `{name}` started…",
+				body="Lobby removal is being verified against the match service.",
+				footer=f"game {self.game_id}"), view=None)
+			if row_id is not None and await launch.wait_for_start(row_id, self.game_id):
+				self.launched = True
+				await self._safe_edit(embeds.simple_embed(
+					f"🎮 `{name}` — game in progress",
+					body="The result will be posted here when the game ends.",
+					footer=f"game {self.game_id}"),
+					view=buttons.link_view(self.game_id, join=False, spectate=True))
+			else:
+				await self._safe_edit(embeds.simple_embed(
+					f"Lobby `{name}` closed",
+					body="No game start was confirmed.", greyed=True), view=None)
 		elif not self.seen:
 			await self._safe_edit(embeds.simple_embed(
 				f"Lobby `{self.game_id}` not found",
@@ -126,27 +141,33 @@ class LobbyAnnouncer:
 			await self._safe_edit(embeds.simple_embed(
 				f"Lobby `{name}` closed", body="Tracking ended.", greyed=True), view=None)
 
-	async def _persist_in_progress(self, entry):
-		"""Leave a bare (match_id NULL) in_progress row so LobbyJobs posts the results
-		card after the game finishes. Only inserts if no row exists for this lobby — a
-		ranked /lobby2 link already created its own row and owns the result flow."""
+	async def _persist_verifying(self, entry):
+		"""Persist the removal candidate without claiming that it launched."""
 		try:
 			existing = await db.select_one(
 				["id"], "lobbies",
 				where={"channel_id": getattr(self.channel, "id", None), "aoe2_game_id": self.game_id})
 			if existing:
-				return
+				await db.execute(
+					"UPDATE lobbies SET message_id=%s, "
+					"status=CASE WHEN launched_at IS NULL THEN 'verifying' ELSE status END "
+					"WHERE id=%s",
+					[getattr(self.message, "id", None), existing["id"]],
+				)
+				return existing["id"]
 			lob = entry.get("lobby") or {}
 			now = int(time.time())
-			await db.insert("lobbies", dict(
+			return await db.insert("lobbies", dict(
 				aoe2_game_id=self.game_id, channel_id=getattr(self.channel, "id", None),
 				message_id=getattr(self.message, "id", None), completed_message_id=None,
-				match_id=None, status="in_progress", lobby_name=(lob.get("name") or "(lobby)"),
+				match_id=None, status="verifying", launched_at=None,
+				lobby_name=(lob.get("name") or "(lobby)"),
 				map_name=lob.get("mapName"), server=lob.get("server"),
 				profile_ids=",".join(str(p) for p in sorted(reducer.profile_ids(entry))),
 				created_at=now, last_edit_at=0, requested_by=self.requested_by))
 		except Exception as e:
 			log.error(f"LobbyAnnouncer({self.game_id}) persist failed: {e}")
+		return None
 
 	# ── discord helpers (bulletproof) ────────────────────────────────────
 	async def _safe_edit(self, embed, view=None):
@@ -160,7 +181,7 @@ class LobbyAnnouncer:
 
 def start(message, game_id, requested_by=None):
 	"""Spawn (or reuse) an announcer that live-edits `message` for game_id. Returns the
-	announcer, or the existing one if /lobby2 is already tracking this id."""
+	announcer, or the existing one if /lobby is already tracking this id."""
 	existing = active.get(game_id)
 	if existing:
 		return existing

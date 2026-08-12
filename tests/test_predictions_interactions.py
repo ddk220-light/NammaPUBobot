@@ -229,10 +229,7 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 	monkeypatch.setattr(interactions, "log", log)
 	the_post = post() if the_post is _DEFAULT_POST else the_post
 	if post_frozen and the_post is not None:
-		# status stays 'open' — the sweep hasn't run yet — but the deadline has
-		# passed, exercising the `now >= freezes_at` clause specifically rather
-		# than the `status != 'open'` one right next to it.
-		the_post = dict(the_post, freezes_at=1)
+		the_post = dict(the_post, status="frozen")
 
 	async def _get_post(_post_id):
 		if get_post_raises is not None:
@@ -344,12 +341,12 @@ class TestBookIsClosed:
 		assert i.all_ephemeral
 		assert log.errors == []
 
-	def test_a_post_past_its_freeze_time_is_refused(self, monkeypatch):
-		""" status is still 'open' here — the freeze sweep runs every 15s, so a
-		press in that window has to be caught by the clock, not the status. """
-		log = wire(monkeypatch, the_post=post(freezes_at=1_000), bank=EXPLODE)
-		assert run(FakeInteraction()).reply == self.CLOSED
-		assert log.errors == []
+	def test_a_legacy_deadline_does_not_refuse_an_open_post(self, monkeypatch):
+		bank = wire(monkeypatch, the_post=post(freezes_at=1_000))
+		i = run(FakeInteraction())
+		assert bank.placed, "status=open remains authoritative until launch closes it"
+		assert "Betting on this match is closed" not in i.reply
+		assert bank.errors == []
 
 	def test_a_post_that_no_longer_exists_is_refused(self, monkeypatch):
 		log = wire(monkeypatch, the_post=None, bank=EXPLODE)

@@ -24,20 +24,8 @@ async def get_post(post_id):
 	return await db.fetchone("SELECT * FROM prediction_posts WHERE id=%s", [post_id])
 
 
-async def due_to_freeze(now):
-	"""Open posts whose voting window has elapsed."""
-	return await db.fetchall(
-		"SELECT * FROM prediction_posts WHERE status='open' AND freezes_at<=%s", [now]) or []
-
-
 async def open_posts():
-	"""Every book still taking money, timer or no timer.
-
-	The freeze sweep's OTHER question. `due_to_freeze` answers "has this book's
-	clock run out", which was the only way a book closed until the game itself
-	became a reason: a match that starts four minutes into a ten-minute window
-	leaves six minutes in which the civs, the starting positions and the first
-	fight are all on screen and the buttons are all still live.
+	"""Every book still taking money, awaiting a confirmed game launch.
 
 	Small by construction — a channel runs one match at a time, so this is one
 	or two rows — which is what makes it affordable to ask a second, external
@@ -113,7 +101,7 @@ async def match_player_ids(match_id):
 	return [r["user_id"] for r in rows or []]
 
 
-async def close_betting(post_id):
+async def close_betting(post_id, closed_at):
 	"""End the betting window: the ONE write that stops a book taking money.
 	True when this call is what closed it.
 
@@ -140,8 +128,9 @@ async def close_betting(post_id):
 	for the last time goes through claim_terminal below instead."""
 	async with db.transaction() as tx:
 		return bool(await tx.execute(
-			"UPDATE prediction_posts SET status='frozen' WHERE id=%s AND status='open'",
-			[post_id]))
+			"UPDATE prediction_posts SET status='frozen', freezes_at=%s "
+			"WHERE id=%s AND status='open'",
+			[closed_at, post_id]))
 
 
 # The three ways a book ends. 'settle' pays the winners out of the pot; 'void'
@@ -150,7 +139,7 @@ async def close_betting(post_id):
 TERMINAL_INTENTS = ("settle", "void", "no_action")
 
 
-async def claim_terminal(post_id, intent):
+async def claim_terminal(post_id, intent, closed_at):
 	"""Stop the book taking money AND stake the terminal branch it will take,
 	in ONE compare-and-set.
 
@@ -184,9 +173,11 @@ async def claim_terminal(post_id, intent):
 		raise ValueError(f"{intent!r} is not one of {TERMINAL_INTENTS}")
 	async with db.transaction() as tx:
 		if await tx.execute(
-				"UPDATE prediction_posts SET status='frozen', terminal_intent=%s "
+				"UPDATE prediction_posts SET "
+				"freezes_at=CASE WHEN status='open' THEN %s ELSE freezes_at END, "
+				"status='frozen', terminal_intent=%s "
 				"WHERE id=%s AND status IN ('open','frozen') AND terminal_intent IS NULL",
-				[intent, post_id]):
+				[closed_at, intent, post_id]):
 			return intent
 		# We lost the claim. FOR UPDATE rather than a plain read: this has to
 		# be the CURRENT row, not this transaction's snapshot of it, or a

@@ -6,11 +6,11 @@ can NEVER break the tick or touch the existing match / civ / rating flow. The
 lobby feature is strictly opt-in and must do no harm to the path that already
 works (create-your-own-lobby + manual /report).
 
-Phase 2 responsibilities:
-  - boot rehydration log of non-terminal lobbies rows
-  - reap stale created/filling rows that never launched (one UPDATE, throttled)
-Phase 3 adds the IN_PROGRESS -> COMPLETED result poll here. All edits land in
-THIS file, never in the hot tick path.
+Responsibilities:
+  - poll linked lobby ids for an API-confirmed ``started`` timestamp;
+  - boot rehydration of non-terminal rows;
+  - reap stale, unconfirmed rows (one UPDATE, throttled);
+  - poll confirmed in-progress games for completion.
 """
 import asyncio
 import time
@@ -20,15 +20,17 @@ from nammaoe2bot.runtime.database import db
 
 
 class LobbyJobs:
-	POLL_INTERVAL = 15      # seconds between maintenance passes
+	POLL_INTERVAL = 2       # launch confirmation should trail the game by seconds
+	COMPLETION_INTERVAL = 15
 	REAP_INTERVAL = 600     # seconds between stale-row sweeps
-	STALE_AFTER = 1800      # a created/filling row older than this never launched
+	STALE_AFTER = 1800      # an unconfirmed row older than this is abandoned
 	FLOOR_SECONDS = 15 * 60  # don't poll a launched game for completion until 15 min in
 	POLL_CONCURRENCY = 5     # max in-flight completion resolutions
 	TERMINAL = ("completed", "expired")
 
 	def __init__(self):
 		self.next_run = 0
+		self.next_completion = 0
 		self.next_reap = 0
 		self._booted = False
 		self._running = False
@@ -60,10 +62,13 @@ class LobbyJobs:
 			self._booted = True
 			await self._rehydrate()
 		now = int(time.time())
+		await self._poll_launches(now)
 		if now >= self.next_reap:
 			self.next_reap = now + self.REAP_INTERVAL
 			await self._reap_stale(now - self.STALE_AFTER)
-		await self._poll_completions(now)
+		if now >= self.next_completion:
+			self.next_completion = now + self.COMPLETION_INTERVAL
+			await self._poll_completions(now)
 
 	async def _rehydrate(self):
 		"""On boot, note any lobbies a redeploy left mid-flight. Phase 2 only logs
@@ -78,18 +83,57 @@ class LobbyJobs:
 			log.error(f"Lobby rehydrate skipped: {e}")
 
 	async def _reap_stale(self, cutoff):
-		"""Expire created/filling rows that never reached in_progress — a lobby was
-		announced/detected but the game never launched (or the match ended another
-		way). One throttled UPDATE; nothing consumes these rows yet so it is pure
-		hygiene."""
+		"""Expire old rows for which the API never confirmed a launch."""
 		try:
 			await db.execute(
 				"UPDATE lobbies SET status='expired' "
-				"WHERE status IN ('created','filling') AND created_at < %s",
+				"WHERE launched_at IS NULL "
+				"AND status IN ('created','filling','verifying','in_progress') "
+				"AND created_at < %s",
 				[cutoff],
 			)
 		except Exception as e:
 			log.error(f"Lobby reap skipped: {e}")
+
+	async def _poll_launches(self, now):
+		"""Poll recent linked rows until the match API proves they started.
+
+		This is the restart-safe verifier. Watcher-local polling exists only to
+		update Discord cards promptly; this query is what survives a Railway
+		redeploy between socket removal and API publication.
+		"""
+		try:
+			rows = await db.fetchall(
+				"SELECT id, aoe2_game_id, match_id, status, created_at "
+				"FROM lobbies WHERE launched_at IS NULL "
+				"AND status IN ('created','filling','verifying','in_progress','awaiting_confirm') "
+				"AND created_at >= %s",
+				[now - self.STALE_AFTER],
+			)
+		except Exception as e:
+			log.error(f"Lobby launch select skipped: {e}")
+			return
+		if not rows:
+			return
+		from nammaoe2bot.features.lobby import launch
+		sem = asyncio.Semaphore(self.POLL_CONCURRENCY)
+		for row in rows:
+			row_id = row.get("id")
+			if row_id in _launch_inflight:
+				continue
+			_launch_inflight.add(row_id)
+			task = asyncio.create_task(self._guarded_launch(launch, row, now, sem))
+			_pending.add(task)
+			task.add_done_callback(_pending.discard)
+
+	async def _guarded_launch(self, launch, row, now, sem):
+		try:
+			async with sem:
+				await launch.verify_row(row, observed_at=now)
+		except Exception as e:
+			log.error(f"Lobby launch verify({row.get('id')}) failed: {e}")
+		finally:
+			_launch_inflight.discard(row.get("id"))
 
 	async def _poll_completions(self, now):
 		"""Phase 3 — select due in_progress / awaiting_confirm rows and dispatch
@@ -99,8 +143,9 @@ class LobbyJobs:
 		try:
 			rows = await db.fetchall(
 				"SELECT id, aoe2_game_id, match_id, channel_id, profile_ids, "
-				"created_at, last_edit_at, completed_message_id, status "
-				"FROM lobbies WHERE status IN ('in_progress','awaiting_confirm')"
+				"created_at, launched_at, last_edit_at, completed_message_id, status "
+				"FROM lobbies WHERE launched_at IS NOT NULL "
+				"AND status IN ('in_progress','awaiting_confirm')"
 			)
 		except Exception as e:
 			log.error(f"Lobby poll select skipped: {e}")
@@ -123,10 +168,12 @@ class LobbyJobs:
 			task.add_done_callback(_pending.discard)
 
 	def _due(self, row, now):
-		"""15-min floor since launch, then gated by the per-row next-poll timestamp
+		"""15-min floor since confirmed launch, then the next-poll timestamp
 		stored in last_edit_at (reboot-safe; no stored attempt counter)."""
-		created = row.get("created_at") or 0
-		if now - created < self.FLOOR_SECONDS:
+		launched = row.get("launched_at")
+		if launched is None:
+			return False
+		if now - launched < self.FLOOR_SECONDS:
 			return False
 		return now >= (row.get("last_edit_at") or 0)
 
@@ -145,5 +192,7 @@ _pending = set()
 # Row ids currently being resolved — prevents the same lobbies row being
 # dispatched by two overlapping poll passes (single-process guard).
 _inflight = set()
+# Row ids currently being checked for an authoritative start timestamp.
+_launch_inflight = set()
 
 jobs = LobbyJobs()

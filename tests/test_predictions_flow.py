@@ -90,11 +90,10 @@ class FakeStore:
 	live_for_match hands the post back CARRYING it — which is precisely what a
 	settlement arriving after an interrupted void reads."""
 
-	def __init__(self, bets=(), post=None, unsettled=(), players=(), closes=True, due=(),
+	def __init__(self, bets=(), post=None, unsettled=(), players=(), closes=True,
 				 abandoned=(), preclaimed=None):
 		self._bets = list(bets)
 		self._post = post
-		self._due = list(due)
 		self._unsettled = list(unsettled)
 		self._abandoned = list(abandoned)
 		self._players = list(players)
@@ -137,10 +136,6 @@ class FakeStore:
 			return dict(self._post)
 		return dict(self._post, status="frozen", terminal_intent=staked)
 
-	async def due_to_freeze(self, _now):
-		self.calls.append("due_to_freeze")
-		return list(self._due)
-
 	async def unsettled_books(self, _reported_before):
 		self.calls.append("unsettled_books")
 		return list(self._unsettled)
@@ -159,14 +154,14 @@ class FakeStore:
 		if post_id not in self.closed:
 			self.closed.append(post_id)
 
-	async def close_betting(self, post_id):
+	async def close_betting(self, post_id, closed_at):
 		self.calls.append("close_betting")
 		if not self._closes:
 			return False
 		self._record_close(post_id)
 		return True
 
-	async def claim_terminal(self, post_id, intent):
+	async def claim_terminal(self, post_id, intent, closed_at):
 		self.calls.append("claim_terminal")
 		self.claims.append((post_id, intent))
 		if not self._closes:
@@ -232,7 +227,7 @@ def post(**overrides):
 
 
 def wire(monkeypatch, *, bets=(), the_post=None, community_id=5,
-		 unsettled=(), players=(), closes=True, due=(), abandoned=(), preclaimed=None):
+		 unsettled=(), players=(), closes=True, abandoned=(), preclaimed=None):
 	"""Stand up store, the bank, the channel and the community lookup.
 
 	`preclaimed` is {post_id: intent} — a branch some other actor staked
@@ -241,7 +236,7 @@ def wire(monkeypatch, *, bets=(), the_post=None, community_id=5,
 	Returns (store, bank, channel, log).
 	"""
 	store = FakeStore(bets=bets, post=the_post, unsettled=unsettled, players=players,
-					  closes=closes, due=due, abandoned=abandoned, preclaimed=preclaimed)
+					  closes=closes, abandoned=abandoned, preclaimed=preclaimed)
 	bank = FakeBank()
 	channel = FakeChannel()
 	log = RecordingLog()
@@ -319,11 +314,11 @@ class TestOpen:
 		assert sent_view.timeout is None and sent_view.auto_defer is False
 		assert log.errors == []
 
-	def test_the_window_the_card_advertises_is_the_window_it_gets(self, monkeypatch):
+	def test_a_new_book_has_no_wall_clock_deadline(self, monkeypatch):
 		store, _bank, _channel, _log = wire(monkeypatch)
 		asyncio.run(flow.open_for_match(self.match()))
-		_channel_id, _match_id, _t0, _t1, opened_at, freezes_at = store.created[0]
-		assert freezes_at - opened_at == flow.VOTE_WINDOW
+		_channel_id, _match_id, _t0, _t1, _opened_at, freezes_at = store.created[0]
+		assert freezes_at == flow.OPEN_UNTIL_LAUNCH
 
 
 # ── freeze ───────────────────────────────────────────────────────────────
@@ -755,7 +750,7 @@ class TestResume:
 	it HAPPEN was not. resolve_for_match has exactly one caller — finish_match,
 	which has already dropped the Match from bot.active_matches — so a redeploy
 	between two payouts left the book at 'frozen' with some winners paid and the
-	rest owed, invisible to due_to_freeze ('open' only) and to every command. """
+	rest owed, invisible to the open-book launch query and to every command. """
 
 	def frozen_book(self, winner=0):
 		return post(status="frozen", match_winner=winner)

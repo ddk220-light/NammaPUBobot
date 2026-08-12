@@ -387,35 +387,22 @@ async def _match_players_profiles(match):
 
 async def link_manual(channel_id, match_id, game_id, requested_by):
 	"""/lobby2 — manually link an aoe2 game id to a ranked match. Persists an
-	in_progress lobbies row (backdated past the 15-min floor so LobbyJobs polls
-	it right away) and supersedes the auto NammaNomad watcher + any other non-terminal
-	lobby row for the match. Returns 'linked' or 'exists'. Best-effort; raises only
-	on a hard DB failure (the caller surfaces it)."""
+	unconfirmed lobbies row for LobbyJobs to verify against the match API. Manual
+	linking does not stop the automatic watcher: the pasted lobby may be cancelled
+	and replaced, and only an API-confirmed start should choose the durable row.
+	Returns 'linked' or 'exists'. Best-effort; raises only on a hard DB failure
+	(the caller surfaces it)."""
 	existing = await db.select_one(
 		["id", "status"], "lobbies", where={"channel_id": channel_id, "aoe2_game_id": game_id}
 	)
 	if existing and existing["status"] not in ("completed", "expired"):
 		return "exists"
-	# Stop the auto (NammaNomad) watcher and expire any other live lobby row for this
-	# match, so only this manual link drives the result.
-	try:
-		from nammaoe2bot.features.lobby import watcher
-		await watcher.stop_for(match_id)
-	except Exception as e:
-		log.error(f"stop auto-watcher for manual link failed (match {match_id}): {e}")
-	try:
-		await db.execute(
-			"UPDATE lobbies SET status='expired' WHERE match_id=%s "
-			"AND status IN ('created','filling','in_progress','awaiting_confirm') AND aoe2_game_id<>%s",
-			[match_id, game_id],
-		)
-	except Exception as e:
-		log.error(f"supersede prior lobby rows failed (match {match_id}): {e}")
 	now = int(time.time())
 	row = dict(
 		aoe2_game_id=game_id, channel_id=channel_id, message_id=None, completed_message_id=None,
-		match_id=match_id, status="in_progress", lobby_name="(manual)", map_name=None, server=None,
-		profile_ids="", created_at=now - 16 * 60, last_edit_at=0, requested_by=requested_by,
+		match_id=match_id, status="filling", launched_at=None,
+		lobby_name="(manual)", map_name=None, server=None,
+		profile_ids="", created_at=now, last_edit_at=0, requested_by=requested_by,
 	)
 	if existing:   # a terminal row for this exact game — revive it
 		await db.update(

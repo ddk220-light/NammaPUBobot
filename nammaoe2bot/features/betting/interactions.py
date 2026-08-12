@@ -60,7 +60,7 @@ async def on_bet_interaction(interaction):
 		post_id, side, stake = route
 		now = int(time.time())
 		post = await store.get_post(post_id)
-		if not post or post["status"] != "open" or now >= post["freezes_at"]:
+		if not post or post["status"] != "open":
 			return await _eph(interaction, "Betting on this match is closed.")
 		# Participants may bet, but only on themselves: a player who could take
 		# the opposing side could profit by losing. Spectators are unrestricted.
@@ -108,7 +108,7 @@ async def on_bet_interaction(interaction):
 		if seeded_now:
 			lines.insert(0, f"Welcome to the betting floor — you started with {SEED_AMOUNT} {view.GOLD}.")
 		await _eph(interaction, "\n".join(lines), component_view=embeds.cancel_view(post_id))
-		await _refresh_card(post, pool0, pool1, now)
+		await _refresh_card(post, pool0, pool1)
 	except Exception as e:
 		await _last_resort(interaction, BET_LANDED_NOTICE if charged else BET_FAILED_NOTICE, e)
 
@@ -142,7 +142,7 @@ async def _handle_cancel(interaction, post_id, now):
 	refunded = False
 	try:
 		post = await store.get_post(post_id)
-		if not post or post["status"] != "open" or now >= post["freezes_at"]:
+		if not post or post["status"] != "open":
 			return await _rewrite(interaction, CANCEL_CLOSED_NOTICE)
 		from nammaoe2bot import community
 		community_id = await community.community_for_channel(post["channel_id"])
@@ -161,7 +161,7 @@ async def _handle_cancel(interaction, post_id, now):
 		await _rewrite(interaction, "\n".join(view.bet_cancelled_lines(amount, balance)))
 		bets = await store.bets_for(post_id)
 		pool0, pool1 = pools(bets)
-		await _refresh_card(post, pool0, pool1, now)
+		await _refresh_card(post, pool0, pool1)
 	except Exception as e:
 		await _last_resort(
 			interaction, CANCEL_LANDED_NOTICE if refunded else CANCEL_FAILED_NOTICE, e)
@@ -182,7 +182,7 @@ async def _last_resort(interaction, text, error):
 		pass
 
 
-async def _refresh_card(post, pool0, pool1, now):
+async def _refresh_card(post, pool0, pool1):
 	"""Best-effort embed update so the card shows the live pools. The buttons
 	(the View) are left untouched by omitting `view` from the edit."""
 	try:
@@ -191,9 +191,8 @@ async def _refresh_card(post, pool0, pool1, now):
 		if channel is None or not post.get("message_id"):
 			return
 		message = await channel.fetch_message(post["message_id"])
-		minutes = max(0, (post["freezes_at"] - now) // 60)
 		await message.edit(embed=embeds.open_embed(
-			post["team0_name"], post["team1_name"], minutes, post["match_id"], pool0, pool1))
+			post["team0_name"], post["team1_name"], post["match_id"], pool0, pool1))
 	except Exception as e:
 		log.warning(f"bet card refresh failed (post {post['id']}): {e}")
 

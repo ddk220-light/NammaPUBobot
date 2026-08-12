@@ -182,14 +182,14 @@ class TestFmtMultiplier:
 
 	def test_the_card_renders_the_rounded_form_not_the_raw_float(self):
 		""" The formatter existing is not the same as the card using it. """
-		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33, pool0=450, pool1=200))
+		text = "\n".join(view.open_lines("Alpha", "Beta", 33, pool0=450, pool1=200))
 		assert "×1.44" in text
 		assert "1.44444" not in text
 
 
 class TestOpenLines:
 	def test_shows_both_pools_and_the_buttons_copy(self):
-		lines = view.open_lines("Alpha", "Beta", 10, 33, pool0=200, pool1=100)
+		lines = view.open_lines("Alpha", "Beta", 33, pool0=200, pool1=100)
 		text = "\n".join(lines)
 		assert "Alpha" in text and "Beta" in text and "#33" in text
 		assert "200" in text and "100" in text
@@ -201,7 +201,7 @@ class TestOpenLines:
 		Amendment 1 §A superseded it and the router started welcoming
 		participants onto their own side. For almost everyone in the channel
 		the card IS the rulebook, and it was barring half of them. """
-		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33))
+		text = "\n".join(view.open_lines("Alpha", "Beta", 33))
 		assert "Spectators only" not in text
 		assert "cannot bet" not in text
 		assert "own team" in text, "a player has to be told what they MAY do"
@@ -209,25 +209,18 @@ class TestOpenLines:
 		assert "whole pot" in text, "the pari-mutuel rule survives both amendments"
 
 	def test_fresh_card_has_zero_pools_and_no_multiplier(self):
-		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33))
+		text = "\n".join(view.open_lines("Alpha", "Beta", 33))
 		assert "×" not in text
 
 	def test_multiplier_appears_once_both_pools_exist(self):
-		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33, pool0=200, pool1=100))
+		text = "\n".join(view.open_lines("Alpha", "Beta", 33, pool0=200, pool1=100))
 		assert "×1.5" in text and "×3" in text
 
 
-	def test_observation_mode_promises_only_the_live_ten_minute_rule(self):
-		"""Launch detection is collecting evidence but cannot close production
-		books yet. The card must not advertise a cutoff boot explicitly disabled."""
-		text = "\n".join(view.open_lines("Alpha", "Beta", 10, 33))
-		assert "when the game starts" not in text
-		assert "10 min" in text
-
-	def test_a_card_with_no_minutes_left_does_not_promise_zero_of_them(self):
-		text = "\n".join(view.open_lines("Alpha", "Beta", 0, 33))
-		assert "0 min" not in text
-		assert "closes now" in text
+	def test_the_card_promises_only_the_launch_rule(self):
+		text = "\n".join(view.open_lines("Alpha", "Beta", 33))
+		assert "when the game starts" in text
+		assert "10 min" not in text
 
 
 class TestFrozenLines:
@@ -240,8 +233,7 @@ class TestFrozenLines:
 		assert "no" in text.lower()
 
 	def test_the_headline_says_why_when_the_game_is_what_closed_it(self):
-		""" A book that closes four minutes into a ten-minute window with no
-		explanation reads as a bug to everyone who was still deciding. """
+		"""A launch close should explain why the live book just locked."""
 		text = "\n".join(view.frozen_lines("Alpha", "Beta", 300, 100, 3, 1,
 										  "The game has started — betting is closed."))
 		assert "The game has started" in text

@@ -102,7 +102,7 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_p
 			# THE BOOK, RE-READ AND LOCKED — not a courtesy re-check of what the
 			# handler already read.
 			#
-			# The handler's status/freezes_at check ran against a row it read at
+			# The handler's status check ran against a row it read at
 			# the top of its own invocation, and a freeze / void / restart /
 			# settle sweep can flip that row at any moment in between. Those
 			# sweeps snapshot the book (store.bets_for) and then refund or pay
@@ -120,9 +120,9 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_p
 			# bet, or the sweep's flip to 'frozen' commits first and this read
 			# sees it and refuses. No third outcome.
 			book = await tx.fetchone(
-				"SELECT status, freezes_at FROM prediction_posts WHERE id=%s FOR UPDATE",
+				"SELECT status FROM prediction_posts WHERE id=%s FOR UPDATE",
 				[post_id])
-			if book is None or book["status"] != "open" or now >= int(book["freezes_at"]):
+			if book is None or book["status"] != "open":
 				raise _Closed()
 			spent = await tx.execute(
 				"UPDATE gold_balances SET balance=balance-%s, updated_at=%s "
@@ -204,9 +204,9 @@ async def cancel_bet(community_id, user_id, post_id, now):
 	one, and tests/test_predictions_gold.py pins it on both writers."""
 	async with db.transaction() as tx:
 		book = await tx.fetchone(
-			"SELECT status, freezes_at FROM prediction_posts WHERE id=%s FOR UPDATE",
+			"SELECT status FROM prediction_posts WHERE id=%s FOR UPDATE",
 			[post_id])
-		if book is None or book["status"] != "open" or now >= int(book["freezes_at"]):
+		if book is None or book["status"] != "open":
 			return "closed", 0
 		row = await tx.fetchone(
 			"SELECT stake FROM prediction_bets WHERE post_id=%s AND user_id=%s FOR UPDATE",

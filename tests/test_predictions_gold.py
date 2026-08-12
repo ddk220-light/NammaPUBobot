@@ -288,13 +288,14 @@ class TestTheBookIsCheckedInsideTheTransaction:
 		assert not fake.inserts()
 		assert fake.rolled_back
 
-	def test_a_book_past_its_freeze_time_refuses_too(self, monkeypatch):
-		""" The status flip lags the clock by up to one 15s sweep; the deadline
-		is authoritative in between. """
+	def test_a_legacy_deadline_does_not_close_an_open_book(self, monkeypatch):
+		"""Old finite freezes_at values survive deployment, but status is now
+		the only betting gate until an API-confirmed launch closes the row."""
 		fake = use_fake(monkeypatch)
 		fake.answer(freezes_at=999)
-		assert asyncio.run(gold.place_bet(5, 42, 12, 0, 50, "nick", 1000))[0] == "closed"
-		assert fake.sql("gold_balances SET balance=balance-") == []
+		fake.rowcounts = [1, 1, 1]
+		assert asyncio.run(gold.place_bet(5, 42, 12, 0, 50, "nick", 1000))[0] == "ok"
+		assert fake.sql("gold_balances SET balance=balance-")
 
 	def test_a_deleted_post_refuses(self, monkeypatch):
 		fake = use_fake(monkeypatch)
@@ -312,7 +313,8 @@ class TestTheBookIsCheckedInsideTheTransaction:
 		locks = fake.sql("FOR UPDATE")
 		assert len(locks) == 1
 		sql, args = locks[0][1], locks[0][2]
-		assert "prediction_posts" in sql and "status" in sql and "freezes_at" in sql
+		assert "prediction_posts" in sql and "status" in sql
+		assert "freezes_at" not in sql
 		assert args == [12]
 		spend = fake.sql("gold_balances SET balance=balance-")
 		assert fake.calls.index(locks[0]) < fake.calls.index(spend[0])
@@ -518,16 +520,13 @@ class TestCancelBet:
 		assert not fake.inserts()
 		assert not fake.sql("DELETE FROM prediction_bets")
 
-	def test_a_cancel_after_the_deadline_is_refused_even_while_open(self, monkeypatch):
-		""" The status flip lags the clock by up to one 15s sweep; the deadline is
-		authoritative in between, exactly as it is for a press. """
+	def test_a_legacy_deadline_does_not_block_cancel_while_open(self, monkeypatch):
 		fake = use_fake(monkeypatch)
 		fake.answer(status="open", freezes_at=500, stake=60)   # now=1000 is past it
 		fake.rowcounts = [1, 1, 1]
 		status, amount = asyncio.run(gold.cancel_bet(5, 42, 12, 1000))
-		assert (status, amount) == ("closed", 0)
-		assert not fake.inserts()
-		assert not fake.sql("DELETE FROM prediction_bets")
+		assert (status, amount) == ("ok", 60)
+		assert fake.sql("DELETE FROM prediction_bets")
 
 	def test_a_deleted_post_refuses(self, monkeypatch):
 		fake = use_fake(monkeypatch)

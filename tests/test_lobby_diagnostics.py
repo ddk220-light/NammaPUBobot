@@ -91,3 +91,20 @@ def test_automatic_watcher_keeps_a_partial_update_with_no_repeated_name(monkeypa
 	assert w.state[77]["lobby"]["name"] == watcher.TARGET_NAME
 	assert w.state[77]["lobby"]["started"] == "2026-08-08T21:00:00.000Z"
 	assert seen[-1] == ("auto:match=9", "lobbyUpdated", "2026-08-08T21:00:00.000Z")
+
+
+def test_automatic_watcher_treats_removal_as_a_candidate_not_a_launch(monkeypatch):
+	monkeypatch.setattr(diagnostics, "trace_event", lambda *_args: None)
+	match = SimpleNamespace(id=9, players=[object(), object()])
+	w = watcher.LobbyWatcher(match, channel=None)
+	w.linked = True
+	w.game_id = 77
+	w._ingest([{"type": "lobbyAdded", "data": {
+		"matchId": 77, "name": watcher.TARGET_NAME, "totalSlotCount": 2,
+		"blockedSlotCount": 0,
+	}}])
+	w._ingest([{"type": "lobbyRemoved", "data": {"matchId": 77}}])
+
+	assert w.launched is False
+	assert w._removed[0][0] == 77
+	assert w._removed[0][1]["lobby"]["name"] == watcher.TARGET_NAME

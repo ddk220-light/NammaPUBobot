@@ -32,13 +32,14 @@ Winnings are *not* capped. A bet can take you to any balance.
 ## Betting on matches
 
 When a ranked match's teams are settled, the bot posts a betting card with six
-buttons — 10 / 50 / 100 on each team. Betting stays open for **10 minutes**,
-then the book freezes and the card locks.
+buttons — 10 / 50 / 100 on each team. Betting stays open while players create
+and fill the lobby. It freezes only when the public AoE2 match service confirms
+an actual game start. Creating, linking, removing, cancelling, or remaking a
+lobby does not close the book by itself. There is no ten-minute deadline.
 
-The lobby tracker is currently recording the live socket events around real
-game launches, but those events do **not** close betting yet. Until launch and
-lobby-cancellation signals have been verified separately, the ten-minute timer
-above is the only automatic cutoff.
+The confirmation is durable: the bot stores the API's `started` timestamp and
+the betting sweep reads that fact after restarts. If the match service is
+temporarily unavailable, the book remains open until launch can be confirmed.
 
 **How the odds work (pari-mutuel).** There is no bookmaker and no fixed price.
 Every stake goes into one pot. When the match is reported, the whole pot is split

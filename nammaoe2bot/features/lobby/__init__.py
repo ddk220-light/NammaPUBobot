@@ -24,9 +24,12 @@ and for the LobbyJobs singleton.
 """
 from nammaoe2bot.runtime.database import db
 
-# One row per tracked lobby. status walks: created -> filling -> in_progress ->
-# completed | expired. match_id links to the ranked bot match (NULL for a bare
-# informational /lobby <id>). profile_ids is a csv of captured slot profileIds.
+# One row per tracked lobby. status walks: created -> filling -> verifying ->
+# in_progress -> completed | expired. `launched_at` is the authoritative launch
+# fact: it is written only after the match API exposes a parseable `started`
+# timestamp. Socket removal and status names are deliberately not proof of a
+# launch. match_id links to the ranked bot match (NULL for a bare informational
+# /lobby <id>). profile_ids is a csv of captured slot profileIds.
 db.ensure_table(dict(
 	tname="lobbies",
 	columns=[
@@ -37,6 +40,7 @@ db.ensure_table(dict(
 		dict(cname="completed_message_id", ctype=db.types.int, notnull=False),
 		dict(cname="match_id", ctype=db.types.int, notnull=False),
 		dict(cname="status", ctype=db.types.str),
+		dict(cname="launched_at", ctype=db.types.int, notnull=False),
 		dict(cname="lobby_name", ctype=db.types.str),
 		dict(cname="map_name", ctype=db.types.str),
 		dict(cname="server", ctype=db.types.str),

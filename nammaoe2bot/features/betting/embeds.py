@@ -38,10 +38,10 @@ def cancel_view(post_id):
 	return v
 
 
-def open_embed(team0, team1, minutes, match_id, pool0=0, pool1=0):
+def open_embed(team0, team1, match_id, pool0=0, pool1=0):
 	return Embed(
 		title="\U0001F52E Match betting",
-		description="\n".join(view.open_lines(team0, team1, minutes, match_id, pool0, pool1)),
+		description="\n".join(view.open_lines(team0, team1, match_id, pool0, pool1)),
 		colour=Colour(_OPEN))
 
 
