@@ -109,7 +109,10 @@ def test_leaderboard_filters_through_the_channels_own_eligibility():
 	get_lb() is the single definition; restating the predicate here would be a
 	second one to drift. """
 	src = _predictions_source()
-	assert "get_lb()" in src
+	assert "get_lb(additional_activity=activity)" in src
+	assert "bet_activity_by_user" in src
+	assert "if eligible is not None" not in src, (
+		"an empty eligible set must not fall back to exposing everyone")
 
 
 def _events_source():

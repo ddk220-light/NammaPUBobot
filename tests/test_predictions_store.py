@@ -247,6 +247,21 @@ class TestBetsFor:
 
 
 class TestLeaderboard:
+	def test_bet_activity_comes_from_the_ledger_and_survives_cancel(self, monkeypatch):
+		fake = use_fake(monkeypatch, rows=[
+			{"user_id": 7, "last_bet_at": 1_700},
+			{"user_id": 8, "last_bet_at": 1_650},
+		])
+
+		assert asyncio.run(store.bet_activity_by_user(900)) == {7: 1_700, 8: 1_650}
+
+		_kind, sql, args = fake.calls[0]
+		assert "gold_ledger" in sql, "prediction_bets deletes cancelled participation"
+		assert "JOIN prediction_posts" in sql
+		assert "l.entry_type='bet'" in sql, "refunds and payouts are not participation"
+		assert "MAX(l.created_at)" in sql
+		assert args == [900]
+
 	def test_gold_bets_count_toward_prediction_accuracy(self, monkeypatch):
 		""" Placing a bet IS the user's prediction — the design's reason the
 		accuracy leaderboard survived the cutover from free votes. Both halves

@@ -22,9 +22,10 @@ ELIGIBILITY IS DEFINED ONCE, by ctx.qc.get_lb(). The leaderboard SQL never
 joined player_ratings, so this board applied NONE of the three gates the rating
 leaderboard uses -- is_hidden, lb_min_matches, lb_last_match_limit -- while the
 deleted /gold_top filtered is_hidden itself. Folding onto the unfiltered command
-without this would have deleted a protection that existed. Rather than restate
-the predicate here (a second definition to drift), we intersect against the
-channel's own leaderboard, which is the authority for "who appears on a board".
+without this would have deleted a protection that existed. Prediction boards
+pass recent bet placement as an additional activity timestamp, so betting can
+refresh only the recency gate; hidden status and minimum ranked matches stay
+unchanged. The ordinary rating leaderboard passes no extra activity.
 """
 from nextcord import Member
 
@@ -33,16 +34,21 @@ from nammaoe2bot.exceptions import Exceptions as Exc
 __all__ = ['predictions_leaderboard', 'predictions_me']
 
 
+async def _eligible_rows(ctx):
+	"""Rating-eligible rows, with bet placement accepted as recent activity."""
+	from nammaoe2bot.features.betting import store
+
+	activity = await store.bet_activity_by_user(ctx.qc.id)
+	return await ctx.qc.get_lb(additional_activity=activity)
+
+
 async def _eligible_user_ids(ctx):
 	"""The set of user_ids this channel is willing to show on a public board.
 
-	None means "no opinion" -- an empty leaderboard is not the same statement as
-	"everybody is ineligible", and blanking the board because the rating board
-	happens to be empty would be a worse answer than showing it unfiltered.
+	An empty set is authoritative. Falling back to unfiltered prediction rows
+	would expose hidden/inactive players precisely when no rating row qualified.
 	"""
-	rows = await ctx.qc.get_lb()
-	if not rows:
-		return None
+	rows = await _eligible_rows(ctx)
 	return {r["user_id"] for r in rows}
 
 
@@ -92,7 +98,7 @@ async def _gold_leaderboard(ctx):
 	if community_id is None:
 		raise Exc.NotFoundError(ctx.qc.gt("This channel keeps no stats — there is no gold here."))
 
-	eligible = await ctx.qc.get_lb()
+	eligible = await _eligible_rows(ctx)
 	balances = await bank.balances_by_user(community_id)
 	preferred = await _display_names(eligible)
 
@@ -119,8 +125,7 @@ async def _accuracy_leaderboard(ctx, page: int = 1):
 	rows = await store.leaderboard(ctx.qc.id)
 
 	eligible = await _eligible_user_ids(ctx)
-	if eligible is not None:
-		rows = [r for r in rows if r["user_id"] in eligible]
+	rows = [r for r in rows if r["user_id"] in eligible]
 
 	# Gold is community-scoped, the board channel-scoped; a channel outside a
 	# community still has a valid accuracy board, just no balances to show.

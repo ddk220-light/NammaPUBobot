@@ -220,6 +220,23 @@ async def bets_for(post_id):
 		"WHERE post_id=%s ORDER BY stake DESC, user_id ASC", [post_id]) or []
 
 
+async def bet_activity_by_user(channel_id):
+	"""{user_id: latest bet-placement epoch} for one prediction channel.
+
+	Read the append-only ledger rather than ``prediction_bets``: cancelling a
+	bet deletes the live stake row, but it does not undo the fact that the player
+	participated. Refunds, payouts and balance grants are deliberately excluded.
+	"""
+	rows = await db.fetchall(
+		"SELECT l.user_id, MAX(l.created_at) AS last_bet_at "
+		"FROM gold_ledger l JOIN prediction_posts p ON p.id=l.post_id "
+		"WHERE p.channel_id=%s AND l.entry_type='bet' "
+		"GROUP BY l.user_id",
+		[channel_id],
+	) or []
+	return {r["user_id"]: int(r["last_bet_at"] or 0) for r in rows}
+
+
 async def no_action(post_id, now):
 	"""Terminal status for a one-sided book: nobody on the other side, every
 	stake refunded at freeze time. Distinct from void so the card and the

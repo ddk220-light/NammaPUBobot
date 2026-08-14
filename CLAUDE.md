@@ -102,6 +102,8 @@ book recovery still works. Bet and cancel transactions gate on the row-locked
 
   Players may bet only on their own team; spectators may choose either. A side is locked per post, same-side presses add stake, and cancelling returns the entire stake while the book remains open. One-sided books refund as `no_action`. Roster changes void/refund/reopen. Settlement pays `floor(stake × total_pool / winning_pool)`; rounding remainder is burned.
 
+  Prediction leaderboard eligibility reuses `QueueChannel.get_lb(additional_activity=...)`: `is_hidden` and `lb_min_matches` remain unchanged, while `lb_last_match_limit` compares against the later of `player_ratings.last_ranked_match_at` and the user's latest `gold_ledger.entry_type='bet'` timestamp in that channel. The append-only ledger is required here because cancelling deletes `prediction_bets`; participation still happened. The ordinary rating leaderboard calls `get_lb()` with no extra activity and remains match-only.
+
   Every terminal path claims `terminal_intent` (`settle|void|no_action`) in the same compare-and-set that closes the book, before money moves, then writes the terminal status last. Resume sweeps finish frozen books from the stored intent and idempotent ledger keys; never derive a new branch after a partial refund or payout. `unsettled_books` joins reported matches, and `abandoned_books` refunds frozen books with no result after the grace period.
 
 ### Utils (`utils/`)

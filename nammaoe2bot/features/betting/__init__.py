@@ -2,9 +2,9 @@
 """Audience match predictions — strictly additive, ranked queues only.
 
 Spectators call a winner by betting gold on a card posted when teams are
-formed, via buttons rather than reactions. Betting freezes on a timer, the
-tally is revealed, and once the match reports a win/loss the winning pool
-pays out pari-mutuel to every correct bettor.
+formed, via buttons rather than reactions. Betting freezes when the linked
+game's API start is confirmed, and once the match reports a win/loss the
+winning pool pays out pari-mutuel to every correct bettor.
 
 Self-contained in the nammaoe2bot/features/quiz and nammaoe2bot/features/lobby mould: dedicated prediction_*
 tables declared here via ensure_table at import, imported by bot/__init__.py for

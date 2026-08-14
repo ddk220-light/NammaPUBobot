@@ -112,9 +112,12 @@ activity. The two that survived absorbed the other two.
 Because players may now back themselves, the accuracy board mixes reading
 matches with winning them.
 
-Players hidden from the rating leaderboard are hidden from this one too, as are
-players below the channel's minimum-games and recent-activity thresholds — one
-definition of who appears on a board, applied everywhere.
+Players hidden from the rating leaderboard are hidden from this one too, and
+the channel's minimum-ranked-matches rule still applies. For the prediction
+boards only, recent activity means **either playing a ranked match or placing a
+bet** within the channel's normal leaderboard activity window. Cancelling the
+bet later does not erase that participation. The ordinary rating leaderboard
+continues to use match activity only.
 
 ## Fine print
 

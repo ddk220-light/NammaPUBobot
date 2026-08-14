@@ -17,6 +17,7 @@ from nammaoe2bot.pickup.expire import expire
 from nammaoe2bot.pickup.queue import PickupQueue
 from nammaoe2bot.pickup.noadds import noadds
 from nammaoe2bot.pickup.rating import FlatRating, Glicko2Rating, TrueSkillRating, AoE2Rating
+from nammaoe2bot.pickup import leaderboard as leaderboard_rules
 
 MAX_EXPIRE_TIME = 12*60*60
 MAX_PROMOTION_DELAY = 12*60*60
@@ -475,20 +476,24 @@ class QueueChannel:
 			return {'rank': '〈?〉', 'rating': 0, 'role': None}
 		return below[0]
 
-	async def get_lb(self):
+	async def get_lb(self, additional_activity=None):
+		"""Public leaderboard rows after the channel's three eligibility gates.
+
+		``additional_activity`` is an optional ``{user_id: epoch}`` supplied by a
+		feature whose own public board has another honest kind of participation.
+		It may refresh only the recency gate; hidden status and the minimum number
+		of ranked matches remain rating-domain rules. The normal rating leaderboard
+		passes nothing and therefore stays match-activity-only.
+		"""
 		now = int(time())
+		additional_activity = additional_activity or {}
 		data = await db.select(
 			['user_id', 'nick', 'rating', 'deviation', 'wins', 'losses', 'draws', 'streak', 'is_hidden', 'last_ranked_match_at'],
 			'player_ratings',
 			where={'channel_id': self.rating.channel_id}, order_by="rating"
 		)
-		return [
-			i for i in data
-			if i['rating'] is not None
-			and not i['is_hidden']
-			and (not self.cfg.lb_last_match_limit or ((i['last_ranked_match_at'] or 0) + self.cfg.lb_last_match_limit > now))
-			and not (self.cfg.lb_min_matches and self.cfg.lb_min_matches > sum((i['wins'], i['losses'], i['draws'])))
-		]
+		return leaderboard_rules.eligible_rows(
+			data, self.cfg, now, additional_activity=additional_activity)
 
 	async def update_rating_roles(self, *members):
 		asyncio.create_task(self._update_rating_roles(*members))
