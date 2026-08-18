@@ -425,7 +425,8 @@ td.et_remove { width: 24px; text-align: center; }
 .overview-badge.new, .overview-badge.unrated {
   color: #9ce5b5; background: rgba(87,217,139,0.1); border-color: rgba(87,217,139,0.28);
 }
-.overview-badge.required, .overview-badge.setup_required, .overview-badge.attention, .overview-badge.invalid {
+.overview-badge.required, .overview-badge.setup_required, .overview-badge.attention, .overview-badge.invalid,
+.overview-badge.conflict, .overview-badge.not_member {
   color: #ffb0b4; background: rgba(255,109,115,0.1); border-color: rgba(255,109,115,0.28);
 }
 .overview-badge.recommended, .overview-badge.partial {
@@ -1429,6 +1430,7 @@ var dashGuildId = null, dashGuildName = null;
 var dashChannelId = null, dashChannelName = null;
 var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null;
 var dashRatingSeedSource = null, dashRatingSeedPreview = null;
+var dashIdentitySource = null, dashIdentityPreview = null;
 
 function adminCommunityApi(communityId, path) {
   return '/api/admin/communities/' + encodeURIComponent(communityId) + (path || '');
@@ -3896,6 +3898,7 @@ function resetDashboard() {
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null;
   dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
+  dashIdentitySource=null; dashIdentityPreview=null;
   loadDashboard();
 }
 
@@ -3910,6 +3913,7 @@ async function loadDashboard() {
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
   dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
+  dashIdentitySource=null; dashIdentityPreview=null;
   renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
   content.innerHTML = '<div class="loading">Loading communities...</div>';
   try {
@@ -3931,6 +3935,7 @@ async function selectGuild(id, name) {
   dashQueueName=null; dashChannels=[]; dashQueues=[];
   dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
+  dashIdentitySource=null; dashIdentityPreview=null;
   publicCommunityId = String(id);
   var tenantDashboardPath = publicPath('/dashboard');
   if (window.location.pathname !== tenantDashboardPath) {
@@ -3987,6 +3992,7 @@ function renderCommunityOverview() {
     html += '<div class="setup-row"><strong>'+esc(step.title)+'</strong><span>'+esc(step.detail)+'</span>';
     html += '<div class="setup-controls"><span class="overview-badge '+esc(step.status)+'">'+esc(overviewStatusLabel(step.status))+'</span>';
     if (step.action === 'seed_ratings') html += '<button type="button" class="setup-action" onclick="openRatingSeed()">Seed ratings</button>';
+    if (step.action === 'map_identities') html += '<button type="button" class="setup-action" onclick="openIdentityImport()">Map profiles</button>';
     html += '</div></div>';
   });
   html += '</div></section>';
@@ -4173,6 +4179,110 @@ async function applyRatingSeed() {
   } catch(e) {
     showToast('Apply failed: '+e.message, 'error');
     if (applyButton) { applyButton.disabled = false; applyButton.textContent = 'Apply '+(data.summary.ready||0)+' ratings'; }
+  }
+}
+
+function identityImportApi(action) {
+  return adminCommunityApi(dashGuildId, '/identities/import/'+action);
+}
+
+function openIdentityImport() {
+  dashIdentitySource = null; dashIdentityPreview = null;
+  var content = document.getElementById('dash-content');
+  var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Map AoE2 profiles</h1>';
+  html += '<p>Connect current Discord members to the AoE2 profile IDs used by lobby and replay analysis.</p></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<div class="seed-methods"><section class="seed-method"><h2>Manual mapping</h2>';
+  html += '<p>Add one profile as an additional account. Existing accounts owned by the member remain linked.</p>';
+  html += '<div class="seed-fields" style="grid-template-columns:1fr 1fr"><input id="identity-user-id" type="text" inputmode="numeric" placeholder="Discord user ID">';
+  html += '<input id="identity-profile-id" type="text" inputmode="numeric" placeholder="AoE2 profile ID"></div>';
+  html += '<button type="button" class="seed-button" onclick="previewManualIdentity()">Preview mapping</button></section>';
+  html += '<section class="seed-method"><h2>Identity CSV or ZIP</h2>';
+  html += '<p>CSV requires user_id and profile_id. ZIP imports profile_resolved.csv or player_profile_map.csv.</p>';
+  html += '<input id="identity-upload" class="seed-file" type="file" accept=".csv,.zip,text/csv,application/zip">';
+  html += '<button type="button" class="seed-button" onclick="previewIdentityFile()">Preview file</button></section></div>';
+  html += '<p class="seed-safety">Every Discord user must currently belong to this community. Bulk import never reassigns a profile owned by another user. '
+    + 'Uploaded AoE2 names are labels for review only; the stored in-game name changes only when observed through the game API or a replay.</p>';
+  html += '<div id="identity-preview" class="seed-preview"></div></div>';
+  content.innerHTML = html;
+}
+
+async function requestIdentityPreview(source) {
+  var preview = document.getElementById('identity-preview');
+  preview.innerHTML = '<div class="loading">Validating identity claims...</div>';
+  try {
+    var resp = await authFetch(identityImportApi('preview'), {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(source),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
+    dashIdentitySource = source; dashIdentityPreview = result;
+    renderIdentityPreview();
+  } catch(e) {
+    preview.innerHTML = '<div class="error">Preview failed: '+esc(e.message)+'</div>';
+  }
+}
+
+function previewManualIdentity() {
+  requestIdentityPreview({rows:[{
+    user_id:document.getElementById('identity-user-id').value.trim(),
+    profile_id:document.getElementById('identity-profile-id').value.trim(),
+  }]});
+}
+
+async function previewIdentityFile() {
+  var input = document.getElementById('identity-upload');
+  try {
+    await requestIdentityPreview(await readSeedFile(input && input.files ? input.files[0] : null));
+  } catch(e) {
+    showToast(e.message, 'error');
+  }
+}
+
+function renderIdentityPreview() {
+  var container = document.getElementById('identity-preview');
+  var data = dashIdentityPreview;
+  if (!container || !data) return;
+  var summary = data.summary || {};
+  var html = '<div class="seed-summary">';
+  [['Rows',summary.received||0],['Ready',summary.ready||0],['New',summary.new||0],
+   ['Already linked',summary.existing||0],['Needs attention',(summary.conflict||0)+(summary.not_member||0)+(summary.invalid||0)]].forEach(function(item) {
+    html += '<div><span>'+esc(item[0])+'</span><b>'+esc(item[1])+'</b></div>';
+  });
+  html += '</div><div class="seed-table-wrap"><table class="seed-table"><thead><tr>';
+  html += '<th>Line</th><th>Discord user</th><th>Member</th><th>AoE2 profile</th><th>Imported label</th><th>Status</th><th>Result</th>';
+  html += '</tr></thead><tbody>';
+  (data.rows || []).forEach(function(row) {
+    html += '<tr class="'+esc(row.status)+'"><td>'+esc(row.line)+'</td><td>'+esc(row.user_id||'-')+'</td>';
+    html += '<td>'+esc(row.member_name||'-')+'</td><td>'+esc(row.profile_id||'-')+'</td><td>'+esc(row.aoe2_name||'-')+'</td>';
+    html += '<td><span class="overview-badge '+esc(row.status)+'">'+esc(overviewStatusLabel(row.status))+'</span></td>';
+    html += '<td class="seed-message">'+esc(row.message)+'</td></tr>';
+  });
+  html += '</tbody></table></div><p class="seed-safety">'+esc(data.name_policy)+'</p><div class="seed-actions">';
+  html += '<span class="seed-source-note">'+esc(data.source)+'</span>';
+  html += '<button type="button" class="seed-button secondary" onclick="openIdentityImport()">Discard preview</button>';
+  html += '<button type="button" class="seed-button apply" onclick="applyIdentityImport()"'+(data.can_apply?'':' disabled')+'>';
+  html += 'Link '+esc(summary.ready||0)+' profile'+((summary.ready||0)===1?'':'s')+'</button></div>';
+  container.innerHTML = html;
+}
+
+async function applyIdentityImport() {
+  var data = dashIdentityPreview, source = dashIdentitySource;
+  if (!data || !source || !data.can_apply) return;
+  var applyButton = document.querySelector('.seed-button.apply');
+  if (applyButton) { applyButton.disabled = true; applyButton.textContent = 'Linking...'; }
+  try {
+    var payload = Object.assign({}, source, {digest:data.digest});
+    var resp = await authFetch(identityImportApi('apply'), {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
+    showToast('Linked '+result.applied+' AoE2 profile'+(result.applied===1?'':'s')+'.', 'success');
+    await selectGuild(dashGuildId, dashGuildName);
+  } catch(e) {
+    showToast('Apply failed: '+e.message, 'error');
+    if (applyButton) { applyButton.disabled = false; applyButton.textContent = 'Link '+(data.summary.ready||0)+' profiles'; }
   }
 }
 

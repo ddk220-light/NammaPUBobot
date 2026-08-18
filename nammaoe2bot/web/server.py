@@ -3068,7 +3068,7 @@ async def _admin_community_overview(admin):
 		_overview_step(
 			"identities", "Link Discord users to AoE2 profiles", bool(linked_profiles),
 			f"{linked_players} player(s) are linked to {linked_profiles} AoE2 profile(s).",
-			required=False),
+			required=False, action="map_identities"),
 	]
 	required_steps = [step for step in steps if step["required"]]
 	completed_required = sum(step["status"] == "complete" for step in required_steps)
@@ -3408,6 +3408,156 @@ async def handle_api_rating_seed_apply(request):
 	})
 
 
+async def _identity_import_preview(admin, payload):
+	"""Validate global identity claims through one authorized Discord guild."""
+	parsed = onboarding.parse_identity_payload(payload)
+	digest = onboarding.identity_digest(admin.community.community_id, parsed)
+	existing_rows = await db.select(
+		["profile_id", "user_id", "confidence", "aoe2_name"], "identities")
+	existing = {int(row["profile_id"]): row for row in existing_rows or []}
+	summary = {
+		"received": len(parsed["rows"]), "ready": 0, "new": 0, "unowned": 0,
+		"existing": 0, "conflict": 0, "not_member": 0, "invalid": 0,
+	}
+	prepared = []
+	members = {}
+	for source_row in parsed["rows"]:
+		row = dict(source_row)
+		member = members.get(row["user_id"])
+		if row["user_id"] is not None and row["user_id"] not in members:
+			try:
+				member = await _member_in_guild(admin.guild, row["user_id"])
+			except Exception:
+				member = None
+			members[row["user_id"]] = member
+		current = existing.get(row["profile_id"])
+		if row["errors"]:
+			status = "invalid"
+			message = " ".join(row["errors"])
+		elif member is None or bool(getattr(member, "bot", False)):
+			status = "not_member"
+			message = "Discord user is not a current non-bot member of this community."
+		elif current is None:
+			status = "new"
+			message = "Ready to link as an additional AoE2 profile."
+		elif current.get("user_id") is None:
+			status = "unowned"
+			message = "Known but unowned profile; ready to link."
+		elif int(current["user_id"]) == row["user_id"]:
+			status = "existing"
+			message = "This profile is already linked to the same Discord user."
+		else:
+			status = "conflict"
+			message = "Profile is already owned by a different Discord user; bulk import cannot reassign it."
+		summary[status] += 1
+		if status in ("new", "unowned"):
+			summary["ready"] += 1
+		prepared.append({
+			**row,
+			"status": status,
+			"message": message,
+			"member_name": str(
+				getattr(member, "display_name", None)
+				or getattr(member, "nick", None)
+				or getattr(member, "name", None)
+				or ""),
+		})
+
+	public_rows = [{key: value for key, value in row.items() if key != "errors"} for row in prepared]
+	return {
+		"community": admin.payload(),
+		"source": parsed["name"],
+		"summary": summary,
+		"rows": public_rows,
+		"digest": digest,
+		"can_apply": (
+			summary["ready"] > 0 and not summary["invalid"]
+			and not summary["not_member"] and not summary["conflict"]),
+		"name_policy": "Imported AoE2 names are preview labels only until observed from the game API or a replay.",
+	}, prepared
+
+
+async def _identity_import_request(request):
+	session = await _get_session(request)
+	if not session:
+		return None, web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return None, error
+	if not _check_csrf(request, session):
+		return None, web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return None, web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	try:
+		preview, prepared = await _identity_import_preview(admin, payload)
+	except onboarding.SeedInputError as exc:
+		return None, web.json_response({"error": str(exc)}, status=400)
+	return (session, admin, payload, preview, prepared), None
+
+
+async def handle_api_identity_import_preview(request):
+	result, error = await _identity_import_request(request)
+	if error is not None:
+		return error
+	return web.json_response(result[3])
+
+
+async def handle_api_identity_import_apply(request):
+	result, error = await _identity_import_request(request)
+	if error is not None:
+		return error
+	_session, admin, payload, preview, prepared = result
+	provided_digest = payload.get("digest") if isinstance(payload, dict) else None
+	if not isinstance(provided_digest, str) or not secrets.compare_digest(provided_digest, preview["digest"]):
+		return web.json_response({"error": "Identity import changed after preview; preview it again"}, status=409)
+	if preview["summary"]["invalid"] or preview["summary"]["not_member"]:
+		return web.json_response({"error": "Fix every invalid or non-member row before applying"}, status=400)
+	if preview["summary"]["conflict"]:
+		return web.json_response({"error": "Resolve conflicting profile ownership before applying"}, status=409)
+	if not preview["can_apply"]:
+		return web.json_response({"error": "No new or unowned profiles remain to link"}, status=409)
+
+	now = int(time.time())
+	applied = 0
+	raced_out = 0
+	try:
+		async with db.transaction() as tx:
+			for row in prepared:
+				if row["status"] not in ("new", "unowned"):
+					continue
+				if row["status"] == "new":
+					changed = await tx.insert("identities", {
+						"profile_id": row["profile_id"],
+						"user_id": row["user_id"],
+						# Imported names are not game observations. Keeping this
+						# NULL preserves resolver.py's provenance contract.
+						"aoe2_name": None,
+						"confidence": "manual",
+						"first_seen_at": now,
+						"last_seen_at": now,
+						"bound_at": now,
+					}, on_duplicate="ignore")
+				else:
+					changed = await tx.execute(
+						"UPDATE identities SET user_id=%s, confidence='manual', "
+						"last_seen_at=%s, bound_at=%s "
+						"WHERE profile_id=%s AND user_id IS NULL",
+						[row["user_id"], now, now, row["profile_id"]])
+				if not changed:
+					raced_out += 1
+					continue
+				applied += 1
+	except Exception as exc:
+		log.error(
+			f"Identity onboarding failed for community={admin.community.community_id}: {exc}")
+		return web.json_response({"error": "Identity import could not be applied"}, status=500)
+	if applied:
+		resolver.invalidate_cache()
+	return web.json_response({"ok": True, "applied": applied, "skipped_after_preview": raced_out})
+
+
 async def handle_api_guilds(request):
 	"""Legacy alias for the pre-community settings client."""
 	session = await _get_session(request)
@@ -3656,6 +3806,12 @@ def create_app():
 	app.router.add_get(
 		'/api/admin/communities/{community_id}/overview',
 		handle_api_community_overview)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/identities/import/preview',
+		handle_api_identity_import_preview)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/identities/import/apply',
+		handle_api_identity_import_apply)
 	app.router.add_get('/api/admin/communities/{community_id}/channels', handle_api_channels)
 	app.router.add_get(
 		'/api/admin/communities/{community_id}/channels/{channel_id}/config',

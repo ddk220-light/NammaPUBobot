@@ -211,6 +211,15 @@ class RatingSeedDB(FakeDB):
 					row["deviation"] = deviation
 					return 1
 			return 0
+		if sql.startswith("UPDATE identities SET"):
+			user_id, last_seen_at, bound_at, profile_id = args
+			for row in self.rows.get("identities", []):
+				if row.get("profile_id") == profile_id and row.get("user_id") is None:
+					row.update(
+						user_id=user_id, confidence="manual",
+						last_seen_at=last_seen_at, bound_at=bound_at)
+					return 1
+			return 0
 		return 0
 
 
@@ -1286,11 +1295,94 @@ def test_rating_seed_rejects_a_shared_rating_host_from_another_guild(monkeypatch
 	assert response.payload == {"error": "Rating host channel not found in this community"}
 
 
+def _identity_import_setup(monkeypatch, fake):
+	alpha = _discord_guild(777, admin=True)
+	_install_discord(monkeypatch, [alpha])
+	install_db(monkeypatch, fake)
+	return alpha
+
+
+def test_identity_import_preview_blocks_non_members_and_existing_owners(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"identities": [
+			{"profile_id": 9002, "user_id": 42, "confidence": "self", "aoe2_name": "Same"},
+			{"profile_id": 9003, "user_id": 99, "confidence": "manual", "aoe2_name": "Other"},
+		],
+	})
+	_identity_import_setup(monkeypatch, fake)
+	rows = [
+		{"user_id": 42, "profile_id": 9001, "aoe2_name": "New"},
+		{"user_id": 42, "profile_id": 9002},
+		{"user_id": 42, "profile_id": 9003},
+		{"user_id": 77, "profile_id": 9004},
+	]
+
+	response = asyncio.run(web.handle_api_identity_import_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={"rows": rows}, match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	payload = response.payload
+	assert payload["summary"] == {
+		"received": 4, "ready": 1, "new": 1, "unowned": 0, "existing": 1,
+		"conflict": 1, "not_member": 1, "invalid": 0,
+	}
+	assert [row["status"] for row in payload["rows"]] == [
+		"new", "existing", "conflict", "not_member"]
+	assert "different Discord user" in payload["rows"][2]["message"]
+	assert "99" not in payload["rows"][2]["message"], "another tenant's owner id stays private"
+	assert payload["can_apply"] is False
+	assert "preview labels only" in payload["name_policy"]
+
+
+def test_identity_import_apply_adds_only_new_or_unowned_profiles(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"identities": [
+			{"profile_id": 9002, "user_id": 42, "confidence": "self", "aoe2_name": "Same",
+			 "first_seen_at": 1, "last_seen_at": 2, "bound_at": 1},
+			{"profile_id": 9003, "user_id": None, "confidence": "seed", "aoe2_name": "Observed",
+			 "first_seen_at": 1, "last_seen_at": 2, "bound_at": 1},
+		],
+	})
+	_identity_import_setup(monkeypatch, fake)
+	invalidations = []
+	monkeypatch.setattr(web.resolver, "invalidate_cache", lambda: invalidations.append(True))
+	rows = [
+		{"user_id": 42, "profile_id": 9001, "aoe2_name": "Unverified upload name"},
+		{"user_id": 42, "profile_id": 9002},
+		{"user_id": 42, "profile_id": 9003},
+	]
+	base_request = dict(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		match_info={"community_id": "9"})
+	preview = asyncio.run(web.handle_api_identity_import_preview(
+		request(json_body={"rows": rows}, **base_request))).payload
+
+	response = asyncio.run(web.handle_api_identity_import_apply(
+		request(json_body={"rows": rows, "digest": preview["digest"]}, **base_request)))
+
+	assert response.status == 200
+	assert response.payload == {"ok": True, "applied": 2, "skipped_after_preview": 0}
+	by_profile = {row["profile_id"]: row for row in fake.rows["identities"]}
+	assert by_profile[9001]["user_id"] == 42
+	assert by_profile[9001]["aoe2_name"] is None, "uploaded labels are not game observations"
+	assert by_profile[9002]["confidence"] == "self", "same-owner rows are left untouched"
+	assert by_profile[9003]["user_id"] == 42
+	assert by_profile[9003]["aoe2_name"] == "Observed"
+	assert invalidations == [True]
+
+
 def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	paths = {path for _method, path, _handler in web.create_app().router.routes}
 	assert "/api/admin/communities" in paths
 	assert "/api/admin/communities/{community_id}" in paths
 	assert "/api/admin/communities/{community_id}/overview" in paths
+	assert "/api/admin/communities/{community_id}/identities/import/preview" in paths
+	assert "/api/admin/communities/{community_id}/identities/import/apply" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/config" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/preview" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/apply" in paths
@@ -1301,7 +1393,10 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "function renderCommunityOverview()" in page
 	assert "function openRatingSeed(channelId)" in page
 	assert "function renderRatingSeedPreview()" in page
+	assert "function openIdentityImport()" in page
+	assert "function renderIdentityPreview()" in page
 	assert "'/ratings/seed/'+action" in page
+	assert "'/identities/import/'+action" in page
 	assert "It never overwrites an existing rating" in page
 	assert "publicCommunityId = String(id)" in page
 	assert "authFetch('/api/guilds')" not in page

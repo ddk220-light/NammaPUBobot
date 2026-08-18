@@ -79,3 +79,37 @@ def test_preview_digest_is_stable_but_bound_to_the_rating_channel():
 	parsed = onboarding.parse_seed_payload({"rows": [{"user_id": 1, "rating": 1000}]}, 200)
 	assert onboarding.seed_digest(100, parsed) == onboarding.seed_digest(100, parsed)
 	assert onboarding.seed_digest(100, parsed) != onboarding.seed_digest(200, parsed)
+
+
+def test_identity_rows_allow_multiple_profiles_per_user_but_reject_duplicate_profiles():
+	parsed = onboarding.parse_identity_payload({"rows": [
+		{"discord_id": "123", "aoe2_profile_id": "9001", "game_name": "Alice"},
+		{"user_id": "123", "profile_id": "9002"},
+		{"user_id": "456", "profile_id": "9002"},
+	]})
+
+	assert parsed["rows"][0] == {
+		"line": 1, "user_id": 123, "profile_id": 9001, "aoe2_name": "Alice", "errors": []}
+	assert parsed["rows"][1]["errors"] == [
+		"AoE2 profile ID appears more than once in this import."]
+	assert parsed["rows"][2]["errors"] == [
+		"AoE2 profile ID appears more than once in this import."]
+
+
+def test_identity_zip_prefers_the_resolved_profile_mapping():
+	content = _zip({
+		"export/players.csv": "user_id,rating\n123,1400\n",
+		"export/profile_resolved.csv": "profile_id,user_id,aoe2_name\n9001,123,Alice\n",
+	})
+	parsed = onboarding.parse_identity_payload(_payload("community.zip", content))
+
+	assert parsed["name"] == "export/profile_resolved.csv"
+	assert parsed["rows"] == [{
+		"line": 2, "user_id": 123, "profile_id": 9001,
+		"aoe2_name": "Alice", "errors": [],
+	}]
+
+
+def test_identity_digest_is_bound_to_the_authorized_community():
+	parsed = onboarding.parse_identity_payload({"rows": [{"user_id": 1, "profile_id": 2}]})
+	assert onboarding.identity_digest(9, parsed) != onboarding.identity_digest(10, parsed)

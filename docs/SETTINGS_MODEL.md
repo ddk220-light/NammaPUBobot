@@ -75,6 +75,41 @@ offline `utils/import_pubobot_export.py` remains the operator tool for a full
 historical migration. Uploads are capped at 700 KB compressed, 2 MB expanded,
 25 ZIP members, and 500 player rows.
 
+## Identity onboarding
+
+The identity workflow maps current Discord members to AoE2 profile IDs. It
+accepts manual rows, a CSV with `user_id` and `profile_id`, or a ZIP containing
+`profile_resolved.csv` or `player_profile_map.csv`. Multiple profiles for one
+member are valid and additive.
+
+Identity truth is global: an AoE2 profile belongs to the same Discord person
+regardless of which community observes it. That makes the write boundary
+stricter than rating import:
+
+- every target Discord user must currently be a non-bot member of the
+  authorized guild;
+- a new or currently unowned profile can be linked;
+- a profile already linked to the same user is an idempotent no-op;
+- a profile owned by another user is reported as a conflict without revealing
+  that other user's ID, and bulk apply is blocked;
+- imports are additive and never release a member's other profiles.
+
+Preview and apply use the same digest/recheck pattern as rating onboarding:
+
+```
+/api/admin/communities/<community_id>/identities/import/preview
+/api/admin/communities/<community_id>/identities/import/apply
+```
+
+Apply uses `INSERT IGNORE` for a new profile and a conditional
+`UPDATE ... WHERE user_id IS NULL` for a known unowned profile. A race therefore
+cannot reassign an existing owner. The resolver cache is invalidated only after
+the transaction commits.
+
+An uploaded AoE2 name is useful preview context but is not written to
+`identities.aoe2_name`: that column promises an in-game name observed through
+the AoE2 API or a replay, while a CSV label is only an administrator's claim.
+
 ## Current control scopes
 
 | Feature | Current scope | Current control |
@@ -96,7 +131,7 @@ are changed accordingly.
 
 - community-level feature policy and public/private dashboard settings;
 - a tenant-safe quiz scheduler and editor;
-- identity import and mapping onboarding;
+- guided resolution for identity ownership conflicts;
 - full historical migration UI and one-time AoE team-rating seeding;
 - actionable diagnostics and repair flows;
 - the full basic/advanced settings information architecture.

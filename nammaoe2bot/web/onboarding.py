@@ -39,6 +39,12 @@ _ALIASES = {
 	"deviation": ("deviation", "rd", "rating_deviation"),
 }
 
+_IDENTITY_ALIASES = {
+	"user_id": ("user_id", "userid", "discord_id", "discord_user_id"),
+	"profile_id": ("profile_id", "profileid", "aoe2_profile_id", "aoe_profile_id"),
+	"aoe2_name": ("aoe2_name", "game_name", "profile_name", "ingame_name"),
+}
+
 
 def _header(value):
 	return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
@@ -222,6 +228,146 @@ def seed_digest(target_channel_id, parsed):
 	"""Bind a preview to the normalized content and its resolved rating target."""
 	canonical = {
 		"target_channel_id": int(target_channel_id),
+		"source": parsed["name"],
+		"rows": parsed["rows"],
+	}
+	encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+	return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _identity_aliased(row, name):
+	clean = {_header(key): value for key, value in row.items() if key is not None}
+	for alias in _IDENTITY_ALIASES[name]:
+		if alias in clean:
+			return clean[alias]
+	return None
+
+
+def _identity_csv_from_zip(content):
+	try:
+		archive = zipfile.ZipFile(io.BytesIO(content))
+	except (zipfile.BadZipFile, OSError) as exc:
+		raise SeedInputError("The uploaded ZIP cannot be read.") from exc
+	with archive:
+		members = [info for info in archive.infolist() if not info.is_dir()]
+		if len(members) > MAX_ZIP_MEMBERS:
+			raise SeedInputError(f"ZIP contains more than {MAX_ZIP_MEMBERS} files.")
+		if any(info.flag_bits & 0x1 for info in members):
+			raise SeedInputError("Password-protected ZIP files are not supported.")
+		if sum(info.file_size for info in members) > MAX_EXPANDED_BYTES:
+			raise SeedInputError("Expanded ZIP contents are too large.")
+
+		csv_members = [info for info in members if info.filename.lower().endswith(".csv")]
+		by_basename = {
+			info.filename.replace("\\", "/").rsplit("/", 1)[-1].lower(): info
+			for info in csv_members
+		}
+		selected = by_basename.get("profile_resolved.csv") or by_basename.get("player_profile_map.csv")
+		if selected is None and len(csv_members) == 1:
+			selected = csv_members[0]
+		elif selected is None and not csv_members:
+			raise SeedInputError("ZIP does not contain an identity CSV file.")
+		elif selected is None:
+			raise SeedInputError(
+				"ZIP contains multiple CSV files but no profile_resolved.csv or player_profile_map.csv.")
+		try:
+			data = archive.read(selected)
+		except (RuntimeError, zipfile.BadZipFile, OSError) as exc:
+			raise SeedInputError("The identity CSV inside the ZIP cannot be read.") from exc
+		if len(data) > MAX_EXPANDED_BYTES:
+			raise SeedInputError("Identity CSV expands beyond the supported size.")
+		return selected.filename, data
+
+
+def _identity_csv_rows(data):
+	try:
+		text = data.decode("utf-8-sig")
+	except UnicodeDecodeError as exc:
+		raise SeedInputError("CSV must use UTF-8 encoding.") from exc
+	try:
+		reader = csv.DictReader(io.StringIO(text))
+		if not reader.fieldnames:
+			raise SeedInputError("CSV has no header row.")
+		headers = {_header(field) for field in reader.fieldnames}
+		for required in ("user_id", "profile_id"):
+			if not any(alias in headers for alias in _IDENTITY_ALIASES[required]):
+				raise SeedInputError(f"CSV is missing a {required} column.")
+		return [(index, row) for index, row in enumerate(reader, start=2)]
+	except csv.Error as exc:
+		raise SeedInputError(f"CSV cannot be parsed: {exc}.") from exc
+
+
+def _identity_source_rows(payload):
+	if not isinstance(payload, dict):
+		raise SeedInputError("Import request must be a JSON object.")
+	if "rows" in payload:
+		rows = payload.get("rows")
+		if not isinstance(rows, list):
+			raise SeedInputError("rows must be a list.")
+		return "Manual entry", [(index, row) for index, row in enumerate(rows, start=1)]
+	name, content = _decode_upload(payload)
+	inner_name = name
+	if zipfile.is_zipfile(io.BytesIO(content)) or name.lower().endswith(".zip"):
+		inner_name, content = _identity_csv_from_zip(content)
+	return inner_name, _identity_csv_rows(content)
+
+
+def parse_identity_payload(payload):
+	"""Normalize Discord-user to AoE2-profile claims for tenant-safe preview."""
+	source_name, source_rows = _identity_source_rows(payload)
+	useful = []
+	for line, raw in source_rows:
+		if not isinstance(raw, dict):
+			useful.append((line, {}, ["Row must be an object."]))
+			continue
+		if not any(str(value or "").strip() for value in raw.values()):
+			continue
+		useful.append((line, raw, []))
+	if len(useful) > MAX_SEED_ROWS:
+		raise SeedInputError(f"Import contains more than {MAX_SEED_ROWS} identity rows.")
+	if not useful:
+		raise SeedInputError("Import contains no identity rows.")
+
+	rows = []
+	for line, raw, errors in useful:
+		user_id = profile_id = None
+		try:
+			user_id = _int_value(
+				_identity_aliased(raw, "user_id"), "Discord user ID",
+				minimum=1, maximum=9_223_372_036_854_775_807)
+		except ValueError as exc:
+			errors.append(str(exc))
+		try:
+			profile_id = _int_value(
+				_identity_aliased(raw, "profile_id"), "AoE2 profile ID",
+				minimum=1, maximum=9_223_372_036_854_775_807)
+		except ValueError as exc:
+			errors.append(str(exc))
+		aoe2_name = str(_identity_aliased(raw, "aoe2_name") or "").strip()
+		if len(aoe2_name) > MAX_NICK_LENGTH:
+			errors.append(f"AoE2 name is longer than {MAX_NICK_LENGTH} characters.")
+		rows.append({
+			"line": line,
+			"user_id": user_id,
+			"profile_id": profile_id,
+			"aoe2_name": aoe2_name,
+			"errors": errors,
+		})
+
+	by_profile = {}
+	for row in rows:
+		if row["profile_id"] is not None:
+			by_profile.setdefault(row["profile_id"], []).append(row)
+	for duplicates in by_profile.values():
+		if len(duplicates) > 1:
+			for row in duplicates:
+				row["errors"].append("AoE2 profile ID appears more than once in this import.")
+	return {"name": source_name, "rows": rows}
+
+
+def identity_digest(community_id, parsed):
+	canonical = {
+		"community_id": int(community_id),
 		"source": parsed["name"],
 		"rows": parsed["rows"],
 	}
