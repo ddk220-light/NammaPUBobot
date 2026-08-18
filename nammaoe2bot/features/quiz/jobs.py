@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """Daily-post / close-and-reveal / weekly-leaderboard job on the shared 1-s think()
 tick. Bulletproof and cadence-gated like LobbyJobs — a failure here can never break
-the tick or any existing flow. Does nothing unless a quiz_settings row has
-enabled=1. nextcord / nammaoe2bot.runtime.client / embeds are imported lazily inside the methods so
+the tick or any existing flow. Every enabled community is processed behind its
+own error boundary; one tenant cannot monopolize or break the schedule for another.
+nextcord / nammaoe2bot.runtime.client / embeds are imported lazily inside the methods so
 importing nammaoe2bot.features.quiz (hence this module) stays test-safe under the conftest stubs."""
 import asyncio
 import json
@@ -57,9 +58,21 @@ class QuizJobs:
 
 	async def _run(self):
 		now = int(time.time())
-		cfg = await store.get_config()
-		if cfg and cfg.get("enabled"):
-			await self._maybe_post_daily(cfg, now)
+		seen_communities = set()
+		for cfg in await store.enabled_configs():
+			community_id = int(cfg["community_id"])
+			if community_id in seen_communities:
+				log.error(
+					f"Quiz configuration has multiple enabled channels for community "
+					f"{community_id}; ignoring channel {cfg.get('channel_id')}.")
+				continue
+			seen_communities.add(community_id)
+			try:
+				await self._maybe_post_daily(cfg, now)
+			except Exception as e:
+				log.error(
+					f"Quiz daily job failed for community {community_id} "
+					f"channel {cfg.get('channel_id')}: {e}")
 		await self._close_due(now)                    # always: resolve any leftover open posts
 
 	async def _maybe_post_daily(self, cfg, now):

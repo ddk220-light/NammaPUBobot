@@ -465,7 +465,7 @@ td.et_remove { width: 24px; text-align: center; }
 .settings-fields { display: grid; gap: 0.8rem; }
 .setting-field { background: #202225; border: 1px solid #484c54; border-radius: 8px; padding: 0.9rem; }
 .setting-field label { display: block; color: #f1f2f3; font-size: 0.88rem; font-weight: 700; }
-.setting-field select { width: 100%; margin-top: 0.55rem; background: #2f3136; color: white; border: 1px solid #5a5f69; border-radius: 5px; padding: 0.55rem; }
+.setting-field select, .setting-field input[type="number"] { width: 100%; box-sizing: border-box; margin-top: 0.55rem; background: #2f3136; color: white; border: 1px solid #5a5f69; border-radius: 5px; padding: 0.55rem; }
 .setting-field input[type="checkbox"] { margin-right: 0.45rem; }
 .field-description { color: #a9adb5; font-size: 0.78rem; line-height: 1.45; margin-top: 0.55rem; }
 .seed-target {
@@ -1434,7 +1434,7 @@ var playerDetailData = null, miniSort = {
 var dashGuilds = [], dashChannels = [], dashQueues = [];
 var dashGuildId = null, dashGuildName = null;
 var dashChannelId = null, dashChannelName = null;
-var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null, dashPolicyData = null;
+var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null, dashPolicyData = null, dashQuizData = null;
 var dashRatingSeedSource = null, dashRatingSeedPreview = null;
 var dashTeamRatingPreview = null;
 var dashIdentitySource = null, dashIdentityPreview = null;
@@ -3904,7 +3904,7 @@ function renderBreadcrumb() {
 
 function resetDashboard() {
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null;
-  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashActiveTab=null;
+  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -3921,7 +3921,7 @@ async function loadDashboard() {
     return;
   }
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
-  dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null; dashPolicyData=null;
+  dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null; dashPolicyData=null; dashQuizData=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -3945,7 +3945,7 @@ async function loadDashboard() {
 async function selectGuild(id, name) {
   dashGuildId=id; dashGuildName=name; dashChannelId=null; dashChannelName=null;
   dashQueueName=null; dashChannels=[]; dashQueues=[];
-  dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashActiveTab=null;
+  dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -3962,16 +3962,19 @@ async function selectGuild(id, name) {
     var results = await Promise.all([
       authFetch(adminCommunityApi(id, '/overview')),
       authFetch(adminCommunityApi(id, '/channels')),
-      authFetch(adminCommunityApi(id, '/policy'))
+      authFetch(adminCommunityApi(id, '/policy')),
+      authFetch(adminCommunityApi(id, '/quiz'))
     ]);
     if (!results[0].ok) throw new Error('HTTP '+results[0].status);
     if (!results[1].ok) throw new Error('HTTP '+results[1].status);
     if (!results[2].ok) throw new Error('HTTP '+results[2].status);
-    var payloads = await Promise.all([results[0].json(), results[1].json(), results[2].json()]);
+    if (!results[3].ok) throw new Error('HTTP '+results[3].status);
+    var payloads = await Promise.all([results[0].json(), results[1].json(), results[2].json(), results[3].json()]);
     if (payloads[0].error) throw new Error(payloads[0].error);
     if (payloads[1].error) throw new Error(payloads[1].error);
     if (payloads[2].error) throw new Error(payloads[2].error);
-    dashOverviewData = payloads[0]; dashChannels = payloads[1].channels || []; dashPolicyData = payloads[2]; dashQueues = [];
+    if (payloads[3].error) throw new Error(payloads[3].error);
+    dashOverviewData = payloads[0]; dashChannels = payloads[1].channels || []; dashPolicyData = payloads[2]; dashQuizData = payloads[3]; dashQueues = [];
     renderGuildMenu();
     renderCommunityOverview();
   } catch(e) { content.innerHTML = '<div class="error">Failed to load community settings: '+esc(e.message)+'</div>'; }
@@ -4025,6 +4028,7 @@ function renderCommunityOverview() {
     html += '<span class="overview-metric"><b>'+(feature.configurable?'editable':'read only')+'</b>control</span>';
     html += overviewMetrics(feature.metrics)+'</div>';
     if (feature.note) html += '<p class="overview-card-note">'+esc(feature.note)+'</p>';
+    if (feature.key === 'quiz') html += '<button type="button" class="setup-action" onclick="openQuizSettings()">Configure quiz</button>';
     html += '</article>';
   });
   html += '</div></section>';
@@ -4093,6 +4097,67 @@ async function saveCommunityPolicy() {
     openCommunityPolicy();
     showToast('Community policy saved', 'success');
   } catch(e) { showToast('Failed to save policy: '+e.message, 'error'); }
+}
+
+function openQuizSettings(channelId) {
+  var content = document.getElementById('dash-content');
+  var data = dashQuizData || {};
+  var channels = data.channels || [];
+  if (!channels.length) {
+    content.innerHTML = '<div class="dash-login-prompt">Enroll a Discord channel before enabling the quiz.<br><br>'
+      + '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+    return;
+  }
+  channelId = String(channelId || data.active_channel_id || channels[0].id);
+  var selected = channels.find(function(channel) { return String(channel.id) === channelId; }) || channels[0];
+  var options = channels.map(function(channel) {
+    return '<option value="'+esc(channel.id)+'"'+(String(channel.id)===String(selected.id)?' selected':'')+'>#'+esc(channel.name)+'</option>';
+  }).join('');
+  var hourOptions = [];
+  for (var hour=0; hour<24; hour++) {
+    var label = String(hour).padStart(2, '0')+':00 UTC';
+    hourOptions.push('<option value="'+hour+'"'+(hour===Number(selected.quiz_hour)?' selected':'')+'>'+label+'</option>');
+  }
+  var windowHours = Math.max(0.25, Math.min(24, Number(selected.open_window || 86400) / 3600));
+  var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Daily quiz</h1>';
+  html += '<p>One quiz channel per community, with an independent schedule and reward history.</p></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<div class="settings-fields"><div class="setting-field"><label>Quiz channel</label>';
+  html += '<select id="quiz-channel" onchange="openQuizSettings(this.value)">'+options+'</select>';
+  html += '<div class="field-description">Enabling this channel automatically disables the previous quiz channel in this community only.</div></div>';
+  html += '<div class="setting-field"><label><input id="quiz-enabled" type="checkbox" '+(selected.enabled?'checked ':'')+'/> Enable daily quiz</label>';
+  html += '<div class="field-description">Open quizzes still resolve and pay rewards after this switch is turned off.</div></div>';
+  html += '<div class="setting-field"><label>Daily post time</label><select id="quiz-hour">'+hourOptions.join('')+'</select>';
+  html += '<div class="field-description">Times are UTC so the schedule remains stable across deployment regions and daylight-saving changes.</div></div>';
+  html += '<div class="setting-field"><label>Voting window (hours)</label>';
+  html += '<input id="quiz-window-hours" type="number" min="0.25" max="24" step="0.25" value="'+esc(windowHours)+'" />';
+  html += '<div class="field-description">Between 15 minutes and 24 hours. The next daily post always resolves the previous poll first.</div></div></div>';
+  html += '<div class="seed-actions"><button type="button" class="seed-button" onclick="saveQuizSettings()">Save quiz settings</button></div></div>';
+  content.innerHTML = html;
+}
+
+async function saveQuizSettings() {
+  var channelId = document.getElementById('quiz-channel').value;
+  var hours = Number(document.getElementById('quiz-window-hours').value);
+  var openWindow = Math.round(hours * 3600);
+  try {
+    var resp = await authFetch(adminCommunityApi(dashGuildId, '/quiz'), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        channel_id:channelId,
+        enabled:document.getElementById('quiz-enabled').checked,
+        quiz_hour:Number(document.getElementById('quiz-hour').value),
+        open_window:openWindow
+      })
+    });
+    var data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || ('HTTP '+resp.status));
+    dashQuizData = data;
+    var overviewResp = await authFetch(adminCommunityApi(dashGuildId, '/overview'));
+    if (overviewResp.ok) dashOverviewData = await overviewResp.json();
+    openQuizSettings(channelId);
+    showToast('Quiz settings saved', 'success');
+  } catch(e) { showToast('Failed to save quiz settings: '+e.message, 'error'); }
 }
 
 function ratingSeedApi(channelId, action) {

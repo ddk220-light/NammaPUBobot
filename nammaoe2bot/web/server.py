@@ -59,6 +59,7 @@ from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 from nammaoe2bot.features.identity import resolver
 from nammaoe2bot.features.lobby import api as lobby_api
+from nammaoe2bot.features.quiz import store as quiz_store
 from nammaoe2bot.features.scouting import report as scouting_report
 from nammaoe2bot.derived import game_labels, rollups
 from nammaoe2bot.ingest import scoring as rs_scoring
@@ -3180,9 +3181,9 @@ async def _admin_community_overview(admin):
 			configurable=False, metrics={"holders": _overview_count(gold, "holders")}),
 		_overview_capability(
 			"quiz", "Daily quiz", quiz_status,
-			"Scheduled AoE2 quiz posts and rewards.", scope="channel", configurable=False,
+			"Scheduled AoE2 quiz posts and rewards.", scope="community", configurable=True,
 			metrics={"configured_channels": len(quiz_rows), "enabled_channels": len(quiz_enabled)},
-			note="The current scheduler permits one enabled quiz channel per deployment; tenant controls are not built yet."),
+			note="Each community may select one enrolled channel; other communities run independently."),
 		_overview_capability(
 			"lobby", "Lobby tracking", "available" if ranked_queues else "unavailable",
 			"Automatic lobby detection and API-confirmed game starts.", scope="built_in",
@@ -3351,6 +3352,87 @@ async def handle_api_community_policy(request):
 		replay_analysis_enabled=replay_enabled,
 		updated_by=session["user_id"])
 	return web.json_response(await _admin_policy_payload(admin))
+
+
+async def _admin_quiz_payload(admin):
+	community_id = admin.community.community_id
+	rows = await quiz_store.configs_for_community(community_id)
+	by_channel = {int(row["channel_id"]): row for row in rows}
+	channels = []
+	for channel_id in sorted(await _community_channel_ids(community_id)):
+		channel = dc.get_channel(channel_id)
+		guild = getattr(channel, "guild", None)
+		if channel is None or int(getattr(guild, "id", 0)) != admin.community.guild_id:
+			continue
+		row = by_channel.get(channel_id) or {}
+		channels.append({
+			"id": str(channel_id),
+			"name": getattr(channel, "name", str(channel_id)),
+			"configured": bool(row),
+			"enabled": bool(row.get("enabled")),
+			"quiz_hour": _hour_or_default(row.get("quiz_hour"), 9),
+			"open_window": int(row.get("open_window") or 86400),
+		})
+	active = next((channel for channel in channels if channel["enabled"]), None)
+	return {
+		"community": admin.payload(),
+		"channels": channels,
+		"active_channel_id": active["id"] if active else None,
+		"defaults": {"quiz_hour": 9, "open_window": 86400},
+	}
+
+
+def _hour_or_default(value, default):
+	return default if value is None else int(value)
+
+
+async def handle_api_community_quiz(request):
+	"""Tenant-safe daily quiz channel and schedule settings."""
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return error
+	if request.method == "GET":
+		return web.json_response(await _admin_quiz_payload(admin))
+	if not _check_csrf(request, session):
+		return web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	if not isinstance(payload, dict):
+		return web.json_response({"error": "Request body must be an object"}, status=400)
+	enabled = payload.get("enabled")
+	channel_id = payload.get("channel_id")
+	quiz_hour = payload.get("quiz_hour")
+	open_window = payload.get("open_window")
+	if not isinstance(enabled, bool):
+		return web.json_response({"error": "enabled must be a boolean"}, status=400)
+	if isinstance(channel_id, bool) or not str(channel_id or "").isdigit():
+		return web.json_response({"error": "channel_id must be a positive integer"}, status=400)
+	channel_id = int(channel_id)
+	if channel_id <= 0:
+		return web.json_response({"error": "channel_id must be a positive integer"}, status=400)
+	if isinstance(quiz_hour, bool) or not isinstance(quiz_hour, int) or not 0 <= quiz_hour <= 23:
+		return web.json_response({"error": "quiz_hour must be an integer from 0 to 23"}, status=400)
+	if (isinstance(open_window, bool) or not isinstance(open_window, int)
+			or not 900 <= open_window <= 86400):
+		return web.json_response(
+			{"error": "open_window must be between 900 and 86400 seconds"}, status=400)
+	if channel_id not in await _community_channel_ids(admin.community.community_id):
+		return web.json_response({"error": "Quiz channel not found"}, status=404)
+	channel = dc.get_channel(channel_id)
+	if int(getattr(getattr(channel, "guild", None), "id", 0)) != admin.community.guild_id:
+		return web.json_response({"error": "Quiz channel not found"}, status=404)
+	try:
+		await quiz_store.configure_for_community(
+			admin.community.community_id, channel_id,
+			enabled=enabled, quiz_hour=quiz_hour, open_window=open_window)
+	except ValueError as exc:
+		return web.json_response({"error": str(exc)}, status=400)
+	return web.json_response(await _admin_quiz_payload(admin))
 
 
 def _seed_member_name(guild, user_id):
@@ -4519,6 +4601,12 @@ def create_app():
 	app.router.add_post(
 		'/api/admin/communities/{community_id}/policy',
 		handle_api_community_policy)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/quiz',
+		handle_api_community_quiz)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/quiz',
+		handle_api_community_quiz)
 	app.router.add_post(
 		'/api/admin/communities/{community_id}/identities/import/preview',
 		handle_api_identity_import_preview)

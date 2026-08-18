@@ -64,6 +64,29 @@ not stop an opted-in tenant on the same self-hosted installation. An absent
 policy row preserves the historical defaults: a public dashboard and replay
 analysis requested.
 
+## Daily quiz settings
+
+The quiz is configured per community through:
+
+```
+GET  /api/admin/communities/<community_id>/quiz
+POST /api/admin/communities/<community_id>/quiz
+```
+
+An administrator selects one enrolled Discord channel, a UTC posting hour,
+and a voting window from 15 minutes through 24 hours. A community can have at
+most one enabled quiz channel. The save transaction locks the `communities`
+row, disables only quiz rows joined to that community, and then enables the
+selected channel, so concurrent saves cannot create two daily reward streams.
+It rechecks the `community_channels` link under the same transaction.
+
+The scheduler loads every enabled row joined through `community_channels`;
+there is no deployment-wide `LIMIT 1`. Each community's daily post is isolated
+behind its own error boundary, so a missing channel or question-bank failure in
+one guild does not prevent other guilds from posting. Disabling a quiz affects
+only the selected community, while already-open polls remain eligible for the
+normal resolve-and-pay retry path.
+
 ## Rating onboarding
 
 The community overview links to a rating seed workflow for each configured
@@ -212,17 +235,15 @@ the AoE2 API or a replay, while a CSV label is only an administrator's claim.
 | Ratings | Channel | Channel configuration and insert-only onboarding seed |
 | Flash predictions | Queue | `predictions_enabled` on ranked queues |
 | Gold economy | Community | Automatic; no admin switch yet |
-| Daily quiz | Channel, but singleton deployment scheduler | No web editor yet |
+| Daily quiz | Community (one enrolled channel) | Web editor for enablement, UTC hour, and voting window |
 | Lobby tracking | Built in for ranked matches | No admin switch yet |
 | Replay analysis | Community inside a self-hosted deployment | Community preference, bounded by `DEPLOYMENT_MODE` and `REPLAY_INGEST_ENABLED` |
 | Public dashboard | Community | `public`, `members`, or `admins` policy |
 
-The overview deliberately exposes these limitations. It must not label the
-quiz as tenant-configurable until its runtime contract is changed accordingly.
+The overview reports these scopes from the runtime contracts above.
 
 ## Still to build
 
-- a tenant-safe quiz scheduler and editor;
 - guided resolution for identity ownership conflicts;
 - actionable diagnostics and repair flows;
 - the full basic/advanced settings information architecture.

@@ -39,6 +39,8 @@ software and remains so.
   Pubobot ZIP previews without overwriting an existing player rating.
   Linked current members can instead be seeded once from their observed AoE2
   ranked-team rating, with external failures blocking partial application.
+  Each community can select its own daily quiz channel, UTC post time, and
+  voting window; scheduler and emergency-disable behavior are tenant-safe.
   A separate guarded migration can atomically import a complete historical
   Pubobot export into an empty channel while remapping legacy match IDs.
   Identity onboarding maps current guild members additively and blocks bulk

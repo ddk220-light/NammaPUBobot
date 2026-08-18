@@ -294,7 +294,7 @@ def install_db(monkeypatch, fake):
 	from nammaoe2bot.runtime.database import db as real_db
 	for name in ("fetchall", "fetchone", "select", "select_one", "execute", "insert", "delete"):
 		monkeypatch.setattr(real_db, name, getattr(fake, name), raising=False)
-	for module in (web, web.community_store, rollups):
+	for module in (web, web.community_store, web.quiz_store, rollups):
 		monkeypatch.setattr(module, "db", fake)
 	return fake
 
@@ -1258,7 +1258,9 @@ def test_community_overview_reports_real_feature_scopes_and_tenant_counts(monkey
 	assert capabilities["predictions"]["status"] == "partial"
 	assert capabilities["predictions"]["scope"] == "queue"
 	assert capabilities["quiz"]["status"] == "active"
-	assert "one enabled quiz channel per deployment" in capabilities["quiz"]["note"]
+	assert capabilities["quiz"]["scope"] == "community"
+	assert capabilities["quiz"]["configurable"] is True
+	assert "one enrolled channel" in capabilities["quiz"]["note"]
 	assert capabilities["replay_analysis"]["scope"] == "community"
 	assert capabilities["replay_analysis"]["configurable"] is True
 	assert capabilities["replay_analysis"]["metrics"] == {"linked": 9, "parsed": 8, "attention": 0}
@@ -1323,6 +1325,64 @@ def test_hosted_policy_can_never_enable_replay_compute(monkeypatch):
 	assert response.payload["policy"]["replay_analysis_requested"] is True
 	assert response.payload["policy"]["replay_analysis_effective"] is False
 	assert response.payload["policy"]["replay_reason"] == "hosted_unavailable"
+
+
+def test_community_quiz_api_is_scoped_validated_and_csrf_protected(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	_install_discord(monkeypatch, [alpha], channels={100: channel})
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+	}))
+	writes = []
+
+	async def configs(_community_id):
+		return ([{"channel_id": 100, "enabled": 1, "quiz_hour": 13, "open_window": 21600}]
+			if writes else [])
+
+	async def configure(community_id, channel_id, **fields):
+		writes.append((community_id, channel_id, fields))
+
+	monkeypatch.setattr(web.quiz_store, "configs_for_community", configs)
+	monkeypatch.setattr(web.quiz_store, "configure_for_community", configure)
+	base = dict(
+		cookies={web.COOKIE_NAME: "sess"}, method="POST",
+		json_body={"channel_id": "100", "enabled": True, "quiz_hour": 13, "open_window": 21600},
+		match_info={"community_id": "9"})
+
+	denied = asyncio.run(web.handle_api_community_quiz(request(**base)))
+	assert denied.status == 403
+	assert writes == []
+
+	response = asyncio.run(web.handle_api_community_quiz(request(
+		headers={"X-CSRF-Token": "tok"}, **base)))
+
+	assert response.status == 200
+	assert writes == [(9, 100, {"enabled": True, "quiz_hour": 13, "open_window": 21600})]
+	assert response.payload["active_channel_id"] == "100"
+	assert response.payload["channels"][0]["quiz_hour"] == 13
+
+
+def test_community_quiz_api_rejects_another_tenants_channel(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	beta = _discord_guild(888, admin=True)
+	channel = types.SimpleNamespace(id=200, name="beta-pub", guild=beta)
+	_install_discord(monkeypatch, [alpha, beta], channels={200: channel})
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0], _community_rows()[1]],
+		"community_channels": [{"community_id": 10, "channel_id": 200}],
+	}))
+
+	response = asyncio.run(web.handle_api_community_quiz(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={"channel_id": "200", "enabled": True, "quiz_hour": 9, "open_window": 86400},
+		match_info={"community_id": "9"})))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Quiz channel not found"}
 
 
 def _rating_seed_setup(monkeypatch, fake):
@@ -1756,6 +1816,7 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "/api/admin/communities/{community_id}" in paths
 	assert "/api/admin/communities/{community_id}/overview" in paths
 	assert "/api/admin/communities/{community_id}/policy" in paths
+	assert "/api/admin/communities/{community_id}/quiz" in paths
 	assert "/api/admin/communities/{community_id}/identities/import/preview" in paths
 	assert "/api/admin/communities/{community_id}/identities/import/apply" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/config" in paths
@@ -1772,6 +1833,8 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "function renderCommunityOverview()" in page
 	assert "function openCommunityPolicy()" in page
 	assert "function saveCommunityPolicy()" in page
+	assert "function openQuizSettings(channelId)" in page
+	assert "function saveQuizSettings()" in page
 	assert "function openRatingSeed(channelId)" in page
 	assert "function renderRatingSeedPreview()" in page
 	assert "function renderTeamRatingSeedPreview()" in page

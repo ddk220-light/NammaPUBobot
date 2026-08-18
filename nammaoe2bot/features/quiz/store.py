@@ -9,13 +9,25 @@ from nammaoe2bot.runtime.database import db
 
 
 # ── config ───────────────────────────────────────────────────────────────
-async def get_config(channel_id=None):
-	"""The enabled config row (no channel given) or the row for channel_id. None if
-	nothing matches."""
-	if channel_id is not None:
-		return await db.select_one(["*"], "quiz_settings", {"channel_id": channel_id})
-	rows = await db.fetchall("SELECT * FROM quiz_settings WHERE enabled=1 LIMIT 1")
-	return rows[0] if rows else None
+async def get_config(channel_id):
+	"""The settings row for one channel, or None when it was never configured."""
+	return await db.select_one(["*"], "quiz_settings", {"channel_id": channel_id})
+
+
+async def enabled_configs():
+	"""Every enabled quiz whose channel is still enrolled in a community."""
+	return await db.fetchall(
+		"SELECT qs.*, cc.community_id FROM quiz_settings qs "
+		"JOIN community_channels cc ON cc.channel_id=qs.channel_id "
+		"WHERE qs.enabled=1 ORDER BY cc.community_id, qs.channel_id") or []
+
+
+async def configs_for_community(community_id):
+	"""All configured quiz channels inside one explicit tenant."""
+	return await db.fetchall(
+		"SELECT qs.* FROM quiz_settings qs "
+		"JOIN community_channels cc ON cc.channel_id=qs.channel_id "
+		"WHERE cc.community_id=%s ORDER BY qs.channel_id", [int(community_id)]) or []
 
 
 async def upsert_config(channel_id, **fields):
@@ -26,10 +38,69 @@ async def upsert_config(channel_id, **fields):
 		await db.insert("quiz_settings", dict(channel_id=channel_id, **fields))
 
 
-async def disable_all():
-	"""Disable the quiz everywhere — used before enabling a new channel so only one
-	channel is ever active (get_config() serves a single enabled row)."""
-	await db.execute("UPDATE quiz_settings SET enabled=0")
+async def configure_for_community(
+		community_id, channel_id, *, enabled, quiz_hour, open_window):
+	"""Atomically select the community's one quiz channel and update its schedule.
+
+	The community row is the serialization lock. Without it, two concurrent web
+	saves could each disable the old row and then enable a different channel,
+	leaving both active and paying two daily rewards from one community economy.
+	"""
+	if not isinstance(enabled, bool):
+		raise ValueError("enabled must be a boolean")
+	if isinstance(quiz_hour, bool) or not isinstance(quiz_hour, int) or not 0 <= quiz_hour <= 23:
+		raise ValueError("quiz_hour must be an integer from 0 to 23")
+	if (isinstance(open_window, bool) or not isinstance(open_window, int)
+			or not 900 <= open_window <= 86400):
+		raise ValueError("open_window must be between 900 and 86400 seconds")
+	community_id = int(community_id)
+	channel_id = int(channel_id)
+	async with db.transaction() as tx:
+		root = await tx.fetchone(
+			"SELECT community_id FROM communities WHERE community_id=%s FOR UPDATE",
+			[community_id])
+		if root is None:
+			raise ValueError("Community not found")
+		link = await tx.fetchone(
+			"SELECT channel_id FROM community_channels "
+			"WHERE community_id=%s AND channel_id=%s", [community_id, channel_id])
+		if link is None:
+			raise ValueError("Quiz channel does not belong to this community")
+		await tx.execute(
+			"UPDATE quiz_settings qs JOIN community_channels cc "
+			"ON cc.channel_id=qs.channel_id SET qs.enabled=0 "
+			"WHERE cc.community_id=%s", [community_id])
+		existing = await tx.fetchone(
+			"SELECT channel_id FROM quiz_settings WHERE channel_id=%s FOR UPDATE",
+			[channel_id])
+		values = [int(bool(enabled)), int(quiz_hour), int(open_window), channel_id]
+		if existing:
+			await tx.execute(
+				"UPDATE quiz_settings SET enabled=%s, quiz_hour=%s, open_window=%s "
+				"WHERE channel_id=%s", values)
+		else:
+			await tx.insert("quiz_settings", {
+				"channel_id": channel_id,
+				"enabled": int(bool(enabled)),
+				"quiz_hour": int(quiz_hour),
+				"open_window": int(open_window),
+			})
+
+
+async def disable_for_community(community_id):
+	"""Emergency stop for one tenant; open posts still resolve normally."""
+	community_id = int(community_id)
+	async with db.transaction() as tx:
+		root = await tx.fetchone(
+			"SELECT community_id FROM communities WHERE community_id=%s FOR UPDATE",
+			[community_id])
+		if root is None:
+			return False
+		await tx.execute(
+			"UPDATE quiz_settings qs JOIN community_channels cc "
+			"ON cc.channel_id=qs.channel_id SET qs.enabled=0 "
+			"WHERE cc.community_id=%s", [community_id])
+		return True
 
 
 # ── posts ────────────────────────────────────────────────────────────────
