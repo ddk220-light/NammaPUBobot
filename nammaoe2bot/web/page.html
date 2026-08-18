@@ -1431,6 +1431,7 @@ var dashChannelId = null, dashChannelName = null;
 var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null;
 var dashRatingSeedSource = null, dashRatingSeedPreview = null;
 var dashIdentitySource = null, dashIdentityPreview = null;
+var dashMigrationSource = null, dashMigrationPreview = null;
 
 function adminCommunityApi(communityId, path) {
   return '/api/admin/communities/' + encodeURIComponent(communityId) + (path || '');
@@ -3899,6 +3900,7 @@ function resetDashboard() {
   dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
+  dashMigrationSource=null; dashMigrationPreview=null;
   loadDashboard();
 }
 
@@ -3914,6 +3916,7 @@ async function loadDashboard() {
   dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
+  dashMigrationSource=null; dashMigrationPreview=null;
   renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
   content.innerHTML = '<div class="loading">Loading communities...</div>';
   try {
@@ -3936,6 +3939,7 @@ async function selectGuild(id, name) {
   dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
+  dashMigrationSource=null; dashMigrationPreview=null;
   publicCommunityId = String(id);
   var tenantDashboardPath = publicPath('/dashboard');
   if (window.location.pathname !== tenantDashboardPath) {
@@ -3993,6 +3997,7 @@ function renderCommunityOverview() {
     html += '<div class="setup-controls"><span class="overview-badge '+esc(step.status)+'">'+esc(overviewStatusLabel(step.status))+'</span>';
     if (step.action === 'seed_ratings') html += '<button type="button" class="setup-action" onclick="openRatingSeed()">Seed ratings</button>';
     if (step.action === 'map_identities') html += '<button type="button" class="setup-action" onclick="openIdentityImport()">Map profiles</button>';
+    if (step.action === 'migrate_history') html += '<button type="button" class="setup-action" onclick="openHistoricalMigration()">Import history</button>';
     html += '</div></div>';
   });
   html += '</div></section>';
@@ -4105,10 +4110,10 @@ function previewManualRatingSeed() {
   }]});
 }
 
-function readSeedFile(file) {
+function readUploadFile(file, maxBytes, chooseMessage, sizeMessage) {
   return new Promise(function(resolve, reject) {
-    if (!file) { reject(new Error('Choose a CSV or ZIP file.')); return; }
-    if (file.size > 700000) { reject(new Error('File is larger than 700 KB.')); return; }
+    if (!file) { reject(new Error(chooseMessage)); return; }
+    if (file.size > maxBytes) { reject(new Error(sizeMessage)); return; }
     var reader = new FileReader();
     reader.onerror = function() { reject(new Error('The selected file could not be read.')); };
     reader.onload = function() {
@@ -4119,6 +4124,14 @@ function readSeedFile(file) {
     };
     reader.readAsDataURL(file);
   });
+}
+
+function readSeedFile(file) {
+  return readUploadFile(file, 700000, 'Choose a CSV or ZIP file.', 'File is larger than 700 KB.');
+}
+
+function readMigrationArchive(file) {
+  return readUploadFile(file, 5000000, 'Choose a Pubobot export ZIP.', 'Archive is larger than 5 MB.');
 }
 
 async function previewFileRatingSeed() {
@@ -4179,6 +4192,126 @@ async function applyRatingSeed() {
   } catch(e) {
     showToast('Apply failed: '+e.message, 'error');
     if (applyButton) { applyButton.disabled = false; applyButton.textContent = 'Apply '+(data.summary.ready||0)+' ratings'; }
+  }
+}
+
+function migrationApi(channelId, action) {
+  return adminCommunityApi(
+    dashGuildId,
+    '/channels/'+encodeURIComponent(channelId)+'/migration/pubobot/'+action);
+}
+
+function openHistoricalMigration(channelId) {
+  dashMigrationSource = null; dashMigrationPreview = null;
+  renderHistoricalMigrationForm(channelId || (dashChannels[0] && dashChannels[0].id));
+}
+
+function renderHistoricalMigrationForm(channelId) {
+  var content = document.getElementById('dash-content');
+  if (!dashChannels.length) {
+    content.innerHTML = '<div class="dash-login-prompt">Configure a pickup channel before importing history.<br><br>'
+      + '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+    return;
+  }
+  channelId = String(channelId || dashChannels[0].id);
+  var options = dashChannels.map(function(channel) {
+    return '<option value="'+esc(channel.id)+'"'+(String(channel.id)===channelId?' selected':'')+'>#'+esc(channel.name)+'</option>';
+  }).join('');
+  var browserTimezone = 'UTC';
+  try { browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch(_e) {}
+  var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Migrate historical matches</h1>';
+  html += '<p>Bring a complete Pubobot match and rating history into a new community.</p></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<div class="seed-target"><label>Pickup channel<select id="migration-channel" onchange="changeHistoricalMigrationChannel(this.value)">';
+  html += options+'</select></label><label>Timezone used by the export<input id="migration-timezone" class="seed-file" type="text" maxlength="64" value="'+esc(browserTimezone)+'" placeholder="America/Los_Angeles"></label></div>';
+  html += '<div class="seed-methods" style="grid-template-columns:1fr"><section class="seed-method"><h2>Complete export ZIP</h2>';
+  html += '<p>The ZIP must contain the four match, player, player-match and rating-history CSV exports. Maximum compressed size is 5 MB.</p>';
+  html += '<input id="migration-upload" class="seed-file" type="file" accept=".zip,application/zip">';
+  html += '<button type="button" class="seed-button" onclick="previewHistoricalMigration()">Run migration preflight</button></section></div>';
+  html += '<p class="seed-safety"><b>Use this once, before live play begins.</b> Preview does not write data. Apply is allowed only when the pickup channel has no recorded matches, '
+    + 'its rating host has no rating history, no match is active, and any ratings-only seed exactly agrees with the archive. Source match IDs are safely remapped.</p>';
+  html += '<div id="migration-preview" class="seed-preview"></div></div>';
+  content.innerHTML = html;
+}
+
+function changeHistoricalMigrationChannel(channelId) {
+  dashMigrationSource = null; dashMigrationPreview = null;
+  renderHistoricalMigrationForm(channelId);
+}
+
+async function previewHistoricalMigration() {
+  var fileInput = document.getElementById('migration-upload');
+  var timezone = document.getElementById('migration-timezone');
+  try {
+    var source = await readMigrationArchive(fileInput && fileInput.files ? fileInput.files[0] : null);
+    source.timezone = (timezone && timezone.value ? timezone.value : 'UTC').trim() || 'UTC';
+    await requestHistoricalMigrationPreview(source);
+  } catch(e) {
+    showToast(e.message, 'error');
+  }
+}
+
+async function requestHistoricalMigrationPreview(source) {
+  var channel = document.getElementById('migration-channel');
+  var preview = document.getElementById('migration-preview');
+  if (!channel || !preview) return;
+  preview.innerHTML = '<div class="loading">Validating every export and checking the target...</div>';
+  try {
+    var resp = await authFetch(migrationApi(channel.value, 'preview'), {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(source),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
+    dashMigrationSource = source; dashMigrationPreview = result;
+    renderHistoricalMigrationPreview();
+  } catch(e) {
+    preview.innerHTML = '<div class="error">Preflight failed: '+esc(e.message)+'</div>';
+  }
+}
+
+function renderHistoricalMigrationPreview() {
+  var container = document.getElementById('migration-preview');
+  var data = dashMigrationPreview;
+  if (!container || !data) return;
+  var summary = data.summary || {}, preflight = data.preflight || {}, target = data.target || {};
+  var html = '<div class="seed-summary">';
+  [['Matches',summary.matches||0],['Players',summary.players||0],['Roster rows',summary.player_matches||0],
+   ['Rating changes',summary.rating_history||0]].forEach(function(item) {
+    html += '<div><span>'+esc(item[0])+'</span><b>'+esc(item[1])+'</b></div>';
+  });
+  html += '</div>';
+  if ((preflight.blockers || []).length) {
+    html += '<div class="error"><b>Import is blocked.</b><ul>';
+    preflight.blockers.forEach(function(blocker) { html += '<li>'+esc(blocker)+'</li>'; });
+    html += '</ul></div>';
+  } else {
+    html += '<p class="seed-safety"><b>Preflight passed.</b> '+esc(preflight.match_ids)+' '
+      + esc(preflight.existing_seed_rows||0)+' existing ratings-only seed row(s) agree with the archive.</p>';
+  }
+  html += '<div class="seed-actions"><span class="seed-source-note">'+esc(data.source)+' · '+esc(data.timezone)+' &rarr; #'+esc(target.channel_name||target.channel_id)+'</span>';
+  html += '<button type="button" class="seed-button secondary" onclick="openHistoricalMigration(\''+esc(target.channel_id)+'\')">Discard preview</button>';
+  html += '<button type="button" class="seed-button apply" onclick="applyHistoricalMigration()"'+(data.can_apply?'':' disabled')+'>';
+  html += 'Import '+esc(summary.matches||0)+' historical match'+((summary.matches||0)===1?'':'es')+'</button></div>';
+  container.innerHTML = html;
+}
+
+async function applyHistoricalMigration() {
+  var data = dashMigrationPreview, source = dashMigrationSource;
+  if (!data || !source || !data.can_apply) return;
+  var applyButton = document.querySelector('.seed-button.apply');
+  if (applyButton) { applyButton.disabled = true; applyButton.textContent = 'Importing atomically...'; }
+  try {
+    var payload = Object.assign({}, source, {digest:data.digest});
+    var resp = await authFetch(migrationApi(data.target.channel_id, 'apply'), {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
+    showToast('Imported '+result.matches+' historical match'+(result.matches===1?'':'es')+'.', 'success');
+    await selectGuild(dashGuildId, dashGuildName);
+  } catch(e) {
+    showToast('Import failed: '+e.message, 'error');
+    if (applyButton) { applyButton.disabled = false; applyButton.textContent = 'Import '+(data.summary.matches||0)+' historical matches'; }
   }
 }
 

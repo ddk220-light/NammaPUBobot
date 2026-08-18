@@ -17,6 +17,7 @@ import cycles would come straight back. If passing it somewhere is awkward,
 that awkwardness is the design telling you the dependency is in the wrong
 direction — the fix is to move the code, not to add an accessor.
 """
+import asyncio
 import time
 
 from nammaoe2bot.pickup.match.events import MatchLifecycle
@@ -76,6 +77,11 @@ class Application:
 		self.channels = {}            # {channel_id: QueueChannel}
 		self.active_queues = []
 		self.active_matches = []
+		# Serializes the short rating-read/id-reservation/active-list boundary
+		# with one-time historical imports. The database counter prevents ID
+		# collisions; this lock also prevents an import from replacing rating
+		# state in the gap before a newly reserved match becomes visible here.
+		self.match_creation_lock = asyncio.Lock()
 		self.waiting_reactions = TTLReactionDict()   # {message_id: callback}
 		self.ready = False
 		self.was_ready = False

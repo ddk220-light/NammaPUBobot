@@ -61,34 +61,36 @@ class Match:
 
 	@classmethod
 	async def new(cls, ctx, queue, players, **kwargs):
-		# Create the Match object
-		ratings = {p['user_id']: p['rating'] for p in await ctx.qc.rating.get_players((p.id for p in players))}
-		match_id = await stats.next_match()
-		match = cls(match_id, queue, ctx.qc, players, ratings, **kwargs)
-		# Prepare the Match object
-		match.maps = match.random_maps(match.cfg['maps'], match.cfg['map_count'], queue.last_maps)
-		match.init_captains(match.cfg['pick_captains'], match.cfg['captains_role_id'])
-		match.init_teams(match.cfg['pick_teams'])
-		if match.ranked:
-			match.states.append(match.WAITING_REPORT)
-		match.qc.app.active_matches.append(match)
+		async with ctx.qc.app.match_creation_lock:
+			# Keep the rating snapshot, id reservation and live-state publication
+			# indivisible with respect to a one-time historical import.
+			ratings = {p['user_id']: p['rating'] for p in await ctx.qc.rating.get_players((p.id for p in players))}
+			match_id = await stats.next_match()
+			match = cls(match_id, queue, ctx.qc, players, ratings, **kwargs)
+			match.maps = match.random_maps(match.cfg['maps'], match.cfg['map_count'], queue.last_maps)
+			match.init_captains(match.cfg['pick_captains'], match.cfg['captains_role_id'])
+			match.init_teams(match.cfg['pick_teams'])
+			if match.ranked:
+				match.states.append(match.WAITING_REPORT)
+			match.qc.app.active_matches.append(match)
 
 	@classmethod
 	async def fake_ranked_match(cls, ctx, queue, qc, winners, losers, draw=False, **kwargs):
 		players = winners + losers
 		if len(set(players)) != len(players):
 			raise Exc.ValueError("Players list can not contains duplicates.")
-		ratings = {p['user_id']: p['rating'] for p in await qc.rating.get_players((p.id for p in players))}
-		match_id = await stats.next_match()
-		match = cls(match_id, queue, qc, players, ratings, pick_teams="premade", **kwargs)
-		match.teams[0].set(winners)
-		match.teams[1].set(losers)
-		if draw:
-			match.winner = None
-		else:
-			match.winner = 0
-			match.scores[match.winner] = 1
-		await stats.register_match_ranked(ctx, match)
+		async with qc.app.match_creation_lock:
+			ratings = {p['user_id']: p['rating'] for p in await qc.rating.get_players((p.id for p in players))}
+			match_id = await stats.next_match()
+			match = cls(match_id, queue, qc, players, ratings, pick_teams="premade", **kwargs)
+			match.teams[0].set(winners)
+			match.teams[1].set(losers)
+			if draw:
+				match.winner = None
+			else:
+				match.winner = 0
+				match.scores[match.winner] = 1
+			await stats.register_match_ranked(ctx, match)
 
 	def serialize(self):
 		return dict(
@@ -122,23 +124,24 @@ class Match:
 			data['teams'][i] = [get(data['players'], id=user_id) for user_id in data['teams'][i]]
 		data['ready_players'] = [get(data['players'], id=user_id) for user_id in data['ready_players']]
 
-		# Create the Match object
-		ratings = {p['user_id']: p['rating'] for p in await qc.rating.get_players((p.id for p in data['players']))}
-		match_id = await stats.next_match()
-		match = cls(match_id, queue, qc, data['players'], ratings, **data['cfg'])
+		async with qc.app.match_creation_lock:
+			# Create the Match object
+			ratings = {p['user_id']: p['rating'] for p in await qc.rating.get_players((p.id for p in data['players']))}
+			match_id = await stats.next_match()
+			match = cls(match_id, queue, qc, data['players'], ratings, **data['cfg'])
 
-		# Set state data
-		for i in range(len(match.teams)):
-			match.teams[i].set(data['teams'][i])
-		match.check_in.ready_players = set(data['ready_players'])
-		match.maps = data['maps']
-		match.state = data['state']
-		match.states = data['states']
-		if match.state == match.CHECK_IN:
-			ctx = SystemContext(qc)
-			await match.check_in.start(ctx)  # Spawn a new check_in message
+			# Set state data
+			for i in range(len(match.teams)):
+				match.teams[i].set(data['teams'][i])
+			match.check_in.ready_players = set(data['ready_players'])
+			match.maps = data['maps']
+			match.state = data['state']
+			match.states = data['states']
+			if match.state == match.CHECK_IN:
+				ctx = SystemContext(qc)
+				await match.check_in.start(ctx)  # Spawn a new check_in message
 
-		match.qc.app.active_matches.append(match)
+			match.qc.app.active_matches.append(match)
 
 	def __init__(self, match_id, queue, qc, players, ratings, **cfg):
 

@@ -27,6 +27,15 @@ class FakeCursor:
 		self.rowcount = 0 if getattr(self.conn, "duplicate_next", False) else 1
 		self.conn.duplicate_next = False
 
+	async def executemany(self, sql, args):
+		rows = [list(row) for row in args]
+		self.executed.append((sql, rows))
+		self.conn.log.append("executemany")
+		if getattr(self.conn, "raise_next", None) is not None:
+			exc, self.conn.raise_next = self.conn.raise_next, None
+			raise exc
+		self.rowcount = len(rows)
+
 	async def fetchone(self):
 		return {"balance": 500}
 
@@ -138,6 +147,27 @@ class TestTransaction:
 		sql, args = conn._cur.executed[0]
 		assert sql.startswith("INSERT IGNORE INTO gold_ledger")
 		assert args == [1, 2]
+
+	def test_insert_many_stays_on_the_transaction_connection(self, adapter_module):
+		a, conn = make_adapter(adapter_module)
+
+		async def run():
+			async with a.transaction() as tx:
+				return await tx.insert_many("matches", [{"a": 1}, {"a": 2}], on_duplicate="ignore")
+		assert asyncio.run(run()) == 2
+		assert conn.log == ["begin", "executemany", "commit"]
+		sql, rows = conn._cur.executed[0]
+		assert sql.startswith("INSERT IGNORE INTO matches")
+		assert rows == [[1], [2]]
+
+	def test_insert_many_empty_input_issues_no_statement(self, adapter_module):
+		a, conn = make_adapter(adapter_module)
+
+		async def run():
+			async with a.transaction() as tx:
+				return await tx.insert_many("matches", [])
+		assert asyncio.run(run()) == 0
+		assert conn.log == ["begin", "commit"]
 
 
 class TestDriverErrorsAreTranslated:

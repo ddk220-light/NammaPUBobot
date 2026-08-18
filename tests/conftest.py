@@ -192,8 +192,9 @@ class _FakeRouter:
 
 
 class _FakeApplication:
-	def __init__(self):
+	def __init__(self, **kwargs):
 		self.router = _FakeRouter()
+		self.client_max_size = kwargs.get("client_max_size")
 
 
 def _fake_json_response(payload=None, status=200):

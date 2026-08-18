@@ -223,6 +223,54 @@ class RatingSeedDB(FakeDB):
 		return 0
 
 
+class MigrationDB(RatingSeedDB):
+	"""Stateful transaction double for a full historical onboarding import."""
+
+	def __init__(self, rows=None, next_match_id=500):
+		super().__init__(rows=rows)
+		self.next_match_id = next_match_id
+		self.bulk_inserted = []
+
+	async def fetchone(self, sql, args=None):
+		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
+		if "SELECT next_id FROM match_counter" in sql:
+			return {"next_id": self.next_match_id}
+		if "MAX(match_id) + 1" in sql:
+			return {"next_id": self.next_match_id}
+		if "FROM community_imports" in sql and "FOR UPDATE" in sql:
+			found = self._matching("community_imports", {"import_id": args[0]})
+			return found[0] if found else None
+		if "COUNT(*) AS n FROM matches" in sql:
+			return {"n": len(self._matching("matches", {"channel_id": args[0]}))}
+		if "COUNT(*) AS n FROM rating_history" in sql:
+			return {"n": len(self._matching("rating_history", {"channel_id": args[0]}))}
+		return None
+
+	async def fetchall(self, sql, args=None):
+		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
+		if "FROM player_ratings" in sql:
+			return [dict(row) for row in self._matching(
+				"player_ratings", {"channel_id": args[0]})]
+		return []
+
+	async def execute(self, sql, args=None):
+		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
+		if sql.startswith("UPDATE match_counter SET next_id"):
+			self.next_match_id = int(args[0])
+			return 1
+		return await super().execute(sql, args)
+
+	async def insert_many(self, table, rows, on_duplicate=None):
+		batch = [dict(row) for row in rows]
+		self.bulk_inserted.append((table, batch, on_duplicate))
+		self.rows.setdefault(table, []).extend(batch)
+		self.inserted.extend((table, row) for row in batch)
+		return len(batch)
+
+
 def install_db(monkeypatch, fake):
 	""" Point the whole web read path at `fake`, two ways, because one is not
 	enough:
@@ -1376,6 +1424,112 @@ def test_identity_import_apply_adds_only_new_or_unowned_profiles(monkeypatch):
 	assert invalidations == [True]
 
 
+def _historical_import_rows():
+	return {
+		"source_name": "complete-export.zip",
+		"timezone": "UTC",
+		"archive_sha256": "a" * 64,
+		"matches": [{
+			"source_match_id": 7, "queue_name": "nomad", "reported_at": 1_700_000_000,
+			"winner": 0, "alpha_score": 1, "beta_score": 0, "maps": "Nomad",
+		}],
+		"players": [
+			{"user_id": 42, "nick": "Alice", "is_hidden": 0, "rating": 1510,
+			 "deviation": 90, "wins": 8, "losses": 3, "draws": 0, "streak": 2,
+			 "last_ranked_match_at": 1_700_000_000},
+			{"user_id": 43, "nick": "Bob", "is_hidden": 0, "rating": 1490,
+			 "deviation": 95, "wins": 3, "losses": 8, "draws": 0, "streak": -2,
+			 "last_ranked_match_at": 1_700_000_000},
+		],
+		"match_players": [
+			{"source_match_id": 7, "user_id": 42, "team": 0},
+			{"source_match_id": 7, "user_id": 43, "team": 1},
+		],
+		"rating_history": [
+			{"user_id": 42, "at": 1_700_000_001, "rating_before": 1500,
+			 "rating_change": 10, "deviation_before": 100, "deviation_change": -10,
+			 "source_match_id": 7, "reason": "nomad"},
+			{"user_id": 43, "at": 1_700_000_001, "rating_before": 1500,
+			 "rating_change": -10, "deviation_before": 100, "deviation_change": -5,
+			 "source_match_id": 7, "reason": "nomad"},
+		],
+	}
+
+
+def _historical_import_setup(monkeypatch, fake):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	rating = types.SimpleNamespace(channel_id=100, init_rp=1000, init_deviation=200)
+	queue_channel = types.SimpleNamespace(
+		guild_id=777, queues=[], rating=rating, app=web.dc.app)
+	_install_discord(
+		monkeypatch, [alpha], channels={100: channel}, queue_channels={100: queue_channel})
+	monkeypatch.setattr(web.dc.app, "active_matches", [])
+	monkeypatch.setattr(
+		web.pubobot_migration, "parse_archive", lambda _payload: _historical_import_rows())
+	install_db(monkeypatch, fake)
+
+
+def test_historical_import_preflight_blocks_nonempty_or_disagreeing_targets(monkeypatch):
+	fake = MigrationDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"matches": [{"match_id": 99, "channel_id": 100}],
+		"player_ratings": [{
+			"channel_id": 100, "user_id": 42, "rating": 1400, "deviation": 90,
+			"wins": 0, "losses": 0, "draws": 0, "streak": 0,
+			"last_ranked_match_at": None,
+		}],
+	})
+	_historical_import_setup(monkeypatch, fake)
+
+	response = asyncio.run(web.handle_api_pubobot_migration_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={"file_name": "complete-export.zip"},
+		match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 200
+	assert response.payload["can_apply"] is False
+	blockers = response.payload["preflight"]["blockers"]
+	assert "already contains recorded matches" in " ".join(blockers)
+	assert "rating different from the archive" in " ".join(blockers)
+
+
+def test_historical_import_remaps_ids_and_writes_every_table_atomically(monkeypatch):
+	fake = MigrationDB(next_match_id=500, rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+	})
+	_historical_import_setup(monkeypatch, fake)
+	base_request = dict(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		match_info={"community_id": "9", "channel_id": "100"})
+	preview = asyncio.run(web.handle_api_pubobot_migration_preview(
+		request(json_body={"file_name": "complete-export.zip"}, **base_request))).payload
+
+	response = asyncio.run(web.handle_api_pubobot_migration_apply(request(
+		json_body={"file_name": "complete-export.zip", "digest": preview["digest"]},
+		**base_request)))
+
+	assert response.status == 200
+	assert response.payload["first_match_id"] == 500
+	assert response.payload["next_match_id"] == 501
+	assert fake.next_match_id == 501
+	assert fake.rows["matches"][0]["match_id"] == 500
+	assert {row["match_id"] for row in fake.rows["match_players"]} == {500}
+	assert {row["match_id"] for row in fake.rows["rating_history"]} == {500}
+	assert fake.rows["community_import_match_map"] == [{
+		"import_id": preview["digest"], "community_id": 9, "channel_id": 100,
+		"source_match_id": 7, "match_id": 500,
+	}]
+	assert fake.rows["community_imports"][0]["created_by"] == 42
+	assert [table for table, _rows, _mode in fake.bulk_inserted] == [
+		"matches", "player_ratings", "match_players", "rating_history",
+		"community_import_match_map"]
+
+
 def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	paths = {path for _method, path, _handler in web.create_app().router.routes}
 	assert "/api/admin/communities" in paths
@@ -1386,6 +1540,8 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/config" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/preview" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/apply" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/preview" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/apply" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/queues/{queue_name}/config" in paths
 	page = Path(_REPO_ROOT, "nammaoe2bot", "web", "page.html").read_text()
 	assert "function adminCommunityApi(communityId, path)" in page
@@ -1395,8 +1551,11 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "function renderRatingSeedPreview()" in page
 	assert "function openIdentityImport()" in page
 	assert "function renderIdentityPreview()" in page
+	assert "function openHistoricalMigration(channelId)" in page
+	assert "function renderHistoricalMigrationPreview()" in page
 	assert "'/ratings/seed/'+action" in page
 	assert "'/identities/import/'+action" in page
+	assert "'/migration/pubobot/'+action" in page
 	assert "It never overwrites an existing rating" in page
 	assert "publicCommunityId = String(id)" in page
 	assert "authFetch('/api/guilds')" not in page

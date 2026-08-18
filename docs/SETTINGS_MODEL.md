@@ -24,9 +24,11 @@ but use the same resolver and authorization checks.
 `GET /api/admin/communities/<community_id>/overview` returns three blocks:
 
 - **Onboarding** reports the required setup sequence: load a pickup channel,
-  create a queue, and seed player ratings when a ranked queue exists. Identity
-  linking is currently recommended because lobby matching and replay-derived
-  player analysis benefit from it, but it is not required for basic queues.
+  create a queue, and seed player ratings when a ranked queue exists. A full
+  historical import is offered as an optional path before live play begins.
+  Identity linking is currently recommended because lobby matching and
+  replay-derived player analysis benefit from it, but it is not required for
+  basic queues.
 - **Capabilities** reports both status and the actual control scope. A feature
   may be controlled per community, channel, queue, deployment, or be built in.
 - **Diagnostics** compares persisted enrollment, live bot configuration and
@@ -69,11 +71,49 @@ initialize an existing empty rating, but it cannot replace a live rating even
 if another write races the preview. Each applied row gets a `rating_history`
 audit entry identifying the web administrator.
 
-This is deliberately a **ratings-only seed**. Pubobot win/loss counts, matches,
-and rating history are not presented as current NammaAoe2Bot records. The
-offline `utils/import_pubobot_export.py` remains the operator tool for a full
-historical migration. Uploads are capped at 700 KB compressed, 2 MB expanded,
-25 ZIP members, and 500 player rows.
+This remains deliberately a **ratings-only seed**. It does not fabricate
+matches, win/loss counts, or historical rating changes. Uploads are capped at
+700 KB compressed, 2 MB expanded, 25 ZIP members, and 500 player rows.
+
+## Full historical migration
+
+A separate one-time workflow imports a complete Pubobot export into a new
+pickup channel:
+
+```
+/api/admin/communities/<community_id>/channels/<channel_id>/migration/pubobot/preview
+/api/admin/communities/<community_id>/channels/<channel_id>/migration/pubobot/apply
+```
+
+The ZIP must contain `qc_matches.csv`, `qc_players.csv`,
+`qc_player_matches.csv`, and `qc_rating_history.csv`. The administrator also
+chooses the timezone in which the export's naive timestamps were written. The
+parser reads members in memory, accepts UTF-8 only, validates relational
+references and duplicate keys, and enforces limits of 5 MB compressed, 25 MB
+expanded, 40 archive members, 10,000 matches, 2,000 players, and 100,000 rows
+in each relation/history export.
+
+This path intentionally does not merge two live histories. Preview and apply
+both require:
+
+- the pickup channel owns its rating table rather than sharing another
+  channel's rating host;
+- no recorded match exists in the target pickup channel;
+- no rating history exists in the target rating channel;
+- no match is active in the pickup channel; and
+- any existing ratings-only seed has zero activity and exactly matches the
+  archive's rating/deviation snapshot.
+
+Apply reparses the archive, verifies the preview digest, and rechecks the
+database state inside a single transaction. Legacy match IDs are never reused
+directly: the importer locks `match_counter`, reserves one consecutive global
+range, and rewrites matches, roster rows, and rating-history references to the
+new IDs. Normal match creation uses that same locked counter. An import ledger
+and source-to-target match map make the operation auditable and prevent the
+same archive from being applied twice to the same target.
+
+The offline `utils/import_pubobot_export.py` remains available for operator-led
+recovery work, but guided community onboarding should use the web preflight.
 
 ## Identity onboarding
 
@@ -132,6 +172,6 @@ are changed accordingly.
 - community-level feature policy and public/private dashboard settings;
 - a tenant-safe quiz scheduler and editor;
 - guided resolution for identity ownership conflicts;
-- full historical migration UI and one-time AoE team-rating seeding;
+- one-time AoE team-rating seeding;
 - actionable diagnostics and repair flows;
 - the full basic/advanced settings information architecture.

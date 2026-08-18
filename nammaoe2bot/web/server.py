@@ -61,6 +61,7 @@ from nammaoe2bot.derived import game_labels, rollups
 from nammaoe2bot.ingest import scoring as rs_scoring
 from nammaoe2bot.features.scouting.tag_leaderboard import tag_leaderboard_score
 from nammaoe2bot.web import onboarding
+from nammaoe2bot.web import pubobot_migration
 
 # --- Paths ---
 HTML_PATH = os.path.join(os.path.dirname(__file__), 'page.html')
@@ -175,6 +176,39 @@ db.ensure_table(dict(
 		dict(cname="expires_at", ctype=db.types.int, notnull=True),
 	],
 	primary_keys=["state"],
+))
+
+db.ensure_table(dict(
+	tname="community_imports",
+	columns=[
+		dict(cname="import_id", ctype=db.types.str),
+		dict(cname="community_id", ctype=db.types.int, notnull=True),
+		dict(cname="channel_id", ctype=db.types.int, notnull=True),
+		dict(cname="rating_channel_id", ctype=db.types.int, notnull=True),
+		dict(cname="kind", ctype=db.types.str, notnull=True),
+		dict(cname="source_name", ctype=db.types.str, notnull=True),
+		dict(cname="timezone", ctype=db.types.str, notnull=True),
+		dict(cname="created_by", ctype=db.types.int, notnull=True),
+		dict(cname="created_at", ctype=db.types.int, notnull=True),
+		dict(cname="match_count", ctype=db.types.int, notnull=True),
+		dict(cname="player_count", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["import_id"],
+	indexes=[("community_imports_tenant", ["community_id", "created_at"])],
+))
+
+db.ensure_table(dict(
+	tname="community_import_match_map",
+	columns=[
+		dict(cname="import_id", ctype=db.types.str, notnull=True),
+		dict(cname="community_id", ctype=db.types.int, notnull=True),
+		dict(cname="channel_id", ctype=db.types.int, notnull=True),
+		dict(cname="source_match_id", ctype=db.types.int, notnull=True),
+		dict(cname="match_id", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["import_id", "source_match_id"],
+	unique_keys=[("community_import_match_target", ["match_id"])],
+	indexes=[("community_import_match_tenant", ["community_id", "channel_id"])],
 ))
 
 
@@ -3061,6 +3095,11 @@ async def _admin_community_overview(admin):
 			"queues", "Create a pickup queue", bool(queues),
 			f"{len(queues)} queue(s) are available across the loaded channels."),
 		_overview_step(
+			"history", "Migrate historical matches (optional)", bool(match_count),
+			(f"{match_count} recorded match(es) are already available."
+			 if match_count else "Import a complete Pubobot export before this community starts playing."),
+			required=False, action="migrate_history" if loaded and not match_count else None),
+		_overview_step(
 			"ratings", "Seed player ratings", bool(player_count) or not rating_required,
 			(f"{player_count} player(s) currently have a seeded rating."
 			 if rating_required else "No ranked queue currently requires a rating seed."),
@@ -3558,6 +3597,255 @@ async def handle_api_identity_import_apply(request):
 	return web.json_response({"ok": True, "applied": applied, "skipped_after_preview": raced_out})
 
 
+class _MigrationPreflightError(RuntimeError):
+	pass
+
+
+def _migration_rating_blockers(existing_rows, source_players):
+	"""Refuse to replace any rating state not created by ratings-only seeding."""
+	source = {int(row["user_id"]): row for row in source_players}
+	blockers = []
+	for current in existing_rows or []:
+		user_id = int(current["user_id"])
+		incoming = source.get(user_id)
+		if incoming is None:
+			blockers.append(f"Existing rated user {user_id} is absent from the archive.")
+			continue
+		activity = any(int(current.get(key) or 0) for key in ("wins", "losses", "draws", "streak"))
+		activity = activity or current.get("last_ranked_match_at") is not None
+		if activity:
+			blockers.append(f"User {user_id} already has live rating activity.")
+			continue
+		if current.get("rating") is None:
+			continue
+		if (int(current["rating"]) != int(incoming.get("rating") or 0)
+		        or int(current.get("deviation") or 0) != int(incoming.get("deviation") or 0)):
+			blockers.append(f"User {user_id} has a rating different from the archive snapshot.")
+	return blockers[:20]
+
+
+async def _pubobot_migration_preview(context, payload):
+	parsed = pubobot_migration.parse_archive(payload)
+	pickup = context.channel
+	import_id = pubobot_migration.migration_digest(
+		pickup.channel_id, context.target_channel_id, parsed)
+	already = await db.select_one(
+		["import_id", "created_at"], "community_imports", where={"import_id": import_id})
+	match_count = await db.fetchone(
+		"SELECT COUNT(*) AS n FROM matches WHERE channel_id=%s", [pickup.channel_id])
+	history_count = await db.fetchone(
+		"SELECT COUNT(*) AS n FROM rating_history WHERE channel_id=%s", [context.target_channel_id])
+	existing_ratings = await db.select(
+		["user_id", "rating", "deviation", "wins", "losses", "draws", "streak", "last_ranked_match_at"],
+		"player_ratings", where={"channel_id": context.target_channel_id})
+	blockers = []
+	if context.target_channel_id != pickup.channel_id:
+		blockers.append("Full history migration requires the pickup channel to own its rating table.")
+	if int((match_count or {}).get("n") or 0):
+		blockers.append("Target pickup channel already contains recorded matches.")
+	if int((history_count or {}).get("n") or 0):
+		blockers.append("Target rating channel already contains rating history.")
+	blockers.extend(_migration_rating_blockers(existing_ratings, parsed["players"]))
+	if already:
+		blockers.append("This exact archive has already been imported into this channel.")
+	if not parsed["matches"] or not parsed["players"]:
+		blockers.append("Archive must contain at least one match and one player.")
+	if any(
+		int(getattr(getattr(match, "qc", None), "id", 0)) == pickup.channel_id
+		for match in pickup.queue_channel.app.active_matches):
+		blockers.append("A match is currently active in the target channel.")
+
+	return {
+		"community": pickup.admin.payload(),
+		"target": {
+			"channel_id": str(pickup.channel_id),
+			"channel_name": pickup.channel.name,
+			"rating_channel_id": str(context.target_channel_id),
+		},
+		"source": parsed["source_name"],
+		"timezone": parsed["timezone"],
+		"summary": {
+			"matches": len(parsed["matches"]),
+			"players": len(parsed["players"]),
+			"player_matches": len(parsed["match_players"]),
+			"rating_history": len(parsed["rating_history"]),
+		},
+		"preflight": {
+			"status": "ready" if not blockers else "blocked",
+			"blockers": blockers,
+			"existing_seed_rows": len(existing_ratings or []),
+			"match_ids": "Source IDs will be remapped into one atomically reserved global range.",
+		},
+		"digest": import_id,
+		"can_apply": not blockers,
+	}, parsed
+
+
+async def _pubobot_migration_request(request):
+	session = await _get_session(request)
+	if not session:
+		return None, web.json_response({"error": "Not logged in"}, status=401)
+	context, error = await _admin_rating_context(request, session)
+	if error is not None:
+		return None, error
+	if not _check_csrf(request, session):
+		return None, web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return None, web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	try:
+		preview, parsed = await _pubobot_migration_preview(context, payload)
+	except pubobot_migration.MigrationInputError as exc:
+		return None, web.json_response({"error": str(exc)}, status=400)
+	return (session, context, payload, preview, parsed), None
+
+
+async def handle_api_pubobot_migration_preview(request):
+	result, error = await _pubobot_migration_request(request)
+	if error is not None:
+		return error
+	return web.json_response(result[3])
+
+
+async def _migration_transaction_preflight(tx, context, parsed, import_id):
+	pickup = context.channel
+	if any(
+		int(getattr(getattr(match, "qc", None), "id", 0)) == pickup.channel_id
+		for match in pickup.queue_channel.app.active_matches):
+		raise _MigrationPreflightError("A match started after migration preview.")
+	if await tx.fetchone(
+			"SELECT import_id FROM community_imports WHERE import_id=%s FOR UPDATE", [import_id]):
+		raise _MigrationPreflightError("This exact archive has already been imported.")
+	match_count = await tx.fetchone(
+		"SELECT COUNT(*) AS n FROM matches WHERE channel_id=%s", [pickup.channel_id])
+	if int((match_count or {}).get("n") or 0):
+		raise _MigrationPreflightError("Target channel received a match after preview.")
+	history_count = await tx.fetchone(
+		"SELECT COUNT(*) AS n FROM rating_history WHERE channel_id=%s", [context.target_channel_id])
+	if int((history_count or {}).get("n") or 0):
+		raise _MigrationPreflightError("Target channel received rating history after preview.")
+	existing = await tx.fetchall(
+		"SELECT user_id, rating, deviation, wins, losses, draws, streak, last_ranked_match_at "
+		"FROM player_ratings WHERE channel_id=%s FOR UPDATE",
+		[context.target_channel_id])
+	blockers = _migration_rating_blockers(existing, parsed["players"])
+	if blockers:
+		raise _MigrationPreflightError(blockers[0])
+
+
+async def handle_api_pubobot_migration_apply(request):
+	result, error = await _pubobot_migration_request(request)
+	if error is not None:
+		return error
+	session, context, payload, preview, parsed = result
+	pickup = context.channel
+	provided_digest = payload.get("digest") if isinstance(payload, dict) else None
+	if not isinstance(provided_digest, str) or not secrets.compare_digest(provided_digest, preview["digest"]):
+		return web.json_response({"error": "Migration archive changed after preview; preview it again"}, status=409)
+	if not preview["can_apply"]:
+		return web.json_response({"error": "Migration preflight is blocked", "blockers": preview["preflight"]["blockers"]}, status=409)
+
+	community_id = pickup.admin.community.community_id
+	import_id = preview["digest"]
+	now = int(time.time())
+	try:
+		async with pickup.queue_channel.app.match_creation_lock:
+			async with db.transaction() as tx:
+				counter = await tx.fetchone("SELECT next_id FROM match_counter FOR UPDATE")
+				if counter is None:
+					maximum = await tx.fetchone(
+						"SELECT COALESCE(MAX(match_id) + 1, 0) AS next_id FROM matches")
+					first_match_id = int((maximum or {}).get("next_id") or 0)
+					await tx.insert("match_counter", {"next_id": first_match_id})
+				else:
+					first_match_id = int(counter["next_id"])
+				await _migration_transaction_preflight(tx, context, parsed, import_id)
+
+				source_ids = sorted(row["source_match_id"] for row in parsed["matches"])
+				match_ids = {source_id: first_match_id + index for index, source_id in enumerate(source_ids)}
+				next_id = first_match_id + len(source_ids)
+				await tx.execute("UPDATE match_counter SET next_id=%s", [next_id])
+
+				matches = [{
+					"match_id": match_ids[row["source_match_id"]],
+					"channel_id": pickup.channel_id,
+					"queue_id": None,
+					"queue_name": row["queue_name"],
+					"reported_at": row["reported_at"],
+					"alpha_name": "Alpha",
+					"beta_name": "Beta",
+					"ranked": 1,
+					"winner": row["winner"],
+					"alpha_score": row["alpha_score"],
+					"beta_score": row["beta_score"],
+					"maps": row["maps"],
+				} for row in parsed["matches"]]
+				players = [{
+					"channel_id": context.target_channel_id,
+					**row,
+				} for row in parsed["players"]]
+				nicks = {row["user_id"]: row["nick"] for row in parsed["players"]}
+				match_players = [{
+					"match_id": match_ids[row["source_match_id"]],
+					"channel_id": pickup.channel_id,
+					"user_id": row["user_id"],
+					"nick": nicks[row["user_id"]],
+					"team": row["team"],
+				} for row in parsed["match_players"]]
+				history = [{
+					"channel_id": context.target_channel_id,
+					"user_id": row["user_id"],
+					"at": row["at"],
+					"rating_before": row["rating_before"],
+					"rating_change": row["rating_change"],
+					"deviation_before": row["deviation_before"],
+					"deviation_change": row["deviation_change"],
+					"match_id": match_ids[row["source_match_id"]] if row["source_match_id"] is not None else None,
+					"reason": row["reason"],
+				} for row in parsed["rating_history"]]
+				mapping = [{
+					"import_id": import_id,
+					"community_id": community_id,
+					"channel_id": pickup.channel_id,
+					"source_match_id": source_id,
+					"match_id": target_id,
+				} for source_id, target_id in match_ids.items()]
+
+				await tx.insert_many("matches", matches)
+				await tx.insert_many("player_ratings", players, on_duplicate="replace")
+				await tx.insert_many("match_players", match_players)
+				await tx.insert_many("rating_history", history)
+				await tx.insert_many("community_import_match_map", mapping)
+				await tx.insert("community_imports", {
+					"import_id": import_id,
+					"community_id": community_id,
+					"channel_id": pickup.channel_id,
+					"rating_channel_id": context.target_channel_id,
+					"kind": "pubobot_full",
+					"source_name": parsed["source_name"],
+					"timezone": parsed["timezone"],
+					"created_by": int(session["user_id"]),
+					"created_at": now,
+					"match_count": len(matches),
+					"player_count": len(players),
+				})
+	except _MigrationPreflightError as exc:
+		return web.json_response({"error": str(exc)}, status=409)
+	except Exception as exc:
+		log.error(
+			f"Historical migration failed for community={community_id} channel={pickup.channel_id}: {exc}")
+		return web.json_response({"error": "Historical migration could not be applied"}, status=500)
+	return web.json_response({
+		"ok": True,
+		"import_id": import_id,
+		"matches": len(parsed["matches"]),
+		"players": len(parsed["players"]),
+		"first_match_id": first_match_id,
+		"next_match_id": next_id,
+	})
+
+
 async def handle_api_guilds(request):
 	"""Legacy alias for the pre-community settings client."""
 	session = await _get_session(request)
@@ -3774,7 +4062,10 @@ async def handle_lobby_spectate(request):
 # ─── App setup ───
 
 def create_app():
-	app = web.Application()
+	# Full onboarding archives are base64 JSON (5 MB compressed becomes about
+	# 6.7 MB on the wire). Keep an explicit ceiling above that payload while
+	# still rejecting unbounded request bodies before any parser runs.
+	app = web.Application(client_max_size=8 * 1024 * 1024)
 	app.router.add_get('/', handle_index)
 	# Health check (Railway healthcheckPath)
 	app.router.add_get('/health', handle_health)
@@ -3828,6 +4119,12 @@ def create_app():
 	app.router.add_post(
 		'/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/apply',
 		handle_api_rating_seed_apply)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/preview',
+		handle_api_pubobot_migration_preview)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/apply',
+		handle_api_pubobot_migration_apply)
 	app.router.add_get(
 		'/api/admin/communities/{community_id}/channels/{channel_id}/queues/{queue_name}/config',
 		handle_api_queue_config)

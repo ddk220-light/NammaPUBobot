@@ -35,6 +35,8 @@ software and remains so.
   stored community mapping, and require a session CSRF token for mutations.
   Rating onboarding supports manual rows, UTF-8 CSVs, and ratings-only
   Pubobot ZIP previews without overwriting an existing player rating.
+  A separate guarded migration can atomically import a complete historical
+  Pubobot export into an empty channel while remapping legacy match IDs.
   Identity onboarding maps current guild members additively and blocks bulk
   reassignment of a profile already owned by another Discord account.
   The current control scopes and onboarding contract are documented in

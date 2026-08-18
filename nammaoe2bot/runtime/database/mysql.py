@@ -65,6 +65,13 @@ class Transaction:
 			self._adapter.wrap_exc(e)
 		return self._cur.rowcount
 
+	async def executemany(self, *args):
+		try:
+			await self._cur.executemany(*args)
+		except mysqlErr.Error as e:
+			self._adapter.wrap_exc(e)
+		return self._cur.rowcount
+
 	async def fetchone(self, *args):
 		try:
 			await self._cur.execute(*args)
@@ -82,6 +89,13 @@ class Transaction:
 	async def insert(self, table, d, on_duplicate=None):
 		request = self._adapter._mysql_insert(d.keys(), table, on_duplicate)
 		return await self.execute(request, list(d.values()))
+
+	async def insert_many(self, table, rows, on_duplicate=None):
+		rows = list(rows)
+		if not rows:
+			return 0
+		request = self._adapter._mysql_insert(rows[0].keys(), table, on_duplicate)
+		return await self.executemany(request, [list(row.values()) for row in rows])
 
 
 class Adapter:

@@ -265,6 +265,10 @@ REGISTRY = {
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("nammaoe2bot/web/server.py",), retention="forever"),
 	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("nammaoe2bot/web/server.py",), retention="forever"),
+	"community_imports": dict(
+		layer="ops", tenancy="community", writers=("nammaoe2bot/web/server.py",), retention="forever"),
+	"community_import_match_map": dict(
+		layer="link", tenancy="community", writers=("nammaoe2bot/web/server.py",), retention="forever"),
 }
 
 ALL_TABLES = frozenset(REGISTRY)
