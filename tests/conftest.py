@@ -169,15 +169,18 @@ class _FakeResponse:
 		self.status = status
 		self.text = text
 		self.content_type = content_type
+		self.headers = {}
 		# aiohttp's Response carries the cookie jar the auth handlers write to.
 		self.cookies = {}
 		self.deleted_cookies = []
+		self.deleted_cookie_options = []
 
 	def set_cookie(self, name, value, **kwargs):
 		self.cookies[name] = dict(value=value, **kwargs)
 
 	def del_cookie(self, name, **kwargs):
 		self.deleted_cookies.append(name)
+		self.deleted_cookie_options.append((name, dict(kwargs)))
 		self.cookies.pop(name, None)
 
 
@@ -196,6 +199,7 @@ class _FakeApplication:
 	def __init__(self, **kwargs):
 		self.router = _FakeRouter()
 		self.client_max_size = kwargs.get("client_max_size")
+		self.middlewares = list(kwargs.get("middlewares") or [])
 
 
 def _fake_json_response(payload=None, status=200):

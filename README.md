@@ -45,6 +45,11 @@ software and remains so.
   Pubobot export into an empty channel while remapping legacy match IDs.
   Identity onboarding maps current guild members additively and blocks bulk
   reassignment of a profile already owned by another Discord account.
+  Admins can run tenant-scoped diagnostics for channel drift, identity and
+  replay coverage, ledger integrity, duplicate quiz settings, and stuck
+  background work, with repair links where a web action exists. OAuth state is
+  single-use, settings mutations are CSRF protected, and authenticated
+  responses are hardened against caching and browser embedding.
   The current control scopes and onboarding contract are documented in
   [docs/SETTINGS_MODEL.md](docs/SETTINGS_MODEL.md).
 

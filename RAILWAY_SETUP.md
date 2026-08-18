@@ -41,9 +41,15 @@ In the **bot service** → **"Variables"** tab, add:
 | `DC_SLASH_SERVERS` | `""` | Comma-separated server IDs for slash commands |
 | `LOG_LEVEL` | `INFO` | `CHAT`, `DEBUG`, `COMMANDS`, `INFO`, or `ERRORS` |
 | `STATUS` | `NammaAoe2Bot` | Bot presence/status text |
-| `REPLAY_INGEST_ENABLED` | `True` | Download and parse completed-match replays |
+| `DEPLOYMENT_MODE` | `self_hosted` | `hosted` hard-disables replay compute; `self_hosted` permits the local pipeline |
+| `REPLAY_INGEST_ENABLED` | `True` | Operator replay switch; effective only in `self_hosted` mode and for communities that opt in |
 | `FLAGSHIP_GUILD_IDS` | `""` | Comma-separated guild IDs that retain full replay detail |
-| `WS_ROOT_URL` | `""` | Public dashboard base URL, required for lobby Join/Spectate buttons |
+| `WS_ROOT_URL` | `""` | HTTPS public dashboard base URL, required for OAuth and lobby Join/Spectate buttons |
+
+For the admin dashboard, create an OAuth redirect in the Discord Developer
+Portal at `<WS_ROOT_URL>/auth/callback`, then set `DC_CLIENT_SECRET` and the
+same `WS_ROOT_URL` on Railway. Do not include a trailing callback path in
+`WS_ROOT_URL` itself.
 
 ## 5. Deploy
 

@@ -422,14 +422,14 @@ td.et_remove { width: 24px; text-align: center; }
   background: rgba(185,187,190,0.12); color: #c8c9cd; border: 1px solid rgba(185,187,190,0.22);
 }
 .overview-badge.active, .overview-badge.complete, .overview-badge.ready, .overview-badge.healthy,
-.overview-badge.new, .overview-badge.unrated {
+.overview-badge.new, .overview-badge.unrated, .overview-badge.ok {
   color: #9ce5b5; background: rgba(87,217,139,0.1); border-color: rgba(87,217,139,0.28);
 }
 .overview-badge.required, .overview-badge.setup_required, .overview-badge.attention, .overview-badge.invalid,
-.overview-badge.conflict, .overview-badge.not_member {
+.overview-badge.conflict, .overview-badge.not_member, .overview-badge.critical {
   color: #ffb0b4; background: rgba(255,109,115,0.1); border-color: rgba(255,109,115,0.28);
 }
-.overview-badge.recommended, .overview-badge.partial {
+.overview-badge.recommended, .overview-badge.partial, .overview-badge.warning {
   color: #f0d587; background: rgba(224,185,67,0.1); border-color: rgba(224,185,67,0.28);
 }
 .overview-metrics { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-top: 0.55rem; }
@@ -453,6 +453,9 @@ td.et_remove { width: 24px; text-align: center; }
   padding: 0.42rem 0.72rem; font: 700 0.76rem 'Outfit', sans-serif; cursor: pointer;
 }
 .setup-action:hover, .seed-button:hover { background: #4679dd; }
+.overview-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.7rem; }
+.diagnostic-checks { display: grid; gap: 0.65rem; }
+.diagnostic-check .overview-metrics { margin-bottom: 0.55rem; }
 .seed-button.secondary { background: #2f3136; border-color: #5a5f69; color: #dcddde; }
 .seed-button.secondary:hover { background: #3a3d43; }
 .seed-button.apply { background: #3d724f; border-color: #4d8e63; }
@@ -1434,7 +1437,7 @@ var playerDetailData = null, miniSort = {
 var dashGuilds = [], dashChannels = [], dashQueues = [];
 var dashGuildId = null, dashGuildName = null;
 var dashChannelId = null, dashChannelName = null;
-var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null, dashPolicyData = null, dashQuizData = null;
+var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null, dashPolicyData = null, dashQuizData = null, dashDiagnosticsData = null;
 var dashRatingSeedSource = null, dashRatingSeedPreview = null;
 var dashTeamRatingPreview = null;
 var dashIdentitySource = null, dashIdentityPreview = null;
@@ -3904,7 +3907,7 @@ function renderBreadcrumb() {
 
 function resetDashboard() {
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null;
-  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashActiveTab=null;
+  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashDiagnosticsData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -3921,7 +3924,7 @@ async function loadDashboard() {
     return;
   }
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
-  dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null; dashPolicyData=null; dashQuizData=null;
+  dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashDiagnosticsData=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -3945,7 +3948,7 @@ async function loadDashboard() {
 async function selectGuild(id, name) {
   dashGuildId=id; dashGuildName=name; dashChannelId=null; dashChannelName=null;
   dashQueueName=null; dashChannels=[]; dashQueues=[];
-  dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashActiveTab=null;
+  dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashDiagnosticsData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -4004,7 +4007,8 @@ function renderCommunityOverview() {
   var html = '<div class="community-overview">';
   html += '<div class="overview-hero"><div><h1>'+esc((data.community||{}).name || dashGuildName)+'</h1>';
   html += '<p>Setup, feature availability and tenant-scoped runtime health.</p>';
-  html += '<button type="button" class="setup-action" onclick="openCommunityPolicy()">Access &amp; compute</button></div>';
+  html += '<div class="overview-actions"><button type="button" class="setup-action" onclick="openCommunityDiagnostics()">Run diagnostics</button>';
+  html += '<button type="button" class="setup-action" onclick="openCommunityPolicy()">Access &amp; compute</button></div></div>';
   html += '<div class="overview-progress"><strong>'+complete+' / '+required+'</strong>required setup steps';
   html += '<div class="overview-progress-bar"><span style="width:'+progress+'%"></span></div></div></div>';
 
@@ -4048,6 +4052,52 @@ function renderCommunityOverview() {
     html += '<div class="diagnostic-cell"><span>'+esc(item[0])+'</span><b>'+esc(item[1])+'</b></div>';
   });
   html += '</div></section></div>';
+  content.innerHTML = html;
+}
+
+async function openCommunityDiagnostics() {
+  var content = document.getElementById('dash-content');
+  content.innerHTML = '<div class="loading">Running tenant-scoped diagnostics...</div>';
+  try {
+    var resp = await authFetch(adminCommunityApi(dashGuildId, '/diagnostics'));
+    var data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || ('HTTP '+resp.status));
+    dashDiagnosticsData = data;
+    renderCommunityDiagnostics();
+  } catch(e) {
+    content.innerHTML = '<div class="error">Diagnostics failed: '+esc(e.message)+'</div>';
+  }
+}
+
+function runDiagnosticAction(target) {
+  if (target === 'map_identities') return openIdentityImport();
+  if (target === 'access_policy') return openCommunityPolicy();
+  if (target === 'quiz') return openQuizSettings();
+}
+
+function renderCommunityDiagnostics() {
+  var content = document.getElementById('dash-content');
+  var data = dashDiagnosticsData;
+  if (!data) return openCommunityDiagnostics();
+  var summary = data.summary || {};
+  var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Community diagnostics</h1>';
+  html += '<p>Live, aggregate checks restricted to '+esc((data.community||{}).name || dashGuildName)+'. No member or credential data is exposed.</p></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<div class="overview-actions"><span class="overview-badge '+esc(data.status)+'">'+esc(overviewStatusLabel(data.status))+'</span>';
+  html += '<span class="overview-metric"><b>'+esc(summary.critical || 0)+'</b>critical</span>';
+  html += '<span class="overview-metric"><b>'+esc(summary.warnings || 0)+'</b>warnings</span>';
+  html += '<button type="button" class="setup-action" onclick="openCommunityDiagnostics()">Run again</button></div>';
+  html += '<section class="overview-section diagnostic-checks">';
+  (data.checks || []).forEach(function(check) {
+    html += '<article class="overview-card diagnostic-check"><div class="overview-card-top"><h3>'+esc(check.title)+'</h3>';
+    html += '<span class="overview-badge '+esc(check.status)+'">'+esc(overviewStatusLabel(check.status))+'</span></div>';
+    html += '<p>'+esc(check.detail)+'</p><div class="overview-metrics">'+overviewMetrics(check.metrics)+'</div>';
+    if (check.action && check.action.target) {
+      html += '<button type="button" class="setup-action" onclick="runDiagnosticAction(\''+esc(check.action.target)+'\')">'+esc(check.action.label || 'Open settings')+'</button>';
+    }
+    html += '</article>';
+  });
+  html += '</section></div>';
   content.innerHTML = html;
 }
 

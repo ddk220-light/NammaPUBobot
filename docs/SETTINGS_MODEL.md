@@ -38,6 +38,46 @@ All stored counts either carry `community_id` directly or join through
 `community_channels`. Global replay and identity tables are never counted in
 isolation.
 
+### Actionable diagnostics
+
+`GET /api/admin/communities/<community_id>/diagnostics` runs deeper live checks
+on demand. It is protected by the same OAuth and Manage Guild boundary as the
+settings API and returns aggregate counts only. The dashboard currently checks:
+
+- persisted, runtime, and Discord channel consistency, including runtime
+  channels that are not enrolled;
+- recent player-to-AoE-profile coverage;
+- replay parse states that need operator attention;
+- cached gold balances against the append-only ledger, including ledger users
+  missing a cache row;
+- duplicate enabled quiz rows;
+- old non-terminal prediction and lobby work; and
+- the effective hosted/self-hosted and community access policy.
+
+Each check is `ok`, `warning`, or `critical`. Where an administrator can repair
+the condition in the web UI, the result links directly to identity mapping,
+quiz settings, or access and compute policy. The endpoint never returns OAuth
+tokens, Discord credentials, member rows, or raw ledger entries.
+
+## Web security boundary
+
+OAuth state is stored in MySQL so login survives a redeploy, but callback
+validation locks and deletes the row in one transaction: a state token is
+single-use even when two callbacks arrive together, and an expired token is
+also spent. Sessions are server-side rows. The browser receives only an
+`HttpOnly`, `SameSite=Lax` cookie, marked `Secure` on HTTPS and scoped to `/`;
+logout removes it at that same path. Production deployments should set an
+HTTPS `WS_ROOT_URL` and register its `/auth/callback` URL in Discord. OAuth
+remains disabled unless both that explicit, valid public URL and
+`DC_CLIENT_SECRET` are configured; callback construction never trusts the
+request's `Host` or forwarded-host headers.
+
+All mutations require the per-session CSRF token in addition to the session
+cookie. Browser responses carry a restrictive content security policy,
+clickjacking, MIME-sniffing, referrer, and permissions headers. Authenticated
+admin, session, and auth responses additionally use `Cache-Control: no-store`
+and vary on the session cookie.
+
 ## Access and compute policy
 
 Each community has one `community_policies` row, edited through:
@@ -223,6 +263,12 @@ Apply uses `INSERT IGNORE` for a new profile and a conditional
 cannot reassign an existing owner. The resolver cache is invalidated only after
 the transaction commits.
 
+Interactive administrator corrections are atomic as well. Relinking locks the
+target profile and every other profile owned by the destination member before
+writing the new owner, superseded-claim audit rows, and any releases. Unlinking
+locks its target and commits the removed-claim audit row with the ownership
+removal. A failure cannot leave either correction half-applied.
+
 An uploaded AoE2 name is useful preview context but is not written to
 `identities.aoe2_name`: that column promises an in-game name observed through
 the AoE2 API or a replay, while a CSV label is only an administrator's claim.
@@ -245,5 +291,4 @@ The overview reports these scopes from the runtime contracts above.
 ## Still to build
 
 - guided resolution for identity ownership conflicts;
-- actionable diagnostics and repair flows;
 - the full basic/advanced settings information architecture.

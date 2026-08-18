@@ -568,29 +568,34 @@ async def unlink(profile_id, status="unlinked") -> None:
 	it. Unlinking twice must not make a profile easier to claim than
 	unlinking once. An unknown profile_id is a no-op for the same family of
 	reason: it must not fabricate a row. """
+	profile_id = int(profile_id)
 	now = int(time.time())
-	existing = await db.select_one(["user_id"], "identities", where={"profile_id": profile_id})
-	if existing is None or existing["user_id"] is None:
-		return
+	async with db.transaction() as tx:
+		existing = await tx.fetchone(
+			"SELECT user_id FROM identities WHERE profile_id=%s FOR UPDATE",
+			[profile_id])
+		if existing is None or existing["user_id"] is None:
+			return
 
-	# Record BEFORE the write, same order as _overwrite_binding. The adapter
-	# runs with autocommit and exposes no transaction API, so a failure between
-	# the two statements is not rolled back — recording first means the worst
-	# case is a conflict row for a binding that still stands (visible, and
-	# self-correcting on a retry), rather than a binding silently gone with no
-	# audit trail of who used to hold it.
-	await _record_conflict(profile_id, existing["user_id"], "manual", now, status=status)
+		# The audit row and ownership removal form one admin correction. Keeping
+		# them in the same transaction prevents either half from surviving when
+		# the other fails.
+		await tx.insert("identity_conflicts", {
+			"profile_id": profile_id,
+			"claimed_user_id": int(existing["user_id"]),
+			"source": "manual",
+			"noticed_at": now,
+			"status": status,
+		}, on_duplicate="ignore")
 
-	# bound_at moves here: losing an owner IS a binding change, and it is the
-	# half nammaoe2bot/derived/refresh.py would otherwise be blindest to — the departing
-	# owner's own game_stats rows do not move, so nothing else would ever tell
-	# the refresh job to shrink their rollup.
-	await db.update("identities", dict(
-		user_id=None,
-		confidence="seed",
-		last_seen_at=now,
-		bound_at=now,
-	), keys=dict(profile_id=profile_id))
+		# bound_at moves here: losing an owner IS a binding change, and it is the
+		# half nammaoe2bot/derived/refresh.py would otherwise be blindest to — the
+		# departing owner's own game_stats rows do not move, so nothing else would
+		# ever tell the refresh job to shrink their rollup.
+		await tx.execute(
+			"UPDATE identities SET user_id=NULL, confidence='seed', "
+			"last_seen_at=%s, bound_at=%s WHERE profile_id=%s",
+			[now, now, profile_id])
 	invalidate_cache()
 
 
@@ -606,15 +611,10 @@ async def relink(profile_id, user_id, additional=False, aoe2_name=None) -> None:
 	halves of the move are recorded as `superseded` (the displaced owner of
 	this profile, and each profile the member is released from), per spec §3.
 
-	KNOWN LIMITATION — this is NOT atomic. nammaoe2bot/runtime/database/mysql.py connects
-	with autocommit=True and exposes no transaction API, so these are several
-	independent statements: an exception after the bind but before/while the
-	release loop runs leaves the member owning two profiles, exactly the state
-	this function exists to prevent. Re-running the same relink repairs it
-	(the bind is idempotent and the loop resumes), and each step records its
-	own conflict row, so the damage is visible rather than silent. Making it
-	genuinely atomic needs a transaction API on the adapter, which is a
-	separate change to core/.
+	The correction is one transaction. It locks the target profile and, unless
+	`additional`, every profile currently owned by the member in profile-id
+	order. The new binding, displaced-owner audit row, released-profile audit
+	rows and releases therefore commit together or roll back together.
 
 	`additional=True` is for genuine multi-account players (the flagship
 	community has several): it adds this profile alongside whatever the member
@@ -641,24 +641,68 @@ async def relink(profile_id, user_id, additional=False, aoe2_name=None) -> None:
 	# the loop would unlink it again — leaving the member owning NOTHING, the
 	# exact opposite of what was asked.
 	profile_id = int(profile_id)
+	user_id = int(user_id)
 	now = int(time.time())
-	existing = await db.select_one(
-		["user_id", "confidence", "aoe2_name"], "identities", where={"profile_id": profile_id})
+	lock_sql = (
+		"SELECT profile_id, user_id, aoe2_name, confidence, first_seen_at, "
+		"last_seen_at, bound_at FROM identities WHERE profile_id=%s")
+	lock_args = [profile_id]
+	if not additional:
+		lock_sql += " OR user_id=%s"
+		lock_args.append(user_id)
+	lock_sql += " ORDER BY profile_id FOR UPDATE"
+	async with db.transaction() as tx:
+		locked = await tx.fetchall(lock_sql, lock_args) or []
+		existing = next(
+			(row for row in locked if int(row["profile_id"]) == profile_id), None)
+		if existing is None:
+			await tx.insert("identities", {
+				"profile_id": profile_id,
+				"user_id": user_id,
+				"aoe2_name": aoe2_name,
+				"confidence": "manual",
+				"first_seen_at": now,
+				"last_seen_at": now,
+				"bound_at": now,
+			})
+		else:
+			old_user = existing.get("user_id")
+			if old_user is not None and int(old_user) != user_id:
+				await tx.insert("identity_conflicts", {
+					"profile_id": profile_id,
+					"claimed_user_id": int(old_user),
+					"source": existing["confidence"],
+					"noticed_at": now,
+					"status": "superseded",
+				}, on_duplicate="ignore")
+			name = aoe2_name if aoe2_name is not None else existing.get("aoe2_name")
+			if old_user != user_id:
+				await tx.execute(
+					"UPDATE identities SET user_id=%s, aoe2_name=%s, confidence='manual', "
+					"last_seen_at=%s, bound_at=%s WHERE profile_id=%s",
+					[user_id, name, now, now, profile_id])
+			else:
+				await tx.execute(
+					"UPDATE identities SET aoe2_name=%s, confidence='manual', "
+					"last_seen_at=%s WHERE profile_id=%s", [name, now, profile_id])
 
-	if existing is None:
-		await _insert_binding(profile_id, user_id, aoe2_name, "manual", now)
-	else:
-		await _overwrite_binding(profile_id, user_id, "manual", aoe2_name, existing, now)
-
-	if additional:
-		return
-
-	# _overwrite_binding/_insert_binding just invalidated the cache, so this
-	# reload sees the binding written above and skips it by profile_id.
-	owned = await profiles_for_users([user_id])
-	for other_profile_id in owned.get(user_id, []):
-		if other_profile_id != profile_id:
-			await unlink(other_profile_id, status="superseded")
+		if not additional:
+			for row in locked:
+				other_profile_id = int(row["profile_id"])
+				if other_profile_id == profile_id or row.get("user_id") != user_id:
+					continue
+				await tx.insert("identity_conflicts", {
+					"profile_id": other_profile_id,
+					"claimed_user_id": user_id,
+					"source": "manual",
+					"noticed_at": now,
+					"status": "superseded",
+				}, on_duplicate="ignore")
+				await tx.execute(
+					"UPDATE identities SET user_id=NULL, confidence='seed', "
+					"last_seen_at=%s, bound_at=%s WHERE profile_id=%s",
+					[now, now, other_profile_id])
+	invalidate_cache()
 
 
 async def open_conflicts() -> list[dict]:

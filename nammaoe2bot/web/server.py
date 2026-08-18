@@ -43,7 +43,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import aiohttp as aiohttp_client
 from aiohttp import web
@@ -252,6 +252,51 @@ _html_cache = None
 # so it's a reasonable proxy for "when the bot process started".
 _boot_time = time.time()
 
+_SECURITY_HEADERS = {
+	"Content-Security-Policy": (
+		"default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
+		"object-src 'none'; img-src 'self' https: data:; "
+		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+		"font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; "
+		"connect-src 'self'; form-action 'self' https://discord.com"),
+	"Referrer-Policy": "no-referrer",
+	"X-Content-Type-Options": "nosniff",
+	"X-Frame-Options": "DENY",
+	"Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+def _apply_security_headers(response, path):
+	for name, value in _SECURITY_HEADERS.items():
+		response.headers[name] = value
+	private_path = (
+		path.startswith("/api/admin/") or path == "/api/me"
+		or path.startswith("/api/guilds") or path.startswith("/api/channels")
+		or path.startswith("/auth/"))
+	if private_path:
+		response.headers["Cache-Control"] = "no-store"
+		vary = [part.strip() for part in response.headers.get("Vary", "").split(",") if part.strip()]
+		if "cookie" not in {part.lower() for part in vary}:
+			vary.append("Cookie")
+		response.headers["Vary"] = ", ".join(vary)
+	return response
+
+
+async def _security_headers_middleware(request, handler):
+	"""Apply browser hardening and prevent authenticated data from being cached."""
+	path = getattr(request, "path", "")
+	try:
+		response = await handler(request)
+	except web.HTTPException as response:
+		_apply_security_headers(response, path)
+		raise
+	return _apply_security_headers(response, path)
+
+
+# aiohttp uses this marker to distinguish modern request/handler middleware
+# from the deprecated application/middleware factory signature.
+_security_headers_middleware.__middleware_version__ = 1
+
 
 def _load_html():
 	global _html_cache
@@ -262,14 +307,29 @@ def _load_html():
 		_html_cache = "<h1>page.html not found</h1>"
 
 
+def _configured_root_url():
+	"""Return a safe configured public origin/base path, or an empty string."""
+	raw = str(getattr(cfg, "WS_ROOT_URL", "") or "").strip().rstrip("/")
+	if not raw:
+		return ""
+	parsed = urlsplit(raw)
+	if (parsed.scheme not in ("http", "https") or not parsed.netloc
+			or parsed.username or parsed.password or parsed.query or parsed.fragment):
+		return ""
+	return raw
+
+
 def _oauth_enabled():
-	return bool(getattr(cfg, 'DC_CLIENT_SECRET', ''))
+	# Never construct an OAuth redirect from Host/X-Forwarded-Host. A configured
+	# public base URL is part of enabling OAuth, not an optional convenience.
+	return bool(getattr(cfg, "DC_CLIENT_SECRET", "") and _configured_root_url())
 
 
 def _get_root_url(request):
 	"""Get public root URL from config or request headers."""
-	if hasattr(cfg, 'WS_ROOT_URL') and cfg.WS_ROOT_URL:
-		return cfg.WS_ROOT_URL.rstrip('/')
+	configured = _configured_root_url()
+	if configured:
+		return configured
 	scheme = request.headers.get('X-Forwarded-Proto', request.scheme)
 	host = request.headers.get('X-Forwarded-Host', request.host)
 	return f"{scheme}://{host}"
@@ -2878,6 +2938,18 @@ async def handle_auth_login(request):
 	raise web.HTTPFound(f"{DISCORD_OAUTH_AUTHORIZE}?{urlencode(params)}")
 
 
+async def _consume_oauth_state(state, now):
+	"""Atomically validate and spend one OAuth state token."""
+	async with db.transaction() as tx:
+		row = await tx.fetchone(
+			"SELECT state, expires_at FROM web_oauth_states WHERE state=%s FOR UPDATE",
+			[state])
+		if row is None:
+			return False
+		await tx.execute("DELETE FROM web_oauth_states WHERE state=%s", [state])
+		return int(row["expires_at"]) >= int(now)
+
+
 async def handle_auth_callback(request):
 	if not _oauth_enabled():
 		raise web.HTTPBadRequest(text="OAuth not configured")
@@ -2889,22 +2961,8 @@ async def handle_auth_callback(request):
 	state = request.query.get("state")
 	if not state:
 		raise web.HTTPBadRequest(text="Invalid or expired state parameter")
-	state_row = await db.select_one(
-		('state', 'expires_at'), 'web_oauth_states', where={'state': state}
-	)
-	if not state_row or state_row['expires_at'] < int(time.time()):
-		# Clean up the stale row if it exists — keeps the table tight
-		if state_row:
-			try:
-				await db.delete('web_oauth_states', where={'state': state})
-			except Exception:
-				pass
+	if not await _consume_oauth_state(state, int(time.time())):
 		raise web.HTTPBadRequest(text="Invalid or expired state parameter")
-	# Single-use — delete immediately to prevent replay
-	try:
-		await db.delete('web_oauth_states', where={'state': state})
-	except Exception:
-		pass
 
 	root_url = _get_root_url(request)
 	redirect_uri = f"{root_url}/auth/callback"
@@ -2945,7 +3003,9 @@ async def handle_auth_callback(request):
 
 	resp = web.HTTPFound("/")
 	is_secure = root_url.startswith("https://")
-	resp.set_cookie(COOKIE_NAME, session_id, max_age=SESSION_LIFETIME, httponly=True, samesite="Lax", secure=is_secure)
+	resp.set_cookie(
+		COOKIE_NAME, session_id, max_age=SESSION_LIFETIME, path="/",
+		httponly=True, samesite="Lax", secure=is_secure)
 	raise resp
 
 
@@ -2957,8 +3017,8 @@ async def handle_auth_logout(request):
 		except Exception:
 			pass
 	resp = web.HTTPFound("/")
-	resp.del_cookie(COOKIE_NAME)
-	resp.del_cookie(_LEGACY_COOKIE_NAME)
+	resp.del_cookie(COOKIE_NAME, path="/")
+	resp.del_cookie(_LEGACY_COOKIE_NAME, path="/")
 	raise resp
 
 
@@ -3433,6 +3493,157 @@ async def handle_api_community_quiz(request):
 	except ValueError as exc:
 		return web.json_response({"error": str(exc)}, status=400)
 	return web.json_response(await _admin_quiz_payload(admin))
+
+
+def _diagnostic_check(key, title, status, detail, *, metrics=None, action=None):
+	return {
+		"key": key,
+		"title": title,
+		"status": status,
+		"detail": detail,
+		"metrics": metrics or {},
+		"action": action,
+	}
+
+
+async def _admin_community_diagnostics(admin):
+	"""Actionable, aggregate-only checks for one authorized community."""
+	community_id = admin.community.community_id
+	now = int(time.time())
+	enrolled = await _community_channel_ids(community_id)
+	runtime = {
+		int(channel_id) for channel_id, qc in dc.app.channels.items()
+		if int(qc.guild_id) == admin.community.guild_id
+	}
+	loaded = runtime & enrolled
+	discord_missing = {
+		channel_id for channel_id in enrolled if dc.get_channel(channel_id) is None
+	}
+	identity = await db.fetchone(
+		"SELECT COUNT(DISTINCT mp.user_id) AS players, "
+		"COUNT(DISTINCT CASE WHEN i.profile_id IS NOT NULL THEN mp.user_id END) AS linked "
+		"FROM match_players mp "
+		"JOIN matches m ON m.match_id=mp.match_id AND m.channel_id=mp.channel_id "
+		"JOIN community_channels cc ON cc.channel_id=m.channel_id "
+		"LEFT JOIN identities i ON i.user_id=mp.user_id "
+		"WHERE cc.community_id=%s AND m.reported_at>=%s",
+		[community_id, now - resolver.COVERAGE_WINDOW_DAYS * 86400]) or {}
+	replay = await db.fetchone(
+		"SELECT COUNT(*) AS linked, "
+		"SUM(ri.status='done') AS parsed, "
+		"SUM(ri.status IN ('unavailable','parse_failed','gave_up','pending_parser_update')) AS attention "
+		"FROM (SELECT DISTINCT replay_match_id FROM match_replays WHERE community_id=%s) mr "
+		"LEFT JOIN replay_ingest ri ON ri.replay_match_id=mr.replay_match_id",
+		[community_id]) or {}
+	gold_drift = await db.fetchone(
+		"SELECT COUNT(*) AS mismatches FROM ("
+		"SELECT b.user_id FROM gold_balances b LEFT JOIN gold_ledger l "
+		"ON l.community_id=b.community_id AND l.user_id=b.user_id "
+		"WHERE b.community_id=%s GROUP BY b.user_id, b.balance "
+		"HAVING b.balance<>COALESCE(SUM(l.amount),0) "
+		"UNION ALL SELECT l.user_id FROM gold_ledger l LEFT JOIN gold_balances b "
+		"ON b.community_id=l.community_id AND b.user_id=l.user_id "
+		"WHERE l.community_id=%s AND b.user_id IS NULL GROUP BY l.user_id"
+		") tenant_gold_drift",
+		[community_id, community_id]) or {}
+	quiz = await db.fetchone(
+		"SELECT COUNT(*) AS configured, SUM(qs.enabled=1) AS enabled "
+		"FROM quiz_settings qs JOIN community_channels cc ON cc.channel_id=qs.channel_id "
+		"WHERE cc.community_id=%s", [community_id]) or {}
+	predictions = await db.fetchone(
+		"SELECT COUNT(*) AS stuck FROM prediction_posts pp "
+		"JOIN community_channels cc ON cc.channel_id=pp.channel_id "
+		"WHERE cc.community_id=%s AND pp.status='frozen' AND pp.freezes_at<%s",
+		[community_id, now - 13 * 60 * 60]) or {}
+	lobbies = await db.fetchone(
+		"SELECT COUNT(*) AS stale FROM lobbies l "
+		"JOIN community_channels cc ON cc.channel_id=l.channel_id "
+		"WHERE cc.community_id=%s "
+		"AND l.status IN ('created','filling','verifying','in_progress','awaiting_confirm') "
+		"AND l.created_at<%s", [community_id, now - 24 * 60 * 60]) or {}
+	policy = await community_store.get_policy(community_id)
+
+	channel_mismatches = len((enrolled - runtime) | (runtime - enrolled) | discord_missing)
+	players = _overview_count(identity, "players")
+	linked = _overview_count(identity, "linked")
+	attention_replays = _overview_count(replay, "attention")
+	mismatches = _overview_count(gold_drift, "mismatches")
+	quiz_enabled = _overview_count(quiz, "enabled")
+	stuck_predictions = _overview_count(predictions, "stuck")
+	stale_lobbies = _overview_count(lobbies, "stale")
+	checks = [
+		_diagnostic_check(
+			"channels", "Discord channel consistency",
+			"warning" if channel_mismatches else "ok",
+			("Some enrolled channels are missing from the bot runtime or Discord."
+			 if channel_mismatches else "Persisted enrollment, the bot runtime and Discord agree."),
+			metrics={
+				"enrolled": len(enrolled), "loaded": len(loaded),
+				"missing": len((enrolled - runtime) | discord_missing),
+				"unenrolled_runtime": len(runtime - enrolled),
+			}),
+		_diagnostic_check(
+			"identities", "Recent identity coverage",
+			"warning" if players and linked < players else "ok",
+			(f"{linked} of {players} recent players have an AoE2 profile link."
+			 if players else "No recent players need identity coverage yet."),
+			metrics={"players": players, "linked": linked},
+			action={"label": "Map profiles", "target": "map_identities"} if players and linked < players else None),
+		_diagnostic_check(
+			"replays", "Replay processing",
+			"warning" if attention_replays else "ok",
+			(f"{attention_replays} linked replay(s) need operator attention."
+			 if attention_replays else "No linked replay is in an attention state."),
+			metrics={
+				"linked": _overview_count(replay, "linked"),
+				"parsed": _overview_count(replay, "parsed"),
+				"attention": attention_replays,
+			}, action={"label": "Review compute policy", "target": "access_policy"} if attention_replays else None),
+		_diagnostic_check(
+			"gold", "Gold ledger integrity", "critical" if mismatches else "ok",
+			(f"{mismatches} account(s) disagree between the balance cache and append-only ledger; operator repair is required."
+			 if mismatches else "Every cached balance agrees with its ledger sum."),
+			metrics={"mismatches": mismatches}),
+		_diagnostic_check(
+			"quiz", "Quiz configuration", "critical" if quiz_enabled > 1 else "ok",
+			("Multiple quiz channels are enabled; the scheduler is suppressing extras until settings are saved."
+			 if quiz_enabled > 1 else "At most one quiz channel is enabled for this community."),
+			metrics={"configured": _overview_count(quiz, "configured"), "enabled": quiz_enabled},
+			action={"label": "Normalize quiz settings", "target": "quiz"} if quiz_enabled > 1 else None),
+		_diagnostic_check(
+			"background_work", "Background work", "warning" if stuck_predictions or stale_lobbies else "ok",
+			("Old prediction or lobby rows remain non-terminal; inspect deployment logs."
+			 if stuck_predictions or stale_lobbies else "No old prediction or lobby work is stuck."),
+			metrics={"stuck_predictions": stuck_predictions, "stale_lobbies": stale_lobbies}),
+		_diagnostic_check(
+			"deployment", "Deployment boundary", "ok",
+			(f"Mode is {community_store.deployment_mode()}; dashboard visibility is "
+			 f"{policy['dashboard_visibility']}."),
+			metrics={
+				"mode": community_store.deployment_mode(),
+				"replay_effective": policy["replay_analysis_enabled"]
+					and community_store.replay_pipeline_available(),
+			}, action={"label": "Access & compute", "target": "access_policy"}),
+	]
+	critical = sum(check["status"] == "critical" for check in checks)
+	warnings = sum(check["status"] == "warning" for check in checks)
+	return {
+		"community": admin.payload(len(loaded)),
+		"status": "critical" if critical else ("warning" if warnings else "healthy"),
+		"summary": {"critical": critical, "warnings": warnings, "checks": len(checks)},
+		"checks": checks,
+		"generated_at": now,
+	}
+
+
+async def handle_api_community_diagnostics(request):
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return error
+	return web.json_response(await _admin_community_diagnostics(admin))
 
 
 def _seed_member_name(guild, user_id):
@@ -4563,7 +4774,9 @@ def create_app():
 	# Full onboarding archives are base64 JSON (5 MB compressed becomes about
 	# 6.7 MB on the wire). Keep an explicit ceiling above that payload while
 	# still rejecting unbounded request bodies before any parser runs.
-	app = web.Application(client_max_size=8 * 1024 * 1024)
+	app = web.Application(
+		client_max_size=8 * 1024 * 1024,
+		middlewares=[_security_headers_middleware])
 	app.router.add_get('/', handle_index)
 	# Health check (Railway healthcheckPath)
 	app.router.add_get('/health', handle_health)
@@ -4607,6 +4820,9 @@ def create_app():
 	app.router.add_post(
 		'/api/admin/communities/{community_id}/quiz',
 		handle_api_community_quiz)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/diagnostics',
+		handle_api_community_diagnostics)
 	app.router.add_post(
 		'/api/admin/communities/{community_id}/identities/import/preview',
 		handle_api_identity_import_preview)

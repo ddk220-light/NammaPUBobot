@@ -8,6 +8,7 @@ touches the real nammaoe2bot.runtime.database fake conftest.py installs for ever
 test file.
 """
 import asyncio
+import copy
 import importlib.util
 import sqlite3
 import sys
@@ -43,6 +44,9 @@ class FakeDb:
 		self.identities = []  # [{profile_id, user_id, aoe2_name, confidence, first_seen_at, last_seen_at}]
 		self.identity_conflicts = []  # [{profile_id, claimed_user_id, source, noticed_at, status}]
 		self.select_calls = 0
+		self.transaction_calls = []
+		self.fail_release_profile = None
+		self.fail_conflict_insert = False
 
 	def _table(self, table):
 		return {
@@ -97,6 +101,70 @@ class FakeDb:
 		for row in self._table(table):
 			if all(row.get(k) == v for k, v in keys.items()):
 				row.update(d)
+
+	def transaction(self):
+		fake = self
+		identities_before = copy.deepcopy(self.identities)
+		conflicts_before = copy.deepcopy(self.identity_conflicts)
+
+		class _Tx:
+			async def fetchone(self, sql, args=None):
+				args = list(args or [])
+				fake.transaction_calls.append(("fetchone", sql, args))
+				profile_id = args[0]
+				row = next((row for row in fake.identities
+					if row["profile_id"] == profile_id), None)
+				return {"user_id": row.get("user_id")} if row is not None else None
+
+			async def fetchall(self, sql, args=None):
+				args = list(args or [])
+				fake.transaction_calls.append(("fetchall", sql, args))
+				profile_id = args[0]
+				user_id = args[1] if len(args) > 1 else None
+				return [dict(row) for row in sorted(fake.identities, key=lambda row: row["profile_id"])
+					if row["profile_id"] == profile_id or (user_id is not None and row.get("user_id") == user_id)]
+
+			async def insert(self, table, row, on_duplicate=None):
+				fake.transaction_calls.append(("insert", table, dict(row)))
+				if table == "identity_conflicts" and fake.fail_conflict_insert:
+					raise RuntimeError("simulated conflict insert failure")
+				return await fake.insert(table, row, on_duplicate=on_duplicate)
+
+			async def execute(self, sql, args=None):
+				args = list(args or [])
+				fake.transaction_calls.append(("execute", sql, args))
+				if "SET user_id=NULL" in sql:
+					now, bound_at, profile_id = args
+					if fake.fail_release_profile == profile_id:
+						raise RuntimeError("simulated release failure")
+					return await fake.update("identities", {
+						"user_id": None, "confidence": "seed",
+						"last_seen_at": now, "bound_at": bound_at,
+					}, {"profile_id": profile_id})
+				if "SET user_id=%s" in sql:
+					user_id, name, last_seen_at, bound_at, profile_id = args
+					return await fake.update("identities", {
+						"user_id": user_id, "aoe2_name": name, "confidence": "manual",
+						"last_seen_at": last_seen_at, "bound_at": bound_at,
+					}, {"profile_id": profile_id})
+				if "SET aoe2_name=%s" in sql:
+					name, last_seen_at, profile_id = args
+					return await fake.update("identities", {
+						"aoe2_name": name, "confidence": "manual", "last_seen_at": last_seen_at,
+					}, {"profile_id": profile_id})
+				raise AssertionError(f"unexpected transactional SQL: {sql}")
+
+		class _Context:
+			async def __aenter__(self):
+				return _Tx()
+
+			async def __aexit__(self, exc_type, exc, traceback):
+				if exc_type is not None:
+					fake.identities[:] = identities_before
+					fake.identity_conflicts[:] = conflicts_before
+				return False
+
+		return _Context()
 
 
 def _setup(monkeypatch):
@@ -1140,19 +1208,12 @@ def test_unlink_does_not_demote_an_already_unowned_row(monkeypatch):
 	assert fake.identities[0]["user_id"] is None
 
 
-def test_unlink_records_the_removed_claim_before_dropping_the_binding(monkeypatch):
-	""" The adapter runs with autocommit and has no transaction API, so the
-	record and the write are two independent statements. Recording first means
-	a failure between them leaves a conflict row for a binding that still
-	stands (visible, and self-correcting on a retry) rather than a binding
-	silently gone with no trace of who held it. """
+def test_unlink_rolls_back_if_recording_the_removed_claim_fails(monkeypatch):
+	"""The audit row and binding removal are one admin correction."""
 	fake = _setup(monkeypatch)
 	asyncio.run(identity.learn(111, 222, "manual"))
-
-	async def _boom(*a, **k):
-		raise RuntimeError("conflict insert failed")
-
-	monkeypatch.setattr(identity, "_record_conflict", _boom)
+	before = copy.deepcopy(fake.identities)
+	fake.fail_conflict_insert = True
 
 	try:
 		asyncio.run(identity.unlink(111))
@@ -1161,7 +1222,10 @@ def test_unlink_records_the_removed_claim_before_dropping_the_binding(monkeypatc
 	else:
 		raise AssertionError("unlink must not swallow a failed conflict record")
 
-	assert fake.identities[0]["user_id"] == 222, "the binding must still stand if its audit row never landed"
+	assert fake.identities == before
+	assert fake.identity_conflicts == []
+	lock = fake.transaction_calls[-2]
+	assert lock[0] == "fetchone" and "FOR UPDATE" in lock[1]
 
 
 # ─── relink ─────────────────────────────────────────────────────────────
@@ -1223,6 +1287,27 @@ def test_relink_records_released_profiles_as_superseded(monkeypatch):
 	assert recorded[(112, 999)]["status"] == "superseded", "the displaced owner of the new profile"
 	assert recorded[(111, 222)]["status"] == "superseded", "the profile the member was released from"
 	assert recorded[(111, 222)]["source"] == "manual"
+
+
+def test_relink_rolls_back_the_new_binding_if_releasing_an_old_one_fails(monkeypatch):
+	fake = _setup(monkeypatch)
+	asyncio.run(identity.learn(111, 222, "learned"))
+	asyncio.run(identity.learn(112, 999, "learned"))
+	before_identities = copy.deepcopy(fake.identities)
+	before_conflicts = copy.deepcopy(fake.identity_conflicts)
+	fake.fail_release_profile = 111
+
+	try:
+		asyncio.run(identity.relink(112, 222))
+	except RuntimeError as exc:
+		assert "release failure" in str(exc)
+	else:
+		raise AssertionError("the simulated release failure must propagate")
+
+	assert fake.identities == before_identities
+	assert fake.identity_conflicts == before_conflicts
+	lock = fake.transaction_calls[0]
+	assert lock[0] == "fetchall" and "ORDER BY profile_id FOR UPDATE" in lock[1]
 
 
 def test_unlink_on_its_own_still_records_unlinked(monkeypatch):

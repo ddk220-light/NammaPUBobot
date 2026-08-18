@@ -25,6 +25,7 @@ import importlib
 import inspect
 import json
 import sqlite3
+from contextlib import asynccontextmanager
 
 import pytest
 
@@ -99,6 +100,7 @@ class _SqliteDB:
 		self.conn = sqlite3.connect(":memory:")
 		self.conn.row_factory = sqlite3.Row
 		self.conn.executescript(_SCHEMA)
+		self._transaction_seq = 0
 
 	# ── fixture helpers ───────────────────────────────────────────────────
 	def add(self, table, **row):
@@ -116,7 +118,7 @@ class _SqliteDB:
 	# ── the adapter surface ───────────────────────────────────────────────
 	@staticmethod
 	def _sql(sql):
-		sql = sql.replace("%s", "?")
+		sql = sql.replace("%s", "?").replace(" FOR UPDATE", "")
 		if sql.startswith("REPLACE INTO"):
 			return "INSERT OR REPLACE INTO" + sql[len("REPLACE INTO"):]
 		if sql.startswith("INSERT IGNORE INTO"):
@@ -132,6 +134,21 @@ class _SqliteDB:
 
 	async def execute(self, sql, args=None):
 		self.conn.execute(self._sql(sql), list(args or []))
+
+	@asynccontextmanager
+	async def transaction(self):
+		"""SQLite savepoint with the production transaction handle's surface."""
+		self._transaction_seq += 1
+		name = f"identity_tx_{self._transaction_seq}"
+		self.conn.execute(f"SAVEPOINT {name}")
+		try:
+			yield self
+		except BaseException:
+			self.conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
+			self.conn.execute(f"RELEASE SAVEPOINT {name}")
+			raise
+		else:
+			self.conn.execute(f"RELEASE SAVEPOINT {name}")
 
 	async def select(self, columns, table, where=None, one=False, **_kw):
 		conditions = " WHERE " + " AND ".join(f"`{k}`=%s" for k in where) if where else ""

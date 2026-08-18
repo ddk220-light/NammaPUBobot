@@ -133,6 +133,9 @@ class FakeDB:
 	async def fetchone(self, sql, args=None):
 		self.sql.append(sql)
 		self.sql_args.append((sql, list(args or [])))
+		if "FROM web_oauth_states" in sql:
+			found = self._matching("web_oauth_states", {"state": args[0]})
+			return dict(found[0]) if found else None
 		found = self._answer(sql, args or [])
 		return found[0] if found else None
 
@@ -154,7 +157,25 @@ class FakeDB:
 
 	async def execute(self, sql, args=None):
 		self.sql.append(sql)
+		if sql.startswith("DELETE FROM web_oauth_states WHERE state="):
+			state = args[0]
+			self.rows["web_oauth_states"] = [
+				row for row in self.rows.get("web_oauth_states", [])
+				if row.get("state") != state]
+			self.deleted.append(("web_oauth_states", {"state": state}))
 		return None
+
+	def transaction(self):
+		fake = self
+
+		class _Context:
+			async def __aenter__(self):
+				return fake
+
+			async def __aexit__(self, exc_type, exc, traceback):
+				return False
+
+		return _Context()
 
 	async def insert(self, table, row, on_duplicate=None):
 		self.selects.append((table, dict(row)))
@@ -299,7 +320,7 @@ def install_db(monkeypatch, fake):
 	return fake
 
 
-def request(cookies=None, match_info=None, headers=None, method="GET", json_body=None, **query):
+def request(cookies=None, match_info=None, headers=None, method="GET", json_body=None, path="/", **query):
 	""" The slice of aiohttp's Request the handlers below actually read. """
 	async def read_json():
 		return dict(json_body or {})
@@ -313,6 +334,7 @@ def request(cookies=None, match_info=None, headers=None, method="GET", json_body
 		json=read_json,
 		scheme="https",
 		host="example.test",
+		path=path,
 	)
 
 
@@ -1276,6 +1298,73 @@ def test_community_overview_reports_real_feature_scopes_and_tenant_counts(monkey
 		assert "community_id=%s" in sql, sql
 
 
+def test_community_diagnostics_are_actionable_and_tenant_scoped(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	queue_channels = {
+		100: types.SimpleNamespace(guild_id=777, queues=[]),
+		999: types.SimpleNamespace(guild_id=777, queues=[]),
+	}
+	_install_discord(
+		monkeypatch, [alpha], channels={100: channel}, queue_channels=queue_channels)
+	fake = install_db(monkeypatch, FakeDB(
+		answers={
+			"COUNT(DISTINCT mp.user_id)": [{"players": 10, "linked": 6}],
+			"FROM (SELECT DISTINCT replay_match_id": [
+				{"linked": 4, "parsed": 2, "attention": 1}],
+			"tenant_gold_drift": [{"mismatches": 1}],
+			"FROM quiz_settings qs JOIN community_channels": [
+				{"configured": 2, "enabled": 2}],
+			"SELECT COUNT(*) AS stuck": [{"stuck": 1}],
+			"SELECT COUNT(*) AS stale": [{"stale": 1}],
+		},
+		rows={
+			"web_sessions": [_session_row()],
+			"communities": [_community_rows()[0]],
+			"community_channels": [{"community_id": 9, "channel_id": 100}],
+			"community_policies": [{
+				"community_id": 9, "dashboard_visibility": "admins",
+				"replay_analysis_enabled": 0, "updated_at": 1, "updated_by": 42,
+			}],
+		}))
+
+	response = asyncio.run(web.handle_api_community_diagnostics(request(
+		cookies={web.COOKIE_NAME: "sess"}, match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	payload = response.payload
+	assert payload["community"]["id"] == "9"
+	assert payload["status"] == "critical"
+	checks = {check["key"]: check for check in payload["checks"]}
+	assert checks["channels"]["status"] == "warning"
+	assert checks["channels"]["metrics"]["unenrolled_runtime"] == 1
+	assert checks["identities"]["action"]["target"] == "map_identities"
+	assert checks["gold"]["status"] == "critical"
+	assert checks["quiz"]["status"] == "critical"
+	assert checks["background_work"]["metrics"] == {
+		"stuck_predictions": 1, "stale_lobbies": 1}
+	assert checks["deployment"]["metrics"]["replay_effective"] is False
+	assert "shhh" not in json.dumps(payload)
+
+	# Every raw diagnostic aggregate carries this authorized community as its
+	# first argument; the gold union repeats it for both sides of the ledger.
+	assert len(fake.sql_args) == 6
+	for sql, args in fake.sql_args:
+		assert args and args[0] == 9, sql
+		if "tenant_gold_drift" in sql:
+			assert args == [9, 9]
+
+
+def test_community_diagnostics_require_a_logged_in_admin(monkeypatch):
+	fake = install_db(monkeypatch, FakeDB())
+
+	response = asyncio.run(web.handle_api_community_diagnostics(request(
+		match_info={"community_id": "9"})))
+
+	assert response.status == 401
+	assert fake.sql == []
+
+
 def test_community_policy_api_is_admin_csrf_protected_and_persists(monkeypatch):
 	alpha = _discord_guild(777, admin=True)
 	_install_discord(monkeypatch, [alpha])
@@ -1817,6 +1906,7 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "/api/admin/communities/{community_id}/overview" in paths
 	assert "/api/admin/communities/{community_id}/policy" in paths
 	assert "/api/admin/communities/{community_id}/quiz" in paths
+	assert "/api/admin/communities/{community_id}/diagnostics" in paths
 	assert "/api/admin/communities/{community_id}/identities/import/preview" in paths
 	assert "/api/admin/communities/{community_id}/identities/import/apply" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/config" in paths
@@ -1835,6 +1925,9 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "function saveCommunityPolicy()" in page
 	assert "function openQuizSettings(channelId)" in page
 	assert "function saveQuizSettings()" in page
+	assert "function openCommunityDiagnostics()" in page
+	assert "function renderCommunityDiagnostics()" in page
+	assert "function runDiagnosticAction(target)" in page
 	assert "function openRatingSeed(channelId)" in page
 	assert "function renderRatingSeedPreview()" in page
 	assert "function renderTeamRatingSeedPreview()" in page
@@ -1907,11 +2000,54 @@ def test_the_http_exception_fakes_are_distinct_types():
 	assert (web.web.HTTPBadRequest().status, web.web.HTTPNotFound().status) == (400, 404)
 
 
+def test_security_middleware_hardens_success_and_error_responses():
+	async def success(_request):
+		return web.web.json_response({"ok": True})
+
+	response = asyncio.run(web._security_headers_middleware(
+		request(path="/api/admin/communities"), success))
+	assert response.headers["X-Content-Type-Options"] == "nosniff"
+	assert response.headers["X-Frame-Options"] == "DENY"
+	assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+	assert response.headers["Cache-Control"] == "no-store"
+	assert response.headers["Vary"] == "Cookie"
+	legacy = web.web.json_response({"private": True})
+	legacy.headers["Vary"] = "Accept-Encoding"
+	web._apply_security_headers(legacy, "/api/guilds")
+	assert legacy.headers["Cache-Control"] == "no-store"
+	assert legacy.headers["Vary"] == "Accept-Encoding, Cookie"
+
+	async def forbidden(_request):
+		raise web.web.HTTPForbidden(text="no")
+
+	with pytest.raises(web.web.HTTPForbidden) as raised:
+		asyncio.run(web._security_headers_middleware(
+			request(path="/api/admin/communities/9"), forbidden))
+	assert raised.value.headers["Referrer-Policy"] == "no-referrer"
+	assert raised.value.headers["Cache-Control"] == "no-store"
+	assert web._security_headers_middleware in web.create_app().middlewares
+
+
 def test_login_without_oauth_configured_is_a_400(monkeypatch):
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "", raising=False)
 
 	with pytest.raises(web.web.HTTPBadRequest):
 		asyncio.run(web.handle_auth_login(request()))
+
+
+def test_oauth_is_disabled_without_an_explicit_safe_public_root(monkeypatch):
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "", raising=False)
+	assert web._oauth_enabled() is False
+
+	with pytest.raises(web.web.HTTPBadRequest):
+		asyncio.run(web.handle_auth_login(request(headers={
+			"X-Forwarded-Host": "attacker.example",
+			"X-Forwarded-Proto": "https",
+		})))
+
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://user:pass@example.test", raising=False)
+	assert web._oauth_enabled() is False
 
 
 def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
@@ -1937,6 +2073,7 @@ def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
 def test_the_callback_rejects_a_request_with_no_code(monkeypatch):
 	install_db(monkeypatch, FakeDB())
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://nammaoe2bot.test", raising=False)
 
 	with pytest.raises(web.web.HTTPBadRequest):
 		asyncio.run(web.handle_auth_callback(request()))
@@ -1948,6 +2085,7 @@ def test_the_callback_rejects_an_unknown_state(monkeypatch):
 	type. """
 	install_db(monkeypatch, FakeDB(rows={"web_oauth_states": []}))
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://nammaoe2bot.test", raising=False)
 
 	with pytest.raises(web.web.HTTPBadRequest) as raised:
 		asyncio.run(web.handle_auth_callback(request(code="abc", state="forged")))
@@ -1958,10 +2096,23 @@ def test_the_callback_rejects_an_expired_state_and_drops_the_row(monkeypatch):
 	expired = {"state": "old", "expires_at": int(time.time()) - 1}
 	fake = install_db(monkeypatch, FakeDB(rows={"web_oauth_states": [expired]}))
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://nammaoe2bot.test", raising=False)
 
 	with pytest.raises(web.web.HTTPBadRequest):
 		asyncio.run(web.handle_auth_callback(request(code="abc", state="old")))
 	assert ("web_oauth_states", {"state": "old"}) in fake.deleted
+
+
+def test_an_oauth_state_can_only_be_consumed_once(monkeypatch):
+	now = int(time.time())
+	fake = install_db(monkeypatch, FakeDB(rows={
+		"web_oauth_states": [{"state": "once", "expires_at": now + 60}],
+	}))
+
+	assert asyncio.run(web._consume_oauth_state("once", now)) is True
+	assert asyncio.run(web._consume_oauth_state("once", now)) is False
+	assert fake.rows["web_oauth_states"] == []
+	assert fake.deleted.count(("web_oauth_states", {"state": "once"})) == 1
 
 
 def test_logout_clears_the_session_cookie_and_redirects_home(monkeypatch):
@@ -1975,6 +2126,7 @@ def test_logout_clears_the_session_cookie_and_redirects_home(monkeypatch):
 
 	assert raised.value.location == "/"
 	assert web.COOKIE_NAME in raised.value.deleted_cookies
+	assert (web.COOKIE_NAME, {"path": "/"}) in raised.value.deleted_cookie_options
 	assert ("web_sessions", {"session_id": "sess"}) in fake.deleted
 
 
