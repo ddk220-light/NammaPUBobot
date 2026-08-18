@@ -37,6 +37,7 @@ community-first settings redesign remains separate work. Do not repopulate
 any of the above from a live re-derivation.
 """
 
+import asyncio
 import json
 import os
 import secrets
@@ -56,6 +57,7 @@ from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 from nammaoe2bot.features.identity import resolver
+from nammaoe2bot.features.lobby import api as lobby_api
 from nammaoe2bot.features.scouting import report as scouting_report
 from nammaoe2bot.derived import game_labels, rollups
 from nammaoe2bot.ingest import scoring as rs_scoring
@@ -194,6 +196,7 @@ db.ensure_table(dict(
 		dict(cname="player_count", ctype=db.types.int, notnull=True),
 	],
 	primary_keys=["import_id"],
+	unique_keys=[("community_import_once_per_channel_kind", ["channel_id", "kind"])],
 	indexes=[("community_imports_tenant", ["community_id", "created_at"])],
 ))
 
@@ -3447,6 +3450,320 @@ async def handle_api_rating_seed_apply(request):
 	})
 
 
+_MAX_TEAM_RATING_PROFILES = 200
+_TEAM_RATING_FETCH_CONCURRENCY = 6
+
+
+class _TeamRatingSeedPreflightError(RuntimeError):
+	pass
+
+
+async def _fetch_team_rating_profiles(profile_ids):
+	semaphore = asyncio.Semaphore(_TEAM_RATING_FETCH_CONCURRENCY)
+
+	async def fetch_one(profile_id):
+		async with semaphore:
+			status, data = await lobby_api.fetch_profile_team_rating(profile_id)
+			return profile_id, status, data
+
+	tasks = {
+		asyncio.create_task(fetch_one(profile_id)): profile_id
+		for profile_id in profile_ids
+	}
+	done, pending = await asyncio.wait(tasks, timeout=45)
+	results = []
+	for task in done:
+		try:
+			results.append(task.result())
+		except Exception:
+			results.append((tasks[task], "unavailable", None))
+	for task in pending:
+		task.cancel()
+		results.append((tasks[task], "unavailable", None))
+	if pending:
+		await asyncio.gather(*pending, return_exceptions=True)
+	return sorted(results)
+
+
+async def _team_rating_seed_preview(context):
+	"""Observe linked members' ranked-team ratings and build an insert-only seed."""
+	pickup = context.channel
+	identity_rows = await db.select(
+		["profile_id", "user_id", "aoe2_name"], "identities")
+	profiles_by_user = {}
+	member_names = {}
+	for row in identity_rows or []:
+		user_id = row.get("user_id")
+		if user_id is None:
+			continue
+		user_id = int(user_id)
+		member = pickup.admin.guild.get_member(user_id)
+		if member is None or bool(getattr(member, "bot", False)):
+			continue
+		profiles_by_user.setdefault(user_id, []).append(int(row["profile_id"]))
+		member_names[user_id] = _seed_member_name(pickup.admin.guild, user_id)
+
+	existing_rows = await db.select(
+		["user_id", "nick", "rating", "deviation"],
+		"player_ratings", where={"channel_id": context.target_channel_id})
+	existing = {int(row["user_id"]): row for row in existing_rows or []}
+	eligible_users = {
+		user_id for user_id in profiles_by_user
+		if user_id not in existing or existing[user_id].get("rating") is None
+	}
+	profile_ids = sorted({
+		profile_id for user_id, ids in profiles_by_user.items()
+		if user_id in eligible_users for profile_id in ids
+	})
+	blockers = []
+	if not profiles_by_user:
+		blockers.append("No current community member has a linked AoE2 profile.")
+	if len(profile_ids) > _MAX_TEAM_RATING_PROFILES:
+		blockers.append(
+			f"This community has more than {_MAX_TEAM_RATING_PROFILES} linked profiles; "
+			"use CSV onboarding for this initial seed.")
+
+	already = await db.select_one(
+		["import_id", "created_at", "player_count"], "community_imports",
+		where={"channel_id": pickup.channel_id, "kind": "aoe_team_rating_seed"})
+	if already:
+		blockers.append("The one-time AoE team-rating seed has already been applied to this channel.")
+	if any(
+		int(getattr(getattr(match, "qc", None), "id", 0)) == pickup.channel_id
+		for match in pickup.queue_channel.app.active_matches):
+		blockers.append("A match is currently active in the target channel.")
+
+	observations = []
+	if profile_ids and len(profile_ids) <= _MAX_TEAM_RATING_PROFILES:
+		observations = await _fetch_team_rating_profiles(profile_ids)
+	by_profile = {
+		profile_id: (status, data) for profile_id, status, data in observations
+	}
+
+	prepared = []
+	summary = {
+		"linked_users": len(profiles_by_user), "profiles": len(profile_ids),
+		"ready": 0, "new": 0, "unrated": 0, "existing": 0,
+		"no_team_rating": 0, "unavailable": 0,
+	}
+	for user_id in sorted(profiles_by_user):
+		current = existing.get(user_id)
+		profiles = []
+		failed = False
+		if current is not None and current.get("rating") is not None:
+			profiles = [{
+				"profile_id": str(profile_id), "name": "", "rating": None,
+				"status": "not_checked",
+			} for profile_id in sorted(profiles_by_user[user_id])]
+		else:
+			for profile_id in sorted(profiles_by_user[user_id]):
+				fetch_status, data = by_profile.get(profile_id, ("unavailable", None))
+				profiles.append({
+					"profile_id": str(profile_id),
+					"name": (data or {}).get("name") or "",
+					"rating": (data or {}).get("rating"),
+					"status": fetch_status,
+				})
+				if fetch_status in ("unavailable", "not_found"):
+					failed = True
+		rated = [profile for profile in profiles if profile["status"] == "ok"]
+		chosen = max(rated, key=lambda profile: (profile["rating"], int(profile["profile_id"]))) if rated else None
+		if current is not None and current.get("rating") is not None:
+			status = "existing"
+			message = f"Already rated at {int(current['rating'])}; this seed will not overwrite it."
+		elif failed:
+			status = "unavailable"
+			message = "At least one linked profile could not be verified; retry when the AoE2 service is available."
+		elif chosen is None:
+			status = "no_team_rating"
+			message = "No linked profile currently has a ranked-team rating."
+		elif current is None:
+			status = "new"
+			message = "Ready to seed from the highest linked ranked-team rating."
+		elif current.get("rating") is None:
+			status = "unrated"
+			message = "Existing unrated player; rating fields can be initialized safely."
+		summary[status] += 1
+		if status in ("new", "unrated"):
+			summary["ready"] += 1
+		prepared.append({
+			"user_id": user_id,
+			"member_name": member_names[user_id],
+			"write_nick": member_names[user_id],
+			"profile_id": int(chosen["profile_id"]) if chosen else None,
+			"rating": chosen["rating"] if chosen else None,
+			"deviation": int(context.rating.init_deviation),
+			"profiles": profiles,
+			"status": status,
+			"message": message,
+			"current_rating": current.get("rating") if current else None,
+		})
+	if summary["unavailable"]:
+		blockers.append(
+			f"{summary['unavailable']} member(s) have a linked profile that could not be verified.")
+
+	digest = onboarding.team_rating_seed_digest(context.target_channel_id, prepared)
+	return {
+		"community": pickup.admin.payload(),
+		"target": {
+			"pickup_channel_id": str(pickup.channel_id),
+			"pickup_channel_name": pickup.channel.name,
+			"rating_channel_id": str(context.target_channel_id),
+			"rating_channel_name": getattr(context.target_channel, "name", str(context.target_channel_id)),
+			"initial_deviation": int(context.rating.init_deviation),
+		},
+		"source": "AoE2 Companion ranked team leaderboard",
+		"leaderboard": "rm_team",
+		"selection_policy": "For members with multiple linked profiles, the highest current ranked-team rating is used.",
+		"summary": summary,
+		"rows": [{key: value for key, value in row.items() if key != "write_nick"} for row in prepared],
+		"blockers": blockers,
+		"digest": digest,
+		"can_apply": summary["ready"] > 0 and not blockers,
+	}, prepared
+
+
+async def _team_rating_seed_request(request):
+	session = await _get_session(request)
+	if not session:
+		return None, web.json_response({"error": "Not logged in"}, status=401)
+	context, error = await _admin_rating_context(request, session)
+	if error is not None:
+		return None, error
+	if not _check_csrf(request, session):
+		return None, web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return None, web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	preview, prepared = await _team_rating_seed_preview(context)
+	return (session, context, payload, preview, prepared), None
+
+
+async def handle_api_team_rating_seed_preview(request):
+	result, error = await _team_rating_seed_request(request)
+	if error is not None:
+		return error
+	return web.json_response(result[3])
+
+
+async def _assert_team_rating_seed_available(tx, context):
+	pickup = context.channel
+	if any(
+		int(getattr(getattr(match, "qc", None), "id", 0)) == pickup.channel_id
+		for match in pickup.queue_channel.app.active_matches):
+		raise _TeamRatingSeedPreflightError("A match started after seed preview.")
+	if await tx.fetchone(
+		"SELECT import_id FROM community_imports "
+		"WHERE channel_id=%s AND kind='aoe_team_rating_seed' FOR UPDATE",
+		[pickup.channel_id]):
+		raise _TeamRatingSeedPreflightError(
+			"The one-time AoE team-rating seed has already been applied to this channel.")
+
+
+async def handle_api_team_rating_seed_apply(request):
+	result, error = await _team_rating_seed_request(request)
+	if error is not None:
+		return error
+	session, context, payload, preview, prepared = result
+	provided_digest = payload.get("digest") if isinstance(payload, dict) else None
+	if not isinstance(provided_digest, str) or not secrets.compare_digest(provided_digest, preview["digest"]):
+		return web.json_response({"error": "Team ratings changed after preview; preview them again"}, status=409)
+	if preview["blockers"]:
+		return web.json_response(
+			{"error": "Team-rating seed preflight is blocked", "blockers": preview["blockers"]},
+			status=409)
+	if not preview["can_apply"]:
+		return web.json_response({"error": "No new or unrated players remain to seed"}, status=409)
+
+	pickup = context.channel
+	now = int(time.time())
+	applied = 0
+	raced_out = 0
+	applied_user_ids = []
+	try:
+		async with pickup.queue_channel.app.match_creation_lock:
+			async with db.transaction() as tx:
+				await _assert_team_rating_seed_available(tx, context)
+				for row in prepared:
+					if row["status"] not in ("new", "unrated"):
+						continue
+					if row["status"] == "new":
+						changed = await tx.insert("player_ratings", {
+							"channel_id": context.target_channel_id,
+							"user_id": row["user_id"],
+							"nick": row["write_nick"] or f"Discord user {row['user_id']}",
+							"rating": row["rating"],
+							"deviation": row["deviation"],
+							"wins": 0, "losses": 0, "draws": 0, "streak": 0,
+						}, on_duplicate="ignore")
+					else:
+						changed = await tx.execute(
+							"UPDATE player_ratings SET nick=IF(%s='',nick,%s), rating=%s, deviation=%s "
+							"WHERE channel_id=%s AND user_id=%s AND rating IS NULL",
+							[row["write_nick"], row["write_nick"], row["rating"], row["deviation"],
+							 context.target_channel_id, row["user_id"]])
+					if not changed:
+						raced_out += 1
+						continue
+					await tx.insert("rating_history", {
+						"channel_id": context.target_channel_id,
+						"user_id": row["user_id"],
+						"at": now,
+						"rating_before": int(context.rating.init_rp),
+						"rating_change": row["rating"] - int(context.rating.init_rp),
+						"deviation_before": int(context.rating.init_deviation),
+						"deviation_change": 0,
+						"match_id": None,
+						"reason": (
+							f"AoE team rating seed by {int(session['user_id'])} "
+							f"from profile {row['profile_id']}"),
+					})
+					applied += 1
+					applied_user_ids.append(row["user_id"])
+				if not applied:
+					raise _TeamRatingSeedPreflightError(
+						"Every eligible player changed after preview; preview the seed again.")
+				await tx.insert("community_imports", {
+					"import_id": preview["digest"],
+					"community_id": pickup.admin.community.community_id,
+					"channel_id": pickup.channel_id,
+					"rating_channel_id": context.target_channel_id,
+					"kind": "aoe_team_rating_seed",
+					"source_name": "AoE2 Companion rm_team",
+					"timezone": "UTC",
+					"created_by": int(session["user_id"]),
+					"created_at": now,
+					"match_count": 0,
+					"player_count": applied,
+				})
+	except _TeamRatingSeedPreflightError as exc:
+		return web.json_response({"error": str(exc)}, status=409)
+	except db.errors.IntegrityError:
+		return web.json_response(
+			{"error": "The one-time team-rating seed was already applied"}, status=409)
+	except Exception as exc:
+		log.error(
+			f"AoE team-rating onboarding failed for community={pickup.admin.community.community_id} "
+			f"channel={context.target_channel_id}: {exc}")
+		return web.json_response({"error": "AoE team-rating seed could not be applied"}, status=500)
+
+	members = [pickup.admin.guild.get_member(user_id) for user_id in applied_user_ids]
+	members = [member for member in members if member is not None]
+	if members and callable(getattr(pickup.queue_channel, "update_rating_roles", None)):
+		try:
+			await pickup.queue_channel.update_rating_roles(*members)
+		except Exception as exc:
+			log.error(
+				f"AoE team-rating seed role sync failed for channel={context.target_channel_id}: {exc}")
+	return web.json_response({
+		"ok": True,
+		"applied": applied,
+		"skipped_after_preview": raced_out,
+		"rating_channel_id": str(context.target_channel_id),
+	})
+
+
 async def _identity_import_preview(admin, payload):
 	"""Validate global identity claims through one authorized Discord guild."""
 	parsed = onboarding.parse_identity_payload(payload)
@@ -4119,6 +4436,12 @@ def create_app():
 	app.router.add_post(
 		'/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/apply',
 		handle_api_rating_seed_apply)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/aoe-team/preview',
+		handle_api_team_rating_seed_preview)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/aoe-team/apply',
+		handle_api_team_rating_seed_apply)
 	app.router.add_post(
 		'/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/preview',
 		handle_api_pubobot_migration_preview)

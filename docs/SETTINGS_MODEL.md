@@ -75,6 +75,34 @@ This remains deliberately a **ratings-only seed**. It does not fabricate
 matches, win/loss counts, or historical rating changes. Uploads are capped at
 700 KB compressed, 2 MB expanded, 25 ZIP members, and 500 player rows.
 
+### One-time AoE ranked-team seed
+
+Admins can alternatively initialize linked current members from the ranked
+team rating observed on their AoE2 profiles:
+
+```
+/api/admin/communities/<community_id>/channels/<channel_id>/ratings/seed/aoe-team/preview
+/api/admin/communities/<community_id>/channels/<channel_id>/ratings/seed/aoe-team/apply
+```
+
+The preview reads the global identity map but keeps only non-bot members
+currently visible in the authorized Discord guild. It checks at most 200
+linked profiles belonging to players without a live rating, with six
+concurrent requests and a 45-second overall bound.
+If a member owns multiple profiles, the highest current `rm_team` rating is
+selected and every observed candidate is shown. A missing team rating is a
+legitimate skip; a missing profile, malformed response, timeout, or service
+failure blocks the whole apply so a partial outage cannot silently become the
+community's initial ladder.
+
+The external ladder is Elo-only, so the selected channel's configured initial
+deviation is used. As with manual/CSV seeding, writes are insert-only or
+conditional on `rating IS NULL`; an existing live rating is never replaced.
+Apply refetches the source, checks the observation digest, rechecks active
+match state, writes rating-history audit rows, and records a unique per-channel
+ledger entry. The unique `(channel_id, kind)` constraint makes this source
+apply exactly once even if two administrators race it.
+
 ## Full historical migration
 
 A separate one-time workflow imports a complete Pubobot export into a new
@@ -172,6 +200,5 @@ are changed accordingly.
 - community-level feature policy and public/private dashboard settings;
 - a tenant-safe quiz scheduler and editor;
 - guided resolution for identity ownership conflicts;
-- one-time AoE team-rating seeding;
 - actionable diagnostics and repair flows;
 - the full basic/advanced settings information architecture.

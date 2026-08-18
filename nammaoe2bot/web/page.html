@@ -1430,6 +1430,7 @@ var dashGuildId = null, dashGuildName = null;
 var dashChannelId = null, dashChannelName = null;
 var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null;
 var dashRatingSeedSource = null, dashRatingSeedPreview = null;
+var dashTeamRatingPreview = null;
 var dashIdentitySource = null, dashIdentityPreview = null;
 var dashMigrationSource = null, dashMigrationPreview = null;
 
@@ -3899,6 +3900,7 @@ function resetDashboard() {
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null;
   dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
+  dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
   dashMigrationSource=null; dashMigrationPreview=null;
   loadDashboard();
@@ -3915,6 +3917,7 @@ async function loadDashboard() {
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
   dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
+  dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
   dashMigrationSource=null; dashMigrationPreview=null;
   renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
@@ -3938,6 +3941,7 @@ async function selectGuild(id, name) {
   dashQueueName=null; dashChannels=[]; dashQueues=[];
   dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
+  dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
   dashMigrationSource=null; dashMigrationPreview=null;
   publicCommunityId = String(id);
@@ -4040,7 +4044,7 @@ function ratingSeedApi(channelId, action) {
 }
 
 function openRatingSeed(channelId) {
-  dashRatingSeedSource = null; dashRatingSeedPreview = null;
+  dashRatingSeedSource = null; dashRatingSeedPreview = null; dashTeamRatingPreview = null;
   renderRatingSeedForm(channelId || (dashChannels[0] && dashChannels[0].id));
 }
 
@@ -4070,7 +4074,11 @@ function renderRatingSeedForm(channelId) {
   html += '<section class="seed-method"><h2>CSV or Pubobot ZIP</h2>';
   html += '<p>CSV requires user_id and rating; nick and deviation are optional. A Pubobot ZIP uses its qc_players.csv.</p>';
   html += '<input id="seed-upload" class="seed-file" type="file" accept=".csv,.zip,text/csv,application/zip">';
-  html += '<button type="button" class="seed-button" onclick="previewFileRatingSeed()">Preview file</button></section></div>';
+  html += '<button type="button" class="seed-button" onclick="previewFileRatingSeed()">Preview file</button></section>';
+  html += '<section class="seed-method"><h2>AoE2 ranked-team ratings</h2>';
+  html += '<p>Use each current member\'s linked AoE2 profile. For multiple profiles, preview chooses the highest ranked-team rating.</p>';
+  html += '<button type="button" class="seed-button" onclick="previewTeamRatings()">Fetch current team ratings</button>';
+  html += '<p class="seed-source-note">This source can be applied only once per pickup channel. Link profiles first.</p></section></div>';
   html += '<p class="seed-safety">Preview is mandatory. Apply adds missing players and initializes rows whose rating is empty. '
     + 'It never overwrites an existing rating, and this ratings-only import does not fabricate match history or win/loss counts.</p>';
   html += '<div id="rating-seed-preview" class="seed-preview"></div></div>';
@@ -4078,7 +4086,7 @@ function renderRatingSeedForm(channelId) {
 }
 
 function changeRatingSeedChannel(channelId) {
-  dashRatingSeedSource = null; dashRatingSeedPreview = null;
+  dashRatingSeedSource = null; dashRatingSeedPreview = null; dashTeamRatingPreview = null;
   renderRatingSeedForm(channelId);
 }
 
@@ -4093,7 +4101,7 @@ async function requestRatingSeedPreview(source) {
     });
     var result = await resp.json();
     if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
-    dashRatingSeedSource = source; dashRatingSeedPreview = result;
+    dashRatingSeedSource = source; dashRatingSeedPreview = result; dashTeamRatingPreview = null;
     renderRatingSeedPreview();
   } catch(e) {
     preview.innerHTML = '<div class="error">Preview failed: '+esc(e.message)+'</div>';
@@ -4192,6 +4200,86 @@ async function applyRatingSeed() {
   } catch(e) {
     showToast('Apply failed: '+e.message, 'error');
     if (applyButton) { applyButton.disabled = false; applyButton.textContent = 'Apply '+(data.summary.ready||0)+' ratings'; }
+  }
+}
+
+function teamRatingSeedApi(channelId, action) {
+  return ratingSeedApi(channelId, 'aoe-team/'+action);
+}
+
+async function previewTeamRatings() {
+  var channel = document.getElementById('rating-seed-channel');
+  var preview = document.getElementById('rating-seed-preview');
+  if (!channel || !preview) return;
+  preview.innerHTML = '<div class="loading">Fetching linked ranked-team ratings and checking the target...</div>';
+  try {
+    var resp = await authFetch(teamRatingSeedApi(channel.value, 'preview'), {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
+    dashRatingSeedSource = null; dashRatingSeedPreview = null; dashTeamRatingPreview = result;
+    renderTeamRatingSeedPreview();
+  } catch(e) {
+    preview.innerHTML = '<div class="error">Team-rating preview failed: '+esc(e.message)+'</div>';
+  }
+}
+
+function renderTeamRatingSeedPreview() {
+  var container = document.getElementById('rating-seed-preview');
+  var data = dashTeamRatingPreview;
+  if (!container || !data) return;
+  var summary = data.summary || {}, target = data.target || {};
+  var html = '<div class="seed-summary">';
+  [['Linked members',summary.linked_users||0],['Profiles checked',summary.profiles||0],
+   ['Ready',summary.ready||0],['Already rated',summary.existing||0],
+   ['No team rating',summary.no_team_rating||0],['Unavailable',summary.unavailable||0]].forEach(function(item) {
+    html += '<div><span>'+esc(item[0])+'</span><b>'+esc(item[1])+'</b></div>';
+  });
+  html += '</div>';
+  if ((data.blockers || []).length) {
+    html += '<div class="error"><b>Seed is blocked.</b><ul>';
+    data.blockers.forEach(function(blocker) { html += '<li>'+esc(blocker)+'</li>'; });
+    html += '</ul></div>';
+  }
+  html += '<p class="seed-safety">'+esc(data.selection_policy)+' Existing ratings are never replaced. '
+    + 'The bot\'s configured initial deviation ('+esc(target.initial_deviation)+') is used because the external Elo ladder does not provide rating deviation.</p>';
+  html += '<div class="seed-table-wrap"><table class="seed-table"><thead><tr>';
+  html += '<th>Discord member</th><th>Linked profiles checked</th><th>Selected profile</th><th>Team rating</th><th>Status</th><th>Result</th>';
+  html += '</tr></thead><tbody>';
+  (data.rows || []).forEach(function(row) {
+    var profiles = (row.profiles || []).map(function(profile) {
+      var label = profile.name || profile.profile_id;
+      return label+' ('+(profile.rating == null ? overviewStatusLabel(profile.status) : profile.rating)+')';
+    }).join(', ');
+    html += '<tr class="'+esc(row.status)+'"><td>'+esc(row.member_name || ('Discord user '+row.user_id))+'</td>';
+    html += '<td>'+esc(profiles || '-')+'</td><td>'+esc(row.profile_id || '-')+'</td><td>'+esc(row.rating || '-')+'</td>';
+    html += '<td><span class="overview-badge '+esc(row.status)+'">'+esc(overviewStatusLabel(row.status))+'</span></td>';
+    html += '<td class="seed-message">'+esc(row.message)+'</td></tr>';
+  });
+  html += '</tbody></table></div><div class="seed-actions"><span class="seed-source-note">'+esc(data.source)+' &rarr; #'+esc(target.rating_channel_name||target.rating_channel_id)+'</span>';
+  html += '<button type="button" class="seed-button secondary" onclick="openRatingSeed(\''+esc(target.pickup_channel_id)+'\')">Discard preview</button>';
+  html += '<button type="button" class="seed-button apply" onclick="applyTeamRatingSeed()"'+(data.can_apply?'':' disabled')+'>';
+  html += 'Apply '+esc(summary.ready||0)+' team rating'+((summary.ready||0)===1?'':'s')+'</button></div>';
+  container.innerHTML = html;
+}
+
+async function applyTeamRatingSeed() {
+  var data = dashTeamRatingPreview;
+  if (!data || !data.can_apply) return;
+  var applyButton = document.querySelector('.seed-button.apply');
+  if (applyButton) { applyButton.disabled = true; applyButton.textContent = 'Refreshing and applying...'; }
+  try {
+    var resp = await authFetch(teamRatingSeedApi(data.target.pickup_channel_id, 'apply'), {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({digest:data.digest}),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
+    showToast('Seeded '+result.applied+' player'+(result.applied===1?'':'s')+' from AoE2 team ratings.', 'success');
+    await selectGuild(dashGuildId, dashGuildName);
+  } catch(e) {
+    showToast('Team-rating seed failed: '+e.message, 'error');
+    if (applyButton) { applyButton.disabled = false; applyButton.textContent = 'Apply '+(data.summary.ready||0)+' team ratings'; }
   }
 }
 

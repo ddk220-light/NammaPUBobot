@@ -235,6 +235,23 @@ def seed_digest(target_channel_id, parsed):
 	return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def team_rating_seed_digest(target_channel_id, rows):
+	"""Bind a remote ladder preview to its target and observed ratings."""
+	canonical_rows = [{
+		"user_id": int(row["user_id"]),
+		"profile_id": int(row["profile_id"]) if row.get("profile_id") is not None else None,
+		"rating": int(row["rating"]) if row.get("rating") is not None else None,
+		"status": row["status"],
+	} for row in rows]
+	canonical = {
+		"target_channel_id": int(target_channel_id),
+		"leaderboard": "rm_team",
+		"rows": canonical_rows,
+	}
+	encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+	return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _identity_aliased(row, name):
 	clean = {_header(key): value for key, value in row.items() if key is not None}
 	for alias in _IDENTITY_ALIASES[name]:

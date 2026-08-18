@@ -1220,9 +1220,11 @@ def _rating_seed_setup(monkeypatch, fake):
 		role_updates.extend(member.id for member in members)
 
 	queue_channel = types.SimpleNamespace(
-		guild_id=777, queues=[], rating=rating, update_rating_roles=update_rating_roles)
+		guild_id=777, queues=[], rating=rating, update_rating_roles=update_rating_roles,
+		app=web.dc.app)
 	_install_discord(
 		monkeypatch, [alpha], channels={100: channel}, queue_channels={100: queue_channel})
+	monkeypatch.setattr(web.dc.app, "active_matches", [])
 	install_db(monkeypatch, fake)
 	return role_updates
 
@@ -1341,6 +1343,109 @@ def test_rating_seed_rejects_a_shared_rating_host_from_another_guild(monkeypatch
 
 	assert response.status == 404
 	assert response.payload == {"error": "Rating host channel not found in this community"}
+
+
+def test_team_rating_seed_uses_the_highest_linked_profile_and_records_one_run(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"identities": [
+			{"profile_id": 9001, "user_id": 42, "aoe2_name": "Alt"},
+			{"profile_id": 9002, "user_id": 42, "aoe2_name": "Main"},
+		],
+	})
+	role_updates = _rating_seed_setup(monkeypatch, fake)
+
+	async def fetch_rating(profile_id):
+		return "ok", {
+			"profile_id": profile_id,
+			"name": "Main" if profile_id == 9002 else "Alt",
+			"rating": 1600 if profile_id == 9002 else 1400,
+			"leaderboard": "rm_team",
+		}
+
+	monkeypatch.setattr(web.lobby_api, "fetch_profile_team_rating", fetch_rating)
+	base_request = dict(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		match_info={"community_id": "9", "channel_id": "100"})
+	preview = asyncio.run(web.handle_api_team_rating_seed_preview(
+		request(json_body={}, **base_request))).payload
+
+	assert preview["can_apply"] is True
+	assert preview["summary"]["ready"] == 1
+	assert preview["rows"][0]["profile_id"] == 9002
+	assert preview["rows"][0]["rating"] == 1600
+	assert "highest current" in preview["selection_policy"]
+
+	response = asyncio.run(web.handle_api_team_rating_seed_apply(request(
+		json_body={"digest": preview["digest"]}, **base_request)))
+
+	assert response.status == 200
+	assert response.payload["applied"] == 1
+	stored = fake.rows["player_ratings"][0]
+	assert (stored["user_id"], stored["rating"], stored["deviation"]) == (42, 1600, 200)
+	history = fake.rows["rating_history"][0]
+	assert history["rating_change"] == 600
+	assert "profile 9002" in history["reason"]
+	assert fake.rows["community_imports"][0]["kind"] == "aoe_team_rating_seed"
+	assert role_updates == [42]
+
+	second = asyncio.run(web.handle_api_team_rating_seed_apply(request(
+		json_body={"digest": preview["digest"]}, **base_request)))
+	assert second.status == 409
+	assert len(fake.rows["community_imports"]) == 1
+
+
+def test_team_rating_seed_does_not_fetch_or_replace_an_existing_live_rating(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"identities": [{"profile_id": 9001, "user_id": 42, "aoe2_name": "Main"}],
+		"player_ratings": [{
+			"channel_id": 100, "user_id": 42, "nick": "Player", "rating": 1200,
+			"deviation": 90,
+		}],
+	})
+	_rating_seed_setup(monkeypatch, fake)
+
+	async def should_not_fetch(_profile_id):
+		raise AssertionError("an existing live rating does not need an external lookup")
+
+	monkeypatch.setattr(web.lobby_api, "fetch_profile_team_rating", should_not_fetch)
+	response = asyncio.run(web.handle_api_team_rating_seed_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={}, match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 200
+	assert response.payload["summary"]["existing"] == 1
+	assert response.payload["summary"]["profiles"] == 0
+	assert response.payload["can_apply"] is False
+	assert fake.rows["player_ratings"][0]["rating"] == 1200
+
+
+def test_team_rating_seed_fails_closed_when_any_linked_profile_is_unavailable(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"identities": [{"profile_id": 9001, "user_id": 42, "aoe2_name": "Main"}],
+	})
+	_rating_seed_setup(monkeypatch, fake)
+
+	async def unavailable(_profile_id):
+		return "unavailable", None
+
+	monkeypatch.setattr(web.lobby_api, "fetch_profile_team_rating", unavailable)
+	response = asyncio.run(web.handle_api_team_rating_seed_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={}, match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 200
+	assert response.payload["can_apply"] is False
+	assert response.payload["summary"]["unavailable"] == 1
+	assert "could not be verified" in " ".join(response.payload["blockers"])
 
 
 def _identity_import_setup(monkeypatch, fake):
@@ -1540,6 +1645,8 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/config" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/preview" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/apply" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/aoe-team/preview" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/aoe-team/apply" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/preview" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/apply" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/queues/{queue_name}/config" in paths
@@ -1549,6 +1656,8 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "function renderCommunityOverview()" in page
 	assert "function openRatingSeed(channelId)" in page
 	assert "function renderRatingSeedPreview()" in page
+	assert "function renderTeamRatingSeedPreview()" in page
+	assert "function applyTeamRatingSeed()" in page
 	assert "function openIdentityImport()" in page
 	assert "function renderIdentityPreview()" in page
 	assert "function openHistoricalMigration(channelId)" in page

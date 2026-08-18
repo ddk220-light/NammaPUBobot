@@ -110,6 +110,33 @@ def test_parse_profile_returns_none_without_a_usable_profile_id():
 	assert api._parse_profile("profile couldn't be found") is None
 
 
+def test_team_rating_parser_selects_ranked_team_and_accepts_a_string_rating():
+	payload = {
+		**LIVE_200_BODY,
+		"leaderboards": [
+			{"leaderboardId": "rm_1v1", "rating": 1701},
+			{"leaderboardId": "rm_team", "rating": "1559"},
+		],
+	}
+	assert api._parse_team_rating(payload) == {
+		"profile_id": 612690, "name": "ddk220", "rating": 1559,
+		"leaderboard": "rm_team",
+	}
+
+
+def test_team_rating_classifier_distinguishes_unrated_from_unavailable():
+	unrated = {**LIVE_200_BODY, "leaderboards": []}
+	assert api._classify_team_rating(200, unrated) == (
+		"unrated", {
+			"profile_id": 612690, "name": "ddk220", "rating": None,
+			"leaderboard": "rm_team",
+		})
+	assert api._classify_team_rating(
+		200, {**LIVE_200_BODY, "leaderboards": [{"leaderboardId": "rm_team"}]}) == (
+			"unavailable", None)
+	assert api._classify_team_rating(404, LIVE_404_BODY) == ("not_found", None)
+
+
 # ── _classify — the whole /link validation decision ──────────────────────
 # This mapping is the gate: it decides whether a player is told "your number is
 # wrong" (their problem, fixable) or "the service is down" (not their problem,
@@ -246,3 +273,22 @@ def test_fetch_profile_reports_unavailable_when_the_body_is_not_json(monkeypatch
 	_install_fake_aiohttp(monkeypatch, status=200, payload=ValueError("Expecting value"))
 
 	assert asyncio.run(api.fetch_profile(612690)) == ("unavailable", None)
+
+
+def test_fetch_profile_team_rating_returns_the_observed_ladder_value(monkeypatch):
+	requests = _install_fake_aiohttp(monkeypatch, status=200, payload=LIVE_200_BODY)
+
+	assert asyncio.run(api.fetch_profile_team_rating(612690)) == (
+		"ok", {
+			"profile_id": 612690, "name": "ddk220", "rating": 1559,
+			"leaderboard": "rm_team",
+		})
+	assert requests == ["https://data.aoe2companion.com/api/profiles/612690"]
+
+
+def test_fetch_profile_team_rating_fails_closed_on_network_or_bad_data(monkeypatch):
+	_install_fake_aiohttp(monkeypatch, status=200, error=_FakeClientError("offline"))
+	assert asyncio.run(api.fetch_profile_team_rating(612690)) == ("unavailable", None)
+
+	_install_fake_aiohttp(monkeypatch, status=200, payload={"profileId": 612690})
+	assert asyncio.run(api.fetch_profile_team_rating(612690)) == ("unavailable", None)
