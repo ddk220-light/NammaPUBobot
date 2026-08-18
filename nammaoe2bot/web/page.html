@@ -393,6 +393,107 @@ td.et_remove { width: 24px; text-align: center; }
 .dash-login-prompt a { color: #5b8cee; font-weight: 600; font-size: 1.1rem; }
 .dash-login-prompt a:hover { text-decoration: underline; }
 
+.community-overview { max-width: 1120px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
+.overview-hero {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+  padding: 1.1rem 1.2rem; background: #2f3136; border: 1px solid #484c54;
+  border-radius: 9px; margin-bottom: 1rem;
+}
+.overview-hero h1 { margin: 0; color: white; font: 400 1.45rem 'Oswald', sans-serif; letter-spacing: 0.5px; }
+.overview-hero p { margin: 0.35rem 0 0; color: #aeb1b7; line-height: 1.45; }
+.overview-progress { min-width: 150px; text-align: right; color: #b9bbbe; font-size: 0.8rem; }
+.overview-progress strong { display: block; color: white; font-size: 1.25rem; margin-bottom: 0.35rem; }
+.overview-progress-bar { height: 7px; border-radius: 999px; background: #202225; overflow: hidden; }
+.overview-progress-bar span { display: block; height: 100%; background: #57d98b; border-radius: inherit; }
+.overview-section { margin-top: 1.15rem; }
+.overview-section h2 { margin: 0 0 0.65rem; color: white; font: 400 1.1rem 'Oswald', sans-serif; letter-spacing: 0.5px; }
+.overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 0.75rem; }
+.overview-card {
+  background: #2f3136; border: 1px solid #484c54; border-radius: 8px;
+  padding: 0.85rem 0.95rem; min-width: 0;
+}
+.overview-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; }
+.overview-card h3 { margin: 0; color: #f1f2f3; font-size: 0.95rem; }
+.overview-card p { margin: 0.45rem 0 0; color: #a9adb5; font-size: 0.8rem; line-height: 1.45; }
+.overview-card-note { color: #d8c47d !important; }
+.overview-badge {
+  flex: 0 0 auto; padding: 0.14rem 0.48rem; border-radius: 999px;
+  font-size: 0.65rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+  background: rgba(185,187,190,0.12); color: #c8c9cd; border: 1px solid rgba(185,187,190,0.22);
+}
+.overview-badge.active, .overview-badge.complete, .overview-badge.ready, .overview-badge.healthy,
+.overview-badge.new, .overview-badge.unrated {
+  color: #9ce5b5; background: rgba(87,217,139,0.1); border-color: rgba(87,217,139,0.28);
+}
+.overview-badge.required, .overview-badge.setup_required, .overview-badge.attention, .overview-badge.invalid {
+  color: #ffb0b4; background: rgba(255,109,115,0.1); border-color: rgba(255,109,115,0.28);
+}
+.overview-badge.recommended, .overview-badge.partial {
+  color: #f0d587; background: rgba(224,185,67,0.1); border-color: rgba(224,185,67,0.28);
+}
+.overview-metrics { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-top: 0.55rem; }
+.overview-metric { color: #858a93; font-size: 0.72rem; }
+.overview-metric b { color: #dcddde; margin-right: 0.2rem; }
+.setup-list { display: grid; gap: 0.5rem; }
+.setup-row {
+  display: grid; grid-template-columns: minmax(150px, 0.7fr) minmax(240px, 1.3fr) auto;
+  gap: 0.75rem; align-items: center; background: #2f3136; border: 1px solid #484c54;
+  border-radius: 7px; padding: 0.7rem 0.85rem;
+}
+.setup-row strong { color: #e8e9eb; font-size: 0.86rem; }
+.setup-row span { color: #a9adb5; font-size: 0.78rem; line-height: 1.35; }
+.setup-controls { display: flex; justify-content: flex-end; align-items: center; gap: 0.45rem; }
+.diagnostic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.6rem; }
+.diagnostic-cell { background: #202225; border-radius: 6px; padding: 0.65rem 0.75rem; }
+.diagnostic-cell span { display: block; color: #858a93; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.diagnostic-cell b { display: block; color: #f1f2f3; font-size: 1rem; margin-top: 0.2rem; }
+.setup-action, .seed-button {
+  border: 1px solid #4d76ca; border-radius: 5px; background: #376ace; color: white;
+  padding: 0.42rem 0.72rem; font: 700 0.76rem 'Outfit', sans-serif; cursor: pointer;
+}
+.setup-action:hover, .seed-button:hover { background: #4679dd; }
+.seed-button.secondary { background: #2f3136; border-color: #5a5f69; color: #dcddde; }
+.seed-button.secondary:hover { background: #3a3d43; }
+.seed-button.apply { background: #3d724f; border-color: #4d8e63; }
+.seed-button.apply:hover { background: #478a5c; }
+.seed-button:disabled { cursor: not-allowed; opacity: 0.42; }
+.seed-shell { max-width: 1000px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
+.seed-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.seed-header h1 { margin: 0; color: white; font: 400 1.45rem 'Oswald', sans-serif; }
+.seed-header p { margin: 0.35rem 0 0; color: #aeb1b7; line-height: 1.45; }
+.seed-target {
+  background: #202225; border: 1px solid #484c54; border-radius: 8px; padding: 0.8rem 0.9rem;
+  margin-bottom: 0.85rem;
+}
+.seed-target label { display: block; color: #858a93; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
+.seed-target select { width: 100%; margin-top: 0.4rem; background: #2f3136; color: white; border: 1px solid #5a5f69; border-radius: 5px; padding: 0.55rem; }
+.seed-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
+.seed-method {
+  background: #2f3136; border: 1px solid #484c54; border-radius: 8px; padding: 0.9rem;
+}
+.seed-method h2 { margin: 0; color: #f1f2f3; font-size: 1rem; }
+.seed-method p { color: #a9adb5; font-size: 0.8rem; line-height: 1.45; min-height: 2.3rem; }
+.seed-fields { display: grid; grid-template-columns: 1.3fr 0.8fr 0.8fr; gap: 0.5rem; margin: 0.75rem 0; }
+.seed-fields input, .seed-file {
+  min-width: 0; background: #202225; color: #f1f2f3; border: 1px solid #5a5f69;
+  border-radius: 5px; padding: 0.55rem; font: 0.82rem 'Outfit', sans-serif;
+}
+.seed-file { display: block; width: 100%; box-sizing: border-box; margin: 0.75rem 0; }
+.seed-safety { color: #d8c47d; font-size: 0.77rem; line-height: 1.45; margin: 0.85rem 0 0; }
+.seed-preview { margin-top: 1rem; }
+.seed-summary { display: grid; grid-template-columns: repeat(5, minmax(90px, 1fr)); gap: 0.5rem; margin-bottom: 0.7rem; }
+.seed-summary div { background: #202225; border-radius: 6px; padding: 0.55rem 0.65rem; }
+.seed-summary span { display: block; color: #858a93; font-size: 0.65rem; text-transform: uppercase; }
+.seed-summary b { display: block; color: white; font-size: 1.05rem; margin-top: 0.15rem; }
+.seed-table-wrap { overflow-x: auto; border: 1px solid #484c54; border-radius: 7px; }
+.seed-table { width: 100%; border-collapse: collapse; min-width: 720px; }
+.seed-table th { background: #202225; color: #aeb1b7; text-align: left; font-size: 0.7rem; text-transform: uppercase; padding: 0.55rem; }
+.seed-table td { border-top: 1px solid #42464d; color: #dcddde; font-size: 0.78rem; padding: 0.55rem; vertical-align: top; }
+.seed-table td.seed-message { color: #a9adb5; white-space: normal; min-width: 220px; }
+.seed-table tr.invalid td { background: rgba(255,109,115,0.04); }
+.seed-actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.55rem; margin-top: 0.75rem; }
+.seed-source-note { margin-right: auto; color: #858a93; font-size: 0.75rem; }
+
 .loading { text-align: center; padding: 3rem; color: #b9bbbe; font-size: 1rem; }
 .error { text-align: center; padding: 2rem; color: #e06060; font-size: 1rem; }
 
@@ -907,6 +1008,16 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   .field_submit { width: 95%; font-size: 16px; letter-spacing: 2px; }
 
   .content-title { font-size: 1.1rem; padding: 1rem 0.75rem 0; }
+  .community-overview { padding: 0.8rem 0.7rem 2rem; }
+  .overview-hero { flex-direction: column; }
+  .overview-progress { width: 100%; text-align: left; }
+  .setup-row { grid-template-columns: 1fr; gap: 0.35rem; }
+  .setup-controls { justify-content: flex-start; }
+  .seed-shell { padding: 0.8rem 0.7rem 2rem; }
+  .seed-header { flex-direction: column; }
+  .seed-methods { grid-template-columns: 1fr; }
+  .seed-fields { grid-template-columns: 1fr; }
+  .seed-summary { grid-template-columns: repeat(2, minmax(90px, 1fr)); }
 }
 /* ─── Strategy insights ─── */
 .strat-controls { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
@@ -1316,7 +1427,12 @@ var playerDetailData = null, miniSort = {
 var dashGuilds = [], dashChannels = [], dashQueues = [];
 var dashGuildId = null, dashGuildName = null;
 var dashChannelId = null, dashChannelName = null;
-var dashQueueName = null, dashActiveTab = null, dashConfigData = null;
+var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null;
+var dashRatingSeedSource = null, dashRatingSeedPreview = null;
+
+function adminCommunityApi(communityId, path) {
+  return '/api/admin/communities/' + encodeURIComponent(communityId) + (path || '');
+}
 
 /* ─── Utils ─── */
 function esc(s) {
@@ -1362,15 +1478,31 @@ function showToast(msg, type) {
 /* ─── Navigation ─── */
 var routeApplying = false;
 
+// Preserve any explicit community segment, including a malformed one. The
+// API resolver will reject unknown IDs; silently dropping the segment here
+// would turn `/c/not-an-id` into the flagship dashboard instead.
+var publicCommunityMatch = window.location.pathname.match(/^\/c\/([^/]+)(?:\/|$)/);
+var publicCommunityId = publicCommunityMatch ? publicCommunityMatch[1] : null;
+
+function publicPath(path) {
+  return publicCommunityId ? '/c/' + encodeURIComponent(publicCommunityId) + path : path;
+}
+
+function publicApi(path) {
+  return publicCommunityId
+    ? '/api/communities/' + encodeURIComponent(publicCommunityId) + path
+    : '/api' + path;
+}
+
 function routePath(page) {
-  if (page === 'player-profile' && playerProfileUserId) return '/player/' + encodeURIComponent(playerProfileUserId);
-  return {
+  if (page === 'player-profile' && playerProfileUserId) return publicPath('/player/' + encodeURIComponent(playerProfileUserId));
+  return publicPath({
     strategies: '/strategies',
     'match-stats': '/match-stats',
     leaderboard: '/leaderboard',
     'civ-stats': '/civ-stats',
     dashboard: '/dashboard'
-  }[page] || '/leaderboard';
+  }[page] || '/leaderboard');
 }
 
 function routeQuery(page) {
@@ -1413,6 +1545,7 @@ function validPlayerProfileView(v) {
 
 function applyRouteFromLocation() {
   var path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (publicCommunityId) path = path.replace(/^\/c\/[^/]+/, '') || '/';
   var q = new URLSearchParams(window.location.search);
   routeApplying = true;
   try {
@@ -1586,13 +1719,13 @@ function renderCivTable() {
 
 async function initCivStats() {
   try {
-    var resp = await fetch('/api/civ-stats');
+    var resp = await fetch(publicApi('/civ-stats'));
     if (!resp.ok) throw new Error('HTTP '+resp.status);
     var res = await resp.json(); civData = res.civs || [];
     buildHeaders();
     if (!civData.length) {
-      // An empty table is a real state (no community resolved, or no civ has
-      // min_games picks yet) and says so, rather than rendering as a load error.
+      // A resolved community can legitimately have no civ above the sample
+      // floor; say so rather than rendering the empty state as a load error.
       document.getElementById('table-body').innerHTML =
         '<tr><td colspan="5" class="loading">No civilization has '+esc(res.min_games)+'+ recorded picks yet.</td></tr>';
       return;
@@ -1741,7 +1874,7 @@ async function loadMatchStats() {
     if (el) el.innerHTML = '<div class="loading">Loading match stats...</div>';
   });
   try {
-    var url = '/api/match-stats?period=' + encodeURIComponent(matchPeriod) + '&player_id=' + encodeURIComponent(matchPlayer);
+    var url = publicApi('/match-stats') + '?period=' + encodeURIComponent(matchPeriod) + '&player_id=' + encodeURIComponent(matchPlayer);
     var resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     matchData = await resp.json();
@@ -1828,7 +1961,7 @@ function avatarImg(url, name) {
   return '<img class="player-avatar" src="' + esc(url) + '" alt="' + esc(name || 'player') + '">';
 }
 function playerProfileHref(userId) {
-  return '/player/' + encodeURIComponent(userId || '') + '?period=' + encodeURIComponent(profilePeriodForCurrentPage()) + '&view=overview';
+  return publicPath('/player/' + encodeURIComponent(userId || '')) + '?period=' + encodeURIComponent(profilePeriodForCurrentPage()) + '&view=overview';
 }
 function playerLink(userId, name, html) {
   if (!userId) return html || esc(name || '-');
@@ -2490,7 +2623,7 @@ async function loadLeaderboard() {
   var panel = document.getElementById('leaderboard-panel');
   panel.innerHTML = '<div class="loading">Loading leaderboard...</div>';
   try {
-    var url = '/api/leaderboard?period=' + encodeURIComponent(leaderboardPeriod) + '&mode=' + encodeURIComponent(leaderboardMode);
+    var url = publicApi('/leaderboard') + '?period=' + encodeURIComponent(leaderboardPeriod) + '&mode=' + encodeURIComponent(leaderboardMode);
     if (leaderboardMode === 'tags' && leaderboardTag) url += '&tag=' + encodeURIComponent(leaderboardTag);
     var resp = await fetch(url);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
@@ -2654,7 +2787,7 @@ async function loadPlayerDetail(userId, period, opts) {
   try {
     /* The /api/strategies preload that used to sit here fed the luck profile
        this page no longer renders. The player payload is self-contained. */
-    var resp = await fetch('/api/player-stats?period=' + encodeURIComponent(playerProfilePeriod) + '&player_id=' + encodeURIComponent(userId));
+    var resp = await fetch(publicApi('/player-stats') + '?period=' + encodeURIComponent(playerProfilePeriod) + '&player_id=' + encodeURIComponent(userId));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     var d = await resp.json();
     playerDetailData = d;
@@ -3524,7 +3657,7 @@ function wrPctCell(v) { return '<td class="' + wrPctClass(v) + '">' + (v == null
 
 async function loadStrategyData() {
   if (stratData.length) return;
-  var resp = await fetch('/api/strategies');
+  var resp = await fetch(publicApi('/strategies'));
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   var d = await resp.json();
   stratData = d.strategies || [];
@@ -3761,7 +3894,8 @@ function renderBreadcrumb() {
 
 function resetDashboard() {
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null;
-  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashActiveTab=null;
+  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
+  dashRatingSeedSource=null; dashRatingSeedPreview=null;
   loadDashboard();
 }
 
@@ -3774,36 +3908,272 @@ async function loadDashboard() {
     return;
   }
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
-  renderBreadcrumb();
-  content.innerHTML = '<div class="loading">Loading guilds...</div>';
+  dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null;
+  dashRatingSeedSource=null; dashRatingSeedPreview=null;
+  renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
+  content.innerHTML = '<div class="loading">Loading communities...</div>';
   try {
-    var resp = await authFetch('/api/guilds');
+    var resp = await authFetch(publicCommunityId
+      ? adminCommunityApi(publicCommunityId, '')
+      : '/api/admin/communities');
     if (!resp.ok) throw new Error('HTTP '+resp.status);
     var data = await resp.json(); if (data.error) throw new Error(data.error);
-    dashGuilds = data.guilds;
+    dashGuilds = data.community ? [data.community] : (data.communities || []);
     renderGuildNav(); renderGuildMenu();
-    if (!dashGuilds.length) { content.innerHTML = '<div class="dash-login-prompt">No configured guilds found.</div>'; return; }
-    // Auto-select first guild
+    if (!dashGuilds.length) { content.innerHTML = '<div class="dash-login-prompt">No communities you can administer were found.</div>'; return; }
+    // Auto-select the explicit community, or the first administered one.
     selectGuild(dashGuilds[0].id, dashGuilds[0].name);
-  } catch(e) { content.innerHTML = '<div class="error">Failed to load guilds: '+esc(e.message)+'</div>'; }
+  } catch(e) { content.innerHTML = '<div class="error">Failed to load communities: '+esc(e.message)+'</div>'; }
 }
 
 async function selectGuild(id, name) {
   dashGuildId=id; dashGuildName=name; dashChannelId=null; dashChannelName=null;
-  dashQueueName=null; dashConfigData=null; dashActiveTab=null;
-  renderBreadcrumb(); renderGuildNav();
+  dashQueueName=null; dashChannels=[]; dashQueues=[];
+  dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
+  dashRatingSeedSource=null; dashRatingSeedPreview=null;
+  publicCommunityId = String(id);
+  var tenantDashboardPath = publicPath('/dashboard');
+  if (window.location.pathname !== tenantDashboardPath) {
+    history.replaceState({page:'dashboard'}, '', tenantDashboardPath);
+  }
+  renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
   var content = document.getElementById('dash-content');
-  content.innerHTML = '<div class="loading">Loading channels...</div>';
+  content.innerHTML = '<div class="loading">Loading community settings...</div>';
   try {
-    var resp = await authFetch('/api/guilds/'+id+'/channels');
-    if (!resp.ok) throw new Error('HTTP '+resp.status);
-    var data = await resp.json(); if (data.error) throw new Error(data.error);
-    dashChannels = data.channels; dashQueues = [];
+    var results = await Promise.all([
+      authFetch(adminCommunityApi(id, '/overview')),
+      authFetch(adminCommunityApi(id, '/channels'))
+    ]);
+    if (!results[0].ok) throw new Error('HTTP '+results[0].status);
+    if (!results[1].ok) throw new Error('HTTP '+results[1].status);
+    var payloads = await Promise.all([results[0].json(), results[1].json()]);
+    if (payloads[0].error) throw new Error(payloads[0].error);
+    if (payloads[1].error) throw new Error(payloads[1].error);
+    dashOverviewData = payloads[0]; dashChannels = payloads[1].channels || []; dashQueues = [];
     renderGuildMenu();
-    if (!dashChannels.length) { content.innerHTML = '<div class="dash-login-prompt">No configured channels.</div>'; return; }
-    // Auto-select first channel
-    selectChannel(dashChannels[0].id, dashChannels[0].name);
-  } catch(e) { content.innerHTML = '<div class="error">Failed to load channels: '+esc(e.message)+'</div>'; }
+    renderCommunityOverview();
+  } catch(e) { content.innerHTML = '<div class="error">Failed to load community settings: '+esc(e.message)+'</div>'; }
+}
+
+function overviewStatusLabel(status) {
+  return String(status || 'unknown').replace(/_/g, ' ');
+}
+
+function overviewMetrics(metrics) {
+  return Object.keys(metrics || {}).map(function(key) {
+    return '<span class="overview-metric"><b>'+esc(metrics[key])+'</b>'+esc(key.replace(/_/g, ' '))+'</span>';
+  }).join('');
+}
+
+function renderCommunityOverview() {
+  var content = document.getElementById('dash-content');
+  var data = dashOverviewData;
+  if (!data) { content.innerHTML = '<div class="error">Community overview is unavailable.</div>'; return; }
+  var onboarding = data.onboarding || {steps:[], completed_required:0, required_steps:0, status:'needs_setup'};
+  var required = onboarding.required_steps || 0;
+  var complete = onboarding.completed_required || 0;
+  var progress = required ? Math.round(100 * complete / required) : 100;
+  var diagnostics = data.diagnostics || {};
+  var channelState = diagnostics.channel_consistency || {};
+  var stored = diagnostics.data || {};
+  var html = '<div class="community-overview">';
+  html += '<div class="overview-hero"><div><h1>'+esc((data.community||{}).name || dashGuildName)+'</h1>';
+  html += '<p>Setup, feature availability and tenant-scoped runtime health.</p></div>';
+  html += '<div class="overview-progress"><strong>'+complete+' / '+required+'</strong>required setup steps';
+  html += '<div class="overview-progress-bar"><span style="width:'+progress+'%"></span></div></div></div>';
+
+  html += '<section class="overview-section"><h2>Onboarding</h2><div class="setup-list">';
+  (onboarding.steps || []).forEach(function(step) {
+    html += '<div class="setup-row"><strong>'+esc(step.title)+'</strong><span>'+esc(step.detail)+'</span>';
+    html += '<div class="setup-controls"><span class="overview-badge '+esc(step.status)+'">'+esc(overviewStatusLabel(step.status))+'</span>';
+    if (step.action === 'seed_ratings') html += '<button type="button" class="setup-action" onclick="openRatingSeed()">Seed ratings</button>';
+    html += '</div></div>';
+  });
+  html += '</div></section>';
+
+  html += '<section class="overview-section"><h2>Features</h2><div class="overview-grid">';
+  (data.capabilities || []).forEach(function(feature) {
+    html += '<article class="overview-card"><div class="overview-card-top"><h3>'+esc(feature.title)+'</h3>';
+    html += '<span class="overview-badge '+esc(feature.status)+'">'+esc(overviewStatusLabel(feature.status))+'</span></div>';
+    html += '<p>'+esc(feature.summary)+'</p><div class="overview-metrics">';
+    html += '<span class="overview-metric"><b>'+esc(feature.scope)+'</b>scope</span>';
+    html += '<span class="overview-metric"><b>'+(feature.configurable?'editable':'read only')+'</b>control</span>';
+    html += overviewMetrics(feature.metrics)+'</div>';
+    if (feature.note) html += '<p class="overview-card-note">'+esc(feature.note)+'</p>';
+    html += '</article>';
+  });
+  html += '</div></section>';
+
+  html += '<section class="overview-section"><h2>Diagnostics <span class="overview-badge '+esc(diagnostics.status)+'">'+esc(overviewStatusLabel(diagnostics.status))+'</span></h2>';
+  html += '<div class="diagnostic-grid">';
+  [
+    ['Discord', diagnostics.discord_connected ? 'Connected' : 'Disconnected'],
+    ['Bot runtime', diagnostics.bot_ready ? 'Ready' : 'Starting'],
+    ['Loaded channels', channelState.loaded || 0],
+    ['Channel mismatches', (channelState.enrolled_not_loaded||0)+(channelState.loaded_not_enrolled||0)+(channelState.discord_unavailable||0)],
+    ['Seeded players', stored.players || 0],
+    ['Linked profiles', stored.linked_profiles || 0],
+    ['Recorded matches', stored.matches || 0],
+    ['Parsed replays', stored.parsed_replays || 0]
+  ].forEach(function(item) {
+    html += '<div class="diagnostic-cell"><span>'+esc(item[0])+'</span><b>'+esc(item[1])+'</b></div>';
+  });
+  html += '</div></section></div>';
+  content.innerHTML = html;
+}
+
+function ratingSeedApi(channelId, action) {
+  return adminCommunityApi(
+    dashGuildId,
+    '/channels/'+encodeURIComponent(channelId)+'/ratings/seed/'+action);
+}
+
+function openRatingSeed(channelId) {
+  dashRatingSeedSource = null; dashRatingSeedPreview = null;
+  renderRatingSeedForm(channelId || (dashChannels[0] && dashChannels[0].id));
+}
+
+function renderRatingSeedForm(channelId) {
+  var content = document.getElementById('dash-content');
+  if (!dashChannels.length) {
+    content.innerHTML = '<div class="dash-login-prompt">Configure a pickup channel before seeding ratings.<br><br>'
+      + '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+    return;
+  }
+  channelId = String(channelId || dashChannels[0].id);
+  var options = dashChannels.map(function(channel) {
+    return '<option value="'+esc(channel.id)+'"'+(String(channel.id)===channelId?' selected':'')+'>#'+esc(channel.name)+'</option>';
+  }).join('');
+  var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Seed player ratings</h1>';
+  html += '<p>Initialize ratings for a new community without replacing anyone already rated.</p></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<div class="seed-target"><label>Pickup channel<select id="rating-seed-channel" onchange="changeRatingSeedChannel(this.value)">';
+  html += options+'</select></label></div>';
+  html += '<div class="seed-methods"><section class="seed-method"><h2>Manual seed</h2>';
+  html += '<p>Add one Discord user. Nickname is optional; the bot uses the current Discord display name when available.</p>';
+  html += '<div class="seed-fields"><input id="seed-user-id" type="text" inputmode="numeric" placeholder="Discord user ID">';
+  html += '<input id="seed-rating" type="number" min="1" max="9999" placeholder="Rating">';
+  html += '<input id="seed-deviation" type="number" min="1" max="2999" placeholder="Deviation"></div>';
+  html += '<input id="seed-nick" class="seed-file" type="text" maxlength="191" placeholder="Nickname (optional)">';
+  html += '<button type="button" class="seed-button" onclick="previewManualRatingSeed()">Preview manual seed</button></section>';
+  html += '<section class="seed-method"><h2>CSV or Pubobot ZIP</h2>';
+  html += '<p>CSV requires user_id and rating; nick and deviation are optional. A Pubobot ZIP uses its qc_players.csv.</p>';
+  html += '<input id="seed-upload" class="seed-file" type="file" accept=".csv,.zip,text/csv,application/zip">';
+  html += '<button type="button" class="seed-button" onclick="previewFileRatingSeed()">Preview file</button></section></div>';
+  html += '<p class="seed-safety">Preview is mandatory. Apply adds missing players and initializes rows whose rating is empty. '
+    + 'It never overwrites an existing rating, and this ratings-only import does not fabricate match history or win/loss counts.</p>';
+  html += '<div id="rating-seed-preview" class="seed-preview"></div></div>';
+  content.innerHTML = html;
+}
+
+function changeRatingSeedChannel(channelId) {
+  dashRatingSeedSource = null; dashRatingSeedPreview = null;
+  renderRatingSeedForm(channelId);
+}
+
+async function requestRatingSeedPreview(source) {
+  var channel = document.getElementById('rating-seed-channel');
+  if (!channel) return;
+  var preview = document.getElementById('rating-seed-preview');
+  preview.innerHTML = '<div class="loading">Validating import...</div>';
+  try {
+    var resp = await authFetch(ratingSeedApi(channel.value, 'preview'), {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(source),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
+    dashRatingSeedSource = source; dashRatingSeedPreview = result;
+    renderRatingSeedPreview();
+  } catch(e) {
+    preview.innerHTML = '<div class="error">Preview failed: '+esc(e.message)+'</div>';
+  }
+}
+
+function previewManualRatingSeed() {
+  var userId = document.getElementById('seed-user-id').value.trim();
+  var rating = document.getElementById('seed-rating').value.trim();
+  var deviation = document.getElementById('seed-deviation').value.trim();
+  var nick = document.getElementById('seed-nick').value.trim();
+  requestRatingSeedPreview({rows:[{
+    user_id: userId, rating: rating, deviation: deviation, nick: nick,
+  }]});
+}
+
+function readSeedFile(file) {
+  return new Promise(function(resolve, reject) {
+    if (!file) { reject(new Error('Choose a CSV or ZIP file.')); return; }
+    if (file.size > 700000) { reject(new Error('File is larger than 700 KB.')); return; }
+    var reader = new FileReader();
+    reader.onerror = function() { reject(new Error('The selected file could not be read.')); };
+    reader.onload = function() {
+      var value = String(reader.result || '');
+      var comma = value.indexOf(',');
+      if (comma < 0) { reject(new Error('The selected file could not be encoded.')); return; }
+      resolve({file_name:file.name, content_base64:value.slice(comma+1)});
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function previewFileRatingSeed() {
+  var input = document.getElementById('seed-upload');
+  try {
+    await requestRatingSeedPreview(await readSeedFile(input && input.files ? input.files[0] : null));
+  } catch(e) {
+    showToast(e.message, 'error');
+  }
+}
+
+function renderRatingSeedPreview() {
+  var container = document.getElementById('rating-seed-preview');
+  var data = dashRatingSeedPreview;
+  if (!container || !data) return;
+  var summary = data.summary || {};
+  var target = data.target || {};
+  var html = '<div class="seed-summary">';
+  [['Rows',summary.received||0],['Ready',summary.ready||0],['New',summary.new||0],
+   ['Already rated',summary.existing||0],['Invalid',summary.invalid||0]].forEach(function(item) {
+    html += '<div><span>'+esc(item[0])+'</span><b>'+esc(item[1])+'</b></div>';
+  });
+  html += '</div><div class="seed-table-wrap"><table class="seed-table"><thead><tr>';
+  html += '<th>Line</th><th>Discord user</th><th>Player</th><th>Rating</th><th>Deviation</th><th>Status</th><th>Result</th>';
+  html += '</tr></thead><tbody>';
+  (data.rows || []).forEach(function(row) {
+    var player = row.nick || row.member_name || ('Discord user '+row.user_id);
+    html += '<tr class="'+esc(row.status)+'"><td>'+esc(row.line)+'</td><td>'+esc(row.user_id || '-')+'</td>';
+    html += '<td>'+esc(player)+'</td><td>'+esc(row.rating || '-')+'</td><td>'+esc(row.deviation || '-')+'</td>';
+    html += '<td><span class="overview-badge '+esc(row.status)+'">'+esc(overviewStatusLabel(row.status))+'</span></td>';
+    html += '<td class="seed-message">'+esc(row.message)+'</td></tr>';
+  });
+  html += '</tbody></table></div><div class="seed-actions">';
+  html += '<span class="seed-source-note">'+esc(data.source)+' &rarr; #'+esc(target.rating_channel_name || target.rating_channel_id);
+  if (target.rating_channel_id !== target.pickup_channel_id) html += ' (shared rating host)';
+  html += '</span><button type="button" class="seed-button secondary" onclick="dashRatingSeedSource=null;dashRatingSeedPreview=null;renderRatingSeedForm(\''
+    +esc(target.pickup_channel_id)+'\')">Discard preview</button>';
+  html += '<button type="button" class="seed-button apply" onclick="applyRatingSeed()"'+(data.can_apply?'':' disabled')+'>';
+  html += 'Apply '+esc(summary.ready||0)+' rating'+((summary.ready||0)===1?'':'s')+'</button></div>';
+  container.innerHTML = html;
+}
+
+async function applyRatingSeed() {
+  var data = dashRatingSeedPreview;
+  var source = dashRatingSeedSource;
+  if (!data || !source || !data.can_apply) return;
+  var applyButton = document.querySelector('.seed-button.apply');
+  if (applyButton) { applyButton.disabled = true; applyButton.textContent = 'Applying...'; }
+  try {
+    var payload = Object.assign({}, source, {digest:data.digest});
+    var resp = await authFetch(ratingSeedApi(data.target.pickup_channel_id, 'apply'), {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload),
+    });
+    var result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'HTTP '+resp.status);
+    showToast('Seeded '+result.applied+' player rating'+(result.applied===1?'':'s')+'.', 'success');
+    await selectGuild(dashGuildId, dashGuildName);
+  } catch(e) {
+    showToast('Apply failed: '+e.message, 'error');
+    if (applyButton) { applyButton.disabled = false; applyButton.textContent = 'Apply '+(data.summary.ready||0)+' ratings'; }
+  }
 }
 
 async function selectChannel(id, name) {
@@ -3812,7 +4182,10 @@ async function selectChannel(id, name) {
   var content = document.getElementById('dash-content');
   content.innerHTML = '<div class="loading">Loading configuration...</div>';
   try {
-    var results = await Promise.all([authFetch('/api/channels/'+id+'/config'), authFetch('/api/channels/'+id+'/queues')]);
+    var results = await Promise.all([
+      authFetch(adminCommunityApi(dashGuildId, '/channels/'+encodeURIComponent(id)+'/config')),
+      authFetch(adminCommunityApi(dashGuildId, '/channels/'+encodeURIComponent(id)+'/queues'))
+    ]);
     if (!results[0].ok) throw new Error('HTTP '+results[0].status);
     if (!results[1].ok) throw new Error('HTTP '+results[1].status);
     var jsons = await Promise.all([results[0].json(), results[1].json()]);
@@ -3829,7 +4202,9 @@ async function selectQueue(name) {
   var content = document.getElementById('dash-content');
   content.innerHTML = '<div class="loading">Loading queue config...</div>';
   try {
-    var resp = await authFetch('/api/channels/'+dashChannelId+'/queues/'+encodeURIComponent(name)+'/config');
+    var resp = await authFetch(adminCommunityApi(
+      dashGuildId,
+      '/channels/'+encodeURIComponent(dashChannelId)+'/queues/'+encodeURIComponent(name)+'/config'));
     if (!resp.ok) throw new Error('HTTP '+resp.status);
     var data = await resp.json(); if (data.error) throw new Error(data.error);
     dashConfigData = data;
@@ -4097,7 +4472,8 @@ function collectFormData(formId) {
 async function saveChannelConfig() {
   var data = collectFormData('channel-config-form');
   try {
-    var resp = await authFetch('/api/channels/'+dashChannelId+'/config', {
+    var resp = await authFetch(adminCommunityApi(
+      dashGuildId, '/channels/'+encodeURIComponent(dashChannelId)+'/config'), {
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data),
     });
     var r = await resp.json();
@@ -4109,7 +4485,9 @@ async function saveChannelConfig() {
 async function saveQueueConfig() {
   var data = collectFormData('queue-config-form');
   try {
-    var resp = await authFetch('/api/channels/'+dashChannelId+'/queues/'+encodeURIComponent(dashQueueName)+'/config', {
+    var resp = await authFetch(adminCommunityApi(
+      dashGuildId,
+      '/channels/'+encodeURIComponent(dashChannelId)+'/queues/'+encodeURIComponent(dashQueueName)+'/config'), {
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data),
     });
     var r = await resp.json();

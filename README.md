@@ -27,6 +27,16 @@ software and remains so.
   win rates rather than a static list.
 - **A public web dashboard** — leaderboards, player pages, civ stats and
   play-style breakdowns — plus an authenticated config surface for admins.
+  Public stats are isolated by community: `/c/<community_id>/...` selects an
+  explicit community, while the unprefixed URLs remain legacy aliases for the
+  configured flagship community. Authenticated settings use
+  `/api/admin/communities/<community_id>/...`; those routes require Discord
+  Manage Guild (or guild/bot ownership), verify every channel through the
+  stored community mapping, and require a session CSRF token for mutations.
+  Rating onboarding supports manual rows, UTF-8 CSVs, and ratings-only
+  Pubobot ZIP previews without overwriting an existing player rating.
+  The current control scopes and onboarding contract are documented in
+  [docs/SETTINGS_MODEL.md](docs/SETTINGS_MODEL.md).
 
 **44 slash commands, 14 of them player-facing.** Every admin group declares
 `default_member_permissions`, so Discord hides them from everyone else. See
