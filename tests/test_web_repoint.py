@@ -159,6 +159,11 @@ class FakeDB:
 	async def insert(self, table, row, on_duplicate=None):
 		self.selects.append((table, dict(row)))
 		self.inserted.append((table, dict(row)))
+		if table == "community_policies" and on_duplicate == "replace":
+			self.rows[table] = [
+				existing for existing in self.rows.get(table, [])
+				if existing.get("community_id") != row.get("community_id")]
+			self.rows[table].append(dict(row))
 		return None
 
 	async def delete(self, table, where=None):
@@ -289,7 +294,7 @@ def install_db(monkeypatch, fake):
 	from nammaoe2bot.runtime.database import db as real_db
 	for name in ("fetchall", "fetchone", "select", "select_one", "execute", "insert", "delete"):
 		monkeypatch.setattr(real_db, name, getattr(fake, name), raising=False)
-	for module in (web, rollups):
+	for module in (web, web.community_store, rollups):
 		monkeypatch.setattr(module, "db", fake)
 	return fake
 
@@ -387,6 +392,64 @@ def test_civ_stats_with_no_community_fails_closed_before_reading_any_rows(monkey
 	assert response.status == 404
 	assert response.payload == {"error": "Community not found"}
 	assert not any("FROM civ_stats" in s for s in fake.sql)
+
+
+def test_members_only_public_dashboard_hides_from_anonymous_viewers(monkeypatch):
+	fake = install_db(monkeypatch, FakeDB(
+		answers={"FROM civ_stats": [{"civ": "Franks", "games": 120, "wins": 66, "losses": 54}]},
+		rows={
+			"communities": [COMMUNITY_ROW],
+			"community_policies": [{
+				"community_id": 9, "dashboard_visibility": "members",
+				"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42}],
+		}))
+	with_community(monkeypatch)
+
+	response = asyncio.run(web.handle_civ_stats(request()))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Community not found"}
+	assert not any("FROM civ_stats" in sql for sql in fake.sql)
+
+
+def test_members_only_public_dashboard_accepts_a_current_discord_member(monkeypatch):
+	alpha = _discord_guild(777, admin=False)
+	_install_discord(monkeypatch, [alpha])
+	install_db(monkeypatch, FakeDB(
+		answers={"FROM civ_stats": []},
+		rows={
+			"web_sessions": [_session_row()],
+			"communities": [COMMUNITY_ROW],
+			"community_policies": [{
+				"community_id": 9, "dashboard_visibility": "members",
+				"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42}],
+		}))
+	with_community(monkeypatch)
+
+	response = asyncio.run(web.handle_civ_stats(request(cookies={web.COOKIE_NAME: "sess"})))
+
+	assert response.status == 200
+	assert response.payload["community"]["id"] == "9"
+
+
+def test_admin_only_public_dashboard_rejects_members_and_accepts_admins(monkeypatch):
+	fake = FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [COMMUNITY_ROW],
+		"community_policies": [{
+			"community_id": 9, "dashboard_visibility": "admins",
+			"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42}],
+	})
+	install_db(monkeypatch, fake)
+	with_community(monkeypatch)
+	_install_discord(monkeypatch, [_discord_guild(777, admin=False)])
+
+	denied = asyncio.run(web.handle_civ_stats(request(cookies={web.COOKIE_NAME: "sess"})))
+	assert denied.status == 404
+
+	_install_discord(monkeypatch, [_discord_guild(777, admin=True)])
+	allowed = asyncio.run(web.handle_civ_stats(request(cookies={web.COOKIE_NAME: "sess"})))
+	assert allowed.status == 200
 
 
 def test_civ_stats_reads_no_file_at_all(monkeypatch):
@@ -1196,7 +1259,8 @@ def test_community_overview_reports_real_feature_scopes_and_tenant_counts(monkey
 	assert capabilities["predictions"]["scope"] == "queue"
 	assert capabilities["quiz"]["status"] == "active"
 	assert "one enabled quiz channel per deployment" in capabilities["quiz"]["note"]
-	assert capabilities["replay_analysis"]["scope"] == "deployment"
+	assert capabilities["replay_analysis"]["scope"] == "community"
+	assert capabilities["replay_analysis"]["configurable"] is True
 	assert capabilities["replay_analysis"]["metrics"] == {"linked": 9, "parsed": 8, "attention": 0}
 	assert payload["diagnostics"]["status"] == "healthy"
 	assert payload["diagnostics"]["data"]["matches"] == 44
@@ -1208,6 +1272,57 @@ def test_community_overview_reports_real_feature_scopes_and_tenant_counts(monkey
 	for sql, args in fake.sql_args:
 		assert args == [9], sql
 		assert "community_id=%s" in sql, sql
+
+
+def test_community_policy_api_is_admin_csrf_protected_and_persists(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	_install_discord(monkeypatch, [alpha])
+	fake = install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_policies": [],
+	}))
+
+	denied = asyncio.run(web.handle_api_community_policy(request(
+		cookies={web.COOKIE_NAME: "sess"}, method="POST",
+		json_body={"dashboard_visibility": "members", "replay_analysis_enabled": False},
+		match_info={"community_id": "9"})))
+	assert denied.status == 403
+
+	response = asyncio.run(web.handle_api_community_policy(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={"dashboard_visibility": "members", "replay_analysis_enabled": False},
+		match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	assert response.payload["policy"]["dashboard_visibility"] == "members"
+	assert response.payload["policy"]["replay_analysis_effective"] is False
+	stored = next(row for table, row in fake.inserted if table == "community_policies")
+	assert stored["community_id"] == 9
+	assert stored["updated_by"] == 42
+
+
+def test_hosted_policy_can_never_enable_replay_compute(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	_install_discord(monkeypatch, [alpha])
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_policies": [{
+			"community_id": 9, "dashboard_visibility": "public",
+			"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42}],
+	}))
+	monkeypatch.setattr(web.cfg, "DEPLOYMENT_MODE", "hosted", raising=False)
+	monkeypatch.setattr(web.cfg, "REPLAY_INGEST_ENABLED", True, raising=False)
+
+	response = asyncio.run(web.handle_api_community_policy(request(
+		cookies={web.COOKIE_NAME: "sess"}, match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	assert response.payload["deployment"]["replay_available"] is False
+	assert response.payload["policy"]["replay_analysis_requested"] is True
+	assert response.payload["policy"]["replay_analysis_effective"] is False
+	assert response.payload["policy"]["replay_reason"] == "hosted_unavailable"
 
 
 def _rating_seed_setup(monkeypatch, fake):
@@ -1640,6 +1755,7 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "/api/admin/communities" in paths
 	assert "/api/admin/communities/{community_id}" in paths
 	assert "/api/admin/communities/{community_id}/overview" in paths
+	assert "/api/admin/communities/{community_id}/policy" in paths
 	assert "/api/admin/communities/{community_id}/identities/import/preview" in paths
 	assert "/api/admin/communities/{community_id}/identities/import/apply" in paths
 	assert "/api/admin/communities/{community_id}/channels/{channel_id}/config" in paths
@@ -1654,6 +1770,8 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "function adminCommunityApi(communityId, path)" in page
 	assert "adminCommunityApi(id, '/overview')" in page
 	assert "function renderCommunityOverview()" in page
+	assert "function openCommunityPolicy()" in page
+	assert "function saveCommunityPolicy()" in page
 	assert "function openRatingSeed(channelId)" in page
 	assert "function renderRatingSeedPreview()" in page
 	assert "function renderTeamRatingSeedPreview()" in page

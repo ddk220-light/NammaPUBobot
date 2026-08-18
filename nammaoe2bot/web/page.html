@@ -462,6 +462,12 @@ td.et_remove { width: 24px; text-align: center; }
 .seed-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .seed-header h1 { margin: 0; color: white; font: 400 1.45rem 'Oswald', sans-serif; }
 .seed-header p { margin: 0.35rem 0 0; color: #aeb1b7; line-height: 1.45; }
+.settings-fields { display: grid; gap: 0.8rem; }
+.setting-field { background: #202225; border: 1px solid #484c54; border-radius: 8px; padding: 0.9rem; }
+.setting-field label { display: block; color: #f1f2f3; font-size: 0.88rem; font-weight: 700; }
+.setting-field select { width: 100%; margin-top: 0.55rem; background: #2f3136; color: white; border: 1px solid #5a5f69; border-radius: 5px; padding: 0.55rem; }
+.setting-field input[type="checkbox"] { margin-right: 0.45rem; }
+.field-description { color: #a9adb5; font-size: 0.78rem; line-height: 1.45; margin-top: 0.55rem; }
 .seed-target {
   background: #202225; border: 1px solid #484c54; border-radius: 8px; padding: 0.8rem 0.9rem;
   margin-bottom: 0.85rem;
@@ -1428,7 +1434,7 @@ var playerDetailData = null, miniSort = {
 var dashGuilds = [], dashChannels = [], dashQueues = [];
 var dashGuildId = null, dashGuildName = null;
 var dashChannelId = null, dashChannelName = null;
-var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null;
+var dashQueueName = null, dashActiveTab = null, dashConfigData = null, dashOverviewData = null, dashPolicyData = null;
 var dashRatingSeedSource = null, dashRatingSeedPreview = null;
 var dashTeamRatingPreview = null;
 var dashIdentitySource = null, dashIdentityPreview = null;
@@ -3898,7 +3904,7 @@ function renderBreadcrumb() {
 
 function resetDashboard() {
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null;
-  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
+  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -3915,7 +3921,7 @@ async function loadDashboard() {
     return;
   }
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
-  dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null;
+  dashGuilds=[]; dashChannels=[]; dashQueues=[]; dashOverviewData=null; dashPolicyData=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -3939,7 +3945,7 @@ async function loadDashboard() {
 async function selectGuild(id, name) {
   dashGuildId=id; dashGuildName=name; dashChannelId=null; dashChannelName=null;
   dashQueueName=null; dashChannels=[]; dashQueues=[];
-  dashConfigData=null; dashOverviewData=null; dashActiveTab=null;
+  dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashActiveTab=null;
   dashRatingSeedSource=null; dashRatingSeedPreview=null;
   dashTeamRatingPreview=null;
   dashIdentitySource=null; dashIdentityPreview=null;
@@ -3955,14 +3961,17 @@ async function selectGuild(id, name) {
   try {
     var results = await Promise.all([
       authFetch(adminCommunityApi(id, '/overview')),
-      authFetch(adminCommunityApi(id, '/channels'))
+      authFetch(adminCommunityApi(id, '/channels')),
+      authFetch(adminCommunityApi(id, '/policy'))
     ]);
     if (!results[0].ok) throw new Error('HTTP '+results[0].status);
     if (!results[1].ok) throw new Error('HTTP '+results[1].status);
-    var payloads = await Promise.all([results[0].json(), results[1].json()]);
+    if (!results[2].ok) throw new Error('HTTP '+results[2].status);
+    var payloads = await Promise.all([results[0].json(), results[1].json(), results[2].json()]);
     if (payloads[0].error) throw new Error(payloads[0].error);
     if (payloads[1].error) throw new Error(payloads[1].error);
-    dashOverviewData = payloads[0]; dashChannels = payloads[1].channels || []; dashQueues = [];
+    if (payloads[2].error) throw new Error(payloads[2].error);
+    dashOverviewData = payloads[0]; dashChannels = payloads[1].channels || []; dashPolicyData = payloads[2]; dashQueues = [];
     renderGuildMenu();
     renderCommunityOverview();
   } catch(e) { content.innerHTML = '<div class="error">Failed to load community settings: '+esc(e.message)+'</div>'; }
@@ -3991,7 +4000,8 @@ function renderCommunityOverview() {
   var stored = diagnostics.data || {};
   var html = '<div class="community-overview">';
   html += '<div class="overview-hero"><div><h1>'+esc((data.community||{}).name || dashGuildName)+'</h1>';
-  html += '<p>Setup, feature availability and tenant-scoped runtime health.</p></div>';
+  html += '<p>Setup, feature availability and tenant-scoped runtime health.</p>';
+  html += '<button type="button" class="setup-action" onclick="openCommunityPolicy()">Access &amp; compute</button></div>';
   html += '<div class="overview-progress"><strong>'+complete+' / '+required+'</strong>required setup steps';
   html += '<div class="overview-progress-bar"><span style="width:'+progress+'%"></span></div></div></div>';
 
@@ -4035,6 +4045,54 @@ function renderCommunityOverview() {
   });
   html += '</div></section></div>';
   content.innerHTML = html;
+}
+
+function openCommunityPolicy() {
+  var content = document.getElementById('dash-content');
+  var data = dashPolicyData;
+  if (!data) { content.innerHTML = '<div class="error">Community policy is unavailable.</div>'; return; }
+  var policy = data.policy || {};
+  var deployment = data.deployment || {};
+  var visibility = policy.dashboard_visibility || 'public';
+  var options = (policy.allowed_dashboard_visibilities || ['public','members','admins']).map(function(value) {
+    var label = value === 'public' ? 'Anyone with the link' : value === 'members' ? 'Discord members' : 'Discord administrators';
+    return '<option value="'+esc(value)+'"'+(value===visibility?' selected':'')+'>'+esc(label)+'</option>';
+  }).join('');
+  var replayAvailable = !!deployment.replay_available;
+  var reason = policy.replay_reason === 'hosted_unavailable'
+    ? 'Replay parsing is intentionally unavailable in hosted mode.'
+    : policy.replay_reason === 'deployment_disabled'
+      ? 'The self-hosted operator has disabled replay parsing for this installation.'
+      : 'Replay parsing runs on this self-hosted installation only when this community opts in.';
+  var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Access &amp; compute</h1>';
+  html += '<p>Choose who may read this community dashboard and whether local replay analysis is requested.</p></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<div class="settings-fields"><div class="setting-field"><label>Dashboard visibility</label>';
+  html += '<select id="policy-dashboard-visibility">'+options+'</select>';
+  html += '<div class="field-description">Private dashboards return not found until the viewer proves membership or administrator access through Discord.</div></div>';
+  html += '<div class="setting-field"><label><input id="policy-replay-enabled" type="checkbox" '
+    +(policy.replay_analysis_requested?'checked ':'')+(replayAvailable?'':'disabled ')+'/> Enable replay analysis</label>';
+  html += '<div class="field-description">'+esc(reason)+' Deployment mode: '+esc(deployment.mode || 'unknown')+'.</div></div></div>';
+  html += '<div class="seed-actions"><button type="button" class="seed-button" onclick="saveCommunityPolicy()">Save policy</button></div></div>';
+  content.innerHTML = html;
+}
+
+async function saveCommunityPolicy() {
+  var visibility = document.getElementById('policy-dashboard-visibility').value;
+  var replay = document.getElementById('policy-replay-enabled');
+  try {
+    var resp = await authFetch(adminCommunityApi(dashGuildId, '/policy'), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dashboard_visibility:visibility, replay_analysis_enabled:!!replay.checked})
+    });
+    var data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || ('HTTP '+resp.status));
+    dashPolicyData = data;
+    var overviewResp = await authFetch(adminCommunityApi(dashGuildId, '/overview'));
+    if (overviewResp.ok) dashOverviewData = await overviewResp.json();
+    openCommunityPolicy();
+    showToast('Community policy saved', 'success');
+  } catch(e) { showToast('Failed to save policy: '+e.message, 'error'); }
 }
 
 function ratingSeedApi(channelId, action) {

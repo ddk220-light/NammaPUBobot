@@ -19,6 +19,51 @@ import asyncio
 from nammaoe2bot.ingest import store
 
 
+class _WorkQueueDB:
+    def __init__(self, rows=None):
+        self.rows = list(rows or [])
+        self.calls = []
+
+    async def fetchall(self, sql, args=None):
+        self.calls.append((sql, list(args or [])))
+        return list(self.rows)
+
+
+def test_replay_ingest_enablement_uses_the_hard_product_boundary(monkeypatch):
+    monkeypatch.setattr(store.community.cfg, "REPLAY_INGEST_ENABLED", True, raising=False)
+    monkeypatch.setattr(store.community.cfg, "DEPLOYMENT_MODE", "hosted", raising=False)
+    assert store.is_enabled() is False
+    monkeypatch.setattr(store.community.cfg, "DEPLOYMENT_MODE", "self_hosted", raising=False)
+    assert store.is_enabled() is True
+
+
+def test_find_new_match_selects_only_communities_that_requested_replay_analysis(monkeypatch):
+    fake = _WorkQueueDB([{"replay_match_id": 7, "bot_match_id": 3, "at": 1}])
+    monkeypatch.setattr(store, "db", fake)
+
+    row = asyncio.run(store.find_new_match(max_age_days=2))
+
+    assert row["replay_match_id"] == 7
+    sql, args = fake.calls[0]
+    assert "JOIN community_channels" in sql
+    assert "LEFT JOIN community_policies" in sql
+    assert "COALESCE(cp.replay_analysis_enabled, 1)=1" in sql
+    assert len(args) == 1
+
+
+def test_find_due_retry_keeps_disabled_communities_out_of_the_retry_queue(monkeypatch):
+    fake = _WorkQueueDB([])
+    monkeypatch.setattr(store, "db", fake)
+
+    assert asyncio.run(store.find_due_retry(123)) is None
+
+    sql, args = fake.calls[0]
+    assert "EXISTS (SELECT 1 FROM civ_picks" in sql
+    assert "LEFT JOIN community_policies" in sql
+    assert "COALESCE(cp.replay_analysis_enabled, 1)=1" in sql
+    assert args == [123]
+
+
 class _FakeIdentity:
     def __init__(self, owners=None):
         self.owners = dict(owners or {})  # profile_id -> user_id

@@ -20,6 +20,7 @@ FLAGSHIP_GUILD_IDS = [{flagship_guild_ids}]
 
 PUBOBOT_USER_ID = {pubobot_user_id}
 LOBBYBOT_USER_ID = {lobbybot_user_id}
+DEPLOYMENT_MODE = "{deployment_mode}"
 REPLAY_INGEST_ENABLED = "{replay_ingest_enabled}"
 
 DB_URI = "{db_uri}"
@@ -95,6 +96,7 @@ def main():
 
     # Resolved once, here, so the value written into config.cfg and the value
     # reported below are provably the same string.
+    deployment_mode = os.environ.get("DEPLOYMENT_MODE", "self_hosted")
     replay_ingest_enabled = os.environ.get("REPLAY_INGEST_ENABLED", "True")
 
     config_content = TEMPLATE.format(
@@ -107,6 +109,7 @@ def main():
         flagship_guild_ids=os.environ.get("FLAGSHIP_GUILD_IDS", ""),
         pubobot_user_id=pubobot_user_id,
         lobbybot_user_id=lobbybot_user_id,
+        deployment_mode=deployment_mode,
         # Defaults to True: 007_raw_renames dropped the single-row ops table whose
         # one row had this switch ON in production, so an unset env var must keep
         # ingestion running rather than silently stopping it.
@@ -143,7 +146,11 @@ def main():
     # deliberately set to `True`.
     _origin = "" if "REPLAY_INGEST_ENABLED" in os.environ else ", unset - defaulted"
     _on = replay_ingest_enabled.strip().lower() in _TRUE
-    print(f"Replay ingest: {'ENABLED' if _on else 'DISABLED'} "
+    _known_mode = deployment_mode.strip().lower().replace("-", "_")
+    _mode = _known_mode if _known_mode in ("hosted", "self_hosted") else "hosted"
+    _effective = _on and _mode == "self_hosted"
+    print(f"Deployment mode: {_mode} (DEPLOYMENT_MODE={deployment_mode!r})")
+    print(f"Replay ingest: {'ENABLED' if _effective else 'DISABLED'} "
           f"(REPLAY_INGEST_ENABLED={replay_ingest_enabled!r}{_origin})")
 
     # Launch the bot

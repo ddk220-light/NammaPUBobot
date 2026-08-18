@@ -7,7 +7,7 @@ store answering "who is this person"."""
 import time
 
 from nammaoe2bot.features.identity import resolver
-from nammaoe2bot.runtime.config import cfg
+from nammaoe2bot import community
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 
@@ -23,10 +23,11 @@ def is_enabled():
     database on every sweep. 007_raw_renames drops that table in favour of the
     REPLAY_INGEST_ENABLED config var — one switch per deployment, set the same
     way every other deployment-wide switch is (env var on Railway, config.cfg
-    locally), and readable without a round trip. Deliberately synchronous for
-    the same reason: there is nothing left to await.
+    locally), and readable without a round trip. Hosted mode is a second,
+    fail-closed product boundary: hosted installations never parse replays.
+    Deliberately synchronous because there is nothing to await.
     """
-    return bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True))
+    return community.replay_pipeline_available()
 
 
 # ── find work ────────────────────────────────────────────────────────────
@@ -42,7 +43,10 @@ async def find_new_match(max_age_days=None):
     rows = await db.fetchall(
         "SELECT mc.replay_match_id AS replay_match_id, MAX(mc.bot_match_id) AS bot_match_id, "
         "MAX(m.reported_at) AS at FROM civ_picks mc JOIN matches m ON m.match_id = mc.bot_match_id "
-        "WHERE mc.replay_match_id IS NOT NULL " + age_clause +
+        "JOIN community_channels cc ON cc.channel_id=m.channel_id "
+        "LEFT JOIN community_policies cp ON cp.community_id=cc.community_id "
+        "WHERE mc.replay_match_id IS NOT NULL "
+        "AND COALESCE(cp.replay_analysis_enabled, 1)=1 " + age_clause +
         "AND mc.replay_match_id NOT IN (SELECT replay_match_id FROM replay_ingest) "
         "GROUP BY mc.replay_match_id ORDER BY MAX(m.reported_at) DESC LIMIT 1", args)
     return rows[0] if rows else None
@@ -51,9 +55,16 @@ async def find_new_match(max_age_days=None):
 async def find_due_retry(now):
     """Oldest ingest row eligible for another attempt (404/parse_failed, due, under cap)."""
     rows = await db.fetchall(
-        "SELECT * FROM replay_ingest WHERE status IN ('unavailable','parse_failed') "
+        "SELECT ri.* FROM replay_ingest ri "
+        "WHERE ri.status IN ('unavailable','parse_failed') "
         "AND (next_attempt_at IS NULL OR next_attempt_at <= %s) "
-        "ORDER BY next_attempt_at ASC LIMIT 1", [now])
+        "AND EXISTS (SELECT 1 FROM civ_picks mc "
+        "JOIN matches m ON m.match_id=mc.bot_match_id "
+        "JOIN community_channels cc ON cc.channel_id=m.channel_id "
+        "LEFT JOIN community_policies cp ON cp.community_id=cc.community_id "
+        "WHERE mc.replay_match_id=ri.replay_match_id "
+        "AND COALESCE(cp.replay_analysis_enabled, 1)=1) "
+        "ORDER BY ri.next_attempt_at ASC LIMIT 1", [now])
     return rows[0] if rows else None
 
 

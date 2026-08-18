@@ -48,6 +48,7 @@ from urllib.parse import urlencode
 import aiohttp as aiohttp_client
 from aiohttp import web
 
+from nammaoe2bot import community as community_store
 from nammaoe2bot.runtime.config import cfg
 from nammaoe2bot.runtime.cfg_factory import (
 	RoleVar, TextChanVar, MemberVar, VariableTable,
@@ -537,21 +538,44 @@ async def _public_community(request=None):
 	not consult deployment config at all.
 	"""
 	explicit = _explicit_community_id(request) if request is not None else None
+	row = None
 	if explicit is not None:
 		if not explicit:
 			return None
 		row = await db.select_one(
 			["community_id", "guild_id", "name"], "communities",
 			where={"community_id": explicit})
-		return PublicCommunity(**row) if row else None
+	else:
+		for guild_id in getattr(cfg, "FLAGSHIP_GUILD_IDS", None) or []:
+			row = await db.select_one(
+				["community_id", "guild_id", "name"], "communities",
+				where={"guild_id": int(guild_id)})
+			if row:
+				break
+	if not row or not await _public_dashboard_allowed(row, request):
+		return None
+	return PublicCommunity(**row)
 
-	for guild_id in getattr(cfg, "FLAGSHIP_GUILD_IDS", None) or []:
-		row = await db.select_one(
-			["community_id", "guild_id", "name"], "communities",
-			where={"guild_id": int(guild_id)})
-		if row:
-			return PublicCommunity(**row)
-	return None
+
+async def _public_dashboard_allowed(row, request):
+	"""Authorize a dashboard read without revealing that a private tenant exists."""
+	policy = await community_store.get_policy(int(row["community_id"]))
+	visibility = policy["dashboard_visibility"]
+	if visibility == "public":
+		return True
+	if request is None:
+		return False
+	session = await _get_session(request)
+	if not session:
+		return False
+	guild = dc.get_guild(int(row["guild_id"]))
+	if guild is None:
+		return False
+	try:
+		member = await _member_in_guild(guild, session["user_id"])
+	except Exception:
+		return False
+	return visibility == "members" or _member_is_admin(member)
 
 
 async def _public_community_id(request=None):
@@ -3124,8 +3148,17 @@ async def _admin_community_overview(admin):
 	else:
 		prediction_status = "partial"
 	quiz_status = "active" if quiz_enabled else ("disabled" if quiz_rows else "not_configured")
-	replay_enabled = bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True))
-	replay_status = "deployment_disabled" if not replay_enabled else "active"
+	policy = await community_store.get_policy(community_id)
+	replay_requested = policy["replay_analysis_enabled"]
+	replay_available = community_store.replay_pipeline_available()
+	if community_store.deployment_mode() == "hosted":
+		replay_status = "unavailable_on_hosted"
+	elif not bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True)):
+		replay_status = "deployment_disabled"
+	elif not replay_requested:
+		replay_status = "disabled"
+	else:
+		replay_status = "active"
 	capabilities = [
 		_overview_capability(
 			"pickup", "Pickup games", "active" if queues else "setup_required",
@@ -3159,15 +3192,16 @@ async def _admin_community_overview(admin):
 			         "active": _overview_count(lobbies, "active_lobbies")}),
 		_overview_capability(
 			"replay_analysis", "Replay analysis", replay_status,
-			"Replay parsing, classifications and scouting rollups.", scope="deployment",
-			configurable=False,
+			"Replay parsing, classifications and scouting rollups.", scope="community",
+			configurable=replay_available,
 			metrics={"linked": linked_replays, "parsed": parsed_replays,
 			         "attention": attention_replays},
-			note="Hosted deployments share this compute switch; self-hosted installations can control it locally."),
+			note=("Replay compute is available only on self-hosted installations; "
+			      "the deployment switch remains the operator's upper bound.")),
 		_overview_capability(
-			"public_dashboard", "Public dashboard", "active",
+			"public_dashboard", "Public dashboard", policy["dashboard_visibility"],
 			"Community-scoped leaderboards and player statistics.", scope="community",
-			configurable=False, metrics={"matches": match_count}),
+			configurable=True, metrics={"matches": match_count}),
 	]
 
 	loaded_for_guild = {
@@ -3252,6 +3286,71 @@ async def handle_api_community_overview(request):
 	if error is not None:
 		return error
 	return web.json_response(await _admin_community_overview(admin))
+
+
+async def _admin_policy_payload(admin):
+	policy = await community_store.get_policy(admin.community.community_id)
+	mode = community_store.deployment_mode()
+	global_enabled = bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True))
+	available = community_store.replay_pipeline_available()
+	requested = policy["replay_analysis_enabled"]
+	if mode == "hosted":
+		reason = "hosted_unavailable"
+	elif not global_enabled:
+		reason = "deployment_disabled"
+	elif not requested:
+		reason = "community_disabled"
+	else:
+		reason = "active"
+	return {
+		"community": admin.payload(),
+		"deployment": {
+			"mode": mode,
+			"replay_pipeline_enabled": global_enabled,
+			"replay_available": available,
+		},
+		"policy": {
+			"dashboard_visibility": policy["dashboard_visibility"],
+			"allowed_dashboard_visibilities": list(community_store.DASHBOARD_VISIBILITIES),
+			"replay_analysis_requested": requested,
+			"replay_analysis_effective": requested and available,
+			"replay_reason": reason,
+		},
+	}
+
+
+async def handle_api_community_policy(request):
+	"""Read or update tenant privacy and optional-compute preferences."""
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return error
+	if request.method == "GET":
+		return web.json_response(await _admin_policy_payload(admin))
+	if not _check_csrf(request, session):
+		return web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	if not isinstance(payload, dict):
+		return web.json_response({"error": "Request body must be an object"}, status=400)
+	visibility = payload.get("dashboard_visibility")
+	replay_enabled = payload.get("replay_analysis_enabled")
+	if visibility not in community_store.DASHBOARD_VISIBILITIES:
+		return web.json_response(
+			{"error": "dashboard_visibility must be public, members, or admins"}, status=400)
+	if not isinstance(replay_enabled, bool):
+		return web.json_response(
+			{"error": "replay_analysis_enabled must be a boolean"}, status=400)
+	await community_store.set_policy(
+		admin.community.community_id,
+		dashboard_visibility=visibility,
+		replay_analysis_enabled=replay_enabled,
+		updated_by=session["user_id"])
+	return web.json_response(await _admin_policy_payload(admin))
 
 
 def _seed_member_name(guild, user_id):
@@ -4414,6 +4513,12 @@ def create_app():
 	app.router.add_get(
 		'/api/admin/communities/{community_id}/overview',
 		handle_api_community_overview)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/policy',
+		handle_api_community_policy)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/policy',
+		handle_api_community_policy)
 	app.router.add_post(
 		'/api/admin/communities/{community_id}/identities/import/preview',
 		handle_api_identity_import_preview)

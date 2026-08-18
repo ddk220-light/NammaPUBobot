@@ -228,6 +228,9 @@ REGISTRY = {
 	"community_channels": dict(
 		layer="core", tenancy="channel", writers=("nammaoe2bot/community.py",), retention="forever"
 	),
+	"community_policies": dict(
+		layer="core", tenancy="community", writers=("nammaoe2bot/community.py",), retention="forever"
+	),
 	# link — cross-tenant joins (stage 1.6)
 	# nammaoe2bot/runtime/migrations.py is a writer too: 004_identity_v2 backfills every
 	# historical pairing out of replay_matches.bot_match_id (INSERT IGNORE, so

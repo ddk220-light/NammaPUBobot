@@ -13,6 +13,7 @@ tests/test_data_registry.py's scanner needs a declaration here to find them):
 
   communities         — one row per Discord guild.
   community_channels  — one row per enrolled channel.
+  community_policies  — tenant privacy and optional-compute choices.
 
 `ensure_community`/`attach_channel` (via `enroll_channel`, below) are called
 once real Discord guild objects exist — from nammaoe2bot/discord/events.py's on_ready at
@@ -69,6 +70,71 @@ db.ensure_table(dict(
 	],
 	primary_keys=["channel_id"],
 ))
+
+db.ensure_table(dict(
+	tname="community_policies",
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="dashboard_visibility", ctype=db.types.str, notnull=True, default="public"),
+		dict(cname="replay_analysis_enabled", ctype=db.types.bool, notnull=True, default=1),
+		dict(cname="updated_at", ctype=db.types.int, notnull=True),
+		dict(cname="updated_by", ctype=db.types.int, notnull=False),
+	],
+	primary_keys=["community_id"],
+))
+
+DASHBOARD_VISIBILITIES = ("public", "members", "admins")
+_DASHBOARD_VISIBILITIES = frozenset(DASHBOARD_VISIBILITIES)
+
+
+def deployment_mode() -> str:
+	"""Return the effective product mode, failing closed on an unknown value."""
+	raw = str(getattr(cfg, "DEPLOYMENT_MODE", "self_hosted") or "").strip().lower()
+	mode = raw.replace("-", "_")
+	return mode if mode in ("hosted", "self_hosted") else "hosted"
+
+
+def replay_pipeline_available() -> bool:
+	"""Whether this installation is allowed and configured to parse replays."""
+	return (
+		deployment_mode() == "self_hosted"
+		and bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True))
+	)
+
+
+async def get_policy(community_id: int) -> dict:
+	row = await db.select_one(
+		["dashboard_visibility", "replay_analysis_enabled", "updated_at", "updated_by"],
+		"community_policies", where={"community_id": int(community_id)})
+	visibility = str((row or {}).get("dashboard_visibility") or "public").lower()
+	if visibility not in _DASHBOARD_VISIBILITIES:
+		visibility = "admins"
+	return {
+		"dashboard_visibility": visibility,
+		"replay_analysis_enabled": bool(
+			(row or {}).get("replay_analysis_enabled", True)),
+		"updated_at": (row or {}).get("updated_at"),
+		"updated_by": (row or {}).get("updated_by"),
+	}
+
+
+async def set_policy(
+		community_id: int, *, dashboard_visibility: str,
+		replay_analysis_enabled: bool, updated_by: int) -> dict:
+	if not isinstance(replay_analysis_enabled, bool):
+		raise ValueError("replay_analysis_enabled must be a boolean")
+	visibility = str(dashboard_visibility or "").lower()
+	if visibility not in _DASHBOARD_VISIBILITIES:
+		raise ValueError("dashboard_visibility must be public, members, or admins")
+	row = {
+		"community_id": int(community_id),
+		"dashboard_visibility": visibility,
+		"replay_analysis_enabled": int(bool(replay_analysis_enabled)),
+		"updated_at": int(time.time()),
+		"updated_by": int(updated_by),
+	}
+	await db.insert("community_policies", row, on_duplicate="replace")
+	return await get_policy(community_id)
 
 # match_replays — links a bot match to the replay it was parsed from, keyed
 # by community. An AoE2 replay is a fact about a *game*; "our match #1234 is

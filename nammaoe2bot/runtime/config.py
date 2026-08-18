@@ -32,6 +32,10 @@ _SCHEMA = {
 	'FLAGSHIP_GUILD_IDS': (list, []),
 	'PUBOBOT_USER_ID': (int, 0),
 	'LOBBYBOT_USER_ID': (int, 0),
+	# Product boundary. Hosted mode never runs replay parsing, even if the
+	# legacy deployment switch is accidentally enabled. Self-hosted preserves
+	# the full local feature set.
+	'DEPLOYMENT_MODE': (str, "self_hosted"),
 	# Replay ingestion on/off for this deployment. Replaces the single-row ops
 	# table dropped by 007_raw_renames; defaults to True to match the production
 	# row that drop removed.

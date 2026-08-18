@@ -27,9 +27,11 @@ software and remains so.
   win rates rather than a static list.
 - **A public web dashboard** — leaderboards, player pages, civ stats and
   play-style breakdowns — plus an authenticated config surface for admins.
-  Public stats are isolated by community: `/c/<community_id>/...` selects an
-  explicit community, while the unprefixed URLs remain legacy aliases for the
-  configured flagship community. Authenticated settings use
+  Public stats are isolated by community and can be public, member-only, or
+  administrator-only: `/c/<community_id>/...` selects an explicit community,
+  while the unprefixed URLs remain legacy aliases for the configured flagship
+  community. Hosted deployments hard-disable replay compute; self-hosted
+  operators may enable it per community. Authenticated settings use
   `/api/admin/communities/<community_id>/...`; those routes require Discord
   Manage Guild (or guild/bot ownership), verify every channel through the
   stored community mapping, and require a session CSRF token for mutations.

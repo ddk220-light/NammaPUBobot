@@ -38,6 +38,32 @@ All stored counts either carry `community_id` directly or join through
 `community_channels`. Global replay and identity tables are never counted in
 isolation.
 
+## Access and compute policy
+
+Each community has one `community_policies` row, edited through:
+
+```
+GET  /api/admin/communities/<community_id>/policy
+POST /api/admin/communities/<community_id>/policy
+```
+
+The public dashboard visibility can be `public`, `members`, or `admins`.
+Member and administrator reads require a valid Discord OAuth session and a
+current guild-member lookup; private tenants return the same 404 response as
+an unknown tenant so the API does not disclose their existence. The policy is
+enforced by the shared community resolver before any public statistics query
+runs, including the legacy flagship URL aliases.
+
+Replay analysis has two independent gates. `DEPLOYMENT_MODE=hosted` is a hard
+product boundary and never permits replay downloads or parsing.
+`DEPLOYMENT_MODE=self_hosted` permits the pipeline only when the operator's
+`REPLAY_INGEST_ENABLED` switch and the community's replay-analysis preference
+are both enabled. The work and retry selectors join through
+`community_channels` and `community_policies`, so disabling one tenant does
+not stop an opted-in tenant on the same self-hosted installation. An absent
+policy row preserves the historical defaults: a public dashboard and replay
+analysis requested.
+
 ## Rating onboarding
 
 The community overview links to a rating seed workflow for each configured
@@ -188,16 +214,14 @@ the AoE2 API or a replay, while a CSV label is only an administrator's claim.
 | Gold economy | Community | Automatic; no admin switch yet |
 | Daily quiz | Channel, but singleton deployment scheduler | No web editor yet |
 | Lobby tracking | Built in for ranked matches | No admin switch yet |
-| Replay analysis | Deployment | `REPLAY_INGEST_ENABLED` environment setting |
-| Public dashboard | Community | Always public; privacy control not built yet |
+| Replay analysis | Community inside a self-hosted deployment | Community preference, bounded by `DEPLOYMENT_MODE` and `REPLAY_INGEST_ENABLED` |
+| Public dashboard | Community | `public`, `members`, or `admins` policy |
 
 The overview deliberately exposes these limitations. It must not label the
-quiz or replay pipeline as tenant-configurable until their runtime contracts
-are changed accordingly.
+quiz as tenant-configurable until its runtime contract is changed accordingly.
 
 ## Still to build
 
-- community-level feature policy and public/private dashboard settings;
 - a tenant-safe quiz scheduler and editor;
 - guided resolution for identity ownership conflicts;
 - actionable diagnostics and repair flows;

@@ -53,6 +53,7 @@ _fake_core_config.cfg = types.SimpleNamespace(
 	STATUS='',
 	HELP='',
 	FLAGSHIP_GUILD_IDS=[],
+	DEPLOYMENT_MODE='self_hosted',
 	# nammaoe2bot/ingest/store.is_enabled() reads this (it replaced the single-row
 	# ops table 007_raw_renames dropped). Its own getattr default is True, so this
 	# is here to make the test environment's answer explicit, not incidental.
