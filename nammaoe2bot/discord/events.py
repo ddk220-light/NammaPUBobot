@@ -26,6 +26,7 @@ from nammaoe2bot.features.elo_sync import process_elo_sync
 from nammaoe2bot.features.civs.sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
 from nammaoe2bot.features.message_log import log_bot_message
 from nammaoe2bot.community import enroll_channel, replay_pipeline_available
+from nammaoe2bot.discord.shortcuts import queue_shortcut_action
 
 
 async def seed_ratings_from_csv():
@@ -177,22 +178,24 @@ async def on_message(message):
 		return
 
 	# `++` / `--` shorthand: add/remove the author to/from the channel queues.
+	# Smart punctuation may turn two hyphens into one Unicode dash, so parse the
+	# small explicit alias set rather than comparing only the ASCII spelling.
 	# Restored after Layer 5 removed the text-command system — these two are the
 	# only shorthands kept. They reuse the existing add/remove command handlers
 	# (add with no args -> default/active queues; remove with no args -> all).
-	if message.content in ('++', '--'):
+	if (shortcut := queue_shortcut_action(message.content)) is not None:
 		if (qc := dc.app.channels.get(message.channel.id)) is not None and dc.app.ready:
 			from nammaoe2bot.discord.message_context import MessageContext
 			ctx = MessageContext(qc, message)
 			try:
-				if message.content == '++':
+				if shortcut == 'add':
 					await queue_commands.add(ctx)
 				else:
 					await queue_commands.remove(ctx)
 			except Exc.BotException as e:
 				await ctx.error(str(e), title=e.__class__.__name__)
 			except Exception as e:
-				log.error(f"Error processing '{message.content}': {e}\n{traceback.format_exc()}")
+				log.error(f"Error processing queue shortcut '{shortcut}': {e}\n{traceback.format_exc()}")
 		return
 
 	# Sync ELO from original Pubobot

@@ -48,6 +48,32 @@ def test_queue_module_is_aliased_away_from_slash_option_names():
 	), "a queues SlashOption would shadow this module access at runtime"
 
 
+def test_no_slash_callback_argument_shadows_an_imported_command_module():
+	"""Pin the whole bug class, not only today's ``queues`` instance."""
+	command_modules = {
+		alias.asname or alias.name
+		for node in _TREE.body
+		if isinstance(node, ast.ImportFrom)
+		and node.module in {
+			"nammaoe2bot.discord.commands",
+			"nammaoe2bot.features.betting",
+			"nammaoe2bot.features.identity",
+			"nammaoe2bot.features.quiz",
+		}
+		for alias in node.names
+	}
+	for node in ast.walk(_TREE):
+		if not isinstance(node, ast.AsyncFunctionDef):
+			continue
+		arguments = {
+			arg.arg for arg in
+			(node.args.posonlyargs + node.args.args + node.args.kwonlyargs)
+		}
+		assert not arguments & command_modules, (
+			f"{node.name} shadows command module(s): "
+			f"{sorted(arguments & command_modules)}")
+
+
 def test_public_add_and_remove_dispatch_to_the_queue_module():
 	assert ("queue_commands", "add") in _attributes(_function("_add"))
 	assert ("queue_commands", "remove") in _attributes(_function("_remove"))
