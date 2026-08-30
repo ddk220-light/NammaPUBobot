@@ -23,8 +23,12 @@ _sql_string = re.compile(r"'(?:''|[^'])*'")
 # socket.  Retrying *connection acquisition* is safe for reads and writes alike:
 # no SQL has been sent yet, so this cannot duplicate a mutation.  Retrying after
 # cur.execute() would not have that property and is deliberately not done.
-_CONNECT_ATTEMPTS = 3
-_CONNECT_RETRY_SECONDS = (0.5, 1.5)
+# Railway's MySQL cold start can take longer than two seconds.  Keep retrying
+# connection acquisition for up to ~8 seconds so the first command after an
+# idle sleep wakes the database instead of surfacing a transient failure.  No
+# SQL has been sent at this point, so every retry remains safe for writes.
+_CONNECT_ATTEMPTS = 6
+_CONNECT_RETRY_SECONDS = (0.5, 1.0, 1.5, 2.0, 3.0)
 
 
 @contextmanager

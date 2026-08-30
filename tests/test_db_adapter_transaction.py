@@ -231,7 +231,10 @@ class TestLowCostPool:
 
 		async def acquire():
 			attempts["n"] += 1
-			if attempts["n"] < 3:
+			# Railway's observed cold wake exceeded the old three-attempt,
+			# two-second window.  Prove a longer wake still retries acquisition
+			# without ever replaying the SQL statement.
+			if attempts["n"] < 5:
 				raise operational
 			return conn
 
@@ -242,7 +245,7 @@ class TestLowCostPool:
 		monkeypatch.setattr(adapter_module.asyncio, "sleep", no_wait)
 
 		assert asyncio.run(a.fetchone("SELECT 1")) == {"balance": 500}
-		assert attempts["n"] == 3
+		assert attempts["n"] == 5
 		assert conn.log == ["execute"], "connection retries must not retry SQL"
 
 	def test_exhausted_connection_wake_is_translated_without_sending_sql(
