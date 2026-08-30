@@ -170,7 +170,7 @@ import asyncio
 import time
 
 from nammaoe2bot.runtime.console import log
-from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.database import db, query_scope
 
 from nammaoe2bot.features.identity import resolver
 
@@ -578,11 +578,7 @@ async def refresh_community(community_id, now):
 
 	civs = 0
 	try:
-		picks = await db.fetchall(_COMMUNITY_PICKS_SQL, [community_id]) or []
-		channels = await db.fetchall(_COMMUNITY_CHANNELS_SQL, [community_id]) or []
-		counts = civ_stats.compute_civ_stats(list(picks), list(channels)).get(community_id, {})
-		await civ_stats.write(community_id, counts, now)
-		civs = len(counts)
+		civs = await civ_stats.refresh_community(community_id, now)
 	except Exception as e:
 		failed += 1
 		log.error(f"Derived refresh civ_stats failed for community {community_id}: {e}")
@@ -634,12 +630,18 @@ class DerivedRefresh:
 	def __init__(self):
 		self.next_run = 0
 		self._running = False
+		self.next_civ_recovery = 0
 
 	async def think(self, frame_time):
 		try:
 			if self._running or frame_time < self.next_run:
 				return
-			self.next_run = frame_time + POLL_INTERVAL
+			from nammaoe2bot.community import replay_pipeline_available
+			# No reason to manufacture an empty task every 30 seconds while all
+			# replay-derived outputs are frozen.  Paused mode needs only the daily
+			# civ-summary recovery pass.
+			interval = POLL_INTERVAL if replay_pipeline_available() else MAX_AGE
+			self.next_run = frame_time + interval
 			self._running = True
 			task = asyncio.create_task(self._run())
 
@@ -656,6 +658,10 @@ class DerivedRefresh:
 			log.error(f"Derived refresh think() error (ignored): {e}")
 
 	async def _run(self, now=None):
+		with query_scope("derived.refresh"):
+			await self._run_scoped(now)
+
+	async def _run_scoped(self, now=None):
 		"""One pass: the per-user layer, then the per-community layer only if the
 		per-user layer had nothing to do. See the module docstring's cadence
 		section for why that debounce is derived from the pass rather than from a
@@ -678,6 +684,30 @@ class DerivedRefresh:
 		Skipping costs one POLL_INTERVAL and nothing else, because this job holds
 		no state: the next pass re-derives both pending sets from scratch."""
 		now = int(time.time()) if now is None else now
+
+		# Replay-derived outputs are frozen while ingestion is paused.  Civ picks
+		# are not replay-derived (LobbyBOT / linked-game APIs write them), so keep
+		# only that small aggregate healthy.  Immediate post-write hooks normally
+		# keep it current; this once-daily pass is the crash/deploy recovery path.
+		from nammaoe2bot.community import replay_pipeline_available
+		if not replay_pipeline_available():
+			if now < self.next_civ_recovery:
+				return
+			self.next_civ_recovery = now + MAX_AGE
+			try:
+				from nammaoe2bot.derived import civ_stats
+				communities = await civ_stats.refresh_all(now)
+				log.info(
+					f"Replay analysis paused: refreshed civ summaries for "
+					f"{communities} communities; replay-derived outputs unchanged.")
+			except Exception as e:
+				# Retry on the next ordinary poll after a failure, rather than waiting
+				# a whole day for a recovery pass that never completed.
+				self.next_civ_recovery = 0
+				self.next_run = 0
+				log.error(f"Paused-mode civ refresh error (ignored): {e}")
+			return
+
 		processed = 0
 		try:
 			processed = await drain_rollups(now)

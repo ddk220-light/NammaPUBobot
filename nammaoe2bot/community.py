@@ -98,7 +98,7 @@ def replay_pipeline_available() -> bool:
 	"""Whether this installation is allowed and configured to parse replays."""
 	return (
 		deployment_mode() == "self_hosted"
-		and bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True))
+		and bool(getattr(cfg, "REPLAY_INGEST_ENABLED", False))
 	)
 
 

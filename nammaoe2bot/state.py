@@ -2,9 +2,8 @@
 import json
 import time
 
-from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.console import log
-from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.database import db, query_scope
 
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.expire import expire
@@ -27,38 +26,99 @@ db.ensure_table(dict(
 ))
 
 
+STATE_PATH = "saved_state.json"
+_JSON_OPTIONS = dict(sort_keys=True, separators=(",", ":"))
+
+# Each destination advances independently.  In particular, a successful local
+# snapshot must not hide a failed durable write: the next cadence tick skips the
+# already-current file and retries MySQL with the same payload.
+_last_local_payload = None
+_last_db_payload = None
+
+
+def _stable_rows(rows):
+	"""A deterministic order for top-level snapshot collections.
+
+	The live containers happen to preserve insertion order, but that is not part
+	of the persisted-state contract.  Sorting by the row's canonical JSON keeps a
+	reordered set of queues, matches or expiry timers from looking like a state
+	change and waking MySQL for an identical snapshot.
+	"""
+	return sorted(rows, key=lambda row: json.dumps(row, **_JSON_OPTIONS))
+
+
 def _serialize_state(app):
 	queues = []
-	for qc in dc.app.channels.values():
+	for qc in app.channels.values():
 		for q in qc.queues:
 			if q.length > 0:
 				queues.append(q.serialize())
 	matches = [match.serialize() for match in app.active_matches]
-	return dict(queues=queues, matches=matches, expire=expire.serialize())
+	return dict(
+		queues=_stable_rows(queues),
+		matches=_stable_rows(matches),
+		expire=_stable_rows(expire.serialize()),
+	)
 
 
-def save_state(app):
+def canonical_state_payload(app):
+	"""The stable JSON payload used by both local and durable snapshots."""
+	return json.dumps(_serialize_state(app), **_JSON_OPTIONS)
+
+
+def save_state(app, payload=None):
 	"""Best-effort local snapshot to disk. Survives only same-container restarts
 	(the bot disk is ephemeral); the DURABLE copy is save_state_db(). Kept for
-	local dev and the sync signal/crash handlers, which can't await."""
-	log.info("Saving state...")
+	local dev and the sync signal/crash handlers, which can't await.
+
+	Returns True only when a changed payload was successfully written.  Quiet
+	no-op snapshots are the common case and deliberately produce no log line.
+	"""
+	global _last_local_payload
+	payload = canonical_state_payload(app) if payload is None else payload
+	if payload == _last_local_payload:
+		return False
 	try:
-		with open("saved_state.json", "w") as f:
-			f.write(json.dumps(_serialize_state(app)))
+		with open(STATE_PATH, "w") as f:
+			f.write(payload)
 	except Exception as e:
 		log.error(f"save_state (file) failed: {e}")
+		return False
+	_last_local_payload = payload
+	return True
 
 
-async def save_state_db(app):
-	"""Durable state snapshot to MySQL — survives Railway redeploys/crashes."""
+async def save_state_db(app, payload=None):
+	"""Persist changed state to MySQL; retry failures on the next call.
+
+	The successful-payload baseline advances only after the awaited INSERT
+	returns.  A transient failure therefore cannot turn the next identical call
+	into a no-op.
+	"""
+	global _last_db_payload
+	payload = canonical_state_payload(app) if payload is None else payload
+	if payload == _last_db_payload:
+		return False
 	try:
-		await db.insert(
-			"bot_state",
-			dict(id=1, data=json.dumps(_serialize_state(app)), updated_at=int(time.time())),
-			on_duplicate="replace",
-		)
+		with query_scope("state.snapshot"):
+			await db.insert(
+				"bot_state",
+				dict(id=1, data=payload, updated_at=int(time.time())),
+				on_duplicate="replace",
+			)
 	except Exception as e:
 		log.error(f"save_state_db failed: {e}")
+		return False
+	_last_db_payload = payload
+	return True
+
+
+async def save_state_if_changed(app):
+	"""Snapshot one canonical view to each destination if that view changed."""
+	payload = canonical_state_payload(app)
+	local_written = save_state(app, payload)
+	db_written = await save_state_db(app, payload)
+	return local_written, db_written
 
 
 async def load_state():
@@ -73,7 +133,7 @@ async def load_state():
 		log.error(f"load_state (db) failed, trying file: {e}")
 	if data is None:
 		try:
-			with open("saved_state.json", "r") as f:
+			with open(STATE_PATH, "r") as f:
 				data = json.loads(f.read())
 		except IOError:  # noqa: UP024
 			return
@@ -98,5 +158,3 @@ async def load_state():
 
 	if 'expire' in data.keys():
 		await expire.load_json(data['expire'])
-
-

@@ -16,13 +16,14 @@ import asyncio
 import time
 
 from nammaoe2bot.runtime.console import log
-from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.database import db, query_scope
 
 
 class LobbyJobs:
 	POLL_INTERVAL = 2       # launch confirmation should trail the game by seconds
 	COMPLETION_INTERVAL = 15
-	REAP_INTERVAL = 600     # seconds between stale-row sweeps
+	RECOVERY_INTERVAL = 24 * 60 * 60  # one crash-recovery pass per idle day
+	REAP_INTERVAL = 24 * 60 * 60
 	STALE_AFTER = 1800      # an unconfirmed row older than this is abandoned
 	FLOOR_SECONDS = 15 * 60  # don't poll a launched game for completion until 15 min in
 	POLL_CONCURRENCY = 5     # max in-flight completion resolutions
@@ -34,6 +35,12 @@ class LobbyJobs:
 		self.next_reap = 0
 		self._booted = False
 		self._running = False
+		self._active = True   # one boot reconciliation, then event-driven
+
+	def arm(self):
+		"""Wake polling after a lobby writer creates/revives a non-terminal row."""
+		self._active = True
+		self.next_run = 0
 
 	async def think(self, frame_time):
 		# Bulletproof by design: this runs on the shared tick alongside the core
@@ -58,29 +65,43 @@ class LobbyJobs:
 			log.error(f"Lobby think() error (ignored): {e}")
 
 	async def _run(self):
+		with query_scope("lobby.jobs"):
+			await self._run_scoped()
+
+	async def _run_scoped(self):
+		was_active = self._active
 		if not self._booted:
 			self._booted = True
-			await self._rehydrate()
+			was_active = await self._rehydrate()
 		now = int(time.time())
-		await self._poll_launches(now)
+		launch_live = await self._poll_launches(now)
 		if now >= self.next_reap:
 			self.next_reap = now + self.REAP_INTERVAL
 			await self._reap_stale(now - self.STALE_AFTER)
+		completion_live = None
 		if now >= self.next_completion:
 			self.next_completion = now + self.COMPLETION_INTERVAL
-			await self._poll_completions(now)
+			completion_live = await self._poll_completions(now)
+		self._active = bool(launch_live or (
+			was_active if completion_live is None else completion_live))
+		self.next_run = now + (
+			self.POLL_INTERVAL if self._active else self.RECOVERY_INTERVAL)
 
 	async def _rehydrate(self):
 		"""On boot, note any lobbies a redeploy left mid-flight. Phase 2 only logs
 		them; Phase 3 resumes their completion polls. Wrapped so a missing table on
 		first boot can't surface an error."""
 		try:
-			rows = await db.select(["id", "aoe2_game_id", "match_id", "status"], "lobbies")
-			live = [r for r in (rows or []) if r.get("status") not in self.TERMINAL]
+			rows = await db.fetchall(
+				"SELECT id, aoe2_game_id, match_id, status FROM lobbies "
+				"WHERE status NOT IN ('completed','expired') LIMIT 100")
+			live = list(rows or [])
 			if live:
-				log.info(f"Lobby rehydrate: {len(live)} non-terminal row(s) (Phase 3 will resume).")
+				log.info(f"Lobby rehydrate: resuming {len(live)} non-terminal row(s).")
+			return bool(live)
 		except Exception as e:
 			log.error(f"Lobby rehydrate skipped: {e}")
+			return True  # retry soon; a DB error must not silently disarm recovery
 
 	async def _reap_stale(self, cutoff):
 		"""Expire old rows for which the API never confirmed a launch."""
@@ -112,9 +133,9 @@ class LobbyJobs:
 			)
 		except Exception as e:
 			log.error(f"Lobby launch select skipped: {e}")
-			return
+			return True
 		if not rows:
-			return
+			return False
 		from nammaoe2bot.features.lobby import launch
 		sem = asyncio.Semaphore(self.POLL_CONCURRENCY)
 		for row in rows:
@@ -125,6 +146,7 @@ class LobbyJobs:
 			task = asyncio.create_task(self._guarded_launch(launch, row, now, sem))
 			_pending.add(task)
 			task.add_done_callback(_pending.discard)
+		return True
 
 	async def _guarded_launch(self, launch, row, now, sem):
 		try:
@@ -149,9 +171,9 @@ class LobbyJobs:
 			)
 		except Exception as e:
 			log.error(f"Lobby poll select skipped: {e}")
-			return
+			return True
 		if not rows:
-			return
+			return False
 		from nammaoe2bot.features.lobby import completed
 		sem = asyncio.Semaphore(self.POLL_CONCURRENCY)
 		for r in rows:
@@ -166,6 +188,7 @@ class LobbyJobs:
 			task = asyncio.create_task(self._guarded_resolve(completed, r, sem))
 			_pending.add(task)
 			task.add_done_callback(_pending.discard)
+		return True
 
 	def _due(self, row, now):
 		"""15-min floor since confirmed launch, then the next-poll timestamp

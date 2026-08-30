@@ -298,3 +298,22 @@ def test_a_player_day_with_no_usable_board_falls_back_to_the_game_bank(monkeypat
     never a padded player one."""
     got = _next(monkeypatch, 1, day=1, live=None)
     assert got["source"] == "game"
+
+
+def test_a_player_day_uses_static_game_bank_when_replay_pipeline_is_paused(monkeypatch):
+    import nammaoe2bot.community as community
+
+    async def _must_not_read_player_bank(*_args, **_kwargs):
+        raise AssertionError("paused replay mode must not read replay-derived boards")
+
+    async def _fake_asked(_channel_id):
+        return set()
+
+    monkeypatch.setattr(community, "replay_pipeline_available", lambda: False)
+    monkeypatch.setattr(
+        _JOBS.player_bank, "question_for_channel", _must_not_read_player_bank)
+    monkeypatch.setattr(_JOBS.store, "asked_ids", _fake_asked)
+
+    got = asyncio.run(_JOBS.QuizJobs()._next_question(1, seq=1, day=1))
+    assert got["source"] == "game"
+    assert got in _JOBS._SCHEDULE

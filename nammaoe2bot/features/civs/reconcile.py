@@ -21,7 +21,7 @@ import asyncio
 import time
 
 from nammaoe2bot.runtime.console import log
-from nammaoe2bot.runtime.database import db
+from nammaoe2bot.runtime.database import db, query_scope
 
 from .matcher import _find_and_record
 from .sync import find_and_record_lobby_from_history
@@ -44,7 +44,10 @@ _pending = set()
 
 
 class CivReconcile:
-	SWEEP_INTERVAL = 180   # seconds between sweeps
+	# Live result hooks retry immediately. This is only the restart/missed-event
+	# safety net, so an empty community does not need to scan MySQL every three
+	# minutes; one boot pass and one daily repair are sufficient.
+	SWEEP_INTERVAL = 24 * 60 * 60
 	BATCH = 5              # matches processed per sweep (each ~ up to 8 API calls)
 	MAX_ATTEMPTS = 5       # stop retrying a match after this many tries
 	RETRY_BACKOFF = 3600   # seconds before a still-'pending' match is retried
@@ -109,6 +112,10 @@ class CivReconcile:
 			)
 
 	async def _sweep(self):
+		with query_scope("civs.reconcile"):
+			await self._sweep_scoped()
+
+	async def _sweep_scoped(self):
 		candidates = await self._candidates()
 		if not candidates:
 			return

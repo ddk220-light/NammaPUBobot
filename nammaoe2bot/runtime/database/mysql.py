@@ -1,5 +1,10 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import re
+import time
+from collections import defaultdict
+from contextvars import ContextVar
+from contextlib import contextmanager
 from contextlib import asynccontextmanager
 
 import aiomysql
@@ -7,6 +12,34 @@ from pymysql import err as mysqlErr
 from .common import *
 
 from nammaoe2bot.runtime.console import log
+
+
+_query_source = ContextVar("db_query_source", default="unattributed")
+_sql_space = re.compile(r"\s+")
+_sql_number = re.compile(r"\b\d+\b")
+_sql_string = re.compile(r"'(?:''|[^'])*'")
+
+# Railway may put the MySQL service to sleep after the bot releases its final
+# socket.  Retrying *connection acquisition* is safe for reads and writes alike:
+# no SQL has been sent yet, so this cannot duplicate a mutation.  Retrying after
+# cur.execute() would not have that property and is deliberately not done.
+_CONNECT_ATTEMPTS = 3
+_CONNECT_RETRY_SECONDS = (0.5, 1.5)
+
+
+@contextmanager
+def query_scope(source):
+	"""Attach a fixed-cardinality caller label to queries in this context.
+
+	Parameters are never recorded.  The tiny in-memory counters exist to find
+	the next accidental polling loop without adding an APM agent (and its RAM)
+	to this small deployment.
+	"""
+	token = _query_source.set(str(source or "unattributed")[:64])
+	try:
+		yield
+	finally:
+		_query_source.reset(token)
 
 
 class Types:
@@ -59,32 +92,46 @@ class Transaction:
 		self._cur = cur
 
 	async def execute(self, *args):
+		started = time.monotonic()
 		try:
 			await self._cur.execute(*args)
 		except mysqlErr.Error as e:
+			self._adapter._record_query(args[0], started, error=True)
 			self._adapter.wrap_exc(e)
+		self._adapter._record_query(args[0], started, rows=self._cur.rowcount)
 		return self._cur.rowcount
 
 	async def executemany(self, *args):
+		started = time.monotonic()
 		try:
 			await self._cur.executemany(*args)
 		except mysqlErr.Error as e:
+			self._adapter._record_query(args[0], started, error=True)
 			self._adapter.wrap_exc(e)
+		self._adapter._record_query(args[0], started, rows=self._cur.rowcount)
 		return self._cur.rowcount
 
 	async def fetchone(self, *args):
+		started = time.monotonic()
 		try:
 			await self._cur.execute(*args)
-			return await self._cur.fetchone()
+			row = await self._cur.fetchone()
 		except mysqlErr.Error as e:
+			self._adapter._record_query(args[0], started, error=True)
 			self._adapter.wrap_exc(e)
+		self._adapter._record_query(args[0], started, rows=int(row is not None))
+		return row
 
 	async def fetchall(self, *args):
+		started = time.monotonic()
 		try:
 			await self._cur.execute(*args)
-			return await self._cur.fetchall()
+			rows = await self._cur.fetchall()
 		except mysqlErr.Error as e:
+			self._adapter._record_query(args[0], started, error=True)
 			self._adapter.wrap_exc(e)
+		self._adapter._record_query(args[0], started, rows=len(rows or ()))
+		return rows
 
 	async def insert(self, table, d, on_duplicate=None):
 		request = self._adapter._mysql_insert(d.keys(), table, on_duplicate)
@@ -99,13 +146,19 @@ class Transaction:
 
 
 class Adapter:
-	pool: aiomysql.Pool
+	pool: aiomysql.Pool | None
 	loop: asyncio.AbstractEventLoop
 	types = Types
 	errors = Errors
 
 	def __init__(self, db_address):
 		self.dbAddress = db_address
+		self.pool = None
+		self._idle_reaper_task = None
+		self._last_activity = time.monotonic()
+		self._query_metrics = defaultdict(lambda: {
+			"calls": 0, "errors": 0, "rows": 0, "seconds": 0.0,
+		})
 		try:
 			self.dbUser, db_address = db_address.split(':', 1)
 			self.dbPassword, db_address = db_address.split('@', 1)
@@ -118,14 +171,15 @@ class Adapter:
 			raise(ValueError('Bad database address string: ' + self.dbAddress))
 
 	async def connect(self):
+		if self.pool is not None:
+			return
 		self.loop = asyncio.get_running_loop()
 		try:
-			# pool_recycle=3600: Railway MySQL (and most managed MySQL) drops
-			# idle connections after ~8h (wait_timeout). Before this was set,
-			# the first query after a quiet night raised InterfaceError
-			# ("MySQL server has gone away") and a whole think() tick would
-			# crash. Recycling every hour keeps all pooled connections fresh
-			# well inside the server's idle window.
+			# minsize=0 is the cost-critical setting: constructing the adapter and
+			# running an idle Discord process holds no MySQL socket.  A connection
+			# is opened on the first real query and free connections are cleared
+			# after a short idle window so Railway Serverless can sleep the DB.
+			from nammaoe2bot.runtime.config import cfg
 			self.pool = await aiomysql.create_pool(
 				host=self.dbHost,
 				port=int(self.dbPort),
@@ -134,46 +188,145 @@ class Adapter:
 				db=self.dbName,
 				charset='utf8mb4',
 				autocommit=True,
+				minsize=0,
+				maxsize=min(8, max(1, int(getattr(cfg, "DB_POOL_MAX_SIZE", 2)))),
+				connect_timeout=5,
 				pool_recycle=3600,
 				cursorclass=aiomysql.cursors.DictCursor)
+			self._idle_reaper_task = asyncio.create_task(self._idle_reaper())
 
 		except mysqlErr.Error as e:
 			self.wrap_exc(e)
 
+	@asynccontextmanager
+	async def _connection(self):
+		if self.pool is None:
+			await self.connect()
+		conn = None
+		self._last_activity = time.monotonic()
+		for attempt in range(_CONNECT_ATTEMPTS):
+			try:
+				conn = await self.pool.acquire()
+				break
+			except (mysqlErr.OperationalError, OSError, TimeoutError) as e:
+				if attempt + 1 >= _CONNECT_ATTEMPTS:
+					if isinstance(e, mysqlErr.Error):
+						self.wrap_exc(e)
+					raise OperationalError() from e
+				await asyncio.sleep(_CONNECT_RETRY_SECONDS[attempt])
+		try:
+			yield conn
+		finally:
+			self.pool.release(conn)
+			self._last_activity = time.monotonic()
+
+	async def _idle_reaper(self):
+		"""Close only FREE connections; borrowed transactions are untouched."""
+		from nammaoe2bot.runtime.config import cfg
+		interval = max(10, int(getattr(cfg, "DB_IDLE_CLOSE_SECONDS", 60)))
+		try:
+			while True:
+				await asyncio.sleep(interval)
+				await self.reap_idle_connections(interval)
+		except asyncio.CancelledError:
+			return
+
+	async def reap_idle_connections(self, idle_seconds=None, now=None):
+		"""Clear idle pooled sockets without issuing SQL. Returns sockets closed."""
+		if self.pool is None:
+			return 0
+		if idle_seconds is None:
+			from nammaoe2bot.runtime.config import cfg
+			idle_seconds = max(10, int(getattr(cfg, "DB_IDLE_CLOSE_SECONDS", 60)))
+		now = time.monotonic() if now is None else now
+		free = int(getattr(self.pool, "freesize", 0) or 0)
+		if free and now - self._last_activity >= idle_seconds:
+			await self.pool.clear()
+			metrics = self.query_metrics_snapshot(reset=True)
+			if metrics:
+				top = ", ".join(
+					f"{row['source']}={row['calls']}"
+					for row in metrics[:8])
+				log.debug(
+					f"Closed {free} idle MySQL connection(s); query calls by source: {top}")
+			return free
+		return 0
+
+	@staticmethod
+	def _fingerprint(sql):
+		text = _sql_space.sub(" ", str(sql or "")).strip().lower()
+		text = _sql_string.sub("?", text)
+		text = _sql_number.sub("?", text)
+		return text[:240]
+
+	def _record_query(self, sql, started, rows=0, error=False):
+		key = (_query_source.get(), self._fingerprint(sql))
+		# Strict cap: diagnostics must never become the memory problem it measures.
+		if key not in self._query_metrics and len(self._query_metrics) >= 128:
+			key = ("other", "other")
+		metric = self._query_metrics[key]
+		metric["calls"] += 1
+		metric["errors"] += int(bool(error))
+		metric["rows"] += max(0, int(rows or 0))
+		metric["seconds"] += max(0.0, time.monotonic() - started)
+
+	def query_metrics_snapshot(self, reset=False):
+		out = [dict(source=source, fingerprint=fingerprint, **values)
+			for (source, fingerprint), values in self._query_metrics.items()]
+		out.sort(key=lambda row: (-row["calls"], row["source"], row["fingerprint"]))
+		if reset:
+			self._query_metrics.clear()
+		return out
+
 	async def execute(self, *args):
-		async with self.pool.acquire() as conn:
+		started = time.monotonic()
+		async with self._connection() as conn:
 			async with conn.cursor() as cur:
 				try:
 					await cur.execute(*args)
-					return cur.lastrowid
+					lastrowid = cur.lastrowid
 				except Exception as e:
+					self._record_query(args[0], started, error=True)
 					self.wrap_exc(e)
+				self._record_query(args[0], started, rows=getattr(cur, "rowcount", 0))
+				return lastrowid
 
 	async def executemany(self, *args):
-		async with self.pool.acquire() as conn:
+		started = time.monotonic()
+		async with self._connection() as conn:
 			async with conn.cursor() as cur:
 				try:
 					await cur.executemany(*args)
 				except mysqlErr.Error as e:
+					self._record_query(args[0], started, error=True)
 					self.wrap_exc(e)
+				self._record_query(args[0], started, rows=getattr(cur, "rowcount", 0))
 
 	async def fetchone(self, *args):
-		async with self.pool.acquire() as conn:
+		started = time.monotonic()
+		async with self._connection() as conn:
 			async with conn.cursor() as cur:
 				try:
 					await cur.execute(*args)
-					return await cur.fetchone()
+					row = await cur.fetchone()
 				except mysqlErr.Error as e:
+					self._record_query(args[0], started, error=True)
 					self.wrap_exc(e)
+				self._record_query(args[0], started, rows=int(row is not None))
+				return row
 
 	async def fetchall(self, *args):
-		async with self.pool.acquire() as conn:
+		started = time.monotonic()
+		async with self._connection() as conn:
 			async with conn.cursor() as cur:
 				try:
 					await cur.execute(*args)
-					return await cur.fetchall()
+					rows = await cur.fetchall()
 				except mysqlErr.Error as e:
+					self._record_query(args[0], started, error=True)
 					self.wrap_exc(e)
+				self._record_query(args[0], started, rows=len(rows or ()))
+				return rows
 
 	@asynccontextmanager
 	async def transaction(self):
@@ -181,7 +334,7 @@ class Adapter:
 		(which propagates). The pool runs autocommit=True; conn.begin() opens an
 		explicit transaction that suspends autocommit until commit/rollback, so
 		nothing else on this connection leaks in."""
-		async with self.pool.acquire() as conn:
+		async with self._connection() as conn:
 			await conn.begin()
 			try:
 				async with conn.cursor() as cur:
@@ -340,8 +493,17 @@ class Adapter:
 		await self.executemany(request, (list(d.values()) for d in it))
 
 	async def close(self):
-		self.pool.close()
-		await self.pool.wait_closed()
+		if self._idle_reaper_task is not None:
+			self._idle_reaper_task.cancel()
+			try:
+				await self._idle_reaper_task
+			except asyncio.CancelledError:
+				pass
+			self._idle_reaper_task = None
+		if self.pool is not None:
+			self.pool.close()
+			await self.pool.wait_closed()
+			self.pool = None
 
 	@staticmethod
 	def wrap_exc(e):

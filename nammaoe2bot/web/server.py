@@ -66,6 +66,7 @@ from nammaoe2bot.ingest import scoring as rs_scoring
 from nammaoe2bot.features.scouting.tag_leaderboard import tag_leaderboard_score
 from nammaoe2bot.web import onboarding
 from nammaoe2bot.web import pubobot_migration
+from nammaoe2bot.web.probes import handle_health, handle_live, handle_ready
 
 # --- Paths ---
 HTML_PATH = os.path.join(os.path.dirname(__file__), 'page.html')
@@ -247,11 +248,6 @@ SKIP_TYPES = (RoleVar, TextChanVar, MemberVar)
 # --- HTML cache ---
 _html_cache = None
 
-# Process boot time — used by /health's uptime_seconds field. Set at module
-# import (which happens during asyncio bootstrap, before any task starts),
-# so it's a reasonable proxy for "when the bot process started".
-_boot_time = time.time()
-
 _SECURITY_HEADERS = {
 	"Content-Security-Policy": (
 		"default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
@@ -342,13 +338,14 @@ async def _get_session(request):
 	so that OAuth logins survive Railway redeploys. Async because DB calls are
 	awaitable — all call sites have been updated to `await _get_session(...)`.
 
-	Piggybacks on the request to run opportunistic cleanup of expired
-	sessions/oauth states at most once every 5 minutes.
+	Authenticated requests piggyback opportunistic cleanup of expired
+	sessions/oauth states at most once every 5 minutes. Anonymous requests return
+	without touching MySQL; there is no session row they could possibly use.
 	"""
-	await _cleanup_expired_sessions()
 	session_id = _session_cookie(request)
 	if not session_id:
 		return None
+	await _cleanup_expired_sessions()
 	row = await db.select_one(
 		('session_id', 'user_id', 'username', 'avatar', 'csrf', 'expires_at'),
 		'web_sessions',
@@ -478,66 +475,6 @@ async def handle_index(request):
 	if _html_cache is None:
 		_load_html()
 	return web.Response(text=_html_cache, content_type='text/html')
-
-
-# ─── Health check (for Railway healthcheckPath) ───
-
-async def handle_health(request):
-	"""Liveness probe used by Railway's healthcheckPath.
-
-	Returns 200 only when the Discord client is connected AND the DB pool
-	answers a trivial query. Returns 503 in every other state.
-
-	This is what prevents the zombie-bot failure mode: previously a
-	Discord 1015 rate limit would kill the Discord task while the web
-	task kept the container "alive" from Railway's point of view (it fell
-	back to a TCP probe because no healthcheckPath was configured). With
-	this endpoint + healthcheckPath = "/health" in railway.toml, Railway
-	restarts the container whenever Discord is actually dead.
-
-	The payload also carries non-gating observability fields:
-	  - active_matches: current in-flight match count
-	  - last_tick_age_seconds: seconds since the last think() tick
-	    (>5 with bot_ready=true means the think loop is stalled)
-	  - last_elo_sync_at: unix timestamp of the last successful ELO sync,
-	    0 if none yet this process run
-	  - uptime_seconds: process uptime since import
-	These let the Railway dashboard / future `/metrics` scrape see
-	degradation before it becomes an outage.
-	"""
-	import asyncio as _asyncio
-	from nammaoe2bot.runtime.database import db as _db
-	from nammaoe2bot.discord import events as _events
-	from nammaoe2bot.features import elo_sync as _elo_sync
-
-	discord_ok = bool(dc.app.ready) and dc.is_ready()
-
-	db_ok = False
-	try:
-		# Cap the query at 2s so a slow DB doesn't hang the healthcheck
-		await _asyncio.wait_for(_db.fetchone("SELECT 1 AS ok"), timeout=2.0)
-		db_ok = True
-	except Exception:
-		db_ok = False
-
-	now = time.time()
-	last_tick = getattr(_events, 'last_tick_at', 0.0) or 0.0
-	# If we've never ticked, report None rather than a misleading huge delta
-	last_tick_age = int(now - last_tick) if last_tick > 0 else None
-	last_elo_sync = getattr(_elo_sync, 'last_elo_sync_at', 0.0) or 0.0
-
-	healthy = discord_ok and db_ok
-	payload = {
-		"status": "ok" if healthy else "unhealthy",
-		"discord_connected": discord_ok,
-		"db_connected": db_ok,
-		"bot_ready": bool(dc.app.ready),
-		"active_matches": len(dc.app.active_matches),
-		"last_tick_age_seconds": last_tick_age,
-		"last_elo_sync_at": int(last_elo_sync) if last_elo_sync > 0 else 0,
-		"uptime_seconds": int(now - _boot_time),
-	}
-	return web.json_response(payload, status=200 if healthy else 503)
 
 
 # ─── The community the public pages describe ───
@@ -905,6 +842,10 @@ _LABEL_JOIN = (
 # decides which stored category the web shows is this constant.
 _STRATEGY_KIND = "strategy"
 
+
+def _replay_dashboard_enabled():
+	return bool(getattr(cfg, "REPLAY_DASHBOARD_ENABLED", False))
+
 # Phase label per classification key, for grouping in the dashboard.
 _STRATEGY_PHASE = {
 	"scout_rush": "Feudal", "archer_rush": "Feudal", "maa_rush": "Feudal",
@@ -933,6 +874,13 @@ async def handle_strategies(request):
 	community = await _public_community(request)
 	if community is None:
 		return _community_not_found()
+	if not _replay_dashboard_enabled():
+		return web.json_response({
+			"community": community.payload(),
+			"disabled": True,
+			"reason": "Replay-derived strategy analysis is paused.",
+			"strategies": [], "player_totals": {}, "player_categorized": {},
+		})
 	replay_scope = _community_replay_predicate(community, "gl.replay_match_id")
 
 	rows = await db.fetchall(
@@ -2054,6 +2002,8 @@ async def _player_scouting_report(user_id, community=None):
 	    omits the block rather than claiming a linking gap that does not exist.
 	  no rollup row         -> {"pending": PENDING}.
 	  a rollup              -> its measured blocks. """
+	if not bool(getattr(cfg, "SCOUTING_REPORT_ENABLED", False)):
+		return None
 	community = community or await _public_community()
 	if community is None:
 		return None
@@ -2217,7 +2167,9 @@ async def _match_rosters(community, match_ids):
 	if not match_ids:
 		return {}
 	placeholder = ",".join(["%s"] * len(match_ids))
-	impacts = await _match_player_impacts(community, match_ids)
+	impacts = (
+		await _match_player_impacts(community, match_ids)
+		if _replay_dashboard_enabled() else {})
 	impact_by_user = {}
 	impact_by_name = {}
 	for match_id, rows in impacts.items():
@@ -2334,15 +2286,24 @@ async def _match_stats_overall(community, period):
 		"FROM matches m WHERE " + _community_channel_predicate(community, "m.channel_id")
 		+ at_clause + " GROUP BY bucket ORDER BY bucket ASC",
 		params)
-	recent = await db.fetchall(
-		"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, m.winner, m.maps, rm.duration_s "
-		"FROM matches m LEFT JOIN match_replays mr "
-		f"ON mr.match_id=m.match_id AND mr.community_id={community.sql_id} "
-		"LEFT JOIN replay_matches rm ON rm.replay_match_id=mr.replay_match_id "
-		"WHERE " + _community_channel_predicate(community, "m.channel_id") + at_clause +
-		" ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
-		params)
-	impacts = await _match_impacts(community, [r["match_id"] for r in recent or []])
+	if _replay_dashboard_enabled():
+		recent = await db.fetchall(
+			"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, "
+			"m.winner, m.maps, rm.duration_s FROM matches m "
+			"LEFT JOIN match_replays mr "
+			f"ON mr.match_id=m.match_id AND mr.community_id={community.sql_id} "
+			"LEFT JOIN replay_matches rm ON rm.replay_match_id=mr.replay_match_id "
+			"WHERE " + _community_channel_predicate(community, "m.channel_id") + at_clause +
+			" ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
+			params)
+		impacts = await _match_impacts(community, [r["match_id"] for r in recent or []])
+	else:
+		recent = await db.fetchall(
+			"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, "
+			"m.winner, m.maps FROM matches m WHERE "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause
+			+ " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50", params)
+		impacts = {}
 	rosters = await _match_rosters(community, [r["match_id"] for r in recent or []])
 	return {
 		"summary": {
@@ -2420,7 +2381,9 @@ async def _match_stats_player(community, user_id, period):
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(community, period, user_id)
 	rating_history = await _rating_history(community, period, user_id)
-	strategy_tags = await _player_profile_tags(community, profile_ids, period)
+	strategy_tags = (
+		await _player_profile_tags(community, profile_ids, period)
+		if _replay_dashboard_enabled() else [])
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -2483,19 +2446,23 @@ async def _match_stats_player(community, user_id, period):
 	impacts = {}
 	match_rosters = {}
 	impact_profile = _player_impact_profile([], civs)
-	impact_match_rows = await db.fetchall(
-		"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
-		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN match_replays mr ON mr.match_id=m.match_id "
-		f"AND mr.community_id={community.sql_id} "
-		"WHERE pm.user_id=%s AND " + _community_channel_predicate(community, "m.channel_id")
-		+ at_clause,
-		[user_id, *params])
-	period_impacts = await _match_impacts(
-		community, [r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+	period_impacts = {}
+	if _replay_dashboard_enabled():
+		impact_match_rows = await db.fetchall(
+			"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
+			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+			"JOIN match_replays mr ON mr.match_id=m.match_id "
+			f"AND mr.community_id={community.sql_id} "
+			"WHERE pm.user_id=%s AND "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause,
+			[user_id, *params])
+		period_impacts = await _match_impacts(
+			community, [r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
 	if period_impacts:
 		impact_profile = _player_impact_profile(period_impacts.values(), civs)
-	scouting = await _player_scouting_report(user_id, community)
+	scouting = (
+		await _player_scouting_report(user_id, community)
+		if _replay_dashboard_enabled() else None)
 	if recent:
 		match_ids = [r["match_id"] for r in recent]
 		match_rosters = await _match_rosters(community, match_ids)
@@ -2647,6 +2614,13 @@ async def handle_leaderboard(request):
 			],
 		})
 	if mode == "tags":
+		if not _replay_dashboard_enabled():
+			return web.json_response({
+				"community": community.payload(), "period": period,
+				"mode": "tags", "disabled": True,
+				"reason": "Replay-derived tag analysis is paused.",
+				"tag": "", "tags": [], "rows": [],
+			})
 		tag_key = request.query.get("tag") or "all"
 		payload = await _tag_leaderboard(community, period, tag_key)
 		return web.json_response({
@@ -2718,7 +2692,9 @@ async def handle_player_stats(request):
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
 	rating = await _rating_delta(community, period, user_id)
 	rating_history = await _rating_history(community, period, user_id)
-	strategy_tags = await _player_profile_tags(community, profile_ids, period)
+	strategy_tags = (
+		await _player_profile_tags(community, profile_ids, period)
+		if _replay_dashboard_enabled() else [])
 	base_args = [user_id, *params]
 	summary = await db.fetchone(
 		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
@@ -2778,7 +2754,7 @@ async def handle_player_stats(request):
 		"WHERE pm.user_id=%s AND m.ranked=1 AND rm.duration_s IS NOT NULL AND "
 		+ _community_channel_predicate(community, "m.channel_id") + at_clause +
 		" GROUP BY bucket, ord ORDER BY ord",
-		base_args)
+		base_args) if _replay_dashboard_enabled() else []
 	civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
 	civs = await db.fetchall(
 		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
@@ -2799,30 +2775,47 @@ async def handle_player_stats(request):
 		+ _community_channel_predicate(community, "oc.channel_id") + at_clause +
 		" GROUP BY oc.civ ORDER BY wins DESC, games DESC LIMIT 30",
 		base_args)
-	matches = await db.fetchall(
-		"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, m.winner, m.maps, pm.team, rm.duration_s "
-		"FROM match_players pm JOIN matches m "
-		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"LEFT JOIN match_replays mr ON mr.match_id=m.match_id "
-		f"AND mr.community_id={community.sql_id} "
-		"LEFT JOIN replay_matches rm ON rm.replay_match_id=mr.replay_match_id "
-		"WHERE pm.user_id=%s AND " + _community_channel_predicate(community, "m.channel_id")
-		+ at_clause +
-		" ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
-		base_args)
-	impact_match_rows = await db.fetchall(
-		"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
-		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN match_replays mr ON mr.match_id=m.match_id "
-		f"AND mr.community_id={community.sql_id} "
-		"WHERE pm.user_id=%s AND " + _community_channel_predicate(community, "m.channel_id")
-		+ at_clause,
-		base_args)
-	period_impacts = await _match_impacts(
-		community, [r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+	if _replay_dashboard_enabled():
+		matches = await db.fetchall(
+			"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, "
+			"m.winner, m.maps, pm.team, rm.duration_s "
+			"FROM match_players pm JOIN matches m "
+			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+			"LEFT JOIN match_replays mr ON mr.match_id=m.match_id "
+			f"AND mr.community_id={community.sql_id} "
+			"LEFT JOIN replay_matches rm ON rm.replay_match_id=mr.replay_match_id "
+			"WHERE pm.user_id=%s AND "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause
+			+ " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50", base_args)
+		impact_match_rows = await db.fetchall(
+			"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
+			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+			"JOIN match_replays mr ON mr.match_id=m.match_id "
+			f"AND mr.community_id={community.sql_id} "
+			"WHERE pm.user_id=%s AND "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause,
+			base_args)
+		period_impacts = await _match_impacts(
+			community, [r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+	else:
+		matches = await db.fetchall(
+			"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, "
+			"m.winner, m.maps, pm.team FROM match_players pm JOIN matches m "
+			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+			"WHERE pm.user_id=%s AND "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause
+			+ " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50", base_args)
+		period_impacts = {}
 	impact_profile = _player_impact_profile(period_impacts.values(), civs, durations)
-	scouting = await _player_scouting_report(user_id, community)
-	strategy_profile = await _player_strategy_profile(community, user_id, profile_ids, period)
+	scouting = (
+		await _player_scouting_report(user_id, community)
+		if _replay_dashboard_enabled() else None)
+	strategy_profile = (
+		await _player_strategy_profile(community, user_id, profile_ids, period)
+		if _replay_dashboard_enabled() else {
+			"games": 0, "summary": "Replay-derived strategy analysis is paused.",
+			"army_mix": [], "top_units": [], "eco_techs": [], "army_techs": [],
+		})
 	match_civs = {}
 	opp_match_civs = {}
 	match_rosters = {}
@@ -3214,7 +3207,7 @@ async def _admin_community_overview(admin):
 	replay_available = community_store.replay_pipeline_available()
 	if community_store.deployment_mode() == "hosted":
 		replay_status = "unavailable_on_hosted"
-	elif not bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True)):
+	elif not bool(getattr(cfg, "REPLAY_INGEST_ENABLED", False)):
 		replay_status = "deployment_disabled"
 	elif not replay_requested:
 		replay_status = "disabled"
@@ -3352,7 +3345,7 @@ async def handle_api_community_overview(request):
 async def _admin_policy_payload(admin):
 	policy = await community_store.get_policy(admin.community.community_id)
 	mode = community_store.deployment_mode()
-	global_enabled = bool(getattr(cfg, "REPLAY_INGEST_ENABLED", True))
+	global_enabled = bool(getattr(cfg, "REPLAY_INGEST_ENABLED", False))
 	available = community_store.replay_pipeline_available()
 	requested = policy["replay_analysis_enabled"]
 	if mode == "hosted":
@@ -4778,8 +4771,10 @@ def create_app():
 		client_max_size=8 * 1024 * 1024,
 		middlewares=[_security_headers_middleware])
 	app.router.add_get('/', handle_index)
-	# Health check (Railway healthcheckPath)
+	# Continuous probes are DB-free. Railway uses /ready only while deploying.
+	app.router.add_get('/live', handle_live)
 	app.router.add_get('/health', handle_health)
+	app.router.add_get('/ready', handle_ready)
 	# AoE2 lobby join / spectate deep-link redirects (clicked from Discord buttons)
 	app.router.add_get('/join/{game_id}', handle_lobby_join)
 	app.router.add_get('/spectate/{game_id}', handle_lobby_spectate)

@@ -8,6 +8,12 @@ import time
 from nammaoe2bot.runtime.database import db
 
 
+def _wake_jobs():
+	# Runtime-only import avoids a store↔jobs import cycle at package bootstrap.
+	from .jobs import jobs
+	jobs.wake()
+
+
 # ── config ───────────────────────────────────────────────────────────────
 async def get_config(channel_id):
 	"""The settings row for one channel, or None when it was never configured."""
@@ -36,6 +42,7 @@ async def upsert_config(channel_id, **fields):
 		await db.update("quiz_settings", fields, {"channel_id": channel_id})
 	else:
 		await db.insert("quiz_settings", dict(channel_id=channel_id, **fields))
+	_wake_jobs()
 
 
 async def configure_for_community(
@@ -85,6 +92,7 @@ async def configure_for_community(
 				"quiz_hour": int(quiz_hour),
 				"open_window": int(open_window),
 			})
+	_wake_jobs()
 
 
 async def disable_for_community(community_id):
@@ -100,7 +108,8 @@ async def disable_for_community(community_id):
 			"UPDATE quiz_settings qs JOIN community_channels cc "
 			"ON cc.channel_id=qs.channel_id SET qs.enabled=0 "
 			"WHERE cc.community_id=%s", [community_id])
-		return True
+	_wake_jobs()
+	return True
 
 
 # ── posts ────────────────────────────────────────────────────────────────
@@ -123,7 +132,7 @@ async def recent_question_ids(channel_id, n=6):
 
 async def create_post(channel_id, q, opened_at, closes_at):
 	"""Insert an open post. q is a schedule entry (carries seq/week/day/correct_indices)."""
-	return await db.insert("quiz_posts", dict(
+	post_id = await db.insert("quiz_posts", dict(
 		channel_id=channel_id, message_id=None, question_id=q["id"], category=q["category"],
 		difficulty=q.get("difficulty"),
 		prompt=q["prompt"], options_json=json.dumps(q["options"]),
@@ -131,6 +140,8 @@ async def create_post(channel_id, q, opened_at, closes_at):
 		correct_indices=json.dumps(q["correct_indices"]),
 		explanation=q["explanation"], opened_at=opened_at, closes_at=closes_at, status="open",
 		seq=q["seq"], week=q["week"], day=q["day"], source=q.get("source")))
+	_wake_jobs()
+	return post_id
 
 
 async def set_message_id(post_id, message_id):
@@ -158,6 +169,12 @@ async def due_to_close(now_ts):
 	rows = await db.fetchall(
 		"SELECT * FROM quiz_posts WHERE status='open' AND closes_at<=%s", [now_ts])
 	return rows or []
+
+
+async def next_open_close_at():
+	row = await db.fetchone(
+		"SELECT MIN(closes_at) AS closes_at FROM quiz_posts WHERE status='open'")
+	return row.get("closes_at") if row and row.get("closes_at") is not None else None
 
 
 async def latest_open_post(channel_id):

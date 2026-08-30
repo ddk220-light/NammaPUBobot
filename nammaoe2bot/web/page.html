@@ -2690,6 +2690,10 @@ function tagCell(r) {
 
 function renderLeaderboard() {
   renderLeaderboardTagPicker();
+  if (leaderboardData.disabled) {
+    document.getElementById('leaderboard-panel').innerHTML = '<div class="empty-panel">' + esc(leaderboardData.reason || 'This leaderboard is paused.') + '</div>';
+    return;
+  }
   var rows = (leaderboardData.rows || []).filter(function (r) {
     return Number(r.games || 0) >= leaderboardMinMatches && leaderboardSearchMatch(r);
   }).map(function (r, i) {
@@ -3660,7 +3664,7 @@ function playerProfileDescription(d) {
 }
 
 /* ─── Strategy Insights ─── */
-var stratData = [], stratView = 'total', stratPlayer = '';
+var stratData = [], stratView = 'total', stratPlayer = '', stratDisabledReason = '';
 var stratTotals = {}, stratCategorized = {};
 var stratSort = { col: 'games', asc: false };
 var stratSearch = '';
@@ -3673,6 +3677,10 @@ async function loadStrategyData() {
   var resp = await fetch(publicApi('/strategies'));
   if (!resp.ok) throw new Error('HTTP ' + resp.status);
   var d = await resp.json();
+  if (d.disabled) {
+    stratDisabledReason = d.reason || 'Replay-derived strategy analysis is paused.';
+    return;
+  }
   stratData = d.strategies || [];
   stratTotals = d.player_totals || {};
   stratCategorized = d.player_categorized || {};
@@ -3681,6 +3689,11 @@ async function loadStrategyData() {
 async function initStrategies() {
   try {
     await loadStrategyData();
+    if (stratDisabledReason) {
+      document.getElementById('strat-body').innerHTML = '<tr><td colspan="6" class="empty-panel">' + esc(stratDisabledReason) + '</td></tr>';
+      document.getElementById('strat-cards').innerHTML = '<div class="empty-panel">' + esc(stratDisabledReason) + '</div>';
+      return;
+    }
     buildStratPlayerSelect();
     renderStrategies();
   } catch (e) {

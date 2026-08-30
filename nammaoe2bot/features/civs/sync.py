@@ -82,6 +82,8 @@ async def persist_lobby_civs(channel_id, parsed):
 			return
 
 	await db.insert_many('civ_picks', rows)
+	from . import recorded
+	await recorded.finalize(channel_id, aoe2_match_id=aoe2_match_id, computed_at=at)
 	log.info(f"Civ record: stored {len(rows)} civs for aoe2 match {aoe2_match_id} in channel {channel_id}.")
 
 
@@ -135,6 +137,9 @@ async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at
 	threshold = min(FULL_TEAM_OVERLAP, len(player_info))
 	if overlap < threshold:
 		return False
+	from . import recorded
+	await recorded.link(
+		bot_match_id, parsed.get("aoe2_match_id"), db_adapter=db_adapter)
 
 	rows = []
 	for user_id, (nick, team, pids) in player_info.items():
@@ -163,6 +168,7 @@ async def record_lobby_match(channel_id, bot_match_id, players, winner, match_at
 		return False
 
 	await dbw.insert_many("civ_picks", rows)
+	await recorded.refresh(channel_id, db_adapter=db_adapter)
 	log.info(
 		f"Civ history: bot match {bot_match_id} -> aoe2 {parsed.get('aoe2_match_id')}, "
 		f"recorded {len(rows)} civs (overlap {overlap}).")

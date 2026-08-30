@@ -95,8 +95,13 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 		)
 		return True  # not enough mapped players to ever match — don't keep retrying
 
-	# Already recorded?
-	if await db.fetchone("SELECT 1 AS x FROM civ_picks WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
+	# Already recorded?  Re-run the link because lobby completion may have
+	# written these rows before the authoritative ``matches`` result existed.
+	from . import recorded
+	if await db.fetchone(
+			"SELECT 1 AS x FROM civ_picks WHERE bot_match_id=%s LIMIT 1",
+			[bot_match_id]):
+		await recorded.link_existing(bot_match_id)
 		return True
 
 	# Build a pool of the participants' recent API games.
@@ -137,6 +142,9 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 				pid_civ[p["profileId"]] = p["civName"]
 
 	aoe2_match_id = best.get("matchId")
+	# Match identity is useful even if this API response has no usable civ for
+	# one of our linked profiles; do not make linkage depend on the row set.
+	await recorded.link(bot_match_id, aoe2_match_id)
 	rows = []
 	for user_id, (nick, team, pids) in player_info.items():
 		civ = next((pid_civ[pid] for pid in pids if pid in pid_civ), None)
@@ -152,6 +160,7 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 		return False
 
 	await db.insert_many("civ_picks", rows)
+	await recorded.refresh(channel_id)
 	log.info(
 		f"Civ match: bot match {bot_match_id} -> aoe2 {aoe2_match_id}, "
 		f"recorded {len(rows)} civs (overlap {best_overlap})."
@@ -160,6 +169,12 @@ async def _find_and_record(channel_id, bot_match_id, players, winner, match_at):
 
 
 async def _record_with_retry(channel_id, bot_match_id, players, winner, match_at):
+	# This function is scheduled from the post-result event, after ``matches`` is
+	# durable.  Recover a LobbyBOT-written link immediately, without waiting for
+	# the first API retry or requiring the identity resolver to be healthy.
+	from . import recorded
+	if await recorded.link_existing(bot_match_id):
+		return
 	for delay in _RETRY_DELAYS:
 		await asyncio.sleep(delay)
 		try:

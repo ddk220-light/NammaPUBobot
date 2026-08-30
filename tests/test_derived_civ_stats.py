@@ -19,6 +19,7 @@ sync tests with asyncio.run().
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 
 import pytest
 
@@ -143,14 +144,32 @@ def test_no_picks_produces_no_communities():
 # ── write() ──────────────────────────────────────────────────────────────
 
 class _RecordingDB:
-	def __init__(self):
+	def __init__(self, fail_insert=False):
 		self.calls = []
+		self.fail_insert = fail_insert
+
+	@asynccontextmanager
+	async def transaction(self):
+		self.calls.append(("begin",))
+		try:
+			yield self
+		except BaseException:
+			self.calls.append(("rollback",))
+			raise
+		else:
+			self.calls.append(("commit",))
+
+	async def fetchone(self, sql, args=None):
+		self.calls.append(("fetchone", sql, list(args) if args else []))
+		return {"community_id": args[0]}
 
 	async def execute(self, sql, args=None):
 		self.calls.append(("execute", sql, list(args) if args else []))
 
 	async def insert_many(self, table, rows, on_duplicate=None):
 		self.calls.append(("insert_many", table, list(rows), on_duplicate))
+		if self.fail_insert:
+			raise RuntimeError("insert failed")
 
 
 def _written(community_id=1, civ_counts=None, computed_at=1700):
@@ -170,13 +189,17 @@ def test_write_deletes_before_insert_and_stamps_community_id():
 	recorder = _written(community_id=9, civ_counts={"Franks": dict(games=4, wins=3, losses=1),
 	                                                 "Mongols": dict(games=2, wins=0, losses=2)},
 	                     computed_at=1700)
-	assert [c[0] for c in recorder.calls] == ["execute", "insert_many"]
-	_, delete_sql, delete_args = recorder.calls[0]
+	assert [c[0] for c in recorder.calls] == [
+		"begin", "fetchone", "execute", "insert_many", "commit"]
+	_, lock_sql, lock_args = recorder.calls[1]
+	assert "FOR UPDATE" in lock_sql
+	assert lock_args == [9]
+	_, delete_sql, delete_args = recorder.calls[2]
 	assert "DELETE" in delete_sql.upper()
 	assert "civ_stats" in delete_sql
 	assert delete_args == [9]
 
-	_, table, payload, on_duplicate = recorder.calls[1]
+	_, table, payload, on_duplicate = recorder.calls[3]
 	assert table == "civ_stats"
 	assert on_duplicate == "replace"
 	assert len(payload) == 2
@@ -186,18 +209,19 @@ def test_write_deletes_before_insert_and_stamps_community_id():
 
 def test_write_with_no_civs_still_deletes_but_never_inserts():
 	recorder = _written(civ_counts={})
-	assert [c[0] for c in recorder.calls] == ["execute"]
+	assert [c[0] for c in recorder.calls] == [
+		"begin", "fetchone", "execute", "commit"]
 
 
 def test_write_emits_exactly_the_declared_columns_in_one_order():
-	payload = _written().calls[1][2]
+	payload = _written().calls[3][2]
 	assert list(payload[0].keys()) == list(civ_stats._COLUMNS)
 
 
 def test_write_rows_carry_the_right_civ_and_counts():
 	recorder = _written(civ_counts={"Franks": dict(games=4, wins=3, losses=1),
 	                                 "Mongols": dict(games=2, wins=0, losses=2)})
-	payload = recorder.calls[1][2]
+	payload = recorder.calls[3][2]
 	by_civ = {r["civ"]: r for r in payload}
 	assert by_civ["Franks"]["games"] == 4
 	assert by_civ["Franks"]["wins"] == 3
@@ -209,10 +233,53 @@ def test_write_accepts_exactly_what_compute_civ_stats_returns():
 	picks = [_pick(100, "Franks", "W")] * 3 + [_pick(100, "Franks", "L")]
 	out = compute_civ_stats(picks, [_channel(100, community_id=1)])
 	recorder = _written(community_id=1, civ_counts=out[1], computed_at=1700)
-	payload = recorder.calls[1][2]
+	payload = recorder.calls[3][2]
 	assert payload == [dict(community_id=1, civ="Franks", games=4, wins=3, losses=1, computed_at=1700)]
 
 
 def test_write_rejects_a_malformed_civ_counts_row():
 	with pytest.raises(ValueError, match="expected exactly"):
 		_written(civ_counts={"Franks": dict(games=4, wins=3)})   # losses missing
+
+
+def test_write_rolls_back_delete_when_insert_fails():
+	recorder = _RecordingDB(fail_insert=True)
+	with pytest.raises(RuntimeError, match="insert failed"):
+		asyncio.run(civ_stats.write(
+			1, {"Franks": dict(games=1, wins=1, losses=0)}, 1700,
+			db_adapter=recorder))
+	assert [c[0] for c in recorder.calls] == [
+		"begin", "fetchone", "execute", "insert_many", "rollback"]
+
+
+def test_two_writes_for_one_community_are_serialized():
+	class _ConcurrentDB(_RecordingDB):
+		def __init__(self):
+			super().__init__()
+			self.active = 0
+			self.peak = 0
+
+		@asynccontextmanager
+		async def transaction(self):
+			self.active += 1
+			self.peak = max(self.peak, self.active)
+			try:
+				yield self
+			finally:
+				await asyncio.sleep(0)
+				self.active -= 1
+
+		async def fetchone(self, sql, args=None):
+			await asyncio.sleep(0.01)
+			return {"community_id": args[0]}
+
+	async def _run():
+		recorder = _ConcurrentDB()
+		counts = {"Franks": dict(games=1, wins=1, losses=0)}
+		await asyncio.gather(
+			civ_stats.write(1, counts, 1700, db_adapter=recorder),
+			civ_stats.write(1, counts, 1701, db_adapter=recorder))
+		return recorder
+
+	recorder = asyncio.run(_run())
+	assert recorder.peak == 1

@@ -43,6 +43,13 @@ async def live_for_match(match_id):
 	return rows[0] if rows else None
 
 
+async def has_live_books():
+	"""Whether any book still needs launch/settlement recovery polling."""
+	return bool(await db.fetchone(
+		"SELECT 1 AS x FROM prediction_posts "
+		"WHERE status IN ('open','frozen') LIMIT 1"))
+
+
 async def unsettled_books(reported_before):
 	"""Books that locked but never finished settling — the resume queue.
 

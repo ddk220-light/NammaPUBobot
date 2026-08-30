@@ -154,10 +154,12 @@ class LobbyAnnouncer:
 					"WHERE id=%s",
 					[getattr(self.message, "id", None), existing["id"]],
 				)
+				from .jobs import jobs
+				jobs.arm()
 				return existing["id"]
 			lob = entry.get("lobby") or {}
 			now = int(time.time())
-			return await db.insert("lobbies", dict(
+			row_id = await db.insert("lobbies", dict(
 				aoe2_game_id=self.game_id, channel_id=getattr(self.channel, "id", None),
 				message_id=getattr(self.message, "id", None), completed_message_id=None,
 				match_id=None, status="verifying", launched_at=None,
@@ -165,6 +167,9 @@ class LobbyAnnouncer:
 				map_name=lob.get("mapName"), server=lob.get("server"),
 				profile_ids=",".join(str(p) for p in sorted(reducer.profile_ids(entry))),
 				created_at=now, last_edit_at=0, requested_by=self.requested_by))
+			from .jobs import jobs
+			jobs.arm()
+			return row_id
 		except Exception as e:
 			log.error(f"LobbyAnnouncer({self.game_id}) persist failed: {e}")
 		return None

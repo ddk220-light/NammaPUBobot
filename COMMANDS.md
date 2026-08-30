@@ -36,19 +36,21 @@ re-opens betting on the new teams — see [docs/GOLD.md](docs/GOLD.md).
 | `/profile_link` | Link your Discord account to your AoE2 profile — run it with no argument and it explains where to find your id |
 | `/lobby` | Post a live lobby card for a game id, and link that game to your ranked match so the result posts itself |
 
-**These two are what make everything else work.** Without `/profile_link` your
-`/rank` says "Statistics pending linking" and you appear on no board. `/lobby`
-is how 79% of games get connected to their replay.
+**These two connect Discord players and matches to AoE2.** `/profile_link`
+allows civilization results to follow a player across games, and `/lobby`
+connects the live AoE2 game to the bot's ranked match. Replay analysis is
+currently paused, so neither command downloads a recorded game.
 
 ## Stats
 
 | command | description |
 |---|---|
-| `/rank [player] [detailed]` | Rating profile, recent form, eAPM and your scouting report. `detailed:true` adds streak, peak, civs, duos & rivals and recent rating changes |
+| `/rank [player] [detailed]` | Rating profile and recent form. `detailed:true` adds streak, peak, civs, duos & rivals and recent rating changes; scouting and the rendered Elo chart are paused |
 | `/leaderboard [page]` | Rating leaderboard |
 
 The web dashboard carries more than these do — leaderboards, match stats,
-player pages, civ stats and play-style breakdowns.
+player pages and civ stats. Historical replay-derived play-style values are
+frozen and may still appear on legacy pages.
 
 ## Gold, betting and the quiz
 

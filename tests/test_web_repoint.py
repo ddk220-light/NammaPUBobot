@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 import nammaoe2bot.web.server as web
+from nammaoe2bot.web import probes
 from nammaoe2bot.derived import rollups
 from nammaoe2bot.features.scouting.report import PENDING
 
@@ -30,27 +31,18 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class TestHealth:
-	""" /health is railway.toml's healthcheckPath. A 503 from it does not
-	degrade anything gracefully — Railway kills the container and redeploys,
-	over and over.
+	"""Continuous probes stay DB-free; deploy readiness checks MySQL once."""
 
-	It read `getattr(bot, 'bot_ready', False)` for its Discord gate. Phase 1
-	moved that global onto Application and the getattr DEFAULT swallowed the
-	change: `discord_ok` became permanently False, so the endpoint would have
-	answered 503 on every probe of every deploy. Nothing raised, no test
-	failed, and the payload it returned was well-formed and wrong.
+	def _request(self, monkeypatch, handler, ready, matches, db_answers=False):
+		calls = []
 
-	These drive the real handler. `db_ok` is left failing in both cases — the
-	fake adapter raises on fetchone — so the healthy case pins the DB half too
-	rather than passing for the wrong reason. """
-
-	def _request(self, monkeypatch, ready, matches, db_answers):
 		async def _fetchone(*_a, **_k):
+			calls.append((_a, _k))
 			if not db_answers:
 				raise RuntimeError("db down")
 			return {"ok": 1}
 
-		# handle_health reaches two modules by function-local import, purely to
+		# The probe handlers reach two modules by function-local import, purely to
 		# read one timestamp off each. Importing them for real pulls in the
 		# whole Discord layer and the config factory, so they are pre-seeded in
 		# sys.modules instead — `from pkg import name` binds whatever is
@@ -64,24 +56,47 @@ class TestHealth:
 		monkeypatch.setattr(web.dc, "is_ready", lambda: ready, raising=False)
 		web.dc.app.ready = ready
 		web.dc.app.active_matches = list(matches)
-		return asyncio.run(web.handle_health(types.SimpleNamespace()))
+		response = asyncio.run(handler(types.SimpleNamespace()))
+		return response, calls
 
-	def test_a_connected_bot_with_a_live_db_is_healthy(self, monkeypatch):
-		resp = self._request(monkeypatch, ready=True, matches=[1, 2], db_answers=True)
+	def test_live_is_healthy_without_touching_the_database(self, monkeypatch):
+		resp, calls = self._request(
+			monkeypatch, web.handle_live, ready=True, matches=[1, 2], db_answers=False)
 		assert resp.status == 200
 		assert resp.payload["status"] == "ok"
 		assert resp.payload["bot_ready"] is True
 		assert resp.payload["active_matches"] == 2
+		assert resp.payload["database_checked"] is False
+		assert calls == []
 
 	def test_a_disconnected_bot_is_unhealthy(self, monkeypatch):
-		resp = self._request(monkeypatch, ready=False, matches=[], db_answers=True)
+		resp, calls = self._request(
+			monkeypatch, web.handle_live, ready=False, matches=[])
 		assert resp.status == 503
 		assert resp.payload["discord_connected"] is False
+		assert calls == []
+
+	def test_health_is_a_backward_compatible_db_free_alias(self, monkeypatch):
+		resp, calls = self._request(
+			monkeypatch, web.handle_health, ready=True, matches=[], db_answers=False)
+		assert resp.status == 200
+		assert resp.payload["db_connected"] is None
+		assert calls == []
+
+	def test_ready_checks_discord_and_the_database_once(self, monkeypatch):
+		resp, calls = self._request(
+			monkeypatch, web.handle_ready, ready=True, matches=[], db_answers=True)
+		assert resp.status == 200
+		assert resp.payload["db_connected"] is True
+		assert resp.payload["database_checked"] is True
+		assert len(calls) == 1
 
 	def test_a_dead_database_is_unhealthy_even_with_discord_up(self, monkeypatch):
-		resp = self._request(monkeypatch, ready=True, matches=[], db_answers=False)
+		resp, calls = self._request(
+			monkeypatch, web.handle_ready, ready=True, matches=[], db_answers=False)
 		assert resp.status == 503
 		assert resp.payload["db_connected"] is False
+		assert len(calls) == 1
 
 
 def test_the_server_can_actually_find_its_page():
@@ -600,6 +615,31 @@ def test_strategy_roster_join_reads_the_three_tables_by_their_own_keys(monkeypat
 	assert "rp.player_number" not in sql
 
 
+def test_paused_replay_dashboard_issues_no_replay_table_queries(monkeypatch):
+	match_row = {"match_id": 7, "queue_name": "pickup", "at": 0,
+		"ranked": 1, "winner": None, "maps": "Arabia", "team": 0}
+	fake = install_db(monkeypatch, FakeDB(
+		answers={
+			"FROM match_players pm WHERE pm.user_id": [{"x": 1}],
+			"ORDER BY m.reported_at DESC": [match_row],
+		}, rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
+	monkeypatch.setattr(web.cfg, "REPLAY_DASHBOARD_ENABLED", False, raising=False)
+
+	assert asyncio.run(web.handle_strategies(request())).payload["disabled"] is True
+	assert asyncio.run(web.handle_leaderboard(request(mode="tags"))).payload["disabled"] is True
+	asyncio.run(web.handle_match_stats(request()))
+	asyncio.run(web.handle_match_stats(request(player_id="42")))
+	asyncio.run(web.handle_player_stats(request(player_id="42")))
+
+	replay_tables = (
+		"game_labels", "game_stats", "replay_players", "replay_matches",
+		"replay_units", "replay_techs", "rs_player_game_tags", "player_rollups",
+	)
+	for sql in fake.sql:
+		assert not any(table in sql for table in replay_tables), sql
+
+
 # ─── the player API renders from player_rollups ───
 
 def _player_db(rollup_rows):
@@ -1096,6 +1136,18 @@ def test_an_anonymous_dashboard_read_is_a_401_not_an_empty_list(monkeypatch):
 
 	assert response.status == 401
 	assert response.payload == {"error": "Not logged in"}
+
+
+def test_anonymous_session_lookup_returns_before_cleanup(monkeypatch):
+	called = []
+
+	async def cleanup():
+		called.append(True)
+
+	monkeypatch.setattr(web, "_cleanup_expired_sessions", cleanup)
+
+	assert asyncio.run(web._get_session(request())) is None
+	assert called == []
 
 
 def test_an_expired_session_is_also_a_401(monkeypatch):
@@ -1901,6 +1953,7 @@ def test_historical_import_remaps_ids_and_writes_every_table_atomically(monkeypa
 
 def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	paths = {path for _method, path, _handler in web.create_app().router.routes}
+	assert {"/live", "/health", "/ready"} <= paths
 	assert "/api/admin/communities" in paths
 	assert "/api/admin/communities/{community_id}" in paths
 	assert "/api/admin/communities/{community_id}/overview" in paths
@@ -1943,6 +1996,11 @@ def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
 	assert "publicCommunityId = String(id)" in page
 	assert "authFetch('/api/guilds')" not in page
 	assert "authFetch('/api/channels/" not in page
+
+
+def test_probe_only_app_exposes_no_dashboard_surface():
+	paths = {path for _method, path, _handler in probes.create_probe_app().router.routes}
+	assert paths == {"/live", "/health", "/ready"}
 
 
 def test_a_logged_in_user_asking_about_an_unknown_guild_is_a_404(monkeypatch):

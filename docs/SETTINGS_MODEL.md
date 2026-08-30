@@ -27,8 +27,8 @@ but use the same resolver and authorization checks.
   create a queue, and seed player ratings when a ranked queue exists. A full
   historical import is offered as an optional path before live play begins.
   Identity linking is currently recommended because lobby matching and
-  replay-derived player analysis benefit from it, but it is not required for
-  basic queues.
+  civilization history benefit from it, but it is not required for basic
+  queues.
 - **Capabilities** reports both status and the actual control scope. A feature
   may be controlled per community, channel, queue, deployment, or be built in.
 - **Diagnostics** compares persisted enrollment, live bot configuration and
@@ -102,7 +102,13 @@ are both enabled. The work and retry selectors join through
 `community_channels` and `community_policies`, so disabling one tenant does
 not stop an opted-in tenant on the same self-hosted installation. An absent
 policy row preserves the historical defaults: a public dashboard and replay
-analysis requested.
+analysis requested. The deployment-wide switch defaults to off in the current
+lightweight product, so an absent Railway variable never starts downloads.
+
+While that switch is off, match results, ratings, predictions, match linkage,
+and civilization W/L continue. Replay-derived player rollups, metric boards,
+scouting reports, Match Cards, and replay-backed quiz/leaderboard values remain
+stored but are not recomputed; `/rank` also skips its Matplotlib Elo image.
 
 ## Daily quiz settings
 

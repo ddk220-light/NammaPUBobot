@@ -33,15 +33,25 @@ _SCHEMA = {
 	'PUBOBOT_USER_ID': (int, 0),
 	'LOBBYBOT_USER_ID': (int, 0),
 	# Product boundary. Hosted mode never runs replay parsing, even if the
-	# legacy deployment switch is accidentally enabled. Self-hosted preserves
-	# the full local feature set.
+	# legacy deployment switch is accidentally enabled. Self-hosted permits the
+	# optional local replay pipeline when its separate switch is enabled.
 	'DEPLOYMENT_MODE': (str, "self_hosted"),
-	# Replay ingestion on/off for this deployment. Replaces the single-row ops
-	# table dropped by 007_raw_renames; defaults to True to match the production
-	# row that drop removed.
-	'REPLAY_INGEST_ENABLED': (bool, True),
+	# Replay analysis is paused by default.  The code and historical data remain
+	# available for a future re-enable, but a deployment must now opt in
+	# explicitly before it may download or parse recorded games.
+	'REPLAY_INGEST_ENABLED': (bool, False),
+	# Presentation switches are deliberately separate from ingestion: this lets
+	# us re-enable basic replay collection later without automatically reviving
+	# product surfaces that were confusing or disproportionately expensive.
+	'REPLAY_POSTGAME_CARDS_ENABLED': (bool, False),
+	'SCOUTING_REPORT_ENABLED': (bool, False),
+	'RANK_ELO_CHART_ENABLED': (bool, False),
+	'REPLAY_DASHBOARD_ENABLED': (bool, False),
 	'DB_URI': (str, ""),
+	'DB_POOL_MAX_SIZE': (int, 2),
+	'DB_IDLE_CLOSE_SECONDS': (int, 60),
 	'LOG_LEVEL': (str, "INFO"),
+	'FILE_LOG_ENABLED': (bool, False),
 	'STATUS': (str, ""),
 	'WS_ENABLE': (bool, False),
 	'WS_HOST': (str, ""),

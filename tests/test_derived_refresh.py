@@ -30,6 +30,7 @@ from contextlib import asynccontextmanager
 import pytest
 
 import nammaoe2bot.features.identity.resolver as identity
+import nammaoe2bot.community as community
 import nammaoe2bot.derived.boards as boards
 import nammaoe2bot.derived.civ_stats as civ_stats
 import nammaoe2bot.derived.game_stats as game_stats_mod
@@ -855,6 +856,33 @@ def test_the_community_pass_writes_every_catalogued_board_and_the_civ_stats():
 	assert _boarded(db)["first_tc_s"]["direction"] == "low"
 	assert db.rows("civ_stats") == [dict(community_id=1, civ="Franks", games=3, wins=2, losses=1,
 	                                     computed_at=T0 + 20)]
+
+
+def test_paused_mode_refreshes_only_civs_and_freezes_replay_outputs(monkeypatch):
+	db, _log = _fresh()
+	_community(db)
+	db.add("civ_picks", channel_id=900, civ="Franks", at=T0, result="W")
+	db.add("player_rollups", community_id=1, user_id=1, games=7,
+	       rollup=json.dumps({"historical": True}), computed_at=T0 - 100)
+	db.add("metric_boards", community_id=1, metric_id="eapm",
+	       board=json.dumps({"historical": True}), computed_at=T0 - 100)
+
+	monkeypatch.setattr(community.cfg, "REPLAY_INGEST_ENABLED", False, raising=False)
+
+	async def _must_not_run(_now):
+		raise AssertionError("replay-derived drain ran while replay analysis was paused")
+
+	monkeypatch.setattr(refresh, "drain_rollups", _must_not_run)
+	monkeypatch.setattr(refresh, "drain_communities", _must_not_run)
+	job = refresh.DerivedRefresh()
+	asyncio.run(job._run(now=T0 + 10))
+
+	assert db.rows("civ_stats") == [dict(
+		community_id=1, civ="Franks", games=1, wins=1, losses=0,
+		computed_at=T0 + 10)]
+	assert json.loads(db.rows("player_rollups")[0]["rollup"]) == {"historical": True}
+	assert json.loads(db.rows("metric_boards")[0]["board"]) == {"historical": True}
+	assert job.next_civ_recovery == T0 + 10 + refresh.MAX_AGE
 
 
 def test_boards_wait_for_the_per_user_layer_to_settle():

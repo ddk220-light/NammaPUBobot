@@ -1,0 +1,9 @@
+# Optional self-hosted replay/chart stack. Not installed in the lightweight
+# Railway image unless Docker is built with --build-arg INSTALL_REPLAY_DEPS=true.
+-r requirements.txt
+matplotlib==3.9.2
+# sanduckhan fork pinned for AoE2 DE save_version 67.x.
+mgz @ https://github.com/sanduckhan/aoc-mgz/archive/a1683d8eeca67796ced0d0c05b145420c97d862d.tar.gz
+aocref==2.0.37
+requests==2.32.3
+tqdm==4.67.1

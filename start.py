@@ -22,9 +22,16 @@ PUBOBOT_USER_ID = {pubobot_user_id}
 LOBBYBOT_USER_ID = {lobbybot_user_id}
 DEPLOYMENT_MODE = "{deployment_mode}"
 REPLAY_INGEST_ENABLED = "{replay_ingest_enabled}"
+REPLAY_POSTGAME_CARDS_ENABLED = "{replay_postgame_cards_enabled}"
+SCOUTING_REPORT_ENABLED = "{scouting_report_enabled}"
+RANK_ELO_CHART_ENABLED = "{rank_elo_chart_enabled}"
+REPLAY_DASHBOARD_ENABLED = "{replay_dashboard_enabled}"
 
 DB_URI = "{db_uri}"
+DB_POOL_MAX_SIZE = {db_pool_max_size}
+DB_IDLE_CLOSE_SECONDS = {db_idle_close_seconds}
 LOG_LEVEL = "{log_level}"
+FILE_LOG_ENABLED = "{file_log_enabled}"
 STATUS = "{status}"
 
 WS_ENABLE = {ws_enable}
@@ -97,7 +104,11 @@ def main():
     # Resolved once, here, so the value written into config.cfg and the value
     # reported below are provably the same string.
     deployment_mode = os.environ.get("DEPLOYMENT_MODE", "self_hosted")
-    replay_ingest_enabled = os.environ.get("REPLAY_INGEST_ENABLED", "True")
+    replay_ingest_enabled = os.environ.get("REPLAY_INGEST_ENABLED", "False")
+    replay_postgame_cards_enabled = os.environ.get("REPLAY_POSTGAME_CARDS_ENABLED", "False")
+    scouting_report_enabled = os.environ.get("SCOUTING_REPORT_ENABLED", "False")
+    rank_elo_chart_enabled = os.environ.get("RANK_ELO_CHART_ENABLED", "False")
+    replay_dashboard_enabled = os.environ.get("REPLAY_DASHBOARD_ENABLED", "False")
 
     config_content = TEMPLATE.format(
         dc_bot_token=token,
@@ -110,9 +121,9 @@ def main():
         pubobot_user_id=pubobot_user_id,
         lobbybot_user_id=lobbybot_user_id,
         deployment_mode=deployment_mode,
-        # Defaults to True: 007_raw_renames dropped the single-row ops table whose
-        # one row had this switch ON in production, so an unset env var must keep
-        # ingestion running rather than silently stopping it.
+        # Defaults to False: replay analysis is intentionally paused.  A future
+        # deployment must opt back in explicitly rather than silently resuming
+        # downloads and parsing after a config change.
         #
         # Emitted QUOTED, unlike the older {ws_enable} above it. config.cfg is
         # loaded as Python source, so an unquoted `REPLAY_INGEST_ENABLED=false`
@@ -122,8 +133,15 @@ def main():
         # and nammaoe2bot/runtime/config.py's bool coercion ('1'/'true'/'yes'/'on', anything
         # else False) decides what it means.
         replay_ingest_enabled=replay_ingest_enabled,
+        replay_postgame_cards_enabled=replay_postgame_cards_enabled,
+        scouting_report_enabled=scouting_report_enabled,
+        rank_elo_chart_enabled=rank_elo_chart_enabled,
+        replay_dashboard_enabled=replay_dashboard_enabled,
         db_uri=db_uri,
+        db_pool_max_size=os.environ.get("DB_POOL_MAX_SIZE", "2"),
+        db_idle_close_seconds=os.environ.get("DB_IDLE_CLOSE_SECONDS", "60"),
         log_level=os.environ.get("LOG_LEVEL", "INFO"),
+        file_log_enabled=os.environ.get("FILE_LOG_ENABLED", "False"),
         status=os.environ.get("STATUS", "NammaAoe2Bot"),
         ws_enable=os.environ.get("WS_ENABLE", "False"),
         ws_port=os.environ.get("WS_PORT", os.environ.get("PORT", "8080")),
@@ -152,6 +170,18 @@ def main():
     print(f"Deployment mode: {_mode} (DEPLOYMENT_MODE={deployment_mode!r})")
     print(f"Replay ingest: {'ENABLED' if _effective else 'DISABLED'} "
           f"(REPLAY_INGEST_ENABLED={replay_ingest_enabled!r}{_origin})")
+    _cards = _effective and replay_postgame_cards_enabled.strip().lower() in _TRUE
+    _scouting = scouting_report_enabled.strip().lower() in _TRUE
+    _elo_chart = rank_elo_chart_enabled.strip().lower() in _TRUE
+    # This controls only legacy replay-derived dashboard reads. Core match/Elo,
+    # civ, prediction and quiz views stay available independently.
+    _replay_dashboard = replay_dashboard_enabled.strip().lower() in _TRUE
+    print(
+        "Legacy analysis surfaces: "
+        f"Match Cards={'ENABLED' if _cards else 'DISABLED'}, "
+        f"scouting={'ENABLED' if _scouting else 'DISABLED'}, "
+        f"rank Elo chart={'ENABLED' if _elo_chart else 'DISABLED'}, "
+        f"replay dashboard={'ENABLED' if _replay_dashboard else 'DISABLED'}")
 
     # Launch the bot
     # `-m`, not the file path: running nammaoe2bot/__main__.py directly puts

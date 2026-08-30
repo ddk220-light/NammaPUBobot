@@ -13,6 +13,11 @@
 #   # or rely on Railway's MYSQLHOST/MYSQLUSER/... environment variables
 #   # optional: BACKUP_DIR=/path RETENTION_DAYS=30 ./scripts/backup_db.sh
 #
+# The dump includes triggers, events and routines and is gzip-tested before an
+# old backup is pruned.  Store BACKUP_DIR outside the Railway database volume
+# when using this before a database replacement; a backup on the volume being
+# replaced is not a backup.
+#
 # Requires: mysqldump, gzip (mysql-client).
 
 set -euo pipefail
@@ -79,16 +84,31 @@ MYSQL_PWD="$DB_PASSWORD" mysqldump \
   --user="$DB_USER" \
   --single-transaction \
   --quick \
+  --routines \
+  --events \
+  --triggers \
+  --hex-blob \
+  --set-gtid-purged=OFF \
+  --no-tablespaces \
   --default-character-set=utf8mb4 \
   "$DB_NAME" > "$BACKUP_FILE"
 
 gzip -f "$BACKUP_FILE"
+gzip -t "${BACKUP_FILE}.gz"
+
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum "${BACKUP_FILE}.gz" > "${BACKUP_FILE}.gz.sha256"
+elif command -v shasum >/dev/null 2>&1; then
+  shasum -a 256 "${BACKUP_FILE}.gz" > "${BACKUP_FILE}.gz.sha256"
+fi
 echo "Backup written: ${BACKUP_FILE}.gz"
 
 # ─────────────────────────────────────────────
 # Prune old backups
 # ─────────────────────────────────────────────
 echo "Pruning backups older than ${RETENTION_DAYS} days..."
-find "$BACKUP_DIR" -type f -name "${DB_NAME}-*.sql.gz" -mtime "+${RETENTION_DAYS}" -print -delete
+find "$BACKUP_DIR" -type f \
+  \( -name "${DB_NAME}-*.sql.gz" -o -name "${DB_NAME}-*.sql.gz.sha256" \) \
+  -mtime "+${RETENTION_DAYS}" -print -delete
 
 echo "Done."
