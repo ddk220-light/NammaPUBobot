@@ -52,6 +52,8 @@ REGISTRY = {
 	"bot_state": dict(layer="core", tenancy="global", writers=("nammaoe2bot/state.py",), retention="forever"),
 	"queue_bans": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/pickup/noadds.py",), retention="forever"),
 	# feature state (core contract)
+	"civ_pick_rounds": dict(layer="core", tenancy="channel",
+		writers=("nammaoe2bot/features/civs/pick_store.py",), retention="forever"),
 	"quiz_posts": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),
 	"quiz_answers": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),
 	"quiz_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),

@@ -1811,3 +1811,10 @@ async def _m011(db):
 	if await column_exists(db, "queue_settings", "pq_id"):
 		await db.execute(_M011_RENAME_QUEUE_PK)
 		log.info("migrations: 011_config_factory_rename: queue_settings.pq_id -> queue_id")
+
+
+@migration("012_civ_pick_history_index")
+async def _m012(db):
+	"""Bound the rolling 24-hour query to this channel's recent history."""
+	if await table_exists(db, 'civ_picks') and not await index_exists(db, 'civ_picks', 'idx_civ_picks_channel_at'):
+		await db.execute('CREATE INDEX `idx_civ_picks_channel_at` ON `civ_picks` (`channel_id`, `at`)')

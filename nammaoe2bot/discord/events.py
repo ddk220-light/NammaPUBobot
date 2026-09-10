@@ -94,6 +94,7 @@ last_tick_at = 0.0
 async def on_think(frame_time):
 	global _last_state_save, last_tick_at
 	last_tick_at = frame_time
+	dc.app.civ_picker.think()
 
 	# Iterate over a snapshot so removing a failed match from the set
 	# doesn't skip the rest of the tick. Previously an exception in one
@@ -249,6 +250,8 @@ async def on_interaction(interaction):
 	await dc.process_application_commands(interaction)
 	from nammaoe2bot.features.quiz import interactions as quiz_interactions
 	await quiz_interactions.on_quiz_interaction(interaction)
+	from nammaoe2bot.features.civs import pick_commands
+	await pick_commands.on_interaction(interaction, dc.app)
 	from nammaoe2bot.derived.classifications import interactions as cls_interactions
 	await cls_interactions.on_insights_interaction(interaction)
 	from nammaoe2bot.features.betting import interactions as bet_interactions

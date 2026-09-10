@@ -20,6 +20,7 @@ from nammaoe2bot.discord.commands import admin, config, matches, queues, stats
 from nammaoe2bot.features.betting import commands as betting_commands
 from nammaoe2bot.features.identity import commands as identity_commands
 from nammaoe2bot.features.quiz import commands as quiz_commands
+from nammaoe2bot.features.civs import pick_commands
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.channel import QueueChannel
 from nammaoe2bot.community import enroll_channel
@@ -473,6 +474,17 @@ async def _lobby2(
 ): await run_slash(matches.lobby2, interaction=interaction, gameid=gameid)
 
 
+@dc.slash_command(name='civpick', description='Quick voluntary civilization picks for a ranked bot match', **guild_kwargs)
+async def _civpick(
+		interaction: Interaction,
+		match_id: int = SlashOption(description='Ranked bot match ID (not the AoE2 lobby ID).'),
+		minutes: int = SlashOption(description='Picking time in minutes (default 3).', default=3,
+			required=False, min_value=1, max_value=10),
+		redo: bool = SlashOption(description='Reset picks and draw a fresh pool.', default=False, required=False)
+): await run_slash(pick_commands.civpick, interaction=interaction, match_id=match_id, minutes=minutes, redo=redo)
+_civpick.on_autocomplete('match_id')(autocomplete.match_ids)
+
+
 @dc.slash_command(name='subfor', description='Become a substitute', **guild_kwargs)
 async def _sub_for(
 		interaction: Interaction,
@@ -538,4 +550,3 @@ async def _quiz_leaderboard(
 async def _quiz_disable(
 		interaction: Interaction
 ): await run_slash(quiz_commands.quiz_disable, interaction=interaction)
-

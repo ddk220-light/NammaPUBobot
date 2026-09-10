@@ -34,7 +34,7 @@ class Match:
 		pick_teams="captain based matchmaking",
 		maps=[], vote_maps=0, map_count=0, check_in_timeout=0,
 		check_in_discard=True, match_lifetime=3*60*60, start_msg=None, server=None,
-		show_streamers=True, predictions_enabled=True
+		show_streamers=True, predictions_enabled=True, civpick_enabled=True
 	)
 
 	class Team(list):

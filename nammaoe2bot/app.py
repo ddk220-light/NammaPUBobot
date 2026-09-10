@@ -79,6 +79,7 @@ class Application:
 		self.waiting_reactions = TTLReactionDict()   # {message_id: callback}
 		self.ready = False
 		self.was_ready = False
+		self.civ_picker = None        # constructed by lifecycle wiring at boot
 		# Empty until nammaoe2bot/wiring.py subscribes the features. A Match announces
 		# through this rather than importing betting, the lobby watcher or the
 		# storyline builders — see nammaoe2bot/pickup/match/events.py.

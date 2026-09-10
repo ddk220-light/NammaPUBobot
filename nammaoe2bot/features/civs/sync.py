@@ -33,7 +33,8 @@ db.ensure_table(dict(
 		dict(cname="team", ctype=db.types.int, notnull=False),
 		dict(cname="result", ctype=db.types.str),
 	],
-	primary_keys=["id"]
+	primary_keys=["id"],
+	indexes=[("idx_civ_picks_channel_at", ["channel_id", "at"])],
 ))
 
 # In-memory buffer of parsed LobbyBOT match results (max 20)

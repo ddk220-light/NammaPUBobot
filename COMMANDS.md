@@ -1,6 +1,6 @@
 # Available Commands
 
-**44 commands. 14 of them are yours** — the rest are admin, and Discord hides
+**45 commands. 15 of them are yours** — the rest are admin, and Discord hides
 those from you unless you have Manage Messages.
 
 If you only ever learn four: `/add`, `/lobby`, `/report`, `/rank`.
@@ -12,11 +12,26 @@ If you only ever learn four: `/add`, `/lobby`, `/report`, `/rank`.
 | `/add` | Join the queue |
 | `/remove` | Leave the queue |
 | `/teams` | Show the teams for your current match |
+| `/civpick match_id [minutes] [redo]` | Pick from 12 civs plus Random for a ranked bot match; defaults to 3 minutes |
 | `/report` | Report your match result |
 
 `++` and `--` are shorthand for `/add` and `/remove` — just type them as a
 message. When the queue fills, react ☑ on the check-in card within the
 check-in window or you'll be replaced by the next player waiting.
+
+`/civpick match_id:123` posts a shared card after both teams are formed. Each
+player gets one successful pick; the first claim wins each civ. Everyone can
+choose Random. Picks lock when everyone has chosen or the timer expires;
+missing picks become **Random (timed out)**. The final assignments appear on
+the same card. These are voluntary suggestions—choose that civ in the game.
+
+The pool avoids civs recorded in this channel in the last 24 hours, filling
+any shortage with the least frequently/recently played. Unrecorded games cannot
+be considered. The catalog includes DLC civs; pick one you own or use Random.
+Repeating the command shows saved results. The initiator or a channel admin can
+use `redo:true` to clear picks and redraw, with a 30-second cooldown. `minutes`
+accepts 1–10. Roster changes cancel an open round; use redo for the new teams.
+Admins can disable this for new matches with the queue's `civpick_enabled` setting.
 
 ### Substitutions
 

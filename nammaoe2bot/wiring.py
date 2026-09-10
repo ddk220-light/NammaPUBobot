@@ -111,6 +111,8 @@ async def _void_book(match, _ctx):
 
 def wire_match_lifecycle(app):
 	"""Subscribe every feature to the match lifecycle. Called once, at boot."""
+	from nammaoe2bot.features.civs.pick_service import PickService
+	app.civ_picker = PickService(app)
 	events = app.match_events
 
 	events.on("teams_posted", _post_team_insights)
@@ -119,6 +121,9 @@ def wire_match_lifecycle(app):
 	events.on("live", _open_book)
 
 	events.on("roster_changed", _restart_book)
+	events.on("roster_changed", app.civ_picker.invalidate)
+	events.on("ending", app.civ_picker.invalidate)
+	events.on("cancelled", app.civ_picker.invalidate)
 
 	events.on("ending", _stop_lobby_watcher)
 

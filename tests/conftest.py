@@ -360,12 +360,13 @@ class _FakeButton:
 	protocol between nammaoe2bot/features/betting/embeds.bet_view and the router that parses
 	it back — a stub that swallowed it would let the two drift apart. """
 
-	def __init__(self, *, style=None, row=None, label=None, emoji=None, custom_id=None, **_kw):
+	def __init__(self, *, style=None, row=None, label=None, emoji=None, custom_id=None, disabled=False, **_kw):
 		self.style = style
 		self.row = row
 		self.label = label
 		self.emoji = emoji
 		self.custom_id = custom_id
+		self.disabled = disabled
 
 
 class _FakeView:
@@ -374,9 +375,10 @@ class _FakeView:
 	what makes the buttons outlive the process, and auto_defer=False is what
 	stops nextcord acking a press before the global router sees it. """
 
-	def __init__(self, timeout=None, auto_defer=True, **_kw):
+	def __init__(self, timeout=None, auto_defer=True, prevent_update=True, **_kw):
 		self.timeout = timeout
 		self.auto_defer = auto_defer
+		self.prevent_update = prevent_update
 		self.children = []
 
 	def add_item(self, item):

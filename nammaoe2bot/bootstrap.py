@@ -44,6 +44,7 @@ def bootstrap(app):
 	from nammaoe2bot.features import lobby              # noqa: F401
 	from nammaoe2bot.features import quiz               # noqa: F401
 	from nammaoe2bot.features.civs import reconcile     # noqa: F401
+	from nammaoe2bot.features.civs import pick_store    # noqa: F401
 
 	# Ingest, and the two layers derived from it.
 	from nammaoe2bot import ingest                      # noqa: F401

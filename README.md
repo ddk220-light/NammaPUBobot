@@ -28,7 +28,7 @@ software and remains so.
 - **A public web dashboard** — leaderboards, player pages, civ stats and
   play-style breakdowns — plus an authenticated config surface for admins.
 
-**44 slash commands, 14 of them player-facing.** Every admin group declares
+**45 slash commands, 15 of them player-facing.** Every admin group declares
 `default_member_permissions`, so Discord hides them from everyone else. See
 [COMMANDS.md](COMMANDS.md), and
 [the consolidation spec](docs/superpowers/specs/2026-08-06-command-consolidation.md)

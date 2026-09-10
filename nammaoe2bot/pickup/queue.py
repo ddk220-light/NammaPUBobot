@@ -96,6 +96,11 @@ class PickupQueue:
 					"Ranked queues only — an unranked match never reports a winner to score against.")),
 				notnull=True
 			),
+			Variables.BoolVar(
+				"civpick_enabled", display="Voluntary civilization picks", section="General",
+				default=1, notnull=True,
+				description="Allow match participants to start /civpick rounds. No automatic posts."
+			),
 			Variables.IntVar(
 				"team_size",
 				display="Force team size",
@@ -338,6 +343,7 @@ class PickupQueue:
 			check_in_discard=self.cfg.check_in_discard,
 			match_lifetime=self.cfg.match_lifetime,
 			predictions_enabled=self.cfg.predictions_enabled,
+			civpick_enabled=self.cfg.civpick_enabled,
 			start_msg=self.cfg.start_msg, server=self.cfg.server
 		)
 
