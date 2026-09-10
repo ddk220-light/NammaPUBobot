@@ -25,6 +25,11 @@ choose Random. Picks lock when everyone has chosen or the timer expires;
 missing picks become **Random (timed out)**. The final assignments appear on
 the same card. These are voluntary suggestions—choose that civ in the game.
 
+Until the round closes, the card shows only who has picked and who is waiting.
+Civilizations are revealed only when everyone has picked or time runs out.
+All buttons stay available-looking to hide which civ was taken. If you try a
+taken civ, the bot tells you privately and you can choose another.
+
 The pool avoids civs recorded in this channel in the last 24 hours, filling
 any shortage with the least frequently/recently played. Unrecorded games cannot
 be considered. The catalog includes DLC civs; pick one you own or use Random.

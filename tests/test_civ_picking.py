@@ -308,7 +308,7 @@ def test_card_has_thirteen_buttons_and_final_assignments():
 	assert len({b.custom_id for b in view.children}) == 13
 	picking.claim(s, 1, 0, 1, 1001)
 	_embed, view = card(123, s)
-	assert view.children[0].disabled
+	assert not view.children[0].disabled
 	assert not view.children[12].disabled
 	picking.expire(s, 1180)
 	embed, view = card(123, s)
@@ -445,3 +445,39 @@ def test_timeout_racing_claim_has_one_terminal_snapshot(monkeypatch):
 		assert s['picks'] == {'1': 12, '2': 12}
 		assert s['status'] == 'closed'
 	asyncio.run(run())
+
+
+def test_open_card_does_not_leak_choices_through_text_or_buttons():
+	from nammaoe2bot.features.civs.pick_view import card
+	# Swapping two players' choices (including Random) must produce identical
+	# public output while open. This also covers /civpick's shared renderer.
+	a = state(4)
+	picking.claim(a, 1, 0, 1, 1001)
+	picking.claim(a, 2, picking.RANDOM, 1, 1002)
+	b = copy.deepcopy(a)
+	b['picks'] = {'1': picking.RANDOM, '2': 5}
+	ea, va = card(123, a)
+	eb, vb = card(123, b)
+	assert ea.description == eb.description
+	assert '<@1> → Picked ✅' in ea.description
+	assert '<@3> → Waiting to pick' in ea.description
+	assert all(not button.disabled for button in va.children + vb.children)
+	assert [(x.label, x.style, x.custom_id) for x in va.children] == [
+		(x.label, x.style, x.custom_id) for x in vb.children]
+
+
+def test_only_completion_or_timeout_reveals_choices():
+	from nammaoe2bot.features.civs.pick_view import card
+	for finish in ('all_picked', 'timeout', 'invalidated'):
+		s = state(2)
+		picking.claim(s, 1, 0, 1, 1001)
+		if finish == 'all_picked':
+			picking.claim(s, 2, 1, 1, 1002)
+		elif finish == 'timeout':
+			picking.expire(s, 1180)
+		else:
+			s['status'] = 'invalidated'
+		embed, view = card(123, s)
+		assert all(button.disabled for button in view.children)
+		assignment = f"<@1> → {s['options'][0]}"
+		assert (assignment in embed.description) == (finish != 'invalidated')
