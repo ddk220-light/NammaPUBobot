@@ -323,12 +323,16 @@ async def record_civs_by_id(channel_id, bot_match_id, match_api, players, winner
 	back half of civ_matcher._find_and_record (idempotency guard + row dict +
 	insert_many) but skips the API search (we already have the exact game). The
 	guard makes it compose with the existing writers (first one wins)."""
+	aoe2_match_id = match_api.get("matchId")
+	from nammaoe2bot.features.civs import recorded
+	# The lobby already identifies the exact game, so preserve that durable link
+	# even when profiles/civilizations are incomplete and no civ row can be made.
+	await recorded.link(bot_match_id, aoe2_match_id)
 	if await db.fetchone("SELECT 1 AS x FROM civ_picks WHERE bot_match_id=%s LIMIT 1", [bot_match_id]):
 		return True
 	pid_civ = api.pid_civ_map(match_api)
 	if not pid_civ:
 		return False
-	aoe2_match_id = match_api.get("matchId")
 	rows = []
 	for user_id, nick, team in players:
 		pids = await _profiles_for(user_id)
@@ -344,6 +348,7 @@ async def record_civs_by_id(channel_id, bot_match_id, match_api, players, winner
 	if not rows:
 		return False
 	await db.insert_many("civ_picks", rows)
+	await recorded.refresh(channel_id, match_at)
 	log.info(f"Flow3: recorded {len(rows)} civs for bot match {bot_match_id} (aoe2 {aoe2_match_id}).")
 	return True
 
@@ -412,6 +417,8 @@ async def link_manual(channel_id, match_id, game_id, requested_by):
 		)
 	else:
 		await db.insert("lobbies", row)
+	from .jobs import jobs
+	jobs.arm()
 	return "linked"
 
 

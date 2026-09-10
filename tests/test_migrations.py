@@ -2542,8 +2542,29 @@ def test_every_migration_this_file_exercises_is_still_registered():
 	nothing runs. """
 	names = {name for name, _fn in mig.MIGRATIONS}
 	for expected in ("008_game_stats_has_production", "009_identities_bound_at",
-					 "010_game_stats_played_at", "011_config_factory_rename"):
+					 "010_game_stats_played_at", "011_config_factory_rename",
+					 "012_community_import_once"):
 		assert expected in names, f"{expected} is no longer registered"
+
+
+def test_m012_adds_the_one_time_community_import_constraint_idempotently():
+	db = FakeDb(tables={"community_imports"})
+
+	asyncio.run(mig._m012(db))
+	asyncio.run(mig._m012(db))
+
+	assert mig._COMMUNITY_IMPORT_ONCE_INDEX in db.indexes["community_imports"]
+	adds = [sql for sql in db.executed if "ADD UNIQUE KEY" in sql]
+	assert len(adds) == 1
+	assert "(`channel_id`, `kind`)" in adds[0]
+
+
+def test_m012_leaves_a_fresh_install_for_the_web_declaration():
+	db = FakeDb()
+
+	asyncio.run(mig._m012(db))
+
+	assert db.executed == []
 
 
 def test_the_played_at_and_version_ddl_match_the_ensure_table_declaration():

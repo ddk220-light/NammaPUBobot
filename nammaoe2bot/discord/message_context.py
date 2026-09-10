@@ -19,7 +19,8 @@ class MessageContext(Context):
 	""" Context for plain text-message commands.
 
 	The full text-command system was removed in Layer 5 (slash-only). This
-	minimal context was restored to support the `++` / `--` shorthand only —
+	minimal context was restored to support the `++` / `--` (including smart
+	dash spellings) shorthand only —
 	it lets the existing add/remove command handlers reply to the channel. """
 
 	def __init__(self, qc: QueueChannel, message: Message):

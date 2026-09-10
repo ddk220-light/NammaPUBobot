@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Structured, privacy-conscious traces for the unofficial lobby socket.
+"""Low-volume, privacy-conscious debug traces for the unofficial lobby socket.
 
-The launch cutoff is temporarily observation-only while real matches establish
-what the socket emits when a host starts a game versus when a lobby is simply
-closed.  Do not log whole event payloads here: lobby metadata can contain a
-password and slot events carry player names/profile ids.  The allowlisted
-summary below preserves the lifecycle evidence without copying either into the
-Railway log.
+The production launch decision is now the match API's durable ``started``
+timestamp, logged once by ``launch.mark_confirmed``. Socket traces therefore
+stay at DEBUG and record only lobby lifecycle shape. Slot events are both noisy
+and identity-bearing, so they are never emitted.
 """
 import json
 
@@ -15,10 +13,13 @@ from nammaoe2bot.runtime.console import log
 from . import reducer
 
 
+# Only fields needed to distinguish lifecycle transitions are safe to retain.
+# Lobby/map labels can be user-created, so even DEBUG traces omit them.
 _LOBBY_FIELDS = (
 	"started", "finished", "status", "totalSlotCount", "blockedSlotCount",
-	"gameModeName", "leaderboardName", "mapName", "server",
 )
+_LIFECYCLE_EVENTS = frozenset(("lobbyAdded", "lobbyUpdated", "lobbyRemoved"))
+_LIFECYCLE_UPDATE_FIELDS = frozenset(("started", "finished", "status"))
 
 
 def event_summary(source, event, entry=None):
@@ -30,27 +31,16 @@ def event_summary(source, event, entry=None):
 	"""
 	data = event.get("data") if isinstance(event, dict) else None
 	data = data if isinstance(data, dict) else {}
+	event_type = event.get("type") if isinstance(event, dict) else None
 	out = {
 		"source": str(source),
-		"event": event.get("type") if isinstance(event, dict) else None,
+		"event": event_type,
 		"match_id": data.get("matchId"),
-		# Key names reveal a new protocol field without exposing its value. This
-		# is how tomorrow's review can spot a possible launch/cancel discriminator
-		# without dumping passwords, tokens or identities tonight.
-		"payload_keys": sorted(str(key) for key in data),
 	}
-	for key in _LOBBY_FIELDS:
-		if key in data:
-			out[key] = data.get(key)
-	if "name" in data:
-		# Useful for proving the automatic name filter selected the intended
-		# lobby. json.dumps below escapes control characters in hostile names.
-		out["lobby_name"] = data.get("name")
-	if "slot" in data:
-		out["slot"] = data.get("slot")
-		out["slot_occupied"] = bool(data.get("profileId"))
-		out["team"] = data.get("team")
-		out["civ_selected"] = bool(data.get("civName"))
+	if event_type in _LIFECYCLE_EVENTS:
+		for key in _LOBBY_FIELDS:
+			if key in data:
+				out[key] = data.get(key)
 
 	if entry:
 		lobby = entry.get("lobby") or {}
@@ -67,6 +57,14 @@ def event_summary(source, event, entry=None):
 
 
 def trace_event(source, event, entry=None):
-	"""Write one greppable JSON line to the ordinary Railway log."""
+	"""Emit one compact DEBUG lifecycle line; return whether one was emitted."""
+	data = event.get("data") if isinstance(event, dict) else None
+	data = data if isinstance(data, dict) else {}
+	event_type = event.get("type") if isinstance(event, dict) else None
+	if event_type not in _LIFECYCLE_EVENTS:
+		return False
+	if event_type == "lobbyUpdated" and not (_LIFECYCLE_UPDATE_FIELDS & data.keys()):
+		return False
 	summary = event_summary(source, event, entry)
-	log.info("LOBBY_SOCKET_TRACE " + json.dumps(summary, sort_keys=True, default=str))
+	log.debug("LOBBY_SOCKET_TRACE " + json.dumps(summary, sort_keys=True, default=str))
+	return True

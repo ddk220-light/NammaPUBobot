@@ -36,3 +36,33 @@ def test_stale_reaper_cannot_expire_an_api_confirmed_game(monkeypatch):
 	sql, args = fake.calls[0]
 	assert "launched_at IS NULL" in sql
 	assert args == [1_000]
+
+
+def test_idle_lobby_job_sleeps_for_a_day_and_writer_can_rearm(monkeypatch):
+	module = __import__("nammaoe2bot.features.lobby.jobs", fromlist=["time"])
+	monkeypatch.setattr(module.time, "time", lambda: 1_000)
+	job = LobbyJobs()
+
+	async def no_live():
+		return False
+
+	async def no_launches(_now):
+		return False
+
+	async def no_completions(_now):
+		return False
+
+	async def no_reap(_cutoff):
+		return None
+
+	job._rehydrate = no_live
+	job._poll_launches = no_launches
+	job._poll_completions = no_completions
+	job._reap_stale = no_reap
+	asyncio.run(job._run())
+
+	assert job._active is False
+	assert job.next_run == 1_000 + job.RECOVERY_INTERVAL
+	job.arm()
+	assert job._active is True
+	assert job.next_run == 0

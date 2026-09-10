@@ -1813,8 +1813,35 @@ async def _m011(db):
 		log.info("migrations: 011_config_factory_rename: queue_settings.pq_id -> queue_id")
 
 
-@migration("012_civ_pick_history_index")
+# ── 012: one externally sourced rating seed per channel ──────────────────
+_COMMUNITY_IMPORT_ONCE_INDEX = "community_import_once_per_channel_kind"
+
+
+@migration("012_community_import_once")
 async def _m012(db):
+	"""Add the one-time import guard to an already-created onboarding ledger.
+
+	The web module declares this index for fresh installs. Migrations run before
+	that module imports, so an absent table is correctly left for ensure_table;
+	this body exists for a database that booted a build which already created the
+	ledger without the constraint.
+	"""
+	if not await table_exists(db, "community_imports"):
+		log.info(
+			"migrations: 012_community_import_once: community_imports does not exist, "
+			"skipping (nammaoe2bot/web/server.py creates it with the index)")
+		return
+	if await index_exists(db, "community_imports", _COMMUNITY_IMPORT_ONCE_INDEX):
+		return
+	await db.execute(
+		f"ALTER TABLE `community_imports` ADD UNIQUE KEY `{_COMMUNITY_IMPORT_ONCE_INDEX}` "
+		"(`channel_id`, `kind`)")
+	log.info(
+		"migrations: 012_community_import_once: added unique channel/kind import guard")
+
+
+@migration("013_civ_pick_history_index")
+async def _m013(db):
 	"""Bound the rolling 24-hour query to this channel's recent history."""
 	if await table_exists(db, 'civ_picks') and not await index_exists(db, 'civ_picks', 'idx_civ_picks_channel_at'):
 		await db.execute('CREATE INDEX `idx_civ_picks_channel_at` ON `civ_picks` (`channel_id`, `at`)')

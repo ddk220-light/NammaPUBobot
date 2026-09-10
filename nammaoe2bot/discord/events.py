@@ -18,14 +18,15 @@ from nammaoe2bot.features import quiz
 from nammaoe2bot import ingest
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.pickup.expire import expire
-from nammaoe2bot.state import load_state, save_state, save_state_db
+from nammaoe2bot.state import load_state, save_state_if_changed
 from nammaoe2bot.pickup.channel import QueueChannel
 from nammaoe2bot.pickup import stats
 from nammaoe2bot.pickup.noadds import noadds
 from nammaoe2bot.features.elo_sync import process_elo_sync
 from nammaoe2bot.features.civs.sync import parse_lobby_embed, buffer_lobby_result, persist_lobby_civs
-from nammaoe2bot.features.message_log import log_channel_message, log_bot_message
-from nammaoe2bot.community import enroll_channel
+from nammaoe2bot.features.message_log import log_bot_message
+from nammaoe2bot.community import enroll_channel, replay_pipeline_available
+from nammaoe2bot.discord.shortcuts import queue_shortcut_action
 
 
 async def seed_ratings_from_csv():
@@ -125,23 +126,19 @@ async def on_think(frame_time):
 	await reconcile.reconcile.think(frame_time)
 	await lobby.jobs.think(frame_time)   # opt-in lobby feature; think() is self-isolating (never raises)
 	await quiz.jobs.think(frame_time)    # opt-in quiz feature; think() is self-isolating (never raises)
-	await ingest.jobs.think(frame_time)  # opt-in replay-stats; think() is self-isolating
 	await betting.jobs.think(frame_time)   # freeze sweep; think() is self-isolating (never raises)
-	# Reconciles game_stats/game_labels against the raw rows they are derived from.
-	# think() only schedules (the batch runs off-tick) and is self-isolating; the loop
-	# converges to zero work and then stays permanently as repair — see nammaoe2bot/derived/backfill.py.
-	await derived.jobs.think(frame_time)
-	# Rebuilds the derived-COMMUNITY layer (player_rollups / metric_boards / civ_stats)
-	# for whoever is out of date. Same self-isolating shape as the backfill above, and
-	# the same stateless convergence: it derives its own work list on every pass rather
-	# than keeping one, so a deploy mid-pass loses nothing — see nammaoe2bot/derived/refresh.py.
+	# Replay download/parse and its replay-derived repair/retention jobs move as
+	# one unit.  When replay analysis is paused, none of them is even scheduled:
+	# historical rows stay frozen and the bot performs no hidden replay scans.
+	if replay_pipeline_available():
+		await ingest.jobs.think(frame_time)
+		await derived.jobs.think(frame_time)
+		await derived.sweeper_jobs.think(frame_time)
+
+	# In normal replay mode this rebuilds player_rollups, metric_boards and
+	# civ_stats.  In paused mode refresh.py deliberately runs only the tiny
+	# civ_stats recovery path, preserving civ W/L while freezing replay outputs.
 	await derived.refresh_jobs.think(frame_time)
-	# Ages the bulky per-match replay detail out for LEAN communities once their
-	# summary provably exists — daily, off-tick, self-isolating like the two above.
-	# The only job in this bot that permanently destroys data, so it ships with
-	# DRY_RUN = True and deletes nothing until that constant is flipped in a commit
-	# of its own — see nammaoe2bot/derived/sweeper.py before touching it.
-	await derived.sweeper_jobs.think(frame_time)
 
 	# Sweep leaked check-in reaction callbacks. See TTLReactionDict
 	# docstring in nammaoe2bot/app.py — entries older than 30 minutes are
@@ -155,8 +152,7 @@ async def on_think(frame_time):
 	# disk for unexpected exits.
 	if frame_time - _last_state_save >= _STATE_SAVE_INTERVAL:
 		try:
-			save_state(dc.app)
-			await save_state_db(dc.app)   # durable copy on the MySQL volume
+			await save_state_if_changed(dc.app)
 			_last_state_save = frame_time
 		except Exception as e:
 			log.error(f"Periodic save_state failed: {e}\n{traceback.format_exc()}")
@@ -183,22 +179,24 @@ async def on_message(message):
 		return
 
 	# `++` / `--` shorthand: add/remove the author to/from the channel queues.
+	# Smart punctuation may turn two hyphens into one Unicode dash, so parse the
+	# small explicit alias set rather than comparing only the ASCII spelling.
 	# Restored after Layer 5 removed the text-command system — these two are the
 	# only shorthands kept. They reuse the existing add/remove command handlers
 	# (add with no args -> default/active queues; remove with no args -> all).
-	if message.content in ('++', '--'):
+	if (shortcut := queue_shortcut_action(message.content)) is not None:
 		if (qc := dc.app.channels.get(message.channel.id)) is not None and dc.app.ready:
 			from nammaoe2bot.discord.message_context import MessageContext
 			ctx = MessageContext(qc, message)
 			try:
-				if message.content == '++':
+				if shortcut == 'add':
 					await queue_commands.add(ctx)
 				else:
 					await queue_commands.remove(ctx)
 			except Exc.BotException as e:
 				await ctx.error(str(e), title=e.__class__.__name__)
 			except Exception as e:
-				log.error(f"Error processing '{message.content}': {e}\n{traceback.format_exc()}")
+				log.error(f"Error processing queue shortcut '{shortcut}': {e}\n{traceback.format_exc()}")
 		return
 
 	# Sync ELO from original Pubobot
@@ -229,14 +227,6 @@ async def on_message(message):
 		except Exception as e:
 			log.error(f"Civ sync buffer error: {e}\n{traceback.format_exc()}")
 
-	# Log all channel messages in queue channels
-	if message.channel.id in dc.app.channels:
-		try:
-			log_channel_message(message)
-		except Exception:
-			pass
-
-
 @dc.event
 async def on_interaction(interaction):
 	# CRITICAL: nammaoe2bot.runtime.client's @dc.event system replaces nextcord's built-in
@@ -252,53 +242,55 @@ async def on_interaction(interaction):
 	await quiz_interactions.on_quiz_interaction(interaction)
 	from nammaoe2bot.features.civs import pick_commands
 	await pick_commands.on_interaction(interaction, dc.app)
-	from nammaoe2bot.derived.classifications import interactions as cls_interactions
-	await cls_interactions.on_insights_interaction(interaction)
+	if bool(getattr(cfg, "REPLAY_DASHBOARD_ENABLED", False)):
+		from nammaoe2bot.derived.classifications import interactions as cls_interactions
+		await cls_interactions.on_insights_interaction(interaction)
+	else:
+		# Old insight buttons remain in Discord history. Acknowledge those clicks
+		# without importing/querying the frozen classification stack; other
+		# component ids continue to the active quiz/betting routers.
+		custom_id = (getattr(interaction, "data", None) or {}).get("custom_id", "")
+		if (custom_id.startswith("insights:full:")
+				and not interaction.response.is_done()):
+			await interaction.response.send_message(
+				"Replay insights are currently paused.", ephemeral=True)
 	from nammaoe2bot.features.betting import interactions as bet_interactions
 	await bet_interactions.on_bet_interaction(interaction)
 
 
-@dc.event
-async def on_reaction_add(reaction, user):
-	if user.id != dc.user.id and reaction.message.id in dc.app.waiting_reactions:
-		await dc.app.waiting_reactions[reaction.message.id](reaction, user)
+async def _route_raw_reaction(payload, *, remove):
+	"""Route an add/remove without requiring Nextcord's message cache.
 
-
-@dc.event
-async def on_raw_reaction_remove(payload):
-	# Fixed in Layer 5 (was `on_reaction_remove` with a FIXME saying "event does not
-	# get triggered"). Two separate problems:
-	#
-	#   1. Nextcord only fires the cached `on_reaction_remove` for messages still
-	#      in its internal message cache. Check-in messages typically live 1-2
-	#      minutes but the cache turnover during a busy channel can evict them
-	#      before the user un-reacts, so the callback silently never ran.
-	#   2. Even when it did fire, the original code checked
-	#      `reaction.message.channel.id in app.waiting_reactions` (channel vs
-	#      message id typo), so the lookup always failed. That's a 2022-vintage
-	#      bug that nobody caught because of (1).
-	#
-	# `on_raw_reaction_remove` fires for ALL reaction removes, cached or not,
-	# and gives us `payload.message_id` directly. The callback only uses
-	# `str(reaction)` and `user` — `payload.emoji` is a PartialEmoji whose
-	# __str__ returns the same string as Reaction's __str__, so the check-in
-	# callback (`str(reaction) == self.READY_EMOJI`) continues to work.
+	Reaction callbacks only use ``str(reaction)`` plus the reacting Member, so a
+	raw payload's PartialEmoji is behaviorally equivalent and lets us keep a much
+	smaller message cache. Guild reaction-add payloads normally include ``member``;
+	remove payloads do not, hence the cache lookup fallback shared by both paths.
+	"""
 	if payload.user_id == dc.user.id:
 		return
 	if payload.message_id not in dc.app.waiting_reactions:
 		return
-	# Resolve Member — the callback checks `user not in self.m.players`, so we
-	# need the actual Member object, not just the id.
-	guild = dc.get_guild(payload.guild_id) if payload.guild_id else None
-	if guild is None:
-		return
-	member = guild.get_member(payload.user_id)
+	member = getattr(payload, "member", None)
+	if member is None:
+		guild = dc.get_guild(payload.guild_id) if payload.guild_id else None
+		member = guild.get_member(payload.user_id) if guild else None
 	if member is None:
 		return
 	try:
-		await dc.app.waiting_reactions[payload.message_id](payload.emoji, member, remove=True)
+		await dc.app.waiting_reactions[payload.message_id](payload.emoji, member, remove=remove)
 	except Exception as e:
-		log.error(f"on_raw_reaction_remove callback error: {e}\n{traceback.format_exc()}")
+		event = "remove" if remove else "add"
+		log.error(f"on_raw_reaction_{event} callback error: {e}\n{traceback.format_exc()}")
+
+
+@dc.event
+async def on_raw_reaction_add(payload):
+	await _route_raw_reaction(payload, remove=False)
+
+
+@dc.event
+async def on_raw_reaction_remove(payload):
+	await _route_raw_reaction(payload, remove=True)
 
 
 @dc.event

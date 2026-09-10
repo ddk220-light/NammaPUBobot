@@ -81,6 +81,34 @@ async def fetch_profile(profile_id):
 	return result
 
 
+async def fetch_profile_team_rating(profile_id):
+	"""Fetch one profile's current ranked-team rating for onboarding.
+
+	Returns ``(status, data)`` where status is ``ok``, ``unrated``,
+	``not_found`` or ``unavailable``. This is intentionally separate from
+	``fetch_profile``: identity validation needs only an observed id/name,
+	while rating onboarding must fail closed when the ladder payload is not
+	usable.
+	"""
+	import aiohttp
+
+	url = f"{AOE2_API}/profiles/{profile_id}"
+	try:
+		async with aiohttp.ClientSession(headers=_UA) as session:
+			async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+				status = resp.status
+				payload = await resp.json() if status == 200 else None
+	except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+		log.warning(f"fetch_profile_team_rating({profile_id}) failed: {exc}")
+		return "unavailable", None
+
+	result = _classify_team_rating(status, payload)
+	if result[0] == "unavailable":
+		log.warning(
+			f"fetch_profile_team_rating({profile_id}) got an unusable HTTP {status} response")
+	return result
+
+
 # ── pure parsers (no I/O) ────────────────────────────────────────────────
 
 def _classify(status, payload):
@@ -118,6 +146,43 @@ def _parse_profile(payload):
 	except (KeyError, TypeError, ValueError):
 		return None
 	return {"profile_id": profile_id, "name": str(payload.get("name") or "")}
+
+
+def _parse_team_rating(payload):
+	"""A profile payload -> its ranked-team rating observation, or None.
+
+	A valid profile with no ``rm_team`` entry is represented by ``rating=None``
+	and classified as ``unrated`` by the caller. Malformed ladder entries are
+	unusable rather than guessed or coerced to zero.
+	"""
+	profile = _parse_profile(payload)
+	if profile is None:
+		return None
+	leaderboards = payload.get("leaderboards")
+	if not isinstance(leaderboards, list):
+		return None
+	for row in leaderboards:
+		if not isinstance(row, dict) or row.get("leaderboardId") != "rm_team":
+			continue
+		try:
+			rating = int(row["rating"])
+		except (KeyError, TypeError, ValueError):
+			return None
+		if not 1 <= rating <= 9_999:
+			return None
+		return {**profile, "rating": rating, "leaderboard": "rm_team"}
+	return {**profile, "rating": None, "leaderboard": "rm_team"}
+
+
+def _classify_team_rating(status, payload):
+	if status == 404:
+		return "not_found", None
+	if status != 200:
+		return "unavailable", None
+	parsed = _parse_team_rating(payload)
+	if parsed is None:
+		return "unavailable", None
+	return ("ok" if parsed["rating"] is not None else "unrated"), parsed
 
 
 def parse_iso(s):

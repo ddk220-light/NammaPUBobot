@@ -15,9 +15,10 @@ from nammaoe2bot.exceptions import Exceptions as Exc
 
 
 async def rank(ctx, player: Member = None, detailed: bool = False):
-	"""Rating profile. Slim by default: headline, record, recent form, scouting
-	report and the ELO chart. `detailed` adds streak, peak, civs, duos & rivals
-	and recent rating changes.
+	"""Rating profile. Slim by default: headline, record and recent form.
+	`detailed` adds streak, peak, civs, duos & rivals and recent rating changes.
+	Replay-derived scouting and the rendered ELO chart are intentionally paused;
+	their code remains behind explicit deployment switches for a future revisit.
 
 	`detailed` was /rank_detailed, a separate command that called this same
 	function with the flag flipped. That is an argument, not a command.
@@ -148,15 +149,16 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 			inline=False
 		)
 
-	# The scouting report: measured facts out of this community's
-	# player_rollups row, each carrying the sample it rests on. Best-effort
-	# like every other piece here — a rollup read that fails costs this field,
-	# not the whole profile.
-	try:
-		scouting = await _scouting_report(ctx, target.id)
-	except Exception as e:
-		log.error(f"scouting report failed for {target.id}: {e}")
-		scouting = None
+	# The scouting report is a separately gated legacy surface.  Keeping the
+	# helper and renderer intact makes the pause reversible without allowing an
+	# accidental replay-ingest re-enable to revive it too.
+	# A rollup read that fails costs this field, not the whole profile.
+	scouting = None
+	if bool(getattr(cfg, "SCOUTING_REPORT_ENABLED", False)):
+		try:
+			scouting = await _scouting_report(ctx, target.id)
+		except Exception as e:
+			log.error(f"scouting report failed for {target.id}: {e}")
 	if scouting:
 		embed.add_field(name="📜 " + ctx.qc.gt("Scouting report"), value=scouting, inline=False)
 
@@ -210,7 +212,8 @@ async def _rank_profile(ctx, player: Member = None, detailed: bool = False):
 	# rendered off the event loop. Needs two played slots to be worth a picture.
 	file = None
 	candles = prof.get("elo_candles") or []
-	if sum(1 for c in candles if c["games"]) >= 2:
+	if (bool(getattr(cfg, "RANK_ELO_CHART_ENABLED", False))
+			and sum(1 for c in candles if c["games"]) >= 2):
 		try:
 			png = await asyncio.get_running_loop().run_in_executor(
 				None, profile.render_elo_candles, candles, get_nick(target)
@@ -340,4 +343,3 @@ _EAPM_EXPLAINER = (
 		"for everybody here, which is what makes the ranking fair.",
 	),
 )
-

@@ -80,6 +80,7 @@ _pending = set()           # keep create_task'd jobs from being GC'd mid-run
 
 class PredictionJobs:
 	POLL_INTERVAL = 15     # seconds between freeze sweeps
+	RECOVERY_INTERVAL = 24 * 60 * 60
 
 	# "Which of these matches have already started?", injected by
 	# nammaoe2bot/wiring.py from the lobby feature — the only part of the bot
@@ -93,6 +94,11 @@ class PredictionJobs:
 	def __init__(self):
 		self.next_run = 0
 		self._running = False
+		self._active = True   # boot recovery; open_for_match arms later work
+
+	def arm(self):
+		self._active = True
+		self.next_run = 0
 
 	async def think(self, frame_time):
 		try:
@@ -162,6 +168,15 @@ class PredictionJobs:
 			except Exception as e:
 				log.error(f"Prediction abandon-refund failed (post {post.get('id')}): {e}")
 
+		# No open/frozen books means there is nothing for a 15-second database
+		# sweep to discover. Sleep until a writer arms us or the daily boot-style
+		# recovery pass catches work left by a hard crash.
+		has_live = getattr(store, "has_live_books", None)
+		if has_live is not None:
+			self._active = bool(await has_live())
+		self.next_run = now + (
+			self.POLL_INTERVAL if self._active else self.RECOVERY_INTERVAL)
+
 	async def _posts_to_freeze(self, now):
 		"""[(post, headline)] whose match has an API-confirmed launch.
 
@@ -205,6 +220,7 @@ async def open_for_match(match):
 		post_id = await store.create_post(
 			match.qc.id, match.id, match.teams[0].name, match.teams[1].name,
 			now, OPEN_UNTIL_LAUNCH)
+		jobs.arm()
 
 		from . import embeds
 		from nammaoe2bot.runtime.client import dc

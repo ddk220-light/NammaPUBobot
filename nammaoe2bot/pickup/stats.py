@@ -95,11 +95,26 @@ async def check_match_id_counter():
 
 
 async def next_match():
-	""" Increase match_id counter, return current match_id """
-	counter = await db.select_one(('next_id',), 'match_counter')
-	await db.update('match_counter', dict(next_id=counter['next_id']+1))
-	log.debug(f"Current match_id is {counter['next_id']}")
-	return counter['next_id']
+	"""Atomically reserve and return one globally unique bot match id.
+
+	The old SELECT followed by an autocommit UPDATE let two simultaneous queue
+	starts read the same value. Historical onboarding also reserves ranges, so
+	both paths now lock the single counter row through the adapter transaction.
+	"""
+	async with db.transaction() as tx:
+		counter = await tx.fetchone("SELECT next_id FROM match_counter FOR UPDATE")
+		if counter is None:
+			maximum = await tx.fetchone(
+				"SELECT COALESCE(MAX(match_id) + 1, 0) AS next_id FROM matches")
+			match_id = int((maximum or {}).get("next_id") or 0)
+			await tx.insert("match_counter", {"next_id": match_id + 1})
+		else:
+			match_id = int(counter["next_id"])
+			await tx.execute(
+				"UPDATE match_counter SET next_id=%s WHERE next_id=%s",
+				[match_id + 1, match_id])
+	log.debug(f"Current match_id is {match_id}")
+	return match_id
 
 
 async def register_match_unranked(ctx, m):

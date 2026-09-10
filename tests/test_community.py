@@ -21,6 +21,7 @@ class FakeDb:
 	def __init__(self):
 		self.communities = []  # [{community_id, guild_id, name, retention, created_at}]
 		self.community_channels = []  # [{channel_id, community_id, added_at}]
+		self.community_policies = []
 		self.matches = []  # [{match_id, channel_id}] — test fixtures populate this directly
 		self.match_replays = []  # [{community_id, match_id, replay_match_id, linked_at}]
 		self._next_id = 1
@@ -31,6 +32,7 @@ class FakeDb:
 		return {
 			"communities": self.communities,
 			"community_channels": self.community_channels,
+			"community_policies": self.community_policies,
 			"matches": self.matches,
 			"match_replays": self.match_replays,
 		}[table]
@@ -57,6 +59,12 @@ class FakeDb:
 						return None
 			self.match_replays.append(dict(d))
 			return None
+		if table == "community_policies":
+			self.community_policies[:] = [
+				row for row in self.community_policies
+				if row["community_id"] != d["community_id"]]
+			self.community_policies.append(dict(d))
+			return None
 		self.community_channels.append(dict(d))
 		return None
 
@@ -80,6 +88,62 @@ def _setup(monkeypatch, flagship_ids=()):
 	monkeypatch.setattr(community.cfg, "FLAGSHIP_GUILD_IDS", list(flagship_ids))
 	community.invalidate_cache()
 	return fake
+
+
+def test_deployment_mode_normalizes_known_values_and_fails_closed(monkeypatch):
+	_setup(monkeypatch)
+	monkeypatch.setattr(community.cfg, "DEPLOYMENT_MODE", "self-hosted", raising=False)
+	assert community.deployment_mode() == "self_hosted"
+	monkeypatch.setattr(community.cfg, "DEPLOYMENT_MODE", "surprise", raising=False)
+	assert community.deployment_mode() == "hosted"
+
+
+def test_replay_pipeline_requires_self_hosted_mode_and_global_switch(monkeypatch):
+	_setup(monkeypatch)
+	monkeypatch.setattr(community.cfg, "REPLAY_INGEST_ENABLED", True, raising=False)
+	monkeypatch.setattr(community.cfg, "DEPLOYMENT_MODE", "hosted", raising=False)
+	assert community.replay_pipeline_available() is False
+	monkeypatch.setattr(community.cfg, "DEPLOYMENT_MODE", "self_hosted", raising=False)
+	assert community.replay_pipeline_available() is True
+	monkeypatch.setattr(community.cfg, "REPLAY_INGEST_ENABLED", False, raising=False)
+	assert community.replay_pipeline_available() is False
+
+
+def test_community_policy_defaults_public_and_replay_requested(monkeypatch):
+	_setup(monkeypatch)
+	assert asyncio.run(community.get_policy(9)) == {
+		"dashboard_visibility": "public",
+		"replay_analysis_enabled": True,
+		"updated_at": None,
+		"updated_by": None,
+	}
+
+
+def test_community_policy_round_trip_and_strict_validation(monkeypatch):
+	fake = _setup(monkeypatch)
+	stored = asyncio.run(community.set_policy(
+		9, dashboard_visibility="members", replay_analysis_enabled=False, updated_by=42))
+	assert stored["dashboard_visibility"] == "members"
+	assert stored["replay_analysis_enabled"] is False
+	assert fake.community_policies[0]["updated_by"] == 42
+
+	for visibility, replay in (("private", False), ("public", "false")):
+		try:
+			asyncio.run(community.set_policy(
+				9, dashboard_visibility=visibility,
+				replay_analysis_enabled=replay, updated_by=42))
+		except ValueError:
+			pass
+		else:
+			raise AssertionError("invalid policy must be rejected")
+
+
+def test_invalid_stored_visibility_fails_closed_to_admins(monkeypatch):
+	fake = _setup(monkeypatch)
+	fake.community_policies.append({
+		"community_id": 9, "dashboard_visibility": "mystery",
+		"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42})
+	assert asyncio.run(community.get_policy(9))["dashboard_visibility"] == "admins"
 
 
 def test_ensure_community_insert_then_select_returns_same_id(monkeypatch):

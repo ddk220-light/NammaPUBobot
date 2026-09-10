@@ -32,31 +32,41 @@ The luck page went with them rather than being repointed: its data source was
 deliberately stored in no table (nammaoe2bot/derived/game_labels.py's kind_for).
 
 The viewing layer is allowed to be thinner for it — the design says so in as
-many words (§1.5) — and the community-first web redesign is a separate future
-project. Do not repopulate any of the above from a live re-derivation.
+many words (§1.5). Public reads are community-scoped, while the broader
+community-first settings redesign remains separate work. Do not repopulate
+any of the above from a live re-derivation.
 """
 
+import asyncio
 import json
 import os
 import secrets
 import time
-from urllib.parse import urlencode
+from dataclasses import dataclass
+from urllib.parse import urlencode, urlsplit
 
 import aiohttp as aiohttp_client
 from aiohttp import web
 
+from nammaoe2bot import community as community_store
 from nammaoe2bot.runtime.config import cfg
 from nammaoe2bot.runtime.cfg_factory import (
 	RoleVar, TextChanVar, MemberVar, VariableTable,
 	BoolVar, IntVar, SliderVar, OptionVar, DurationVar, TextVar
 )
 from nammaoe2bot.runtime.client import dc
+from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 from nammaoe2bot.features.identity import resolver
+from nammaoe2bot.features.lobby import api as lobby_api
+from nammaoe2bot.features.quiz import store as quiz_store
 from nammaoe2bot.features.scouting import report as scouting_report
 from nammaoe2bot.derived import game_labels, rollups
 from nammaoe2bot.ingest import scoring as rs_scoring
 from nammaoe2bot.features.scouting.tag_leaderboard import tag_leaderboard_score
+from nammaoe2bot.web import onboarding
+from nammaoe2bot.web import pubobot_migration
+from nammaoe2bot.web.probes import handle_health, handle_live, handle_ready
 
 # --- Paths ---
 HTML_PATH = os.path.join(os.path.dirname(__file__), 'page.html')
@@ -173,6 +183,40 @@ db.ensure_table(dict(
 	primary_keys=["state"],
 ))
 
+db.ensure_table(dict(
+	tname="community_imports",
+	columns=[
+		dict(cname="import_id", ctype=db.types.str),
+		dict(cname="community_id", ctype=db.types.int, notnull=True),
+		dict(cname="channel_id", ctype=db.types.int, notnull=True),
+		dict(cname="rating_channel_id", ctype=db.types.int, notnull=True),
+		dict(cname="kind", ctype=db.types.str, notnull=True),
+		dict(cname="source_name", ctype=db.types.str, notnull=True),
+		dict(cname="timezone", ctype=db.types.str, notnull=True),
+		dict(cname="created_by", ctype=db.types.int, notnull=True),
+		dict(cname="created_at", ctype=db.types.int, notnull=True),
+		dict(cname="match_count", ctype=db.types.int, notnull=True),
+		dict(cname="player_count", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["import_id"],
+	unique_keys=[("community_import_once_per_channel_kind", ["channel_id", "kind"])],
+	indexes=[("community_imports_tenant", ["community_id", "created_at"])],
+))
+
+db.ensure_table(dict(
+	tname="community_import_match_map",
+	columns=[
+		dict(cname="import_id", ctype=db.types.str, notnull=True),
+		dict(cname="community_id", ctype=db.types.int, notnull=True),
+		dict(cname="channel_id", ctype=db.types.int, notnull=True),
+		dict(cname="source_match_id", ctype=db.types.int, notnull=True),
+		dict(cname="match_id", ctype=db.types.int, notnull=True),
+	],
+	primary_keys=["import_id", "source_match_id"],
+	unique_keys=[("community_import_match_target", ["match_id"])],
+	indexes=[("community_import_match_tenant", ["community_id", "channel_id"])],
+))
+
 
 async def _cleanup_expired_sessions():
 	"""Best-effort cleanup of expired sessions and OAuth states.
@@ -204,10 +248,50 @@ SKIP_TYPES = (RoleVar, TextChanVar, MemberVar)
 # --- HTML cache ---
 _html_cache = None
 
-# Process boot time — used by /health's uptime_seconds field. Set at module
-# import (which happens during asyncio bootstrap, before any task starts),
-# so it's a reasonable proxy for "when the bot process started".
-_boot_time = time.time()
+_SECURITY_HEADERS = {
+	"Content-Security-Policy": (
+		"default-src 'self'; base-uri 'self'; frame-ancestors 'none'; "
+		"object-src 'none'; img-src 'self' https: data:; "
+		"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+		"font-src 'self' https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; "
+		"connect-src 'self'; form-action 'self' https://discord.com"),
+	"Referrer-Policy": "no-referrer",
+	"X-Content-Type-Options": "nosniff",
+	"X-Frame-Options": "DENY",
+	"Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+def _apply_security_headers(response, path):
+	for name, value in _SECURITY_HEADERS.items():
+		response.headers[name] = value
+	private_path = (
+		path.startswith("/api/admin/") or path == "/api/me"
+		or path.startswith("/api/guilds") or path.startswith("/api/channels")
+		or path.startswith("/auth/"))
+	if private_path:
+		response.headers["Cache-Control"] = "no-store"
+		vary = [part.strip() for part in response.headers.get("Vary", "").split(",") if part.strip()]
+		if "cookie" not in {part.lower() for part in vary}:
+			vary.append("Cookie")
+		response.headers["Vary"] = ", ".join(vary)
+	return response
+
+
+async def _security_headers_middleware(request, handler):
+	"""Apply browser hardening and prevent authenticated data from being cached."""
+	path = getattr(request, "path", "")
+	try:
+		response = await handler(request)
+	except web.HTTPException as response:
+		_apply_security_headers(response, path)
+		raise
+	return _apply_security_headers(response, path)
+
+
+# aiohttp uses this marker to distinguish modern request/handler middleware
+# from the deprecated application/middleware factory signature.
+_security_headers_middleware.__middleware_version__ = 1
 
 
 def _load_html():
@@ -219,14 +303,29 @@ def _load_html():
 		_html_cache = "<h1>page.html not found</h1>"
 
 
+def _configured_root_url():
+	"""Return a safe configured public origin/base path, or an empty string."""
+	raw = str(getattr(cfg, "WS_ROOT_URL", "") or "").strip().rstrip("/")
+	if not raw:
+		return ""
+	parsed = urlsplit(raw)
+	if (parsed.scheme not in ("http", "https") or not parsed.netloc
+			or parsed.username or parsed.password or parsed.query or parsed.fragment):
+		return ""
+	return raw
+
+
 def _oauth_enabled():
-	return bool(getattr(cfg, 'DC_CLIENT_SECRET', ''))
+	# Never construct an OAuth redirect from Host/X-Forwarded-Host. A configured
+	# public base URL is part of enabling OAuth, not an optional convenience.
+	return bool(getattr(cfg, "DC_CLIENT_SECRET", "") and _configured_root_url())
 
 
 def _get_root_url(request):
 	"""Get public root URL from config or request headers."""
-	if hasattr(cfg, 'WS_ROOT_URL') and cfg.WS_ROOT_URL:
-		return cfg.WS_ROOT_URL.rstrip('/')
+	configured = _configured_root_url()
+	if configured:
+		return configured
 	scheme = request.headers.get('X-Forwarded-Proto', request.scheme)
 	host = request.headers.get('X-Forwarded-Host', request.host)
 	return f"{scheme}://{host}"
@@ -239,13 +338,14 @@ async def _get_session(request):
 	so that OAuth logins survive Railway redeploys. Async because DB calls are
 	awaitable — all call sites have been updated to `await _get_session(...)`.
 
-	Piggybacks on the request to run opportunistic cleanup of expired
-	sessions/oauth states at most once every 5 minutes.
+	Authenticated requests piggyback opportunistic cleanup of expired
+	sessions/oauth states at most once every 5 minutes. Anonymous requests return
+	without touching MySQL; there is no session row they could possibly use.
 	"""
-	await _cleanup_expired_sessions()
 	session_id = _session_cookie(request)
 	if not session_id:
 		return None
+	await _cleanup_expired_sessions()
 	row = await db.select_one(
 		('session_id', 'user_id', 'username', 'avatar', 'csrf', 'expires_at'),
 		'web_sessions',
@@ -322,8 +422,8 @@ def _var_meta(var, value):
 	return meta
 
 
-def _check_admin(qc, member):
-	"""Check if a guild member has admin access for a queue channel.
+def _member_is_admin(member):
+	"""Whether a Discord guild member may administer its community.
 
 	Mirrors the permission model used by slash admin commands in
 	bot/context/slash/ and by enable_channel/disable_channel in
@@ -357,8 +457,8 @@ def _check_csrf(request, session):
 	when the session has a csrf token AND the header exactly matches.
 	Dashboard POST endpoints that don't gate on this are vulnerable to
 	cross-site request forgery: a malicious page could trick a logged-in
-	admin's browser into POSTing to /api/channels/<id>/config because the
-	session cookie rides along automatically.
+	admin's browser into POSTing to an admin community config route because
+	the session cookie rides along automatically.
 	"""
 	if not session:
 		return False
@@ -377,93 +477,298 @@ async def handle_index(request):
 	return web.Response(text=_html_cache, content_type='text/html')
 
 
-# ─── Health check (for Railway healthcheckPath) ───
-
-async def handle_health(request):
-	"""Liveness probe used by Railway's healthcheckPath.
-
-	Returns 200 only when the Discord client is connected AND the DB pool
-	answers a trivial query. Returns 503 in every other state.
-
-	This is what prevents the zombie-bot failure mode: previously a
-	Discord 1015 rate limit would kill the Discord task while the web
-	task kept the container "alive" from Railway's point of view (it fell
-	back to a TCP probe because no healthcheckPath was configured). With
-	this endpoint + healthcheckPath = "/health" in railway.toml, Railway
-	restarts the container whenever Discord is actually dead.
-
-	The payload also carries non-gating observability fields:
-	  - active_matches: current in-flight match count
-	  - last_tick_age_seconds: seconds since the last think() tick
-	    (>5 with bot_ready=true means the think loop is stalled)
-	  - last_elo_sync_at: unix timestamp of the last successful ELO sync,
-	    0 if none yet this process run
-	  - uptime_seconds: process uptime since import
-	These let the Railway dashboard / future `/metrics` scrape see
-	degradation before it becomes an outage.
-	"""
-	import asyncio as _asyncio
-	from nammaoe2bot.runtime.database import db as _db
-	from nammaoe2bot.discord import events as _events
-	from nammaoe2bot.features import elo_sync as _elo_sync
-
-	discord_ok = bool(dc.app.ready) and dc.is_ready()
-
-	db_ok = False
-	try:
-		# Cap the query at 2s so a slow DB doesn't hang the healthcheck
-		await _asyncio.wait_for(_db.fetchone("SELECT 1 AS ok"), timeout=2.0)
-		db_ok = True
-	except Exception:
-		db_ok = False
-
-	now = time.time()
-	last_tick = getattr(_events, 'last_tick_at', 0.0) or 0.0
-	# If we've never ticked, report None rather than a misleading huge delta
-	last_tick_age = int(now - last_tick) if last_tick > 0 else None
-	last_elo_sync = getattr(_elo_sync, 'last_elo_sync_at', 0.0) or 0.0
-
-	healthy = discord_ok and db_ok
-	payload = {
-		"status": "ok" if healthy else "unhealthy",
-		"discord_connected": discord_ok,
-		"db_connected": db_ok,
-		"bot_ready": bool(dc.app.ready),
-		"active_matches": len(dc.app.active_matches),
-		"last_tick_age_seconds": last_tick_age,
-		"last_elo_sync_at": int(last_elo_sync) if last_elo_sync > 0 else 0,
-		"uptime_seconds": int(now - _boot_time),
-	}
-	return web.json_response(payload, status=200 if healthy else 503)
-
-
 # ─── The community the public pages describe ───
 
-async def _public_community_id():
-	""" The community_id every community-keyed public read is scoped to, or
-	None when there is not one yet.
+@dataclass(frozen=True)
+class PublicCommunity:
+	"""The tenant boundary carried through one public-dashboard request.
 
-	The public pages have no channel to resolve through, so the one resolver
-	every other consumer uses (nammaoe2bot/community.community_for_channel) does not
-	apply here. The flagship guild is the honest stand-in: cfg.FLAGSHIP_GUILD_IDS
-	is already "the server this deployment is really for" (nammaoe2bot/community.py's
-	ensure_community pins it to retention='full' for exactly that reason), and
-	it is a stated configuration value rather than a guess.
+	Do not pass a naked community id through the web read path. Keeping the
+	guild alongside it lets member/avatar lookups stay inside the same Discord
+	server, and making the object mandatory gives helper signatures something
+	the tests can enforce instead of relying on ambient FLAGSHIP_GUILD_IDS.
+	"""
+	community_id: int
+	guild_id: int
+	name: str
 
-	What this deliberately does NOT do is sum across communities. A union would
-	be the one number the derived-community layer exists to stop us printing:
-	two communities sharing a player must be able to disagree about that
-	player's numbers, and adding their rows together produces a figure that
-	describes neither.
+	@property
+	def sql_id(self):
+		"""A DB-validated integer safe to embed in fixed SQL fragments.
 
-	None is a real state (no flagship configured, or configured but never
-	enrolled), and every caller has to answer it as "nothing measured here" —
-	never as an empty measurement. """
-	for guild_id in getattr(cfg, "FLAGSHIP_GUILD_IDS", None) or []:
-		row = await db.select_one(["community_id"], "communities", where={"guild_id": int(guild_id)})
-		if row:
-			return row["community_id"]
-	return None
+		The dynamic value came from an integer route parse and was then resolved
+		through `communities`; returning the canonical DB value here avoids adding
+		a tenant placeholder in the middle of every pre-existing parameter list.
+		"""
+		return str(int(self.community_id))
+
+	def payload(self):
+		return {
+			"id": str(self.community_id),
+			"guild_id": str(self.guild_id),
+			"name": self.name,
+		}
+
+
+def _explicit_community_id(request):
+	"""The numeric tenant in `/api/communities/{community_id}/...`, or None.
+
+	False-y/invalid ids never fall back to the flagship alias: a malformed
+	explicit tenant must fail closed rather than silently serving another
+	community's data.
+	"""
+	raw = getattr(request, "match_info", {}).get("community_id")
+	if raw is None:
+		return None
+	try:
+		value = int(raw)
+	except (TypeError, ValueError):
+		return 0
+	return value if value > 0 else 0
+
+
+async def _public_community(request=None):
+	"""Resolve the explicit route tenant, or the legacy flagship alias.
+
+	Unprefixed public URLs are retained while the existing deployment and old
+	bookmarks move to `/c/{community_id}/...`. They still resolve exactly one
+	configured flagship and never aggregate communities. New prefixed routes do
+	not consult deployment config at all.
+	"""
+	explicit = _explicit_community_id(request) if request is not None else None
+	row = None
+	if explicit is not None:
+		if not explicit:
+			return None
+		row = await db.select_one(
+			["community_id", "guild_id", "name"], "communities",
+			where={"community_id": explicit})
+	else:
+		for guild_id in getattr(cfg, "FLAGSHIP_GUILD_IDS", None) or []:
+			row = await db.select_one(
+				["community_id", "guild_id", "name"], "communities",
+				where={"guild_id": int(guild_id)})
+			if row:
+				break
+	if not row or not await _public_dashboard_allowed(row, request):
+		return None
+	return PublicCommunity(**row)
+
+
+async def _public_dashboard_allowed(row, request):
+	"""Authorize a dashboard read without revealing that a private tenant exists."""
+	policy = await community_store.get_policy(int(row["community_id"]))
+	visibility = policy["dashboard_visibility"]
+	if visibility == "public":
+		return True
+	if request is None:
+		return False
+	session = await _get_session(request)
+	if not session:
+		return False
+	guild = dc.get_guild(int(row["guild_id"]))
+	if guild is None:
+		return False
+	try:
+		member = await _member_in_guild(guild, session["user_id"])
+	except Exception:
+		return False
+	return visibility == "members" or _member_is_admin(member)
+
+
+async def _public_community_id(request=None):
+	"""Compatibility shim for non-web callers during the route migration."""
+	community = await _public_community(request)
+	return community.community_id if community else None
+
+
+def _community_not_found():
+	return web.json_response({"error": "Community not found"}, status=404)
+
+
+def _community_channel_predicate(community, channel_expression):
+	return (
+		"EXISTS (SELECT 1 FROM community_channels tenant_cc "
+		f"WHERE tenant_cc.channel_id={channel_expression} "
+		f"AND tenant_cc.community_id={community.sql_id})"
+	)
+
+
+def _community_replay_predicate(community, replay_expression):
+	return (
+		"EXISTS (SELECT 1 FROM match_replays tenant_mr "
+		f"WHERE tenant_mr.replay_match_id={replay_expression} "
+		f"AND tenant_mr.community_id={community.sql_id})"
+	)
+
+
+@dataclass(frozen=True)
+class AdminCommunityContext:
+	"""An authenticated administrator bound to one enrolled community."""
+	community: PublicCommunity
+	guild: object
+	member: object
+	retention: str | None = None
+
+	def payload(self, channels=0):
+		icon = getattr(self.guild, "icon", None)
+		return {
+			"id": str(self.community.community_id),
+			"guild_id": str(self.community.guild_id),
+			"name": self.community.name or getattr(self.guild, "name", "Community"),
+			"icon": str(icon.url) if icon and getattr(icon, "url", None) else None,
+			"channels": int(channels),
+			"is_admin": True,
+			"retention": self.retention,
+		}
+
+
+@dataclass(frozen=True)
+class AdminChannelContext:
+	"""A configured channel proven to belong to an admin community context."""
+	admin: AdminCommunityContext
+	channel_id: int
+	channel: object
+	queue_channel: object
+
+
+@dataclass(frozen=True)
+class AdminRatingContext:
+	"""A pickup channel plus its guild-proven rating storage target."""
+	channel: AdminChannelContext
+	target_channel_id: int
+	target_channel: object
+	rating: object
+
+
+def _positive_route_id(request, key):
+	raw = getattr(request, "match_info", {}).get(key)
+	try:
+		value = int(raw)
+	except (TypeError, ValueError):
+		return 0
+	return value if value > 0 else 0
+
+
+async def _member_in_guild(guild, user_id):
+	member = guild.get_member(user_id)
+	if member is not None:
+		return member
+	return await guild.fetch_member(user_id)
+
+
+async def _authorized_admin_row(row, session):
+	guild = dc.get_guild(int(row["guild_id"]))
+	if guild is None:
+		return None, web.json_response({"error": "Community unavailable"}, status=404)
+	try:
+		member = await _member_in_guild(guild, session["user_id"])
+	except Exception:
+		return None, web.json_response({"error": "Not a community member"}, status=403)
+	if not _member_is_admin(member):
+		return None, web.json_response({"error": "Admin access required"}, status=403)
+
+	community = PublicCommunity(
+		community_id=int(row["community_id"]),
+		guild_id=int(row["guild_id"]),
+		name=row.get("name") or getattr(guild, "name", "Community"),
+	)
+	return AdminCommunityContext(
+		community=community,
+		guild=guild,
+		member=member,
+		retention=row.get("retention"),
+	), None
+
+
+async def _admin_community_context(request, session, *, guild_id=None, channel_id=None):
+	"""Resolve and authorize exactly one community for the settings surface.
+
+	New `/api/admin/communities/{community_id}/...` routes resolve the explicit
+	community first. Legacy guild/channel routes resolve through the same
+	persistent tables, so possession of a configured runtime channel id is no
+	longer enough to choose a tenant.
+	"""
+	explicit = _explicit_community_id(request)
+	row = None
+	if explicit is not None:
+		if explicit:
+			row = await db.select_one(
+				["community_id", "guild_id", "name", "retention"],
+				"communities", where={"community_id": explicit})
+	elif guild_id:
+		row = await db.select_one(
+			["community_id", "guild_id", "name", "retention"],
+			"communities", where={"guild_id": int(guild_id)})
+	elif channel_id:
+		link = await db.select_one(
+			["community_id"], "community_channels", where={"channel_id": int(channel_id)})
+		if link:
+			row = await db.select_one(
+				["community_id", "guild_id", "name", "retention"],
+				"communities", where={"community_id": link["community_id"]})
+	if not row:
+		return None, web.json_response({"error": "Community not found"}, status=404)
+	return await _authorized_admin_row(row, session)
+
+
+async def _community_channel_ids(community_id):
+	rows = await db.select(
+		["channel_id"], "community_channels", where={"community_id": int(community_id)})
+	return {int(row["channel_id"]) for row in rows or []}
+
+
+async def _admin_channel_context(request, session):
+	"""Authorize a route channel and prove its persistent/runtime guild agree."""
+	channel_id = _positive_route_id(request, "channel_id")
+	if not channel_id:
+		return None, web.json_response({"error": "Channel not found"}, status=404)
+	admin, error = await _admin_community_context(
+		request, session, channel_id=channel_id)
+	if error is not None:
+		return None, error
+	link = await db.select_one(
+		["community_id"], "community_channels", where={"channel_id": channel_id})
+	if not link or int(link["community_id"]) != admin.community.community_id:
+		return None, web.json_response({"error": "Channel not found"}, status=404)
+	queue_channel = dc.app.channels.get(channel_id)
+	if queue_channel is None or int(queue_channel.guild_id) != admin.community.guild_id:
+		return None, web.json_response({"error": "Channel not configured"}, status=404)
+	channel = dc.get_channel(channel_id)
+	channel_guild = getattr(channel, "guild", None)
+	if channel is None or int(getattr(channel_guild, "id", 0)) != admin.community.guild_id:
+		return None, web.json_response({"error": "Channel not found"}, status=404)
+	return AdminChannelContext(
+		admin=admin,
+		channel_id=channel_id,
+		channel=channel,
+		queue_channel=queue_channel,
+	), None
+
+
+async def _admin_rating_context(request, session):
+	"""Resolve the selected pickup channel and prove its rating host is local.
+
+	A queue can deliberately share ratings with another Discord text channel,
+	so the write key is ``qc.rating.channel_id`` rather than the route channel.
+	That target need not itself be a loaded pickup channel; Discord guild
+	ownership is the tenant boundary in that case.
+	"""
+	channel, error = await _admin_channel_context(request, session)
+	if error is not None:
+		return None, error
+	target_channel_id = int(channel.queue_channel.rating.channel_id)
+	target = dc.get_channel(target_channel_id)
+	if target is None and target_channel_id == channel.channel_id:
+		target = channel.channel
+	if target is None or int(getattr(getattr(target, "guild", None), "id", 0)) != channel.admin.community.guild_id:
+		return None, web.json_response({"error": "Rating host channel not found in this community"}, status=404)
+	return AdminRatingContext(
+		channel=channel,
+		target_channel_id=target_channel_id,
+		target_channel=target,
+		rating=channel.queue_channel.rating,
+	), None
 
 
 # ─── Civ stats API (public) ───
@@ -478,13 +783,13 @@ async def handle_civ_stats(request):
 
 	`winrate` is a 0..1 fraction, matching what the page's fmtWr() has always
 	been handed. """
-	community_id = await _public_community_id()
-	rows = []
-	if community_id is not None:
-		rows = await db.fetchall(
-			"SELECT civ, games, wins, losses FROM civ_stats "
-			"WHERE community_id=%s AND games >= %s ORDER BY games DESC, civ ASC",
-			[community_id, MIN_GAMES]) or []
+	community = await _public_community(request)
+	if community is None:
+		return _community_not_found()
+	rows = await db.fetchall(
+		"SELECT civ, games, wins, losses FROM civ_stats "
+		"WHERE community_id=%s AND games >= %s ORDER BY games DESC, civ ASC",
+		[community.community_id, MIN_GAMES]) or []
 
 	civs = []
 	for r in rows:
@@ -499,7 +804,11 @@ async def handle_civ_stats(request):
 			"winrate": int(r["wins"] or 0) / games,
 		})
 
-	return web.json_response({"civs": civs, "min_games": MIN_GAMES})
+	return web.json_response({
+		"community": community.payload(),
+		"civs": civs,
+		"min_games": MIN_GAMES,
+	})
 
 
 # ─── Strategy insights API (public) ───
@@ -533,6 +842,10 @@ _LABEL_JOIN = (
 # decides which stored category the web shows is this constant.
 _STRATEGY_KIND = "strategy"
 
+
+def _replay_dashboard_enabled():
+	return bool(getattr(cfg, "REPLAY_DASHBOARD_ENABLED", False))
+
 # Phase label per classification key, for grouping in the dashboard.
 _STRATEGY_PHASE = {
 	"scout_rush": "Feudal", "archer_rush": "Feudal", "maa_rush": "Feudal",
@@ -558,12 +871,24 @@ async def handle_strategies(request):
 	filter, which also retires the old NOT IN (luck keys) exclusion the categorized count
 	needed."""
 	from utils.classifications.registry import REGISTRY
+	community = await _public_community(request)
+	if community is None:
+		return _community_not_found()
+	if not _replay_dashboard_enabled():
+		return web.json_response({
+			"community": community.payload(),
+			"disabled": True,
+			"reason": "Replay-derived strategy analysis is paused.",
+			"strategies": [], "player_totals": {}, "player_categorized": {},
+		})
+	replay_scope = _community_replay_predicate(community, "gl.replay_match_id")
 
 	rows = await db.fetchall(
 		"SELECT gl.label AS k, rp.identity AS player, COUNT(*) AS games, "
 		"SUM(gs.winner=1) AS wins, SUM(gs.winner=0) AS losses "
 		+ _LABEL_JOIN +
-		"WHERE gl.kind=%s GROUP BY gl.label, rp.identity", [_STRATEGY_KIND])
+		"WHERE gl.kind=%s AND " + replay_scope +
+		" GROUP BY gl.label, rp.identity", [_STRATEGY_KIND])
 	by_key = {}
 	for r in (rows or []):
 		by_key.setdefault(r["k"], []).append({
@@ -576,7 +901,8 @@ async def handle_strategies(request):
 	for r in (await db.fetchall(
 			"SELECT gl.label AS k, gs.civ AS civ, COUNT(*) AS n "
 			+ _LABEL_JOIN +
-			"WHERE gl.kind=%s AND gs.civ IS NOT NULL AND gs.civ <> '' "
+			"WHERE gl.kind=%s AND " + replay_scope +
+			" AND gs.civ IS NOT NULL AND gs.civ <> '' "
 			"GROUP BY gl.label, gs.civ", [_STRATEGY_KIND]) or []):
 		civ_by_key.setdefault(r["k"], []).append((r["civ"], int(r["n"])))
 
@@ -619,7 +945,8 @@ async def handle_strategies(request):
 	for r in (await db.fetchall(
 			"SELECT identity, COUNT(DISTINCT replay_match_id) AS games, "
 			"SUM(winner=1) AS wins, SUM(winner=0) AS losses "
-			"FROM replay_players WHERE identity IS NOT NULL AND identity <> '' "
+			"FROM replay_players rp WHERE identity IS NOT NULL AND identity <> '' AND "
+			+ _community_replay_predicate(community, "rp.replay_match_id") + " "
 			"GROUP BY identity") or []):
 		totals[r["identity"]] = {"games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
 		                         "losses": int(r["losses"] or 0)}
@@ -632,11 +959,13 @@ async def handle_strategies(request):
 			"COUNT(DISTINCT IF(gs.winner=1, gl.replay_match_id, NULL)) AS w, "
 			"COUNT(DISTINCT IF(gs.winner=0, gl.replay_match_id, NULL)) AS l "
 			+ _LABEL_JOIN +
-			"WHERE gl.kind=%s GROUP BY rp.identity", [_STRATEGY_KIND]) or []):
+			"WHERE gl.kind=%s AND " + replay_scope +
+			" GROUP BY rp.identity", [_STRATEGY_KIND]) or []):
 		categorized[r["identity"]] = {"games": int(r["g"] or 0), "wins": int(r["w"] or 0),
 		                              "losses": int(r["l"] or 0)}
 
 	return web.json_response({
+		"community": community.payload(),
 		"strategies": strategies,
 		"player_totals": totals,
 		"player_categorized": categorized,
@@ -673,48 +1002,59 @@ def _winrate(wins, losses):
 	return round(100 * int(wins or 0) / decided) if decided else None
 
 
-def _avatar_for_user_id(user_id):
+def _avatar_for_user_id(user_id, community):
 	try:
 		uid = int(user_id)
 	except (TypeError, ValueError):
 		return None
-	user = dc.get_user(uid)
-	if user is not None and getattr(user, "display_avatar", None):
-		return str(user.display_avatar.url)
-	for guild in dc.guilds:
-		member = guild.get_member(uid)
-		if member is not None and getattr(member, "display_avatar", None):
-			return str(member.display_avatar.url)
+	# Never search every guild: doing so lets one tenant's player directory
+	# learn that a globally-known Discord user belongs to some other server.
+	guild = dc.get_guild(community.guild_id)
+	member = guild.get_member(uid) if guild is not None else None
+	if member is not None and getattr(member, "display_avatar", None):
+		return str(member.display_avatar.url)
 	return None
 
 
-def _visible_user_clause(alias="pm"):
+def _visible_user_clause(alias, community):
 	return (
 		" AND NOT EXISTS (SELECT 1 FROM player_ratings hp "
-		f"WHERE hp.user_id={alias}.user_id AND hp.is_hidden=1)"
+		f"WHERE hp.user_id={alias}.user_id AND hp.is_hidden=1 AND "
+		+ _community_channel_predicate(community, "hp.channel_id") + ")"
 	)
 
 
-async def _player_is_hidden(user_id):
+async def _player_is_hidden(community, user_id):
 	row = await db.fetchone(
-		"SELECT 1 AS hidden FROM player_ratings WHERE user_id=%s AND is_hidden=1 LIMIT 1",
+		"SELECT 1 AS hidden FROM player_ratings pr WHERE user_id=%s AND is_hidden=1 AND "
+		+ _community_channel_predicate(community, "pr.channel_id") + " LIMIT 1",
 		[user_id])
 	return bool(row)
 
 
-async def _player_has_public_stats(user_id):
-	if await _player_is_hidden(user_id):
+async def _player_has_public_stats(community, user_id):
+	if await _player_is_hidden(community, user_id):
 		return False
 	row = await db.fetchone(
-		"SELECT 1 AS x FROM match_players pm WHERE pm.user_id=%s" +
-		_visible_user_clause("pm") + " LIMIT 1",
+		"SELECT 1 AS x FROM match_players pm WHERE pm.user_id=%s AND "
+		+ _community_channel_predicate(community, "pm.channel_id")
+		+ _visible_user_clause("pm", community) + " LIMIT 1",
 		[user_id])
 	if row:
 		return True
-	# No reported match, but a linked AoE2 profile still gives them a page
-	# (replay-derived stats key on profile_id). One store answers that now.
+	# A seeded player is part of this community even before their first match.
+	row = await db.fetchone(
+		"SELECT 1 AS x FROM player_ratings pr WHERE pr.user_id=%s AND "
+		+ _community_channel_predicate(community, "pr.channel_id") + " LIMIT 1",
+		[user_id])
+	if row:
+		return True
+	# A linked profile with no local row is visible only when Discord confirms
+	# the user is a member of this community's guild.
 	uid = int(user_id)
-	return bool((await resolver.profiles_for_users([uid])).get(uid))
+	guild = dc.get_guild(community.guild_id)
+	member = guild.get_member(uid) if guild is not None else None
+	return bool(member and (await resolver.profiles_for_users([uid])).get(uid))
 
 
 def _map_counts(rows):
@@ -727,7 +1067,7 @@ def _map_counts(rows):
 	return [{"map": k, "games": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:12]]
 
 
-async def _match_stat_players():
+async def _match_stat_players(community):
 	"""The player directory: everyone with reported matches, plus everyone with a
 	linked AoE2 profile but no reported match yet (they still have replay-derived
 	stats, keyed on profile_id, so they must not be missing from the list).
@@ -740,13 +1080,19 @@ async def _match_stat_players():
 	gap — so a player with no row in match_players is now labelled by their
 	AoE2 in-game name instead of a stale CSV nick.
 	"""
-	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM player_ratings WHERE is_hidden=1")
+	rating_rows = await db.fetchall(
+		"SELECT pr.user_id, pr.is_hidden FROM player_ratings pr WHERE "
+		+ _community_channel_predicate(community, "pr.channel_id"))
+	hidden_rows = [r for r in rating_rows or [] if r.get("is_hidden")]
 	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
 	rows = await db.fetchall(
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT pm.match_id) AS games "
-		"FROM match_players pm WHERE 1=1" + _visible_user_clause("pm") +
+		"FROM match_players pm WHERE " + _community_channel_predicate(community, "pm.channel_id")
+		+ _visible_user_clause("pm", community) +
 		" GROUP BY pm.user_id ORDER BY games DESC, nick ASC LIMIT 250")
 	mapped = await resolver.profiles_and_names_by_user()
+	eligible_users = {int(r["user_id"]) for r in rating_rows or []}
+	guild = dc.get_guild(community.guild_id)
 	players = {}
 	for r in rows or []:
 		uid = int(r["user_id"])
@@ -757,16 +1103,17 @@ async def _match_stat_players():
 			"nick": r["nick"] or next(iter(mapped.get(uid, {}).get("aoe2_names", [])), str(uid)),
 			"games": int(r["games"] or 0),
 			"profile_ids": mapped.get(uid, {}).get("profile_ids", []),
-			"avatar": _avatar_for_user_id(uid),
+			"avatar": _avatar_for_user_id(uid, community),
 		}
 	for uid, m in mapped.items():
-		if uid not in players and uid not in hidden_users:
+		is_member = guild is not None and guild.get_member(uid) is not None
+		if uid not in players and uid not in hidden_users and (uid in eligible_users or is_member):
 			players[uid] = {
 				"user_id": str(uid),
 				"nick": next(iter(m["aoe2_names"]), str(uid)),
 				"games": 0,
 				"profile_ids": m["profile_ids"],
-				"avatar": _avatar_for_user_id(uid),
+				"avatar": _avatar_for_user_id(uid, community),
 			}
 	return sorted(players.values(), key=lambda p: (-p["games"], p["nick"].lower()))[:500]
 
@@ -780,6 +1127,30 @@ async def _mapped_player_identity(user_id):
 	profile_ids = (await resolver.profiles_for_users([uid])).get(uid, [])
 	names = await resolver.names_for_profiles(profile_ids)
 	return sorted(profile_ids), sorted({n.lower() for n in names.values() if n})
+
+
+async def _community_user_ids(community):
+	"""Discord users with stored participation/rating evidence in this tenant.
+
+	Global identity bindings are not membership. This set is the gate used
+	before a replay profile can become a clickable Discord user on a community
+	page; otherwise an identity learned in guild A could expose that user id in
+	guild B merely because the same AoE profile appeared there.
+	"""
+	rows = await db.fetchall(
+		"SELECT DISTINCT tenant_users.user_id FROM ("
+		"SELECT pm.user_id FROM match_players pm WHERE "
+		+ _community_channel_predicate(community, "pm.channel_id")
+		+ " UNION SELECT pr.user_id FROM player_ratings pr WHERE "
+		+ _community_channel_predicate(community, "pr.channel_id")
+		+ ") tenant_users")
+	user_ids = {int(row["user_id"]) for row in rows or [] if row.get("user_id") is not None}
+	# Current guild membership is equally strong evidence for identity-only
+	# players who have linked before playing their first pickup match.
+	guild = dc.get_guild(community.guild_id)
+	for member in getattr(guild, "members", ()) or ():
+		user_ids.add(int(member.id))
+	return user_ids
 
 
 def _civ_player_clause(user_id, aoe2_names):
@@ -809,8 +1180,8 @@ def _rating_payload(row):
 	}
 
 
-async def _rating_deltas(period, user_ids=None):
-	clauses = []
+async def _rating_deltas(community, period, user_ids=None):
+	clauses = [_community_channel_predicate(community, "rh.channel_id")]
 	args = []
 	start = _period_start(period)
 	if start is not None:
@@ -828,24 +1199,24 @@ async def _rating_deltas(period, user_ids=None):
 		"SUBSTRING_INDEX(GROUP_CONCAT(rating_before ORDER BY at ASC, id ASC), ',', 1) AS rating_start, "
 		"SUBSTRING_INDEX(GROUP_CONCAT(rating_before + rating_change ORDER BY at DESC, id DESC), ',', 1) AS rating_end, "
 		"SUM(rating_change) AS rating_delta "
-		"FROM rating_history" + where + " GROUP BY user_id",
+		"FROM rating_history rh" + where + " GROUP BY user_id",
 		args)
 	return {int(r["user_id"]): _rating_payload(r) for r in rows or []}
 
 
-async def _rating_delta(period, user_id):
-	return (await _rating_deltas(period, [user_id])).get(int(user_id), _rating_payload(None))
+async def _rating_delta(community, period, user_id):
+	return (await _rating_deltas(community, period, [user_id])).get(int(user_id), _rating_payload(None))
 
 
-async def _rating_history(period, user_id):
-	clauses = ["user_id=%s"]
+async def _rating_history(community, period, user_id):
+	clauses = ["user_id=%s", _community_channel_predicate(community, "rh.channel_id")]
 	args = [int(user_id)]
 	start = _period_start(period)
 	if start is not None:
 		clauses.append("at >= %s")
 		args.append(start)
 	rows = await db.fetchall(
-		"SELECT at, rating_before, rating_change FROM rating_history "
+		"SELECT at, rating_before, rating_change FROM rating_history rh "
 		"WHERE " + " AND ".join(clauses) + " ORDER BY at ASC, id ASC",
 		args)
 	out = []
@@ -887,12 +1258,13 @@ def _tag_meta(key, tag_type):
 	return {"key": key, "label": IMPACT_TAG_LABELS.get(key, key), "type": tag_type or "impact"}
 
 
-async def _parsed_games_by_user(period, profile_to_user):
+async def _parsed_games_by_user(community, period, profile_to_user):
 	at_clause, params = _period_filter(period)
 	rows = await db.fetchall(
 		"SELECT g.user_id, g.profile_id, COUNT(DISTINCT g.replay_match_id) AS games "
-		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
-		"JOIN matches m ON m.match_id=rm.bot_match_id "
+		"FROM replay_players g JOIN match_replays mr ON mr.replay_match_id=g.replay_match_id "
+		f"AND mr.community_id={community.sql_id} "
+		"JOIN matches m ON m.match_id=mr.match_id "
 		"WHERE 1=1" + at_clause +
 		" GROUP BY g.user_id, g.profile_id",
 		params)
@@ -958,7 +1330,7 @@ def _label_for(mapped, user_id):
 	return next(iter(mapped.get(user_id, {}).get("aoe2_names", [])), None)
 
 
-async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
+async def _strategy_tag_leaderboard(community, period, tag_key, mapped, profile_to_user, hidden_users):
 	"""The strategy half of /api/leaderboard?mode=tags, from `game_labels`.
 
 	`gl.kind` carries the filtering the old `key IN (...17 keys...)` list did by
@@ -976,7 +1348,8 @@ async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hi
 		"COUNT(*) AS games, SUM(gs.winner=1) AS wins, SUM(gs.winner=0) AS losses, "
 		"MAX(gl.played_at) AS last_tagged_at "
 		+ _LABEL_JOIN +
-		"WHERE gl.kind=%s" + time_clause +
+		"WHERE gl.kind=%s AND " + _community_replay_predicate(community, "gl.replay_match_id")
+		+ time_clause +
 		" GROUP BY gs.profile_id, rp.identity, gl.label",
 		args)
 	out = {}
@@ -992,7 +1365,8 @@ async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hi
 			continue
 		row_key = (uid, key, "strategy")
 		cur = out.setdefault(row_key, _empty_tag_row(
-			uid, _label_for(mapped, uid) or r.get("identity"), _avatar_for_user_id(uid), key, "strategy"))
+			uid, _label_for(mapped, uid) or r.get("identity"),
+			_avatar_for_user_id(uid, community), key, "strategy"))
 		cur["tag_games"] += int(r.get("games") or 0)
 		cur["wins"] += int(r.get("wins") or 0)
 		cur["losses"] += int(r.get("losses") or 0)
@@ -1000,7 +1374,8 @@ async def _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hi
 	return list(available.values()), out
 
 
-async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users):
+async def _stored_tag_leaderboard(
+		community, period, tag_key, mapped, profile_to_user, hidden_users, eligible_users):
 	start = _period_start(period)
 	params = []
 	time_clause = ""
@@ -1011,14 +1386,15 @@ async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidd
 		"SELECT t.user_id, t.profile_id, t.identity, t.tag, MAX(t.tag_label) AS tag_label, "
 		"MAX(t.category) AS category, COUNT(*) AS games, SUM(t.winner=1) AS wins, "
 		"SUM(t.winner=0) AS losses, AVG(t.score) AS avg_score, MAX(t.played_at) AS last_tagged_at "
-		"FROM rs_player_game_tags t WHERE 1=1" + time_clause +
+		"FROM rs_player_game_tags t WHERE "
+		+ _community_replay_predicate(community, "t.aoe2_match_id") + time_clause +
 		" GROUP BY t.user_id, t.profile_id, t.identity, t.tag",
 		params)
 	out = {}
 	available = {}
 	for r in rows or []:
 		uid = r.get("user_id") or profile_to_user.get(int(r["profile_id"])) if r.get("profile_id") else r.get("user_id")
-		if uid is None or int(uid) in hidden_users:
+		if uid is None or int(uid) in hidden_users or int(uid) not in eligible_users:
 			continue
 		key = r.get("tag")
 		tag_type = r.get("category") or "impact"
@@ -1030,7 +1406,7 @@ async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidd
 		row_key = (int(uid), key, tag_type)
 		cur = out.setdefault(row_key, _empty_tag_row(
 			int(uid), _label_for(mapped, int(uid)) or r.get("identity"),
-			_avatar_for_user_id(uid), key, tag_type))
+			_avatar_for_user_id(uid, community), key, tag_type))
 		cur["tag_label"] = meta["label"]
 		cur["tag_games"] += int(r.get("games") or 0)
 		cur["wins"] += int(r.get("wins") or 0)
@@ -1042,20 +1418,28 @@ async def _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidd
 	return list(available.values()), out
 
 
-async def _tag_leaderboard(period, tag_key="all"):
+async def _tag_leaderboard(community, period, tag_key="all"):
 	# Same single source as the player directory: the tag leaderboards join
 	# replay-derived rows (keyed on profile_id) back to Discord users, which is
 	# the identity resolver's whole job.
-	mapped = await resolver.profiles_and_names_by_user()
+	eligible_users = await _community_user_ids(community)
+	mapped = {
+		int(uid): data for uid, data in (await resolver.profiles_and_names_by_user()).items()
+		if int(uid) in eligible_users
+	}
 	profile_to_user = {}
 	for uid, data in mapped.items():
 		for pid in data.get("profile_ids") or []:
 			profile_to_user[int(pid)] = int(uid)
-	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM player_ratings WHERE is_hidden=1")
+	hidden_rows = await db.fetchall(
+		"SELECT DISTINCT pr.user_id FROM player_ratings pr WHERE pr.is_hidden=1 AND "
+		+ _community_channel_predicate(community, "pr.channel_id"))
 	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
-	parsed_games = await _parsed_games_by_user(period, profile_to_user)
-	strategy_tags, rows_by_key = await _strategy_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users)
-	stored_tags, stored_rows = await _stored_tag_leaderboard(period, tag_key, mapped, profile_to_user, hidden_users)
+	parsed_games = await _parsed_games_by_user(community, period, profile_to_user)
+	strategy_tags, rows_by_key = await _strategy_tag_leaderboard(
+		community, period, tag_key, mapped, profile_to_user, hidden_users)
+	stored_tags, stored_rows = await _stored_tag_leaderboard(
+		community, period, tag_key, mapped, profile_to_user, hidden_users, eligible_users)
 	for k, r in stored_rows.items():
 		rows_by_key[k] = r
 	tags = {}
@@ -1139,13 +1523,14 @@ def _cat_label(cat):
 	return labels.get(cat, str(cat or "").replace("_", " "))
 
 
-async def _player_strategy_profile(user_id, profile_ids, period):
+async def _player_strategy_profile(community, user_id, profile_ids, period):
 	at_clause, at_params = _period_filter(period)
 	identity_clause, identity_args = _identity_clause(user_id, profile_ids)
 	args = [*identity_args, *at_params]
 	base_join = (
-		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
-		"JOIN matches m ON m.match_id=rm.bot_match_id "
+		"FROM replay_players g JOIN match_replays mr ON mr.replay_match_id=g.replay_match_id "
+		f"AND mr.community_id={community.sql_id} "
+		"JOIN matches m ON m.match_id=mr.match_id "
 		"WHERE " + identity_clause + at_clause
 	)
 	summary = await db.fetchone(
@@ -1159,8 +1544,9 @@ async def _player_strategy_profile(user_id, profile_ids, period):
 	if not summary or not summary.get("games"):
 		return {"games": 0, "summary": "No parsed strategy sample yet.", "army_mix": [], "top_units": [], "eco_techs": [], "army_techs": []}
 	unit_join = (
-		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
-		"JOIN matches m ON m.match_id=rm.bot_match_id "
+		"FROM replay_players g JOIN match_replays mr ON mr.replay_match_id=g.replay_match_id "
+		f"AND mr.community_id={community.sql_id} "
+		"JOIN matches m ON m.match_id=mr.match_id "
 		"JOIN replay_units u ON u.replay_match_id=g.replay_match_id AND u.player_number=g.player_number "
 		"WHERE " + identity_clause + at_clause + " AND u.is_military=1 AND u.total>0 "
 	)
@@ -1177,8 +1563,9 @@ async def _player_strategy_profile(user_id, profile_ids, period):
 		"GROUP BY u.unit, u.category ORDER BY total DESC LIMIT 8",
 		args)
 	tech_join = (
-		"FROM replay_players g JOIN replay_matches rm ON rm.replay_match_id=g.replay_match_id "
-		"JOIN matches m ON m.match_id=rm.bot_match_id "
+		"FROM replay_players g JOIN match_replays mr ON mr.replay_match_id=g.replay_match_id "
+		f"AND mr.community_id={community.sql_id} "
+		"JOIN matches m ON m.match_id=mr.match_id "
 		"JOIN replay_techs t ON t.replay_match_id=g.replay_match_id AND t.player_number=g.player_number "
 		"WHERE " + identity_clause + at_clause + " "
 	)
@@ -1263,7 +1650,7 @@ def _strategy_tag_payload(row):
 	}
 
 
-async def _player_strategy_tags(profile_ids, period, limit=24):
+async def _player_strategy_tags(community, profile_ids, period, limit=24):
 	"""One player's strategy labels in the selected window, from `game_labels`.
 
 	Deliberately NOT read out of that player's `player_rollups` blob, which
@@ -1285,14 +1672,15 @@ async def _player_strategy_tags(profile_ids, period, limit=24):
 		"SELECT gl.label AS `key`, COUNT(*) AS games, "
 		"SUM(gs.winner=1) AS wins, SUM(gs.winner=0) AS losses "
 		+ _LABEL_JOIN +
-		"WHERE gl.kind=%s AND gs.profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ")"
+		"WHERE gl.kind=%s AND " + _community_replay_predicate(community, "gl.replay_match_id")
+		+ " AND gs.profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ")"
 		+ time_clause +
 		" GROUP BY gl.label ORDER BY games DESC, wins DESC, gl.label LIMIT %s",
 		[*args, limit])
 	return [_strategy_tag_payload(r) for r in rows or []]
 
 
-async def _player_stored_tags(profile_ids, period, limit=12):
+async def _player_stored_tags(community, profile_ids, period, limit=12):
 	profile_ids = [str(p) for p in profile_ids or []]
 	if not profile_ids:
 		return []
@@ -1305,7 +1693,9 @@ async def _player_stored_tags(profile_ids, period, limit=12):
 	rows = await db.fetchall(
 		"SELECT tag AS `key`, MAX(tag_label) AS label, MAX(category) AS category, "
 		"COUNT(*) AS games, SUM(winner=1) AS wins, SUM(winner=0) AS losses, AVG(score) AS avg_impact "
-		"FROM rs_player_game_tags WHERE profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ")" +
+		"FROM rs_player_game_tags t WHERE "
+		+ _community_replay_predicate(community, "t.aoe2_match_id")
+		+ " AND profile_id IN (" + ",".join(["%s"] * len(profile_ids)) + ")" +
 		time_clause + " GROUP BY tag ORDER BY games DESC, wins DESC, tag LIMIT %s",
 		[*args, limit])
 	return [
@@ -1324,9 +1714,9 @@ async def _player_stored_tags(profile_ids, period, limit=12):
 	]
 
 
-async def _player_profile_tags(profile_ids, period):
-	stored = await _player_stored_tags(profile_ids, period)
-	strategy = await _player_strategy_tags(profile_ids, period)
+async def _player_profile_tags(community, profile_ids, period):
+	stored = await _player_stored_tags(community, profile_ids, period)
+	strategy = await _player_strategy_tags(community, profile_ids, period)
 	out = []
 	seen = set()
 	for tag in stored + strategy:
@@ -1339,29 +1729,28 @@ async def _player_profile_tags(profile_ids, period):
 	return sorted(out, key=lambda t: (-int(t.get("games") or 0), -(t.get("winrate") or 0), str(t.get("label") or "")))[:24]
 
 
-async def _classification_tags_for_bot_matches(match_ids):
+async def _classification_tags_for_bot_matches(community, match_ids):
 	"""Per-(match, player) chips for the match rows: strategy labels from
 	`game_labels`, plus the stored impact tags.
 
-	The bot-match -> replay hop still goes through `replay_matches.bot_match_id`.
-	`match_replays` is the authoritative link from stage 5 on and that column is
-	dropped in stage 6 — but the link table is keyed by community, and switching
-	this join to it would silently empty every chip on a deployment whose
-	flagship community is not resolvable. Stage 6 owns that column drop and the
-	repoint that has to land with it."""
+	The bot-match -> replay hop goes through the community-owned `match_replays`
+	link. Besides surviving the stage-6 removal of `replay_matches.bot_match_id`,
+	that makes it impossible for an otherwise matching replay from another
+	community to contribute a chip."""
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
 		return {}, {}
 	rows = await db.fetchall(
-		"SELECT rm.bot_match_id, gs.profile_id AS profile_id, rp.identity AS identity, "
+		"SELECT mr.match_id AS bot_match_id, gs.profile_id AS profile_id, rp.identity AS identity, "
 		"gl.label AS `key` "
-		"FROM replay_matches rm "
-		"JOIN game_labels gl ON gl.replay_match_id=rm.replay_match_id "
+		"FROM match_replays mr "
+		"JOIN game_labels gl ON gl.replay_match_id=mr.replay_match_id "
 		"JOIN game_stats gs ON gs.replay_match_id=gl.replay_match_id "
 		"AND gs.player_number=gl.player_number "
 		"LEFT JOIN replay_players rp ON rp.replay_match_id=gs.replay_match_id "
 		"AND rp.profile_id=gs.profile_id "
-		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ") AND gl.kind=%s",
+		f"WHERE mr.community_id={community.sql_id} AND mr.match_id IN ("
+		+ ",".join(["%s"] * len(match_ids)) + ") AND gl.kind=%s",
 		[*match_ids, _STRATEGY_KIND])
 	by_profile = {}
 	by_name = {}
@@ -1372,9 +1761,10 @@ async def _classification_tags_for_bot_matches(match_ids):
 		if row.get("identity"):
 			by_name.setdefault((row["bot_match_id"], str(row["identity"]).lower()), []).append(tag)
 	stored_rows = await db.fetchall(
-		"SELECT rm.bot_match_id, t.profile_id, t.identity, t.tag, t.tag_label "
-		"FROM replay_matches rm JOIN rs_player_game_tags t ON t.aoe2_match_id=rm.replay_match_id "
-		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
+		"SELECT mr.match_id AS bot_match_id, t.profile_id, t.identity, t.tag, t.tag_label "
+		"FROM match_replays mr JOIN rs_player_game_tags t ON t.aoe2_match_id=mr.replay_match_id "
+		f"WHERE mr.community_id={community.sql_id} AND mr.match_id IN ("
+		+ ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
 	for row in stored_rows or []:
 		tag = {"key": row.get("tag"), "label": row.get("tag_label") or row.get("tag")}
@@ -1601,7 +1991,7 @@ def _scouting_payload(rollup):
 	}
 
 
-async def _player_scouting_report(user_id):
+async def _player_scouting_report(user_id, community=None):
 	""" The scouting-report block for `user_id`, or None when there is no
 	community to read one from.
 
@@ -1612,13 +2002,15 @@ async def _player_scouting_report(user_id):
 	    omits the block rather than claiming a linking gap that does not exist.
 	  no rollup row         -> {"pending": PENDING}.
 	  a rollup              -> its measured blocks. """
-	community_id = await _public_community_id()
-	if community_id is None:
+	if not bool(getattr(cfg, "SCOUTING_REPORT_ENABLED", False)):
 		return None
-	return _scouting_payload(await rollups.fetch(community_id, int(user_id)))
+	community = community or await _public_community()
+	if community is None:
+		return None
+	return _scouting_payload(await rollups.fetch(community.community_id, int(user_id)))
 
 
-def _relationship_payload(row):
+def _relationship_payload(row, community):
 	if not row:
 		return None
 	wins = int(row.get("wins") or 0)
@@ -1630,15 +2022,15 @@ def _relationship_payload(row):
 		"wins": wins,
 		"losses": losses,
 		"winrate": _winrate(wins, losses),
-		"avatar": _avatar_for_user_id(row["user_id"]),
+		"avatar": _avatar_for_user_id(row["user_id"], community),
 	}
 
 
-def _best_relationship(rows, kind):
+def _best_relationship(rows, kind, community):
 	"""Top pick for a relation quadrant. ``kind``: 'ally' (highest winrate
 	together), 'worst_ally' (lowest winrate together), 'enemy' (they beat you
 	the most), 'easy_enemy' (you beat them the most)."""
-	payloads = [_relationship_payload(r) for r in rows or []]
+	payloads = [_relationship_payload(r, community) for r in rows or []]
 	payloads = [p for p in payloads if p]
 	if not payloads:
 		return None
@@ -1665,20 +2057,27 @@ def _best_relationship(rows, kind):
 	)[0]
 
 
-async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
+async def _match_impacts(community, match_ids, focus_user_id=None, focus_profile_ids=None):
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
 		return {}
-	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM player_ratings WHERE is_hidden=1")
+	hidden_rows = await db.fetchall(
+		"SELECT DISTINCT pr.user_id FROM player_ratings pr WHERE pr.is_hidden=1 AND "
+		+ _community_channel_predicate(community, "pr.channel_id"))
 	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
 	rows = await db.fetchall(
-		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.civ, g.team, "
+		"SELECT mr.match_id AS bot_match_id, g.profile_id, scoped_pm.user_id, g.identity, g.civ, g.team, "
 		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, "
 		"g.military, g.mil_pre_castle, g.mil_pre_imperial, g.feudal_s, g.castle_s, g.imperial_s "
-		"FROM replay_matches rm JOIN replay_players g ON g.replay_match_id=rm.replay_match_id "
-		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
+		"FROM match_replays mr JOIN matches scoped_m ON scoped_m.match_id=mr.match_id "
+		"JOIN replay_players g ON g.replay_match_id=mr.replay_match_id "
+		"LEFT JOIN match_players scoped_pm ON scoped_pm.match_id=mr.match_id "
+		"AND scoped_pm.channel_id=scoped_m.channel_id AND scoped_pm.user_id=g.user_id "
+		f"WHERE mr.community_id={community.sql_id} AND "
+		+ _community_channel_predicate(community, "scoped_m.channel_id") + " AND mr.match_id IN ("
+		+ ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
-	strategy_by_profile, strategy_by_name = await _classification_tags_for_bot_matches(match_ids)
+	strategy_by_profile, strategy_by_name = await _classification_tags_for_bot_matches(community, match_ids)
 	groups = {}
 	for r in rows or []:
 		groups.setdefault(r["bot_match_id"], []).append(r)
@@ -1721,20 +2120,27 @@ async def _match_impacts(match_ids, focus_user_id=None, focus_profile_ids=None):
 	return out
 
 
-async def _match_player_impacts(match_ids):
+async def _match_player_impacts(community, match_ids):
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
 		return {}
-	hidden_rows = await db.fetchall("SELECT DISTINCT user_id FROM player_ratings WHERE is_hidden=1")
+	hidden_rows = await db.fetchall(
+		"SELECT DISTINCT pr.user_id FROM player_ratings pr WHERE pr.is_hidden=1 AND "
+		+ _community_channel_predicate(community, "pr.channel_id"))
 	hidden_users = {int(r["user_id"]) for r in hidden_rows or []}
 	rows = await db.fetchall(
-		"SELECT rm.bot_match_id, g.profile_id, g.user_id, g.identity, g.civ, g.team, "
+		"SELECT mr.match_id AS bot_match_id, g.profile_id, scoped_pm.user_id, g.identity, g.civ, g.team, "
 		"g.villagers, g.vil_pre_castle, g.vil_pre_imperial, g.military, g.mil_pre_castle, g.mil_pre_imperial, "
 		"g.feudal_s, g.castle_s, g.imperial_s "
-		"FROM replay_matches rm JOIN replay_players g ON g.replay_match_id=rm.replay_match_id "
-		"WHERE rm.bot_match_id IN (" + ",".join(["%s"] * len(match_ids)) + ")",
+		"FROM match_replays mr JOIN matches scoped_m ON scoped_m.match_id=mr.match_id "
+		"JOIN replay_players g ON g.replay_match_id=mr.replay_match_id "
+		"LEFT JOIN match_players scoped_pm ON scoped_pm.match_id=mr.match_id "
+		"AND scoped_pm.channel_id=scoped_m.channel_id AND scoped_pm.user_id=g.user_id "
+		f"WHERE mr.community_id={community.sql_id} AND "
+		+ _community_channel_predicate(community, "scoped_m.channel_id") + " AND mr.match_id IN ("
+		+ ",".join(["%s"] * len(match_ids)) + ")",
 		match_ids)
-	strategy_by_profile, strategy_by_name = await _classification_tags_for_bot_matches(match_ids)
+	strategy_by_profile, strategy_by_name = await _classification_tags_for_bot_matches(community, match_ids)
 	groups = {}
 	for r in rows or []:
 		groups.setdefault(r["bot_match_id"], []).append(r)
@@ -1756,12 +2162,14 @@ async def _match_player_impacts(match_ids):
 	return out
 
 
-async def _match_rosters(match_ids):
+async def _match_rosters(community, match_ids):
 	match_ids = [m for m in dict.fromkeys(match_ids or []) if m is not None]
 	if not match_ids:
 		return {}
 	placeholder = ",".join(["%s"] * len(match_ids))
-	impacts = await _match_player_impacts(match_ids)
+	impacts = (
+		await _match_player_impacts(community, match_ids)
+		if _replay_dashboard_enabled() else {})
 	impact_by_user = {}
 	impact_by_name = {}
 	for match_id, rows in impacts.items():
@@ -1772,7 +2180,8 @@ async def _match_rosters(match_ids):
 				impact_by_name[(match_id, impact["nick"].lower())] = impact
 	civ_rows = await db.fetchall(
 		"SELECT bot_match_id, user_id, nick, team, civ, result FROM civ_picks "
-		"WHERE bot_match_id IN (" + placeholder + ")",
+		"WHERE bot_match_id IN (" + placeholder + ") AND "
+		+ _community_channel_predicate(community, "civ_picks.channel_id"),
 		match_ids)
 	civs_by_user = {}
 	civs_by_name = {}
@@ -1788,7 +2197,9 @@ async def _match_rosters(match_ids):
 		"SELECT pm.match_id, pm.user_id, MAX(pm.nick) AS nick, pm.team, MAX(m.winner) AS winner "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE pm.match_id IN (" + placeholder + ")" + _visible_user_clause("pm") +
+		"WHERE pm.match_id IN (" + placeholder + ") AND "
+		+ _community_channel_predicate(community, "pm.channel_id")
+		+ _visible_user_clause("pm", community) +
 		" GROUP BY pm.match_id, pm.user_id, pm.team ORDER BY pm.match_id, pm.team, nick",
 		match_ids)
 	out = {match_id: [] for match_id in match_ids}
@@ -1805,7 +2216,7 @@ async def _match_rosters(match_ids):
 		payload = {
 			"user_id": user_id,
 			"nick": nick,
-			"avatar": _avatar_for_user_id(user_id),
+			"avatar": _avatar_for_user_id(user_id, community),
 			"team": row["team"],
 			"civ": civ.get("civ") or (impact or {}).get("civ"),
 			"result": result,
@@ -1822,7 +2233,7 @@ async def _match_rosters(match_ids):
 				"user_id": user_id,
 				"profile_id": impact.get("profile_id"),
 				"nick": impact.get("nick") or user_id or "Unknown",
-				"avatar": _avatar_for_user_id(user_id),
+				"avatar": _avatar_for_user_id(user_id, community),
 				"team": impact.get("team"),
 				"civ": impact.get("civ"),
 				"result": None,
@@ -1835,15 +2246,16 @@ async def _match_rosters(match_ids):
 	}
 
 
-async def _match_stats_overall(period):
+async def _match_stats_overall(community, period):
 	at_clause, params = _period_filter(period)
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"COUNT(DISTINCT IF(m.ranked=1, m.match_id, NULL)) AS ranked_games, "
 		"COUNT(DISTINCT pm.user_id) AS players, MAX(m.reported_at) AS last_match_at "
 		"FROM matches m LEFT JOIN match_players pm "
-		"ON pm.match_id=m.match_id AND pm.channel_id=m.channel_id" + _visible_user_clause("pm") +
-		" WHERE 1=1" + at_clause,
+		"ON pm.match_id=m.match_id AND pm.channel_id=m.channel_id"
+		+ _visible_user_clause("pm", community) +
+		" WHERE " + _community_channel_predicate(community, "m.channel_id") + at_clause,
 		params)
 	board = await db.fetchall(
 		"SELECT pm.user_id, MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
@@ -1852,30 +2264,47 @@ async def _match_stats_overall(period):
 		"SUM(m.ranked=1 AND m.winner IS NULL) AS draws "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE 1=1" + _visible_user_clause("pm") + at_clause +
+		"WHERE " + _community_channel_predicate(community, "m.channel_id")
+		+ _visible_user_clause("pm", community) + at_clause +
 		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 500",
 		params)
-	ratings = await _rating_deltas(period, [r["user_id"] for r in board or []])
+	ratings = await _rating_deltas(community, period, [r["user_id"] for r in board or []])
 	civs = await db.fetchall(
 		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
-		"FROM civ_picks WHERE " + _linked_civ_clause() + " AND civ IS NOT NULL AND civ<>''"
+		"FROM civ_picks cp WHERE " + _linked_civ_clause("cp") + " AND "
+		+ _community_channel_predicate(community, "cp.channel_id")
+		+ " AND civ IS NOT NULL AND civ<>''"
 		+ (" AND at >= %s" if params else "") +
 		" GROUP BY civ ORDER BY games DESC LIMIT 20",
 		params)
-	maps = _map_counts(await db.fetchall("SELECT maps FROM matches m WHERE maps IS NOT NULL" + at_clause, params))
+	maps = _map_counts(await db.fetchall(
+		"SELECT maps FROM matches m WHERE maps IS NOT NULL AND "
+		+ _community_channel_predicate(community, "m.channel_id") + at_clause, params))
 	trend_bucket = _trend_bucket_expr(period)
 	trend = await db.fetchall(
 		"SELECT " + trend_bucket + " AS bucket, COUNT(*) AS games "
-		"FROM matches m WHERE 1=1" + at_clause + " GROUP BY bucket ORDER BY bucket ASC",
+		"FROM matches m WHERE " + _community_channel_predicate(community, "m.channel_id")
+		+ at_clause + " GROUP BY bucket ORDER BY bucket ASC",
 		params)
-	recent = await db.fetchall(
-		"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, m.winner, m.maps, rm.duration_s "
-		"FROM matches m LEFT JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
-		"WHERE 1=1" + at_clause +
-		" ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
-		params)
-	impacts = await _match_impacts([r["match_id"] for r in recent or []])
-	rosters = await _match_rosters([r["match_id"] for r in recent or []])
+	if _replay_dashboard_enabled():
+		recent = await db.fetchall(
+			"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, "
+			"m.winner, m.maps, rm.duration_s FROM matches m "
+			"LEFT JOIN match_replays mr "
+			f"ON mr.match_id=m.match_id AND mr.community_id={community.sql_id} "
+			"LEFT JOIN replay_matches rm ON rm.replay_match_id=mr.replay_match_id "
+			"WHERE " + _community_channel_predicate(community, "m.channel_id") + at_clause +
+			" ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
+			params)
+		impacts = await _match_impacts(community, [r["match_id"] for r in recent or []])
+	else:
+		recent = await db.fetchall(
+			"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, "
+			"m.winner, m.maps FROM matches m WHERE "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause
+			+ " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50", params)
+		impacts = {}
+	rosters = await _match_rosters(community, [r["match_id"] for r in recent or []])
 	return {
 		"summary": {
 			"games": int((summary or {}).get("games") or 0),
@@ -1893,7 +2322,7 @@ async def _match_stats_overall(period):
 					"losses": int(r["losses"] or 0),
 					"draws": int(r["draws"] or 0),
 					"winrate": _winrate(r["wins"], r["losses"]),
-					"avatar": _avatar_for_user_id(r["user_id"]),
+					"avatar": _avatar_for_user_id(r["user_id"], community),
 				},
 				**ratings.get(int(r["user_id"]), _rating_payload(None)),
 			}
@@ -1923,11 +2352,13 @@ async def _match_stats_overall(period):
 	}
 
 
-async def _player_streak(user_id, at_clause, params):
+async def _player_streak(community, user_id, at_clause, params):
 	rows = await db.fetchall(
 		"SELECT m.winner, pm.team FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE pm.user_id=%s AND m.ranked=1" + at_clause + " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 20",
+		"WHERE pm.user_id=%s AND m.ranked=1 AND "
+		+ _community_channel_predicate(community, "m.channel_id") + at_clause
+		+ " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 20",
 		[user_id, *params])
 	streak = []
 	for r in rows or []:
@@ -1940,7 +2371,7 @@ async def _player_streak(user_id, at_clause, params):
 	return streak
 
 
-async def _match_stats_player(user_id, period):
+async def _match_stats_player(community, user_id, period):
 	# The stored player-commentary feature was retired (its backing table
 	# dropped) — the key stays in the payload for API compatibility, but is
 	# always None now.
@@ -1948,9 +2379,11 @@ async def _match_stats_player(user_id, period):
 
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
-	rating = await _rating_delta(period, user_id)
-	rating_history = await _rating_history(period, user_id)
-	strategy_tags = await _player_profile_tags(profile_ids, period)
+	rating = await _rating_delta(community, period, user_id)
+	rating_history = await _rating_history(community, period, user_id)
+	strategy_tags = (
+		await _player_profile_tags(community, profile_ids, period)
+		if _replay_dashboard_enabled() else [])
 	summary = await db.fetchone(
 		"SELECT COUNT(DISTINCT m.match_id) AS games, "
 		"SUM(m.ranked=1 AND m.winner=pm.team) AS wins, "
@@ -1958,12 +2391,14 @@ async def _match_stats_player(user_id, period):
 		"SUM(m.ranked=1 AND m.winner IS NULL) AS draws, MAX(m.reported_at) AS last_match_at, MAX(pm.nick) AS nick "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE pm.user_id=%s" + at_clause,
+		"WHERE pm.user_id=%s AND " + _community_channel_predicate(community, "m.channel_id")
+		+ at_clause,
 		[user_id, *params])
 	civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
 	civs = await db.fetchall(
 		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
-		"FROM civ_picks WHERE " + _linked_civ_clause() + " AND " + civ_clause +
+		"FROM civ_picks cp WHERE " + _linked_civ_clause("cp") + " AND "
+		+ _community_channel_predicate(community, "cp.channel_id") + " AND " + civ_clause +
 		" AND civ IS NOT NULL AND civ<>''"
 		+ (" AND at >= %s" if params else "") +
 		" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 12",
@@ -1971,7 +2406,8 @@ async def _match_stats_player(user_id, period):
 	maps = _map_counts(await db.fetchall(
 		"SELECT m.maps FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE pm.user_id=%s AND m.maps IS NOT NULL" + at_clause,
+		"WHERE pm.user_id=%s AND m.maps IS NOT NULL AND "
+		+ _community_channel_predicate(community, "m.channel_id") + at_clause,
 		[user_id, *params]))
 	teammates = await db.fetchall(
 		"SELECT mate.user_id, MAX(mate.nick) AS nick, COUNT(*) AS games, "
@@ -1979,8 +2415,10 @@ async def _match_stats_player(user_id, period):
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"JOIN match_players mate ON mate.match_id=pm.match_id AND mate.channel_id=pm.channel_id "
-		"AND mate.team=pm.team AND mate.user_id<>pm.user_id" + _visible_user_clause("mate") +
-		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		"AND mate.team=pm.team AND mate.user_id<>pm.user_id"
+		+ _visible_user_clause("mate", community) +
+		" WHERE pm.user_id=%s AND m.ranked=1 AND "
+		+ _community_channel_predicate(community, "m.channel_id") + at_clause +
 		" GROUP BY mate.user_id HAVING games >= 2 AND wins + losses > 0 "
 		"ORDER BY wins / NULLIF(wins + losses, 0) DESC, games DESC, wins DESC LIMIT 8",
 		[user_id, *params])
@@ -1990,8 +2428,10 @@ async def _match_stats_player(user_id, period):
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"JOIN match_players opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
-		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
-		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id"
+		+ _visible_user_clause("opp", community) +
+		" WHERE pm.user_id=%s AND m.ranked=1 AND "
+		+ _community_channel_predicate(community, "m.channel_id") + at_clause +
 		" GROUP BY opp.user_id HAVING games >= 2 AND wins + losses > 0 "
 		"ORDER BY wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC LIMIT 8",
 		[user_id, *params])
@@ -1999,30 +2439,40 @@ async def _match_stats_player(user_id, period):
 		"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, m.winner, m.maps, pm.team "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE pm.user_id=%s" + at_clause + " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
+		"WHERE pm.user_id=%s AND " + _community_channel_predicate(community, "m.channel_id")
+		+ at_clause + " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
 		[user_id, *params])
 	recent_civs = {}
 	impacts = {}
 	match_rosters = {}
 	impact_profile = _player_impact_profile([], civs)
-	impact_match_rows = await db.fetchall(
-		"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
-		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
-		"WHERE pm.user_id=%s" + at_clause,
-		[user_id, *params])
-	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+	period_impacts = {}
+	if _replay_dashboard_enabled():
+		impact_match_rows = await db.fetchall(
+			"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
+			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+			"JOIN match_replays mr ON mr.match_id=m.match_id "
+			f"AND mr.community_id={community.sql_id} "
+			"WHERE pm.user_id=%s AND "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause,
+			[user_id, *params])
+		period_impacts = await _match_impacts(
+			community, [r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
 	if period_impacts:
 		impact_profile = _player_impact_profile(period_impacts.values(), civs)
-	scouting = await _player_scouting_report(user_id)
+	scouting = (
+		await _player_scouting_report(user_id, community)
+		if _replay_dashboard_enabled() else None)
 	if recent:
 		match_ids = [r["match_id"] for r in recent]
-		match_rosters = await _match_rosters(match_ids)
+		match_rosters = await _match_rosters(community, match_ids)
 		impacts = {match_id: period_impacts.get(match_id) for match_id in match_ids}
 		civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
 		rows = await db.fetchall(
 			"SELECT bot_match_id, civ FROM civ_picks WHERE bot_match_id IN ("
-			+ ",".join(["%s"] * len(match_ids)) + ") AND " + civ_clause,
+			+ ",".join(["%s"] * len(match_ids)) + ") AND "
+			+ _community_channel_predicate(community, "civ_picks.channel_id")
+			+ " AND " + civ_clause,
 			[*match_ids, *civ_args])
 		for r in rows or []:
 			if r.get("civ") and r["bot_match_id"] not in recent_civs:
@@ -2034,13 +2484,14 @@ async def _match_stats_player(user_id, period):
 		"SUM(m.ranked=1 AND m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE pm.user_id=%s" + at_clause + " GROUP BY bucket ORDER BY bucket ASC",
+		"WHERE pm.user_id=%s AND " + _community_channel_predicate(community, "m.channel_id")
+		+ at_clause + " GROUP BY bucket ORDER BY bucket ASC",
 		[user_id, *params])
 	return {
 		"summary": {
 			"user_id": str(user_id),
 			"nick": (summary or {}).get("nick") or str(user_id),
-			"avatar": _avatar_for_user_id(user_id),
+			"avatar": _avatar_for_user_id(user_id, community),
 			"profile_ids": profile_ids,
 			**rating,
 			"games": int((summary or {}).get("games") or 0),
@@ -2049,7 +2500,7 @@ async def _match_stats_player(user_id, period):
 			"draws": int((summary or {}).get("draws") or 0),
 			"winrate": _winrate((summary or {}).get("wins"), (summary or {}).get("losses")),
 			"last_match_at": (summary or {}).get("last_match_at"),
-			"streak": await _player_streak(user_id, at_clause, params),
+			"streak": await _player_streak(community, user_id, at_clause, params),
 			"impact_profile": impact_profile,
 			"scouting_report": scouting,
 			"strategy_tags": strategy_tags,
@@ -2064,13 +2515,15 @@ async def _match_stats_player(user_id, period):
 		"teammates": [
 			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]), "games": int(r["games"] or 0),
 			 "wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0),
-			 "winrate": _winrate(r["wins"], r["losses"]), "avatar": _avatar_for_user_id(r["user_id"])}
+				 "winrate": _winrate(r["wins"], r["losses"]),
+				 "avatar": _avatar_for_user_id(r["user_id"], community)}
 			for r in teammates or []
 		],
 		"opponents": [
 			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]), "games": int(r["games"] or 0),
 			 "wins": int(r["wins"] or 0), "losses": int(r["losses"] or 0),
-			 "winrate": _winrate(r["wins"], r["losses"]), "avatar": _avatar_for_user_id(r["user_id"])}
+				 "winrate": _winrate(r["wins"], r["losses"]),
+				 "avatar": _avatar_for_user_id(r["user_id"], community)}
 			for r in opponents or []
 		],
 		"recent": [
@@ -2103,28 +2556,39 @@ async def _match_stats_player(user_id, period):
 
 
 async def handle_match_stats(request):
+	community = await _public_community(request)
+	if community is None:
+		return _community_not_found()
 	period = request.query.get("period", DEFAULT_STATS_PERIOD)
 	if period not in MATCH_STAT_PERIODS:
 		period = DEFAULT_STATS_PERIOD
 	player_raw = request.query.get("player_id") or ""
-	players = await _match_stat_players()
-	payload = {"period": period, "players": players, "scope": "overall"}
+	players = await _match_stat_players(community)
+	payload = {
+		"community": community.payload(),
+		"period": period,
+		"players": players,
+		"scope": "overall",
+	}
 	if player_raw and player_raw != "all":
 		try:
 			user_id = int(player_raw)
 		except ValueError:
 			return web.json_response({"error": "Invalid player_id"}, status=400)
-		if not await _player_has_public_stats(user_id):
+		if not await _player_has_public_stats(community, user_id):
 			return web.json_response({"error": "Player not found"}, status=404)
 		payload["scope"] = "player"
 		payload["selected_player_id"] = str(user_id)
-		payload.update(await _match_stats_player(user_id, period))
+		payload.update(await _match_stats_player(community, user_id, period))
 	else:
-		payload.update(await _match_stats_overall(period))
+		payload.update(await _match_stats_overall(community, period))
 	return web.json_response(payload)
 
 
 async def handle_leaderboard(request):
+	community = await _public_community(request)
+	if community is None:
+		return _community_not_found()
 	period = request.query.get("period", DEFAULT_STATS_PERIOD)
 	if period not in MATCH_STAT_PERIODS:
 		period = DEFAULT_STATS_PERIOD
@@ -2133,11 +2597,14 @@ async def handle_leaderboard(request):
 	if mode == "civs":
 		rows = await db.fetchall(
 			"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
-			"FROM civ_picks WHERE " + _linked_civ_clause() + " AND civ IS NOT NULL AND civ<>''"
+			"FROM civ_picks cp WHERE " + _linked_civ_clause("cp") + " AND "
+			+ _community_channel_predicate(community, "cp.channel_id")
+			+ " AND civ IS NOT NULL AND civ<>''"
 			+ (" AND at >= %s" if params else "") +
 			" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 500",
 			params)
 		return web.json_response({
+			"community": community.payload(),
 			"period": period,
 			"mode": "civs",
 			"rows": [
@@ -2147,9 +2614,17 @@ async def handle_leaderboard(request):
 			],
 		})
 	if mode == "tags":
+		if not _replay_dashboard_enabled():
+			return web.json_response({
+				"community": community.payload(), "period": period,
+				"mode": "tags", "disabled": True,
+				"reason": "Replay-derived tag analysis is paused.",
+				"tag": "", "tags": [], "rows": [],
+			})
 		tag_key = request.query.get("tag") or "all"
-		payload = await _tag_leaderboard(period, tag_key)
+		payload = await _tag_leaderboard(community, period, tag_key)
 		return web.json_response({
+			"community": community.payload(),
 			"period": period,
 			"mode": "tags",
 			"tag": tag_key,
@@ -2163,11 +2638,13 @@ async def handle_leaderboard(request):
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"LEFT JOIN player_ratings p ON p.user_id=pm.user_id AND p.channel_id=pm.channel_id "
-		"WHERE 1=1" + _visible_user_clause("pm") + at_clause +
+		"WHERE " + _community_channel_predicate(community, "m.channel_id")
+		+ _visible_user_clause("pm", community) + at_clause +
 		" GROUP BY pm.user_id ORDER BY wins DESC, games DESC LIMIT 500",
 		params)
-	ratings = await _rating_deltas(period, [r["user_id"] for r in rows or []])
+	ratings = await _rating_deltas(community, period, [r["user_id"] for r in rows or []])
 	return web.json_response({
+		"community": community.payload(),
 		"period": period,
 		"mode": "players",
 		"rows": [
@@ -2181,7 +2658,7 @@ async def handle_leaderboard(request):
 					"draws": int(r["draws"] or 0),
 					"rating": r.get("rating"),
 					"winrate": _winrate(r["wins"], r["losses"]),
-					"avatar": _avatar_for_user_id(r["user_id"]),
+					"avatar": _avatar_for_user_id(r["user_id"], community),
 				},
 				**ratings.get(int(r["user_id"]), _rating_payload(None)),
 			}
@@ -2191,6 +2668,9 @@ async def handle_leaderboard(request):
 
 
 async def handle_player_stats(request):
+	community = await _public_community(request)
+	if community is None:
+		return _community_not_found()
 	period = request.query.get("period", DEFAULT_STATS_PERIOD)
 	if period not in MATCH_STAT_PERIODS:
 		period = DEFAULT_STATS_PERIOD
@@ -2200,7 +2680,7 @@ async def handle_player_stats(request):
 		return web.json_response({"error": "Invalid player_id"}, status=400)
 	if not user_id:
 		return web.json_response({"error": "Missing player_id"}, status=400)
-	if not await _player_has_public_stats(user_id):
+	if not await _player_has_public_stats(community, user_id):
 		return web.json_response({"error": "Player not found"}, status=404)
 
 	# The stored player-commentary feature was retired (its backing table
@@ -2210,9 +2690,11 @@ async def handle_player_stats(request):
 
 	at_clause, params = _period_filter(period)
 	profile_ids, aoe2_names = await _mapped_player_identity(user_id)
-	rating = await _rating_delta(period, user_id)
-	rating_history = await _rating_history(period, user_id)
-	strategy_tags = await _player_profile_tags(profile_ids, period)
+	rating = await _rating_delta(community, period, user_id)
+	rating_history = await _rating_history(community, period, user_id)
+	strategy_tags = (
+		await _player_profile_tags(community, profile_ids, period)
+		if _replay_dashboard_enabled() else [])
 	base_args = [user_id, *params]
 	summary = await db.fetchone(
 		"SELECT MAX(pm.nick) AS nick, COUNT(DISTINCT m.match_id) AS games, "
@@ -2221,7 +2703,8 @@ async def handle_player_stats(request):
 		"SUM(m.ranked=1 AND m.winner IS NULL) AS draws, MAX(m.reported_at) AS last_match_at "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"WHERE pm.user_id=%s" + at_clause,
+		"WHERE pm.user_id=%s AND " + _community_channel_predicate(community, "m.channel_id")
+		+ at_clause,
 		base_args)
 	allies = await db.fetchall(
 		"SELECT ally.user_id, MAX(ally.nick) AS nick, COUNT(*) AS games, "
@@ -2229,8 +2712,10 @@ async def handle_player_stats(request):
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"JOIN match_players ally ON ally.match_id=pm.match_id AND ally.channel_id=pm.channel_id "
-		"AND ally.team=pm.team AND ally.user_id<>pm.user_id" + _visible_user_clause("ally") +
-		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		"AND ally.team=pm.team AND ally.user_id<>pm.user_id"
+		+ _visible_user_clause("ally", community) +
+		" WHERE pm.user_id=%s AND m.ranked=1 AND "
+		+ _community_channel_predicate(community, "m.channel_id") + at_clause +
 		" GROUP BY ally.user_id HAVING games >= 1 AND wins + losses > 0 "
 		# No LIMIT: any winrate-sorted cut silently drops one of the two tails
 		# (dream duos vs cursed duos). The roster is small, so the full list is
@@ -2243,8 +2728,10 @@ async def handle_player_stats(request):
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"JOIN match_players opp ON opp.match_id=pm.match_id AND opp.channel_id=pm.channel_id "
-		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id" + _visible_user_clause("opp") +
-		" WHERE pm.user_id=%s AND m.ranked=1" + at_clause +
+		"AND opp.team<>pm.team AND opp.user_id<>pm.user_id"
+		+ _visible_user_clause("opp", community) +
+		" WHERE pm.user_id=%s AND m.ranked=1 AND "
+		+ _community_channel_predicate(community, "m.channel_id") + at_clause +
 		" GROUP BY opp.user_id HAVING games >= 1 AND wins + losses > 0 "
 		"ORDER BY games >= 10 DESC, wins / NULLIF(wins + losses, 0) ASC, losses DESC, games DESC",
 		base_args)
@@ -2261,14 +2748,18 @@ async def handle_player_stats(request):
 		"SUM(m.winner IS NOT NULL AND m.winner<>pm.team) AS losses "
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
-		"WHERE pm.user_id=%s AND m.ranked=1 AND rm.duration_s IS NOT NULL" + at_clause +
+		"JOIN match_replays mr ON mr.match_id=m.match_id "
+		f"AND mr.community_id={community.sql_id} "
+		"JOIN replay_matches rm ON rm.replay_match_id=mr.replay_match_id "
+		"WHERE pm.user_id=%s AND m.ranked=1 AND rm.duration_s IS NOT NULL AND "
+		+ _community_channel_predicate(community, "m.channel_id") + at_clause +
 		" GROUP BY bucket, ord ORDER BY ord",
-		base_args)
+		base_args) if _replay_dashboard_enabled() else []
 	civ_clause, civ_args = _civ_player_clause(user_id, aoe2_names)
 	civs = await db.fetchall(
 		"SELECT civ, COUNT(*) AS games, SUM(result='W') AS wins, SUM(result='L') AS losses "
-		"FROM civ_picks WHERE " + _linked_civ_clause() + " AND " + civ_clause +
+		"FROM civ_picks cp WHERE " + _linked_civ_clause("cp") + " AND "
+		+ _community_channel_predicate(community, "cp.channel_id") + " AND " + civ_clause +
 		" AND civ IS NOT NULL AND civ<>''"
 		+ (" AND at >= %s" if params else "") +
 		" GROUP BY civ ORDER BY wins DESC, games DESC LIMIT 30",
@@ -2279,37 +2770,64 @@ async def handle_player_stats(request):
 		"FROM match_players pm JOIN matches m "
 		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
 		"JOIN civ_picks oc ON oc.bot_match_id=m.match_id AND oc.team<>pm.team "
-		"WHERE pm.user_id=%s AND m.ranked=1 AND oc.civ IS NOT NULL AND oc.civ<>''" + at_clause +
+		"WHERE pm.user_id=%s AND m.ranked=1 AND oc.civ IS NOT NULL AND oc.civ<>'' AND "
+		+ _community_channel_predicate(community, "m.channel_id") + " AND "
+		+ _community_channel_predicate(community, "oc.channel_id") + at_clause +
 		" GROUP BY oc.civ ORDER BY wins DESC, games DESC LIMIT 30",
 		base_args)
-	matches = await db.fetchall(
-		"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, m.winner, m.maps, pm.team, rm.duration_s "
-		"FROM match_players pm JOIN matches m "
-		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"LEFT JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
-		"WHERE pm.user_id=%s" + at_clause +
-		" ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50",
-		base_args)
-	impact_match_rows = await db.fetchall(
-		"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
-		"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
-		"JOIN replay_matches rm ON rm.bot_match_id=m.match_id "
-		"WHERE pm.user_id=%s" + at_clause,
-		base_args)
-	period_impacts = await _match_impacts([r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+	if _replay_dashboard_enabled():
+		matches = await db.fetchall(
+			"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, "
+			"m.winner, m.maps, pm.team, rm.duration_s "
+			"FROM match_players pm JOIN matches m "
+			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+			"LEFT JOIN match_replays mr ON mr.match_id=m.match_id "
+			f"AND mr.community_id={community.sql_id} "
+			"LEFT JOIN replay_matches rm ON rm.replay_match_id=mr.replay_match_id "
+			"WHERE pm.user_id=%s AND "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause
+			+ " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50", base_args)
+		impact_match_rows = await db.fetchall(
+			"SELECT DISTINCT m.match_id FROM match_players pm JOIN matches m "
+			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+			"JOIN match_replays mr ON mr.match_id=m.match_id "
+			f"AND mr.community_id={community.sql_id} "
+			"WHERE pm.user_id=%s AND "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause,
+			base_args)
+		period_impacts = await _match_impacts(
+			community, [r["match_id"] for r in impact_match_rows or []], user_id, profile_ids)
+	else:
+		matches = await db.fetchall(
+			"SELECT m.match_id, m.queue_name, m.reported_at AS at, m.ranked, "
+			"m.winner, m.maps, pm.team FROM match_players pm JOIN matches m "
+			"ON m.match_id=pm.match_id AND m.channel_id=pm.channel_id "
+			"WHERE pm.user_id=%s AND "
+			+ _community_channel_predicate(community, "m.channel_id") + at_clause
+			+ " ORDER BY m.reported_at DESC, m.match_id DESC LIMIT 50", base_args)
+		period_impacts = {}
 	impact_profile = _player_impact_profile(period_impacts.values(), civs, durations)
-	scouting = await _player_scouting_report(user_id)
-	strategy_profile = await _player_strategy_profile(user_id, profile_ids, period)
+	scouting = (
+		await _player_scouting_report(user_id, community)
+		if _replay_dashboard_enabled() else None)
+	strategy_profile = (
+		await _player_strategy_profile(community, user_id, profile_ids, period)
+		if _replay_dashboard_enabled() else {
+			"games": 0, "summary": "Replay-derived strategy analysis is paused.",
+			"army_mix": [], "top_units": [], "eco_techs": [], "army_techs": [],
+		})
 	match_civs = {}
 	opp_match_civs = {}
 	match_rosters = {}
 	if matches:
 		match_ids = [r["match_id"] for r in matches]
 		match_id_clause = ",".join(["%s"] * len(match_ids))
-		match_rosters = await _match_rosters(match_ids)
+		match_rosters = await _match_rosters(community, match_ids)
 		civ_rows = await db.fetchall(
 			"SELECT bot_match_id, civ FROM civ_picks WHERE bot_match_id IN ("
-			+ match_id_clause + ") AND " + civ_clause,
+			+ match_id_clause + ") AND "
+			+ _community_channel_predicate(community, "civ_picks.channel_id")
+			+ " AND " + civ_clause,
 			[*match_ids, *civ_args])
 		for r in civ_rows or []:
 			if r.get("civ") and r["bot_match_id"] not in match_civs:
@@ -2319,16 +2837,19 @@ async def handle_player_stats(request):
 			"FROM match_players pm JOIN civ_picks oc "
 			"ON oc.bot_match_id=pm.match_id AND oc.team<>pm.team "
 			"WHERE pm.user_id=%s AND pm.match_id IN (" + match_id_clause + ") "
-			"AND oc.civ IS NOT NULL AND oc.civ<>'' GROUP BY oc.bot_match_id",
+			"AND " + _community_channel_predicate(community, "pm.channel_id")
+			+ " AND " + _community_channel_predicate(community, "oc.channel_id")
+			+ " AND oc.civ IS NOT NULL AND oc.civ<>'' GROUP BY oc.bot_match_id",
 			[user_id, *match_ids])
 		opp_match_civs = {r["bot_match_id"]: r["civs"] for r in opp_rows or []}
 	return web.json_response({
+		"community": community.payload(),
 		"period": period,
 		"commentary": commentary,
 		"summary": {
 			"user_id": str(user_id),
 			"nick": (summary or {}).get("nick") or str(user_id),
-			"avatar": _avatar_for_user_id(user_id),
+			"avatar": _avatar_for_user_id(user_id, community),
 			"profile_ids": profile_ids,
 			**rating,
 			"games": int((summary or {}).get("games") or 0),
@@ -2341,18 +2862,18 @@ async def handle_player_stats(request):
 			"scouting_report": scouting,
 			"strategy_profile": strategy_profile,
 			"strategy_tags": strategy_tags,
-			"best_ally": _best_relationship(allies, "ally"),
-			"worst_ally": _best_relationship(allies, "worst_ally"),
-			"worst_enemy": _best_relationship(opponents, "enemy"),
-			"easiest_enemy": _best_relationship(opponents, "easy_enemy"),
+			"best_ally": _best_relationship(allies, "ally", community),
+			"worst_ally": _best_relationship(allies, "worst_ally", community),
+			"worst_enemy": _best_relationship(opponents, "enemy", community),
+			"easiest_enemy": _best_relationship(opponents, "easy_enemy", community),
 		},
-		"allies": [_relationship_payload(r) for r in allies or []],
+		"allies": [_relationship_payload(r, community) for r in allies or []],
 		"rating_history": rating_history,
 		"opponents": [
 			{"user_id": str(r["user_id"]), "nick": r["nick"] or str(r["user_id"]),
 			 "games": int(r["games"] or 0), "wins": int(r["wins"] or 0),
 			 "losses": int(r["losses"] or 0), "winrate": _winrate(r["wins"], r["losses"]),
-			 "avatar": _avatar_for_user_id(r["user_id"])}
+				 "avatar": _avatar_for_user_id(r["user_id"], community)}
 			for r in opponents or []
 		],
 		"durations": [
@@ -2410,6 +2931,18 @@ async def handle_auth_login(request):
 	raise web.HTTPFound(f"{DISCORD_OAUTH_AUTHORIZE}?{urlencode(params)}")
 
 
+async def _consume_oauth_state(state, now):
+	"""Atomically validate and spend one OAuth state token."""
+	async with db.transaction() as tx:
+		row = await tx.fetchone(
+			"SELECT state, expires_at FROM web_oauth_states WHERE state=%s FOR UPDATE",
+			[state])
+		if row is None:
+			return False
+		await tx.execute("DELETE FROM web_oauth_states WHERE state=%s", [state])
+		return int(row["expires_at"]) >= int(now)
+
+
 async def handle_auth_callback(request):
 	if not _oauth_enabled():
 		raise web.HTTPBadRequest(text="OAuth not configured")
@@ -2421,22 +2954,8 @@ async def handle_auth_callback(request):
 	state = request.query.get("state")
 	if not state:
 		raise web.HTTPBadRequest(text="Invalid or expired state parameter")
-	state_row = await db.select_one(
-		('state', 'expires_at'), 'web_oauth_states', where={'state': state}
-	)
-	if not state_row or state_row['expires_at'] < int(time.time()):
-		# Clean up the stale row if it exists — keeps the table tight
-		if state_row:
-			try:
-				await db.delete('web_oauth_states', where={'state': state})
-			except Exception:
-				pass
+	if not await _consume_oauth_state(state, int(time.time())):
 		raise web.HTTPBadRequest(text="Invalid or expired state parameter")
-	# Single-use — delete immediately to prevent replay
-	try:
-		await db.delete('web_oauth_states', where={'state': state})
-	except Exception:
-		pass
 
 	root_url = _get_root_url(request)
 	redirect_uri = f"{root_url}/auth/callback"
@@ -2477,7 +2996,9 @@ async def handle_auth_callback(request):
 
 	resp = web.HTTPFound("/")
 	is_secure = root_url.startswith("https://")
-	resp.set_cookie(COOKIE_NAME, session_id, max_age=SESSION_LIFETIME, httponly=True, samesite="Lax", secure=is_secure)
+	resp.set_cookie(
+		COOKIE_NAME, session_id, max_age=SESSION_LIFETIME, path="/",
+		httponly=True, samesite="Lax", secure=is_secure)
 	raise resp
 
 
@@ -2489,8 +3010,8 @@ async def handle_auth_logout(request):
 		except Exception:
 			pass
 	resp = web.HTTPFound("/")
-	resp.del_cookie(COOKIE_NAME)
-	resp.del_cookie(_LEGACY_COOKIE_NAME)
+	resp.del_cookie(COOKIE_NAME, path="/")
+	resp.del_cookie(_LEGACY_COOKIE_NAME, path="/")
 	raise resp
 
 
@@ -2525,29 +3046,1520 @@ async def handle_api_me(request):
 	})
 
 
+async def _admin_communities_for_session(session):
+	rows = await db.select(
+		["community_id", "guild_id", "name", "retention"], "communities")
+	links = await db.select(["community_id", "channel_id"], "community_channels")
+	channel_ids = {}
+	for link in links or []:
+		channel_ids.setdefault(int(link["community_id"]), set()).add(int(link["channel_id"]))
+	communities = []
+	for row in rows or []:
+		admin, error = await _authorized_admin_row(row, session)
+		if error is not None:
+			continue
+		enrolled = channel_ids.get(admin.community.community_id, set())
+		configured = sum(
+			1 for channel_id, qc in dc.app.channels.items()
+			if channel_id in enrolled and int(qc.guild_id) == admin.community.guild_id)
+		communities.append(admin.payload(configured))
+	return sorted(communities, key=lambda item: item["name"].lower())
+
+
+def _overview_count(row, key):
+	return int((row or {}).get(key) or 0)
+
+
+def _overview_step(key, title, complete, detail, *, required=True, action=None):
+	return {
+		"key": key,
+		"title": title,
+		"status": "complete" if complete else ("required" if required else "recommended"),
+		"required": required,
+		"detail": detail,
+		"action": action,
+	}
+
+
+def _overview_capability(key, title, status, summary, *, scope, configurable, metrics=None, note=None):
+	return {
+		"key": key,
+		"title": title,
+		"status": status,
+		"scope": scope,
+		"configurable": configurable,
+		"summary": summary,
+		"metrics": metrics or {},
+		"note": note,
+	}
+
+
+async def _admin_community_overview(admin):
+	"""Setup, feature scope and diagnostics for one authorized tenant.
+
+	Every stored count crosses `community_id` or `community_channels`; global
+	identity/replay tables are never counted on their own. Runtime feature state
+	is labelled by its real control scope (queue, channel, or deployment) so the
+	settings UI does not promise a tenant switch that does not exist.
+	"""
+	community_id = admin.community.community_id
+	enrolled = await _community_channel_ids(community_id)
+	loaded = {
+		int(channel_id): qc for channel_id, qc in dc.app.channels.items()
+		if int(channel_id) in enrolled and int(qc.guild_id) == admin.community.guild_id
+	}
+	queues = [queue for qc in loaded.values() for queue in qc.queues]
+	ranked_queues = [queue for queue in queues if bool(getattr(queue.cfg, "ranked", False))]
+	prediction_queues = [
+		queue for queue in ranked_queues
+		if bool(getattr(queue.cfg, "predictions_enabled", False))
+	]
+
+	ratings = await db.fetchone(
+		"SELECT COUNT(DISTINCT pr.user_id) AS players, "
+		"COUNT(DISTINCT CASE WHEN i.profile_id IS NOT NULL THEN pr.user_id END) AS linked_players, "
+		"COUNT(DISTINCT i.profile_id) AS linked_profiles "
+		"FROM player_ratings pr "
+		"JOIN community_channels cc ON cc.channel_id=pr.channel_id "
+		"LEFT JOIN identities i ON i.user_id=pr.user_id "
+		"WHERE cc.community_id=%s",
+		[community_id])
+	matches = await db.fetchone(
+		"SELECT COUNT(DISTINCT m.match_id) AS matches, MAX(m.reported_at) AS last_match_at "
+		"FROM matches m JOIN community_channels cc ON cc.channel_id=m.channel_id "
+		"WHERE cc.community_id=%s",
+		[community_id])
+	replays = await db.fetchone(
+		"SELECT COUNT(*) AS linked_replays, SUM(ri.status='done') AS parsed_replays, "
+		"SUM(ri.status IN ('unavailable','parse_failed','gave_up','pending_parser_update')) "
+		"AS attention_replays FROM ("
+		"SELECT DISTINCT replay_match_id FROM match_replays WHERE community_id=%s"
+		") tenant_replays LEFT JOIN replay_ingest ri "
+		"ON ri.replay_match_id=tenant_replays.replay_match_id",
+		[community_id])
+	predictions = await db.fetchone(
+		"SELECT COUNT(*) AS posts, SUM(pp.status='open') AS open_posts, "
+		"SUM(pp.status='resolved') AS resolved_posts "
+		"FROM prediction_posts pp JOIN community_channels cc ON cc.channel_id=pp.channel_id "
+		"WHERE cc.community_id=%s",
+		[community_id])
+	lobbies = await db.fetchone(
+		"SELECT COUNT(*) AS tracked_lobbies, SUM(l.launched_at IS NOT NULL) AS launched_lobbies, "
+		"SUM(l.status IN ('created','filling','verifying','in_progress')) AS active_lobbies "
+		"FROM lobbies l JOIN community_channels cc ON cc.channel_id=l.channel_id "
+		"WHERE cc.community_id=%s",
+		[community_id])
+	gold = await db.fetchone(
+		"SELECT COUNT(*) AS holders FROM gold_balances WHERE community_id=%s",
+		[community_id])
+	quiz_rows = await db.fetchall(
+		"SELECT qs.channel_id, qs.enabled, qs.quiz_hour, qs.open_window "
+		"FROM quiz_settings qs JOIN community_channels cc ON cc.channel_id=qs.channel_id "
+		"WHERE cc.community_id=%s ORDER BY qs.channel_id",
+		[community_id]) or []
+
+	player_count = _overview_count(ratings, "players")
+	linked_players = _overview_count(ratings, "linked_players")
+	linked_profiles = _overview_count(ratings, "linked_profiles")
+	match_count = _overview_count(matches, "matches")
+	linked_replays = _overview_count(replays, "linked_replays")
+	parsed_replays = _overview_count(replays, "parsed_replays")
+	attention_replays = _overview_count(replays, "attention_replays")
+	quiz_enabled = [row for row in quiz_rows if bool(row.get("enabled"))]
+
+	rating_required = bool(ranked_queues)
+	steps = [
+		_overview_step(
+			"channels", "Connect a pickup channel", bool(loaded),
+			f"{len(loaded)} configured channel(s) are loaded in this community."),
+		_overview_step(
+			"queues", "Create a pickup queue", bool(queues),
+			f"{len(queues)} queue(s) are available across the loaded channels."),
+		_overview_step(
+			"history", "Migrate historical matches (optional)", bool(match_count),
+			(f"{match_count} recorded match(es) are already available."
+			 if match_count else "Import a complete Pubobot export before this community starts playing."),
+			required=False, action="migrate_history" if loaded and not match_count else None),
+		_overview_step(
+			"ratings", "Seed player ratings", bool(player_count) or not rating_required,
+			(f"{player_count} player(s) currently have a seeded rating."
+			 if rating_required else "No ranked queue currently requires a rating seed."),
+			required=rating_required, action="seed_ratings" if rating_required else None),
+		_overview_step(
+			"identities", "Link Discord users to AoE2 profiles", bool(linked_profiles),
+			f"{linked_players} player(s) are linked to {linked_profiles} AoE2 profile(s).",
+			required=False, action="map_identities"),
+	]
+	required_steps = [step for step in steps if step["required"]]
+	completed_required = sum(step["status"] == "complete" for step in required_steps)
+
+	if not ranked_queues:
+		prediction_status = "unavailable"
+	elif not prediction_queues:
+		prediction_status = "disabled"
+	elif len(prediction_queues) == len(ranked_queues):
+		prediction_status = "active"
+	else:
+		prediction_status = "partial"
+	quiz_status = "active" if quiz_enabled else ("disabled" if quiz_rows else "not_configured")
+	policy = await community_store.get_policy(community_id)
+	replay_requested = policy["replay_analysis_enabled"]
+	replay_available = community_store.replay_pipeline_available()
+	if community_store.deployment_mode() == "hosted":
+		replay_status = "unavailable_on_hosted"
+	elif not bool(getattr(cfg, "REPLAY_INGEST_ENABLED", False)):
+		replay_status = "deployment_disabled"
+	elif not replay_requested:
+		replay_status = "disabled"
+	else:
+		replay_status = "active"
+	capabilities = [
+		_overview_capability(
+			"pickup", "Pickup games", "active" if queues else "setup_required",
+			"Queue formation, check-in and match reporting.", scope="community",
+			configurable=True, metrics={"channels": len(loaded), "queues": len(queues)}),
+		_overview_capability(
+			"ratings", "Ratings", "active" if ranked_queues and player_count else "setup_required",
+			"Per-channel ratings for ranked queues.", scope="channel", configurable=True,
+			metrics={"ranked_queues": len(ranked_queues), "players": player_count}),
+		_overview_capability(
+			"predictions", "Flash predictions", prediction_status,
+			"Audience gold betting on ranked matches.", scope="queue", configurable=True,
+			metrics={"enabled_queues": len(prediction_queues), "ranked_queues": len(ranked_queues),
+			         "posts": _overview_count(predictions, "posts"),
+			         "open_posts": _overview_count(predictions, "open_posts")}),
+		_overview_capability(
+			"gold", "Gold economy", "active" if _overview_count(gold, "holders") else "available",
+			"Automatic balances used by predictions and quiz rewards.", scope="community",
+			configurable=False, metrics={"holders": _overview_count(gold, "holders")}),
+		_overview_capability(
+			"quiz", "Daily quiz", quiz_status,
+			"Scheduled AoE2 quiz posts and rewards.", scope="community", configurable=True,
+			metrics={"configured_channels": len(quiz_rows), "enabled_channels": len(quiz_enabled)},
+			note="Each community may select one enrolled channel; other communities run independently."),
+		_overview_capability(
+			"lobby", "Lobby tracking", "available" if ranked_queues else "unavailable",
+			"Automatic lobby detection and API-confirmed game starts.", scope="built_in",
+			configurable=False,
+			metrics={"tracked": _overview_count(lobbies, "tracked_lobbies"),
+			         "launched": _overview_count(lobbies, "launched_lobbies"),
+			         "active": _overview_count(lobbies, "active_lobbies")}),
+		_overview_capability(
+			"replay_analysis", "Replay analysis", replay_status,
+			"Replay parsing, classifications and scouting rollups.", scope="community",
+			configurable=replay_available,
+			metrics={"linked": linked_replays, "parsed": parsed_replays,
+			         "attention": attention_replays},
+			note=("Replay compute is available only on self-hosted installations; "
+			      "the deployment switch remains the operator's upper bound.")),
+		_overview_capability(
+			"public_dashboard", "Public dashboard", policy["dashboard_visibility"],
+			"Community-scoped leaderboards and player statistics.", scope="community",
+			configurable=True, metrics={"matches": match_count}),
+	]
+
+	loaded_for_guild = {
+		int(channel_id) for channel_id, qc in dc.app.channels.items()
+		if int(qc.guild_id) == admin.community.guild_id
+	}
+	enrolled_not_loaded = enrolled - set(loaded)
+	loaded_not_enrolled = loaded_for_guild - enrolled
+	discord_unavailable = {
+		channel_id for channel_id in enrolled if dc.get_channel(channel_id) is None
+	}
+	active_matches = sum(
+		1 for match in dc.app.active_matches
+		if int(getattr(getattr(match, "qc", None), "id", 0)) in enrolled)
+	diagnostic_attention = (
+		not bool(dc.app.ready) or not bool(dc.is_ready()) or bool(enrolled_not_loaded)
+		or bool(loaded_not_enrolled) or bool(discord_unavailable) or bool(attention_replays)
+	)
+	return {
+		"community": admin.payload(len(loaded)),
+		"onboarding": {
+			"status": "ready" if completed_required == len(required_steps) else "needs_setup",
+			"completed_required": completed_required,
+			"required_steps": len(required_steps),
+			"steps": steps,
+		},
+		"capabilities": capabilities,
+		"diagnostics": {
+			"status": "attention" if diagnostic_attention else "healthy",
+			"discord_connected": bool(dc.is_ready()),
+			"bot_ready": bool(dc.app.ready),
+			"active_matches": active_matches,
+			"channel_consistency": {
+				"enrolled": len(enrolled),
+				"loaded": len(loaded),
+				"enrolled_not_loaded": len(enrolled_not_loaded),
+				"loaded_not_enrolled": len(loaded_not_enrolled),
+				"discord_unavailable": len(discord_unavailable),
+			},
+			"data": {
+				"players": player_count,
+				"linked_players": linked_players,
+				"linked_profiles": linked_profiles,
+				"matches": match_count,
+				"last_match_at": (matches or {}).get("last_match_at"),
+				"linked_replays": linked_replays,
+				"parsed_replays": parsed_replays,
+				"replays_needing_attention": attention_replays,
+			},
+		},
+	}
+
+
+async def handle_api_communities(request):
+	"""Communities the signed-in user is allowed to administer."""
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	return web.json_response({"communities": await _admin_communities_for_session(session)})
+
+
+async def handle_api_community(request):
+	"""One explicit admin community, used by `/c/{id}/dashboard`."""
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return error
+	channel_ids = await _community_channel_ids(admin.community.community_id)
+	configured = sum(
+		1 for channel_id, qc in dc.app.channels.items()
+		if channel_id in channel_ids and int(qc.guild_id) == admin.community.guild_id)
+	return web.json_response({"community": admin.payload(configured)})
+
+
+async def handle_api_community_overview(request):
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return error
+	return web.json_response(await _admin_community_overview(admin))
+
+
+async def _admin_policy_payload(admin):
+	policy = await community_store.get_policy(admin.community.community_id)
+	mode = community_store.deployment_mode()
+	global_enabled = bool(getattr(cfg, "REPLAY_INGEST_ENABLED", False))
+	available = community_store.replay_pipeline_available()
+	requested = policy["replay_analysis_enabled"]
+	if mode == "hosted":
+		reason = "hosted_unavailable"
+	elif not global_enabled:
+		reason = "deployment_disabled"
+	elif not requested:
+		reason = "community_disabled"
+	else:
+		reason = "active"
+	return {
+		"community": admin.payload(),
+		"deployment": {
+			"mode": mode,
+			"replay_pipeline_enabled": global_enabled,
+			"replay_available": available,
+		},
+		"policy": {
+			"dashboard_visibility": policy["dashboard_visibility"],
+			"allowed_dashboard_visibilities": list(community_store.DASHBOARD_VISIBILITIES),
+			"replay_analysis_requested": requested,
+			"replay_analysis_effective": requested and available,
+			"replay_reason": reason,
+		},
+	}
+
+
+async def handle_api_community_policy(request):
+	"""Read or update tenant privacy and optional-compute preferences."""
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return error
+	if request.method == "GET":
+		return web.json_response(await _admin_policy_payload(admin))
+	if not _check_csrf(request, session):
+		return web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	if not isinstance(payload, dict):
+		return web.json_response({"error": "Request body must be an object"}, status=400)
+	visibility = payload.get("dashboard_visibility")
+	replay_enabled = payload.get("replay_analysis_enabled")
+	if visibility not in community_store.DASHBOARD_VISIBILITIES:
+		return web.json_response(
+			{"error": "dashboard_visibility must be public, members, or admins"}, status=400)
+	if not isinstance(replay_enabled, bool):
+		return web.json_response(
+			{"error": "replay_analysis_enabled must be a boolean"}, status=400)
+	await community_store.set_policy(
+		admin.community.community_id,
+		dashboard_visibility=visibility,
+		replay_analysis_enabled=replay_enabled,
+		updated_by=session["user_id"])
+	return web.json_response(await _admin_policy_payload(admin))
+
+
+async def _admin_quiz_payload(admin):
+	community_id = admin.community.community_id
+	rows = await quiz_store.configs_for_community(community_id)
+	by_channel = {int(row["channel_id"]): row for row in rows}
+	channels = []
+	for channel_id in sorted(await _community_channel_ids(community_id)):
+		channel = dc.get_channel(channel_id)
+		guild = getattr(channel, "guild", None)
+		if channel is None or int(getattr(guild, "id", 0)) != admin.community.guild_id:
+			continue
+		row = by_channel.get(channel_id) or {}
+		channels.append({
+			"id": str(channel_id),
+			"name": getattr(channel, "name", str(channel_id)),
+			"configured": bool(row),
+			"enabled": bool(row.get("enabled")),
+			"quiz_hour": _hour_or_default(row.get("quiz_hour"), 9),
+			"open_window": int(row.get("open_window") or 86400),
+		})
+	active = next((channel for channel in channels if channel["enabled"]), None)
+	return {
+		"community": admin.payload(),
+		"channels": channels,
+		"active_channel_id": active["id"] if active else None,
+		"defaults": {"quiz_hour": 9, "open_window": 86400},
+	}
+
+
+def _hour_or_default(value, default):
+	return default if value is None else int(value)
+
+
+async def handle_api_community_quiz(request):
+	"""Tenant-safe daily quiz channel and schedule settings."""
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return error
+	if request.method == "GET":
+		return web.json_response(await _admin_quiz_payload(admin))
+	if not _check_csrf(request, session):
+		return web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	if not isinstance(payload, dict):
+		return web.json_response({"error": "Request body must be an object"}, status=400)
+	enabled = payload.get("enabled")
+	channel_id = payload.get("channel_id")
+	quiz_hour = payload.get("quiz_hour")
+	open_window = payload.get("open_window")
+	if not isinstance(enabled, bool):
+		return web.json_response({"error": "enabled must be a boolean"}, status=400)
+	if isinstance(channel_id, bool) or not str(channel_id or "").isdigit():
+		return web.json_response({"error": "channel_id must be a positive integer"}, status=400)
+	channel_id = int(channel_id)
+	if channel_id <= 0:
+		return web.json_response({"error": "channel_id must be a positive integer"}, status=400)
+	if isinstance(quiz_hour, bool) or not isinstance(quiz_hour, int) or not 0 <= quiz_hour <= 23:
+		return web.json_response({"error": "quiz_hour must be an integer from 0 to 23"}, status=400)
+	if (isinstance(open_window, bool) or not isinstance(open_window, int)
+			or not 900 <= open_window <= 86400):
+		return web.json_response(
+			{"error": "open_window must be between 900 and 86400 seconds"}, status=400)
+	if channel_id not in await _community_channel_ids(admin.community.community_id):
+		return web.json_response({"error": "Quiz channel not found"}, status=404)
+	channel = dc.get_channel(channel_id)
+	if int(getattr(getattr(channel, "guild", None), "id", 0)) != admin.community.guild_id:
+		return web.json_response({"error": "Quiz channel not found"}, status=404)
+	try:
+		await quiz_store.configure_for_community(
+			admin.community.community_id, channel_id,
+			enabled=enabled, quiz_hour=quiz_hour, open_window=open_window)
+	except ValueError as exc:
+		return web.json_response({"error": str(exc)}, status=400)
+	return web.json_response(await _admin_quiz_payload(admin))
+
+
+def _diagnostic_check(key, title, status, detail, *, metrics=None, action=None):
+	return {
+		"key": key,
+		"title": title,
+		"status": status,
+		"detail": detail,
+		"metrics": metrics or {},
+		"action": action,
+	}
+
+
+async def _admin_community_diagnostics(admin):
+	"""Actionable, aggregate-only checks for one authorized community."""
+	community_id = admin.community.community_id
+	now = int(time.time())
+	enrolled = await _community_channel_ids(community_id)
+	runtime = {
+		int(channel_id) for channel_id, qc in dc.app.channels.items()
+		if int(qc.guild_id) == admin.community.guild_id
+	}
+	loaded = runtime & enrolled
+	discord_missing = {
+		channel_id for channel_id in enrolled if dc.get_channel(channel_id) is None
+	}
+	identity = await db.fetchone(
+		"SELECT COUNT(DISTINCT mp.user_id) AS players, "
+		"COUNT(DISTINCT CASE WHEN i.profile_id IS NOT NULL THEN mp.user_id END) AS linked "
+		"FROM match_players mp "
+		"JOIN matches m ON m.match_id=mp.match_id AND m.channel_id=mp.channel_id "
+		"JOIN community_channels cc ON cc.channel_id=m.channel_id "
+		"LEFT JOIN identities i ON i.user_id=mp.user_id "
+		"WHERE cc.community_id=%s AND m.reported_at>=%s",
+		[community_id, now - resolver.COVERAGE_WINDOW_DAYS * 86400]) or {}
+	replay = await db.fetchone(
+		"SELECT COUNT(*) AS linked, "
+		"SUM(ri.status='done') AS parsed, "
+		"SUM(ri.status IN ('unavailable','parse_failed','gave_up','pending_parser_update')) AS attention "
+		"FROM (SELECT DISTINCT replay_match_id FROM match_replays WHERE community_id=%s) mr "
+		"LEFT JOIN replay_ingest ri ON ri.replay_match_id=mr.replay_match_id",
+		[community_id]) or {}
+	gold_drift = await db.fetchone(
+		"SELECT COUNT(*) AS mismatches FROM ("
+		"SELECT b.user_id FROM gold_balances b LEFT JOIN gold_ledger l "
+		"ON l.community_id=b.community_id AND l.user_id=b.user_id "
+		"WHERE b.community_id=%s GROUP BY b.user_id, b.balance "
+		"HAVING b.balance<>COALESCE(SUM(l.amount),0) "
+		"UNION ALL SELECT l.user_id FROM gold_ledger l LEFT JOIN gold_balances b "
+		"ON b.community_id=l.community_id AND b.user_id=l.user_id "
+		"WHERE l.community_id=%s AND b.user_id IS NULL GROUP BY l.user_id"
+		") tenant_gold_drift",
+		[community_id, community_id]) or {}
+	quiz = await db.fetchone(
+		"SELECT COUNT(*) AS configured, SUM(qs.enabled=1) AS enabled "
+		"FROM quiz_settings qs JOIN community_channels cc ON cc.channel_id=qs.channel_id "
+		"WHERE cc.community_id=%s", [community_id]) or {}
+	predictions = await db.fetchone(
+		"SELECT COUNT(*) AS stuck FROM prediction_posts pp "
+		"JOIN community_channels cc ON cc.channel_id=pp.channel_id "
+		"WHERE cc.community_id=%s AND pp.status='frozen' AND pp.freezes_at<%s",
+		[community_id, now - 13 * 60 * 60]) or {}
+	lobbies = await db.fetchone(
+		"SELECT COUNT(*) AS stale FROM lobbies l "
+		"JOIN community_channels cc ON cc.channel_id=l.channel_id "
+		"WHERE cc.community_id=%s "
+		"AND l.status IN ('created','filling','verifying','in_progress','awaiting_confirm') "
+		"AND l.created_at<%s", [community_id, now - 24 * 60 * 60]) or {}
+	policy = await community_store.get_policy(community_id)
+
+	channel_mismatches = len((enrolled - runtime) | (runtime - enrolled) | discord_missing)
+	players = _overview_count(identity, "players")
+	linked = _overview_count(identity, "linked")
+	attention_replays = _overview_count(replay, "attention")
+	mismatches = _overview_count(gold_drift, "mismatches")
+	quiz_enabled = _overview_count(quiz, "enabled")
+	stuck_predictions = _overview_count(predictions, "stuck")
+	stale_lobbies = _overview_count(lobbies, "stale")
+	checks = [
+		_diagnostic_check(
+			"channels", "Discord channel consistency",
+			"warning" if channel_mismatches else "ok",
+			("Some enrolled channels are missing from the bot runtime or Discord."
+			 if channel_mismatches else "Persisted enrollment, the bot runtime and Discord agree."),
+			metrics={
+				"enrolled": len(enrolled), "loaded": len(loaded),
+				"missing": len((enrolled - runtime) | discord_missing),
+				"unenrolled_runtime": len(runtime - enrolled),
+			}),
+		_diagnostic_check(
+			"identities", "Recent identity coverage",
+			"warning" if players and linked < players else "ok",
+			(f"{linked} of {players} recent players have an AoE2 profile link."
+			 if players else "No recent players need identity coverage yet."),
+			metrics={"players": players, "linked": linked},
+			action={"label": "Map profiles", "target": "map_identities"} if players and linked < players else None),
+		_diagnostic_check(
+			"replays", "Replay processing",
+			"warning" if attention_replays else "ok",
+			(f"{attention_replays} linked replay(s) need operator attention."
+			 if attention_replays else "No linked replay is in an attention state."),
+			metrics={
+				"linked": _overview_count(replay, "linked"),
+				"parsed": _overview_count(replay, "parsed"),
+				"attention": attention_replays,
+			}, action={"label": "Review compute policy", "target": "access_policy"} if attention_replays else None),
+		_diagnostic_check(
+			"gold", "Gold ledger integrity", "critical" if mismatches else "ok",
+			(f"{mismatches} account(s) disagree between the balance cache and append-only ledger; operator repair is required."
+			 if mismatches else "Every cached balance agrees with its ledger sum."),
+			metrics={"mismatches": mismatches}),
+		_diagnostic_check(
+			"quiz", "Quiz configuration", "critical" if quiz_enabled > 1 else "ok",
+			("Multiple quiz channels are enabled; the scheduler is suppressing extras until settings are saved."
+			 if quiz_enabled > 1 else "At most one quiz channel is enabled for this community."),
+			metrics={"configured": _overview_count(quiz, "configured"), "enabled": quiz_enabled},
+			action={"label": "Normalize quiz settings", "target": "quiz"} if quiz_enabled > 1 else None),
+		_diagnostic_check(
+			"background_work", "Background work", "warning" if stuck_predictions or stale_lobbies else "ok",
+			("Old prediction or lobby rows remain non-terminal; inspect deployment logs."
+			 if stuck_predictions or stale_lobbies else "No old prediction or lobby work is stuck."),
+			metrics={"stuck_predictions": stuck_predictions, "stale_lobbies": stale_lobbies}),
+		_diagnostic_check(
+			"deployment", "Deployment boundary", "ok",
+			(f"Mode is {community_store.deployment_mode()}; dashboard visibility is "
+			 f"{policy['dashboard_visibility']}."),
+			metrics={
+				"mode": community_store.deployment_mode(),
+				"replay_effective": policy["replay_analysis_enabled"]
+					and community_store.replay_pipeline_available(),
+			}, action={"label": "Access & compute", "target": "access_policy"}),
+	]
+	critical = sum(check["status"] == "critical" for check in checks)
+	warnings = sum(check["status"] == "warning" for check in checks)
+	return {
+		"community": admin.payload(len(loaded)),
+		"status": "critical" if critical else ("warning" if warnings else "healthy"),
+		"summary": {"critical": critical, "warnings": warnings, "checks": len(checks)},
+		"checks": checks,
+		"generated_at": now,
+	}
+
+
+async def handle_api_community_diagnostics(request):
+	session = await _get_session(request)
+	if not session:
+		return web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return error
+	return web.json_response(await _admin_community_diagnostics(admin))
+
+
+def _seed_member_name(guild, user_id):
+	if not user_id:
+		return ""
+	member = guild.get_member(user_id)
+	if member is None:
+		return ""
+	return str(
+		getattr(member, "display_name", None)
+		or getattr(member, "nick", None)
+		or getattr(member, "name", None)
+		or ""
+	).strip()
+
+
+async def _rating_seed_preview(context, payload):
+	"""Parse once, resolve existing rows once, and build apply-ready statuses."""
+	parsed = onboarding.parse_seed_payload(payload, context.rating.init_deviation)
+	digest = onboarding.seed_digest(context.target_channel_id, parsed)
+	existing_rows = await db.select(
+		["user_id", "nick", "rating", "deviation"],
+		"player_ratings", where={"channel_id": context.target_channel_id})
+	existing = {int(row["user_id"]): row for row in existing_rows or []}
+	prepared = []
+	summary = {"received": len(parsed["rows"]), "ready": 0, "new": 0,
+	           "unrated": 0, "existing": 0, "invalid": 0}
+	for source_row in parsed["rows"]:
+		row = dict(source_row)
+		member_name = _seed_member_name(context.channel.admin.guild, row["user_id"])
+		write_nick = row["nick"] or member_name
+		current = existing.get(row["user_id"])
+		if row["errors"]:
+			status = "invalid"
+			message = " ".join(row["errors"])
+		elif current is None:
+			status = "new"
+			message = "Ready to add."
+		elif current.get("rating") is None:
+			status = "unrated"
+			message = "Existing unrated player; rating fields can be initialized safely."
+		else:
+			status = "existing"
+			message = f"Already rated at {int(current['rating'])}; this import will not overwrite it."
+
+		summary[status] += 1
+		if status in ("new", "unrated"):
+			summary["ready"] += 1
+		prepared.append({
+			**row,
+			"status": status,
+			"message": message,
+			"member_name": member_name,
+			"write_nick": write_nick,
+			"current_rating": current.get("rating") if current else None,
+		})
+
+	public_rows = []
+	for row in prepared:
+		public_rows.append({
+			key: value for key, value in row.items()
+			if key not in ("errors", "write_nick")
+		})
+	return {
+		"community": context.channel.admin.payload(),
+		"target": {
+			"pickup_channel_id": str(context.channel.channel_id),
+			"pickup_channel_name": context.channel.channel.name,
+			"rating_channel_id": str(context.target_channel_id),
+			"rating_channel_name": getattr(context.target_channel, "name", str(context.target_channel_id)),
+			"rating_system": type(context.rating).__name__.removesuffix("Rating"),
+			"initial_rating": int(context.rating.init_rp),
+			"initial_deviation": int(context.rating.init_deviation),
+		},
+		"source": parsed["name"],
+		"summary": summary,
+		"rows": public_rows,
+		"digest": digest,
+		"can_apply": summary["invalid"] == 0 and summary["ready"] > 0,
+	}, prepared
+
+
+async def _rating_seed_request(request):
+	session = await _get_session(request)
+	if not session:
+		return None, web.json_response({"error": "Not logged in"}, status=401)
+	context, error = await _admin_rating_context(request, session)
+	if error is not None:
+		return None, error
+	if not _check_csrf(request, session):
+		return None, web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return None, web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	try:
+		preview, prepared = await _rating_seed_preview(context, payload)
+	except onboarding.SeedInputError as exc:
+		return None, web.json_response({"error": str(exc)}, status=400)
+	return (session, context, payload, preview, prepared), None
+
+
+async def handle_api_rating_seed_preview(request):
+	result, error = await _rating_seed_request(request)
+	if error is not None:
+		return error
+	return web.json_response(result[3])
+
+
+async def handle_api_rating_seed_apply(request):
+	result, error = await _rating_seed_request(request)
+	if error is not None:
+		return error
+	session, context, payload, preview, prepared = result
+	provided_digest = payload.get("digest") if isinstance(payload, dict) else None
+	if not isinstance(provided_digest, str) or not secrets.compare_digest(provided_digest, preview["digest"]):
+		return web.json_response({"error": "Import changed after preview; preview it again"}, status=409)
+	if preview["summary"]["invalid"]:
+		return web.json_response({"error": "Fix every invalid row before applying the import"}, status=400)
+	if not preview["can_apply"]:
+		return web.json_response({"error": "No new or unrated players remain to seed"}, status=409)
+
+	now = int(time.time())
+	applied = 0
+	raced_out = 0
+	applied_user_ids = []
+	reason = f"web onboarding seed by {int(session['user_id'])}"
+	try:
+		async with db.transaction() as tx:
+			for row in prepared:
+				if row["status"] not in ("new", "unrated"):
+					continue
+				if row["status"] == "new":
+					write_nick = row["write_nick"] or f"Discord user {row['user_id']}"
+					changed = await tx.insert("player_ratings", {
+						"channel_id": context.target_channel_id,
+						"user_id": row["user_id"],
+						"nick": write_nick,
+						"rating": row["rating"],
+						"deviation": row["deviation"],
+						"wins": 0,
+						"losses": 0,
+						"draws": 0,
+						"streak": 0,
+					}, on_duplicate="ignore")
+				else:
+					# Empty means "preserve the nick already on this unrated
+					# row", not "replace it with a generated placeholder".
+					write_nick = row["write_nick"]
+					changed = await tx.execute(
+						"UPDATE player_ratings SET "
+						"nick=IF(%s='',nick,%s), rating=%s, deviation=%s "
+						"WHERE channel_id=%s AND user_id=%s AND rating IS NULL",
+						[write_nick, write_nick, row["rating"], row["deviation"],
+						 context.target_channel_id, row["user_id"]])
+				if not changed:
+					raced_out += 1
+					continue
+				await tx.insert("rating_history", {
+					"channel_id": context.target_channel_id,
+					"user_id": row["user_id"],
+					"at": now,
+					"rating_before": int(context.rating.init_rp),
+					"rating_change": row["rating"] - int(context.rating.init_rp),
+					"deviation_before": int(context.rating.init_deviation),
+					"deviation_change": row["deviation"] - int(context.rating.init_deviation),
+					"match_id": None,
+					"reason": reason,
+				})
+				applied += 1
+				applied_user_ids.append(row["user_id"])
+	except Exception as exc:
+		log.error(
+			f"Rating onboarding failed for community={context.channel.admin.community.community_id} "
+			f"channel={context.target_channel_id}: {exc}")
+		return web.json_response({"error": "Rating seed could not be applied"}, status=500)
+
+	# Keep the existing slash-command behavior: after a successful seed, apply
+	# configured rating roles/nick prefixes for members currently in the guild.
+	members = [context.channel.admin.guild.get_member(user_id) for user_id in applied_user_ids]
+	members = [member for member in members if member is not None]
+	if members and callable(getattr(context.channel.queue_channel, "update_rating_roles", None)):
+		try:
+			await context.channel.queue_channel.update_rating_roles(*members)
+		except Exception as exc:
+			# The rating transaction is already committed. Role/nickname sync is
+			# a follow-up convenience and must not turn a successful seed into a
+			# false 500 that invites the admin to retry it.
+			log.error(
+				f"Rating onboarding role sync failed for channel={context.target_channel_id}: {exc}")
+	return web.json_response({
+		"ok": True,
+		"applied": applied,
+		"skipped_after_preview": raced_out,
+		"rating_channel_id": str(context.target_channel_id),
+	})
+
+
+_MAX_TEAM_RATING_PROFILES = 200
+_TEAM_RATING_FETCH_CONCURRENCY = 6
+
+
+class _TeamRatingSeedPreflightError(RuntimeError):
+	pass
+
+
+async def _fetch_team_rating_profiles(profile_ids):
+	semaphore = asyncio.Semaphore(_TEAM_RATING_FETCH_CONCURRENCY)
+
+	async def fetch_one(profile_id):
+		async with semaphore:
+			status, data = await lobby_api.fetch_profile_team_rating(profile_id)
+			return profile_id, status, data
+
+	tasks = {
+		asyncio.create_task(fetch_one(profile_id)): profile_id
+		for profile_id in profile_ids
+	}
+	done, pending = await asyncio.wait(tasks, timeout=45)
+	results = []
+	for task in done:
+		try:
+			results.append(task.result())
+		except Exception:
+			results.append((tasks[task], "unavailable", None))
+	for task in pending:
+		task.cancel()
+		results.append((tasks[task], "unavailable", None))
+	if pending:
+		await asyncio.gather(*pending, return_exceptions=True)
+	return sorted(results)
+
+
+async def _team_rating_seed_preview(context):
+	"""Observe linked members' ranked-team ratings and build an insert-only seed."""
+	pickup = context.channel
+	identity_rows = await db.select(
+		["profile_id", "user_id", "aoe2_name"], "identities")
+	profiles_by_user = {}
+	member_names = {}
+	for row in identity_rows or []:
+		user_id = row.get("user_id")
+		if user_id is None:
+			continue
+		user_id = int(user_id)
+		member = pickup.admin.guild.get_member(user_id)
+		if member is None or bool(getattr(member, "bot", False)):
+			continue
+		profiles_by_user.setdefault(user_id, []).append(int(row["profile_id"]))
+		member_names[user_id] = _seed_member_name(pickup.admin.guild, user_id)
+
+	existing_rows = await db.select(
+		["user_id", "nick", "rating", "deviation"],
+		"player_ratings", where={"channel_id": context.target_channel_id})
+	existing = {int(row["user_id"]): row for row in existing_rows or []}
+	eligible_users = {
+		user_id for user_id in profiles_by_user
+		if user_id not in existing or existing[user_id].get("rating") is None
+	}
+	profile_ids = sorted({
+		profile_id for user_id, ids in profiles_by_user.items()
+		if user_id in eligible_users for profile_id in ids
+	})
+	blockers = []
+	if not profiles_by_user:
+		blockers.append("No current community member has a linked AoE2 profile.")
+	if len(profile_ids) > _MAX_TEAM_RATING_PROFILES:
+		blockers.append(
+			f"This community has more than {_MAX_TEAM_RATING_PROFILES} linked profiles; "
+			"use CSV onboarding for this initial seed.")
+
+	already = await db.select_one(
+		["import_id", "created_at", "player_count"], "community_imports",
+		where={"channel_id": pickup.channel_id, "kind": "aoe_team_rating_seed"})
+	if already:
+		blockers.append("The one-time AoE team-rating seed has already been applied to this channel.")
+	if any(
+		int(getattr(getattr(match, "qc", None), "id", 0)) == pickup.channel_id
+		for match in pickup.queue_channel.app.active_matches):
+		blockers.append("A match is currently active in the target channel.")
+
+	observations = []
+	if profile_ids and len(profile_ids) <= _MAX_TEAM_RATING_PROFILES:
+		observations = await _fetch_team_rating_profiles(profile_ids)
+	by_profile = {
+		profile_id: (status, data) for profile_id, status, data in observations
+	}
+
+	prepared = []
+	summary = {
+		"linked_users": len(profiles_by_user), "profiles": len(profile_ids),
+		"ready": 0, "new": 0, "unrated": 0, "existing": 0,
+		"no_team_rating": 0, "unavailable": 0,
+	}
+	for user_id in sorted(profiles_by_user):
+		current = existing.get(user_id)
+		profiles = []
+		failed = False
+		if current is not None and current.get("rating") is not None:
+			profiles = [{
+				"profile_id": str(profile_id), "name": "", "rating": None,
+				"status": "not_checked",
+			} for profile_id in sorted(profiles_by_user[user_id])]
+		else:
+			for profile_id in sorted(profiles_by_user[user_id]):
+				fetch_status, data = by_profile.get(profile_id, ("unavailable", None))
+				profiles.append({
+					"profile_id": str(profile_id),
+					"name": (data or {}).get("name") or "",
+					"rating": (data or {}).get("rating"),
+					"status": fetch_status,
+				})
+				if fetch_status in ("unavailable", "not_found"):
+					failed = True
+		rated = [profile for profile in profiles if profile["status"] == "ok"]
+		chosen = max(rated, key=lambda profile: (profile["rating"], int(profile["profile_id"]))) if rated else None
+		if current is not None and current.get("rating") is not None:
+			status = "existing"
+			message = f"Already rated at {int(current['rating'])}; this seed will not overwrite it."
+		elif failed:
+			status = "unavailable"
+			message = "At least one linked profile could not be verified; retry when the AoE2 service is available."
+		elif chosen is None:
+			status = "no_team_rating"
+			message = "No linked profile currently has a ranked-team rating."
+		elif current is None:
+			status = "new"
+			message = "Ready to seed from the highest linked ranked-team rating."
+		elif current.get("rating") is None:
+			status = "unrated"
+			message = "Existing unrated player; rating fields can be initialized safely."
+		summary[status] += 1
+		if status in ("new", "unrated"):
+			summary["ready"] += 1
+		prepared.append({
+			"user_id": user_id,
+			"member_name": member_names[user_id],
+			"write_nick": member_names[user_id],
+			"profile_id": int(chosen["profile_id"]) if chosen else None,
+			"rating": chosen["rating"] if chosen else None,
+			"deviation": int(context.rating.init_deviation),
+			"profiles": profiles,
+			"status": status,
+			"message": message,
+			"current_rating": current.get("rating") if current else None,
+		})
+	if summary["unavailable"]:
+		blockers.append(
+			f"{summary['unavailable']} member(s) have a linked profile that could not be verified.")
+
+	digest = onboarding.team_rating_seed_digest(context.target_channel_id, prepared)
+	return {
+		"community": pickup.admin.payload(),
+		"target": {
+			"pickup_channel_id": str(pickup.channel_id),
+			"pickup_channel_name": pickup.channel.name,
+			"rating_channel_id": str(context.target_channel_id),
+			"rating_channel_name": getattr(context.target_channel, "name", str(context.target_channel_id)),
+			"initial_deviation": int(context.rating.init_deviation),
+		},
+		"source": "AoE2 Companion ranked team leaderboard",
+		"leaderboard": "rm_team",
+		"selection_policy": "For members with multiple linked profiles, the highest current ranked-team rating is used.",
+		"summary": summary,
+		"rows": [{key: value for key, value in row.items() if key != "write_nick"} for row in prepared],
+		"blockers": blockers,
+		"digest": digest,
+		"can_apply": summary["ready"] > 0 and not blockers,
+	}, prepared
+
+
+async def _team_rating_seed_request(request):
+	session = await _get_session(request)
+	if not session:
+		return None, web.json_response({"error": "Not logged in"}, status=401)
+	context, error = await _admin_rating_context(request, session)
+	if error is not None:
+		return None, error
+	if not _check_csrf(request, session):
+		return None, web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return None, web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	preview, prepared = await _team_rating_seed_preview(context)
+	return (session, context, payload, preview, prepared), None
+
+
+async def handle_api_team_rating_seed_preview(request):
+	result, error = await _team_rating_seed_request(request)
+	if error is not None:
+		return error
+	return web.json_response(result[3])
+
+
+async def _assert_team_rating_seed_available(tx, context):
+	pickup = context.channel
+	if any(
+		int(getattr(getattr(match, "qc", None), "id", 0)) == pickup.channel_id
+		for match in pickup.queue_channel.app.active_matches):
+		raise _TeamRatingSeedPreflightError("A match started after seed preview.")
+	if await tx.fetchone(
+		"SELECT import_id FROM community_imports "
+		"WHERE channel_id=%s AND kind='aoe_team_rating_seed' FOR UPDATE",
+		[pickup.channel_id]):
+		raise _TeamRatingSeedPreflightError(
+			"The one-time AoE team-rating seed has already been applied to this channel.")
+
+
+async def handle_api_team_rating_seed_apply(request):
+	result, error = await _team_rating_seed_request(request)
+	if error is not None:
+		return error
+	session, context, payload, preview, prepared = result
+	provided_digest = payload.get("digest") if isinstance(payload, dict) else None
+	if not isinstance(provided_digest, str) or not secrets.compare_digest(provided_digest, preview["digest"]):
+		return web.json_response({"error": "Team ratings changed after preview; preview them again"}, status=409)
+	if preview["blockers"]:
+		return web.json_response(
+			{"error": "Team-rating seed preflight is blocked", "blockers": preview["blockers"]},
+			status=409)
+	if not preview["can_apply"]:
+		return web.json_response({"error": "No new or unrated players remain to seed"}, status=409)
+
+	pickup = context.channel
+	now = int(time.time())
+	applied = 0
+	raced_out = 0
+	applied_user_ids = []
+	try:
+		async with pickup.queue_channel.app.match_creation_lock:
+			async with db.transaction() as tx:
+				await _assert_team_rating_seed_available(tx, context)
+				for row in prepared:
+					if row["status"] not in ("new", "unrated"):
+						continue
+					if row["status"] == "new":
+						changed = await tx.insert("player_ratings", {
+							"channel_id": context.target_channel_id,
+							"user_id": row["user_id"],
+							"nick": row["write_nick"] or f"Discord user {row['user_id']}",
+							"rating": row["rating"],
+							"deviation": row["deviation"],
+							"wins": 0, "losses": 0, "draws": 0, "streak": 0,
+						}, on_duplicate="ignore")
+					else:
+						changed = await tx.execute(
+							"UPDATE player_ratings SET nick=IF(%s='',nick,%s), rating=%s, deviation=%s "
+							"WHERE channel_id=%s AND user_id=%s AND rating IS NULL",
+							[row["write_nick"], row["write_nick"], row["rating"], row["deviation"],
+							 context.target_channel_id, row["user_id"]])
+					if not changed:
+						raced_out += 1
+						continue
+					await tx.insert("rating_history", {
+						"channel_id": context.target_channel_id,
+						"user_id": row["user_id"],
+						"at": now,
+						"rating_before": int(context.rating.init_rp),
+						"rating_change": row["rating"] - int(context.rating.init_rp),
+						"deviation_before": int(context.rating.init_deviation),
+						"deviation_change": 0,
+						"match_id": None,
+						"reason": (
+							f"AoE team rating seed by {int(session['user_id'])} "
+							f"from profile {row['profile_id']}"),
+					})
+					applied += 1
+					applied_user_ids.append(row["user_id"])
+				if not applied:
+					raise _TeamRatingSeedPreflightError(
+						"Every eligible player changed after preview; preview the seed again.")
+				await tx.insert("community_imports", {
+					"import_id": preview["digest"],
+					"community_id": pickup.admin.community.community_id,
+					"channel_id": pickup.channel_id,
+					"rating_channel_id": context.target_channel_id,
+					"kind": "aoe_team_rating_seed",
+					"source_name": "AoE2 Companion rm_team",
+					"timezone": "UTC",
+					"created_by": int(session["user_id"]),
+					"created_at": now,
+					"match_count": 0,
+					"player_count": applied,
+				})
+	except _TeamRatingSeedPreflightError as exc:
+		return web.json_response({"error": str(exc)}, status=409)
+	except db.errors.IntegrityError:
+		return web.json_response(
+			{"error": "The one-time team-rating seed was already applied"}, status=409)
+	except Exception as exc:
+		log.error(
+			f"AoE team-rating onboarding failed for community={pickup.admin.community.community_id} "
+			f"channel={context.target_channel_id}: {exc}")
+		return web.json_response({"error": "AoE team-rating seed could not be applied"}, status=500)
+
+	members = [pickup.admin.guild.get_member(user_id) for user_id in applied_user_ids]
+	members = [member for member in members if member is not None]
+	if members and callable(getattr(pickup.queue_channel, "update_rating_roles", None)):
+		try:
+			await pickup.queue_channel.update_rating_roles(*members)
+		except Exception as exc:
+			log.error(
+				f"AoE team-rating seed role sync failed for channel={context.target_channel_id}: {exc}")
+	return web.json_response({
+		"ok": True,
+		"applied": applied,
+		"skipped_after_preview": raced_out,
+		"rating_channel_id": str(context.target_channel_id),
+	})
+
+
+async def _identity_import_preview(admin, payload):
+	"""Validate global identity claims through one authorized Discord guild."""
+	parsed = onboarding.parse_identity_payload(payload)
+	digest = onboarding.identity_digest(admin.community.community_id, parsed)
+	existing_rows = await db.select(
+		["profile_id", "user_id", "confidence", "aoe2_name"], "identities")
+	existing = {int(row["profile_id"]): row for row in existing_rows or []}
+	summary = {
+		"received": len(parsed["rows"]), "ready": 0, "new": 0, "unowned": 0,
+		"existing": 0, "conflict": 0, "not_member": 0, "invalid": 0,
+	}
+	prepared = []
+	members = {}
+	for source_row in parsed["rows"]:
+		row = dict(source_row)
+		member = members.get(row["user_id"])
+		if row["user_id"] is not None and row["user_id"] not in members:
+			try:
+				member = await _member_in_guild(admin.guild, row["user_id"])
+			except Exception:
+				member = None
+			members[row["user_id"]] = member
+		current = existing.get(row["profile_id"])
+		if row["errors"]:
+			status = "invalid"
+			message = " ".join(row["errors"])
+		elif member is None or bool(getattr(member, "bot", False)):
+			status = "not_member"
+			message = "Discord user is not a current non-bot member of this community."
+		elif current is None:
+			status = "new"
+			message = "Ready to link as an additional AoE2 profile."
+		elif current.get("user_id") is None:
+			status = "unowned"
+			message = "Known but unowned profile; ready to link."
+		elif int(current["user_id"]) == row["user_id"]:
+			status = "existing"
+			message = "This profile is already linked to the same Discord user."
+		else:
+			status = "conflict"
+			message = "Profile is already owned by a different Discord user; bulk import cannot reassign it."
+		summary[status] += 1
+		if status in ("new", "unowned"):
+			summary["ready"] += 1
+		prepared.append({
+			**row,
+			"status": status,
+			"message": message,
+			"member_name": str(
+				getattr(member, "display_name", None)
+				or getattr(member, "nick", None)
+				or getattr(member, "name", None)
+				or ""),
+		})
+
+	public_rows = [{key: value for key, value in row.items() if key != "errors"} for row in prepared]
+	return {
+		"community": admin.payload(),
+		"source": parsed["name"],
+		"summary": summary,
+		"rows": public_rows,
+		"digest": digest,
+		"can_apply": (
+			summary["ready"] > 0 and not summary["invalid"]
+			and not summary["not_member"] and not summary["conflict"]),
+		"name_policy": "Imported AoE2 names are preview labels only until observed from the game API or a replay.",
+	}, prepared
+
+
+async def _identity_import_request(request):
+	session = await _get_session(request)
+	if not session:
+		return None, web.json_response({"error": "Not logged in"}, status=401)
+	admin, error = await _admin_community_context(request, session)
+	if error is not None:
+		return None, error
+	if not _check_csrf(request, session):
+		return None, web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return None, web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	try:
+		preview, prepared = await _identity_import_preview(admin, payload)
+	except onboarding.SeedInputError as exc:
+		return None, web.json_response({"error": str(exc)}, status=400)
+	return (session, admin, payload, preview, prepared), None
+
+
+async def handle_api_identity_import_preview(request):
+	result, error = await _identity_import_request(request)
+	if error is not None:
+		return error
+	return web.json_response(result[3])
+
+
+async def handle_api_identity_import_apply(request):
+	result, error = await _identity_import_request(request)
+	if error is not None:
+		return error
+	_session, admin, payload, preview, prepared = result
+	provided_digest = payload.get("digest") if isinstance(payload, dict) else None
+	if not isinstance(provided_digest, str) or not secrets.compare_digest(provided_digest, preview["digest"]):
+		return web.json_response({"error": "Identity import changed after preview; preview it again"}, status=409)
+	if preview["summary"]["invalid"] or preview["summary"]["not_member"]:
+		return web.json_response({"error": "Fix every invalid or non-member row before applying"}, status=400)
+	if preview["summary"]["conflict"]:
+		return web.json_response({"error": "Resolve conflicting profile ownership before applying"}, status=409)
+	if not preview["can_apply"]:
+		return web.json_response({"error": "No new or unowned profiles remain to link"}, status=409)
+
+	now = int(time.time())
+	applied = 0
+	raced_out = 0
+	try:
+		async with db.transaction() as tx:
+			for row in prepared:
+				if row["status"] not in ("new", "unowned"):
+					continue
+				if row["status"] == "new":
+					changed = await tx.insert("identities", {
+						"profile_id": row["profile_id"],
+						"user_id": row["user_id"],
+						# Imported names are not game observations. Keeping this
+						# NULL preserves resolver.py's provenance contract.
+						"aoe2_name": None,
+						"confidence": "manual",
+						"first_seen_at": now,
+						"last_seen_at": now,
+						"bound_at": now,
+					}, on_duplicate="ignore")
+				else:
+					changed = await tx.execute(
+						"UPDATE identities SET user_id=%s, confidence='manual', "
+						"last_seen_at=%s, bound_at=%s "
+						"WHERE profile_id=%s AND user_id IS NULL",
+						[row["user_id"], now, now, row["profile_id"]])
+				if not changed:
+					raced_out += 1
+					continue
+				applied += 1
+	except Exception as exc:
+		log.error(
+			f"Identity onboarding failed for community={admin.community.community_id}: {exc}")
+		return web.json_response({"error": "Identity import could not be applied"}, status=500)
+	if applied:
+		resolver.invalidate_cache()
+	return web.json_response({"ok": True, "applied": applied, "skipped_after_preview": raced_out})
+
+
+class _MigrationPreflightError(RuntimeError):
+	pass
+
+
+def _migration_rating_blockers(existing_rows, source_players):
+	"""Refuse to replace any rating state not created by ratings-only seeding."""
+	source = {int(row["user_id"]): row for row in source_players}
+	blockers = []
+	for current in existing_rows or []:
+		user_id = int(current["user_id"])
+		incoming = source.get(user_id)
+		if incoming is None:
+			blockers.append(f"Existing rated user {user_id} is absent from the archive.")
+			continue
+		activity = any(int(current.get(key) or 0) for key in ("wins", "losses", "draws", "streak"))
+		activity = activity or current.get("last_ranked_match_at") is not None
+		if activity:
+			blockers.append(f"User {user_id} already has live rating activity.")
+			continue
+		if current.get("rating") is None:
+			continue
+		if (int(current["rating"]) != int(incoming.get("rating") or 0)
+		        or int(current.get("deviation") or 0) != int(incoming.get("deviation") or 0)):
+			blockers.append(f"User {user_id} has a rating different from the archive snapshot.")
+	return blockers[:20]
+
+
+async def _pubobot_migration_preview(context, payload):
+	parsed = pubobot_migration.parse_archive(payload)
+	pickup = context.channel
+	import_id = pubobot_migration.migration_digest(
+		pickup.channel_id, context.target_channel_id, parsed)
+	already = await db.select_one(
+		["import_id", "created_at"], "community_imports", where={"import_id": import_id})
+	match_count = await db.fetchone(
+		"SELECT COUNT(*) AS n FROM matches WHERE channel_id=%s", [pickup.channel_id])
+	history_count = await db.fetchone(
+		"SELECT COUNT(*) AS n FROM rating_history WHERE channel_id=%s", [context.target_channel_id])
+	existing_ratings = await db.select(
+		["user_id", "rating", "deviation", "wins", "losses", "draws", "streak", "last_ranked_match_at"],
+		"player_ratings", where={"channel_id": context.target_channel_id})
+	blockers = []
+	if context.target_channel_id != pickup.channel_id:
+		blockers.append("Full history migration requires the pickup channel to own its rating table.")
+	if int((match_count or {}).get("n") or 0):
+		blockers.append("Target pickup channel already contains recorded matches.")
+	if int((history_count or {}).get("n") or 0):
+		blockers.append("Target rating channel already contains rating history.")
+	blockers.extend(_migration_rating_blockers(existing_ratings, parsed["players"]))
+	if already:
+		blockers.append("This exact archive has already been imported into this channel.")
+	if not parsed["matches"] or not parsed["players"]:
+		blockers.append("Archive must contain at least one match and one player.")
+	if any(
+		int(getattr(getattr(match, "qc", None), "id", 0)) == pickup.channel_id
+		for match in pickup.queue_channel.app.active_matches):
+		blockers.append("A match is currently active in the target channel.")
+
+	return {
+		"community": pickup.admin.payload(),
+		"target": {
+			"channel_id": str(pickup.channel_id),
+			"channel_name": pickup.channel.name,
+			"rating_channel_id": str(context.target_channel_id),
+		},
+		"source": parsed["source_name"],
+		"timezone": parsed["timezone"],
+		"summary": {
+			"matches": len(parsed["matches"]),
+			"players": len(parsed["players"]),
+			"player_matches": len(parsed["match_players"]),
+			"rating_history": len(parsed["rating_history"]),
+		},
+		"preflight": {
+			"status": "ready" if not blockers else "blocked",
+			"blockers": blockers,
+			"existing_seed_rows": len(existing_ratings or []),
+			"match_ids": "Source IDs will be remapped into one atomically reserved global range.",
+		},
+		"digest": import_id,
+		"can_apply": not blockers,
+	}, parsed
+
+
+async def _pubobot_migration_request(request):
+	session = await _get_session(request)
+	if not session:
+		return None, web.json_response({"error": "Not logged in"}, status=401)
+	context, error = await _admin_rating_context(request, session)
+	if error is not None:
+		return None, error
+	if not _check_csrf(request, session):
+		return None, web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
+	try:
+		payload = await request.json()
+	except Exception:
+		return None, web.json_response({"error": "Request body must be valid JSON"}, status=400)
+	try:
+		preview, parsed = await _pubobot_migration_preview(context, payload)
+	except pubobot_migration.MigrationInputError as exc:
+		return None, web.json_response({"error": str(exc)}, status=400)
+	return (session, context, payload, preview, parsed), None
+
+
+async def handle_api_pubobot_migration_preview(request):
+	result, error = await _pubobot_migration_request(request)
+	if error is not None:
+		return error
+	return web.json_response(result[3])
+
+
+async def _migration_transaction_preflight(tx, context, parsed, import_id):
+	pickup = context.channel
+	if any(
+		int(getattr(getattr(match, "qc", None), "id", 0)) == pickup.channel_id
+		for match in pickup.queue_channel.app.active_matches):
+		raise _MigrationPreflightError("A match started after migration preview.")
+	if await tx.fetchone(
+			"SELECT import_id FROM community_imports WHERE import_id=%s FOR UPDATE", [import_id]):
+		raise _MigrationPreflightError("This exact archive has already been imported.")
+	match_count = await tx.fetchone(
+		"SELECT COUNT(*) AS n FROM matches WHERE channel_id=%s", [pickup.channel_id])
+	if int((match_count or {}).get("n") or 0):
+		raise _MigrationPreflightError("Target channel received a match after preview.")
+	history_count = await tx.fetchone(
+		"SELECT COUNT(*) AS n FROM rating_history WHERE channel_id=%s", [context.target_channel_id])
+	if int((history_count or {}).get("n") or 0):
+		raise _MigrationPreflightError("Target channel received rating history after preview.")
+	existing = await tx.fetchall(
+		"SELECT user_id, rating, deviation, wins, losses, draws, streak, last_ranked_match_at "
+		"FROM player_ratings WHERE channel_id=%s FOR UPDATE",
+		[context.target_channel_id])
+	blockers = _migration_rating_blockers(existing, parsed["players"])
+	if blockers:
+		raise _MigrationPreflightError(blockers[0])
+
+
+async def handle_api_pubobot_migration_apply(request):
+	result, error = await _pubobot_migration_request(request)
+	if error is not None:
+		return error
+	session, context, payload, preview, parsed = result
+	pickup = context.channel
+	provided_digest = payload.get("digest") if isinstance(payload, dict) else None
+	if not isinstance(provided_digest, str) or not secrets.compare_digest(provided_digest, preview["digest"]):
+		return web.json_response({"error": "Migration archive changed after preview; preview it again"}, status=409)
+	if not preview["can_apply"]:
+		return web.json_response({"error": "Migration preflight is blocked", "blockers": preview["preflight"]["blockers"]}, status=409)
+
+	community_id = pickup.admin.community.community_id
+	import_id = preview["digest"]
+	now = int(time.time())
+	try:
+		async with pickup.queue_channel.app.match_creation_lock:
+			async with db.transaction() as tx:
+				counter = await tx.fetchone("SELECT next_id FROM match_counter FOR UPDATE")
+				if counter is None:
+					maximum = await tx.fetchone(
+						"SELECT COALESCE(MAX(match_id) + 1, 0) AS next_id FROM matches")
+					first_match_id = int((maximum or {}).get("next_id") or 0)
+					await tx.insert("match_counter", {"next_id": first_match_id})
+				else:
+					first_match_id = int(counter["next_id"])
+				await _migration_transaction_preflight(tx, context, parsed, import_id)
+
+				source_ids = sorted(row["source_match_id"] for row in parsed["matches"])
+				match_ids = {source_id: first_match_id + index for index, source_id in enumerate(source_ids)}
+				next_id = first_match_id + len(source_ids)
+				await tx.execute("UPDATE match_counter SET next_id=%s", [next_id])
+
+				matches = [{
+					"match_id": match_ids[row["source_match_id"]],
+					"channel_id": pickup.channel_id,
+					"queue_id": None,
+					"queue_name": row["queue_name"],
+					"reported_at": row["reported_at"],
+					"alpha_name": "Alpha",
+					"beta_name": "Beta",
+					"ranked": 1,
+					"winner": row["winner"],
+					"alpha_score": row["alpha_score"],
+					"beta_score": row["beta_score"],
+					"maps": row["maps"],
+				} for row in parsed["matches"]]
+				players = [{
+					"channel_id": context.target_channel_id,
+					**row,
+				} for row in parsed["players"]]
+				nicks = {row["user_id"]: row["nick"] for row in parsed["players"]}
+				match_players = [{
+					"match_id": match_ids[row["source_match_id"]],
+					"channel_id": pickup.channel_id,
+					"user_id": row["user_id"],
+					"nick": nicks[row["user_id"]],
+					"team": row["team"],
+				} for row in parsed["match_players"]]
+				history = [{
+					"channel_id": context.target_channel_id,
+					"user_id": row["user_id"],
+					"at": row["at"],
+					"rating_before": row["rating_before"],
+					"rating_change": row["rating_change"],
+					"deviation_before": row["deviation_before"],
+					"deviation_change": row["deviation_change"],
+					"match_id": match_ids[row["source_match_id"]] if row["source_match_id"] is not None else None,
+					"reason": row["reason"],
+				} for row in parsed["rating_history"]]
+				mapping = [{
+					"import_id": import_id,
+					"community_id": community_id,
+					"channel_id": pickup.channel_id,
+					"source_match_id": source_id,
+					"match_id": target_id,
+				} for source_id, target_id in match_ids.items()]
+
+				await tx.insert_many("matches", matches)
+				await tx.insert_many("player_ratings", players, on_duplicate="replace")
+				await tx.insert_many("match_players", match_players)
+				await tx.insert_many("rating_history", history)
+				await tx.insert_many("community_import_match_map", mapping)
+				await tx.insert("community_imports", {
+					"import_id": import_id,
+					"community_id": community_id,
+					"channel_id": pickup.channel_id,
+					"rating_channel_id": context.target_channel_id,
+					"kind": "pubobot_full",
+					"source_name": parsed["source_name"],
+					"timezone": parsed["timezone"],
+					"created_by": int(session["user_id"]),
+					"created_at": now,
+					"match_count": len(matches),
+					"player_count": len(players),
+				})
+	except _MigrationPreflightError as exc:
+		return web.json_response({"error": str(exc)}, status=409)
+	except Exception as exc:
+		log.error(
+			f"Historical migration failed for community={community_id} channel={pickup.channel_id}: {exc}")
+		return web.json_response({"error": "Historical migration could not be applied"}, status=500)
+	return web.json_response({
+		"ok": True,
+		"import_id": import_id,
+		"matches": len(parsed["matches"]),
+		"players": len(parsed["players"]),
+		"first_match_id": first_match_id,
+		"next_match_id": next_id,
+	})
+
+
 async def handle_api_guilds(request):
+	"""Legacy alias for the pre-community settings client."""
 	session = await _get_session(request)
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
-	user_id = session["user_id"]
 	guilds = []
-	for guild in dc.guilds:
-		# Only show guilds with configured queue channels
-		qc_ids = [ch_id for ch_id, qc in dc.app.channels.items() if qc.guild_id == guild.id]
-		if not qc_ids:
-			continue
-		try:
-			member = guild.get_member(user_id) or await guild.fetch_member(user_id)
-		except Exception:
-			continue
-		is_admin = any(_check_admin(dc.app.channels[ch_id], member) for ch_id in qc_ids)
+	for community in await _admin_communities_for_session(session):
 		guilds.append({
-			"id": str(guild.id),
-			"name": guild.name,
-			"icon": str(guild.icon.url) if guild.icon else None,
-			"channels": len(qc_ids),
-			"is_admin": is_admin,
+			**community,
+			"community_id": community["id"],
+			"id": community["guild_id"],
 		})
 	return web.json_response({"guilds": guilds})
 
@@ -2557,27 +4569,35 @@ async def handle_api_channels(request):
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
-	guild_id = int(request.match_info["guild_id"])
-	guild = dc.get_guild(guild_id)
-	if not guild:
-		return web.json_response({"error": "Guild not found"}, status=404)
-	try:
-		member = guild.get_member(session["user_id"]) or await guild.fetch_member(session["user_id"])
-	except Exception:
-		return web.json_response({"error": "Not a guild member"}, status=403)
+	guild_id = None
+	if _explicit_community_id(request) is None:
+		guild_id = _positive_route_id(request, "guild_id")
+		if not guild_id:
+			return web.json_response({"error": "Community not found"}, status=404)
+		if dc.get_guild(guild_id) is None:
+			return web.json_response({"error": "Guild not found"}, status=404)
+	admin, error = await _admin_community_context(request, session, guild_id=guild_id)
+	if error is not None:
+		return error
+	enrolled = await _community_channel_ids(admin.community.community_id)
 
 	channels = []
 	for ch_id, qc in dc.app.channels.items():
-		if qc.guild_id != guild_id:
+		if ch_id not in enrolled or int(qc.guild_id) != admin.community.guild_id:
 			continue
 		ch = dc.get_channel(ch_id)
+		if ch is None or int(getattr(getattr(ch, "guild", None), "id", 0)) != admin.community.guild_id:
+			continue
 		channels.append({
 			"id": str(ch_id),
 			"name": ch.name if ch else f"unknown-{ch_id}",
 			"queues": len(qc.queues),
-			"is_admin": _check_admin(qc, member),
+			"is_admin": True,
 		})
-	return web.json_response({"channels": channels})
+	return web.json_response({
+		"community": admin.payload(len(channels)),
+		"channels": channels,
+	})
 
 
 async def handle_api_channel_config(request):
@@ -2585,20 +4605,11 @@ async def handle_api_channel_config(request):
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
-	channel_id = int(request.match_info["channel_id"])
-	qc = dc.app.channels.get(channel_id)
-	if not qc:
-		return web.json_response({"error": "Channel not configured"}, status=404)
-
-	channel = dc.get_channel(channel_id)
-	if not channel:
-		return web.json_response({"error": "Channel not found"}, status=404)
-	try:
-		member = channel.guild.get_member(session["user_id"]) or await channel.guild.fetch_member(session["user_id"])
-	except Exception:
-		return web.json_response({"error": "Not a guild member"}, status=403)
-
-	is_admin = _check_admin(qc, member)
+	context, error = await _admin_channel_context(request, session)
+	if error is not None:
+		return error
+	qc = context.queue_channel
+	channel = context.channel
 
 	if request.method == "GET":
 		readable = qc.cfg.readable()
@@ -2608,22 +4619,21 @@ async def handle_api_channel_config(request):
 				continue
 			variables[name] = _var_meta(var, readable.get(name))
 		return web.json_response({
+			"community": context.admin.payload(),
 			"channel_name": channel.name,
 			"guild_name": channel.guild.name,
 			"sections": qc.cfg_factory.sections,
 			"variables": variables,
-			"is_admin": is_admin,
+			"is_admin": True,
 		})
 
 	# POST — update config
-	# CSRF check first: reject cross-site POSTs before running any admin
-	# or config-mutation logic. Pre-CSRF this endpoint accepted any POST
+	# The community/admin context above is read-only. Check CSRF before parsing
+	# or mutating config. Pre-CSRF this endpoint accepted any POST
 	# with a valid session cookie, so a malicious page could rewrite a
 	# logged-in admin's channel config with no interaction.
 	if not _check_csrf(request, session):
 		return web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
-	if not is_admin:
-		return web.json_response({"error": "Admin access required"}, status=403)
 	try:
 		data = await request.json()
 		filtered = {}
@@ -2649,27 +4659,18 @@ async def handle_api_queues(request):
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
-	channel_id = int(request.match_info["channel_id"])
-	qc = dc.app.channels.get(channel_id)
-	if not qc:
-		return web.json_response({"error": "Channel not configured"}, status=404)
+	context, error = await _admin_channel_context(request, session)
+	if error is not None:
+		return error
+	qc = context.queue_channel
 
-	channel = dc.get_channel(channel_id)
-	if not channel:
-		return web.json_response({"error": "Channel not found"}, status=404)
-	try:
-		# We don't use the member object — we only call fetch_member for
-		# its side effect: raising if the caller isn't actually in the
-		# guild. Assigning to `_` is what tells the linter "the name is
-		# unused on purpose" without losing the membership check.
-		_ = channel.guild.get_member(session["user_id"]) or await channel.guild.fetch_member(session["user_id"])
-	except Exception:
-		return web.json_response({"error": "Not a guild member"}, status=403)
-
-	return web.json_response({"queues": [
-		{"name": q.name, "size": q.cfg.size, "players": len(q.queue), "ranked": bool(q.cfg.ranked)}
-		for q in qc.queues
-	]})
+	return web.json_response({
+		"community": context.admin.payload(),
+		"queues": [
+			{"name": q.name, "size": q.cfg.size, "players": len(q.queue), "ranked": bool(q.cfg.ranked)}
+			for q in qc.queues
+		],
+	})
 
 
 async def handle_api_queue_config(request):
@@ -2677,25 +4678,15 @@ async def handle_api_queue_config(request):
 	if not session:
 		return web.json_response({"error": "Not logged in"}, status=401)
 
-	channel_id = int(request.match_info["channel_id"])
 	queue_name = request.match_info["queue_name"]
-	qc = dc.app.channels.get(channel_id)
-	if not qc:
-		return web.json_response({"error": "Channel not configured"}, status=404)
-
-	channel = dc.get_channel(channel_id)
-	if not channel:
-		return web.json_response({"error": "Channel not found"}, status=404)
-	try:
-		member = channel.guild.get_member(session["user_id"]) or await channel.guild.fetch_member(session["user_id"])
-	except Exception:
-		return web.json_response({"error": "Not a guild member"}, status=403)
+	context, error = await _admin_channel_context(request, session)
+	if error is not None:
+		return error
+	qc = context.queue_channel
 
 	queue = next((q for q in qc.queues if q.name.lower() == queue_name.lower()), None)
 	if not queue:
 		return web.json_response({"error": f"Queue '{queue_name}' not found"}, status=404)
-
-	is_admin = _check_admin(qc, member)
 
 	if request.method == "GET":
 		readable = queue.cfg.readable()
@@ -2705,18 +4696,17 @@ async def handle_api_queue_config(request):
 				continue
 			variables[name] = _var_meta(var, readable.get(name))
 		return web.json_response({
+			"community": context.admin.payload(),
 			"queue_name": queue.name,
 			"sections": queue.cfg_factory.sections,
 			"variables": variables,
-			"is_admin": is_admin,
+			"is_admin": True,
 		})
 
 	# POST
 	# CSRF check first — see handle_api_channel_config for rationale.
 	if not _check_csrf(request, session):
 		return web.json_response({"error": "Invalid or missing CSRF token"}, status=403)
-	if not is_admin:
-		return web.json_response({"error": "Admin access required"}, status=403)
 	try:
 		data = await request.json()
 		filtered = {}
@@ -2734,20 +4724,6 @@ async def handle_api_queue_config(request):
 		return web.json_response({"ok": True})
 	except Exception as e:
 		return web.json_response({"error": str(e)}, status=400)
-
-
-# ─── Debug endpoint (temporary) ───
-
-async def handle_api_debug(request):
-	"""Temporary debug endpoint to diagnose guild/channel state."""
-	return web.json_response({
-		"bot_guilds": [{"id": str(g.id), "name": g.name} for g in dc.guilds],
-		"queue_channels": {
-			str(ch_id): {"guild_id": str(qc.guild_id), "queues": len(qc.queues)}
-			for ch_id, qc in dc.app.channels.items()
-		},
-		"bot_ready": dc.app.ready,
-	})
 
 
 # ─── AoE2 lobby join / spectate redirects ───
@@ -2788,10 +4764,17 @@ async def handle_lobby_spectate(request):
 # ─── App setup ───
 
 def create_app():
-	app = web.Application()
+	# Full onboarding archives are base64 JSON (5 MB compressed becomes about
+	# 6.7 MB on the wire). Keep an explicit ceiling above that payload while
+	# still rejecting unbounded request bodies before any parser runs.
+	app = web.Application(
+		client_max_size=8 * 1024 * 1024,
+		middlewares=[_security_headers_middleware])
 	app.router.add_get('/', handle_index)
-	# Health check (Railway healthcheckPath)
+	# Continuous probes are DB-free. Railway uses /ready only while deploying.
+	app.router.add_get('/live', handle_live)
 	app.router.add_get('/health', handle_health)
+	app.router.add_get('/ready', handle_ready)
 	# AoE2 lobby join / spectate deep-link redirects (clicked from Discord buttons)
 	app.router.add_get('/join/{game_id}', handle_lobby_join)
 	app.router.add_get('/spectate/{game_id}', handle_lobby_spectate)
@@ -2805,9 +4788,78 @@ def create_app():
 	app.router.add_get('/api/match-stats', handle_match_stats)
 	app.router.add_get('/api/leaderboard', handle_leaderboard)
 	app.router.add_get('/api/player-stats', handle_player_stats)
+	# Explicit public tenant routes. The unprefixed forms above are temporary
+	# aliases for the configured flagship; these are the product contract.
+	app.router.add_get('/api/communities/{community_id}/civ-stats', handle_civ_stats)
+	app.router.add_get('/api/communities/{community_id}/strategies', handle_strategies)
+	app.router.add_get('/api/communities/{community_id}/match-stats', handle_match_stats)
+	app.router.add_get('/api/communities/{community_id}/leaderboard', handle_leaderboard)
+	app.router.add_get('/api/communities/{community_id}/player-stats', handle_player_stats)
 	app.router.add_get('/api/me', handle_api_me)
-	# Dashboard API
-	app.router.add_get('/api/debug', handle_api_debug)
+	# Tenant-aware admin/settings API. Every route below resolves the explicit
+	# community and verifies Manage Guild (or owner) authority before reading.
+	app.router.add_get('/api/admin/communities', handle_api_communities)
+	app.router.add_get('/api/admin/communities/{community_id}', handle_api_community)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/overview',
+		handle_api_community_overview)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/policy',
+		handle_api_community_policy)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/policy',
+		handle_api_community_policy)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/quiz',
+		handle_api_community_quiz)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/quiz',
+		handle_api_community_quiz)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/diagnostics',
+		handle_api_community_diagnostics)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/identities/import/preview',
+		handle_api_identity_import_preview)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/identities/import/apply',
+		handle_api_identity_import_apply)
+	app.router.add_get('/api/admin/communities/{community_id}/channels', handle_api_channels)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/config',
+		handle_api_channel_config)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/config',
+		handle_api_channel_config)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/queues',
+		handle_api_queues)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/preview',
+		handle_api_rating_seed_preview)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/apply',
+		handle_api_rating_seed_apply)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/aoe-team/preview',
+		handle_api_team_rating_seed_preview)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/aoe-team/apply',
+		handle_api_team_rating_seed_apply)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/preview',
+		handle_api_pubobot_migration_preview)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/apply',
+		handle_api_pubobot_migration_apply)
+	app.router.add_get(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/queues/{queue_name}/config',
+		handle_api_queue_config)
+	app.router.add_post(
+		'/api/admin/communities/{community_id}/channels/{channel_id}/queues/{queue_name}/config',
+		handle_api_queue_config)
+	# Legacy settings aliases. These now resolve through the same community
+	# boundary and remain only for old dashboard clients/bookmarks.
 	app.router.add_get('/api/guilds', handle_api_guilds)
 	app.router.add_get('/api/guilds/{guild_id}/channels', handle_api_channels)
 	app.router.add_get('/api/channels/{channel_id}/config', handle_api_channel_config)
@@ -2831,6 +4883,14 @@ def create_app():
 	app.router.add_get('/dashboard', handle_index)
 	app.router.add_get('/player/{user_id}', handle_index)
 	app.router.add_get('/player-profile/{user_id}', handle_index)
+	app.router.add_get('/c/{community_id}', handle_index)
+	app.router.add_get('/c/{community_id}/strategies', handle_index)
+	app.router.add_get('/c/{community_id}/match-stats', handle_index)
+	app.router.add_get('/c/{community_id}/leaderboard', handle_index)
+	app.router.add_get('/c/{community_id}/civ-stats', handle_index)
+	app.router.add_get('/c/{community_id}/dashboard', handle_index)
+	app.router.add_get('/c/{community_id}/player/{user_id}', handle_index)
+	app.router.add_get('/c/{community_id}/player-profile/{user_id}', handle_index)
 	return app
 
 

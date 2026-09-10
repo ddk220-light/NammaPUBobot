@@ -41,13 +41,31 @@ In the **bot service** → **"Variables"** tab, add:
 | `DC_SLASH_SERVERS` | `""` | Comma-separated server IDs for slash commands |
 | `LOG_LEVEL` | `INFO` | `CHAT`, `DEBUG`, `COMMANDS`, `INFO`, or `ERRORS` |
 | `STATUS` | `NammaAoe2Bot` | Bot presence/status text |
-| `REPLAY_INGEST_ENABLED` | `True` | Download and parse completed-match replays |
+| `DEPLOYMENT_MODE` | `self_hosted` | `hosted` hard-disables replay compute; `self_hosted` permits the local pipeline |
+| `REPLAY_INGEST_ENABLED` | `False` | Replay download/parsing switch; leave off for the lightweight product |
+| `REPLAY_POSTGAME_CARDS_ENABLED` | `False` | Legacy replay-derived Match Cards/APM chart switch |
+| `SCOUTING_REPORT_ENABLED` | `False` | Legacy `/rank` and web scouting-report switch |
+| `RANK_ELO_CHART_ENABLED` | `False` | Rendered `/rank` Elo image switch; leaving it off avoids loading Matplotlib |
+| `REPLAY_DASHBOARD_ENABLED` | `False` | Legacy replay-derived dashboard reads; core match/Elo/civ/prediction views stay available |
+| `DB_POOL_MAX_SIZE` | `2` | Maximum concurrent MySQL sockets for this small workload |
+| `DB_IDLE_CLOSE_SECONDS` | `60` | Close free pooled sockets so Railway MySQL can enter Serverless sleep |
+| `FILE_LOG_ENABLED` | `False` | Duplicate stdout into local log files; leave off on Railway |
 | `FLAGSHIP_GUILD_IDS` | `""` | Comma-separated guild IDs that retain full replay detail |
-| `WS_ROOT_URL` | `""` | Public dashboard base URL, required for lobby Join/Spectate buttons |
+| `WS_ROOT_URL` | `""` | HTTPS public dashboard base URL, required for OAuth and lobby Join/Spectate buttons |
+
+For the admin dashboard, create an OAuth redirect in the Discord Developer
+Portal at `<WS_ROOT_URL>/auth/callback`, then set `DC_CLIENT_SECRET` and the
+same `WS_ROOT_URL` on Railway. Do not include a trailing callback path in
+`WS_ROOT_URL` itself.
 
 ## 5. Deploy
 
 Once the database and environment variables are configured, Railway will auto-deploy on each push to the connected branch. You can also trigger a manual deploy from the dashboard.
+
+For the production cost configuration, safe replay-detail cleanup, MySQL 8.4
+canary migration, private networking, Serverless, and verification gates, follow
+[the low-cost MySQL runbook](docs/runbooks/railway-low-cost-mysql.md). Do not
+in-place downgrade an existing MySQL data volume.
 
 ## Getting Your Discord Bot Token
 

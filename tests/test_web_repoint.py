@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 import nammaoe2bot.web.server as web
+from nammaoe2bot.web import probes
 from nammaoe2bot.derived import rollups
 from nammaoe2bot.features.scouting.report import PENDING
 
@@ -30,27 +31,18 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 class TestHealth:
-	""" /health is railway.toml's healthcheckPath. A 503 from it does not
-	degrade anything gracefully — Railway kills the container and redeploys,
-	over and over.
+	"""Continuous probes stay DB-free; deploy readiness checks MySQL once."""
 
-	It read `getattr(bot, 'bot_ready', False)` for its Discord gate. Phase 1
-	moved that global onto Application and the getattr DEFAULT swallowed the
-	change: `discord_ok` became permanently False, so the endpoint would have
-	answered 503 on every probe of every deploy. Nothing raised, no test
-	failed, and the payload it returned was well-formed and wrong.
+	def _request(self, monkeypatch, handler, ready, matches, db_answers=False):
+		calls = []
 
-	These drive the real handler. `db_ok` is left failing in both cases — the
-	fake adapter raises on fetchone — so the healthy case pins the DB half too
-	rather than passing for the wrong reason. """
-
-	def _request(self, monkeypatch, ready, matches, db_answers):
 		async def _fetchone(*_a, **_k):
+			calls.append((_a, _k))
 			if not db_answers:
 				raise RuntimeError("db down")
 			return {"ok": 1}
 
-		# handle_health reaches two modules by function-local import, purely to
+		# The probe handlers reach two modules by function-local import, purely to
 		# read one timestamp off each. Importing them for real pulls in the
 		# whole Discord layer and the config factory, so they are pre-seeded in
 		# sys.modules instead — `from pkg import name` binds whatever is
@@ -64,24 +56,47 @@ class TestHealth:
 		monkeypatch.setattr(web.dc, "is_ready", lambda: ready, raising=False)
 		web.dc.app.ready = ready
 		web.dc.app.active_matches = list(matches)
-		return asyncio.run(web.handle_health(types.SimpleNamespace()))
+		response = asyncio.run(handler(types.SimpleNamespace()))
+		return response, calls
 
-	def test_a_connected_bot_with_a_live_db_is_healthy(self, monkeypatch):
-		resp = self._request(monkeypatch, ready=True, matches=[1, 2], db_answers=True)
+	def test_live_is_healthy_without_touching_the_database(self, monkeypatch):
+		resp, calls = self._request(
+			monkeypatch, web.handle_live, ready=True, matches=[1, 2], db_answers=False)
 		assert resp.status == 200
 		assert resp.payload["status"] == "ok"
 		assert resp.payload["bot_ready"] is True
 		assert resp.payload["active_matches"] == 2
+		assert resp.payload["database_checked"] is False
+		assert calls == []
 
 	def test_a_disconnected_bot_is_unhealthy(self, monkeypatch):
-		resp = self._request(monkeypatch, ready=False, matches=[], db_answers=True)
+		resp, calls = self._request(
+			monkeypatch, web.handle_live, ready=False, matches=[])
 		assert resp.status == 503
 		assert resp.payload["discord_connected"] is False
+		assert calls == []
+
+	def test_health_is_a_backward_compatible_db_free_alias(self, monkeypatch):
+		resp, calls = self._request(
+			monkeypatch, web.handle_health, ready=True, matches=[], db_answers=False)
+		assert resp.status == 200
+		assert resp.payload["db_connected"] is None
+		assert calls == []
+
+	def test_ready_checks_discord_and_the_database_once(self, monkeypatch):
+		resp, calls = self._request(
+			monkeypatch, web.handle_ready, ready=True, matches=[], db_answers=True)
+		assert resp.status == 200
+		assert resp.payload["db_connected"] is True
+		assert resp.payload["database_checked"] is True
+		assert len(calls) == 1
 
 	def test_a_dead_database_is_unhealthy_even_with_discord_up(self, monkeypatch):
-		resp = self._request(monkeypatch, ready=True, matches=[], db_answers=False)
+		resp, calls = self._request(
+			monkeypatch, web.handle_ready, ready=True, matches=[], db_answers=False)
 		assert resp.status == 503
 		assert resp.payload["db_connected"] is False
+		assert len(calls) == 1
 
 
 def test_the_server_can_actually_find_its_page():
@@ -113,6 +128,7 @@ class FakeDB:
 		self.answers = answers or {}
 		self.rows = rows or {}
 		self.sql = []
+		self.sql_args = []
 		self.selects = []
 		self.inserted = []
 		self.deleted = []
@@ -126,10 +142,15 @@ class FakeDB:
 
 	async def fetchall(self, sql, args=None):
 		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
 		return self._answer(sql, args or [])
 
 	async def fetchone(self, sql, args=None):
 		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
+		if "FROM web_oauth_states" in sql:
+			found = self._matching("web_oauth_states", {"state": args[0]})
+			return dict(found[0]) if found else None
 		found = self._answer(sql, args or [])
 		return found[0] if found else None
 
@@ -151,11 +172,34 @@ class FakeDB:
 
 	async def execute(self, sql, args=None):
 		self.sql.append(sql)
+		if sql.startswith("DELETE FROM web_oauth_states WHERE state="):
+			state = args[0]
+			self.rows["web_oauth_states"] = [
+				row for row in self.rows.get("web_oauth_states", [])
+				if row.get("state") != state]
+			self.deleted.append(("web_oauth_states", {"state": state}))
 		return None
+
+	def transaction(self):
+		fake = self
+
+		class _Context:
+			async def __aenter__(self):
+				return fake
+
+			async def __aexit__(self, exc_type, exc, traceback):
+				return False
+
+		return _Context()
 
 	async def insert(self, table, row, on_duplicate=None):
 		self.selects.append((table, dict(row)))
 		self.inserted.append((table, dict(row)))
+		if table == "community_policies" and on_duplicate == "replace":
+			self.rows[table] = [
+				existing for existing in self.rows.get(table, [])
+				if existing.get("community_id") != row.get("community_id")]
+			self.rows[table].append(dict(row))
 		return None
 
 	async def delete(self, table, where=None):
@@ -168,6 +212,104 @@ class FakeDB:
 		so a "never touches table X" assertion cannot be fooled by a read that
 		happened to go through select_one() instead of fetchall(). """
 		return self.sql + [f"{table} {sorted(where)}" for table, where in self.selects]
+
+
+class RatingSeedDB(FakeDB):
+	"""Stateful transaction double for the rating-onboarding apply path."""
+
+	async def __aenter__(self):
+		return self
+
+	async def __aexit__(self, exc_type, exc, traceback):
+		return False
+
+	def transaction(self):
+		return self
+
+	async def insert(self, table, row, on_duplicate=None):
+		row = dict(row)
+		if table == "player_ratings":
+			duplicate = next((existing for existing in self.rows.get(table, [])
+			                  if existing.get("channel_id") == row.get("channel_id")
+			                  and existing.get("user_id") == row.get("user_id")), None)
+			if duplicate is not None and on_duplicate == "ignore":
+				return 0
+		self.rows.setdefault(table, []).append(row)
+		self.inserted.append((table, row))
+		return 1
+
+	async def execute(self, sql, args=None):
+		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
+		if sql.startswith("UPDATE player_ratings SET"):
+			nick, _nick_again, rating, deviation, channel_id, user_id = args
+			for row in self.rows.get("player_ratings", []):
+				if (row.get("channel_id") == channel_id and row.get("user_id") == user_id
+				        and row.get("rating") is None):
+					if nick:
+						row["nick"] = nick
+					row["rating"] = rating
+					row["deviation"] = deviation
+					return 1
+			return 0
+		if sql.startswith("UPDATE identities SET"):
+			user_id, last_seen_at, bound_at, profile_id = args
+			for row in self.rows.get("identities", []):
+				if row.get("profile_id") == profile_id and row.get("user_id") is None:
+					row.update(
+						user_id=user_id, confidence="manual",
+						last_seen_at=last_seen_at, bound_at=bound_at)
+					return 1
+			return 0
+		return 0
+
+
+class MigrationDB(RatingSeedDB):
+	"""Stateful transaction double for a full historical onboarding import."""
+
+	def __init__(self, rows=None, next_match_id=500):
+		super().__init__(rows=rows)
+		self.next_match_id = next_match_id
+		self.bulk_inserted = []
+
+	async def fetchone(self, sql, args=None):
+		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
+		if "SELECT next_id FROM match_counter" in sql:
+			return {"next_id": self.next_match_id}
+		if "MAX(match_id) + 1" in sql:
+			return {"next_id": self.next_match_id}
+		if "FROM community_imports" in sql and "FOR UPDATE" in sql:
+			found = self._matching("community_imports", {"import_id": args[0]})
+			return found[0] if found else None
+		if "COUNT(*) AS n FROM matches" in sql:
+			return {"n": len(self._matching("matches", {"channel_id": args[0]}))}
+		if "COUNT(*) AS n FROM rating_history" in sql:
+			return {"n": len(self._matching("rating_history", {"channel_id": args[0]}))}
+		return None
+
+	async def fetchall(self, sql, args=None):
+		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
+		if "FROM player_ratings" in sql:
+			return [dict(row) for row in self._matching(
+				"player_ratings", {"channel_id": args[0]})]
+		return []
+
+	async def execute(self, sql, args=None):
+		self.sql.append(sql)
+		self.sql_args.append((sql, list(args or [])))
+		if sql.startswith("UPDATE match_counter SET next_id"):
+			self.next_match_id = int(args[0])
+			return 1
+		return await super().execute(sql, args)
+
+	async def insert_many(self, table, rows, on_duplicate=None):
+		batch = [dict(row) for row in rows]
+		self.bulk_inserted.append((table, batch, on_duplicate))
+		self.rows.setdefault(table, []).extend(batch)
+		self.inserted.extend((table, row) for row in batch)
+		return len(batch)
 
 
 def install_db(monkeypatch, fake):
@@ -188,20 +330,26 @@ def install_db(monkeypatch, fake):
 	from nammaoe2bot.runtime.database import db as real_db
 	for name in ("fetchall", "fetchone", "select", "select_one", "execute", "insert", "delete"):
 		monkeypatch.setattr(real_db, name, getattr(fake, name), raising=False)
-	for module in (web, rollups):
+	for module in (web, web.community_store, web.quiz_store, rollups):
 		monkeypatch.setattr(module, "db", fake)
 	return fake
 
 
-def request(cookies=None, match_info=None, headers=None, **query):
+def request(cookies=None, match_info=None, headers=None, method="GET", json_body=None, path="/", **query):
 	""" The slice of aiohttp's Request the handlers below actually read. """
+	async def read_json():
+		return dict(json_body or {})
+
 	return types.SimpleNamespace(
 		query=dict(query),
 		cookies=dict(cookies or {}),
 		match_info=dict(match_info or {}),
 		headers=dict(headers or {}),
+		method=method,
+		json=read_json,
 		scheme="https",
 		host="example.test",
+		path=path,
 	)
 
 
@@ -213,6 +361,7 @@ def with_community(monkeypatch, guild_id=777):
 
 
 COMMUNITY_ROW = {"guild_id": 777, "community_id": 9}
+COMMUNITY = web.PublicCommunity(community_id=9, guild_id=777, name="Test community")
 
 
 # A rollup shaped exactly like production's: peak_eapm is NULL on every row, so
@@ -269,16 +418,75 @@ def test_civ_stats_scopes_the_read_to_one_community(monkeypatch):
 	assert seen["args"][1] == web.MIN_GAMES
 
 
-def test_civ_stats_with_no_community_returns_nothing_rather_than_every_communitys_rows(monkeypatch):
+def test_civ_stats_with_no_community_fails_closed_before_reading_any_rows(monkeypatch):
 	fake = install_db(monkeypatch, FakeDB(
 		answers={"FROM civ_stats": [{"civ": "Franks", "games": 120, "wins": 66, "losses": 54}]},
 		rows={"communities": []}))
 	monkeypatch.setattr(web.cfg, "FLAGSHIP_GUILD_IDS", [], raising=False)
 
-	payload = asyncio.run(web.handle_civ_stats(request())).payload
+	response = asyncio.run(web.handle_civ_stats(request()))
 
-	assert payload["civs"] == []
+	assert response.status == 404
+	assert response.payload == {"error": "Community not found"}
 	assert not any("FROM civ_stats" in s for s in fake.sql)
+
+
+def test_members_only_public_dashboard_hides_from_anonymous_viewers(monkeypatch):
+	fake = install_db(monkeypatch, FakeDB(
+		answers={"FROM civ_stats": [{"civ": "Franks", "games": 120, "wins": 66, "losses": 54}]},
+		rows={
+			"communities": [COMMUNITY_ROW],
+			"community_policies": [{
+				"community_id": 9, "dashboard_visibility": "members",
+				"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42}],
+		}))
+	with_community(monkeypatch)
+
+	response = asyncio.run(web.handle_civ_stats(request()))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Community not found"}
+	assert not any("FROM civ_stats" in sql for sql in fake.sql)
+
+
+def test_members_only_public_dashboard_accepts_a_current_discord_member(monkeypatch):
+	alpha = _discord_guild(777, admin=False)
+	_install_discord(monkeypatch, [alpha])
+	install_db(monkeypatch, FakeDB(
+		answers={"FROM civ_stats": []},
+		rows={
+			"web_sessions": [_session_row()],
+			"communities": [COMMUNITY_ROW],
+			"community_policies": [{
+				"community_id": 9, "dashboard_visibility": "members",
+				"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42}],
+		}))
+	with_community(monkeypatch)
+
+	response = asyncio.run(web.handle_civ_stats(request(cookies={web.COOKIE_NAME: "sess"})))
+
+	assert response.status == 200
+	assert response.payload["community"]["id"] == "9"
+
+
+def test_admin_only_public_dashboard_rejects_members_and_accepts_admins(monkeypatch):
+	fake = FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [COMMUNITY_ROW],
+		"community_policies": [{
+			"community_id": 9, "dashboard_visibility": "admins",
+			"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42}],
+	})
+	install_db(monkeypatch, fake)
+	with_community(monkeypatch)
+	_install_discord(monkeypatch, [_discord_guild(777, admin=False)])
+
+	denied = asyncio.run(web.handle_civ_stats(request(cookies={web.COOKIE_NAME: "sess"})))
+	assert denied.status == 404
+
+	_install_discord(monkeypatch, [_discord_guild(777, admin=True)])
+	allowed = asyncio.run(web.handle_civ_stats(request(cookies={web.COOKIE_NAME: "sess"})))
+	assert allowed.status == 200
 
 
 def test_civ_stats_reads_no_file_at_all(monkeypatch):
@@ -340,15 +548,16 @@ def _strategy_db():
 		"rp.identity AS player": _STRATEGY_ROWS,
 		"gs.civ AS civ": [{"k": "archer_rush", "civ": "Britons", "n": 8},
 		                  {"k": "archer_rush", "civ": "Mayans", "n": 2}],
-		"FROM replay_players WHERE identity": [
+		"FROM replay_players rp WHERE identity": [
 			{"identity": "Alice", "games": 40, "wins": 22, "losses": 18}],
 		"COUNT(DISTINCT gl.replay_match_id) AS g": [
 			{"identity": "Alice", "g": 13, "w": 9, "l": 4}],
-	})
+	}, rows={"communities": [COMMUNITY_ROW]})
 
 
 def test_strategies_page_renders_rosters_from_game_labels(monkeypatch):
 	fake = install_db(monkeypatch, _strategy_db())
+	with_community(monkeypatch)
 
 	payload = asyncio.run(web.handle_strategies(request())).payload
 
@@ -366,6 +575,7 @@ def test_every_strategies_query_constrains_the_stored_kind(monkeypatch):
 	""" Without the kind in the WHERE, the spawn rows sharing the table would be
 	counted as strategies. """
 	fake = install_db(monkeypatch, _strategy_db())
+	with_community(monkeypatch)
 
 	asyncio.run(web.handle_strategies(request()))
 
@@ -379,6 +589,7 @@ def test_strategies_page_emits_no_luck_row(monkeypatch):
 	""" The luck keys are registered upstream but stored under no kind, so a row
 	for one could only ever be a row of zeros. """
 	install_db(monkeypatch, _strategy_db())
+	with_community(monkeypatch)
 
 	payload = asyncio.run(web.handle_strategies(request())).payload
 
@@ -394,6 +605,7 @@ def test_strategy_roster_join_reads_the_three_tables_by_their_own_keys(monkeypat
 	label — and replay_players on (match, profile_id), its own PK. Joining
 	replay_players on player_number instead would duplicate rows. """
 	fake = install_db(monkeypatch, _strategy_db())
+	with_community(monkeypatch)
 
 	asyncio.run(web.handle_strategies(request()))
 
@@ -401,6 +613,31 @@ def test_strategy_roster_join_reads_the_three_tables_by_their_own_keys(monkeypat
 	assert "gs.player_number=gl.player_number" in sql
 	assert "rp.profile_id=gs.profile_id" in sql
 	assert "rp.player_number" not in sql
+
+
+def test_paused_replay_dashboard_issues_no_replay_table_queries(monkeypatch):
+	match_row = {"match_id": 7, "queue_name": "pickup", "at": 0,
+		"ranked": 1, "winner": None, "maps": "Arabia", "team": 0}
+	fake = install_db(monkeypatch, FakeDB(
+		answers={
+			"FROM match_players pm WHERE pm.user_id": [{"x": 1}],
+			"ORDER BY m.reported_at DESC": [match_row],
+		}, rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
+	monkeypatch.setattr(web.cfg, "REPLAY_DASHBOARD_ENABLED", False, raising=False)
+
+	assert asyncio.run(web.handle_strategies(request())).payload["disabled"] is True
+	assert asyncio.run(web.handle_leaderboard(request(mode="tags"))).payload["disabled"] is True
+	asyncio.run(web.handle_match_stats(request()))
+	asyncio.run(web.handle_match_stats(request(player_id="42")))
+	asyncio.run(web.handle_player_stats(request(player_id="42")))
+
+	replay_tables = (
+		"game_labels", "game_stats", "replay_players", "replay_matches",
+		"replay_units", "replay_techs", "rs_player_game_tags", "player_rollups",
+	)
+	for sql in fake.sql:
+		assert not any(table in sql for table in replay_tables), sql
 
 
 # ─── the player API renders from player_rollups ───
@@ -566,7 +803,7 @@ def test_player_strategy_tags_read_game_labels_within_the_selected_window(monkey
 
 	fake = install_db(monkeypatch, FakeDB(answers={"FROM game_labels": capture}))
 
-	tags = asyncio.run(web._player_strategy_tags([123, 456], "month"))
+	tags = asyncio.run(web._player_strategy_tags(COMMUNITY, [123, 456], "month"))
 
 	assert tags[0]["key"] == "archer_rush"
 	assert tags[0]["label"] == "Feudal archer poke"
@@ -579,7 +816,7 @@ def test_player_strategy_tags_read_game_labels_within_the_selected_window(monkey
 def test_player_strategy_tags_skip_the_window_clause_for_all_time(monkeypatch):
 	fake = install_db(monkeypatch, FakeDB(answers={"FROM game_labels": []}))
 
-	asyncio.run(web._player_strategy_tags([123], "all"))
+	asyncio.run(web._player_strategy_tags(COMMUNITY, [123], "all"))
 
 	assert "gl.played_at" not in fake.sql[0]
 
@@ -590,7 +827,7 @@ def test_player_strategy_tags_are_not_served_from_the_lifetime_rollup(monkeypatc
 	migration exists to remove. """
 	fake = install_db(monkeypatch, FakeDB(answers={"FROM game_labels": []}))
 
-	asyncio.run(web._player_strategy_tags([123], "month3"))
+	asyncio.run(web._player_strategy_tags(COMMUNITY, [123], "month3"))
 
 	assert not any("player_rollups" in s for s in fake.statements)
 
@@ -604,7 +841,7 @@ def test_match_strategy_chips_come_from_game_labels(monkeypatch):
 		"JOIN rs_player_game_tags": [],
 	}))
 
-	by_profile, by_name = asyncio.run(web._classification_tags_for_bot_matches([7]))
+	by_profile, by_name = asyncio.run(web._classification_tags_for_bot_matches(COMMUNITY, [7]))
 
 	assert by_profile[(7, "111")] == [{"key": "scout_rush", "label": "Scout-map opener"}]
 	assert by_name[(7, "alice")] == [{"key": "scout_rush", "label": "Scout-map opener"}]
@@ -623,6 +860,113 @@ def test_the_luck_route_is_not_registered():
 	assert "/luck" not in paths
 	assert "/strategies" in paths, "the surviving SPA routes must still be registered"
 	assert "/api/civ-stats" in paths
+
+
+# ─── explicit community routes are the tenant boundary ───
+
+def test_explicit_community_route_ignores_the_flagship_alias(monkeypatch):
+	seen = {}
+
+	def capture(args):
+		seen["args"] = list(args)
+		return []
+
+	other = {"guild_id": 888, "community_id": 10, "name": "Other"}
+	install_db(monkeypatch, FakeDB(
+		answers={"FROM civ_stats": capture},
+		rows={"communities": [COMMUNITY_ROW, other]}))
+	with_community(monkeypatch)
+
+	response = asyncio.run(web.handle_civ_stats(request(match_info={"community_id": "10"})))
+
+	assert response.status == 200
+	assert response.payload["community"]["id"] == "10"
+	assert seen["args"][0] == 10
+
+
+def test_unknown_explicit_community_never_falls_back_to_flagship(monkeypatch):
+	fake = install_db(monkeypatch, FakeDB(
+		answers={"FROM civ_stats": [{"civ": "Franks", "games": 100, "wins": 60, "losses": 40}]},
+		rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
+
+	response = asyncio.run(web.handle_civ_stats(request(match_info={"community_id": "999"})))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Community not found"}
+	assert not any("FROM civ_stats" in sql for sql in fake.sql)
+
+
+def test_malformed_explicit_community_never_falls_back_to_flagship(monkeypatch):
+	fake = install_db(monkeypatch, FakeDB(
+		answers={"FROM civ_stats": [{"civ": "Franks", "games": 100, "wins": 60, "losses": 40}]},
+		rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
+
+	response = asyncio.run(web.handle_civ_stats(request(match_info={"community_id": "not-an-id"})))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Community not found"}
+	assert not any("FROM civ_stats" in sql for sql in fake.sql)
+
+
+def test_every_explicit_public_api_route_is_registered_and_debug_is_gone():
+	paths = {path for _method, path, _handler in web.create_app().router.routes}
+	for endpoint in ("civ-stats", "strategies", "match-stats", "leaderboard", "player-stats"):
+		assert f"/api/communities/{{community_id}}/{endpoint}" in paths
+	assert "/api/debug" not in paths
+
+
+def test_public_queries_carry_the_resolved_tenant(monkeypatch):
+	"""Drive every public API and reject a tenant-owned SQL read without a
+	community_channels/match_replays/civ_stats boundary.
+
+	This is intentionally broader than checking one expected SQL string. A new
+	card or helper added to an existing handler is covered automatically as soon
+	as it issues a query during this drive-through.
+	"""
+	match_row = {"match_id": 7, "queue_name": "pickup", "at": 0, "ranked": 1,
+	             "winner": None, "maps": "Arabia", "team": 0, "duration_s": 1800}
+	fake = install_db(monkeypatch, FakeDB(
+		answers={
+			"FROM match_players pm WHERE pm.user_id": [{"x": 1}],
+			"ORDER BY m.reported_at DESC": [match_row],
+			"SELECT DISTINCT m.match_id": [{"match_id": 7}],
+		},
+		rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
+
+	def req(**query):
+		return request(match_info={"community_id": "9"}, **query)
+
+	asyncio.run(web.handle_civ_stats(req()))
+	asyncio.run(web.handle_strategies(req()))
+	asyncio.run(web.handle_leaderboard(req()))
+	asyncio.run(web.handle_leaderboard(req(mode="civs")))
+	asyncio.run(web.handle_leaderboard(req(mode="tags")))
+	asyncio.run(web.handle_match_stats(req()))
+	asyncio.run(web.handle_match_stats(req(player_id="42")))
+	asyncio.run(web.handle_player_stats(req(player_id="42")))
+
+	channel_tables = ("matches", "match_players", "player_ratings", "rating_history", "civ_picks")
+	replay_tables = ("replay_players", "replay_matches", "game_labels", "rs_player_game_tags")
+	for sql in fake.sql:
+		if any(name in sql for name in channel_tables):
+			# Raw replay queries can mention matches after crossing match_replays;
+			# either boundary is sufficient for those mixed statements.
+			assert "tenant_cc" in sql or "community_id=9" in sql, sql
+		if any(name in sql for name in replay_tables):
+			assert "tenant_mr" in sql or ("match_replays" in sql and "community_id=9" in sql), sql
+
+
+def test_the_spa_preserves_community_routes_for_pages_and_apis():
+	page = Path(_REPO_ROOT, "nammaoe2bot", "web", "page.html").read_text()
+	assert "function publicPath(path)" in page
+	assert "function publicApi(path)" in page
+	assert "match(/^\\/c\\/([^/]+)(?:\\/|$)/)" in page, \
+		"malformed explicit community paths must reach the API and fail closed"
+	for endpoint in ("civ-stats", "strategies", "match-stats", "leaderboard", "player-stats"):
+		assert f"publicApi('/{endpoint}')" in page
 
 
 def test_no_endpoint_reads_a_table_stage_six_drops(monkeypatch):
@@ -713,7 +1057,8 @@ def test_the_response_fake_cannot_quietly_lose_a_status(monkeypatch):
 
 
 def test_a_malformed_player_id_is_a_400_not_an_empty_200(monkeypatch):
-	install_db(monkeypatch, FakeDB())
+	install_db(monkeypatch, FakeDB(rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
 
 	response = asyncio.run(web.handle_player_stats(request(player_id="not-a-number")))
 
@@ -722,7 +1067,8 @@ def test_a_malformed_player_id_is_a_400_not_an_empty_200(monkeypatch):
 
 
 def test_a_missing_player_id_is_a_400(monkeypatch):
-	install_db(monkeypatch, FakeDB())
+	install_db(monkeypatch, FakeDB(rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
 
 	response = asyncio.run(web.handle_player_stats(request()))
 
@@ -731,9 +1077,10 @@ def test_a_missing_player_id_is_a_400(monkeypatch):
 
 
 def test_an_unknown_player_is_a_404(monkeypatch):
-	install_db(monkeypatch, FakeDB())
+	install_db(monkeypatch, FakeDB(rows={"communities": [COMMUNITY_ROW]}))
+	with_community(monkeypatch)
 
-	async def _no_such_player(_user_id):
+	async def _no_such_player(_community, _user_id):
 		return False
 
 	monkeypatch.setattr(web, "_player_has_public_stats", _no_such_player)
@@ -748,6 +1095,38 @@ def _session_row(session_id="sess", user_id=42, expires_in=3600):
 	        "avatar": None, "csrf": "tok", "expires_at": int(time.time()) + expires_in}
 
 
+def _discord_guild(guild_id, *, admin, user_id=42):
+	guild = types.SimpleNamespace(
+		id=guild_id, name=f"Guild {guild_id}", owner_id=999999, icon=None)
+	member = types.SimpleNamespace(
+		id=user_id, guild=guild,
+		guild_permissions=types.SimpleNamespace(manage_guild=admin))
+	guild.get_member = lambda candidate: member if candidate == user_id else None
+
+	async def fetch_member(candidate):
+		if candidate != user_id:
+			raise LookupError(candidate)
+		return member
+
+	guild.fetch_member = fetch_member
+	return guild
+
+
+def _install_discord(monkeypatch, guilds, channels=None, queue_channels=None):
+	by_guild = {guild.id: guild for guild in guilds}
+	channels = channels or {}
+	monkeypatch.setattr(web.dc, "get_guild", lambda guild_id: by_guild.get(guild_id))
+	monkeypatch.setattr(web.dc, "get_channel", lambda channel_id: channels.get(channel_id))
+	monkeypatch.setattr(web.dc.app, "channels", dict(queue_channels or {}))
+
+
+def _community_rows():
+	return [
+		{"community_id": 9, "guild_id": 777, "name": "Alpha", "retention": "full"},
+		{"community_id": 10, "guild_id": 888, "name": "Beta", "retention": "lean"},
+	]
+
+
 def test_an_anonymous_dashboard_read_is_a_401_not_an_empty_list(monkeypatch):
 	""" The distinction the SPA acts on: 401 means "log in", an empty 200 means
 	"you are logged in and own nothing". """
@@ -759,12 +1138,869 @@ def test_an_anonymous_dashboard_read_is_a_401_not_an_empty_list(monkeypatch):
 	assert response.payload == {"error": "Not logged in"}
 
 
+def test_anonymous_session_lookup_returns_before_cleanup(monkeypatch):
+	called = []
+
+	async def cleanup():
+		called.append(True)
+
+	monkeypatch.setattr(web, "_cleanup_expired_sessions", cleanup)
+
+	assert asyncio.run(web._get_session(request())) is None
+	assert called == []
+
+
 def test_an_expired_session_is_also_a_401(monkeypatch):
 	install_db(monkeypatch, FakeDB(rows={"web_sessions": [_session_row(expires_in=-1)]}))
 
 	response = asyncio.run(web.handle_api_guilds(request(cookies={web.COOKIE_NAME: "sess"})))
 
 	assert response.status == 401
+
+
+def test_admin_community_list_contains_only_communities_the_user_administers(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	beta = _discord_guild(888, admin=False)
+	queue_channels = {
+		100: types.SimpleNamespace(guild_id=777),
+		200: types.SimpleNamespace(guild_id=888),
+	}
+	_install_discord(monkeypatch, [alpha, beta], queue_channels=queue_channels)
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": _community_rows(),
+		"community_channels": [
+			{"community_id": 9, "channel_id": 100},
+			{"community_id": 10, "channel_id": 200},
+		],
+	}))
+
+	response = asyncio.run(web.handle_api_communities(
+		request(cookies={web.COOKIE_NAME: "sess"})))
+
+	assert response.status == 200
+	assert response.payload["communities"] == [{
+		"id": "9", "guild_id": "777", "name": "Alpha", "icon": None,
+		"channels": 1, "is_admin": True, "retention": "full",
+	}]
+
+
+def test_explicit_admin_community_rejects_a_member_without_admin_authority(monkeypatch):
+	_install_discord(monkeypatch, [_discord_guild(777, admin=False)])
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+	}))
+
+	response = asyncio.run(web.handle_api_community(request(
+		cookies={web.COOKIE_NAME: "sess"}, match_info={"community_id": "9"})))
+
+	assert response.status == 403
+	assert response.payload == {"error": "Admin access required"}
+
+
+def test_explicit_admin_channels_include_only_the_communitys_enrolled_channels(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	beta = _discord_guild(888, admin=True)
+	channel_100 = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	channel_200 = types.SimpleNamespace(id=200, name="beta-pub", guild=beta)
+	queue_channels = {
+		100: types.SimpleNamespace(guild_id=777, queues=[]),
+		200: types.SimpleNamespace(guild_id=888, queues=[]),
+	}
+	_install_discord(
+		monkeypatch, [alpha, beta],
+		channels={100: channel_100, 200: channel_200}, queue_channels=queue_channels)
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": _community_rows(),
+		"community_channels": [
+			{"community_id": 9, "channel_id": 100},
+			{"community_id": 10, "channel_id": 200},
+		],
+	}))
+
+	response = asyncio.run(web.handle_api_channels(request(
+		cookies={web.COOKIE_NAME: "sess"}, match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	assert response.payload["community"]["id"] == "9"
+	assert response.payload["channels"] == [{
+		"id": "100", "name": "alpha-pub", "queues": 0, "is_admin": True,
+	}]
+
+
+def test_explicit_admin_mutation_cannot_target_another_communitys_channel(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	_install_discord(monkeypatch, [alpha])
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": _community_rows(),
+		"community_channels": [{"community_id": 10, "channel_id": 200}],
+	}))
+
+	response = asyncio.run(web.handle_api_channel_config(request(
+		cookies={web.COOKIE_NAME: "sess"},
+		headers={"X-CSRF-Token": "tok"}, method="POST", json_body={"name": "changed"},
+		match_info={"community_id": "9", "channel_id": "200"})))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Channel not found"}
+
+
+def test_explicit_admin_mutation_updates_an_enrolled_channel(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	updates = []
+
+	class Config:
+		async def update(self, values):
+			updates.append(values)
+
+	queue_channel = types.SimpleNamespace(
+		guild_id=777, queues=[], cfg=Config(),
+		cfg_factory=types.SimpleNamespace(variables={"label": object()}, sections=[]))
+	_install_discord(
+		monkeypatch, [alpha], channels={100: channel}, queue_channels={100: queue_channel})
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+	}))
+
+	denied = asyncio.run(web.handle_api_channel_config(request(
+		cookies={web.COOKIE_NAME: "sess"}, method="POST", json_body={"label": "wrong"},
+		match_info={"community_id": "9", "channel_id": "100"})))
+	assert denied.status == 403
+	assert denied.payload == {"error": "Invalid or missing CSRF token"}
+	assert updates == []
+
+	response = asyncio.run(web.handle_api_channel_config(request(
+		cookies={web.COOKIE_NAME: "sess"},
+		headers={"X-CSRF-Token": "tok"}, method="POST", json_body={"label": "ready"},
+		match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 200
+	assert response.payload == {"ok": True}
+	assert updates == [{"label": "ready"}]
+
+
+def test_community_overview_reports_real_feature_scopes_and_tenant_counts(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	queues = [
+		types.SimpleNamespace(cfg=types.SimpleNamespace(ranked=True, predictions_enabled=True)),
+		types.SimpleNamespace(cfg=types.SimpleNamespace(ranked=True, predictions_enabled=False)),
+	]
+	queue_channel = types.SimpleNamespace(guild_id=777, queues=queues)
+	_install_discord(
+		monkeypatch, [alpha], channels={100: channel}, queue_channels={100: queue_channel})
+	monkeypatch.setattr(web.dc, "is_ready", lambda: True)
+	monkeypatch.setattr(web.dc.app, "ready", True)
+	monkeypatch.setattr(web.dc.app, "active_matches", [])
+	fake = install_db(monkeypatch, FakeDB(
+		answers={
+			"COUNT(DISTINCT pr.user_id)": [
+				{"players": 12, "linked_players": 8, "linked_profiles": 10}],
+			"COUNT(DISTINCT m.match_id)": [{"matches": 44, "last_match_at": 123456}],
+			"FROM (SELECT DISTINCT replay_match_id": [
+				{"linked_replays": 9, "parsed_replays": 8, "attention_replays": 0}],
+			"FROM prediction_posts pp": [{"posts": 7, "open_posts": 1, "resolved_posts": 6}],
+			"FROM lobbies l": [{"tracked_lobbies": 5, "launched_lobbies": 4, "active_lobbies": 0}],
+			"FROM gold_balances": [{"holders": 12}],
+			"FROM quiz_settings qs": [
+				{"channel_id": 100, "enabled": 1, "quiz_hour": 9, "open_window": 86400}],
+		},
+		rows={
+			"web_sessions": [_session_row()],
+			"communities": [_community_rows()[0], _community_rows()[1]],
+			"community_channels": [
+				{"community_id": 9, "channel_id": 100},
+				{"community_id": 10, "channel_id": 200},
+			],
+		}))
+
+	response = asyncio.run(web.handle_api_community_overview(request(
+		cookies={web.COOKIE_NAME: "sess"}, match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	payload = response.payload
+	assert payload["community"]["id"] == "9"
+	assert payload["onboarding"]["status"] == "ready"
+	assert payload["onboarding"]["completed_required"] == payload["onboarding"]["required_steps"] == 3
+	capabilities = {feature["key"]: feature for feature in payload["capabilities"]}
+	assert capabilities["predictions"]["status"] == "partial"
+	assert capabilities["predictions"]["scope"] == "queue"
+	assert capabilities["quiz"]["status"] == "active"
+	assert capabilities["quiz"]["scope"] == "community"
+	assert capabilities["quiz"]["configurable"] is True
+	assert "one enrolled channel" in capabilities["quiz"]["note"]
+	assert capabilities["replay_analysis"]["scope"] == "community"
+	assert capabilities["replay_analysis"]["configurable"] is True
+	assert capabilities["replay_analysis"]["metrics"] == {"linked": 9, "parsed": 8, "attention": 0}
+	assert payload["diagnostics"]["status"] == "healthy"
+	assert payload["diagnostics"]["data"]["matches"] == 44
+	assert payload["diagnostics"]["data"]["linked_profiles"] == 10
+
+	# Every raw aggregate in the overview is either directly keyed by this
+	# community or crosses community_channels with this exact argument.
+	assert fake.sql_args
+	for sql, args in fake.sql_args:
+		assert args == [9], sql
+		assert "community_id=%s" in sql, sql
+
+
+def test_community_diagnostics_are_actionable_and_tenant_scoped(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	queue_channels = {
+		100: types.SimpleNamespace(guild_id=777, queues=[]),
+		999: types.SimpleNamespace(guild_id=777, queues=[]),
+	}
+	_install_discord(
+		monkeypatch, [alpha], channels={100: channel}, queue_channels=queue_channels)
+	fake = install_db(monkeypatch, FakeDB(
+		answers={
+			"COUNT(DISTINCT mp.user_id)": [{"players": 10, "linked": 6}],
+			"FROM (SELECT DISTINCT replay_match_id": [
+				{"linked": 4, "parsed": 2, "attention": 1}],
+			"tenant_gold_drift": [{"mismatches": 1}],
+			"FROM quiz_settings qs JOIN community_channels": [
+				{"configured": 2, "enabled": 2}],
+			"SELECT COUNT(*) AS stuck": [{"stuck": 1}],
+			"SELECT COUNT(*) AS stale": [{"stale": 1}],
+		},
+		rows={
+			"web_sessions": [_session_row()],
+			"communities": [_community_rows()[0]],
+			"community_channels": [{"community_id": 9, "channel_id": 100}],
+			"community_policies": [{
+				"community_id": 9, "dashboard_visibility": "admins",
+				"replay_analysis_enabled": 0, "updated_at": 1, "updated_by": 42,
+			}],
+		}))
+
+	response = asyncio.run(web.handle_api_community_diagnostics(request(
+		cookies={web.COOKIE_NAME: "sess"}, match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	payload = response.payload
+	assert payload["community"]["id"] == "9"
+	assert payload["status"] == "critical"
+	checks = {check["key"]: check for check in payload["checks"]}
+	assert checks["channels"]["status"] == "warning"
+	assert checks["channels"]["metrics"]["unenrolled_runtime"] == 1
+	assert checks["identities"]["action"]["target"] == "map_identities"
+	assert checks["gold"]["status"] == "critical"
+	assert checks["quiz"]["status"] == "critical"
+	assert checks["background_work"]["metrics"] == {
+		"stuck_predictions": 1, "stale_lobbies": 1}
+	assert checks["deployment"]["metrics"]["replay_effective"] is False
+	assert "shhh" not in json.dumps(payload)
+
+	# Every raw diagnostic aggregate carries this authorized community as its
+	# first argument; the gold union repeats it for both sides of the ledger.
+	assert len(fake.sql_args) == 6
+	for sql, args in fake.sql_args:
+		assert args and args[0] == 9, sql
+		if "tenant_gold_drift" in sql:
+			assert args == [9, 9]
+
+
+def test_community_diagnostics_require_a_logged_in_admin(monkeypatch):
+	fake = install_db(monkeypatch, FakeDB())
+
+	response = asyncio.run(web.handle_api_community_diagnostics(request(
+		match_info={"community_id": "9"})))
+
+	assert response.status == 401
+	assert fake.sql == []
+
+
+def test_community_policy_api_is_admin_csrf_protected_and_persists(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	_install_discord(monkeypatch, [alpha])
+	fake = install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_policies": [],
+	}))
+
+	denied = asyncio.run(web.handle_api_community_policy(request(
+		cookies={web.COOKIE_NAME: "sess"}, method="POST",
+		json_body={"dashboard_visibility": "members", "replay_analysis_enabled": False},
+		match_info={"community_id": "9"})))
+	assert denied.status == 403
+
+	response = asyncio.run(web.handle_api_community_policy(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={"dashboard_visibility": "members", "replay_analysis_enabled": False},
+		match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	assert response.payload["policy"]["dashboard_visibility"] == "members"
+	assert response.payload["policy"]["replay_analysis_effective"] is False
+	stored = next(row for table, row in fake.inserted if table == "community_policies")
+	assert stored["community_id"] == 9
+	assert stored["updated_by"] == 42
+
+
+def test_hosted_policy_can_never_enable_replay_compute(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	_install_discord(monkeypatch, [alpha])
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_policies": [{
+			"community_id": 9, "dashboard_visibility": "public",
+			"replay_analysis_enabled": 1, "updated_at": 1, "updated_by": 42}],
+	}))
+	monkeypatch.setattr(web.cfg, "DEPLOYMENT_MODE", "hosted", raising=False)
+	monkeypatch.setattr(web.cfg, "REPLAY_INGEST_ENABLED", True, raising=False)
+
+	response = asyncio.run(web.handle_api_community_policy(request(
+		cookies={web.COOKIE_NAME: "sess"}, match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	assert response.payload["deployment"]["replay_available"] is False
+	assert response.payload["policy"]["replay_analysis_requested"] is True
+	assert response.payload["policy"]["replay_analysis_effective"] is False
+	assert response.payload["policy"]["replay_reason"] == "hosted_unavailable"
+
+
+def test_community_quiz_api_is_scoped_validated_and_csrf_protected(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	_install_discord(monkeypatch, [alpha], channels={100: channel})
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+	}))
+	writes = []
+
+	async def configs(_community_id):
+		return ([{"channel_id": 100, "enabled": 1, "quiz_hour": 13, "open_window": 21600}]
+			if writes else [])
+
+	async def configure(community_id, channel_id, **fields):
+		writes.append((community_id, channel_id, fields))
+
+	monkeypatch.setattr(web.quiz_store, "configs_for_community", configs)
+	monkeypatch.setattr(web.quiz_store, "configure_for_community", configure)
+	base = dict(
+		cookies={web.COOKIE_NAME: "sess"}, method="POST",
+		json_body={"channel_id": "100", "enabled": True, "quiz_hour": 13, "open_window": 21600},
+		match_info={"community_id": "9"})
+
+	denied = asyncio.run(web.handle_api_community_quiz(request(**base)))
+	assert denied.status == 403
+	assert writes == []
+
+	response = asyncio.run(web.handle_api_community_quiz(request(
+		headers={"X-CSRF-Token": "tok"}, **base)))
+
+	assert response.status == 200
+	assert writes == [(9, 100, {"enabled": True, "quiz_hour": 13, "open_window": 21600})]
+	assert response.payload["active_channel_id"] == "100"
+	assert response.payload["channels"][0]["quiz_hour"] == 13
+
+
+def test_community_quiz_api_rejects_another_tenants_channel(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	beta = _discord_guild(888, admin=True)
+	channel = types.SimpleNamespace(id=200, name="beta-pub", guild=beta)
+	_install_discord(monkeypatch, [alpha, beta], channels={200: channel})
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0], _community_rows()[1]],
+		"community_channels": [{"community_id": 10, "channel_id": 200}],
+	}))
+
+	response = asyncio.run(web.handle_api_community_quiz(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={"channel_id": "200", "enabled": True, "quiz_hour": 9, "open_window": 86400},
+		match_info={"community_id": "9"})))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Quiz channel not found"}
+
+
+def _rating_seed_setup(monkeypatch, fake):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	rating = types.SimpleNamespace(channel_id=100, init_rp=1000, init_deviation=200)
+	role_updates = []
+
+	async def update_rating_roles(*members):
+		role_updates.extend(member.id for member in members)
+
+	queue_channel = types.SimpleNamespace(
+		guild_id=777, queues=[], rating=rating, update_rating_roles=update_rating_roles,
+		app=web.dc.app)
+	_install_discord(
+		monkeypatch, [alpha], channels={100: channel}, queue_channels={100: queue_channel})
+	monkeypatch.setattr(web.dc.app, "active_matches", [])
+	install_db(monkeypatch, fake)
+	return role_updates
+
+
+def test_rating_seed_preview_is_insert_only_and_uses_the_real_rating_target(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"player_ratings": [
+			{"channel_id": 100, "user_id": 102, "nick": "Rated", "rating": 1200, "deviation": 100},
+			{"channel_id": 100, "user_id": 103, "nick": "Unrated", "rating": None, "deviation": None},
+		],
+	})
+	_rating_seed_setup(monkeypatch, fake)
+	rows = [
+		{"user_id": 101, "nick": "New", "rating": 1400},
+		{"user_id": 102, "nick": "Do not overwrite", "rating": 1800},
+		{"user_id": 103, "rating": 1300, "deviation": 150},
+	]
+
+	denied = asyncio.run(web.handle_api_rating_seed_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, method="POST", json_body={"rows": rows},
+		match_info={"community_id": "9", "channel_id": "100"})))
+	assert denied.status == 403
+	assert denied.payload == {"error": "Invalid or missing CSRF token"}
+
+	response = asyncio.run(web.handle_api_rating_seed_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"},
+		method="POST", json_body={"rows": rows},
+		match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 200
+	payload = response.payload
+	assert payload["target"] == {
+		"pickup_channel_id": "100", "pickup_channel_name": "alpha-pub",
+		"rating_channel_id": "100", "rating_channel_name": "alpha-pub",
+		"rating_system": "SimpleNamespace", "initial_rating": 1000,
+		"initial_deviation": 200,
+	}
+	assert payload["summary"] == {
+		"received": 3, "ready": 2, "new": 1, "unrated": 1, "existing": 1, "invalid": 0,
+	}
+	assert [row["status"] for row in payload["rows"]] == ["new", "existing", "unrated"]
+	assert payload["rows"][1]["current_rating"] == 1200
+	assert payload["can_apply"] is True
+	assert len(payload["digest"]) == 64
+
+
+def test_rating_seed_apply_is_transactional_audited_and_does_not_replace_rated_rows(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"player_ratings": [
+			{"channel_id": 100, "user_id": 102, "nick": "Rated", "rating": 1200, "deviation": 100},
+			{"channel_id": 100, "user_id": 103, "nick": "Unrated", "rating": None, "deviation": None},
+		],
+	})
+	_rating_seed_setup(monkeypatch, fake)
+	rows = [
+		{"user_id": 101, "nick": "New", "rating": 1400},
+		{"user_id": 102, "nick": "Do not overwrite", "rating": 1800},
+		{"user_id": 103, "rating": 1300, "deviation": 150},
+	]
+	base_request = dict(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		match_info={"community_id": "9", "channel_id": "100"})
+	preview = asyncio.run(web.handle_api_rating_seed_preview(
+		request(json_body={"rows": rows}, **base_request))).payload
+
+	mismatch = asyncio.run(web.handle_api_rating_seed_apply(
+		request(json_body={"rows": rows, "digest": "0" * 64}, **base_request)))
+	assert mismatch.status == 409
+	assert not fake.inserted
+
+	response = asyncio.run(web.handle_api_rating_seed_apply(
+		request(json_body={"rows": rows, "digest": preview["digest"]}, **base_request)))
+
+	assert response.status == 200
+	assert response.payload == {
+		"ok": True, "applied": 2, "skipped_after_preview": 0, "rating_channel_id": "100"}
+	by_user = {row["user_id"]: row for row in fake.rows["player_ratings"]}
+	assert by_user[101]["rating"] == 1400
+	assert by_user[102]["rating"] == 1200
+	assert by_user[102]["nick"] == "Rated"
+	assert by_user[103]["rating"] == 1300
+	assert by_user[103]["nick"] == "Unrated"
+	history = [row for table, row in fake.inserted if table == "rating_history"]
+	assert len(history) == 2
+	assert {row["user_id"] for row in history} == {101, 103}
+	assert all(row["reason"] == "web onboarding seed by 42" for row in history)
+
+
+def test_rating_seed_rejects_a_shared_rating_host_from_another_guild(monkeypatch):
+	alpha = _discord_guild(777, admin=True)
+	beta = _discord_guild(888, admin=True)
+	pickup = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	foreign_rating = types.SimpleNamespace(id=200, name="beta-rating", guild=beta)
+	queue_channel = types.SimpleNamespace(
+		guild_id=777, queues=[], rating=types.SimpleNamespace(
+			channel_id=200, init_rp=1000, init_deviation=200))
+	_install_discord(
+		monkeypatch, [alpha, beta], channels={100: pickup, 200: foreign_rating},
+		queue_channels={100: queue_channel})
+	install_db(monkeypatch, FakeDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+	}))
+
+	response = asyncio.run(web.handle_api_rating_seed_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"},
+		method="POST", json_body={"rows": [{"user_id": 101, "rating": 1400}]},
+		match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 404
+	assert response.payload == {"error": "Rating host channel not found in this community"}
+
+
+def test_team_rating_seed_uses_the_highest_linked_profile_and_records_one_run(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"identities": [
+			{"profile_id": 9001, "user_id": 42, "aoe2_name": "Alt"},
+			{"profile_id": 9002, "user_id": 42, "aoe2_name": "Main"},
+		],
+	})
+	role_updates = _rating_seed_setup(monkeypatch, fake)
+
+	async def fetch_rating(profile_id):
+		return "ok", {
+			"profile_id": profile_id,
+			"name": "Main" if profile_id == 9002 else "Alt",
+			"rating": 1600 if profile_id == 9002 else 1400,
+			"leaderboard": "rm_team",
+		}
+
+	monkeypatch.setattr(web.lobby_api, "fetch_profile_team_rating", fetch_rating)
+	base_request = dict(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		match_info={"community_id": "9", "channel_id": "100"})
+	preview = asyncio.run(web.handle_api_team_rating_seed_preview(
+		request(json_body={}, **base_request))).payload
+
+	assert preview["can_apply"] is True
+	assert preview["summary"]["ready"] == 1
+	assert preview["rows"][0]["profile_id"] == 9002
+	assert preview["rows"][0]["rating"] == 1600
+	assert "highest current" in preview["selection_policy"]
+
+	response = asyncio.run(web.handle_api_team_rating_seed_apply(request(
+		json_body={"digest": preview["digest"]}, **base_request)))
+
+	assert response.status == 200
+	assert response.payload["applied"] == 1
+	stored = fake.rows["player_ratings"][0]
+	assert (stored["user_id"], stored["rating"], stored["deviation"]) == (42, 1600, 200)
+	history = fake.rows["rating_history"][0]
+	assert history["rating_change"] == 600
+	assert "profile 9002" in history["reason"]
+	assert fake.rows["community_imports"][0]["kind"] == "aoe_team_rating_seed"
+	assert role_updates == [42]
+
+	second = asyncio.run(web.handle_api_team_rating_seed_apply(request(
+		json_body={"digest": preview["digest"]}, **base_request)))
+	assert second.status == 409
+	assert len(fake.rows["community_imports"]) == 1
+
+
+def test_team_rating_seed_does_not_fetch_or_replace_an_existing_live_rating(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"identities": [{"profile_id": 9001, "user_id": 42, "aoe2_name": "Main"}],
+		"player_ratings": [{
+			"channel_id": 100, "user_id": 42, "nick": "Player", "rating": 1200,
+			"deviation": 90,
+		}],
+	})
+	_rating_seed_setup(monkeypatch, fake)
+
+	async def should_not_fetch(_profile_id):
+		raise AssertionError("an existing live rating does not need an external lookup")
+
+	monkeypatch.setattr(web.lobby_api, "fetch_profile_team_rating", should_not_fetch)
+	response = asyncio.run(web.handle_api_team_rating_seed_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={}, match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 200
+	assert response.payload["summary"]["existing"] == 1
+	assert response.payload["summary"]["profiles"] == 0
+	assert response.payload["can_apply"] is False
+	assert fake.rows["player_ratings"][0]["rating"] == 1200
+
+
+def test_team_rating_seed_fails_closed_when_any_linked_profile_is_unavailable(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"identities": [{"profile_id": 9001, "user_id": 42, "aoe2_name": "Main"}],
+	})
+	_rating_seed_setup(monkeypatch, fake)
+
+	async def unavailable(_profile_id):
+		return "unavailable", None
+
+	monkeypatch.setattr(web.lobby_api, "fetch_profile_team_rating", unavailable)
+	response = asyncio.run(web.handle_api_team_rating_seed_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={}, match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 200
+	assert response.payload["can_apply"] is False
+	assert response.payload["summary"]["unavailable"] == 1
+	assert "could not be verified" in " ".join(response.payload["blockers"])
+
+
+def _identity_import_setup(monkeypatch, fake):
+	alpha = _discord_guild(777, admin=True)
+	_install_discord(monkeypatch, [alpha])
+	install_db(monkeypatch, fake)
+	return alpha
+
+
+def test_identity_import_preview_blocks_non_members_and_existing_owners(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"identities": [
+			{"profile_id": 9002, "user_id": 42, "confidence": "self", "aoe2_name": "Same"},
+			{"profile_id": 9003, "user_id": 99, "confidence": "manual", "aoe2_name": "Other"},
+		],
+	})
+	_identity_import_setup(monkeypatch, fake)
+	rows = [
+		{"user_id": 42, "profile_id": 9001, "aoe2_name": "New"},
+		{"user_id": 42, "profile_id": 9002},
+		{"user_id": 42, "profile_id": 9003},
+		{"user_id": 77, "profile_id": 9004},
+	]
+
+	response = asyncio.run(web.handle_api_identity_import_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={"rows": rows}, match_info={"community_id": "9"})))
+
+	assert response.status == 200
+	payload = response.payload
+	assert payload["summary"] == {
+		"received": 4, "ready": 1, "new": 1, "unowned": 0, "existing": 1,
+		"conflict": 1, "not_member": 1, "invalid": 0,
+	}
+	assert [row["status"] for row in payload["rows"]] == [
+		"new", "existing", "conflict", "not_member"]
+	assert "different Discord user" in payload["rows"][2]["message"]
+	assert "99" not in payload["rows"][2]["message"], "another tenant's owner id stays private"
+	assert payload["can_apply"] is False
+	assert "preview labels only" in payload["name_policy"]
+
+
+def test_identity_import_apply_adds_only_new_or_unowned_profiles(monkeypatch):
+	fake = RatingSeedDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"identities": [
+			{"profile_id": 9002, "user_id": 42, "confidence": "self", "aoe2_name": "Same",
+			 "first_seen_at": 1, "last_seen_at": 2, "bound_at": 1},
+			{"profile_id": 9003, "user_id": None, "confidence": "seed", "aoe2_name": "Observed",
+			 "first_seen_at": 1, "last_seen_at": 2, "bound_at": 1},
+		],
+	})
+	_identity_import_setup(monkeypatch, fake)
+	invalidations = []
+	monkeypatch.setattr(web.resolver, "invalidate_cache", lambda: invalidations.append(True))
+	rows = [
+		{"user_id": 42, "profile_id": 9001, "aoe2_name": "Unverified upload name"},
+		{"user_id": 42, "profile_id": 9002},
+		{"user_id": 42, "profile_id": 9003},
+	]
+	base_request = dict(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		match_info={"community_id": "9"})
+	preview = asyncio.run(web.handle_api_identity_import_preview(
+		request(json_body={"rows": rows}, **base_request))).payload
+
+	response = asyncio.run(web.handle_api_identity_import_apply(
+		request(json_body={"rows": rows, "digest": preview["digest"]}, **base_request)))
+
+	assert response.status == 200
+	assert response.payload == {"ok": True, "applied": 2, "skipped_after_preview": 0}
+	by_profile = {row["profile_id"]: row for row in fake.rows["identities"]}
+	assert by_profile[9001]["user_id"] == 42
+	assert by_profile[9001]["aoe2_name"] is None, "uploaded labels are not game observations"
+	assert by_profile[9002]["confidence"] == "self", "same-owner rows are left untouched"
+	assert by_profile[9003]["user_id"] == 42
+	assert by_profile[9003]["aoe2_name"] == "Observed"
+	assert invalidations == [True]
+
+
+def _historical_import_rows():
+	return {
+		"source_name": "complete-export.zip",
+		"timezone": "UTC",
+		"archive_sha256": "a" * 64,
+		"matches": [{
+			"source_match_id": 7, "queue_name": "nomad", "reported_at": 1_700_000_000,
+			"winner": 0, "alpha_score": 1, "beta_score": 0, "maps": "Nomad",
+		}],
+		"players": [
+			{"user_id": 42, "nick": "Alice", "is_hidden": 0, "rating": 1510,
+			 "deviation": 90, "wins": 8, "losses": 3, "draws": 0, "streak": 2,
+			 "last_ranked_match_at": 1_700_000_000},
+			{"user_id": 43, "nick": "Bob", "is_hidden": 0, "rating": 1490,
+			 "deviation": 95, "wins": 3, "losses": 8, "draws": 0, "streak": -2,
+			 "last_ranked_match_at": 1_700_000_000},
+		],
+		"match_players": [
+			{"source_match_id": 7, "user_id": 42, "team": 0},
+			{"source_match_id": 7, "user_id": 43, "team": 1},
+		],
+		"rating_history": [
+			{"user_id": 42, "at": 1_700_000_001, "rating_before": 1500,
+			 "rating_change": 10, "deviation_before": 100, "deviation_change": -10,
+			 "source_match_id": 7, "reason": "nomad"},
+			{"user_id": 43, "at": 1_700_000_001, "rating_before": 1500,
+			 "rating_change": -10, "deviation_before": 100, "deviation_change": -5,
+			 "source_match_id": 7, "reason": "nomad"},
+		],
+	}
+
+
+def _historical_import_setup(monkeypatch, fake):
+	alpha = _discord_guild(777, admin=True)
+	channel = types.SimpleNamespace(id=100, name="alpha-pub", guild=alpha)
+	rating = types.SimpleNamespace(channel_id=100, init_rp=1000, init_deviation=200)
+	queue_channel = types.SimpleNamespace(
+		guild_id=777, queues=[], rating=rating, app=web.dc.app)
+	_install_discord(
+		monkeypatch, [alpha], channels={100: channel}, queue_channels={100: queue_channel})
+	monkeypatch.setattr(web.dc.app, "active_matches", [])
+	monkeypatch.setattr(
+		web.pubobot_migration, "parse_archive", lambda _payload: _historical_import_rows())
+	install_db(monkeypatch, fake)
+
+
+def test_historical_import_preflight_blocks_nonempty_or_disagreeing_targets(monkeypatch):
+	fake = MigrationDB(rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+		"matches": [{"match_id": 99, "channel_id": 100}],
+		"player_ratings": [{
+			"channel_id": 100, "user_id": 42, "rating": 1400, "deviation": 90,
+			"wins": 0, "losses": 0, "draws": 0, "streak": 0,
+			"last_ranked_match_at": None,
+		}],
+	})
+	_historical_import_setup(monkeypatch, fake)
+
+	response = asyncio.run(web.handle_api_pubobot_migration_preview(request(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		json_body={"file_name": "complete-export.zip"},
+		match_info={"community_id": "9", "channel_id": "100"})))
+
+	assert response.status == 200
+	assert response.payload["can_apply"] is False
+	blockers = response.payload["preflight"]["blockers"]
+	assert "already contains recorded matches" in " ".join(blockers)
+	assert "rating different from the archive" in " ".join(blockers)
+
+
+def test_historical_import_remaps_ids_and_writes_every_table_atomically(monkeypatch):
+	fake = MigrationDB(next_match_id=500, rows={
+		"web_sessions": [_session_row()],
+		"communities": [_community_rows()[0]],
+		"community_channels": [{"community_id": 9, "channel_id": 100}],
+	})
+	_historical_import_setup(monkeypatch, fake)
+	base_request = dict(
+		cookies={web.COOKIE_NAME: "sess"}, headers={"X-CSRF-Token": "tok"}, method="POST",
+		match_info={"community_id": "9", "channel_id": "100"})
+	preview = asyncio.run(web.handle_api_pubobot_migration_preview(
+		request(json_body={"file_name": "complete-export.zip"}, **base_request))).payload
+
+	response = asyncio.run(web.handle_api_pubobot_migration_apply(request(
+		json_body={"file_name": "complete-export.zip", "digest": preview["digest"]},
+		**base_request)))
+
+	assert response.status == 200
+	assert response.payload["first_match_id"] == 500
+	assert response.payload["next_match_id"] == 501
+	assert fake.next_match_id == 501
+	assert fake.rows["matches"][0]["match_id"] == 500
+	assert {row["match_id"] for row in fake.rows["match_players"]} == {500}
+	assert {row["match_id"] for row in fake.rows["rating_history"]} == {500}
+	assert fake.rows["community_import_match_map"] == [{
+		"import_id": preview["digest"], "community_id": 9, "channel_id": 100,
+		"source_match_id": 7, "match_id": 500,
+	}]
+	assert fake.rows["community_imports"][0]["created_by"] == 42
+	assert [table for table, _rows, _mode in fake.bulk_inserted] == [
+		"matches", "player_ratings", "match_players", "rating_history",
+		"community_import_match_map"]
+
+
+def test_tenant_aware_admin_routes_are_registered_and_used_by_the_spa():
+	paths = {path for _method, path, _handler in web.create_app().router.routes}
+	assert {"/live", "/health", "/ready"} <= paths
+	assert "/api/admin/communities" in paths
+	assert "/api/admin/communities/{community_id}" in paths
+	assert "/api/admin/communities/{community_id}/overview" in paths
+	assert "/api/admin/communities/{community_id}/policy" in paths
+	assert "/api/admin/communities/{community_id}/quiz" in paths
+	assert "/api/admin/communities/{community_id}/diagnostics" in paths
+	assert "/api/admin/communities/{community_id}/identities/import/preview" in paths
+	assert "/api/admin/communities/{community_id}/identities/import/apply" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/config" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/preview" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/apply" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/aoe-team/preview" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/ratings/seed/aoe-team/apply" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/preview" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/migration/pubobot/apply" in paths
+	assert "/api/admin/communities/{community_id}/channels/{channel_id}/queues/{queue_name}/config" in paths
+	page = Path(_REPO_ROOT, "nammaoe2bot", "web", "page.html").read_text()
+	assert "function adminCommunityApi(communityId, path)" in page
+	assert "adminCommunityApi(id, '/overview')" in page
+	assert "function renderCommunityOverview()" in page
+	assert "function openCommunityPolicy()" in page
+	assert "function saveCommunityPolicy()" in page
+	assert "function openQuizSettings(channelId)" in page
+	assert "function saveQuizSettings()" in page
+	assert "function openCommunityDiagnostics()" in page
+	assert "function renderCommunityDiagnostics()" in page
+	assert "function runDiagnosticAction(target)" in page
+	assert "function openRatingSeed(channelId)" in page
+	assert "function renderRatingSeedPreview()" in page
+	assert "function renderTeamRatingSeedPreview()" in page
+	assert "function applyTeamRatingSeed()" in page
+	assert "function openIdentityImport()" in page
+	assert "function renderIdentityPreview()" in page
+	assert "function openHistoricalMigration(channelId)" in page
+	assert "function renderHistoricalMigrationPreview()" in page
+	assert "'/ratings/seed/'+action" in page
+	assert "'/identities/import/'+action" in page
+	assert "'/migration/pubobot/'+action" in page
+	assert "It never overwrites an existing rating" in page
+	assert "publicCommunityId = String(id)" in page
+	assert "authFetch('/api/guilds')" not in page
+	assert "authFetch('/api/channels/" not in page
+
+
+def test_probe_only_app_exposes_no_dashboard_surface():
+	paths = {path for _method, path, _handler in probes.create_probe_app().router.routes}
+	assert paths == {"/live", "/health", "/ready"}
 
 
 def test_a_logged_in_user_asking_about_an_unknown_guild_is_a_404(monkeypatch):
@@ -822,11 +2058,54 @@ def test_the_http_exception_fakes_are_distinct_types():
 	assert (web.web.HTTPBadRequest().status, web.web.HTTPNotFound().status) == (400, 404)
 
 
+def test_security_middleware_hardens_success_and_error_responses():
+	async def success(_request):
+		return web.web.json_response({"ok": True})
+
+	response = asyncio.run(web._security_headers_middleware(
+		request(path="/api/admin/communities"), success))
+	assert response.headers["X-Content-Type-Options"] == "nosniff"
+	assert response.headers["X-Frame-Options"] == "DENY"
+	assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
+	assert response.headers["Cache-Control"] == "no-store"
+	assert response.headers["Vary"] == "Cookie"
+	legacy = web.web.json_response({"private": True})
+	legacy.headers["Vary"] = "Accept-Encoding"
+	web._apply_security_headers(legacy, "/api/guilds")
+	assert legacy.headers["Cache-Control"] == "no-store"
+	assert legacy.headers["Vary"] == "Accept-Encoding, Cookie"
+
+	async def forbidden(_request):
+		raise web.web.HTTPForbidden(text="no")
+
+	with pytest.raises(web.web.HTTPForbidden) as raised:
+		asyncio.run(web._security_headers_middleware(
+			request(path="/api/admin/communities/9"), forbidden))
+	assert raised.value.headers["Referrer-Policy"] == "no-referrer"
+	assert raised.value.headers["Cache-Control"] == "no-store"
+	assert web._security_headers_middleware in web.create_app().middlewares
+
+
 def test_login_without_oauth_configured_is_a_400(monkeypatch):
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "", raising=False)
 
 	with pytest.raises(web.web.HTTPBadRequest):
 		asyncio.run(web.handle_auth_login(request()))
+
+
+def test_oauth_is_disabled_without_an_explicit_safe_public_root(monkeypatch):
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "", raising=False)
+	assert web._oauth_enabled() is False
+
+	with pytest.raises(web.web.HTTPBadRequest):
+		asyncio.run(web.handle_auth_login(request(headers={
+			"X-Forwarded-Host": "attacker.example",
+			"X-Forwarded-Proto": "https",
+		})))
+
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://user:pass@example.test", raising=False)
+	assert web._oauth_enabled() is False
 
 
 def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
@@ -852,6 +2131,7 @@ def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
 def test_the_callback_rejects_a_request_with_no_code(monkeypatch):
 	install_db(monkeypatch, FakeDB())
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://nammaoe2bot.test", raising=False)
 
 	with pytest.raises(web.web.HTTPBadRequest):
 		asyncio.run(web.handle_auth_callback(request()))
@@ -863,6 +2143,7 @@ def test_the_callback_rejects_an_unknown_state(monkeypatch):
 	type. """
 	install_db(monkeypatch, FakeDB(rows={"web_oauth_states": []}))
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://nammaoe2bot.test", raising=False)
 
 	with pytest.raises(web.web.HTTPBadRequest) as raised:
 		asyncio.run(web.handle_auth_callback(request(code="abc", state="forged")))
@@ -873,10 +2154,23 @@ def test_the_callback_rejects_an_expired_state_and_drops_the_row(monkeypatch):
 	expired = {"state": "old", "expires_at": int(time.time()) - 1}
 	fake = install_db(monkeypatch, FakeDB(rows={"web_oauth_states": [expired]}))
 	monkeypatch.setattr(web.cfg, "DC_CLIENT_SECRET", "shhh", raising=False)
+	monkeypatch.setattr(web.cfg, "WS_ROOT_URL", "https://nammaoe2bot.test", raising=False)
 
 	with pytest.raises(web.web.HTTPBadRequest):
 		asyncio.run(web.handle_auth_callback(request(code="abc", state="old")))
 	assert ("web_oauth_states", {"state": "old"}) in fake.deleted
+
+
+def test_an_oauth_state_can_only_be_consumed_once(monkeypatch):
+	now = int(time.time())
+	fake = install_db(monkeypatch, FakeDB(rows={
+		"web_oauth_states": [{"state": "once", "expires_at": now + 60}],
+	}))
+
+	assert asyncio.run(web._consume_oauth_state("once", now)) is True
+	assert asyncio.run(web._consume_oauth_state("once", now)) is False
+	assert fake.rows["web_oauth_states"] == []
+	assert fake.deleted.count(("web_oauth_states", {"state": "once"})) == 1
 
 
 def test_logout_clears_the_session_cookie_and_redirects_home(monkeypatch):
@@ -890,6 +2184,7 @@ def test_logout_clears_the_session_cookie_and_redirects_home(monkeypatch):
 
 	assert raised.value.location == "/"
 	assert web.COOKIE_NAME in raised.value.deleted_cookies
+	assert (web.COOKIE_NAME, {"path": "/"}) in raised.value.deleted_cookie_options
 	assert ("web_sessions", {"session_id": "sess"}) in fake.deleted
 
 

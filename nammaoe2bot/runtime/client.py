@@ -85,4 +85,7 @@ intents.presences = True
 intents.members = True
 intents.message_content = True
 intents.bans = False
-dc = DiscordClient(intents=intents)
+# Reaction handling uses raw gateway events, so the bot does not need to retain
+# a large message history solely to observe adds/removes on check-in messages.
+MESSAGE_CACHE_SIZE = 100
+dc = DiscordClient(intents=intents, max_messages=MESSAGE_CACHE_SIZE)

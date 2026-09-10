@@ -10,8 +10,6 @@ import time
 from nammaoe2bot.runtime.console import log
 
 from . import policy, store
-from .fetch import fetch_replay
-from .parse import parse_replay
 from . import PARSER_VERSION
 
 _pending = set()
@@ -67,6 +65,12 @@ class ReplayStatsJobs:
     async def ingest_one(self, replay_match_id, bot_match_id, played_at_epoch, now,
                          attempts=0, first_seen_at=None, post_summary=True):
         """Run one match through fetch -> gate/parse -> store. Updates replay_ingest. Bulletproof."""
+        # This is the first point reached only when replay ingestion is enabled.
+        # Keeping these imports here avoids loading multiprocessing and building
+        # the parser's worker-pool wrapper in the lightweight Railway process.
+        from .fetch import fetch_replay
+        from .parse import parse_replay
+
         first_seen_at = first_seen_at or now
         try:
             await store.upsert_ingest(replay_match_id, status="processing", attempts=attempts,
@@ -113,7 +117,12 @@ class ReplayStatsJobs:
                 log.error(f"Replay-stats classification sync failed ({replay_match_id}): {e}")
             await store.upsert_ingest(replay_match_id, status="done", save_version=sv,
                                       parser_version=PARSER_VERSION, attempts=attempts + 1)
-            if post_summary and bot_match_id:
+            # Match Cards/APM are paused independently of replay ingestion.  A
+            # future basic parser may be enabled without reviving this costly,
+            # poorly understood presentation surface.
+            from nammaoe2bot.runtime.config import cfg
+            if (post_summary and bot_match_id
+                    and bool(getattr(cfg, "REPLAY_POSTGAME_CARDS_ENABLED", False))):
                 try:
                     from nammaoe2bot.features.postgame.card import post_match_analysis
                     posted = await post_match_analysis(bot_match_id)

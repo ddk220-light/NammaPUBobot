@@ -12,8 +12,13 @@ WORKDIR /app
 # huge, so this belongs in every long-running Python container.
 ENV PYTHONUNBUFFERED=1
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ARG INSTALL_REPLAY_DEPS=false
+COPY requirements.txt requirements-replay.txt ./
+RUN if [ "$INSTALL_REPLAY_DEPS" = "true" ]; then \
+      pip install --no-cache-dir -r requirements-replay.txt; \
+    else \
+      pip install --no-cache-dir -r requirements.txt; \
+    fi
 
 COPY . .
 

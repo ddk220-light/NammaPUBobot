@@ -269,9 +269,14 @@ class LobbyWatcher:
 					 row["map_name"], row["server"], row["profile_ids"],
 					 row["last_edit_at"], row["requested_by"], existing["id"]],
 				)
+				from .jobs import jobs
+				jobs.arm()
 				return existing["id"]
 			else:
-				return await db.insert("lobbies", row)
+				row_id = await db.insert("lobbies", row)
+				from .jobs import jobs
+				jobs.arm()
+				return row_id
 		except Exception as e:
 			log.error(f"LobbyWatcher({self.match.id}) persist failed: {e}")
 		return None

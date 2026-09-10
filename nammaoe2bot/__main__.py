@@ -75,11 +75,22 @@ bootstrap(dc.app)
 
 from nammaoe2bot.state import save_state
 
-# Load web server
-from nammaoe2bot.web.server import start_web_server
+# WS_ENABLE controls the dashboard, not Railway readiness. A disabled dashboard
+# still starts a tiny probe-only app so /ready can protect deployments without
+# importing the onboarding, migration and statistics web surfaces.
+if config.cfg.WS_ENABLE:
+	from nammaoe2bot.web.server import start_web_server
+else:
+	from nammaoe2bot.web.probes import start_probe_server as start_web_server
 web_runner = None
 
 log = console.log
+_fatal_exit = False
+
+
+def _process_exit_code():
+	"""The process status Railway's ON_FAILURE restart policy observes."""
+	return 1 if _fatal_exit else 0
 
 # ─── Task supervision ────────────────────────────────────────────────
 # Any critical task that dies unexpectedly must bring down the whole
@@ -95,12 +106,14 @@ def _task_done_callback(task):
 	only job is catching unhandled crashes. (init_web in particular is
 	a start-and-return task: it launches the aiohttp runner and returns.
 	Its 'completion' is expected and not worth logging.)"""
+	global _fatal_exit
 	if task.cancelled():
 		return
 	exc = task.exception()
 	if exc is None:
 		return
 	# Uncaught exception — critical failure.
+	_fatal_exit = True
 	tb_text = ''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))
 	log.error(f"CRITICAL: supervised task '{task.get_name()}' crashed:\n{tb_text}")
 	# Report to Sentry if configured. No-op when SENTRY_DSN is unset.
@@ -205,3 +218,4 @@ supervised_task(dc.start(config.cfg.DC_BOT_TOKEN), name="discord_client")
 
 log.info("Connecting to discord...")
 loop.run_forever()
+raise SystemExit(_process_exit_code())

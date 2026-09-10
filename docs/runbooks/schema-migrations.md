@@ -152,7 +152,7 @@ redeploy.
 Every boot prints the resolved value in the deploy log, both ways:
 
 ```
-Replay ingest: ENABLED (REPLAY_INGEST_ENABLED='True', unset - defaulted)
+Replay ingest: DISABLED (REPLAY_INGEST_ENABLED='False', unset - defaulted)
 Replay ingest: DISABLED (REPLAY_INGEST_ENABLED='')
 ```
 

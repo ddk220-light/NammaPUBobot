@@ -3,7 +3,7 @@ from asyncio import get_event_loop  # noqa: F401
 
 from nammaoe2bot.runtime.config import cfg
 
-from .mysql import Adapter as MySQLAdapter
+from .mysql import Adapter as MySQLAdapter, query_scope as query_scope
 
 # Scheme -> adapter, written out rather than assembled into a module path and
 # handed to import_module. The old form was `import_module('core.DBAdapters.' +

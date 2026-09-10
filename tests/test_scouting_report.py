@@ -915,6 +915,34 @@ def test_rank_survives_a_scouting_read_that_blows_up_and_shows_no_field(monkeypa
 	assert _scouting_fields(ctx.replied[0]) == []
 
 
+def test_rank_disabled_surfaces_do_not_read_scouting_or_render_matplotlib(monkeypatch):
+	stats = _prepared_stats_module(monkeypatch)
+	import nammaoe2bot.features.scouting.profile as player_profile
+
+	async def _gather(*_args, **_kwargs):
+		return {"elo_candles": [
+			{"games": 1}, {"games": 1},
+		]}
+
+	async def _scouting_must_not_run(*_args, **_kwargs):
+		raise AssertionError("disabled scouting was read")
+
+	def _chart_must_not_run(*_args, **_kwargs):
+		raise AssertionError("disabled Elo chart loaded Matplotlib")
+
+	monkeypatch.setattr(player_profile, "gather_profile", _gather)
+	monkeypatch.setattr(player_profile, "render_elo_candles", _chart_must_not_run)
+	monkeypatch.setattr(stats, "_scouting_report", _scouting_must_not_run)
+	monkeypatch.setattr(stats.cfg, "SCOUTING_REPORT_ENABLED", False, raising=False)
+	monkeypatch.setattr(stats.cfg, "RANK_ELO_CHART_ENABLED", False, raising=False)
+
+	ctx = _FakeRankCtx()
+	asyncio.run(stats._rank_profile(ctx))
+
+	assert _scouting_fields(ctx.replied[0]) == []
+	assert not hasattr(ctx.replied[0], "image")
+
+
 # ── what stage 5a removed ────────────────────────────────────────────────
 # Source-level, because nammaoe2bot/web/server.py cannot be imported under CI (aiohttp.web +
 # nammaoe2bot.runtime.client's nextcord) -- the same approach tests/test_web_identity.py
@@ -1054,4 +1082,3 @@ def _explainer(monkeypatch):
 	ctx = _ReplyCtx()
 	asyncio.run(stats.eapm_explained(ctx))
 	return ctx.replies[0]
-

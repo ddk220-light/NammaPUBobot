@@ -27,6 +27,15 @@ class FakeCursor:
 		self.rowcount = 0 if getattr(self.conn, "duplicate_next", False) else 1
 		self.conn.duplicate_next = False
 
+	async def executemany(self, sql, args):
+		rows = [list(row) for row in args]
+		self.executed.append((sql, rows))
+		self.conn.log.append("executemany")
+		if getattr(self.conn, "raise_next", None) is not None:
+			exc, self.conn.raise_next = self.conn.raise_next, None
+			raise exc
+		self.rowcount = len(rows)
+
 	async def fetchone(self):
 		return {"balance": 500}
 
@@ -66,18 +75,19 @@ class FakeConn:
 class FakePool:
 	def __init__(self, conn):
 		self._conn = conn
+		self.freesize = 1
+		self.cleared = 0
+		self.released = []
 
-	def acquire(self):
-		pool = self
+	async def acquire(self):
+		return self._conn
 
-		class _Ctx:
-			async def __aenter__(self):
-				return pool._conn
+	def release(self, conn):
+		self.released.append(conn)
 
-			async def __aexit__(self, *exc):
-				return False
-
-		return _Ctx()
+	async def clear(self):
+		self.cleared += 1
+		self.freesize = 0
 
 
 def make_adapter(adapter_module):
@@ -138,6 +148,124 @@ class TestTransaction:
 		sql, args = conn._cur.executed[0]
 		assert sql.startswith("INSERT IGNORE INTO gold_ledger")
 		assert args == [1, 2]
+
+	def test_insert_many_stays_on_the_transaction_connection(self, adapter_module):
+		a, conn = make_adapter(adapter_module)
+
+		async def run():
+			async with a.transaction() as tx:
+				return await tx.insert_many("matches", [{"a": 1}, {"a": 2}], on_duplicate="ignore")
+		assert asyncio.run(run()) == 2
+		assert conn.log == ["begin", "executemany", "commit"]
+		sql, rows = conn._cur.executed[0]
+		assert sql.startswith("INSERT IGNORE INTO matches")
+		assert rows == [[1], [2]]
+
+	def test_insert_many_empty_input_issues_no_statement(self, adapter_module):
+		a, conn = make_adapter(adapter_module)
+
+		async def run():
+			async with a.transaction() as tx:
+				return await tx.insert_many("matches", [])
+		assert asyncio.run(run()) == 0
+		assert conn.log == ["begin", "commit"]
+
+
+class TestLowCostPool:
+	def test_idle_free_connections_are_cleared_without_a_query(self, adapter_module):
+		a, _conn = make_adapter(adapter_module)
+		a._last_activity = 10
+		closed = asyncio.run(a.reap_idle_connections(idle_seconds=60, now=71))
+		assert closed == 1
+		assert a.pool.cleared == 1
+
+	def test_active_or_recent_pool_is_not_cleared(self, adapter_module):
+		a, _conn = make_adapter(adapter_module)
+		a._last_activity = 10
+		assert asyncio.run(a.reap_idle_connections(idle_seconds=60, now=69)) == 0
+		assert a.pool.cleared == 0
+
+	def test_connect_creates_a_zero_idle_two_connection_pool(self, adapter_module, monkeypatch):
+		seen = {}
+
+		class Pool:
+			freesize = 0
+			def close(self):
+				pass
+			async def wait_closed(self):
+				pass
+
+		async def create_pool(**kwargs):
+			seen.update(kwargs)
+			return Pool()
+
+		monkeypatch.setattr(adapter_module.aiomysql, "create_pool", create_pool)
+		a = adapter_module.Adapter("user:pass@host:3306/dbname")
+
+		async def run():
+			await a.connect()
+			await a.close()
+		asyncio.run(run())
+		assert seen["minsize"] == 0
+		assert seen["maxsize"] == 2
+		assert seen["connect_timeout"] == 5
+
+	def test_query_metrics_are_parameter_free_bounded_counters(self, adapter_module):
+		a, _conn = make_adapter(adapter_module)
+
+		async def run():
+			with adapter_module.query_scope("quiz.jobs"):
+				await a.fetchall("SELECT * FROM quiz_posts WHERE id=%s", [123])
+		asyncio.run(run())
+		rows = a.query_metrics_snapshot()
+		assert rows[0]["source"] == "quiz.jobs"
+		assert rows[0]["calls"] == 1
+		assert rows[0]["rows"] == 1
+		assert "123" not in rows[0]["fingerprint"]
+
+	def test_a_sleeping_database_retries_only_before_sql_is_sent(
+			self, adapter_module, monkeypatch):
+		a, conn = make_adapter(adapter_module)
+		attempts = {"n": 0}
+		operational = adapter_module.mysqlErr.OperationalError("asleep")
+
+		async def acquire():
+			attempts["n"] += 1
+			# Railway's observed cold wake exceeded the old three-attempt,
+			# two-second window.  Prove a longer wake still retries acquisition
+			# without ever replaying the SQL statement.
+			if attempts["n"] < 5:
+				raise operational
+			return conn
+
+		async def no_wait(_seconds):
+			return None
+
+		a.pool.acquire = acquire
+		monkeypatch.setattr(adapter_module.asyncio, "sleep", no_wait)
+
+		assert asyncio.run(a.fetchone("SELECT 1")) == {"balance": 500}
+		assert attempts["n"] == 5
+		assert conn.log == ["execute"], "connection retries must not retry SQL"
+
+	def test_exhausted_connection_wake_is_translated_without_sending_sql(
+			self, adapter_module, monkeypatch):
+		a, conn = make_adapter(adapter_module)
+
+		async def acquire():
+			raise adapter_module.mysqlErr.OperationalError("still asleep")
+
+		async def no_wait(_seconds):
+			return None
+
+		a.pool.acquire = acquire
+		monkeypatch.setattr(adapter_module.asyncio, "sleep", no_wait)
+		try:
+			asyncio.run(a.execute("UPDATE t SET x=1"))
+			assert False, "should have raised the adapter's OperationalError"
+		except adapter_module.OperationalError:
+			pass
+		assert conn.log == [], "no statement exists to retry or duplicate"
 
 
 class TestDriverErrorsAreTranslated:

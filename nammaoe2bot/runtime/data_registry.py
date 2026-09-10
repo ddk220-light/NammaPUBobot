@@ -230,6 +230,9 @@ REGISTRY = {
 	"community_channels": dict(
 		layer="core", tenancy="channel", writers=("nammaoe2bot/community.py",), retention="forever"
 	),
+	"community_policies": dict(
+		layer="core", tenancy="community", writers=("nammaoe2bot/community.py",), retention="forever"
+	),
 	# link — cross-tenant joins (stage 1.6)
 	# nammaoe2bot/runtime/migrations.py is a writer too: 004_identity_v2 backfills every
 	# historical pairing out of replay_matches.bot_match_id (INSERT IGNORE, so
@@ -267,6 +270,10 @@ REGISTRY = {
 	# ops/web
 	"web_sessions": dict(layer="ops", tenancy="global", writers=("nammaoe2bot/web/server.py",), retention="forever"),
 	"web_oauth_states": dict(layer="ops", tenancy="global", writers=("nammaoe2bot/web/server.py",), retention="forever"),
+	"community_imports": dict(
+		layer="ops", tenancy="community", writers=("nammaoe2bot/web/server.py",), retention="forever"),
+	"community_import_match_map": dict(
+		layer="link", tenancy="community", writers=("nammaoe2bot/web/server.py",), retention="forever"),
 }
 
 ALL_TABLES = frozenset(REGISTRY)

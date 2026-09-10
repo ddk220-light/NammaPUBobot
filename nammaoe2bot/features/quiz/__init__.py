@@ -3,7 +3,8 @@
 
 Self-contained: the bot reads only data/quiz_schedule.json + these quiz_* tables
 at runtime and NEVER touches the aoe2_matchup SQLite. Disabled by default (no
-quiz_settings row with enabled=1 -> the think() job does nothing). Mirrors the
+quiz_settings row with enabled=1 -> the think() job does nothing). Enabled rows
+are joined to community_channels and scheduled independently per tenant. Mirrors the
 nammaoe2bot/features/lobby/ isolation: dedicated tables declared here via ensure_table at import,
 imported by bot/__init__.py for that side effect and the QuizJobs singleton.
 

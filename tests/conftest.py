@@ -24,7 +24,9 @@ bottom, which runs per-test and only after its own stubs are in place.
 """
 from __future__ import annotations
 
+import importlib
 import importlib.util
+from contextlib import contextmanager
 import sys
 import types
 from pathlib import Path
@@ -53,10 +55,17 @@ _fake_core_config.cfg = types.SimpleNamespace(
 	STATUS='',
 	HELP='',
 	FLAGSHIP_GUILD_IDS=[],
+	DEPLOYMENT_MODE='self_hosted',
 	# nammaoe2bot/ingest/store.is_enabled() reads this (it replaced the single-row
-	# ops table 007_raw_renames dropped). Its own getattr default is True, so this
-	# is here to make the test environment's answer explicit, not incidental.
+	# ops table 007_raw_renames dropped). Product defaults are now False; this
+	# explicit fixture value keeps replay-pipeline unit tests enabled.
 	REPLAY_INGEST_ENABLED=True,
+	FILE_LOG_ENABLED=False,
+	LOG_LEVEL='INFO',
+	REPLAY_POSTGAME_CARDS_ENABLED=True,
+	SCOUTING_REPORT_ENABLED=True,
+	RANK_ELO_CHART_ENABLED=True,
+	REPLAY_DASHBOARD_ENABLED=True,
 )
 sys.modules['nammaoe2bot.runtime.config'] = _fake_core_config
 
@@ -122,6 +131,10 @@ class _RaisingDB:
 
 _fake_core_database = types.ModuleType('nammaoe2bot.runtime.database')
 _fake_core_database.db = _RaisingDB()
+@contextmanager
+def _query_scope(_source):
+	yield
+_fake_core_database.query_scope = _query_scope
 # __path__ so the stub does not hide its own submodules. The adapter tests
 # import nammaoe2bot.runtime.database.mysql for real (that IS the code under
 # test), and a plain ModuleType here answers "not a package" — which is a
@@ -168,15 +181,18 @@ class _FakeResponse:
 		self.status = status
 		self.text = text
 		self.content_type = content_type
+		self.headers = {}
 		# aiohttp's Response carries the cookie jar the auth handlers write to.
 		self.cookies = {}
 		self.deleted_cookies = []
+		self.deleted_cookie_options = []
 
 	def set_cookie(self, name, value, **kwargs):
 		self.cookies[name] = dict(value=value, **kwargs)
 
 	def del_cookie(self, name, **kwargs):
 		self.deleted_cookies.append(name)
+		self.deleted_cookie_options.append((name, dict(kwargs)))
 		self.cookies.pop(name, None)
 
 
@@ -192,8 +208,10 @@ class _FakeRouter:
 
 
 class _FakeApplication:
-	def __init__(self):
+	def __init__(self, **kwargs):
 		self.router = _FakeRouter()
+		self.client_max_size = kwargs.get("client_max_size")
+		self.middlewares = list(kwargs.get("middlewares") or [])
 
 
 def _fake_json_response(payload=None, status=200):
@@ -756,6 +774,9 @@ def adapter_module(monkeypatch):
 	monkeypatch.setitem(sys.modules, "pymysql.err", fake_pymysql.err)
 
 	monkeypatch.delitem(sys.modules, "nammaoe2bot.runtime.database.mysql", raising=False)
-	import nammaoe2bot.runtime.database.mysql as mysql
+	# import_module does not require the synthetic parent packages above to be
+	# exposed as attributes on nammaoe2bot; that keeps this fixture reliable when
+	# the adapter test is run alone as well as after the broader suite.
+	mysql = importlib.import_module("nammaoe2bot.runtime.database.mysql")
 	monkeypatch.delitem(sys.modules, "nammaoe2bot.runtime.database.mysql", raising=False)
 	return mysql

@@ -35,6 +35,9 @@ an inconsistency:
     it, and no other task claims ownership of it the way 4.5 claims identity
     resolution.
 """
+import asyncio
+from weakref import WeakKeyDictionary
+
 from nammaoe2bot.runtime.database import db
 
 _WIN_RESULTS = frozenset({"W", "L"})
@@ -90,8 +93,50 @@ def compute_civ_stats(pick_rows, channel_rows):
 
 _COLUMNS = ("community_id", "civ", "games", "wins", "losses", "computed_at")
 
+# One lock per community and event loop.  The database row lock below is the
+# cross-process guard; this small in-process guard also prevents two tasks in
+# one bot process from doing the relatively expensive read/compute pass at the
+# same time.  Keeping locks per loop matters to the synchronous test suite,
+# which drives async functions through multiple ``asyncio.run`` calls.
+_REFRESH_LOCKS = WeakKeyDictionary()
 
-async def write(community_id, civ_counts, computed_at):
+
+def _refresh_lock(community_id):
+	loop = asyncio.get_running_loop()
+	by_community = _REFRESH_LOCKS.setdefault(loop, {})
+	return by_community.setdefault(int(community_id), asyncio.Lock())
+
+
+async def _replace(tx, community_id, civ_counts, computed_at):
+	"""Replace one community's rows on an already-locked transaction."""
+	await tx.execute("DELETE FROM civ_stats WHERE community_id=%s", [community_id])
+	if not civ_counts:
+		return 0
+	payload = []
+	for civ, counts in civ_counts.items():
+		# Merged rather than subscripted field-by-field so a `counts` dict
+		# missing a key (e.g. a caller-built row that forgot `losses`) shows
+		# up as a key-set mismatch below -- a loud, diagnosable ValueError --
+		# instead of a bare KeyError from reading `counts["losses"]` directly.
+		row = dict(civ=civ, community_id=community_id, computed_at=computed_at, **counts)
+		if set(row) != set(_COLUMNS):
+			# Loud, not coerced -- see game_stats.write for why.
+			raise ValueError(
+				f"civ_stats row for community {community_id} civ {civ} has keys {sorted(row)}, "
+				f"expected exactly {sorted(_COLUMNS)}")
+		payload.append({c: row[c] for c in _COLUMNS})
+	await tx.insert_many("civ_stats", payload, on_duplicate="replace")
+	return len(payload)
+
+
+async def _lock_row(tx, community_id):
+	"""Serialize refreshes across bot processes/deploy overlap for one tenant."""
+	await tx.fetchone(
+		"SELECT community_id FROM communities WHERE community_id=%s FOR UPDATE",
+		[community_id])
+
+
+async def write(community_id, civ_counts, computed_at, db_adapter=None):
 	"""Store one community's whole civ_stats set. Idempotent:
 	DELETE this community's rows, then insert what compute_civ_stats
 	returned for it (i.e. one value of the outer dict compute_civ_stats
@@ -108,27 +153,64 @@ async def write(community_id, civ_counts, computed_at):
 	whole SET of civs, exactly like game_stats' grain per match is a whole
 	set of players.
 
-	ACCEPTED TRADEOFF, deliberate, same as every delete-then-insert writer in
-	this package: the DELETE and the INSERT are not one transaction (the
-	adapter runs autocommit with no transaction surface -- see
-	nammaoe2bot/runtime/database/mysql.py). An insert failing after a successful delete
-	leaves this community's civ-stats page briefly empty rather than stale;
-	the next refresh pass repopulates it.
+	The replacement is one transaction and locks the owning community row first.
+	That makes the delete+insert atomic and serializes overlapping deploys as
+	well as concurrent jobs in this process.  A failed insert therefore rolls
+	back to the previous complete summary instead of leaving an empty page.
 	"""
-	await db.execute("DELETE FROM civ_stats WHERE community_id=%s", [community_id])
-	if not civ_counts:
-		return
-	payload = []
-	for civ, counts in civ_counts.items():
-		# Merged rather than subscripted field-by-field so a `counts` dict
-		# missing a key (e.g. a caller-built row that forgot `losses`) shows
-		# up as a key-set mismatch below -- a loud, diagnosable ValueError --
-		# instead of a bare KeyError from reading `counts["losses"]` directly.
-		row = dict(civ=civ, community_id=community_id, computed_at=computed_at, **counts)
-		if set(row) != set(_COLUMNS):
-			# Loud, not coerced -- see game_stats.write for why.
-			raise ValueError(
-				f"civ_stats row for community {community_id} civ {civ} has keys {sorted(row)}, "
-				f"expected exactly {sorted(_COLUMNS)}")
-		payload.append({c: row[c] for c in _COLUMNS})
-	await db.insert_many("civ_stats", payload, on_duplicate="replace")
+	dbw = db_adapter or db
+	async with _refresh_lock(community_id):
+		async with dbw.transaction() as tx:
+			await _lock_row(tx, community_id)
+			return await _replace(tx, community_id, civ_counts, computed_at)
+
+
+async def refresh_community(community_id, computed_at, db_adapter=None):
+	"""Recompute one community under the same lock as its atomic replacement."""
+	dbw = db_adapter or db
+	async with _refresh_lock(community_id):
+		async with dbw.transaction() as tx:
+			await _lock_row(tx, community_id)
+			channels = await tx.fetchall(
+				"SELECT channel_id, community_id FROM community_channels "
+				"WHERE community_id=%s", [community_id]) or []
+			picks = await tx.fetchall(
+				"SELECT cp.channel_id, cp.civ, cp.result FROM civ_picks cp "
+				"JOIN community_channels cc ON cc.channel_id=cp.channel_id "
+				"WHERE cc.community_id=%s", [community_id]) or []
+			counts = compute_civ_stats(
+				list(picks), list(channels)).get(community_id, {})
+			return await _replace(tx, community_id, counts, computed_at)
+
+
+async def refresh_for_channel(channel_id, computed_at, db_adapter=None):
+	"""Refresh the small civ W/L summary for the community owning ``channel_id``.
+
+	This is the non-replay path: civ picks arrive from the linked-game API or
+	LobbyBOT and should remain current while replay-derived boards are frozen.
+	The whole community is recomputed so multiple enrolled channels still merge
+	correctly.
+	"""
+	dbw = db_adapter or db
+	owner = await dbw.fetchone(
+		"SELECT community_id FROM community_channels WHERE channel_id=%s",
+		[channel_id])
+	if not owner:
+		return False
+	community_id = owner["community_id"]
+	await refresh_community(
+		community_id, computed_at, db_adapter=dbw)
+	return True
+
+
+async def refresh_all(computed_at, db_adapter=None):
+	"""Daily/boot recovery for civ summaries while replay analysis is paused."""
+	dbw = db_adapter or db
+	communities = await dbw.fetchall(
+		"SELECT DISTINCT community_id FROM community_channels") or []
+	if not communities:
+		return 0
+	community_ids = sorted(row["community_id"] for row in communities)
+	for community_id in community_ids:
+		await refresh_community(community_id, computed_at, db_adapter=dbw)
+	return len(community_ids)

@@ -3,7 +3,6 @@ import sys
 import os
 import datetime
 from threading import Thread
-from multiprocessing import Queue
 import rlcompleter  # this does python autocomplete by tab  # noqa: F401
 try:
 	import readline
@@ -25,11 +24,13 @@ LogLevelToInt = {
 class Log:
 
 	def __init__(self):
-		# Create log dir if needed
-		if not os.path.exists(os.path.abspath("logs")):
-			os.makedirs('logs')
-
-		self.file = open(datetime.datetime.now().strftime("logs/log_%Y-%m-%d-%H:%M"), 'w')  # noqa: SIM115
+		self.file = None
+		if getattr(cfg, 'FILE_LOG_ENABLED', False):
+			# Railway already captures stdout. Local duplication is available for
+			# self-hosted operators who explicitly request it.
+			if not os.path.exists(os.path.abspath("logs")):
+				os.makedirs('logs')
+			self.file = open(datetime.datetime.now().strftime("logs/log_%Y-%m-%d-%H:%M"), 'w')  # noqa: SIM115
 		self.loglevel = LogLevelToInt[cfg.LOG_LEVEL]
 
 	@staticmethod
@@ -51,10 +52,12 @@ class Log:
 			log_level,
 			string)
 		self.display(string)
-		self.file.write(string + '\r\n')
+		if self.file is not None:
+			self.file.write(string + '\r\n')
 
 	def close(self):
-		self.file.close()
+		if self.file is not None:
+			self.file.close()
 
 	def chat(self, data):
 		if self.loglevel <= 0:
@@ -95,8 +98,11 @@ class Log:
 def user_input():
 	readline.parse_and_bind("tab: complete")
 	while 1:
-		input_cmd = input('>')
-		user_input_queue.put(input_cmd)
+		# The legacy command consumer was removed years ago; retain only the local
+		# interactive prompt without allocating a multiprocessing pipe/feeder for a
+		# queue nobody reads. Railway never enters this branch because stdin is not
+		# a TTY.
+		input('>')
 
 
 def terminate():
@@ -106,7 +112,6 @@ def terminate():
 
 alive = True
 log = Log()
-user_input_queue = Queue()
 
 # Init user console (skip in non-interactive environments like containers)
 if sys.stdin.isatty():

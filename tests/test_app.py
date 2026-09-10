@@ -29,6 +29,7 @@ def test_application_starts_with_empty_state():
 	assert app.active_matches == []
 	assert app.active_queues == []
 	assert len(app.waiting_reactions) == 0
+	assert app.match_creation_lock is not None
 	assert app.ready is False
 	assert app.was_ready is False
 
@@ -41,6 +42,7 @@ def test_state_is_per_instance_not_shared():
 	a.channels[1] = "channel"
 	assert b.active_matches == []
 	assert b.channels == {}
+	assert a.match_creation_lock is not b.match_creation_lock
 
 
 def test_the_module_exposes_no_global_instance_and_no_accessor():

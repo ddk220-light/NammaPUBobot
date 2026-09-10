@@ -407,8 +407,8 @@ def test_history_index_migration_is_idempotent():
 	from nammaoe2bot.runtime import migrations
 	from tests.test_migrations import FakeDb
 	db = FakeDb(tables={'civ_picks'})
-	asyncio.run(migrations._m012(db))
-	asyncio.run(migrations._m012(db))
+	asyncio.run(migrations._m013(db))
+	asyncio.run(migrations._m013(db))
 	assert sum('CREATE INDEX' in q for q in db.executed) == 1
 
 

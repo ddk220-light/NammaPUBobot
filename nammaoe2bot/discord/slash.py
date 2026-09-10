@@ -2,6 +2,7 @@ from typing import Callable  # noqa: UP035
 from asyncio import wait_for, shield
 from asyncio.exceptions import TimeoutError as aTimeoutError
 from nextcord import Interaction, SlashOption, Member, TextChannel
+from nextcord.errors import InteractionResponded
 import traceback
 import time
 
@@ -16,7 +17,7 @@ from nammaoe2bot.runtime.config import cfg
 # lived or which subsystem it belonged to. Naming the module makes the surface
 # self-describing: a reader sees at a glance that /rank is a stats command and
 # /quiz a quiz one, and a feature's commands live WITH the feature.
-from nammaoe2bot.discord.commands import admin, config, matches, queues, stats
+from nammaoe2bot.discord.commands import admin, config, matches, queues as queue_commands, stats
 from nammaoe2bot.features.betting import commands as betting_commands
 from nammaoe2bot.features.identity import commands as identity_commands
 from nammaoe2bot.features.quiz import commands as quiz_commands
@@ -63,7 +64,15 @@ async def run_slash(coro: Callable, interaction: Interaction, **kwargs):
 		await wait_for(shield(run_slash_coro(ctx, coro, **kwargs)), timeout=max(2.5 - passed_time, 0))
 	except (TimeoutError, aTimeoutError):
 		log.info('Deferring /slash command')
-		await interaction.response.defer()
+		# The shielded command keeps running and can finish between wait_for's
+		# timeout and this defer.  In that race it has already answered, so defer
+		# would raise InteractionResponded and incorrectly turn a successful
+		# command into an application-command failure.
+		if not interaction.response.is_done():
+			try:
+				await interaction.response.defer()
+			except InteractionResponded:
+				pass
 
 
 async def run_slash_coro(ctx: SlashContext, coro: Callable, **kwargs):
@@ -141,7 +150,7 @@ async def _add_player(
 	interaction: Interaction,
 	player: Member = SlashOption(name="player", description="Member to add to the queue", verify=False),
 	queue: str = SlashOption(name="queue", description="Queue to add to.")
-): await run_slash(queues.add_player, interaction=interaction, player=player, queue=queue)
+): await run_slash(queue_commands.add_player, interaction=interaction, player=player, queue=queue)
 
 
 @groups.admin_queue.subcommand(name='remove_player', description='Remove a player from queues.')
@@ -149,14 +158,14 @@ async def _remove_player(
 	interaction: Interaction,
 	player: Member = SlashOption(name="player", description="Member to remove from the queues", verify=False),
 	queues: str = SlashOption(name="queues", description="Queues to remove the player from.", required=False)
-): await run_slash(queues.remove_player, interaction=interaction, player=player, queues=queues)
+): await run_slash(queue_commands.remove_player, interaction=interaction, player=player, queues=queues)
 
 
 @groups.admin_queue.subcommand(name='clear', description='Remove players from the queues.')
 async def _reset(
 		interaction: Interaction,
 		queue: str = SlashOption(name="queue", description="Only clear this queue.", required=False)
-): await run_slash(queues.reset, interaction=interaction, queue=queue)
+): await run_slash(queue_commands.reset, interaction=interaction, queue=queue)
 _reset.on_autocomplete("queue")(autocomplete.queues)
 
 
@@ -164,7 +173,7 @@ _reset.on_autocomplete("queue")(autocomplete.queues)
 async def _start_queue(
 	interaction: Interaction,
 	queue: str
-): await run_slash(queues.start, interaction=interaction, queue=queue)
+): await run_slash(queue_commands.start, interaction=interaction, queue=queue)
 _start_queue.on_autocomplete("queue")(autocomplete.queues)
 
 
@@ -174,7 +183,9 @@ async def _split_queue(
 	queue: str = SlashOption(),
 	group_size: int = SlashOption(description="Amount of players per match", required=False),
 	sort_by_rating: bool = SlashOption(description="Sort groups by players ratings", required=False)
-): await run_slash(queues.split, interaction=interaction, queue=queue, group_size=group_size, sort_by_rating=sort_by_rating)
+): await run_slash(
+	queue_commands.split, interaction=interaction, queue=queue,
+	group_size=group_size, sort_by_rating=sort_by_rating)
 _split_queue.on_autocomplete("queue")(autocomplete.queues)
 
 
@@ -422,7 +433,7 @@ async def _add(
 		name="queues",
 		description="Queues you want to add to.",
 		required=False)
-): await run_slash(queues.add, interaction=interaction, queues=queues)
+): await run_slash(queue_commands.add, interaction=interaction, queues=queues)
 _add.on_autocomplete("queues")(autocomplete.queues)
 
 
@@ -433,7 +444,7 @@ async def _remove(
 		name="queues",
 		description="Queues you want to add to.",
 		required=False)
-): await run_slash(queues.remove, interaction=interaction, queues=queues)
+): await run_slash(queue_commands.remove, interaction=interaction, queues=queues)
 _remove.on_autocomplete("queues")(autocomplete.queues)
 
 

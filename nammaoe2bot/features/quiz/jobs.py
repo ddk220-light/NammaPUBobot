@@ -1,14 +1,16 @@
 # -*- coding: utf-8 -*-
 """Daily-post / close-and-reveal / weekly-leaderboard job on the shared 1-s think()
 tick. Bulletproof and cadence-gated like LobbyJobs — a failure here can never break
-the tick or any existing flow. Does nothing unless a quiz_settings row has
-enabled=1. nextcord / nammaoe2bot.runtime.client / embeds are imported lazily inside the methods so
+the tick or any existing flow. Every enabled community is processed behind its
+own error boundary; one tenant cannot monopolize or break the schedule for another.
+nextcord / nammaoe2bot.runtime.client / embeds are imported lazily inside the methods so
 importing nammaoe2bot.features.quiz (hence this module) stays test-safe under the conftest stubs."""
 import asyncio
 import json
 import time
 
 from nammaoe2bot.runtime.console import log
+from nammaoe2bot.runtime.database import query_scope
 
 from . import player_bank, schedule, scoring, store
 
@@ -29,11 +31,17 @@ def _hour(value, default):
 
 
 class QuizJobs:
-	POLL_INTERVAL = 30     # seconds between quiz maintenance passes
+	POLL_INTERVAL = 30     # provisional/error cadence while a pass is running
+	RECOVERY_INTERVAL = 24 * 60 * 60
+	RETRY_INTERVAL = 5 * 60
 
 	def __init__(self):
 		self.next_run = 0
 		self._running = False
+
+	def wake(self):
+		"""Recompute deadlines after an admin/config/post write."""
+		self.next_run = 0
 
 	async def think(self, frame_time):
 		try:
@@ -47,6 +55,7 @@ class QuizJobs:
 				self._running = False
 				_pending.discard(t)
 				if not t.cancelled() and t.exception() is not None:
+					self.next_run = time.time() + self.RETRY_INTERVAL
 					log.error(f"Quiz job crashed: {t.exception()}")
 
 			_pending.add(task)
@@ -56,11 +65,53 @@ class QuizJobs:
 			log.error(f"Quiz think() error (ignored): {e}")
 
 	async def _run(self):
-		now = int(time.time())
-		cfg = await store.get_config()
-		if cfg and cfg.get("enabled"):
-			await self._maybe_post_daily(cfg, now)
-		await self._close_due(now)                    # always: resolve any leftover open posts
+		with query_scope("quiz.jobs"):
+			now = int(time.time())
+			seen_communities = set()
+			configs = await store.enabled_configs()
+			failed = False
+			for cfg in configs:
+				community_id = int(cfg["community_id"])
+				if community_id in seen_communities:
+					log.error(
+						f"Quiz configuration has multiple enabled channels for community "
+						f"{community_id}; ignoring channel {cfg.get('channel_id')}.")
+					continue
+				seen_communities.add(community_id)
+				try:
+					await self._maybe_post_daily(cfg, now)
+				except Exception as e:
+					failed = True
+					log.error(
+						f"Quiz daily job failed for community {community_id} "
+						f"channel {cfg.get('channel_id')}: {e}")
+			failed = await self._close_due(now) or failed
+
+			deadlines = [self._config_due_at(cfg, now) for cfg in configs]
+			next_close_fn = getattr(store, "next_open_close_at", None)
+			next_close = await next_close_fn() if next_close_fn is not None else None
+			if next_close is not None:
+				deadlines.append(int(next_close))
+			if failed:
+				deadlines.append(now + self.RETRY_INTERVAL)
+			target = min(deadlines) if deadlines else now + self.RECOVERY_INTERVAL
+			# A failed due item remains in the DB with a past deadline. Do not turn
+			# that durable retry ticket into a one-second hot loop.
+			if target <= now:
+				target = now + (self.RETRY_INTERVAL if failed else 1)
+			self.next_run = target
+
+	@staticmethod
+	def _config_due_at(cfg, now):
+		test_interval = int(cfg.get("test_interval") or 0)
+		if test_interval:
+			return max(now, int(cfg.get("last_post_at") or 0) + test_interval)
+		hour = _hour(cfg.get("quiz_hour"), 9)
+		if scoring.daily_due(now, hour, cfg.get("last_post_ymd")):
+			return now
+		day_start = now - (now % 86400)
+		target = day_start + hour * 3600
+		return target if target > now else target + 86400
 
 	async def _maybe_post_daily(self, cfg, now):
 		ti = cfg.get("test_interval")
@@ -71,7 +122,11 @@ class QuizJobs:
 			return
 		await self._reveal_previous(cfg["channel_id"])
 		await self._maybe_week_leaderboard(cfg["channel_id"])
-		await self._post_question(cfg["channel_id"], int(cfg.get("open_window") or 86400), now)
+		post_id = await self._post_question(
+			cfg["channel_id"], int(cfg.get("open_window") or 86400), now)
+		if post_id is not None:
+			cfg["last_post_ymd"] = scoring._ymd(now)
+			cfg["last_post_at"] = now
 
 	async def _next_question(self, channel_id, seq, day):
 		"""The question for this channel's `seq`-th slot, already stamped with its
@@ -84,15 +139,25 @@ class QuizJobs:
 		cadence, which is the whole point of the feature; posting a padded
 		four-option question from a board with two leaders would not."""
 		if schedule.source_for_day(day) == "player":
-			try:
-				recent = await store.recent_question_ids(channel_id, RECENT_WINDOW)
-				q = await player_bank.question_for_channel(
-					channel_id, seq, player_bank.metrics_of_ids(recent))
-				if q:
-					return q
-				log.info(f"Quiz seq {seq}: no board can carry a player question — using the game bank.")
-			except Exception as e:
-				log.error(f"Quiz player-bank generation failed at seq {seq} (using the game bank): {e}")
+			from nammaoe2bot import community
+			if community.replay_pipeline_available():
+				try:
+					recent = await store.recent_question_ids(channel_id, RECENT_WINDOW)
+					q = await player_bank.question_for_channel(
+						channel_id, seq, player_bank.metrics_of_ids(recent))
+					if q:
+						return q
+					log.info(
+						f"Quiz seq {seq}: no board can carry a player question — "
+						"using the game bank.")
+				except Exception as e:
+					log.error(
+						f"Quiz player-bank generation failed at seq {seq} "
+						f"(using the game bank): {e}")
+			else:
+				log.info(
+					f"Quiz seq {seq}: replay-derived player bank is paused — "
+					"using the game bank.")
 		return schedule.next_game_entry(_SCHEDULE, await store.asked_ids(channel_id))
 
 	async def next_up(self, channel_id):
@@ -135,6 +200,7 @@ class QuizJobs:
 	async def reveal_now(self, channel_id):
 		"""Admin: immediately reveal the previous still-open question."""
 		await self._reveal_previous(channel_id)
+		self.wake()
 
 	async def force_post(self, channel_id):
 		"""Post a quiz immediately, ignoring the daily schedule (admin /quiz post_now).
@@ -143,7 +209,10 @@ class QuizJobs:
 		later today."""
 		cfg = await store.get_config(channel_id)
 		open_window = int((cfg or {}).get("open_window") or 86400)
-		return await self._post_question(channel_id, open_window, int(time.time()))
+		try:
+			return await self._post_question(channel_id, open_window, int(time.time()))
+		finally:
+			self.wake()
 
 	async def _reveal(self, post, fresh):
 		"""Resolve one poll: grade every cast vote, pay gold, edit the card
@@ -282,11 +351,14 @@ class QuizJobs:
 		picked up again on the next pass. Close first and a voter's unpaid gold
 		is out of this query forever, with the ledger and the balance cache
 		still agreeing, so nothing downstream could detect the loss either."""
+		failed = False
 		for post in await store.due_to_close(now):
 			try:
 				await self._reveal(post, fresh=False)
 			except Exception as e:
+				failed = True
 				log.error(f"Quiz close({post.get('id')}) failed: {e}")
+		return failed
 
 
 jobs = QuizJobs()
