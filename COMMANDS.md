@@ -30,9 +30,11 @@ Civilizations are revealed only when everyone has picked or time runs out.
 All buttons stay available-looking to hide which civ was taken. If you try a
 taken civ, the bot tells you privately and you can choose another.
 
-The pool avoids civs recorded in this channel in the last 24 hours, filling
-any shortage with the least frequently/recently played. Unrecorded games cannot
-be considered. The catalog includes DLC civs; pick one you own or use Random.
+The pool avoids civs explicitly picked with `/civpick` in this channel in the
+last 24 hours, including picks made before a redo. Unpicked options and civs
+received through in-game Random can appear again. If there aren't 12 fresh civs,
+the bot fills the shortage with the least frequently/recently picked ones.
+The catalog includes DLC civs; pick one you own or use Random.
 Repeating the command shows saved results. The initiator or a channel admin can
 use `redo:true` to clear picks and redraw, with a 30-second cooldown. `minutes`
 accepts 1–10. Roster changes cancel an open round; use redo for the new teams.

@@ -24,6 +24,21 @@ db.ensure_table(dict(
 ))
 
 
+db.ensure_table(dict(
+	tname='civ_pick_history',
+	columns=[
+		dict(cname='channel_id', ctype=db.types.int),
+		dict(cname='match_id', ctype=db.types.int),
+		dict(cname='generation', ctype=db.types.int),
+		dict(cname='user_id', ctype=db.types.int),
+		dict(cname='civ', ctype=db.types.str),
+		dict(cname='at', ctype=db.types.int),
+	],
+	primary_keys=['channel_id', 'match_id', 'generation', 'user_id'],
+	indexes=[('idx_civ_pick_history_channel_at', ['channel_id', 'at'])],
+))
+
+
 def unpack(row):
 	if row:
 		return {**row, 'state': json.loads(row['state_json'])}
@@ -74,12 +89,15 @@ async def start(channel_id, match_id, roster, user_id, minutes, redo, admin=Fals
 				raise ValueError('Wait 30 seconds between starts or redos for this match.')
 		# Same connection: no nested checkout while holding the session lock.
 		recent = await tx.fetchall(
-			'SELECT civ, COUNT(*) AS uses, MAX(at) AS last_at FROM civ_picks '
+			'SELECT civ, COUNT(*) AS uses, MAX(at) AS last_at FROM civ_pick_history '
 			'WHERE channel_id=%s AND at >= %s AND at <= %s GROUP BY civ',
 			[channel_id, now - 86400, now]) or []
-		options = picking.select_pool(recent, previous.get('options', ()))
+		options = picking.select_pool(recent)
 		state = picking.new_round(roster, options, user_id, now, minutes, previous)
 		await _write(tx, channel_id, match_id, state)
+		# Opportunistic, bounded cleanup; no new periodic job or idle DB work.
+		await tx.execute('DELETE FROM civ_pick_history WHERE channel_id=%s AND at < %s LIMIT 100',
+			[channel_id, now - 86400])
 		return True
 
 
@@ -93,8 +111,18 @@ async def change(channel_id, match_id, operation):
 			return 'This civ-pick round no longer exists.'
 		state = json.loads(row['state_json'])
 		before = json.dumps(state)
-		result = operation(state, int(time.time()))
+		prior_picks = set(state['picks'])
+		now = int(time.time())
+		result = operation(state, now)
 		if json.dumps(state) != before:
+			# Record only newly accepted explicit choices, in the SAME transaction
+			# as the pick. Random (including auto-timeouts) never enters history.
+			for uid in state['picks'].keys() - prior_picks:
+				choice = state['picks'][uid]
+				if choice != picking.RANDOM:
+					await tx.insert('civ_pick_history', dict(channel_id=channel_id, match_id=match_id,
+						generation=state['generation'], user_id=int(uid), civ=state['options'][choice], at=now),
+						on_duplicate='ignore')
 			await _write(tx, channel_id, match_id, state)
 		return result
 

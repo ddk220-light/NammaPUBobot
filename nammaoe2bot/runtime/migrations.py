@@ -1845,3 +1845,36 @@ async def _m013(db):
 	"""Bound the rolling 24-hour query to this channel's recent history."""
 	if await table_exists(db, 'civ_picks') and not await index_exists(db, 'civ_picks', 'idx_civ_picks_channel_at'):
 		await db.execute('CREATE INDEX `idx_civ_picks_channel_at` ON `civ_picks` (`channel_id`, `at`)')
+
+
+@migration("014_explicit_civ_pick_history")
+async def _m014(db):
+	"""Preserve recent explicit choices from the old snapshot-only picker.
+
+	Old snapshots have no individual pick timestamps, so use round opened_at
+	for those legacy choices. Superseded rounds are unrecoverable. New picks
+	are recorded at their actual acceptance time by pick_store.change.
+	"""
+	if not await table_exists(db, 'civ_pick_rounds'):
+		return  # A fresh installation gets the table from its declaration.
+	await db.execute('CREATE TABLE IF NOT EXISTS civ_pick_history ('
+		'`channel_id` BIGINT NOT NULL, `match_id` BIGINT NOT NULL, '
+		'`generation` BIGINT NOT NULL, `user_id` BIGINT NOT NULL, '
+		'`civ` VARCHAR(191) NOT NULL, `at` BIGINT NOT NULL, '
+		'PRIMARY KEY (`channel_id`, `match_id`, `generation`, `user_id`), '
+		'KEY `idx_civ_pick_history_channel_at` (`channel_id`, `at`))')
+	# One-time scan of recent legacy snapshots. Runtime uses the new time index.
+	import json
+	cutoff = int(time.time()) - 86400
+	rows = await db.fetchall(
+		"SELECT channel_id, match_id, state_json FROM civ_pick_rounds "
+		"WHERE CAST(JSON_UNQUOTE(JSON_EXTRACT(state_json, '$.opened_at')) AS UNSIGNED) >= %s",
+		[cutoff]) or []
+	for row in rows:
+		state = json.loads(row['state_json'])
+		options = state.get('options', [])
+		for uid, choice in state.get('picks', {}).items():
+			if 0 <= choice < len(options):
+				await db.insert('civ_pick_history', dict(channel_id=row['channel_id'], match_id=row['match_id'],
+					generation=state['generation'], user_id=int(uid), civ=options[choice], at=state['opened_at']),
+					on_duplicate='ignore')

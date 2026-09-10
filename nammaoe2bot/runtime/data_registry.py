@@ -21,6 +21,8 @@ must say which:
    that task (e.g. "task 3.3 adds nammaoe2bot/derived/game_labels.py as its
    writer"), so the empty tuple reads as "not yet" rather than "never"."""
 
+# Retention "sweepable" is reserved for the replay-detail sweeper's exact
+# allowlist. "feature_managed" means the owning feature expires its own rows.
 REGISTRY = {
 	# core — irreplaceable
 	"matches": dict(
@@ -54,6 +56,8 @@ REGISTRY = {
 	# feature state (core contract)
 	"civ_pick_rounds": dict(layer="core", tenancy="channel",
 		writers=("nammaoe2bot/features/civs/pick_store.py",), retention="forever"),
+	"civ_pick_history": dict(layer="ops", tenancy="channel",
+		writers=("nammaoe2bot/features/civs/pick_store.py", "nammaoe2bot/runtime/migrations.py"), retention="feature_managed"),
 	"quiz_posts": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),
 	"quiz_answers": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),
 	"quiz_settings": dict(layer="core", tenancy="channel", writers=("nammaoe2bot/features/quiz/store.py",), retention="forever"),

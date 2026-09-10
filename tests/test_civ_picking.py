@@ -25,11 +25,10 @@ def test_pool_preserves_every_unused_civ_when_filling_shortage():
 	assert set(picking.CIVS[:6]) <= set(pool)
 
 
-def test_pool_avoids_recent_and_previous_options_when_possible():
+def test_pool_avoids_recent_explicit_choices_when_possible():
 	history = [dict(civ=c.upper(), uses=1, last_at=900) for c in picking.CIVS[:15]]
-	previous = picking.CIVS[15:27]
-	pool = picking.select_pool(history, previous, random.Random(1))
-	assert not set(pool) & set(picking.CIVS[:27])
+	pool = picking.select_pool(history, random.Random(1))
+	assert not set(pool) & set(picking.CIVS[:15])
 
 
 def test_pool_prefers_least_frequent_then_oldest_repeats():
@@ -74,18 +73,20 @@ class MemoryDB:
 		self.lock = asyncio.Lock()
 		self.in_tx = False
 		self.trace = []
-		self.recent = []
+		self.history = {}
 		self.on_lock = None
 
 	@asynccontextmanager
 	async def transaction(self):
 		async with self.lock:
 			before = copy.deepcopy(self.rows)
+			history_before = copy.deepcopy(self.history)
 			self.in_tx = True
 			try:
 				yield self
 			except Exception:
 				self.rows = before
+				self.history = history_before
 				raise
 			finally:
 				self.in_tx = False
@@ -101,9 +102,15 @@ class MemoryDB:
 
 	async def fetchall(self, sql, args=None):
 		self.trace.append((sql, args))
-		if 'civ_picks' in sql:
+		if 'FROM civ_pick_history' in sql:
 			assert self.in_tx
-			return self.recent
+			counts = {}
+			for row in self.history.values():
+				if row['channel_id'] == args[0] and args[1] <= row['at'] <= args[2]:
+					r = counts.setdefault(row['civ'], dict(civ=row['civ'], uses=0, last_at=0))
+					r['uses'] += 1
+					r['last_at'] = max(r['last_at'], row['at'])
+			return list(counts.values())
 		return [copy.deepcopy(r) for r in self.rows.values() if r['status'] == 'open' or r['dirty']]
 
 	async def execute(self, sql, args):
@@ -113,6 +120,11 @@ class MemoryDB:
 			key = tuple(args)
 			self.rows.setdefault(key, dict(channel_id=key[0], match_id=key[1], state_json='{}',
 				status='new', dirty=0, message_id=None))
+		elif sql.startswith('DELETE FROM civ_pick_history'):
+			assert self.in_tx
+			old = [k for k, r in self.history.items() if r['channel_id'] == args[0] and r['at'] < args[1]]
+			for key in old[:100]:
+				del self.history[key]
 		elif 'SET state_json=' in sql:
 			assert self.in_tx
 			row = self.rows[tuple(args[2:])]
@@ -123,6 +135,11 @@ class MemoryDB:
 				row.update(message_id=args[0], dirty=0)
 		else:
 			raise AssertionError(sql)
+
+	async def insert(self, table, row, on_duplicate=None):
+		assert self.in_tx and table == 'civ_pick_history' and on_duplicate == 'ignore'
+		key = tuple(row[k] for k in ('channel_id', 'match_id', 'generation', 'user_id'))
+		self.history.setdefault(key, copy.deepcopy(row))
 
 
 def setup_db(monkeypatch):
@@ -481,3 +498,95 @@ def test_only_completion_or_timeout_reveals_choices():
 		assert all(button.disabled for button in view.children)
 		assignment = f"<@1> → {s['options'][0]}"
 		assert (assignment in embed.description) == (finish != 'invalidated')
+
+
+def test_only_explicit_choices_affect_future_pools_even_after_redo(monkeypatch):
+	db, clock = setup_db(monkeypatch)
+	monkeypatch.setattr(picking.random, 'shuffle', lambda _items: None)
+	async def run():
+		await start(4)
+		options = (await store.get(10, 123))['state']['options']
+		assert await pick(1, 0) is None
+		assert await pick(2, picking.RANDOM) is None
+		assert 'taken' in await pick(3, 0)
+		assert await pick(3, 1) is None
+		clock.now = 1180
+		await store.change(10, 123, picking.expire)
+		assert {r['civ'] for r in db.history.values()} == set(options[:2])
+		assert len(db.history) == 2
+		await start(4, redo=True)
+		redraw = (await store.get(10, 123))['state']['options']
+		assert not set(options[:2]) & set(redraw)
+		assert options[2] in redraw  # offered but never picked: no cooldown
+		assert len(db.history) == 2  # redo cannot erase explicit-pick history
+		assert not any('FROM civ_picks ' in q for q, _ in db.trace)
+	asyncio.run(run())
+
+
+def test_pick_history_is_channel_scoped_and_uses_rolling_acceptance_time(monkeypatch):
+	db, clock = setup_db(monkeypatch)
+	monkeypatch.setattr(picking.random, 'shuffle', lambda _items: None)
+	async def run():
+		await start(2)
+		clock.now = 1100
+		await pick(1, 0)
+		assert next(iter(db.history.values()))['at'] == 1100
+		await start(2, channel=20)
+		assert picking.CIVS[0] in (await store.get(20, 123))['state']['options']
+		clock.now = 1100 + 86400
+		await start(2, redo=True)
+		assert picking.CIVS[0] not in (await store.get(10, 123))['state']['options']
+		clock.now += 31
+		await start(2, redo=True)
+		assert picking.CIVS[0] in (await store.get(10, 123))['state']['options']
+		assert not db.history
+	asyncio.run(run())
+
+
+def test_failed_history_write_rolls_back_pick(monkeypatch):
+	db, _clock = setup_db(monkeypatch)
+	async def run():
+		await start(2)
+		async def fail(*_args, **_kwargs):
+			raise RuntimeError('History unavailable')
+		db.insert = fail
+		with pytest.raises(RuntimeError, match='History unavailable'):
+			await pick(1, 0)
+		assert not (await store.get(10, 123))['state']['picks']
+		assert not db.history
+	asyncio.run(run())
+
+
+def test_explicit_history_migration_preserves_only_legacy_explicit_picks():
+	from nammaoe2bot.runtime import migrations
+	from tests.test_migrations import FakeDb
+	class LegacyDB(FakeDb):
+		def __init__(self):
+			super().__init__(tables={'civ_pick_rounds'})
+			self.history = {}
+
+		async def fetchall(self, sql, args=None):
+			s = state(3)
+			picking.claim(s, 1, 0, 1, 1001)
+			picking.claim(s, 2, picking.RANDOM, 1, 1002)
+			picking.expire(s, 1180)
+			return [dict(channel_id=10, match_id=123, state_json=json.dumps(s))]
+
+		async def insert(self, table, row, on_duplicate=None):
+			assert table == 'civ_pick_history' and on_duplicate == 'ignore'
+			key = (row['channel_id'], row['match_id'], row['generation'], row['user_id'])
+			self.history.setdefault(key, row)
+
+	db = LegacyDB()
+	asyncio.run(migrations._m014(db))
+	asyncio.run(migrations._m014(db))
+	assert len(db.history) == 1
+	assert db.history[10, 123, 1, 1]['civ'] == picking.CIVS[0]
+	assert db.history[10, 123, 1, 1]['at'] == 1000
+
+
+def test_pick_history_cleanup_does_not_expand_replay_sweeper():
+	from nammaoe2bot.runtime.data_registry import REGISTRY
+	from nammaoe2bot.derived import sweeper
+	assert REGISTRY['civ_pick_history']['retention'] == 'feature_managed'
+	assert 'civ_pick_history' not in sweeper.targets()

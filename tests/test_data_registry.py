@@ -52,4 +52,4 @@ def test_registry_entries_are_complete():
 		assert isinstance(writers, tuple), name
 		for w in writers:
 			assert isinstance(w, str) and w.endswith(".py"), name
-		assert meta.get("retention") in ("forever", "sweepable"), name
+		assert meta.get("retention") in ("forever", "sweepable", "feature_managed"), name

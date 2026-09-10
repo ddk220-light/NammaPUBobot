@@ -18,7 +18,7 @@ def civ_key(name):
 	return {'inca': 'incas', 'maya': 'mayans', 'khitans': 'khitan', 'khmers': 'khmer'}.get(key, key)
 
 
-def select_pool(history, previous=(), rng=None):
+def select_pool(history, rng=None):
 	"""Fill only the shortage with repeats; shuffle ties and the displayed order."""
 	rng = rng or random
 	recent = {}
@@ -26,10 +26,9 @@ def select_pool(history, previous=(), rng=None):
 		key = civ_key(row['civ'])
 		uses, last_at = recent.get(key, (0, 0))
 		recent[key] = (uses + int(row['uses']), max(last_at, int(row['last_at'])))
-	previous = set(previous)
 	candidates = list(CIVS)
 	rng.shuffle(candidates)
-	candidates.sort(key=lambda c: (*recent.get(civ_key(c), (0, 0)), c in previous))
+	candidates.sort(key=lambda c: recent.get(civ_key(c), (0, 0)))
 	pool = candidates[:12]
 	rng.shuffle(pool)
 	return pool
