@@ -35,14 +35,13 @@ class ReadCursor:
 
 
 def main():
-	import pymysql
-
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--community', type=int, required=True)
 	action = parser.add_mutually_exclusive_group()
 	action.add_argument('--enable', action='store_true')
 	action.add_argument('--disable', action='store_true')
 	args = parser.parse_args()
+	import pymysql
 	settings = connection_settings()
 	if not all(settings.get(k) for k in ('host', 'user', 'database')):
 		parser.error('database environment is not configured')
