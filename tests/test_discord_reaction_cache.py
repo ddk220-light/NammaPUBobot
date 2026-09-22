@@ -30,7 +30,7 @@ def test_raw_add_routes_without_a_cached_message():
 	member = SimpleNamespace(id=7)
 	dc = SimpleNamespace(
 		user=SimpleNamespace(id=99),
-		app=SimpleNamespace(waiting_reactions={123: callback}),
+		app=SimpleNamespace(ready=True, shutting_down=False, waiting_reactions={123: callback}),
 		get_guild=lambda _guild_id: None,
 	)
 	router = _load_reaction_router(dc, SimpleNamespace(error=lambda *_args: None))
@@ -57,7 +57,7 @@ def test_raw_remove_resolves_member_from_guild_cache():
 	guild = SimpleNamespace(get_member=lambda user_id: member if user_id == 7 else None)
 	dc = SimpleNamespace(
 		user=SimpleNamespace(id=99),
-		app=SimpleNamespace(waiting_reactions={123: callback}),
+		app=SimpleNamespace(ready=True, shutting_down=False, waiting_reactions={123: callback}),
 		get_guild=lambda guild_id: guild if guild_id == 1 else None,
 	)
 	router = _load_reaction_router(dc, SimpleNamespace(error=lambda *_args: None))

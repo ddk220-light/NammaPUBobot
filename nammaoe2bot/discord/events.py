@@ -95,6 +95,8 @@ last_tick_at = 0.0
 async def on_think(frame_time):
 	global _last_state_save, last_tick_at
 	last_tick_at = frame_time
+	if not dc.app.state_restored or dc.app.shutting_down:
+		return
 	dc.app.civ_picker.think()
 
 	# Iterate over a snapshot so removing a failed match from the set
@@ -147,9 +149,8 @@ async def on_think(frame_time):
 	dc.app.waiting_reactions.sweep_expired(frame_time)
 
 	# Periodic state snapshot — if the process crashes before a clean
-	# shutdown, SIGTERM (or the crash supervisor in nammaoe2bot/__main__.py) can only
-	# save state best-effort. This keeps a rolling ≤30s-old backup on
-	# disk for unexpected exits.
+	# shutdown, the final flush can only save state best-effort. This keeps
+	# changed state on disk and in MySQL at the existing 30-second cadence.
 	if frame_time - _last_state_save >= _STATE_SAVE_INTERVAL:
 		try:
 			await save_state_if_changed(dc.app)
@@ -266,6 +267,8 @@ async def _route_raw_reaction(payload, *, remove):
 	smaller message cache. Guild reaction-add payloads normally include ``member``;
 	remove payloads do not, hence the cache lookup fallback shared by both paths.
 	"""
+	if not dc.app.ready or dc.app.shutting_down:
+		return
 	if payload.user_id == dc.user.id:
 		return
 	if payload.message_id not in dc.app.waiting_reactions:
@@ -295,61 +298,62 @@ async def on_raw_reaction_remove(payload):
 
 @dc.event
 async def on_ready():
-	await dc.change_presence(activity=Activity(type=ActivityType.watching, name=cfg.STATUS))
-	if not dc.app.was_ready:  # Connected for the first time, load everything
-		log.info(f"Logged in discord as '{dc.user.name}#{dc.user.discriminator}'.")
-		log.info("Loading queue channels...")
-		for channel_id in await QueueChannel.cfg_factory.p_keys():
-			channel = dc.get_channel(channel_id)
-			if channel:
-				dc.app.channels[channel_id] = await QueueChannel.create(channel, dc.app)
-				await dc.app.channels[channel_id].update_info(channel)
-				log.info(f"\tInit channel {channel.guild.name}>#{channel.name} successful.")
-			else:
-				log.info(f"\tCould not reach a text channel with id {channel_id}.")
-
-		# Enroll every successfully-initialised queue channel into a community
-		# (one per Discord guild). Guild objects only exist once Discord is
-		# connected, which is why this is a runtime hook here rather than a
-		# migration — see nammaoe2bot/community.py. Never let a failure here stop
-		# the bot from booting.
-		try:
-			enrolled_communities = set()
-			for channel_id in dc.app.channels:
+	async with dc.app.ready_lock:
+		await dc.change_presence(activity=Activity(type=ActivityType.watching, name=cfg.STATUS))
+		if not dc.app.was_ready:  # Connected for the first time, load everything
+			log.info(f"Logged in discord as '{dc.user.name}#{dc.user.discriminator}'.")
+			log.info("Loading queue channels...")
+			for channel_id in await QueueChannel.cfg_factory.p_keys():
 				channel = dc.get_channel(channel_id)
-				if not channel:
-					continue
-				community_id = await enroll_channel(channel)
-				if community_id is not None:
-					enrolled_communities.add(community_id)
-			log.info(
-				f"\tEnrolled {len(dc.app.channels)} channels into "
-				f"{len(enrolled_communities)} communities."
-			)
-		except Exception:
-			log.error(f"Failed to enroll queue channels into communities:\n{traceback.format_exc()}")
+				if channel:
+					if channel_id not in dc.app.channels:
+						dc.app.channels[channel_id] = await QueueChannel.create(channel, dc.app)
+					await dc.app.channels[channel_id].update_info(channel)
+					log.info(f"\tInit channel {channel.guild.name}>#{channel.name} successful.")
+				else:
+					log.info(f"\tCould not reach a text channel with id {channel_id}.")
 
-		await seed_ratings_from_csv()
+			# Enroll every successfully-initialised queue channel into a community
+			# (one per Discord guild). Guild objects only exist once Discord is
+			# connected, which is why this is a runtime hook here rather than a
+			# migration — see nammaoe2bot/community.py. Never let a failure here stop
+			# the bot from booting.
+			try:
+				enrolled_communities = set()
+				for channel_id in dc.app.channels:
+					channel = dc.get_channel(channel_id)
+					if not channel:
+						continue
+					community_id = await enroll_channel(channel)
+					if community_id is not None:
+						enrolled_communities.add(community_id)
+				log.info(
+					f"\tEnrolled {len(dc.app.channels)} channels into "
+					f"{len(enrolled_communities)} communities."
+				)
+			except Exception:
+				log.error(f"Failed to enroll queue channels into communities:\n{traceback.format_exc()}")
 
-		# One idempotent pass seeds starting gold for every known player in
-		# every community; after the first boot this inserts nothing. Newcomers
-		# are seeded lazily on their first gold touch instead.
-		try:
-			from nammaoe2bot.features.betting import gold as gold_bank
-			seeded = await gold_bank.bulk_seed(int(time.time()))
-			if seeded:
-				log.info(f"\tSeeded {seeded} player(s) with starting gold.")
-		except Exception:
-			log.error(f"Gold bulk seed failed:\n{traceback.format_exc()}")
+			await seed_ratings_from_csv()
 
-		await load_state()
-		dc.app.was_ready = True
-		dc.app.ready = True
-		log.info("Done.")
-	else:  # Reconnected, fetch new channel objects
-		dc.app.ready = True
-		log.info("Reconnected to discord.")
+			# One idempotent pass seeds starting gold for every known player in
+			# every community; after the first boot this inserts nothing. Newcomers
+			# are seeded lazily on their first gold touch instead.
+			try:
+				from nammaoe2bot.features.betting import gold as gold_bank
+				seeded = await gold_bank.bulk_seed(int(time.time()))
+				if seeded:
+					log.info(f"\tSeeded {seeded} player(s) with starting gold.")
+			except Exception:
+				log.error(f"Gold bulk seed failed:\n{traceback.format_exc()}")
 
+			await load_state(dc.app)
+			dc.app.was_ready = True
+			dc.app.ready = not dc.app.shutting_down
+			log.info("Done.")
+		else:  # Reconnected, fetch new channel objects
+			dc.app.ready = not dc.app.shutting_down
+			log.info("Reconnected to discord.")
 
 @dc.event
 async def on_disconnect():
@@ -361,7 +365,7 @@ async def on_disconnect():
 async def on_resumed():
 	log.info("Connection to discord is resumed.")
 	if dc.app.was_ready:
-		dc.app.ready = True
+		dc.app.ready = not dc.app.shutting_down
 
 
 @dc.event

@@ -148,6 +148,11 @@ class Transaction:
 		request = self._adapter._mysql_insert(rows[0].keys(), table, on_duplicate)
 		return await self.executemany(request, [list(row.values()) for row in rows])
 
+	async def update(self, table, d, keys=None):
+		keys = keys or {}
+		request = self._adapter._mysql_update(table, d.keys(), keys.keys())
+		return await self.execute(request, list(d.values()) + list(keys.values()))
+
 
 class Adapter:
 	pool: aiomysql.Pool | None
@@ -343,11 +348,13 @@ class Adapter:
 			try:
 				async with conn.cursor() as cur:
 					yield Transaction(self, cur)
-			except BaseException:
-				await conn.rollback()
-				raise
-			else:
 				await conn.commit()
+			except BaseException:
+				try:
+					await conn.rollback()
+				except BaseException:
+					conn.close()  # Never return an uncertain transaction to the pool.
+				raise
 
 	@staticmethod
 	def _mysql_column(kwargs):

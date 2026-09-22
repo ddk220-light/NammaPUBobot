@@ -1,9 +1,13 @@
 import asyncio
+import json
 import importlib.util
 import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
 
 
 def _load_state_module():
@@ -67,7 +71,7 @@ def _app(queue_rows=(), match_rows=()):
 		for index, row in enumerate(queue_rows)
 	}
 	return SimpleNamespace(
-		channels=channels,
+		channels=channels, state_restored=True, state_restore_lock=asyncio.Lock(),
 		active_matches=[_Match(row) for row in match_rows],
 	)
 
@@ -139,6 +143,120 @@ def test_failed_db_snapshot_retries_without_advancing_baseline(monkeypatch):
 	assert asyncio.run(state.save_state_db(app)) is True
 	assert asyncio.run(state.save_state_db(app)) is False
 	assert database.calls == 2
+
+
+def test_all_save_entrypoints_preserve_existing_snapshot_before_restoration(tmp_path, monkeypatch):
+	_reset_baselines(monkeypatch)
+	path = tmp_path / "state.json"
+	path.write_text("previous active matches")
+	monkeypatch.setattr(state, "STATE_PATH", str(path))
+	database = SimpleNamespace(insert=AsyncMock())
+	monkeypatch.setattr(state, "db", database)
+	app = _app()
+	app.state_restored = False
+	assert state.save_state(app) is False
+	assert asyncio.run(state.save_state_db(app)) is False
+	assert asyncio.run(state.save_state_if_changed(app)) == (False, False)
+	assert path.read_text() == "previous active matches"
+	database.insert.assert_not_awaited()
+
+
+def _restore_setup(tmp_path, monkeypatch, data):
+	app = _app()
+	app.state_restored = False
+	monkeypatch.setattr(state, "STATE_PATH", str(tmp_path / "state.json"))
+	database = SimpleNamespace(select_one=AsyncMock(return_value={"data": json.dumps(data)}))
+	monkeypatch.setattr(state, "db", database)
+	monkeypatch.setattr(state.stats, "reserve_restored_ids", AsyncMock())
+	monkeypatch.setattr(state.expire, "load_json", AsyncMock(), raising=False)
+	return app, database
+
+
+def test_failed_db_read_does_not_fall_back_to_stale_local_state(tmp_path, monkeypatch):
+	app, database = _restore_setup(tmp_path, monkeypatch, {})
+	(tmp_path / "state.json").write_text('{"queues":[],"matches":[]}')
+	database.select_one.side_effect = ConnectionError("unavailable")
+	with pytest.raises(ConnectionError):
+		asyncio.run(state.load_state(app))
+	assert not app.state_restored
+	assert asyncio.run(state.save_state_if_changed(app)) == (False, False)
+
+
+@pytest.mark.parametrize("payload", ["{", "null", "{}", '{"queues":[],"matches":null}'])
+def test_invalid_durable_state_never_enables_snapshots(tmp_path, monkeypatch, payload):
+	app, database = _restore_setup(tmp_path, monkeypatch, {})
+	database.select_one.return_value = {"data": payload}
+	with pytest.raises((ValueError, state.Exc.ValueError)):
+		asyncio.run(state.load_state(app))
+	assert not app.state_restored
+
+
+def test_fresh_database_and_missing_local_file_enable_empty_state(tmp_path, monkeypatch):
+	app, database = _restore_setup(tmp_path, monkeypatch, {})
+	database.select_one.return_value = None
+	asyncio.run(state.load_state(app))
+	assert app.state_restored
+
+
+def test_restore_race_blocks_save_until_every_match_is_loaded(tmp_path, monkeypatch):
+	data = {"queues": [], "matches": [{"match_id": 81}], "expire": []}
+	app, database = _restore_setup(tmp_path, monkeypatch, data)
+	database.select_one.side_effect = [{"data": json.dumps(data)}, None]
+
+	async def run():
+		entered, release = asyncio.Event(), asyncio.Event()
+
+		async def restore(_data):
+			entered.set()
+			await release.wait()
+
+		monkeypatch.setattr(state.Match, "from_json", restore, raising=False)
+		task = asyncio.create_task(state.load_state(app))
+		await entered.wait()
+		assert not app.state_restored
+		assert await state.save_state_if_changed(app) == (False, False)
+		release.set()
+		await task
+		assert app.state_restored
+
+	asyncio.run(run())
+	state.stats.reserve_restored_ids.assert_awaited_once_with([81])
+
+
+def test_partial_restore_failure_keeps_durable_source_protected(tmp_path, monkeypatch):
+	data = {"queues": [], "matches": [{"match_id": 81}, {"match_id": 82}]}
+	app, database = _restore_setup(tmp_path, monkeypatch, data)
+	database.select_one.side_effect = [{"data": json.dumps(data)}, None, None]
+	monkeypatch.setattr(state.Match, "from_json", AsyncMock(side_effect=[None, state.Exc.ValueError("missing guild")]), raising=False)
+	with pytest.raises(state.Exc.ValueError):
+		asyncio.run(state.load_state(app))
+	assert not app.state_restored
+
+
+def test_committed_match_in_old_snapshot_is_not_restored(tmp_path, monkeypatch):
+	md = dict(match_id=81, channel_id=1, queue_id=2, players=[3, 4], teams=[[3], [4], []])
+	data = dict(queues=[], matches=[md])
+	app, database = _restore_setup(tmp_path, monkeypatch, data)
+	database.select_one.side_effect = [{"data": json.dumps(data)}, dict(match_id=81, channel_id=1, queue_id=2, ranked=1)]
+	database.fetchall = AsyncMock(side_effect=[
+		[dict(user_id=3, team=0, channel_id=1), dict(user_id=4, team=1, channel_id=1)],
+		[dict(user_id=3), dict(user_id=4)]])
+	restore = AsyncMock()
+	monkeypatch.setattr(state.Match, "from_json", restore, raising=False)
+	asyncio.run(state.load_state(app))
+	assert app.state_restored
+	restore.assert_not_awaited()
+	assert app.active_matches == []
+
+
+def test_incomplete_legacy_result_blocks_restore_instead_of_rerating(tmp_path, monkeypatch):
+	md = dict(match_id=81, channel_id=1, queue_id=2, players=[3, 4], teams=[[3], [4], []])
+	app, database = _restore_setup(tmp_path, monkeypatch, dict(queues=[], matches=[md]))
+	database.select_one.side_effect = [{"data": json.dumps(dict(queues=[], matches=[md]))}, dict(match_id=81, channel_id=1, queue_id=2, ranked=1)]
+	database.fetchall = AsyncMock(return_value=[])
+	with pytest.raises(state.Exc.ValueError, match="inconsistent stored roster"):
+		asyncio.run(state.load_state(app))
+	assert not app.state_restored
 
 
 def test_combined_snapshot_computes_once_and_tracks_destinations_independently(

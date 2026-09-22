@@ -9,6 +9,7 @@ CI installs pytest only.
 from __future__ import annotations
 
 import asyncio
+import pytest
 
 
 class FakeCursor:
@@ -98,6 +99,37 @@ def make_adapter(adapter_module):
 
 
 class TestTransaction:
+	def test_cancelled_transaction_rolls_back(self, adapter_module):
+		a, conn = make_adapter(adapter_module)
+
+		async def run():
+			async with a.transaction() as tx:
+				await tx.execute("UPDATE t SET x=1")
+				raise asyncio.CancelledError()
+
+		with pytest.raises(asyncio.CancelledError):
+			asyncio.run(run())
+		assert conn.log == ["begin", "execute", "rollback"]
+
+	def test_commit_failure_rolls_back_before_releasing_connection(self, adapter_module):
+		a, conn = make_adapter(adapter_module)
+
+		async def fail_commit():
+			conn.log.append("commit failed")
+			raise ConnectionError("commit acknowledgement lost")
+
+		conn.commit = fail_commit
+
+		async def run():
+			async with a.transaction() as tx:
+				await tx.update("t", {"x": 1}, keys={"id": 2})
+
+		with pytest.raises(ConnectionError):
+			asyncio.run(run())
+		assert conn.log == ["begin", "execute", "commit failed", "rollback"]
+		assert a.pool.released == [conn]
+		assert conn._cur.executed[0][1] == [1, 2]
+
 	def test_commits_on_clean_exit(self, adapter_module):
 		a, conn = make_adapter(adapter_module)
 

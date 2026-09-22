@@ -142,13 +142,11 @@ class TestWiring:
 	def test_settlement_runs_after_the_result_is_stored(self):
 		""" finish_match writes the `matches` row (register_match_*) and THEN
 		emits 'finished'. The betting resume sweep finds a stranded book by
-		JOINing prediction_posts to that row, so a payout attempted before it
-		exists could not be recovered if it died half-way — and 'ending' has to
-		stay on the near side of that write, because the lobby-watcher teardown
-		it carries ran there before this indirection existed. """
+		JOINing prediction_posts to that row. Teardown also follows commit:
+		a failed report must keep the live match available for retry. """
 		body = _function_source("nammaoe2bot/pickup/match/match.py", "finish_match")
 		register = body.index("register_match_ranked")
-		assert body.index('emit("ending"') < register, "'ending' moved past the result write"
+		assert register < body.index('emit("ending"'), "teardown must wait for commit"
 		assert register < body.index('emit("finished"'), (
 			"'finished' fires before the result is in `matches` — a payout that "
 			"crashes half-way is then invisible to store.unsettled_books"

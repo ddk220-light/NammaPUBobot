@@ -62,12 +62,21 @@ class BaseRating:
 		p['deviation'] = max(self.min_deviation, round(p['deviation'] + d_change))
 		return p
 
-	async def get_players(self, user_ids):
+	async def get_players(self, user_ids, *, transaction=None):
 		""" Return rating or initial rating for each member """
-		data = await db.select(
-			['user_id', 'rating', 'deviation', 'channel_id', 'wins', 'losses', 'draws', 'streak'], self.table,
-			where={'channel_id': self.channel_id}
-		)
+		user_ids = list(user_ids)
+		if transaction is None:
+			data = await db.select(
+				['user_id', 'rating', 'deviation', 'channel_id', 'wins', 'losses', 'draws', 'streak'], self.table,
+				where={'channel_id': self.channel_id})
+		else:
+			if not user_ids:
+				return []
+			data = await transaction.fetchall(
+				"SELECT user_id, rating, deviation, channel_id, wins, losses, draws, streak "
+				"FROM player_ratings WHERE channel_id=%s AND user_id IN ("
+				+ ",".join(["%s"] * len(user_ids)) + ") ORDER BY user_id FOR UPDATE",
+				[self.channel_id, *sorted(user_ids)])
 		results = []
 		for user_id in user_ids:
 			if d := find(lambda p: p['user_id'] == user_id, data):  # noqa: B023

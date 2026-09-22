@@ -83,6 +83,10 @@ class Application:
 		# state in the gap before a newly reserved match becomes visible here.
 		self.match_creation_lock = asyncio.Lock()
 		self.waiting_reactions = TTLReactionDict()   # {message_id: callback}
+		self.state_restored = False
+		self.shutting_down = False
+		self.state_restore_lock = asyncio.Lock()
+		self.ready_lock = asyncio.Lock()
 		self.ready = False
 		self.was_ready = False
 		self.civ_picker = None        # constructed by lifecycle wiring at boot

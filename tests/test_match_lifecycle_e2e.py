@@ -104,7 +104,7 @@ class FakeQueueChannel:
 	def gt(self, text):
 		return text
 
-	async def _get_players(self, user_ids):
+	async def _get_players(self, user_ids, *, transaction=None):
 		return [dict(user_id=uid, rating=1500, deviation=100, wins=0, losses=0, draws=0,
 					 streak=0, is_hidden=0) for uid in user_ids]
 
@@ -210,6 +210,21 @@ class _RecordingDb:
 	def __init__(self, sink):
 		self._sink = sink
 
+	def transaction(self):
+		return self
+
+	async def __aenter__(self):
+		return self
+
+	async def __aexit__(self, *args):
+		return False
+
+	async def fetchone(self, *_args):
+		return None
+
+	async def fetchall(self, *_args):
+		return []
+
 	async def insert(self, table, row, **_kw):
 		if table == "matches":
 			self._sink.append(("stats.register", row["match_id"]))
@@ -252,8 +267,8 @@ class TestAFullRankedMatch:
 			"storyline.tease",     # teams_posted, from final_message
 			"lobby.start",         # live
 			"betting.open",        # live
-			"lobby.stop",          # ending
 			"stats.register",      # the `matches` row
+			"lobby.stop",          # ending
 			"civs.record",         # result_recorded
 			"storyline.payoff",    # finished
 			"betting.settle",      # finished
@@ -276,10 +291,8 @@ class TestAFullRankedMatch:
 
 		assert rec.labels.index("stats.register") < rec.labels.index("betting.settle")
 
-	def test_the_watcher_stops_before_the_result_is_written(self, monkeypatch):
-		""" `ending` exists as a separate event from `finished` only because the
-		lobby teardown ran on the near side of the result write before this
-		indirection existed. Collapsing the two would move it. """
+	def test_the_watcher_stops_after_the_result_is_written(self, monkeypatch):
+		"""A failed write must leave the live watcher available for a retry."""
 		rec = Recorder(monkeypatch)
 		app = wired_app()
 		match = build_match(app)
@@ -287,12 +300,10 @@ class TestAFullRankedMatch:
 		asyncio.run(go_live(match, ctx))
 		asyncio.run(match.finish_match(ctx))
 
-		assert rec.labels.index("lobby.stop") < rec.labels.index("stats.register")
+		assert rec.labels.index("stats.register") < rec.labels.index("lobby.stop")
 
 	def test_the_match_leaves_active_matches_before_anything_is_announced(self, monkeypatch):
-		""" finish_match drops the match on its FIRST line. Betting captures
-		is_player at press time precisely because the roster is gone from
-		app.active_matches by the time settlement runs. """
+		"""Teardown and settlement see a committed match removed from the live list."""
 		seen = []
 		rec = Recorder(monkeypatch)
 		app = wired_app()
@@ -359,7 +370,7 @@ class TestASubstitutionUnderALiveBook:
 		match.winner = 0
 		asyncio.run(match.finish_match(ctx))
 		assert rec.labels == [
-			"lobby.stop", "stats.register", "civs.record",
+			"stats.register", "lobby.stop", "civs.record",
 			"storyline.payoff", "betting.settle",
 		]
 

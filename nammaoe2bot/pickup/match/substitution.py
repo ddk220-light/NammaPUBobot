@@ -2,8 +2,23 @@
 from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.runtime.utils import find
 from nextcord import DiscordException
+from functools import wraps
 
 from .subbing import pick_available
+
+
+def _roster_change(method):
+	@wraps(method)
+	async def run(self, *args, **kwargs):
+		if any(getattr(self.m, flag, False) for flag in
+				("_reporting", "_finishing", "_editing_roster", "_result_committed", "_cancelling", "_cancelled")):
+			raise Exc.MatchStateError("The match is being updated or has already been reported.")
+		self.m._editing_roster = True
+		try:
+			return await method(self, *args, **kwargs)
+		finally:
+			self.m._editing_roster = False
+	return run
 
 
 class Draft:
@@ -38,6 +53,7 @@ class Draft:
 		else:
 			await self.m.next_state(ctx)
 
+	@_roster_change
 	async def put(self, ctx, player, team_name):
 		if (team := find(lambda t: t.name.lower() == team_name.lower(), self.m.teams)) is None:
 			raise Exc.SyntaxError(self.m.gt("Specified team name not found."))
@@ -67,6 +83,7 @@ class Draft:
 			self.sub_queue.append(author)
 			await ctx.success(self.m.gt("You are now looking for a substitute."))
 
+	@_roster_change
 	async def sub_for(self, ctx, player1, player2, force=False):
 		if self.m.state not in [self.m.CHECK_IN, self.m.DRAFT, self.m.WAITING_REPORT]:
 			raise Exc.MatchStateError(self.m.gt("The match must be on the check-in, draft or waiting report stage."))
@@ -105,6 +122,7 @@ class Draft:
 		else:
 			await self.print(ctx)
 
+	@_roster_change
 	async def sub_auto(self, ctx, out_member):
 		if self.m.state not in [self.m.DRAFT, self.m.WAITING_REPORT]:
 			raise Exc.MatchStateError(self.m.gt("The match must be on the draft or waiting report stage."))
