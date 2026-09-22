@@ -157,34 +157,36 @@ def test_mysql_lost_ack_retry_and_stale_snapshot_recovery(monkeypatch, tmp_path)
 	asyncio.run(run())
 
 
-@pytest.mark.parametrize("shared_players", [False, True])
-def test_mysql_concurrent_reports_commit_without_lost_updates(monkeypatch, shared_players):
+@pytest.mark.parametrize("mode", ["disjoint", "shared", "duplicate"])
+def test_mysql_concurrent_reports_commit_without_lost_updates(monkeypatch, mode):
 	async def run():
 		async with live_database(monkeypatch) as (database, module):
-			# Force the two transactions to read the absent result before either
-			# inserts. This exposes MySQL gap-lock behavior hidden by SQLite.
-			original = module.Transaction.fetchone
+			# Start both result claims together on separate pooled connections.
+			# Seed existing ratings too: IGNORE's shared locks can deadlock when
+			# both transactions subsequently upgrade them for rating updates.
+			await database.insert_many("player_ratings", [dict(channel_id=900, user_id=uid)
+				for uid in (1, 2, 3, 4)])
+			original = module.Transaction.insert
 			arrived, release = 0, asyncio.Event()
 
-			async def synchronize(tx, sql, args=None):
+			async def synchronize(tx, table, row, **kwargs):
 				nonlocal arrived
-				row = await original(tx, sql, args)
-				if "FROM matches WHERE match_id=" in sql:
+				if table == "matches":
 					arrived += 1
 					if arrived == 2:
 						release.set()
 					await asyncio.wait_for(release.wait(), timeout=5)
-				return row
+				return await original(tx, table, row, **kwargs)
 
-			monkeypatch.setattr(module.Transaction, "fetchone", synchronize)
+			monkeypatch.setattr(module.Transaction, "insert", synchronize)
 			_app1, first, ctx1 = make_match(81)
-			_app2, second, ctx2 = make_match(82, players_offset=0 if shared_players else 10)
+			_app2, second, ctx2 = make_match(81 if mode == "duplicate" else 82, players_offset=10 if mode == "disjoint" else 0)
 			await asyncio.wait_for(asyncio.gather(
 				first.report_scores(ctx1, [1, 0]), second.report_scores(ctx2, [1, 0])), timeout=15)
-			assert len(await database.fetchall("SELECT * FROM matches")) == 2
-			assert len(await database.fetchall("SELECT * FROM rating_history")) == 8
+			assert len(await database.fetchall("SELECT * FROM matches")) == (1 if mode == "duplicate" else 2)
+			assert len(await database.fetchall("SELECT * FROM rating_history")) == (4 if mode == "duplicate" else 8)
 			players = await database.fetchall("SELECT * FROM player_ratings")
-			assert all(p["wins"] + p["losses"] == (2 if shared_players else 1) for p in players)
+			assert all(p["wins"] + p["losses"] == (2 if mode == "shared" else 1) for p in players)
 	asyncio.run(run())
 
 

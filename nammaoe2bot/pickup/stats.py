@@ -169,8 +169,11 @@ async def _register_match(ctx, m, *, ranked, notify):
 		beta_score=m.scores[1] if ranked else None, maps="\n".join(m.maps))
 	result = None
 	async with db.transaction() as tx:
-		existing = await tx.fetchone("SELECT * FROM matches WHERE match_id=%s FOR UPDATE", [m.id])
-		if existing:
+		# Claim the unique key directly. SELECT FOR UPDATE on a missing ID
+		# takes a gap lock, which makes simultaneous new reports deadlock.
+		created = await tx.insert("matches", row, on_duplicate="keep")
+		if not created:
+			existing = await tx.fetchone("SELECT * FROM matches WHERE match_id=%s FOR UPDATE", [m.id])
 			# The timestamp is the time of the first successful report. Everything
 			# else must agree: a conflicting retry must never overwrite a result.
 			if any(existing[key] != value for key, value in row.items() if key != "reported_at"):
@@ -178,7 +181,6 @@ async def _register_match(ctx, m, *, ranked, notify):
 			await validate_recorded_match(tx, existing, [p.id for p in m.players],
 				[[p.id for p in team] for team in m.teams], m.qc.rating.channel_id)
 		else:
-			await tx.insert("matches", row)
 			if ranked:
 				result = await _write_ranked(tx, m, now)
 			else:
@@ -192,7 +194,7 @@ async def _register_match(ctx, m, *, ranked, notify):
 
 async def _write_unranked(tx, m):
 	for p in sorted(m.players, key=lambda p: p.id):
-		await tx.insert("player_ratings", dict(channel_id=m.qc.id, user_id=p.id), on_duplicate="ignore")
+		await tx.insert("player_ratings", dict(channel_id=m.qc.id, user_id=p.id), on_duplicate="keep")
 		nick = get_nick(p)
 		await tx.update("player_ratings", dict(nick=nick), keys=dict(channel_id=m.qc.id, user_id=p.id))
 		team = next((i for i, team in enumerate(m.teams[:2]) if p in team), None)
@@ -204,12 +206,7 @@ async def _write_ranked(tx, m, now):
 		await tx.insert_many('player_ratings', (
 			dict(channel_id=channel_id, user_id=p.id, nick=get_nick(p))
 			for p in sorted(m.players, key=lambda p: p.id)
-		), on_duplicate="ignore")
-
-	await tx.fetchall(
-		"SELECT user_id FROM player_ratings WHERE channel_id=%s AND user_id IN ("
-		+ ",".join(["%s"] * len(m.players)) + ") ORDER BY user_id FOR UPDATE",
-		[m.qc.rating.channel_id, *sorted(p.id for p in m.players)])
+		), on_duplicate="keep")
 
 	results = [[
 		await m.qc.rating.get_players((p.id for p in m.teams[0]), transaction=tx),

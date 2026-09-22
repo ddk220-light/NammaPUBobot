@@ -379,13 +379,21 @@ class Adapter:
 
 	@staticmethod
 	def _mysql_insert(columns, table, on_duplicate):
-		return "{action}{ignore} INTO {table} ({columns}) VALUES({values})".format(
+		columns = list(columns)
+		request = "{action}{ignore} INTO {table} ({columns}) VALUES({values})".format(
 			action="REPLACE" if on_duplicate == 'replace' else "INSERT",
 			ignore=" IGNORE" if on_duplicate == 'ignore' else "",
 			table=table,
 			columns=", ".join((f"`{i}`" for i in columns)),
 			values=", ".join(('%s' for i in range(len(columns))))
 		)
+		if on_duplicate == "keep":
+			# Acquire the existing row's exclusive lock without changing it.
+			# Unlike IGNORE, other data errors still fail the transaction. With
+			# our default client flags, a duplicate reports zero affected rows.
+			column = columns[0]
+			request += f" ON DUPLICATE KEY UPDATE `{column}`=`{column}`"
+		return request
 
 	@staticmethod
 	def _mysql_update(table, columns, keys):

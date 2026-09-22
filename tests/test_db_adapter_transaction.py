@@ -99,6 +99,20 @@ def make_adapter(adapter_module):
 
 
 class TestTransaction:
+	def test_keep_duplicate_claim_uses_exclusive_noop_update(self, adapter_module):
+		a, conn = make_adapter(adapter_module)
+
+		async def run():
+			async with a.transaction() as tx:
+				conn.duplicate_next = True
+				return await tx.insert("matches", {"match_id": 81, "winner": 0}, on_duplicate="keep")
+
+		assert asyncio.run(run()) == 0
+		sql, args = conn._cur.executed[0]
+		assert sql.startswith("INSERT INTO matches")
+		assert sql.endswith("ON DUPLICATE KEY UPDATE `match_id`=`match_id`")
+		assert args == [81, 0]
+
 	def test_cancelled_transaction_rolls_back(self, adapter_module):
 		a, conn = make_adapter(adapter_module)
 

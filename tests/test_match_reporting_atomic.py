@@ -87,7 +87,7 @@ class SQLDatabase:
 		return self.conn.execute(sql, args).rowcount
 
 	async def insert(self, table, row, on_duplicate=None):
-		mode = " OR IGNORE" if on_duplicate == "ignore" else ""
+		mode = " OR IGNORE" if on_duplicate in ("ignore", "keep") else ""
 		return self._write(f"INSERT{mode} INTO {table} ({','.join(row)}) VALUES ({','.join('?' for _ in row)})", list(row.values()))
 
 	async def insert_many(self, table, rows, on_duplicate=None):
@@ -143,7 +143,7 @@ def test_lost_commit_acknowledgement_is_safe_to_retry(monkeypatch):
 	asyncio.run(match.report_scores(ctx, [1, 0]))
 	assert match not in app.active_matches
 	assert database.rows("player_ratings") == before
-	assert database.writes == write_count
+	assert database.writes == write_count + 1  # Only the no-op match claim; no rating writes.
 	assert len(database.rows("rating_history")) == 4
 
 
