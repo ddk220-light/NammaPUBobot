@@ -293,9 +293,9 @@ class TestOpen:
 			qc=types.SimpleNamespace(id=900),
 			teams=[types.SimpleNamespace(name="Alpha"), types.SimpleNamespace(name="Bravo")])
 
-	def test_the_card_ships_with_the_six_bet_buttons_wired_to_the_post(self, monkeypatch):
+	def test_the_card_ships_with_two_team_choices_wired_to_the_post(self, monkeypatch):
 		from nammaoe2bot.features.betting import embeds
-		from nammaoe2bot.features.betting.scoring import STAKES, parse_bet_custom_id
+		from nammaoe2bot.features.betting.scoring import parse_personal_bet_id
 
 		store, _bank, channel, log = wire(monkeypatch)
 		asyncio.run(flow.open_for_match(self.match()))
@@ -305,11 +305,11 @@ class TestOpen:
 		sent_view = channel.sent_kwargs[0].get("view")
 		assert sent_view is not None, "a card with no view has no buttons and no feature"
 		assert [b.custom_id for b in sent_view.children] == [
-			f"bet:12:{side}:{stake}" for side in (0, 1) for stake in STAKES]
+			f"betpick:12:{side}" for side in (0, 1)]
 		# The router's parser is the other end of these ids; a card whose
 		# buttons it refuses to route is the same outage in a different place.
-		assert [parse_bet_custom_id(b.custom_id) for b in sent_view.children] == [
-			(12, side, stake) for side in (0, 1) for stake in STAKES]
+		assert [parse_personal_bet_id(b.custom_id) for b in sent_view.children] == [
+			(12, side) for side in (0, 1)]
 		assert sent_view is not embeds.bet_view(12), "built per post, not shared"
 		assert sent_view.timeout is None and sent_view.auto_defer is False
 		assert log.errors == []

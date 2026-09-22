@@ -26,7 +26,7 @@ pytestmark = pytest.mark.skipif(os.environ.get("NAMMA_TEST_MYSQL") != "1", reaso
 
 
 @asynccontextmanager
-async def live_database(monkeypatch):
+async def live_database(monkeypatch, schema_paths=("nammaoe2bot/pickup/stats.py", "nammaoe2bot/state.py")):
 	# This fixed endpoint and dedicated user deliberately cannot use production
 	# credentials accidentally. The CI service is destroyed with its job.
 	module = importlib.import_module("nammaoe2bot.runtime.database.mysql")
@@ -50,7 +50,7 @@ async def live_database(monkeypatch):
 				self.tables.append(table)
 
 		schema = Schema()
-		for relative in ("nammaoe2bot/pickup/stats.py", "nammaoe2bot/state.py"):
+		for relative in schema_paths:
 			path = Path(REPO_ROOT) / relative
 			tree = ast.parse(path.read_text())
 			declarations = [node for node in tree.body if isinstance(node, ast.Expr)

@@ -264,7 +264,7 @@ class TestPlaceBet:
 	def test_forged_stake_is_rejected_outright(self, monkeypatch):
 		use_fake(monkeypatch)
 		try:
-			asyncio.run(gold.place_bet(5, 42, 12, 0, 9999, "nick", 1000))
+			asyncio.run(gold.place_bet(5, 42, 12, 0, -1, "nick", 1000))
 			assert False, "should have raised"
 		except ValueError:
 			pass
@@ -311,7 +311,8 @@ class TestTheBookIsCheckedInsideTheTransaction:
 		asyncio.run(gold.place_bet(5, 42, 12, 0, 50, "nick", 1000))
 
 		locks = fake.sql("FOR UPDATE")
-		assert len(locks) == 1
+		assert len(locks) == 2
+		assert "gold_balances" in locks[1][1]
 		sql, args = locks[0][1], locks[0][2]
 		assert "prediction_posts" in sql and "status" in sql
 		assert "freezes_at" not in sql
@@ -396,9 +397,9 @@ class TestTheMoneyPredicates:
 	def test_the_first_press_records_the_side_that_was_pressed(self, monkeypatch):
 		fake = use_fake(monkeypatch)
 		fake.rowcounts = [1, 0, 1, 1]      # spend hits, additive UPDATE misses -> INSERT
-		asyncio.run(gold.place_bet(5, 42, 12, 1, 100, "nick", 1000))
+		asyncio.run(gold.place_bet(5, 42, 12, 1, 125, "nick", 1000))
 		row = next(c[2] for c in fake.inserts() if c[1] == "prediction_bets")
-		assert row["side"] == 1 and row["stake"] == 100 and row["post_id"] == 12
+		assert row["side"] == 1 and row["stake"] == 125 and row["post_id"] == 12
 
 	def test_the_bet_ledger_row_is_a_plain_insert(self, monkeypatch):
 		""" Bet rows carry idem_key=NULL by design (many presses per user per

@@ -40,6 +40,7 @@ from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.console import log
 
 from . import gold, scoring, store
+from .tax import TaxScheduler
 
 # ``freezes_at`` remains a required BIGINT and is used by abandoned-book
 # recovery after a close. New books use the signed-BIGINT maximum while open;
@@ -95,6 +96,7 @@ class PredictionJobs:
 		self.next_run = 0
 		self._running = False
 		self._active = True   # boot recovery; open_for_match arms later work
+		self._tax = TaxScheduler()
 
 	def arm(self):
 		self._active = True
@@ -102,11 +104,13 @@ class PredictionJobs:
 
 	async def think(self, frame_time):
 		try:
-			if self._running or frame_time < self.next_run:
+			if self._running or frame_time < min(self.next_run, self._tax.next_run):
 				return
-			self.next_run = frame_time + self.POLL_INTERVAL
+			books_due = frame_time >= self.next_run
+			if books_due:
+				self.next_run = frame_time + self.POLL_INTERVAL
 			self._running = True
-			task = asyncio.create_task(self._run())
+			task = asyncio.create_task(self._run_due(books_due))
 
 			def _done(t):
 				self._running = False
@@ -119,6 +123,13 @@ class PredictionJobs:
 		except Exception as e:
 			self._running = False
 			log.error(f"Prediction think() error (ignored): {e}")
+
+	async def _run_due(self, books_due):
+		try:
+			if books_due:
+				await self._run()
+		finally:
+			await self._tax.run_due(int(time.time()))
 
 	async def _run(self):
 		# _freeze is a MODULE function, not a method -- `self._freeze` raises

@@ -6,7 +6,7 @@ stubs, which have no nextcord."""
 from nextcord import Embed, Colour, ui, ButtonStyle
 
 from . import view
-from .scoring import STAKES
+from .scoring import stake_options
 from .view import TEAM_EMOJIS
 
 _OPEN = 0x5865F2     # blurple — betting live
@@ -21,10 +21,18 @@ def bet_view(post_id):
 	# nextcord's default auto_defer would silently ack the click first.
 	v = ui.View(timeout=None, auto_defer=False)
 	for side, style in ((0, ButtonStyle.primary), (1, ButtonStyle.danger)):
-		for stake in STAKES:
-			v.add_item(ui.Button(
-				style=style, row=side, label=str(stake), emoji=TEAM_EMOJIS[side],
-				custom_id=f"bet:{post_id}:{side}:{stake}"))
+		v.add_item(ui.Button(
+			style=style, label="Choose stake", emoji=TEAM_EMOJIS[side],
+			custom_id=f"betpick:{post_id}:{side}"))
+	return v
+
+
+def stake_view(post_id, side, user_id, balance, chooser_id):
+	v = ui.View(timeout=None, auto_defer=False)
+	for stake in stake_options(balance):
+		v.add_item(ui.Button(
+			style=ButtonStyle.primary, label=str(stake), emoji=view.GOLD,
+			custom_id=f"betstake:{post_id}:{side}:{user_id}:{stake}:{chooser_id}"))
 	return v
 
 

@@ -7,15 +7,37 @@ lets the interesting cases be unit-tested without a live Discord client or
 database.
 """
 
-# The whole economy in four numbers. STAKES is also the input-validation
-# whitelist: custom_ids arrive from the client, so any stake not in this
-# tuple is a forgery, not a feature request.
-STAKES = (10, 50, 100)
+# Recognise old public cards, but route them to the personal chooser.
+LEGACY_STAKES = (10, 50, 100)
 SEED_AMOUNT = 500
 MATCH_REWARD = 100
 QUIZ_CORRECT_REWARD = 50
 QUIZ_PLAYED_REWARD = 10
 REWARD_CEILING = 500
+
+
+def stake_options(balance):
+	"""Whole-gold options derived from the current wallet, never stored tiers."""
+	if balance < 10:
+		return ()
+	ceiling = 500 * ((balance + 499) // 500)
+	reference = min(ceiling, 2 * balance)
+	return tuple(sorted({min(balance, max(10, reference // d)) for d in (10, 4, 2)}))
+
+
+def parse_personal_bet_id(cid):
+	"""betpick:post:side, or betstake:post:side:user:amount:chooser."""
+	parts = (cid or "").split(":")
+	if not ((parts[0] == "betpick" and len(parts) == 3)
+			or (parts[0] == "betstake" and len(parts) == 6)):
+		return None
+	try:
+		values = tuple(int(v) for v in parts[1:])
+	except ValueError:
+		return None
+	if values[1] not in (0, 1) or any(v <= 0 or v > 2**63 - 1 for i, v in enumerate(values) if i != 1):
+		return None
+	return values
 
 
 def parse_bet_custom_id(cid):
@@ -31,7 +53,7 @@ def parse_bet_custom_id(cid):
 		post_id, side, stake = int(parts[1]), int(parts[2]), int(parts[3])
 	except ValueError:
 		return None
-	if side not in (0, 1) or stake not in STAKES:
+	if post_id <= 0 or side not in (0, 1) or stake not in LEGACY_STAKES:
 		return None
 	return post_id, side, stake
 

@@ -55,6 +55,9 @@ class FakeResponse:
 	def is_done(self):
 		return self._done
 
+	async def defer(self, **_kw):
+		self._done = True
+
 	async def send_message(self, content=None, ephemeral=False, view=nextcord.utils.MISSING, **_kw):
 		if self.fail_sends > 0:
 			self.fail_sends -= 1
@@ -89,6 +92,9 @@ class FakeFollowup:
 		self._response = response
 
 	async def send(self, content=None, ephemeral=False, view=nextcord.utils.MISSING, **_kw):
+		if self._response.fail_sends > 0:
+			self._response.fail_sends -= 1
+			raise RuntimeError("Discord 503 — followup failed")
 		_check_view(view)
 		self._response.sent.append((content, ephemeral, view))
 
@@ -108,7 +114,10 @@ def _check_view(view):
 class FakeInteraction:
 	COMPONENT = 3               # Discord's own wire value; see conftest
 
-	def __init__(self, custom_id="bet:12:0:50", user_id=7, itype=COMPONENT):
+	def __init__(self, custom_id=None, user_id=7, itype=COMPONENT):
+		self.id = 456
+		if custom_id is None:
+			custom_id = f"betstake:12:0:{user_id}:50:123"
 		self.type = itype
 		self.data = {"custom_id": custom_id}
 		self.user = types.SimpleNamespace(id=user_id, display_name="Zed", name="zed")
@@ -250,7 +259,7 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 		return seeded
 
 	async def _place_bet(_community_id, user_id, _post_id, side, stake, _nick, _now,
-						 is_player=False):
+						 is_player=False, chooser_id=None):
 		if bank is EXPLODE:
 			raise AssertionError("place_bet reached on a press that must be refused")
 		wiring.placed.append(dict(user_id=user_id, side=side, stake=stake, is_player=is_player))
@@ -388,7 +397,7 @@ class TestOwnTeamOnly:
 		""" The whole point of the amendment: a participant's gold can join the
 		pool on the side they are actually playing. """
 		bank = wire(monkeypatch, team0={7}, team1={8})
-		i = FakeInteraction(user_id=7, custom_id="bet:12:0:50")
+		i = FakeInteraction(user_id=7, custom_id="betstake:12:0:7:50:123")
 		run(i)
 		assert bank.placed, "the bet never reached the bank"
 		assert bank.placed[-1]["is_player"] is True
@@ -397,7 +406,7 @@ class TestOwnTeamOnly:
 		""" A participant must never be able to hold a position against
 		themselves — that is the only reason letting players bet is safe. """
 		bank = wire(monkeypatch, team0={7}, team1={8})
-		i = FakeInteraction(user_id=7, custom_id="bet:12:1:50")
+		i = FakeInteraction(user_id=7, custom_id="betstake:12:1:7:50:123")
 		run(i)
 		assert not bank.placed, "the bank was reached on a forbidden side"
 		assert "only bet on yourself" in i.reply
@@ -405,7 +414,7 @@ class TestOwnTeamOnly:
 	def test_a_spectator_may_back_either_side(self, monkeypatch):
 		for side in (0, 1):
 			bank = wire(monkeypatch, team0={7}, team1={8})
-			i = FakeInteraction(user_id=99, custom_id=f"bet:12:{side}:50")
+			i = FakeInteraction(user_id=99, custom_id=f"betstake:12:{side}:99:50:123")
 			run(i)
 			assert bank.placed, f"spectator refused on side {side}"
 			assert bank.placed[-1]["is_player"] is False
@@ -414,7 +423,7 @@ class TestOwnTeamOnly:
 		""" Match.teams[2] is 'unpicked'. Someone sitting there is not playing
 		either side and must be treated as a spectator, not silently blocked. """
 		bank = wire(monkeypatch, team0={7}, team1={8}, unpicked={42})
-		i = FakeInteraction(user_id=42, custom_id="bet:12:1:50")
+		i = FakeInteraction(user_id=42, custom_id="betstake:12:1:42:50:123")
 		run(i)
 		assert bank.placed
 		assert bank.placed[-1]["is_player"] is False
@@ -423,7 +432,7 @@ class TestOwnTeamOnly:
 		""" bank=EXPLODE turns any leak past the guard into a logged error and
 		the wrong message, so neither assertion here can pass by accident. """
 		log = wire(monkeypatch, team0={7}, team1={8}, bank=EXPLODE)
-		i = run(FakeInteraction(user_id=8, custom_id="bet:12:0:100"))
+		i = run(FakeInteraction(user_id=8, custom_id="betstake:12:0:8:100:123"))
 		assert "only bet on yourself" in i.reply
 		assert i.all_ephemeral
 		assert log.errors == []
@@ -456,7 +465,7 @@ class TestBankRejections:
 		The press here is side 1 (Bravo) while the lock is side 0 (Alpha). """
 		log = wire(monkeypatch, place_bet=("side_locked", 0),
 				   bets_raise=AssertionError("kept processing after a refused bet"))
-		i = run(FakeInteraction(custom_id="bet:12:1:50"))
+		i = run(FakeInteraction(custom_id="betstake:12:1:7:50:123"))
 		assert "You're on **Alpha** this match" in i.reply
 		assert "Bravo" not in i.reply
 		assert log.errors == []
@@ -473,7 +482,7 @@ class TestConfirmation:
 		log = wire(monkeypatch, place_bet=("ok", 440), bets=[
 			dict(user_id=7, nick="Zed", side=0, stake=50),
 			dict(user_id=8, nick="Ada", side=1, stake=100)])
-		i = run(FakeInteraction(custom_id="bet:12:0:50", user_id=7))
+		i = run(FakeInteraction(custom_id="betstake:12:0:7:50:123", user_id=7))
 		assert "Bet **50**" in i.reply
 		assert "on **Alpha**" in i.reply
 		assert "Pools: 50 vs 100" in i.reply
@@ -493,7 +502,7 @@ class TestConfirmation:
 		""" Presses are additive: this one staked 50 on top of an earlier 10. """
 		wire(monkeypatch, place_bet=("ok", 380), bets=[
 			dict(user_id=7, nick="Zed", side=0, stake=60)])
-		assert "(your total: 60)" in run(FakeInteraction(custom_id="bet:12:0:50")).reply
+		assert "(your total: 60)" in run(FakeInteraction(custom_id="betstake:12:0:7:50:123")).reply
 
 	def test_a_first_time_bettor_is_welcomed_before_the_confirmation(self, monkeypatch):
 		wire(monkeypatch, seeded=True, place_bet=("ok", 450), bets=[
@@ -524,8 +533,8 @@ class TestFailureAfterTheCharge:
 		""" The message that was always right, on the path where it is right. """
 		log = wire(monkeypatch, get_post_raises=RuntimeError("db blip"), bank=EXPLODE)
 		i = run(FakeInteraction())
-		assert "nothing was charged" in i.reply
-		assert "Try again." in i.reply
+		assert "same stake button" in i.reply
+		assert "Try again" in i.reply
 		assert i.all_ephemeral
 		assert len(log.errors) == 1
 
@@ -555,7 +564,7 @@ class TestFailureAfterTheCharge:
 	def test_the_two_notices_disagree_about_the_only_thing_that_matters(self):
 		""" Pins the pair rather than one string: whatever the copy becomes, the
 		before-notice may promise no charge and the after-notice may not. """
-		assert "nothing was charged" in interactions.BET_FAILED_NOTICE
+		assert "same stake button" in interactions.BET_FAILED_NOTICE
 		assert "nothing was charged" not in interactions.BET_LANDED_NOTICE
 		assert "Try again" in interactions.BET_FAILED_NOTICE
 		assert "try again" not in interactions.BET_LANDED_NOTICE.lower()
@@ -582,7 +591,7 @@ class TestFailureAfterTheCharge:
 		so a press refused for being on the locked side and then failing to
 		deliver that refusal is still an uncharged user. """
 		wire(monkeypatch, place_bet=("side_locked", 0))
-		i = FakeInteraction(custom_id="bet:12:1:50")
+		i = FakeInteraction(custom_id="betstake:12:1:7:50:123")
 		i.response.fail_sends = 1
 		run(i)
 		assert i.reply == interactions.BET_FAILED_NOTICE

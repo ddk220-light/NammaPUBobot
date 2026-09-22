@@ -31,8 +31,25 @@ Winnings are *not* capped. A bet can take you to any balance.
 
 ## Betting on matches
 
-When a ranked match's teams are settled, the bot posts a betting card with six
-buttons — 10 / 50 / 100 on each team. Betting stays open while players create
+When a ranked match's teams are settled, choose a team on its betting card,
+then choose an amount privately. Your options scale with your available gold:
+
+| Available gold | Stake options |
+|---|---|
+| 250–500 | 50 / 125 / 250 |
+| 501–1,000 | 100 / 250 / 500 |
+| 1,001–1,500 | 150 / 375 / 750 |
+| 1,501–2,000 | 200 / 500 / 1,000 |
+
+Options are 10%, 25%, and 50% of the upper-inclusive 500-gold band ceiling.
+At 501 gold the largest option is 500: these are not percentages of the exact
+wallet balance. Below 250, options shrink to fit; 100 gives 20 / 50 / 100 and
+50 gives 10 / 25 / 50. The minimum is 10 gold, and tiny wallets may have fewer
+than three distinct options. A changed balance refreshes invalid choices without
+charging. One chooser can place only one bet; reopen the card to deliberately
+add more. These limits apply per addition, not to the total committed to a match.
+
+Betting stays open while players create
 and fill the lobby. It freezes only when the public AoE2 match service confirms
 an actual game start. Creating, linking, removing, cancelling, or remaking a
 lobby does not close the book by itself. There is no ten-minute deadline.
@@ -74,6 +91,29 @@ over.
 
 When the match is reported, the bot posts a betting report: who backed whom, who
 won, what each was paid, and which players backed themselves.
+
+## Weekly inactivity tax
+
+In communities where this rule is enabled, Thursday's assessment removes **10%
+of available gold**, rounded down, if you had no qualifying match bet during the
+preceding seven days. The assessment uses Asia/Kolkata time; its time of day is
+set to the daily quiz posting time when enabled. The exact cutoff belongs to the
+next week's activity window.
+
+A bet qualifies when betting closes with your stake still placed, whether you
+win or lose. Manual cancellation before closure does not qualify. Automatic
+refunds for a one-sided pot or a bot-voided match still count. Quiz answers do
+not exempt you, and betting in any channel of the same community counts.
+
+New holders and newly enabled communities get at least seven full days of grace.
+A week with no betting opportunity is exempt. After downtime, only the latest
+due week is assessed, using the available balance at that assessment; missed
+weeks do not stack. Deductions appear as **Weekly inactivity tax** in your history.
+
+Stakes already in open pots are outside this tax base. An open bet crossing the
+cutoff can reduce that week's taxable balance even if cancelled later; keeping
+it until betting closes qualifies in the week it closes. There is no tax debt
+or later clawback. One qualifying bet exempts the entire week.
 
 ## The daily quiz
 
