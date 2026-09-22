@@ -2,22 +2,22 @@
 """The gold bank — the ONLY module that moves gold.
 
 Every movement is one transaction: an append-only gold_ledger row plus the
-matching gold_balances update, committed together or not at all. Non-bet
-movements carry an idem_key with a unique index, so seeds, rewards, refunds
-and payouts are impossible to apply twice — re-running a half-finished sweep
-skips the rows that already exist (INSERT IGNORE, rowcount 0) and applies the
-rest. The two exceptions are 'bet' and 'cancel', which a user may repeat on
-one post and which are therefore guarded by a conditional write's rowcount
-instead (see place_bet and cancel_bet). Balance truth is
+matching gold_balances update. Personal stake choosers and non-bet movements
+carry unique idem_keys, so retries cannot move gold twice. A cancellation uses
+the deleted stake row as its refund token, allowing bet/cancel/bet cycles.
+Balance truth is
 SUM(gold_ledger.amount); gold_balances is the spendable cache, and
 reconcile() can prove the two agree.
 
 No nextcord and no time.time() in here: callers pass `now`, and the module
 stays importable (and its control flow testable) under the conftest stubs."""
+import asyncio
+
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 
 from . import scoring
+from .tax_policy import first_cutoff, latest_cutoff, tax_candidates
 
 
 class _Insufficient(Exception):
@@ -30,6 +30,59 @@ class _SideLocked(Exception):
 
 class _Closed(Exception):
 	pass
+
+
+async def apply_weekly_tax(community_id, cutoff, now):
+	"""One community/week, all-or-nothing; retry only confirmed deadlocks/timeouts."""
+	for attempt in range(3):
+		try:
+			return await _apply_weekly_tax(community_id, cutoff, now)
+		except Exception as error:
+			cause = error.__cause__ or error
+			if not cause.args or cause.args[0] not in (1205, 1213) or attempt == 2:
+				raise
+			await asyncio.sleep(0.05 * (attempt + 1))
+
+
+async def _apply_weekly_tax(community_id, cutoff, now):
+	async with db.transaction() as tx:
+		policy = await tx.fetchone(
+			"SELECT * FROM gold_tax_policy WHERE community_id=%s FOR UPDATE", [community_id])
+		if not policy or not policy["enabled"]:
+			return None
+		minute = int(policy["minute_of_day"])
+		if cutoff > now or cutoff != latest_cutoff(cutoff, minute):
+			raise ValueError("invalid weekly tax cutoff")
+		if cutoff < first_cutoff(int(policy["activated_at"]), minute):
+			return None
+		await tx.insert("gold_tax_runs", dict(community_id=community_id, cutoff=cutoff), on_duplicate="keep")
+		run = await tx.fetchone(
+			"SELECT completed_at FROM gold_tax_runs WHERE community_id=%s AND cutoff=%s FOR UPDATE",
+			[community_id, cutoff])
+		if run["completed_at"] is not None:
+			return None
+		wallets = await tx.fetchall(
+			"SELECT user_id, balance FROM gold_balances WHERE community_id=%s ORDER BY user_id FOR UPDATE",
+			[community_id]) or []
+		owed = await tax_candidates(tx, community_id, cutoff, wallets)
+		for uid, amount in owed:
+			# A duplicate with an incomplete run is an invariant violation: fail
+			# the transaction instead of updating a wallet without a ledger debit.
+			await tx.insert("gold_ledger", dict(
+				community_id=community_id, user_id=uid, entry_type="inactivity_tax",
+				amount=-amount, created_at=now, idem_key=f"tax:{community_id}:{uid}:{cutoff}"))
+			changed = await tx.execute(
+				"UPDATE gold_balances SET balance=balance-%s, updated_at=%s "
+				"WHERE community_id=%s AND user_id=%s AND balance>=%s",
+				[amount, now, community_id, uid, amount])
+			if changed != 1:
+				raise RuntimeError("weekly tax wallet invariant failed")
+		result = dict(taxed_holders=len(owed), total_tax=sum(amount for _, amount in owed))
+		await tx.execute(
+			"UPDATE gold_tax_runs SET completed_at=%s, taxed_holders=%s, total_tax=%s "
+			"WHERE community_id=%s AND cutoff=%s",
+			[now, result["taxed_holders"], result["total_tax"], community_id, cutoff])
+		return result
 
 
 async def balance(community_id, user_id):
@@ -78,11 +131,11 @@ async def bulk_seed(now):
 	return seeded
 
 
-async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_player=False):
+async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_player=False, chooser_id=None):
 	"""One press of a bet button, atomically.
 
 	-> ('ok', new_balance) | ('insufficient', balance) | ('side_locked', locked_side)
-	   | ('closed', None)
+	   | ('closed', None) | ('stale', balance) | ('duplicate', balance)
 
 	`is_player` says the bettor is on the side they just backed, decided by the
 	caller against the live roster and stored on the row. It is captured here
@@ -95,8 +148,9 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_p
 	UPDATE, else INSERT; a duplicate-key error means the user is on the other
 	side), and the ledger row. Any rejection raises, so the stake deduction can
 	never survive a refused bet."""
-	if stake not in scoring.STAKES:
-		raise ValueError(f"stake {stake} is not one of {scoring.STAKES}")
+	if type(stake) is not int or not 0 < stake <= 2**63 - 1 or side not in (0, 1):
+		raise ValueError("invalid bet")
+	idem_key = f"bet:{community_id}:{user_id}:{chooser_id}" if chooser_id is not None else None
 	try:
 		async with db.transaction() as tx:
 			# THE BOOK, RE-READ AND LOCKED — not a courtesy re-check of what the
@@ -124,6 +178,17 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_p
 				[post_id])
 			if book is None or book["status"] != "open":
 				raise _Closed()
+			wallet = await tx.fetchone(
+				"SELECT balance FROM gold_balances WHERE community_id=%s AND user_id=%s FOR UPDATE",
+				[community_id, user_id])
+			available = int(wallet["balance"]) if wallet else 0
+			if idem_key is not None and await tx.fetchone(
+					"SELECT id FROM gold_ledger WHERE idem_key=%s", [idem_key]):
+				return "duplicate", available
+			if stake > available:
+				raise _Insufficient()
+			if stake not in scoring.stake_options(available):
+				return "stale", available
 			spent = await tx.execute(
 				"UPDATE gold_balances SET balance=balance-%s, updated_at=%s "
 				"WHERE community_id=%s AND user_id=%s AND balance>=%s",
@@ -147,7 +212,7 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_p
 					raise _SideLocked() from None
 			await tx.insert("gold_ledger", dict(
 				community_id=community_id, user_id=user_id, entry_type="bet",
-				amount=-stake, post_id=post_id, created_at=now))
+				amount=-stake, post_id=post_id, created_at=now, idem_key=idem_key))
 			row = await tx.fetchone(
 				"SELECT balance FROM gold_balances WHERE community_id=%s AND user_id=%s",
 				[community_id, user_id])

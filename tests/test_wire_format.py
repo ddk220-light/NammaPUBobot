@@ -108,7 +108,8 @@ class TestTheBuildersStillEmitTheseShapes:
 
 	def test_the_betting_view_builds_bet_and_betcancel(self):
 		src = self._source("nammaoe2bot/features/betting/embeds.py")
-		assert 'f"bet:{post_id}:{side}:{stake}"' in src
+		assert 'f"betpick:{post_id}:{side}"' in src
+		assert 'f"betstake:{post_id}:{side}:{user_id}:{stake}:{chooser_id}"' in src
 		assert 'f"betcancel:{post_id}"' in src
 
 	def test_the_quiz_view_builds_ans_and_msel(self):

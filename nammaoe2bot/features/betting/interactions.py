@@ -14,13 +14,13 @@ import nextcord
 from nammaoe2bot.runtime.console import log
 
 from . import embeds, flow, gold, store, view
-from .scoring import SEED_AMOUNT, parse_bet_custom_id, parse_cancel_custom_id, pools
+from .scoring import SEED_AMOUNT, parse_bet_custom_id, parse_cancel_custom_id, parse_personal_bet_id, pools
 
 # The two things the last-resort handler can truthfully say, kept side by side
 # because the difference between them is the difference between one charge and
 # two. Neither invites a retry it cannot honour.
-BET_FAILED_NOTICE = ("Something went wrong placing that bet — nothing was charged if you "
-					 "didn't get a confirmation. Try again.")
+BET_FAILED_NOTICE = ("Could not confirm this bet. Check /predictions me. Try again using the "
+					 "same stake button; it cannot charge twice.")
 BET_LANDED_NOTICE = ("Your bet went through — the gold is staked and your side is locked "
 					 "in. Only the confirmation failed, so **don't press again** unless you "
 					 "mean to stake more.")
@@ -47,6 +47,7 @@ async def on_bet_interaction(interaction):
 	# "nothing was charged, try again" is true and reassuring; after it, that
 	# same sentence is a false statement that instructs the user to double-pay.
 	charged = False
+	deferred = False
 	try:
 		if interaction.type != nextcord.InteractionType.component:
 			return
@@ -54,10 +55,20 @@ async def on_bet_interaction(interaction):
 		cancel_post_id = parse_cancel_custom_id(custom_id)
 		if cancel_post_id is not None:
 			return await _handle_cancel(interaction, cancel_post_id, int(time.time()))
-		route = parse_bet_custom_id(custom_id)
+		route = parse_personal_bet_id(custom_id)
+		legacy = parse_bet_custom_id(custom_id)
+		if route is None and legacy is not None:
+			route = legacy[:2]
 		if route is None:
 			return
-		post_id, side, stake = route
+		post_id, side = route[:2]
+		if len(route) == 5 and route[2] != interaction.user.id:
+			return await _eph(interaction, "Open your own stake choices from the match card.")
+		# A sleeping MySQL instance can take longer than Discord's initial
+		# response window to wake. Acknowledge before touching the database.
+		if not interaction.response.is_done():
+			await interaction.response.defer(ephemeral=True, with_message=True)
+			deferred = True
 		now = int(time.time())
 		post = await store.get_post(post_id)
 		if not post or post["status"] != "open":
@@ -75,9 +86,19 @@ async def on_bet_interaction(interaction):
 			return await _eph(interaction, "This channel keeps no stats — there is no gold here.")
 
 		seeded_now = await gold.ensure_seeded(community_id, interaction.user.id, now)
+		if len(route) == 2:
+			return await _choose_stake(interaction, post, side,
+				await gold.balance(community_id, interaction.user.id), seeded_now=seeded_now)
+		_, _, _, stake, chooser_id = route
 		status, value = await gold.place_bet(
 			community_id, interaction.user.id, post_id, side, stake, _nick(interaction.user), now,
-			is_player=is_player)
+			is_player=is_player, chooser_id=chooser_id)
+		if status == "duplicate":
+			return await _eph(interaction,
+				"This selection was already placed; no additional gold was charged. "
+				"Use the match card for a new bet.", component_view=embeds.cancel_view(post_id))
+		if status == "stale":
+			return await _choose_stake(interaction, post, side, value, changed=True)
 		if status == "closed":
 			# The gate at the top of this handler read the post row before any
 			# of the above; place_bet re-read it FOR UPDATE inside the
@@ -110,7 +131,21 @@ async def on_bet_interaction(interaction):
 		await _eph(interaction, "\n".join(lines), component_view=embeds.cancel_view(post_id))
 		await _refresh_card(post, pool0, pool1)
 	except Exception as e:
-		await _last_resort(interaction, BET_LANDED_NOTICE if charged else BET_FAILED_NOTICE, e)
+		await _last_resort(interaction, BET_LANDED_NOTICE if charged else BET_FAILED_NOTICE, e, deferred=deferred)
+
+
+async def _choose_stake(interaction, post, side, balance, *, seeded_now=False, changed=False):
+	team = post["team0_name"] if side == 0 else post["team1_name"]
+	text = f"Back **{team}**. You hold **{balance}** {view.GOLD}. Choose your stake below."
+	if seeded_now:
+		text = f"Welcome — you started with {SEED_AMOUNT} {view.GOLD}.\n" + text
+	if changed:
+		text = "Your balance changed; nothing was charged. Here are your current options.\n" + text
+	if balance < 10:
+		return await _eph(interaction,
+			f"You hold **{balance}** {view.GOLD}. The minimum bet is 10 gold. Quiz and match rewards can refill it.")
+	await _eph(interaction, text, component_view=embeds.stake_view(
+		post["id"], side, interaction.user.id, balance, interaction.id))
 
 
 CANCEL_CLOSED_NOTICE = "Betting on this match is closed — bets can no longer be cancelled."
@@ -167,7 +202,7 @@ async def _handle_cancel(interaction, post_id, now):
 			interaction, CANCEL_LANDED_NOTICE if refunded else CANCEL_FAILED_NOTICE, e)
 
 
-async def _last_resort(interaction, text, error):
+async def _last_resort(interaction, text, error, *, deferred=False):
 	"""The only thing the user ever hears from when a handler falls over.
 
 	Silence is right when we have already responded: the user is holding their
@@ -178,6 +213,8 @@ async def _last_resort(interaction, text, error):
 	try:
 		if not interaction.response.is_done():
 			await interaction.response.send_message(text, ephemeral=True)
+		elif deferred:
+			await interaction.followup.send(text, ephemeral=True)
 	except Exception:
 		pass
 

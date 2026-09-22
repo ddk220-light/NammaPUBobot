@@ -71,8 +71,8 @@ db.ensure_table(dict(
 # ── gold betting (stage: gold-betting spec, 2026-08-05) ─────────────────
 # gold_ledger is APPEND-ONLY: no UPDATE, no DELETE, ever. idem_key makes
 # every non-bet movement impossible to apply twice at the schema level
-# (unique index; MySQL unique ignores NULLs, and bet rows are NULL because
-# a user may press the buttons many times). Balance truth is
+# (unique index; legacy bet and cancellation rows may have NULL keys).
+# Personal choosers also carry unique keys. Balance truth is
 # SUM(amount) per (community_id, user_id); gold_balances is the spendable
 # cache written in the same transaction — see nammaoe2bot/features/betting/gold.py.
 db.ensure_table(dict(
@@ -82,9 +82,9 @@ db.ensure_table(dict(
 		dict(cname="community_id", ctype=db.types.int),
 		dict(cname="user_id", ctype=db.types.int),
 		# seed | match_reward | bet | cancel | refund | payout
-		# | quiz_correct | quiz_played | admin_adjust
+		# | quiz_correct | quiz_played | admin_adjust | inactivity_tax
 		dict(cname="entry_type", ctype=db.types.str),
-		dict(cname="amount", ctype=db.types.int),          # signed; negative only for 'bet'
+		dict(cname="amount", ctype=db.types.int),          # signed; negative for bets and tax
 		dict(cname="match_id", ctype=db.types.int, notnull=False),
 		dict(cname="post_id", ctype=db.types.int, notnull=False),
 		dict(cname="created_at", ctype=db.types.int),
@@ -103,6 +103,30 @@ db.ensure_table(dict(
 		dict(cname="updated_at", ctype=db.types.int),
 	],
 	primary_keys=["community_id", "user_id"],
+))
+
+db.ensure_table(dict(
+	tname="gold_tax_policy",
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="enabled", ctype=db.types.bool, default=0),
+		dict(cname="activated_at", ctype=db.types.int),
+		# Local time in Asia/Kolkata, persisted independently of quiz settings.
+		dict(cname="minute_of_day", ctype=db.types.int),
+	],
+	primary_keys=["community_id"],
+))
+
+db.ensure_table(dict(
+	tname="gold_tax_runs",
+	columns=[
+		dict(cname="community_id", ctype=db.types.int),
+		dict(cname="cutoff", ctype=db.types.int),
+		dict(cname="completed_at", ctype=db.types.int, notnull=False),
+		dict(cname="taxed_holders", ctype=db.types.int, default=0),
+		dict(cname="total_tax", ctype=db.types.int, default=0),
+	],
+	primary_keys=["community_id", "cutoff"],
 ))
 
 # One row per bettor per post — the composite PK IS the side lock: a second

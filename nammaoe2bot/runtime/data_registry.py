@@ -24,6 +24,11 @@ must say which:
 # Retention "sweepable" is reserved for the replay-detail sweeper's exact
 # allowlist. "feature_managed" means the owning feature expires its own rows.
 REGISTRY = {
+	# Tax policy is configured explicitly by the operational tool, not on boot.
+	"gold_tax_policy": dict(
+		layer="ops", tenancy="community", writers=("scripts/gold_tax.py",), retention="forever"),
+	"gold_tax_runs": dict(
+		layer="ops", tenancy="community", writers=("nammaoe2bot/features/betting/gold.py",), retention="forever"),
 	# core — irreplaceable
 	"matches": dict(
 		layer="core", tenancy="channel", writers=("nammaoe2bot/features/elo_sync.py", "nammaoe2bot/pickup/stats.py"), retention="forever"

@@ -20,6 +20,7 @@ _ENTRY_LABELS = {
 	"quiz_correct": "Quiz — correct answer",
 	"quiz_played": "Quiz — played",
 	"admin_adjust": "Adjustment",
+	"inactivity_tax": "Weekly inactivity tax",
 }
 
 
@@ -59,7 +60,7 @@ def open_lines(team0, team1, match_id, pool0=0, pool1=0):
 		_side_line(TEAM_EMOJIS[0], team0, pool0, pool1),
 		_side_line(TEAM_EMOJIS[1], team1, pool1, pool0),
 		"",
-		"Stake your gold with the buttons. Betting closes when the game starts.",
+		"Choose a team, then your personal stake. Amounts scale with your gold. Betting closes when the game starts.",
 		# THE RULE, as Amendment 1 §A actually left it. This line said
 		# "Spectators only — players in this match cannot bet" long after the
 		# router stopped enforcing anything of the kind, on every ranked match
