@@ -40,7 +40,7 @@ class MatchLifecycle:
 		"teams_posted",     # the teams embed has been sent
 		"live",             # teams are final, the match is being played
 		"roster_changed",   # a substitution rewrote the teams
-		"ending",           # dropped from active_matches, result not yet stored
+		"ending",           # committed result; dropped from active_matches
 		"result_recorded",  # a result reached `matches` — NOT the same as finished
 		"finished",         # the match itself is over — see wiring.py, order matters
 		"cancelled",        # aborted; there will never be a result

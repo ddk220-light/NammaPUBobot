@@ -5,6 +5,7 @@ import asyncio
 from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.client import dc
 from nammaoe2bot.runtime.database import db
+from nammaoe2bot.exceptions import Exceptions as Exc
 from nammaoe2bot.runtime.utils import iter_to_dict, find, get_nick  # noqa: F401
 
 db.ensure_table(dict(
@@ -82,16 +83,15 @@ db.ensure_table(dict(
 
 
 async def check_match_id_counter():
-	"""
-	Set to current max match_id+1 if not persist or less
-	"""
-	m = await db.select_one(('match_id',), 'matches', order_by='match_id', limit=1)
-	next_known_match = m['match_id']+1 if m else 0
-	counter = await db.select_one(('next_id',), 'match_counter')
-	if counter is None:
-		await db.insert('match_counter', dict(next_id=next_known_match))
-	elif next_known_match > counter['next_id']:
-		await db.update('match_counter', dict(next_id=next_known_match))
+	"""Repair the floor under the same lock as restoration and ID allocation."""
+	async with db.transaction() as tx:
+		counter = await tx.fetchone("SELECT next_id FROM match_counter FOR UPDATE")
+		maximum = await tx.fetchone("SELECT COALESCE(MAX(match_id) + 1, 0) AS next_id FROM matches")
+		floor = int(maximum["next_id"])
+		if counter is None:
+			await tx.insert("match_counter", dict(next_id=floor))
+		elif counter["next_id"] < floor:
+			await tx.execute("UPDATE match_counter SET next_id=%s", [floor])
 
 
 async def next_match():
@@ -117,60 +117,100 @@ async def next_match():
 	return match_id
 
 
-async def register_match_unranked(ctx, m):
-	await db.insert('matches', dict(
-		match_id=m.id, channel_id=m.qc.id, queue_id=m.queue.cfg.p_key, queue_name=m.queue.name,
-		alpha_name=m.teams[0].name, beta_name=m.teams[1].name,
-		reported_at=int(time.time()), ranked=0, winner=None, maps="\n".join(m.maps)
-	))
-
-	await db.insert_many('player_ratings', (
-		dict(channel_id=m.qc.id, user_id=p.id)
-		for p in m.players
-	), on_duplicate="ignore")
-
-	for p in m.players:
-		nick = get_nick(p)
-		await db.update(
-			"player_ratings",
-			dict(nick=nick),
-			keys=dict(channel_id=m.qc.id, user_id=p.id)
-		)
-
-		if p in m.teams[0]:
-			team = 0
-		elif p in m.teams[1]:
-			team = 1
-		else:
-			team = None
-
-		await db.insert(
-			'match_players',
-			dict(match_id=m.id, channel_id=m.qc.id, user_id=p.id, nick=nick, team=team)
-		)
-
-	await m.qc.app.match_events.emit("result_recorded", m, ctx)
+async def reserve_restored_ids(match_ids):
+	"""Raise the counter floor once at startup; do not allocate replacement IDs."""
+	if not match_ids:
+		return
+	floor = max(match_ids) + 1
+	async with db.transaction() as tx:
+		counter = await tx.fetchone("SELECT next_id FROM match_counter FOR UPDATE")
+		if counter is None:
+			maximum = await tx.fetchone("SELECT COALESCE(MAX(match_id) + 1, 0) AS next_id FROM matches")
+			floor = max(floor, int(maximum["next_id"]))
+			await tx.insert("match_counter", dict(next_id=floor))
+		elif counter["next_id"] < floor:
+			await tx.execute("UPDATE match_counter SET next_id=%s", [floor])
 
 
-async def register_match_ranked(ctx, m):
+async def validate_recorded_match(reader, row, players, teams, rating_channel_id=None):
+	"""Reject incomplete legacy results instead of silently treating them as committed."""
+	roster = await reader.fetchall(
+		"SELECT user_id, team, channel_id FROM match_players WHERE match_id=%s", [row["match_id"]])
+	expected = {uid: next((i for i, team in enumerate(teams[:2]) if uid in team), None)
+		for uid in players}
+	if (len(roster) != len(expected)
+			or {p["user_id"]: p["team"] for p in roster} != expected
+			or any(p["channel_id"] != row["channel_id"] for p in roster)):
+		raise Exc.ValueError(f"Match {row['match_id']} has an inconsistent stored roster; manual review required.")
+	if row["ranked"]:
+		history = await reader.fetchall(
+			"SELECT user_id, channel_id FROM rating_history WHERE match_id=%s", [row["match_id"]])
+		if (len(history) != len(expected) or {p["user_id"] for p in history} != set(expected)
+				or (rating_channel_id is not None
+					and any(p["channel_id"] != rating_channel_id for p in history))):
+			raise Exc.ValueError(f"Match {row['match_id']} has incomplete rating history; manual review required.")
+
+
+async def register_match_unranked(ctx, m, *, notify=True):
+	return await _register_match(ctx, m, ranked=False, notify=notify)
+
+
+async def register_match_ranked(ctx, m, *, notify=True):
+	return await _register_match(ctx, m, ranked=True, notify=notify)
+
+
+async def _register_match(ctx, m, *, ranked, notify):
 	now = int(time.time())
-
-	await db.insert('matches', dict(
+	row = dict(
 		match_id=m.id, channel_id=m.qc.id, queue_id=m.queue.cfg.p_key, queue_name=m.queue.name,
 		alpha_name=m.teams[0].name, beta_name=m.teams[1].name,
-		reported_at=now, ranked=1, winner=m.winner,
-		alpha_score=m.scores[0], beta_score=m.scores[1], maps="\n".join(m.maps)
-	))
+		reported_at=now, ranked=int(ranked), winner=m.winner if ranked else None,
+		alpha_score=m.scores[0] if ranked else None,
+		beta_score=m.scores[1] if ranked else None, maps="\n".join(m.maps))
+	result = None
+	async with db.transaction() as tx:
+		# Claim the unique key directly. SELECT FOR UPDATE on a missing ID
+		# takes a gap lock, which makes simultaneous new reports deadlock.
+		created = await tx.insert("matches", row, on_duplicate="keep")
+		if not created:
+			existing = await tx.fetchone("SELECT * FROM matches WHERE match_id=%s FOR UPDATE", [m.id])
+			# The timestamp is the time of the first successful report. Everything
+			# else must agree: a conflicting retry must never overwrite a result.
+			if any(existing[key] != value for key, value in row.items() if key != "reported_at"):
+				raise Exc.ValueError(f"Match {m.id} already has a different recorded result.")
+			await validate_recorded_match(tx, existing, [p.id for p in m.players],
+				[[p.id for p in team] for team in m.teams], m.qc.rating.channel_id)
+		else:
+			if ranked:
+				result = await _write_ranked(tx, m, now)
+			else:
+				await _write_unranked(tx, m)
+	# No external requests while holding the pooled connection/row locks.
+	m._result_committed = True
+	if notify:
+		await notify_match_result(ctx, m, result)
+	return result
 
-	for channel_id in {m.qc.id, m.qc.rating.channel_id}:
-		await db.insert_many('player_ratings', (
+
+async def _write_unranked(tx, m):
+	for p in sorted(m.players, key=lambda p: p.id):
+		await tx.insert("player_ratings", dict(channel_id=m.qc.id, user_id=p.id), on_duplicate="keep")
+		nick = get_nick(p)
+		await tx.update("player_ratings", dict(nick=nick), keys=dict(channel_id=m.qc.id, user_id=p.id))
+		team = next((i for i, team in enumerate(m.teams[:2]) if p in team), None)
+		await tx.insert("match_players", dict(match_id=m.id, channel_id=m.qc.id, user_id=p.id, nick=nick, team=team))
+
+
+async def _write_ranked(tx, m, now):
+	for channel_id in sorted({m.qc.id, m.qc.rating.channel_id}):
+		await tx.insert_many('player_ratings', (
 			dict(channel_id=channel_id, user_id=p.id, nick=get_nick(p))
-			for p in m.players
-		), on_duplicate="ignore")
+			for p in sorted(m.players, key=lambda p: p.id)
+		), on_duplicate="keep")
 
 	results = [[
-		await m.qc.rating.get_players((p.id for p in m.teams[0])),
-		await m.qc.rating.get_players((p.id for p in m.teams[1])),
+		await m.qc.rating.get_players((p.id for p in m.teams[0]), transaction=tx),
+		await m.qc.rating.get_players((p.id for p in m.teams[1]), transaction=tx),
 	]]
 
 	if m.winner is None:  # draw
@@ -190,11 +230,11 @@ async def register_match_ranked(ctx, m):
 	after = iter_to_dict((*results[-1][0], *results[-1][1]), key='user_id')
 	before = iter_to_dict((*results[0][0], *results[0][1]), key='user_id')
 
-	for p in m.players:
+	for p in sorted(m.players, key=lambda p: p.id):
 		nick = get_nick(p)
 		team = 0 if p in m.teams[0] else 1
 
-		await db.update(
+		await tx.update(
 			"player_ratings",
 			dict(
 				nick=nick,
@@ -209,11 +249,11 @@ async def register_match_ranked(ctx, m):
 			keys=dict(channel_id=m.qc.rating.channel_id, user_id=p.id)
 		)
 
-		await db.insert(
+		await tx.insert(
 			'match_players',
 			dict(match_id=m.id, channel_id=m.qc.id, user_id=p.id, nick=nick, team=team)
 		)
-		await db.insert('rating_history', dict(
+		await tx.insert('rating_history', dict(
 			channel_id=m.qc.rating.channel_id,
 			user_id=p.id,
 			at=now,
@@ -225,10 +265,22 @@ async def register_match_ranked(ctx, m):
 			reason=m.queue.name
 		))
 
-	await m.qc.app.match_events.emit("result_recorded", m, ctx)
+	return before, after
 
-	await m.qc.update_rating_roles(*m.players)
-	await m.print_rating_results(ctx, before, after)
+
+async def notify_match_result(ctx, m, result):
+	await m.qc.app.match_events.emit("result_recorded", m, ctx)
+	if result is not None:
+		# One notification failure must not suppress the remaining post-commit
+		# actions or make the captain think the database report failed.
+		try:
+			await m.qc.update_rating_roles(*m.players)
+		except Exception as exc:
+			log.error(f"Rating role update failed after committing match {m.id}: {exc}")
+		try:
+			await m.print_rating_results(ctx, *result)
+		except Exception as exc:
+			log.error(f"Result message failed after committing match {m.id}: {exc}")
 
 
 async def undo_match(ctx, match_id):

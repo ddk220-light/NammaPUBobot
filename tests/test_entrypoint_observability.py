@@ -5,6 +5,7 @@ execute only the small pure/supervision functions extracted from its AST. This
 is the same source-level isolation used by the existing entrypoint tests.
 """
 import ast
+import asyncio
 import traceback
 import types
 from pathlib import Path
@@ -16,7 +17,7 @@ _MAIN = _ROOT / "nammaoe2bot" / "__main__.py"
 
 def _function(name):
 	tree = ast.parse(_MAIN.read_text(encoding="utf-8"), filename=str(_MAIN))
-	node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
+	node = next(n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == name)
 	return compile(ast.Module(body=[node], type_ignores=[]), str(_MAIN), "exec")
 
 
@@ -46,7 +47,7 @@ def test_a_crashed_supervised_task_marks_the_process_fatal_and_stops_the_loop():
 		"traceback": traceback,
 		"log": types.SimpleNamespace(error=logs.append),
 		"sentinel": object(),
-		"save_state": lambda _app: None,
+		"_request_shutdown": lambda: stops.append(True),
 		"dc": types.SimpleNamespace(app=object()),
 		"sentry_sdk": None,
 		"loop": types.SimpleNamespace(stop=lambda: stops.append(True)),
@@ -96,3 +97,78 @@ def test_ws_enable_selects_full_dashboard_or_probe_only_server():
 def test_railway_uses_db_checking_readiness_not_continuous_liveness():
 	config = (_ROOT / "railway.toml").read_text(encoding="utf-8")
 	assert 'healthcheckPath = "/ready"' in config
+
+
+def test_shutdown_drains_pending_mutations_then_flushes_before_closing_db():
+	seen = []
+
+	async def close_discord():
+		seen.append("discord closed")
+
+	async def close_db():
+		seen.append("db closed")
+
+	async def flush(_app):
+		seen.append("durable snapshot")
+
+	namespace = {
+		"asyncio": asyncio,
+		"dc": types.SimpleNamespace(app=object(), close=close_discord),
+		"database": types.SimpleNamespace(db=types.SimpleNamespace(close=close_db)),
+		"save_state_if_changed": flush, "web_runner": None,
+		"log": types.SimpleNamespace(error=lambda _msg: None, close=lambda: seen.append("log closed")),
+		"loop": types.SimpleNamespace(stop=lambda: seen.append("loop stopped")),
+	}
+	exec(_function("_shutdown"), namespace)
+
+	async def run():
+		entered = asyncio.Event()
+
+		async def mutation():
+			try:
+				entered.set()
+				await asyncio.Event().wait()
+			finally:
+				seen.append("mutation rolled back")
+
+		asyncio.create_task(mutation())
+		await entered.wait()
+		await namespace["_shutdown"]()
+
+	asyncio.run(run())
+	assert seen == ["mutation rolled back", "durable snapshot", "discord closed", "db closed", "log closed", "loop stopped"]
+
+
+def test_repeated_shutdown_requests_disable_commands_and_start_one_cleanup():
+	created = []
+
+	def schedule(coro, **_kwargs):
+		coro.close()
+		created.append(True)
+		return object()
+
+	async def shutdown():
+		pass
+
+	app = types.SimpleNamespace(ready=True, shutting_down=False)
+	namespace = {"_shutdown_task": None, "dc": types.SimpleNamespace(app=app),
+		"console": types.SimpleNamespace(terminate=lambda: None),
+		"loop": types.SimpleNamespace(create_task=schedule), "_shutdown": shutdown}
+	exec(_function("_request_shutdown"), namespace)
+	namespace["_request_shutdown"]()
+	namespace["_request_shutdown"]()
+	assert not app.ready and app.shutting_down
+	assert created == [True]
+
+
+def test_startup_tick_only_updates_liveness_before_restore_finishes():
+	path = _ROOT / "nammaoe2bot/discord/events.py"
+	tree = ast.parse(path.read_text())
+	function = next(node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "on_think")
+	function.decorator_list = []
+	namespace = {"dc": types.SimpleNamespace(app=types.SimpleNamespace(state_restored=False, shutting_down=False))}
+	exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), "exec"), namespace)
+	# Every dependency after the guard is deliberately absent: no match, job
+	# or snapshot may run while the application is still being restored.
+	asyncio.run(namespace["on_think"](123))
+	assert namespace["last_tick_at"] == 123

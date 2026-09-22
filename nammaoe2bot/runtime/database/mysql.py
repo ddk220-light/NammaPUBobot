@@ -148,6 +148,11 @@ class Transaction:
 		request = self._adapter._mysql_insert(rows[0].keys(), table, on_duplicate)
 		return await self.executemany(request, [list(row.values()) for row in rows])
 
+	async def update(self, table, d, keys=None):
+		keys = keys or {}
+		request = self._adapter._mysql_update(table, d.keys(), keys.keys())
+		return await self.execute(request, list(d.values()) + list(keys.values()))
+
 
 class Adapter:
 	pool: aiomysql.Pool | None
@@ -343,11 +348,13 @@ class Adapter:
 			try:
 				async with conn.cursor() as cur:
 					yield Transaction(self, cur)
-			except BaseException:
-				await conn.rollback()
-				raise
-			else:
 				await conn.commit()
+			except BaseException:
+				try:
+					await conn.rollback()
+				except BaseException:
+					conn.close()  # Never return an uncertain transaction to the pool.
+				raise
 
 	@staticmethod
 	def _mysql_column(kwargs):
@@ -372,13 +379,21 @@ class Adapter:
 
 	@staticmethod
 	def _mysql_insert(columns, table, on_duplicate):
-		return "{action}{ignore} INTO {table} ({columns}) VALUES({values})".format(
+		columns = list(columns)
+		request = "{action}{ignore} INTO {table} ({columns}) VALUES({values})".format(
 			action="REPLACE" if on_duplicate == 'replace' else "INSERT",
 			ignore=" IGNORE" if on_duplicate == 'ignore' else "",
 			table=table,
 			columns=", ".join((f"`{i}`" for i in columns)),
 			values=", ".join(('%s' for i in range(len(columns))))
 		)
+		if on_duplicate == "keep":
+			# Acquire the existing row's exclusive lock without changing it.
+			# Unlike IGNORE, other data errors still fail the transaction. With
+			# our default client flags, a duplicate reports zero affected rows.
+			column = columns[0]
+			request += f" ON DUPLICATE KEY UPDATE `{column}`=`{column}`"
+		return request
 
 	@staticmethod
 	def _mysql_update(table, columns, keys):

@@ -66,3 +66,34 @@ jobs:
         # is what Railway runs on every deploy — catching breakage
         # here saves a failed deploy round-trip.
         run: docker build -t nammaoe2bot:ci .
+
+  mysql-reliability:
+    name: MySQL 9.4 reliability
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:9.4
+        env:
+          MYSQL_ROOT_PASSWORD: integration-only
+          MYSQL_DATABASE: namma_reliability_test
+          MYSQL_USER: reliability_test
+          MYSQL_PASSWORD: integration-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pintegration-only"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install integration test dependencies
+        run: pip install pytest==8.3.3 aiomysql==0.3.2 'PyMySQL[rsa]==1.1.2'
+      - name: Check reporting and recovery on disposable MySQL
+        env:
+          NAMMA_TEST_MYSQL: "1"
+        run: pytest tests/test_mysql_reliability.py -v

@@ -73,7 +73,7 @@ dc.app = Application(client=dc)
 from nammaoe2bot.bootstrap import bootstrap
 bootstrap(dc.app)
 
-from nammaoe2bot.state import save_state
+from nammaoe2bot.state import save_state_if_changed
 
 # WS_ENABLE controls the dashboard, not Railway readiness. A disabled dashboard
 # still starts a tiny probe-only app so /ready can protect deployments without
@@ -86,6 +86,7 @@ web_runner = None
 
 log = console.log
 _fatal_exit = False
+_shutdown_task = None
 
 
 def _process_exit_code():
@@ -101,7 +102,7 @@ def _process_exit_code():
 
 def _task_done_callback(task):
 	"""Done-callback: if a critical task crashed, stop the loop so the
-	process exits non-zero and Railway restarts the container.
+	process exits non-zero after bounded cleanup and Railway restarts it.
 	Cancelled tasks and normal completion are silent — the supervisor's
 	only job is catching unhandled crashes. (init_web in particular is
 	a start-and-return task: it launches the aiohttp runner and returns.
@@ -126,17 +127,7 @@ def _task_done_callback(task):
 				sentry_sdk.capture_exception(exc)
 		except Exception as sentry_exc:
 			log.error(f"Sentry capture failed during task crash: {sentry_exc}")
-	# Best-effort state save before exit — we have periodic snapshots too
-	# but an extra save here loses at most a few seconds of in-flight state.
-	try:
-		save_state(dc.app)
-	except Exception as save_exc:
-		log.error(f"Failed to save state during crash: {save_exc}")
-	log.error("Stopping event loop — process will exit, Railway will restart the container.")
-	try:
-		loop.stop()
-	except RuntimeError:
-		pass
+	_request_shutdown()
 
 
 def supervised_task(coro, name):
@@ -148,16 +139,14 @@ def supervised_task(coro, name):
 
 # ─── Signal handlers ─────────────────────────────────────────────────
 # Gracefully exit on SIGINT (Ctrl+C locally) or SIGTERM (Railway deploys).
-# Without SIGTERM, `saved_state.json` is never written when Railway stops
-# the container for a redeploy → in-flight matches are lost every deploy.
+# Stop new commands and drain pending work before the bounded durable flush.
 original_SIGINT_handler = signal.getsignal(signal.SIGINT)
 original_SIGTERM_handler = signal.getsignal(signal.SIGTERM)
 
 
 def ctrl_c(sig, frame):
 	log.info(f"Received signal {sig}, shutting down gracefully...")
-	save_state(dc.app)
-	console.terminate()
+	_request_shutdown()
 	# Restore original handlers so a second signal kills immediately
 	signal.signal(signal.SIGINT, original_SIGINT_handler)
 	signal.signal(signal.SIGTERM, original_SIGTERM_handler)
@@ -182,25 +171,57 @@ async def think():
 				log.error('Error running background task from {}: {}\n{}'.format(task.__module__, str(e), traceback.format_exc()))
 		await asleep(1)
 
-	# Exit signal received
-	for task in dc.events['on_exit']:
+	_request_shutdown()
+
+
+def _request_shutdown():
+	global _shutdown_task
+	dc.app.shutting_down = True
+	dc.app.ready = False
+	console.terminate()
+	if _shutdown_task is None:
+		_shutdown_task = loop.create_task(_shutdown(), name="shutdown")
+
+
+async def _shutdown():
+	"""Drain mutation tasks, flush once, then close the existing services."""
+	try:
+		if web_runner:
+			# Stop accepting HTTP mutations before taking the task snapshot.
+			for site in tuple(web_runner.sites):
+				await asyncio.wait_for(site.stop(), timeout=2)
+		current = asyncio.current_task()
+		pending = [task for task in asyncio.all_tasks() if task is not current and not task.done()]
+		for task in pending:
+			task.cancel()
+		if pending:
+			_done, pending = await asyncio.wait(pending, timeout=2)
+		if pending:
+			log.error("Shutdown tasks did not drain; retaining the previous durable snapshot.")
+		else:
+			for hook in getattr(dc, "events", {}).get("on_exit", []):
+				try:
+					await asyncio.wait_for(hook(), timeout=1)
+				except Exception as exc:
+					log.error(f"Shutdown hook failed: {exc}")
+			try:
+				await asyncio.wait_for(save_state_if_changed(dc.app), timeout=8)
+			except Exception as exc:
+				log.error(f"Shutdown state flush failed: {exc}")
+
+		async def close_services():
+			await dc.close()
+			if web_runner:
+				await web_runner.cleanup()
+			await database.db.close()
+
 		try:
-			await task()
-		except Exception as e:
-			log.error('Error running exit task from {}: {}\n{}'.format(task.__module__, str(e), traceback.format_exc()))
-
-	log.info("Waiting for connection to close...")
-	await dc.close()
-
-	log.info("Closing db.")
-	await database.db.close()
-	if web_runner:
-		log.info("Closing web server.")
-		await web_runner.cleanup()
-	log.info("Closing log.")
-	log.close()
-	print("Exit now.")
-	loop.stop()
+			await asyncio.wait_for(close_services(), timeout=5)
+		except Exception as exc:
+			log.error(f"Shutdown cleanup failed: {exc}")
+	finally:
+		log.close()
+		loop.stop()
 
 # Start web server
 async def init_web():

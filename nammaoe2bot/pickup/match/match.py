@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 from time import time
+from functools import wraps
+from copy import deepcopy
 from itertools import combinations
 import random
 from nextcord import DiscordException
@@ -14,6 +16,29 @@ from nammaoe2bot.runtime.client import dc
 from .checkin import CheckIn
 from .substitution import Draft
 from .embeds import Embeds
+
+
+def _report_command(method):
+	"""Do not let concurrent commands mutate an in-flight report's outcome."""
+	@wraps(method)
+	async def run(self, *args, **kwargs):
+		if self._reporting or self._finishing or self._editing_roster or self._cancelling:
+			raise Exc.MatchStateError("A report is already being saved. Please wait.")
+		if self._cancelled:
+			raise Exc.MatchStateError("This match has already been cancelled.")
+		if self._result_committed:
+			return
+		self._reporting = True
+		winner, scores = self.winner, list(self.scores)
+		try:
+			return await method(self, *args, **kwargs)
+		except BaseException:
+			if not self._result_committed:
+				self.winner, self.scores = winner, scores
+			raise
+		finally:
+			self._reporting = False
+	return run
 
 
 class Match:
@@ -103,11 +128,17 @@ class Match:
 			maps=self.maps,
 			state=self.state,
 			states=self.states,
+			winner=self.winner, scores=self.scores, start_time=self.start_time,
 			ready_players=[p.id for p in self.check_in.ready_players if p]
 		)
 
 	@classmethod
 	async def from_json(cls, data):
+		data = deepcopy(data)  # Keep the source usable after a partial restore failure.
+		if (len(data['teams']) != 3
+				or any(uid not in data['players'] for team in data['teams'] for uid in team)
+				or any(uid not in data['players'] for uid in data['ready_players'])):
+			raise Exc.ValueError('Saved match contains an invalid roster.')
 		if (qc := dc.app.channels.get(data['channel_id'])) is None:
 			raise Exc.ValueError('QueueChannel not found.')
 		if (queue := get(qc.queues, id=data['queue_id'])) is None:
@@ -127,7 +158,7 @@ class Match:
 		async with qc.app.match_creation_lock:
 			# Create the Match object
 			ratings = {p['user_id']: p['rating'] for p in await qc.rating.get_players((p.id for p in data['players']))}
-			match_id = await stats.next_match()
+			match_id = data["match_id"]
 			match = cls(match_id, queue, qc, data['players'], ratings, **data['cfg'])
 
 			# Set state data
@@ -137,11 +168,20 @@ class Match:
 			match.maps = data['maps']
 			match.state = data['state']
 			match.states = data['states']
-			if match.state == match.CHECK_IN:
-				ctx = SystemContext(qc)
-				await match.check_in.start(ctx)  # Spawn a new check_in message
-
+			match.winner = data.get('winner')
+			match.scores = data.get('scores', [0, 0])
+			match.start_time = data.get('start_time', match.start_time)
 			match.qc.app.active_matches.append(match)
+			try:
+				if match.state == match.CHECK_IN:
+					ctx = SystemContext(qc)
+					await match.check_in.start(ctx)  # Spawn a new check_in message.
+			except BaseException:
+				if match in match.qc.app.active_matches:
+					match.qc.app.active_matches.remove(match)
+				if match.check_in.message:
+					match.qc.app.waiting_reactions.pop(match.check_in.message.id, None)
+				raise
 
 	def __init__(self, match_id, queue, qc, players, ratings, **cfg):
 
@@ -162,6 +202,12 @@ class Match:
 		self.ratings = ratings
 		self.winner = None
 		self.scores = [0, 0]
+		self._reporting = False
+		self._editing_roster = False
+		self._cancelling = False
+		self._cancelled = False
+		self._finishing = False
+		self._result_committed = False
 
 		team_names = self.cfg['team_names']
 		team_emojis = self.cfg['team_emojis'] or random.sample(self.TEAM_EMOJIS, 2)
@@ -301,6 +347,8 @@ class Match:
 			self.teams[2].set([p for p in self.players if p not in [*self.teams[0], *self.teams[1]]])
 
 	async def think(self, frame_time):
+		if self._reporting or self._finishing or self._editing_roster or self._cancelling:
+			return
 		if self.state == self.INIT:
 			await self.next_state(SystemContext(self.qc))
 
@@ -355,6 +403,7 @@ class Match:
 		# nammaoe2bot/wiring.py, including the `ranked` test each of them applies.
 		await self.qc.app.match_events.emit("live", self, ctx)
 
+	@_report_command
 	async def report_loss(self, ctx, member, draw_flag):
 		if self.state != self.WAITING_REPORT:
 			raise Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
@@ -377,6 +426,7 @@ class Match:
 			)
 			return
 
+		self.scores = [0, 0]
 		if draw_flag == 2:
 			await self.cancel(ctx)
 			return
@@ -388,10 +438,12 @@ class Match:
 			self.scores[self.winner] = 1
 		await self.finish_match(ctx)
 
+	@_report_command
 	async def report_win(self, ctx, team_name, draw=False):  # version for admins/mods
 		if self.state != self.WAITING_REPORT:
 			raise Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
 
+		self.scores = [0, 0]
 		if draw:
 			self.winner = None
 		elif team_name and (team := find(lambda t: t.name.lower() == team_name.lower(), self.teams[:2])) is not None:
@@ -402,6 +454,7 @@ class Match:
 
 		await self.finish_match(ctx)
 
+	@_report_command
 	async def report_scores(self, ctx, scores):
 		if self.state != self.WAITING_REPORT:
 			raise Exc.MatchStateError(self.gt("The match must be on the waiting report stage."))
@@ -455,38 +508,59 @@ class Match:
 		await self.qc.app.match_events.emit("teams_posted", self, ctx)
 
 	async def finish_match(self, ctx):
-		self.qc.app.active_matches.remove(self)
-		# The match is over but the result is NOT stored yet. Teardown only —
-		# anything that needs the outcome waits for 'finished' below.
-		await self.qc.app.match_events.emit("ending", self, ctx)
-		self.queue.last_maps += self.maps
-		self.queue.last_maps = self.queue.last_maps[-len(self.maps)*self.queue.cfg.map_cooldown:]
-
-		if self.ranked:
-			await stats.register_match_ranked(ctx, self)
-		else:
-			await stats.register_match_unranked(ctx, self)
-
-		# THE RESULT IS NOW IN THE `matches` TABLE — register_match_* above wrote
-		# it. That is why settlement fires here and not on 'ending': the betting
-		# resume sweep finds a stranded book by JOINing prediction_posts to that
-		# row (nammaoe2bot/features/betting/store.py::unsettled_books), so a payout attempted
-		# before it exists could not be recovered if it died half-way.
-		await self.qc.app.match_events.emit("finished", self, ctx)
+		if self._result_committed or self._cancelled:
+			return
+		if self._finishing or self._editing_roster or self._cancelling:
+			raise Exc.MatchStateError("A report is already being saved. Please wait.")
+		self._finishing = True
+		try:
+			if self.ranked:
+				result = await stats.register_match_ranked(ctx, self, notify=False)
+			else:
+				result = await stats.register_match_unranked(ctx, self, notify=False)
+			# No awaits between commit and removal: a snapshot sees either the
+			# retryable active match or the completed state. A stale DB snapshot
+			# is reconciled against the committed result during restoration.
+			if self in self.qc.app.active_matches:
+				self.qc.app.active_matches.remove(self)
+			self.queue.last_maps += self.maps
+			self.queue.last_maps = self.queue.last_maps[-len(self.maps)*self.queue.cfg.map_cooldown:]
+			await self.qc.app.match_events.emit("ending", self, ctx)
+			await stats.notify_match_result(ctx, self, result)
+			await self.qc.app.match_events.emit("finished", self, ctx)
+		except BaseException:
+			if not self._result_committed:
+				# Unranked completion can run from the check-in tick. Leave it
+				# reportable too, rather than replaying a deleted check-in message
+				# every second until the tick's error limit removes the match.
+				self.state = self.WAITING_REPORT
+				self.states = []
+			raise
+		finally:
+			self._finishing = False
 
 	def print(self):
 		return f"> *({self.id})* **{self.queue.name}** | `{join_and([get_nick(p) for p in self.players])}`"
 
 	async def cancel(self, ctx):
-		if self.check_in.message and self.check_in.message.id in self.qc.app.waiting_reactions.keys():
-			self.qc.app.waiting_reactions.pop(self.check_in.message.id)
+		if self._finishing or self._editing_roster or self._cancelling:
+			raise Exc.MatchStateError("A report is already being saved. Please wait.")
+		if self._result_committed or self._cancelled:
+			return
+		self._cancelling = True
 		try:
-			await ctx.notice(
-				self.gt("{players} your match has been canceled.").format(players=join_and([p.mention for p in self.players]))
-			)
-		except DiscordException:
-			pass
-		self.qc.app.active_matches.remove(self)
-		# Aborted: there will never be a result, so anything holding state for
-		# this match has to let go of it. Nothing to score.
-		await self.qc.app.match_events.emit("cancelled", self, ctx)
+			if self.check_in.message and self.check_in.message.id in self.qc.app.waiting_reactions.keys():
+				self.qc.app.waiting_reactions.pop(self.check_in.message.id)
+			try:
+				await ctx.notice(
+					self.gt("{players} your match has been canceled.").format(players=join_and([p.mention for p in self.players]))
+				)
+			except DiscordException:
+				pass
+			self.qc.app.active_matches.remove(self)
+			self._cancelled = True
+			# Aborted: there will never be a result, so anything holding state for
+			# this match has to let go of it. Nothing to score.
+			await self.qc.app.match_events.emit("cancelled", self, ctx)
+		finally:
+			self._cancelling = False
