@@ -2,7 +2,7 @@
 
 Implementation base: `79efb2b` (the deployed version reviewed on 2026-09-22).
 Scope: the two reliability fixes approved by the owner. No Railway configuration,
-new service, scheduled job, polling interval, replay feature, or capacity change.
+new Railway service, scheduled job, polling interval, replay feature, or capacity change.
 
 ## Plan
 
@@ -53,23 +53,24 @@ attempted separately and any remaining limitation recorded honestly.
 
 ## Rollout and rollback
 
-Implement and validate locally on `codex/match-recovery-and-atomic-reporting`.
-No production database writes or deployment are part of this task. Prefer no
-schema changes so rollback remains a code rollback; saved JSON additions must
-be optional when reading older snapshots. Before a later deployment, avoid
-overlapping bot replicas (the existing deployment uses one replica).
+Implement and validate on `codex/match-recovery-and-atomic-reporting`. The owner
+subsequently authorized the real MySQL check and publishing to main for deployment.
+Use a disposable MySQL 9.4 GitHub CI service, never production data, for the check.
+Merge only after CI passes, then verify Railway readiness. No schema changes are
+required; rollback remains a code rollback and older saved JSON remains readable.
+The existing Railway deployment uses one replica; capacity stays unchanged.
 
 ## Validation results
 
 Implemented locally and self-reviewed on 2026-09-22.
 
-- `python3.11 -m pytest -q tests --tb=short`: **2,145 passed**.
+- `python3.11 -m pytest -q tests --tb=short`: **2,146 passed**, with the 7 opt-in MySQL tests skipped locally.
 - `ruff check .`: passed.
 - `git diff --check`: passed.
 - Ranked and unranked reports: injected failure at every write boundary;
   verified no partial rows/ratings survive and the match remains reportable.
-- Lost commit acknowledgement: retry produces no additional writes or rating
-  changes; a different outcome is rejected. Draws, multigame scores, shared
+- Lost commit acknowledgement: retry claims the existing ID with a no-op and
+  produces no additional rating/history changes; a different outcome is rejected. Draws, multigame scores, shared
   rating channels, cancellation and failed Discord notifications are covered.
 - Startup: blocked snapshots before/during restore; missing, invalid and failed
   reads; incomplete legacy results; stale snapshots of completed games; original
@@ -77,8 +78,8 @@ Implemented locally and self-reviewed on 2026-09-22.
 - Shutdown: pending mutations finish cancellation before the snapshot, which
   precedes database closure; repeated shutdown requests schedule one cleanup.
 - Existing lifecycle, replay-pause and idle-database contracts pass. No Railway,
-  Docker, dependency or job configuration changes were made. Additional database
-  checks occur on startup/reporting, not through a new background polling loop.
+  Docker or application dependency/job configuration changes were made. A
+  disposable MySQL service was added to GitHub CI. Additional database checks occur on startup/reporting, not through a new background polling loop.
 
 Final review also addressed overlapping ready callbacks, reuse of initialized
 channels after partial restoration, counter repair racing restoration, report
@@ -86,13 +87,20 @@ versus substitution/cancellation races, and failed unranked completion being
 removed after repeated tick errors. Those completions remain in the reporting
 stage for an explicit retry. No rating algorithm or map-voting behavior changed.
 
-The SQL outcome tests execute the production reporting and AoE2 rating code
-against disposable in-memory SQLite transactions, with MySQL syntax adapted.
-They prove rollback/data outcomes, **not MySQL row-lock semantics**. Existing and
-extended adapter tests verify connection use, commit, rollback and cancellation
-with driver fakes. A live MySQL/Docker integration run could not be performed:
-Docker has no running daemon and only MySQL client tools are installed locally.
-This is a remaining pre-deployment check, not a claim of production validation.
+The live MySQL 9.4 check is complete: **7 integration tests passed** using the
+production schema, adapter, two-connection pool and AoE2 rating code. The initial
+run exposed a MySQL gap-lock deadlock between simultaneous reports. Result
+registration now claims the unique match key with an exclusive no-op upsert;
+rating rows use exclusive claims in deterministic order as well. This avoids
+both missing-key gap locks and shared-to-exclusive rating-lock upgrades without
+adding retries, capacity, or background work.
+
+[Passing CI run](https://github.com/ddk220-light/NammaPUBobot/actions/runs/35768119280)
+checks rollback at every write boundary for ranked/unranked matches, lost commit
+acknowledgement, stale-snapshot recovery, disjoint/shared-player/duplicate
+concurrent reports, and cancellation of a real database query followed by pool
+reuse. All existing tests, lint and Docker build passed in the same run.
+SQLite outcome tests and fake-driver adapter tests remain as fast local coverage.
 
 Operational limits remain explicit: abrupt kills can lose changes since the
 last 30-second snapshot; an unavailable database can defeat the bounded shutdown
@@ -100,6 +108,7 @@ flush; a corrupt/incomplete snapshot keeps readiness off until repaired rather
 than silently discarding games. Post-commit Discord messages are best effort;
 their delivery is not part of the atomic SQL transaction. Existing admin undo
 and bulk-rating workflows are unchanged and should not run concurrently with
-reports during the later deployment smoke test.
+reports during the deployment smoke test.
 
-No production database writes, push, or deployment were performed.
+No test writes were made to the production database. Main publication and the
+Railway deployment are verified separately after the successful CI check.
