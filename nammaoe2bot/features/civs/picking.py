@@ -1,15 +1,21 @@
 """Pure rules for the voluntary civ picker. No game/Discord/network access."""
 import random
+from datetime import datetime
 
-# Standard AoE2 DE multiplayer catalog, including The Last Chieftains.
-# https://www.ageofempires.com/news/faq-the-last-chieftains/
+# Standard AoE2 DE multiplayer catalog, including The Viking Sagas.
+# https://www.ageofempires.com/news/faq-the-viking-sagas/
 # Deliberately excludes Chronicles and Return of Rome civilizations.
+DLC_CIVS = ('Danes', 'Saxons', 'Varangians')
+# One fixed calendar month in the community's time zone; restarts never extend it.
+DLC_TRIAL_START = int(datetime.fromisoformat('2026-09-23T00:00:00+05:30').timestamp())
+DLC_TRIAL_END = int(datetime.fromisoformat('2026-10-23T00:00:00+05:30').timestamp())
 CIVS = tuple(sorted("""Armenians,Aztecs,Bengalis,Berbers,Bohemians,Britons,Bulgarians,
 Burgundians,Burmese,Byzantines,Celts,Chinese,Cumans,Dravidians,Ethiopians,Franks,
 Georgians,Goths,Gurjaras,Hindustanis,Huns,Incas,Italians,Japanese,Jurchens,Khitan,
 Khmer,Koreans,Lithuanians,Magyars,Malay,Malians,Mapuche,Mayans,Mongols,Muisca,
 Persians,Poles,Portuguese,Romans,Saracens,Shu,Sicilians,Slavs,Spanish,Tatars,
-Teutons,Turks,Tupi,Vietnamese,Vikings,Wei,Wu""".replace("\n", "").split(",")))
+Teutons,Turks,Tupi,Vietnamese,Vikings,Wei,Wu""".replace("\n", "").split(",") + list(DLC_CIVS)))
+# Persisted button/choice ID: keep Random at 12 even when bonus civs are offered.
 RANDOM = 12
 
 
@@ -18,7 +24,11 @@ def civ_key(name):
 	return {'inca': 'incas', 'maya': 'mayans', 'khitans': 'khitan', 'khmers': 'khmer'}.get(key, key)
 
 
-def select_pool(history, rng=None):
+def bonus_civs(now):
+	return DLC_CIVS if DLC_TRIAL_START <= now < DLC_TRIAL_END else ()
+
+
+def select_pool(history, now, rng=None):
 	"""Fill only the shortage with repeats; shuffle ties and the displayed order."""
 	rng = rng or random
 	recent = {}
@@ -26,7 +36,8 @@ def select_pool(history, rng=None):
 		key = civ_key(row['civ'])
 		uses, last_at = recent.get(key, (0, 0))
 		recent[key] = (uses + int(row['uses']), max(last_at, int(row['last_at'])))
-	candidates = list(CIVS)
+	bonus = bonus_civs(now)
+	candidates = [c for c in CIVS if c not in bonus]
 	rng.shuffle(candidates)
 	candidates.sort(key=lambda c: recent.get(civ_key(c), (0, 0)))
 	pool = candidates[:12]
@@ -35,9 +46,18 @@ def select_pool(history, rng=None):
 
 
 def new_round(roster, options, user_id, now, minutes, previous=None):
-	return dict(generation=(previous or {}).get('generation', 0) + 1,
+	state = dict(generation=(previous or {}).get('generation', 0) + 1,
 		roster=roster, options=options, initiator=user_id, opened_at=now,
 		closes_at=now + minutes * 60, status='open', picks={}, timed_out=[])
+	if bonus := bonus_civs(now):
+		# Snapshot offers so open rounds and final cards survive the trial's end.
+		state.update(bonus_options=list(bonus), bonus_ends_at=DLC_TRIAL_END)
+	return state
+
+
+def choice_names(state):
+	"""Old snapshots lack bonus_options; their choice IDs retain their meaning."""
+	return [*state['options'], 'Random', *state.get('bonus_options', [])]
 
 
 def expire(state, now):
@@ -64,7 +84,7 @@ def claim(state, user_id, choice, generation, now):
 		return 'Only players in this match can pick.'
 	if uid in state['picks']:
 		return 'You have already picked. Each player gets one successful choice.'
-	if not 0 <= choice <= RANDOM:
+	if not 0 <= choice < len(choice_names(state)):
 		return 'Invalid civilization option.'
 	if choice != RANDOM and choice in state['picks'].values():
 		return 'That civilization was just taken. You can still choose another.'
