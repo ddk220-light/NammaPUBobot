@@ -11,6 +11,20 @@ from tests.test_mysql_reliability import live_database, pytestmark  # noqa: F401
 T = latest_cutoff(1800000000, 870)
 
 
+def test_mysql_activation_reads_quiz_schedule_through_channel_membership(monkeypatch):
+	from scripts.gold_tax import QUIZ_SCHEDULE_SQL
+
+	async def run():
+		async with live_database(monkeypatch, (
+				'nammaoe2bot/community.py', 'nammaoe2bot/features/quiz/__init__.py')) as (db, _):
+			for channel, cid, hour, enabled in ((900, 5, 0, 1), (901, 5, 9, 0), (902, 6, 16, 1)):
+				await db.insert('community_channels', dict(channel_id=channel, community_id=cid))
+				await db.insert('quiz_settings', dict(channel_id=channel, quiz_hour=hour, enabled=enabled))
+			assert await db.fetchall(QUIZ_SCHEDULE_SQL, [5]) == [{'quiz_hour': 0}]
+			assert await db.fetchall(QUIZ_SCHEDULE_SQL, [6]) == [{'quiz_hour': 16}]
+	asyncio.run(run())
+
+
 @asynccontextmanager
 async def bank(monkeypatch, users=(1, 2)):
 	async with live_database(monkeypatch, (

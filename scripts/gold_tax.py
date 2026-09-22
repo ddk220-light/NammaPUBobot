@@ -19,6 +19,10 @@ from scripts.purge_paused_replay_detail import connection_settings
 # Loading this dependency-free file directly avoids betting/__init__.py's
 # application bootstrap and schema side effects in an operational CLI.
 _rules = runpy.run_path(str(Path(REPO_ROOT) / 'nammaoe2bot/features/betting/tax_policy.py'))
+QUIZ_SCHEDULE_SQL = (
+	'SELECT q.quiz_hour FROM quiz_settings q '
+	'JOIN community_channels c ON c.channel_id=q.channel_id '
+	'WHERE c.community_id=%s AND q.enabled=1')
 
 
 class ReadCursor:
@@ -57,7 +61,7 @@ def main():
 				parser.error('community does not exist')
 			cur.execute('SELECT * FROM gold_tax_policy WHERE community_id=%s', [args.community])
 			policy = cur.fetchone()
-			cur.execute('SELECT quiz_hour FROM quiz_settings WHERE community_id=%s AND enabled=1', [args.community])
+			cur.execute(QUIZ_SCHEDULE_SQL, [args.community])
 			quiz = cur.fetchall()
 			if len(quiz) > 1:
 				parser.error('multiple enabled quiz schedules; resolve before enabling tax')
