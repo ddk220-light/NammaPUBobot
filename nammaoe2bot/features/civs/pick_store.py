@@ -92,7 +92,7 @@ async def start(channel_id, match_id, roster, user_id, minutes, redo, admin=Fals
 			'SELECT civ, COUNT(*) AS uses, MAX(at) AS last_at FROM civ_pick_history '
 			'WHERE channel_id=%s AND at >= %s AND at <= %s GROUP BY civ',
 			[channel_id, now - 86400, now]) or []
-		options = picking.select_pool(recent)
+		options = picking.select_pool(recent, now)
 		state = picking.new_round(roster, options, user_id, now, minutes, previous)
 		await _write(tx, channel_id, match_id, state)
 		# Opportunistic, bounded cleanup; no new periodic job or idle DB work.
@@ -121,7 +121,7 @@ async def change(channel_id, match_id, operation):
 				choice = state['picks'][uid]
 				if choice != picking.RANDOM:
 					await tx.insert('civ_pick_history', dict(channel_id=channel_id, match_id=match_id,
-						generation=state['generation'], user_id=int(uid), civ=state['options'][choice], at=now),
+						generation=state['generation'], user_id=int(uid), civ=picking.choice_names(state)[choice], at=now),
 						on_duplicate='ignore')
 			await _write(tx, channel_id, match_id, state)
 		return result

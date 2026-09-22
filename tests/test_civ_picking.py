@@ -20,20 +20,20 @@ def state(n=8):
 def test_pool_preserves_every_unused_civ_when_filling_shortage():
 	history = [dict(civ=c, uses=2, last_at=900) for c in picking.CIVS[5:]]
 	history[0]['uses'] = 1
-	pool = picking.select_pool(history, rng=random.Random(7))
+	pool = picking.select_pool(history, 1000, rng=random.Random(7))
 	assert len(pool) == len(set(pool)) == 12
 	assert set(picking.CIVS[:6]) <= set(pool)
 
 
 def test_pool_avoids_recent_explicit_choices_when_possible():
 	history = [dict(civ=c.upper(), uses=1, last_at=900) for c in picking.CIVS[:15]]
-	pool = picking.select_pool(history, random.Random(1))
+	pool = picking.select_pool(history, 1000, random.Random(1))
 	assert not set(pool) & set(picking.CIVS[:15])
 
 
 def test_pool_prefers_least_frequent_then_oldest_repeats():
 	history = [dict(civ=c, uses=1, last_at=i) for i, c in enumerate(picking.CIVS)]
-	assert set(picking.select_pool(history)) == set(picking.CIVS[:12])
+	assert set(picking.select_pool(history, 1000)) == set(picking.CIVS[:12])
 
 
 def test_only_successful_claim_spends_choice_and_random_is_unlimited():
@@ -64,6 +64,72 @@ def test_stale_foreign_and_bad_choices_do_not_claim():
 	assert picking.claim(s, 1, -1, 1, 1001)
 	assert picking.claim(s, 1, 13, 1, 1001)
 	assert not s['picks']
+
+
+@pytest.mark.parametrize(('now', 'has_bonus'), [
+	(picking.DLC_TRIAL_START - 1, False),
+	(picking.DLC_TRIAL_START, True),
+	(picking.DLC_TRIAL_END - 1, True),
+	(picking.DLC_TRIAL_END, False),
+])
+def test_dlc_trial_boundaries_preserve_twelve_normal_choices(now, has_bonus):
+	# Force the new civs to the front of the normal selection whenever eligible.
+	history = [dict(civ=c, uses=1, last_at=now - 1) for c in picking.CIVS if c not in picking.DLC_CIVS]
+	pool = picking.select_pool(history, now)
+	s = picking.new_round(state()['roster'], pool, 1, now, 3)
+	assert len(pool) == len(set(pool)) == 12
+	assert s.get('bonus_options', []) == (list(picking.DLC_CIVS) if has_bonus else [])
+	assert len(picking.choice_names(s)) == (16 if has_bonus else 13)
+	assert picking.choice_names(s)[12] == 'Random'
+	assert (set(pool) & set(picking.DLC_CIVS)) == (set() if has_bonus else set(picking.DLC_CIVS))
+	if has_bonus:
+		assert s['bonus_ends_at'] == picking.DLC_TRIAL_END
+		assert len(set(picking.choice_names(s))) == 16
+	else:
+		assert 'Invalid' in picking.claim(s, 1, 13, 1, now)
+
+
+def test_dlc_trial_restored_round_finishes_across_cutoff_without_changing_random():
+	from nammaoe2bot.features.civs.pick_view import card
+	now = picking.DLC_TRIAL_END - 30
+	s = picking.new_round(state(4)['roster'], picking.select_pool([], now), 1, now, 3)
+	assert picking.claim(s, 1, 13, 1, now) is None
+	# A restart after the cutoff must retain saved offers, IDs and assignments.
+	s = json.loads(json.dumps(s))
+	assert picking.claim(s, 2, 14, 1, now + 31) is None
+	assert picking.claim(s, 3, picking.RANDOM, 1, now + 32) is None
+	assert 'Invalid' in picking.claim(s, 4, 16, 1, now + 33)
+	assert 'already' in picking.claim(s, 2, 15, 1, now + 34)
+	assert picking.expire(s, now + 180)
+	assert s['picks'] == {'1': 13, '2': 14, '3': 12, '4': 12}
+	embed, view = card(123, s)
+	assert '<@1> → Danes' in embed.description
+	assert '<@2> → Saxons' in embed.description
+	assert '<@4> → Random (timed out)' in embed.description
+	assert all(button.disabled for button in view.children)
+
+
+def test_dlc_buttons_have_separate_row_and_preserve_hidden_choices():
+	from nammaoe2bot.features.civs.pick_view import card
+	now = picking.DLC_TRIAL_START
+	a = picking.new_round(state(4)['roster'], picking.select_pool([], now), 1, now, 3)
+	assert picking.claim(a, 1, 13, 1, now) is None
+	assert picking.claim(a, 2, 15, 1, now) is None
+	b = copy.deepcopy(a)
+	b['picks'] = {'1': 14, '2': 12}
+	ea, va = card(123, a)
+	eb, vb = card(123, b)
+	assert ea.description == eb.description
+	assert 'own the DLC' in ea.description
+	assert 'available again next match' in ea.description
+	assert ea.description.index('13. 🎲 Random') < ea.description.index('bonus DLC choices')
+	assert [button.row for button in va.children] == [0] * 5 + [1] * 5 + [2] * 3 + [3] * 3
+	assert [button.label for button in va.children[13:]] == [
+		'14 · Danes', '15 · Saxons', '16 · Varangians']
+	assert len({button.custom_id for button in va.children}) == 16
+	assert all(not button.disabled for button in va.children + vb.children)
+	assert [(x.label, x.style, x.custom_id) for x in va.children] == [
+		(x.label, x.style, x.custom_id) for x in vb.children]
 
 
 class MemoryDB:
@@ -167,6 +233,37 @@ def test_concurrent_creations_and_claims(monkeypatch):
 		assert len((await store.get(10, 123))['state']['picks']) == 1
 		loser = 2 if results[0] is None else 1
 		assert await pick(loser, 1) is None
+	asyncio.run(run())
+
+
+def test_dlc_claim_is_unique_per_match_but_available_again_with_recent_history(monkeypatch):
+	db, clock = setup_db(monkeypatch)
+	clock.now = picking.DLC_TRIAL_START
+	async def run():
+		await start(4)
+		results = await asyncio.gather(pick(1, 13), pick(2, 13))
+		assert results.count(None) == 1
+		assert sum('taken' in (result or '') for result in results) == 1
+		loser = 2 if results[0] is None else 1
+		assert await pick(loser, 14) is None
+		assert await pick(3, 15) is None
+		assert await pick(4, picking.RANDOM) is None
+		assert {r['civ'] for r in db.history.values()} == set(picking.DLC_CIVS)
+		assert len(db.history) == 3
+		clock.now += 60
+		await store.start(10, 124, state(4)['roster'], 1, 3, False)
+		s = (await store.get(10, 124))['state']
+		assert s['bonus_options'] == list(picking.DLC_CIVS)
+		assert not set(s['options']) & set(picking.DLC_CIVS)
+		assert await store.change(10, 124, lambda s, now: picking.claim(s, 1, 13, 1, now)) is None
+		assert sum(r['civ'] == 'Danes' for r in db.history.values()) == 2
+		# At expiry the extra row goes away; recorded DLC picks follow normal cooldown.
+		clock.now = picking.DLC_TRIAL_END
+		history = [dict(civ=c, uses=1, last_at=clock.now - 1) for c in picking.DLC_CIVS]
+		assert not set(picking.select_pool(history, clock.now)) & set(picking.DLC_CIVS)
+		await start(4, redo=True)
+		assert 'bonus_options' not in (await store.get(10, 123))['state']
+		assert 'Invalid' in await pick(1, 13, generation=2)
 	asyncio.run(run())
 
 
@@ -285,7 +382,7 @@ def test_missing_session_does_not_leave_retry_loop(monkeypatch):
 
 def test_history_aliases_and_unpicked_bucket():
 	history = [dict(civ=c, uses=1, last_at=900) for c in ('Inca', 'Maya', 'Khitans', 'Khmers')]
-	pool = picking.select_pool(history)
+	pool = picking.select_pool(history, 1000)
 	assert not set(pool) & {'Incas', 'Mayans', 'Khitan', 'Khmer'}
 	match = app_for().active_matches[0]
 	assert picking.validate_match(match) is None
