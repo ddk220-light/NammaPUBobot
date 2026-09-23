@@ -1,8 +1,14 @@
 """Current ranked streak leaders, independent of the narrative history window."""
 
-CLIPS = {
-	3: 'Killing Spree', 4: 'Dominating', 5: 'Mega Kill', 6: 'Unstoppable',
-	7: 'Wicked Sick', 8: 'Monster Kill', 9: 'Godlike', 10: 'Beyond Godlike',
+ANNOUNCEMENTS = {
+	3: '{player} is on a **Killing Spree**!',
+	4: '{player} is **Dominating**!',
+	5: '{player} is on a **Mega Kill** streak!',
+	6: '{player} is **Unstoppable**!',
+	7: '{player} is **Wicked Sick**!',
+	8: '{player} is on a **Monster Kill** streak!',
+	9: '{player} is **GODLIKE**!',
+	10: '{player} is **beyond GODLIKE**, someone kill them!!',
 }
 
 
@@ -42,5 +48,5 @@ def summary(match, nick):
 	lines.insert(0, '**🔥 Current win streaks**')
 	if leader := match_leader(match):
 		uid, wins = leader
-		lines.append(f'👑 **{nick[uid]}** leads the match — **{CLIPS[clip_for(wins)]}!**')
+		lines.append('👑 ' + ANNOUNCEMENTS[clip_for(wins)].format(player=f'**{nick[uid]}**'))
 	return '\n'.join(lines)
