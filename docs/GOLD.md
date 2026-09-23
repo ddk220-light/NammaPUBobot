@@ -100,6 +100,10 @@ preceding seven days. The assessment uses Asia/Kolkata time; its time of day is
 set to the daily quiz posting time when enabled. The exact cutoff belongs to the
 next week's activity window.
 
+**Taxes never reduce your available gold below 500.** Balances at or below 500
+are exempt; above 500, the deduction is capped at the amount over 500. For
+example, 520 gold loses 20, while 1,000 gold loses 100.
+
 A bet qualifies when betting closes with your stake still placed, whether you
 win or lose. Manual cancellation before closure does not qualify. Automatic
 refunds for a one-sided pot or a bot-voided match still count. Quiz answers do

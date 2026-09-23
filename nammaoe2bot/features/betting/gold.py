@@ -17,7 +17,7 @@ from nammaoe2bot.runtime.console import log
 from nammaoe2bot.runtime.database import db
 
 from . import scoring
-from .tax_policy import first_cutoff, latest_cutoff, tax_candidates
+from .tax_policy import TAX_BALANCE_FLOOR, first_cutoff, latest_cutoff, tax_candidates
 
 
 class _Insufficient(Exception):
@@ -74,7 +74,7 @@ async def _apply_weekly_tax(community_id, cutoff, now):
 			changed = await tx.execute(
 				"UPDATE gold_balances SET balance=balance-%s, updated_at=%s "
 				"WHERE community_id=%s AND user_id=%s AND balance>=%s",
-				[amount, now, community_id, uid, amount])
+				[amount, now, community_id, uid, amount + TAX_BALANCE_FLOOR])
 			if changed != 1:
 				raise RuntimeError("weekly tax wallet invariant failed")
 		result = dict(taxed_holders=len(owed), total_tax=sum(amount for _, amount in owed))

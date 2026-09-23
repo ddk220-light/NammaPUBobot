@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 import pytest
 
 from nammaoe2bot.features.betting import gold, store
-from nammaoe2bot.features.betting.tax_policy import WEEK, latest_cutoff
+from nammaoe2bot.features.betting.tax_policy import WEEK, latest_cutoff, tax_candidates
 from tests.test_mysql_reliability import live_database, pytestmark  # noqa: F401
 
 T = latest_cutoff(1800000000, 870)
@@ -26,7 +26,7 @@ def test_mysql_activation_reads_quiz_schedule_through_channel_membership(monkeyp
 
 
 @asynccontextmanager
-async def bank(monkeypatch, users=(1, 2)):
+async def bank(monkeypatch, users=(1, 2), bonus=0):
 	async with live_database(monkeypatch, (
 			'nammaoe2bot/community.py', 'nammaoe2bot/features/betting/__init__.py')) as (db, module):
 		monkeypatch.setattr(gold, 'db', db)
@@ -36,6 +36,8 @@ async def bank(monkeypatch, users=(1, 2)):
 		await db.insert('gold_tax_policy', dict(community_id=5, enabled=1, activated_at=T - 2 * WEEK, minute_of_day=870))
 		for uid in users:
 			await gold.ensure_seeded(5, uid, T - 2 * WEEK)
+			if bonus:
+				await gold._credit(5, uid, 'admin_adjust', bonus, f'fixture:bonus:{uid}', T - 1)
 		await db.insert('prediction_posts', dict(id=12, channel_id=900, match_id=77,
 			opened_at=T - 100, freezes_at=2**63 - 1, status='open'))
 		yield db, module
@@ -51,8 +53,8 @@ async def reconciled(db):
 	assert all(r['balance'] >= 0 and r['balance'] == r['ledger'] for r in rows)
 
 
-async def place(uid=1, post=12, quote=123, now=T - 50):
-	return await gold.place_bet(5, uid, post, 0, 50, 'player', now, interaction_id=quote)
+async def place(uid=1, post=12, quote=123, now=T - 50, stake=50):
+	return await gold.place_bet(5, uid, post, 0, stake, 'player', now, interaction_id=quote)
 
 
 def test_mysql_tax_eligibility_boundaries_refunds_grace_and_tenancy(monkeypatch):
@@ -73,12 +75,15 @@ def test_mysql_tax_eligibility_boundaries_refunds_grace_and_tenancy(monkeypatch)
 					await store.close_betting(pid, closed)
 				if uid == 4:
 					await gold.refund_post(5, await store.bets_for(pid), pid, T - 1)
+			# Keep every holder above the tax floor so these cases still test eligibility.
+			for cid, uid in [(5, u) for u in (1, 2, 3, 4, 5, 6, 8)] + [(6, 2)]:
+				await gold._credit(cid, uid, 'admin_adjust', 500, f'fixture:bonus:{cid}:{uid}', T - 1)
 			result = await gold.apply_weekly_tax(5, T, T + 1)
-			assert result == dict(taxed_holders=3, total_tax=140)  # cancelled, still open, exact cutoff
+			assert result == dict(taxed_holders=3, total_tax=290)  # cancelled, still open, exact cutoff
 			balances = {r['user_id']: r['balance'] for r in await db.fetchall(
 				'SELECT user_id,balance FROM gold_balances WHERE community_id=5')}
-			assert balances == {1: 450, 2: 450, 3: 405, 4: 500, 5: 450, 6: 500, 8: 405}
-			assert await gold.balance(6, 2) == 500
+			assert balances == {1: 950, 2: 900, 3: 855, 4: 1000, 5: 950, 6: 1000, 8: 855}
+			assert await gold.balance(6, 2) == 1000
 			assert await gold.apply_weekly_tax(5, T, T + 2) is None
 			await reconciled(db)
 	asyncio.run(run())
@@ -86,7 +91,7 @@ def test_mysql_tax_eligibility_boundaries_refunds_grace_and_tenancy(monkeypatch)
 
 def test_mysql_tax_every_write_rolls_back_and_retry_is_once(monkeypatch):
 	async def run():
-		async with bank(monkeypatch) as (db, module):
+		async with bank(monkeypatch, bonus=500) as (db, module):
 			original = module.Transaction.execute
 			control = dict(count=0, fail=0)
 			async def execute(tx, *args):
@@ -99,12 +104,12 @@ def test_mysql_tax_every_write_rolls_back_and_retry_is_once(monkeypatch):
 				control.update(count=0, fail=fail)
 				with pytest.raises(ConnectionError):
 					await gold.apply_weekly_tax(5, T, T + 1)
-				assert await gold.balance(5, 1) == 500
-				assert await gold.balance(5, 2) == 500
+				assert await gold.balance(5, 1) == 1000
+				assert await gold.balance(5, 2) == 1000
 				assert not await db.fetchall('SELECT * FROM gold_tax_runs')
 				await reconciled(db)
 			control.update(count=0, fail=0)
-			assert (await gold.apply_weekly_tax(5, T, T + 1))['total_tax'] == 100
+			assert (await gold.apply_weekly_tax(5, T, T + 1))['total_tax'] == 200
 			assert await gold.apply_weekly_tax(5, T, T + 2) is None
 			await reconciled(db)
 	asyncio.run(run())
@@ -112,7 +117,7 @@ def test_mysql_tax_every_write_rolls_back_and_retry_is_once(monkeypatch):
 
 def test_mysql_tax_lost_ack_and_overlapping_assessors(monkeypatch):
 	async def run():
-		async with bank(monkeypatch) as (db, _):
+		async with bank(monkeypatch, bonus=500) as (db, _):
 			transaction = db.transaction
 			@asynccontextmanager
 			async def lose_ack():
@@ -129,7 +134,7 @@ def test_mysql_tax_lost_ack_and_overlapping_assessors(monkeypatch):
 				gold.apply_weekly_tax(5, T + WEEK, T + WEEK + 1),
 				gold.apply_weekly_tax(5, T + WEEK, T + WEEK + 1)), 10)
 			assert sum(r is not None for r in results) == 1
-			assert await gold.balance(5, 1) == 405
+			assert await gold.balance(5, 1) == 810
 			await reconciled(db)
 	asyncio.run(run())
 
@@ -137,12 +142,14 @@ def test_mysql_tax_lost_ack_and_overlapping_assessors(monkeypatch):
 @pytest.mark.parametrize('operation', ['bet', 'cancel', 'reward', 'payout'])
 def test_mysql_tax_races_with_wallet_movements(monkeypatch, operation):
 	async def run():
-		async with bank(monkeypatch) as (db, _):
-			if operation in ('cancel', 'reward'):
-				await place()
+		async with bank(monkeypatch, bonus=50) as (db, _):
+			if operation == 'cancel':
+				assert (await place(stake=250))[0] == 'ok'
+			elif operation == 'reward':
+				assert (await place(stake=100))[0] == 'ok'
 			async def movement():
 				if operation == 'bet':
-					assert (await place(now=T + 1))[0] == 'ok'
+					assert (await place(now=T + 1, stake=250))[0] == 'ok'
 				elif operation == 'cancel':
 					assert (await gold.cancel_bet(5, 1, 12, T + 1))[0] == 'ok'
 				elif operation == 'reward':
@@ -151,7 +158,39 @@ def test_mysql_tax_races_with_wallet_movements(monkeypatch, operation):
 					await gold.pay_post(5, {1: 200}, 99, T + 1)
 			await asyncio.wait_for(asyncio.gather(gold.apply_weekly_tax(5, T, T + 1), movement()), 10)
 			await reconciled(db)
-			assert len(await db.fetchall("SELECT id FROM gold_ledger WHERE entry_type='inactivity_tax'")) == 2
+			# Either serialization is valid. Betting may spend below 500; tax may not.
+			expected = {'bet': (250, 300), 'cancel': (500, 550), 'reward': (500,), 'payout': (675, 700)}
+			assert await gold.balance(5, 1) in expected[operation]
+			assert await gold.balance(5, 2) == 500
+			taxes = {r['user_id']: -r['amount'] for r in await db.fetchall(
+				"SELECT user_id,amount FROM gold_ledger WHERE entry_type='inactivity_tax'")}
+			assert taxes[2] == 50
+			allowed = {'bet': (0, 50), 'cancel': (0, 50), 'reward': (0,), 'payout': (50, 75)}
+			assert taxes.get(1, 0) in allowed[operation]
+	asyncio.run(run())
+
+
+def test_mysql_tax_floor_matches_preview_and_skips_exempt_ledger_entries(monkeypatch):
+	async def run():
+		balances = {1: 450, 2: 500, 3: 501, 4: 520, 5: 555, 6: 556, 7: 1000}
+		async with bank(monkeypatch, users=tuple(balances)) as (db, _):
+			assert (await place())[0] == 'ok'  # 450 gold; still open, so no participation exemption
+			for uid, balance in balances.items():
+				if balance > 500:
+					await gold._credit(5, uid, 'admin_adjust', balance - 500, f'fixture:bonus:{uid}', T - 1)
+			wallets = await db.fetchall('SELECT user_id,balance FROM gold_balances WHERE community_id=5')
+			expected = {3: 1, 4: 20, 5: 55, 6: 55, 7: 100}
+			assert dict(await tax_candidates(db, 5, T, wallets)) == expected
+			assert await gold.apply_weekly_tax(5, T, T + 1) == dict(taxed_holders=5, total_tax=231)
+			assert {r['user_id']: -r['amount'] for r in await db.fetchall(
+				"SELECT user_id,amount FROM gold_ledger WHERE entry_type='inactivity_tax'")} == expected
+			for uid, before in balances.items():
+				assert await gold.balance(5, uid) == before - expected.get(uid, 0)
+			assert await gold.apply_weekly_tax(5, T, T + 2) is None
+			assert await gold.apply_weekly_tax(5, T + WEEK, T + WEEK + 1) == dict(taxed_holders=2, total_tax=91)
+			assert await gold.balance(5, 6) == 500
+			assert await gold.balance(5, 1) == 450
+			await reconciled(db)
 	asyncio.run(run())
 
 
@@ -188,13 +227,13 @@ def test_mysql_distinct_clicks_add_and_replayed_click_cannot_charge_after_cancel
 
 def test_mysql_no_opportunity_and_disabled_tax_do_not_debit(monkeypatch):
 	async def run():
-		async with bank(monkeypatch) as (db, _):
+		async with bank(monkeypatch, bonus=500) as (db, _):
 			await db.execute('UPDATE gold_tax_policy SET enabled=0')
 			assert await gold.apply_weekly_tax(5, T, T + 1) is None
 			assert not await db.fetchall('SELECT * FROM gold_tax_runs')
 			await db.execute('UPDATE gold_tax_policy SET enabled=1')
 			await db.execute('UPDATE prediction_posts SET opened_at=%s', [T])
 			assert await gold.apply_weekly_tax(5, T, T + 1) == dict(taxed_holders=0, total_tax=0)
-			assert await gold.balance(5, 1) == 500
+			assert await gold.balance(5, 1) == 1000
 			await reconciled(db)
 	asyncio.run(run())
