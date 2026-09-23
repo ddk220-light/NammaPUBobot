@@ -811,7 +811,7 @@ def test_current_streaks_are_shown_without_history_or_other_storylines(monkeypat
 	embed = _run_insights_build(monkeypatch, match, [])
 	assert '**Alpha:** **u1**, **u2** — **12** consecutive wins (tied)' in embed.description
 	assert '**Beta:** **u5** — **3** consecutive wins' in embed.description
-	assert 'leads the match' not in embed.description
+	assert '👑' not in embed.description
 	assert not hasattr(match, 'storyline_ctx'), 'streak summary alone must not invent a payoff'
 
 
@@ -829,4 +829,4 @@ def test_only_the_team_with_a_qualifying_streak_is_listed(monkeypatch):
 	embed = _run_insights_build(monkeypatch, match, [])
 	assert '**Alpha:** **u1** — **3** consecutive wins' in embed.description
 	assert 'Beta' not in embed.description
-	assert 'Killing Spree' in embed.description
+	assert '👑 **u1** is on a **Killing Spree**!' in embed.description
