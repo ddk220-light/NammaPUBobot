@@ -57,6 +57,7 @@ class FakeResponse:
 
 	async def defer(self, **_kw):
 		self._done = True
+		self.defer_kwargs = _kw
 
 	async def send_message(self, content=None, ephemeral=False, view=nextcord.utils.MISSING, **_kw):
 		if self.fail_sends > 0:
@@ -123,6 +124,13 @@ class FakeInteraction:
 		self.user = types.SimpleNamespace(id=user_id, display_name="Zed", name="zed")
 		self.response = FakeResponse()
 		self.followup = FakeFollowup(self.response)
+		self.message = types.SimpleNamespace(flags=types.SimpleNamespace(ephemeral=True))
+
+	async def edit_original_message(self, *, content, view):
+		if self.response.fail_sends > 0:
+			self.response.fail_sends -= 1
+			raise RuntimeError('Discord 503 — original message edit failed')
+		self.response.edits.append((content, view))
 
 	@property
 	def replies(self):
@@ -130,18 +138,21 @@ class FakeInteraction:
 
 	@property
 	def reply(self):
-		assert len(self.response.sent) == 1, f"expected exactly one reply, got {self.response.sent}"
-		return self.response.sent[0][0]
+		messages = [*self.response.sent, *self.response.edits]
+		assert len(messages) == 1, f"expected exactly one reply, got {messages}"
+		return messages[0][0]
 
 	@property
 	def reply_view(self):
 		""" The view attached to the single reply, or MISSING if none was. """
-		assert len(self.response.sent) == 1, f"expected exactly one reply, got {self.response.sent}"
-		return self.response.sent[0][2]
+		views = [v for _, _, v in self.response.sent] + [v for _, v in self.response.edits]
+		assert len(views) == 1, f"expected exactly one reply view, got {views}"
+		return views[0]
 
 	@property
 	def all_ephemeral(self):
-		return all(ephemeral for _text, ephemeral, _view in self.response.sent)
+		return all(ephemeral for _text, ephemeral, _view in self.response.sent) and (
+			not self.response.edits or self.message.flags.ephemeral)
 
 	@property
 	def edit(self):
@@ -185,6 +196,7 @@ class Wiring:
 		self.log = log
 		self.placed = []            # one dict per gold.place_bet call
 		self.cancelled = []         # one dict per gold.cancel_bet call
+		self.interaction_ids = []
 
 	@property
 	def errors(self):
@@ -259,10 +271,11 @@ def wire(monkeypatch, *, the_post=_DEFAULT_POST, team0=(), team1=(), unpicked=()
 		return seeded
 
 	async def _place_bet(_community_id, user_id, _post_id, side, stake, _nick, _now,
-						 is_player=False, chooser_id=None):
+						 is_player=False, interaction_id=None):
 		if bank is EXPLODE:
 			raise AssertionError("place_bet reached on a press that must be refused")
 		wiring.placed.append(dict(user_id=user_id, side=side, stake=stake, is_player=is_player))
+		wiring.interaction_ids.append(interaction_id)
 		if isinstance(place_bet, Exception):
 			raise place_bet
 		return place_bet
@@ -494,8 +507,10 @@ class TestConfirmation:
 		# custom_id that merely looks right.
 		from nammaoe2bot.features.betting.scoring import parse_cancel_custom_id
 		assert i.reply_view is not None and i.reply_view is not interactions.nextcord.utils.MISSING
-		assert [b.custom_id for b in i.reply_view.children] == ["betcancel:12"]
-		assert [parse_cancel_custom_id(b.custom_id) for b in i.reply_view.children] == [12]
+		assert [b.label for b in i.reply_view.children] == ['50', '125', '250', 'Cancel my bet']
+		assert parse_cancel_custom_id(i.reply_view.children[-1].custom_id) == 12
+		assert i.response.sent == [], 'repeat betting updates the same private chooser'
+		assert i.response.defer_kwargs == dict(ephemeral=True, with_message=False)
 		assert i.reply_view.timeout is None and i.reply_view.auto_defer is False
 
 	def test_an_added_stake_shows_the_running_total(self, monkeypatch):
@@ -533,8 +548,8 @@ class TestFailureAfterTheCharge:
 		""" The message that was always right, on the path where it is right. """
 		log = wire(monkeypatch, get_post_raises=RuntimeError("db blip"), bank=EXPLODE)
 		i = run(FakeInteraction())
-		assert "same stake button" in i.reply
-		assert "Try again" in i.reply
+		assert "Check /predictions me before pressing again" in i.reply
+		assert "each new click can add" in i.reply
 		assert i.all_ephemeral
 		assert len(log.errors) == 1
 
@@ -564,9 +579,9 @@ class TestFailureAfterTheCharge:
 	def test_the_two_notices_disagree_about_the_only_thing_that_matters(self):
 		""" Pins the pair rather than one string: whatever the copy becomes, the
 		before-notice may promise no charge and the after-notice may not. """
-		assert "same stake button" in interactions.BET_FAILED_NOTICE
+		assert "before pressing again" in interactions.BET_FAILED_NOTICE
 		assert "nothing was charged" not in interactions.BET_LANDED_NOTICE
-		assert "Try again" in interactions.BET_FAILED_NOTICE
+		assert "cannot charge twice" not in interactions.BET_FAILED_NOTICE
 		assert "try again" not in interactions.BET_LANDED_NOTICE.lower()
 
 	def test_a_rejected_bet_is_not_treated_as_charged(self, monkeypatch):

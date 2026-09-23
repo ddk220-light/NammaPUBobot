@@ -8,6 +8,7 @@ nammaoe2bot.discord.events, and directly by tests/test_predictions_interactions.
 the handler for real against fake collaborators."""
 import time
 import traceback
+from functools import partial
 
 import nextcord
 
@@ -19,8 +20,8 @@ from .scoring import SEED_AMOUNT, parse_bet_custom_id, parse_cancel_custom_id, p
 # The two things the last-resort handler can truthfully say, kept side by side
 # because the difference between them is the difference between one charge and
 # two. Neither invites a retry it cannot honour.
-BET_FAILED_NOTICE = ("Could not confirm this bet. Check /predictions me. Try again using the "
-					 "same stake button; it cannot charge twice.")
+BET_FAILED_NOTICE = ("Could not confirm this bet. Check /predictions me before pressing again; "
+					 "each new click can add another stake.")
 BET_LANDED_NOTICE = ("Your bet went through — the gold is staked and your side is locked "
 					 "in. Only the confirmation failed, so **don't press again** unless you "
 					 "mean to stake more.")
@@ -43,9 +44,9 @@ async def on_bet_interaction(interaction):
 	# would stake it twice. Everything after that call — reading the pools,
 	# rendering the confirmation, the Discord round-trip itself — can still
 	# fail, and the outer except below is the only thing the user hears from.
-	# It therefore has to know which side of the commit it is on: before it,
-	# "nothing was charged, try again" is true and reassuring; after it, that
-	# same sentence is a false statement that instructs the user to double-pay.
+	# A missing return may also mean the commit acknowledgement was lost.
+	# Unknown outcomes must ask the user to check their balance; only an 'ok'
+	# return allows us to state that the bet definitely landed.
 	charged = False
 	deferred = False
 	try:
@@ -61,59 +62,70 @@ async def on_bet_interaction(interaction):
 			route = legacy[:2]
 		if route is None:
 			return
-		post_id, side = route[:2]
+		post_id = route[0]
+		side = route[1] if len(route) > 1 else None
 		if len(route) == 5 and route[2] != interaction.user.id:
 			return await _eph(interaction, "Open your own stake choices from the match card.")
+		update = len(route) == 5
+		reply = partial(_eph, interaction, update=update)
 		# A sleeping MySQL instance can take longer than Discord's initial
 		# response window to wake. Acknowledge before touching the database.
 		if not interaction.response.is_done():
-			await interaction.response.defer(ephemeral=True, with_message=True)
+			await interaction.response.defer(ephemeral=True, with_message=not update)
 			deferred = True
 		now = int(time.time())
 		post = await store.get_post(post_id)
 		if not post or post["status"] != "open":
-			return await _eph(interaction, "Betting on this match is closed.")
+			return await reply("Betting on this match is closed.")
 		# Participants may bet, but only on themselves: a player who could take
 		# the opposing side could profit by losing. Spectators are unrestricted.
 		team0, team1 = flow._team_ids(post["match_id"])
 		is_player = interaction.user.id in team0 or interaction.user.id in team1
+		if len(route) < 5 and is_player:
+			side = 0 if interaction.user.id in team0 else 1
+		elif side is None:
+			return await reply("Choose the team you want to back.",
+				component_view=embeds.side_view(post_id, post["team0_name"], post["team1_name"]))
 		if is_player and interaction.user.id not in (team0 if side == 0 else team1):
-			return await _eph(interaction, "You can only bet on yourself — back your own team.")
+			return await reply("You can only bet on yourself — back your own team.")
 
 		from nammaoe2bot import community
 		community_id = await community.community_for_channel(post["channel_id"])
 		if community_id is None:
-			return await _eph(interaction, "This channel keeps no stats — there is no gold here.")
+			return await reply("This channel keeps no stats — there is no gold here.")
 
 		seeded_now = await gold.ensure_seeded(community_id, interaction.user.id, now)
-		if len(route) == 2:
+		if len(route) < 5:
 			return await _choose_stake(interaction, post, side,
 				await gold.balance(community_id, interaction.user.id), seeded_now=seeded_now)
-		_, _, _, stake, chooser_id = route
+		_, _, _, stake, _chooser_id = route
 		status, value = await gold.place_bet(
 			community_id, interaction.user.id, post_id, side, stake, _nick(interaction.user), now,
-			is_player=is_player, chooser_id=chooser_id)
+			is_player=is_player, interaction_id=interaction.id)
 		if status == "duplicate":
-			return await _eph(interaction,
-				"This selection was already placed; no additional gold was charged. "
-				"Use the match card for a new bet.", component_view=embeds.cancel_view(post_id))
+			return await reply("This click was already processed; no additional gold was charged.",
+				component_view=embeds.stake_view(post_id, side, interaction.user.id, value,
+					interaction.id, allow_cancel=True))
 		if status == "stale":
-			return await _choose_stake(interaction, post, side, value, changed=True)
+			return await _choose_stake(interaction, post, side, value, changed=True, update=True)
 		if status == "closed":
 			# The gate at the top of this handler read the post row before any
 			# of the above; place_bet re-read it FOR UPDATE inside the
 			# transaction, which is the only place the answer is authoritative.
 			# A sweep that closed the book in between wins, and nothing was
 			# charged — the whole transaction rolled back.
-			return await _eph(interaction, "Betting on this match is closed.")
+			return await reply("Betting on this match is closed.")
 		if status == "insufficient":
-			return await _eph(interaction,
+			return await reply(
 				f"Not enough gold — you hold **{value}** {view.GOLD}. "
-				"Playing matches tops you back up.")
+				"Playing matches tops you back up.",
+				component_view=embeds.stake_view(post_id, side, interaction.user.id, value,
+					interaction.id, allow_cancel=True))
 		if status == "side_locked":
 			locked = post["team0_name"] if value == 0 else post["team1_name"]
-			return await _eph(interaction,
-				f"You're on **{locked}** this match — bets add up, they don't switch sides.")
+			return await reply(
+				f"You're on **{locked}** this match — bets add up, they don't switch sides.",
+				component_view=embeds.cancel_view(post_id))
 
 		# Committed. (The two rejections above roll the whole transaction back,
 		# and ensure_seeded is a grant rather than a charge and is idempotent —
@@ -128,13 +140,16 @@ async def on_bet_interaction(interaction):
 									   pool0, pool1, value)
 		if seeded_now:
 			lines.insert(0, f"Welcome to the betting floor — you started with {SEED_AMOUNT} {view.GOLD}.")
-		await _eph(interaction, "\n".join(lines), component_view=embeds.cancel_view(post_id))
+		lines.append('Click an amount again to add to your bet.' if value >= 10
+			else 'You need at least 10 gold to add another stake.')
+		await reply("\n".join(lines), component_view=embeds.stake_view(
+			post_id, side, interaction.user.id, value, interaction.id, allow_cancel=True))
 		await _refresh_card(post, pool0, pool1)
 	except Exception as e:
 		await _last_resort(interaction, BET_LANDED_NOTICE if charged else BET_FAILED_NOTICE, e, deferred=deferred)
 
 
-async def _choose_stake(interaction, post, side, balance, *, seeded_now=False, changed=False):
+async def _choose_stake(interaction, post, side, balance, *, seeded_now=False, changed=False, update=False):
 	team = post["team0_name"] if side == 0 else post["team1_name"]
 	text = f"Back **{team}**. You hold **{balance}** {view.GOLD}. Choose your stake below."
 	if seeded_now:
@@ -143,9 +158,11 @@ async def _choose_stake(interaction, post, side, balance, *, seeded_now=False, c
 		text = "Your balance changed; nothing was charged. Here are your current options.\n" + text
 	if balance < 10:
 		return await _eph(interaction,
-			f"You hold **{balance}** {view.GOLD}. The minimum bet is 10 gold. Quiz and match rewards can refill it.")
+			f"You hold **{balance}** {view.GOLD}. The minimum bet is 10 gold. Quiz and match rewards can refill it.",
+			component_view=embeds.cancel_view(post['id']) if update else nextcord.utils.MISSING,
+			update=update)
 	await _eph(interaction, text, component_view=embeds.stake_view(
-		post["id"], side, interaction.user.id, balance, interaction.id))
+		post["id"], side, interaction.user.id, balance, interaction.id, allow_cancel=update), update=update)
 
 
 CANCEL_CLOSED_NOTICE = "Betting on this match is closed — bets can no longer be cancelled."
@@ -263,7 +280,13 @@ async def _rewrite(interaction, text):
 		await interaction.followup.send(text, ephemeral=True)
 
 
-async def _eph(interaction, text, component_view=nextcord.utils.MISSING):
+async def _eph(interaction, text, component_view=nextcord.utils.MISSING, *, update=False):
+	if update:
+		# A personal amount click uses a deferred message update, so replace
+		# its private chooser with the receipt and fresh buttons in-place.
+		await interaction.edit_original_message(content=text,
+			view=None if component_view is nextcord.utils.MISSING else component_view)
+		return
 	# nextcord 2.6.0's send_message/followup.send treat `view=None` as a real
 	# view and dereference it (`view.to_components()` / `view.timeout`) — the
 	# sentinel default lets callers omit the view entirely. Named

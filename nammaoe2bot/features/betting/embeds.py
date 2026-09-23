@@ -19,27 +19,38 @@ def bet_view(post_id):
 	# these buttons carry no per-View callback (clicks route through the global
 	# on_interaction handler so they work across a Railway redeploy), and
 	# nextcord's default auto_defer would silently ack the click first.
-	v = ui.View(timeout=None, auto_defer=False)
+	# Global routing also needs no per-message View retention (prevent_update).
+	v = ui.View(timeout=None, auto_defer=False, prevent_update=False)
+	v.add_item(ui.Button(style=ButtonStyle.primary, label="Place bet", emoji=view.GOLD,
+		custom_id=f"betpick:{post_id}"))
+	return v
+
+
+def side_view(post_id, team0, team1):
+	v = ui.View(timeout=None, auto_defer=False, prevent_update=False)
 	for side, style in ((0, ButtonStyle.primary), (1, ButtonStyle.danger)):
 		v.add_item(ui.Button(
-			style=style, label="Choose stake", emoji=TEAM_EMOJIS[side],
+			style=style, label=(team0 if side == 0 else team1)[:80], emoji=TEAM_EMOJIS[side],
 			custom_id=f"betpick:{post_id}:{side}"))
 	return v
 
 
-def stake_view(post_id, side, user_id, balance, chooser_id):
-	v = ui.View(timeout=None, auto_defer=False)
+def stake_view(post_id, side, user_id, balance, chooser_id, *, allow_cancel=False):
+	v = ui.View(timeout=None, auto_defer=False, prevent_update=False)
 	for stake in stake_options(balance):
 		v.add_item(ui.Button(
 			style=ButtonStyle.primary, label=str(stake), emoji=view.GOLD,
 			custom_id=f"betstake:{post_id}:{side}:{user_id}:{stake}:{chooser_id}"))
+	if allow_cancel:
+		v.add_item(ui.Button(style=ButtonStyle.secondary, label="Cancel my bet",
+			custom_id=f"betcancel:{post_id}"))
 	return v
 
 
 def cancel_view(post_id):
 	# Same rules as bet_view: routed by the global on_interaction handler, so
 	# timeout=None and auto_defer=False.
-	v = ui.View(timeout=None, auto_defer=False)
+	v = ui.View(timeout=None, auto_defer=False, prevent_update=False)
 	v.add_item(ui.Button(
 		style=ButtonStyle.secondary, label="Cancel my bet",
 		custom_id=f"betcancel:{post_id}"))

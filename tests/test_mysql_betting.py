@@ -52,7 +52,7 @@ async def reconciled(db):
 
 
 async def place(uid=1, post=12, quote=123, now=T - 50):
-	return await gold.place_bet(5, uid, post, 0, 50, 'player', now, chooser_id=quote)
+	return await gold.place_bet(5, uid, post, 0, 50, 'player', now, interaction_id=quote)
 
 
 def test_mysql_tax_eligibility_boundaries_refunds_grace_and_tenancy(monkeypatch):
@@ -155,7 +155,7 @@ def test_mysql_tax_races_with_wallet_movements(monkeypatch, operation):
 	asyncio.run(run())
 
 
-def test_mysql_duplicate_quote_lost_ack_and_stale_amount(monkeypatch):
+def test_mysql_duplicate_click_and_stale_amount(monkeypatch):
 	async def run():
 		async with bank(monkeypatch) as (db, _):
 			results = await asyncio.wait_for(asyncio.gather(place(), place()), 10)
@@ -165,6 +165,23 @@ def test_mysql_duplicate_quote_lost_ack_and_stale_amount(monkeypatch):
 			assert (await place(quote=456))[0] == 'stale'
 			assert (await place())[0] == 'duplicate'
 			assert await gold.balance(5, 1) == 501
+			await reconciled(db)
+	asyncio.run(run())
+
+
+def test_mysql_distinct_clicks_add_and_replayed_click_cannot_charge_after_cancel(monkeypatch):
+	async def run():
+		async with bank(monkeypatch) as (db, _):
+			results = await asyncio.wait_for(asyncio.gather(place(quote=123), place(quote=124)), 10)
+			assert [r[0] for r in results] == ['ok', 'ok']
+			assert await gold.balance(5, 1) == 400
+			bets = await store.bets_for(12)
+			assert len(bets) == 1 and bets[0]['stake'] == 100
+			assert (await place(quote=123))[0] == 'duplicate'
+			assert await gold.cancel_bet(5, 1, 12, T - 20) == ('ok', 100)
+			assert (await place(quote=124))[0] == 'duplicate'
+			assert await gold.balance(5, 1) == 500
+			assert await place(quote=125) == ('ok', 450)
 			await reconciled(db)
 	asyncio.run(run())
 

@@ -62,7 +62,9 @@ class StreakVoice:
 		try:
 			# Bound the whole attempt, including library handshake retries.
 			async with asyncio.timeout(15):
-				voice = await channel.connect(timeout=8, reconnect=False, self_deaf=True)
+				voice = await channel.connect(timeout=8, reconnect=False)
+				# nextcord sets self-deafening through the guild, not connect().
+				await channel.guild.change_voice_state(channel=channel, self_deaf=True)
 				if (not self.app.ready or match not in self.app.active_matches
 						or getattr(match, '_cancelled', False) or getattr(match, '_result_committed', False)
 						or tuple(p.id for team in match.teams[:2] for p in team) != roster

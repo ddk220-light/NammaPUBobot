@@ -2,8 +2,8 @@
 """The gold bank — the ONLY module that moves gold.
 
 Every movement is one transaction: an append-only gold_ledger row plus the
-matching gold_balances update. Personal stake choosers and non-bet movements
-carry unique idem_keys, so retries cannot move gold twice. A cancellation uses
+matching gold_balances update. Individual bet clicks and non-bet movements
+carry unique idem_keys, so duplicate deliveries cannot move gold twice. A cancellation uses
 the deleted stake row as its refund token, allowing bet/cancel/bet cycles.
 Balance truth is
 SUM(gold_ledger.amount); gold_balances is the spendable cache, and
@@ -131,7 +131,7 @@ async def bulk_seed(now):
 	return seeded
 
 
-async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_player=False, chooser_id=None):
+async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_player=False, interaction_id=None):
 	"""One press of a bet button, atomically.
 
 	-> ('ok', new_balance) | ('insufficient', balance) | ('side_locked', locked_side)
@@ -150,7 +150,9 @@ async def place_bet(community_id, user_id, post_id, side, stake, nick, now, is_p
 	never survive a refused bet."""
 	if type(stake) is not int or not 0 < stake <= 2**63 - 1 or side not in (0, 1):
 		raise ValueError("invalid bet")
-	idem_key = f"bet:{community_id}:{user_id}:{chooser_id}" if chooser_id is not None else None
+	# Each new click adds a stake; redelivery of that same Discord interaction
+	# is idempotent. The chooser's ID must not make every button single-use.
+	idem_key = f"bet:{community_id}:{user_id}:{interaction_id}" if interaction_id is not None else None
 	try:
 		async with db.transaction() as tx:
 			# THE BOOK, RE-READ AND LOCKED — not a courtesy re-check of what the

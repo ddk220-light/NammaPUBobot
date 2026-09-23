@@ -293,7 +293,7 @@ class TestOpen:
 			qc=types.SimpleNamespace(id=900),
 			teams=[types.SimpleNamespace(name="Alpha"), types.SimpleNamespace(name="Bravo")])
 
-	def test_the_card_ships_with_two_team_choices_wired_to_the_post(self, monkeypatch):
+	def test_the_card_ships_with_one_personal_betting_entry_point(self, monkeypatch):
 		from nammaoe2bot.features.betting import embeds
 		from nammaoe2bot.features.betting.scoring import parse_personal_bet_id
 
@@ -304,12 +304,10 @@ class TestOpen:
 		assert store.message_ids == [(12, 555)], "the card's id is stored for later edits"
 		sent_view = channel.sent_kwargs[0].get("view")
 		assert sent_view is not None, "a card with no view has no buttons and no feature"
-		assert [b.custom_id for b in sent_view.children] == [
-			f"betpick:12:{side}" for side in (0, 1)]
+		assert [b.custom_id for b in sent_view.children] == ['betpick:12']
 		# The router's parser is the other end of these ids; a card whose
 		# buttons it refuses to route is the same outage in a different place.
-		assert [parse_personal_bet_id(b.custom_id) for b in sent_view.children] == [
-			(12, side) for side in (0, 1)]
+		assert [parse_personal_bet_id(b.custom_id) for b in sent_view.children] == [(12,)]
 		assert sent_view is not embeds.bet_view(12), "built per post, not shared"
 		assert sent_view.timeout is None and sent_view.auto_defer is False
 		assert log.errors == []
