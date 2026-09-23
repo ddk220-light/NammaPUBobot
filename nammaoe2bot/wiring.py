@@ -55,6 +55,13 @@ async def _post_team_insights(match, ctx):
 		# that its own failure invalidates state it stored earlier.
 		match.storyline_ctx = None
 		log.error(f"Storyline insights failed for match {match.id}: {e}")
+		return
+	if embed is not None:
+		# Scheduling is separate: voice failures must not undo a posted tease.
+		try:
+			match.qc.app.streak_voice.announce(match)
+		except Exception as exc:
+			log.error(f'Streak audio scheduling failed for match {match.id}: {exc}')
 
 
 async def _post_storyline_payoff(match, ctx):
@@ -112,7 +119,9 @@ async def _void_book(match, _ctx):
 def wire_match_lifecycle(app):
 	"""Subscribe every feature to the match lifecycle. Called once, at boot."""
 	from nammaoe2bot.features.civs.pick_service import PickService
+	from nammaoe2bot.features.storylines.voice import StreakVoice
 	app.civ_picker = PickService(app)
+	app.streak_voice = StreakVoice(app)
 	events = app.match_events
 
 	events.on("teams_posted", _post_team_insights)

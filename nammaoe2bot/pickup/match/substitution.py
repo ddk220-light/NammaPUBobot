@@ -64,9 +64,7 @@ class Draft:
 			old_team.remove(player)
 		else:
 			self.m.players.append(player)
-			self.m.ratings = {
-				p['user_id']: p['rating'] for p in await self.m.qc.rating.get_players((p.id for p in self.m.players))
-			}
+			self.m.set_player_ratings(await self.m.qc.rating.get_players(p.id for p in self.m.players))
 
 		team.append(player)
 		await self.m.qc.remove_members(player, ctx=ctx)
@@ -96,9 +94,7 @@ class Draft:
 		self.m.players.append(player2)
 		if player1 in self.sub_queue:
 			self.sub_queue.remove(player1)
-		self.m.ratings = {
-			p['user_id']: p['rating'] for p in await self.m.qc.rating.get_players((p.id for p in self.m.players))
-		}
+		self.m.set_player_ratings(await self.m.qc.rating.get_players(p.id for p in self.m.players))
 		await self.m.qc.remove_members(player2, ctx=ctx)
 		await self.m.qc.app.remove_players(player2, reason="pickup started")
 
@@ -141,9 +137,7 @@ class Draft:
 		self.m.players.append(candidate)
 		if out_member in self.sub_queue:
 			self.sub_queue.remove(out_member)
-		self.m.ratings = {
-			p['user_id']: p['rating'] for p in await self.m.qc.rating.get_players((p.id for p in self.m.players))
-		}
+		self.m.set_player_ratings(await self.m.qc.rating.get_players(p.id for p in self.m.players))
 
 		# Pull the candidate out of the queue and expire timers, like /subfor.
 		await self.m.qc.remove_members(candidate, ctx=ctx)

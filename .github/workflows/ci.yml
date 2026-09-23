@@ -1,12 +1,10 @@
-# NammaPUBobot CI — ruff lint + pytest unit tests + docker build.
+# NammaPUBobot CI — lint, tests, Docker build and MySQL reliability.
 #
-# Runs on every push and every PR against main. Three independent
-# jobs so they fan out in parallel; any one of them failing blocks
-# the PR. Nothing here deploys anywhere — deployment is still manual
-# via `railway up --ci`.
+# Runs on every push and every PR against main. Four independent jobs
+# run in parallel. Railway deploys main through its GitHub integration.
 #
-# Python version is pinned to 3.11 to match the Dockerfile
-# (FROM python:3.11-slim). If the Dockerfile moves, bump this too.
+# Python version is pinned to 3.12 to match the Dockerfile
+# (FROM python:3.12-slim). If the Dockerfile moves, bump this too.
 name: CI
 
 on:
@@ -23,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install ruff
         # Pin ruff so a silent upgrade doesn't start failing CI out of
         # nowhere. Bump deliberately.
@@ -38,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         # tests/test_web_page_scouting.py executes nammaoe2bot/web/page.html's real
         # render functions — the SPA is inline JS, and three of stage 5's four
@@ -48,13 +46,13 @@ jobs:
         with:
           node-version: "20"
       - name: Install test deps
-        # We don't pip-install the full requirements.txt here because
-        # it pulls nextcord (+ its native deps) which aren't needed for
-        # the pure-parser unit tests. conftest.py stubs out the heavy
-        # imports. Keep this minimal on purpose.
-        run: pip install pytest==8.3.3
+        # Unit tests stub Discord; the separate runtime check exercises the
+        # real pinned library, slash payloads and voice encryption dependencies.
+        run: pip install pytest==8.3.3 -r requirements.txt
       - name: Run pytest
         run: pytest tests/ -v
+      - name: Check Discord runtime and prepared voice clips offline
+        run: PYTHONPATH=. python scripts/check_discord_runtime.py
 
   docker:
     name: docker build
@@ -90,7 +88,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install integration test dependencies
         run: pip install pytest==8.3.3 aiomysql==0.3.2 'PyMySQL[rsa]==1.1.2'
       - name: Check reporting and recovery on disposable MySQL

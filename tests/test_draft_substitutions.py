@@ -34,6 +34,7 @@ import types
 
 import nammaoe2bot.features.betting as predictions
 from nammaoe2bot.pickup.match.substitution import Draft
+from nammaoe2bot.pickup.match.match import Match
 from nammaoe2bot.wiring import wire_match_lifecycle
 
 
@@ -90,6 +91,7 @@ class FakeCtx:
 
 class FakeMatch:
 	CHECK_IN, DRAFT, WAITING_REPORT = 0, 1, 2
+	set_player_ratings = Match.set_player_ratings
 
 	def __init__(self, ranked=True, state=DRAFT):
 		self.id = 77

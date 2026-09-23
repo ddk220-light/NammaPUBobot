@@ -89,9 +89,11 @@ class Match:
 		async with ctx.qc.app.match_creation_lock:
 			# Keep the rating snapshot, id reservation and live-state publication
 			# indivisible with respect to a one-time historical import.
-			ratings = {p['user_id']: p['rating'] for p in await ctx.qc.rating.get_players((p.id for p in players))}
+			rows = await ctx.qc.rating.get_players((p.id for p in players))
+			ratings = {p['user_id']: p['rating'] for p in rows}
 			match_id = await stats.next_match()
 			match = cls(match_id, queue, ctx.qc, players, ratings, **kwargs)
+			match.set_player_ratings(rows)
 			match.maps = match.random_maps(match.cfg['maps'], match.cfg['map_count'], queue.last_maps)
 			match.init_captains(match.cfg['pick_captains'], match.cfg['captains_role_id'])
 			match.init_teams(match.cfg['pick_teams'])
@@ -129,7 +131,8 @@ class Match:
 			state=self.state,
 			states=self.states,
 			winner=self.winner, scores=self.scores, start_time=self.start_time,
-			ready_players=[p.id for p in self.check_in.ready_players if p]
+			ready_players=[p.id for p in self.check_in.ready_players if p],
+			streaks=self.streaks,
 		)
 
 	@classmethod
@@ -157,9 +160,14 @@ class Match:
 
 		async with qc.app.match_creation_lock:
 			# Create the Match object
-			ratings = {p['user_id']: p['rating'] for p in await qc.rating.get_players((p.id for p in data['players']))}
+			rows = await qc.rating.get_players((p.id for p in data['players']))
+			ratings = {p['user_id']: p['rating'] for p in rows}
 			match_id = data["match_id"]
 			match = cls(match_id, queue, qc, data['players'], ratings, **data['cfg'])
+			match.set_player_ratings(rows)
+			if data.get('streaks') is not None:
+				match.streaks = {int(uid): value for uid, value in data['streaks'].items()}
+			match.restored = True
 
 			# Set state data
 			for i in range(len(match.teams)):
@@ -200,6 +208,8 @@ class Match:
 		self.ranked = self.cfg['ranked'] and self.cfg['pick_teams'] != 'no teams'
 		self.players = list(players)
 		self.ratings = ratings
+		self.streaks = None
+		self.restored = False
 		self.winner = None
 		self.scores = [0, 0]
 		self._reporting = False
@@ -228,6 +238,11 @@ class Match:
 		self.check_in = CheckIn(self, self.cfg['check_in_timeout'])
 		self.draft = Draft(self, self.cfg['captains_role_id'])
 		self.embeds = Embeds(self)
+
+	def set_player_ratings(self, rows):
+		"""Retain current form from the rating read already needed for team setup."""
+		self.ratings = {p['user_id']: p['rating'] for p in rows}
+		self.streaks = {p['user_id']: int(p.get('streak') or 0) for p in rows}
 
 	@staticmethod
 	def random_maps(maps, map_count, last_maps=None):

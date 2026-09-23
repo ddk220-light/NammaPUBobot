@@ -1,4 +1,5 @@
 import asyncio
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -50,9 +51,10 @@ def test_match_roundtrip_preserves_original_id_and_checkin_or_report_state(monke
 	match.states = [Match.WAITING_REPORT] if stage == Match.CHECK_IN else []
 	match.check_in.ready_players = {match.players[0]}
 	match.winner, match.scores = 1, [0, 1]
-	data = match.serialize()
+	match.streaks = {p.id: i - 2 for i, p in enumerate(match.players)}
+	data = json.loads(json.dumps(match.serialize()))
 	if legacy:
-		for key in ("winner", "scores", "start_time"):
+		for key in ("winner", "scores", "start_time", "streaks"):
 			data.pop(key)
 	source = deepcopy(data)
 	qc = match.qc
@@ -76,8 +78,25 @@ def test_match_roundtrip_preserves_original_id_and_checkin_or_report_state(monke
 	assert restored.maps == source["maps"]
 	assert restored.scores == ([0, 0] if legacy else [0, 1])
 	assert restored.winner == (None if legacy else 1)
+	assert restored.restored is True
+	assert restored.streaks == ({p.id: 0 for p in match.players} if legacy else match.streaks)
 	assert checkin.await_count == int(stage == Match.CHECK_IN)
 	assert data == source, "restoration mutated its input and made retries unsafe"
+
+
+def test_new_match_preserves_streaks_from_the_existing_rating_read(monkeypatch):
+	app = Application(client=None)
+	template = build_match(app)
+	rows = [dict(user_id=p.id, rating=1500, streak=i - 3) for i, p in enumerate(template.players)]
+	read = AsyncMock(return_value=rows)
+	template.qc.rating.get_players = read
+	monkeypatch.setattr(stats, 'next_match', AsyncMock(return_value=9000))
+	asyncio.run(Match.new(SimpleNamespace(qc=template.qc), template.queue, template.players,
+		ranked=True, pick_teams='matchmaking', team_size=4))
+	created = app.active_matches[-1]
+	assert read.await_count == 1
+	assert created.streaks == {row['user_id']: row['streak'] for row in rows}
+	assert created.restored is False
 
 
 def test_failed_checkin_restoration_removes_partial_match(monkeypatch):

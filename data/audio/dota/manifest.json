@@ -1,0 +1,82 @@
+[
+  {
+    "wins": 3,
+    "label": "Killing Spree",
+    "filename": "3.ogg",
+    "source_url": "https://raw.githubusercontent.com/MoNoLidThZ/DotaKillStreak/97686e4cb69313cabc0996446c7529a30c38e3f7/sound/dota_killing_spree/announcer_kill_spree_01.mp3",
+    "source_sha256": "4cb4aae94c1644357a7db64cbf3ec64970f455f13f01eceb546d96814ba649f4",
+    "sha256": "1dceeb5054902f818cf1a6bfb6757656a2792ff116e4526abd09db08f4ba0e1d",
+    "duration_seconds": 2.383646,
+    "bytes": 22384
+  },
+  {
+    "wins": 4,
+    "label": "Dominating",
+    "filename": "4.ogg",
+    "source_url": "https://raw.githubusercontent.com/MoNoLidThZ/DotaKillStreak/97686e4cb69313cabc0996446c7529a30c38e3f7/sound/dota_killing_spree/announcer_kill_dominate_01.mp3",
+    "source_sha256": "7bf6ef49c0ff04ec130a8345f3c72f1694549e40cd239f1d67fa5a1be9f9c933",
+    "sha256": "b4f4de216157ab4049eb13d16ee550947e1864b2e5f7f215a5092e8e30e89e0c",
+    "duration_seconds": 1.808958,
+    "bytes": 18180
+  },
+  {
+    "wins": 5,
+    "label": "Mega Kill",
+    "filename": "5.ogg",
+    "source_url": "https://raw.githubusercontent.com/MoNoLidThZ/DotaKillStreak/97686e4cb69313cabc0996446c7529a30c38e3f7/sound/dota_killing_spree/announcer_kill_mega_01.mp3",
+    "source_sha256": "40560cb6e49e1333ba0d06e5ae109c0b47e5f0b77d557dcca8138574cead18f6",
+    "sha256": "a6ba238b46d22bf291b5770c874535a9fc7203bac4691a6563a98eea5332caf1",
+    "duration_seconds": 2.61875,
+    "bytes": 24713
+  },
+  {
+    "wins": 6,
+    "label": "Unstoppable",
+    "filename": "6.ogg",
+    "source_url": "https://raw.githubusercontent.com/MoNoLidThZ/DotaKillStreak/97686e4cb69313cabc0996446c7529a30c38e3f7/sound/dota_killing_spree/announcer_kill_unstop_01.mp3",
+    "source_sha256": "8928bcca660aa570d272fe0f4a54c0d8861555c7df4114043d39869845be05f4",
+    "sha256": "c7a8e67a87ff981b3e78f59245d72e12323e3a3ce69664047c558c6c49c9a72e",
+    "duration_seconds": 2.044063,
+    "bytes": 19939
+  },
+  {
+    "wins": 7,
+    "label": "Wicked Sick",
+    "filename": "7.ogg",
+    "source_url": "https://raw.githubusercontent.com/MoNoLidThZ/DotaKillStreak/97686e4cb69313cabc0996446c7529a30c38e3f7/sound/dota_killing_spree/announcer_kill_wicked_01.mp3",
+    "source_sha256": "d5458721af901752186ce528484712d7b3fb47edf787702945078430fd5de577",
+    "sha256": "75ea93a04cab657af60cd108bcaa93535664c26b756f3bb683972fdda19909ef",
+    "duration_seconds": 2.61875,
+    "bytes": 25469
+  },
+  {
+    "wins": 8,
+    "label": "Monster Kill",
+    "filename": "8.ogg",
+    "source_url": "https://raw.githubusercontent.com/MoNoLidThZ/DotaKillStreak/97686e4cb69313cabc0996446c7529a30c38e3f7/sound/dota_killing_spree/announcer_kill_monster_01.mp3",
+    "source_sha256": "7b1a38041b41e278ba0e051702d13132b43440849eb7351dac833909dbdaca23",
+    "sha256": "41cd48bef9638e3e7aa31a90fdba4a15cae609cfa305e06147232a2b405976ec",
+    "duration_seconds": 3.350188,
+    "bytes": 31212
+  },
+  {
+    "wins": 9,
+    "label": "Godlike",
+    "filename": "9.ogg",
+    "source_url": "https://raw.githubusercontent.com/MoNoLidThZ/DotaKillStreak/97686e4cb69313cabc0996446c7529a30c38e3f7/sound/dota_killing_spree/announcer_kill_godlike_01.mp3",
+    "source_sha256": "09c79ab1ab4b9f5fbe5067c9c453c676b2bc5484966662fa3e82c9fd804b3678",
+    "sha256": "7e155b948c6b9196f6d0ed259a80c29b4e994fdadfea8edad671425efed18af6",
+    "duration_seconds": 1.835083,
+    "bytes": 18525
+  },
+  {
+    "wins": 10,
+    "label": "Beyond Godlike",
+    "filename": "10.ogg",
+    "source_url": "https://raw.githubusercontent.com/MoNoLidThZ/DotaKillStreak/97686e4cb69313cabc0996446c7529a30c38e3f7/sound/dota_killing_spree/announcer_kill_holy_01.mp3",
+    "source_sha256": "138274db7a4abfc25bea429f1f9f516248edbb90bbc8c561df35f7a4702dd502",
+    "sha256": "8b3b50020c18760b584dd39398fb4f2228729e5bfe7199919ed8e244a76df1a1",
+    "duration_seconds": 2.331417,
+    "bytes": 22642
+  }
+]
