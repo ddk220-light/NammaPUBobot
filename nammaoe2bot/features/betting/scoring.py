@@ -26,16 +26,17 @@ def stake_options(balance):
 
 
 def parse_personal_bet_id(cid):
-	"""betpick:post:side, or betstake:post:side:user:amount:chooser."""
+	"""betpick:post[:side], or betstake:post:side:user:amount:chooser."""
 	parts = (cid or "").split(":")
-	if not ((parts[0] == "betpick" and len(parts) == 3)
+	if not ((parts[0] == "betpick" and len(parts) in (2, 3))
 			or (parts[0] == "betstake" and len(parts) == 6)):
 		return None
 	try:
 		values = tuple(int(v) for v in parts[1:])
 	except ValueError:
 		return None
-	if values[1] not in (0, 1) or any(v <= 0 or v > 2**63 - 1 for i, v in enumerate(values) if i != 1):
+	if (len(values) > 1 and values[1] not in (0, 1)
+			or any(v <= 0 or v > 2**63 - 1 for i, v in enumerate(values) if i != 1)):
 		return None
 	return values
 

@@ -8,7 +8,8 @@ import hashlib
 import json
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, create_autospec
 
 import aiohttp  # noqa: F401 -- preserve its real submodules before installing DB fakes
 import nextcord
@@ -34,7 +35,40 @@ from nammaoe2bot.discord import slash  # noqa: F401
 from nammaoe2bot.features.civs import picking
 from nammaoe2bot.features.civs.pick_view import card
 from nammaoe2bot.features.storylines.opus_source import OpusClip
+from nammaoe2bot.features.storylines.voice import StreakVoice
+from nammaoe2bot.features.betting import embeds as betting_embeds
 from nammaoe2bot.runtime.paths import data
+
+
+async def check_voice_api():
+	# Enforce the installed library's method signatures at the network boundary.
+	# A permissive **kwargs fake previously hid an invalid connect(self_deaf=...).
+	guild = create_autospec(nextcord.Guild, instance=True)
+	channel = create_autospec(nextcord.VoiceChannel, instance=True)
+	voice = create_autospec(nextcord.VoiceClient, instance=True)
+	guild.id, guild.me, guild.voice_client = 99, SimpleNamespace(id=3), None
+	guild.voice_channels = [channel]
+	channel.id, channel.guild = 10, guild
+	channel.members = [SimpleNamespace(bot=False)]
+	channel.permissions_for.return_value = nextcord.Permissions(view_channel=True, connect=True, speak=True)
+	channel.connect.return_value = voice
+	played_packets = []
+	def play(source, *, after):
+		assert isinstance(source, nextcord.AudioSource) and source.is_opus()
+		played_packets.extend(iter(source.read, b''))
+		after(None)
+	voice.play.side_effect = play
+	match = SimpleNamespace(id=123, ranked=True, streaks={1: 3, 2: 0},
+		teams=[[SimpleNamespace(id=1)], [SimpleNamespace(id=2)]], qc=SimpleNamespace(guild_id=99))
+	app = SimpleNamespace(ready=True, client=SimpleNamespace(get_guild=lambda _id: guild), active_matches=[match])
+	service = StreakVoice(app)
+	service.announce(match)
+	await asyncio.gather(*service.tasks.values())
+	channel.connect.assert_awaited_once_with(timeout=8, reconnect=False)
+	guild.change_voice_state.assert_awaited_once_with(channel=channel, self_deaf=True)
+	voice.play.assert_called_once()
+	voice.disconnect.assert_awaited_once_with(force=True)
+	assert played_packets and not service.tasks
 
 
 async def main():
@@ -59,6 +93,12 @@ async def main():
 		if command['name'] != 'start':
 			assert not any(p['name'] == 'skip_check_in' for p in command.get('options', []))
 	json.dumps(payloads)
+	await check_voice_api()
+	public = betting_embeds.bet_view(123)
+	assert [b.custom_id for b in public.children] == ['betpick:123']
+	for view in [public, betting_embeds.side_view(123, 'Alpha', 'Beta'),
+			betting_embeds.stake_view(123, 0, 7, 400, 456, allow_cancel=True), betting_embeds.cancel_view(123)]:
+		assert not view.auto_defer and not view.prevent_update and len(view.to_components()) == 1
 
 	roster = [dict(id=i + 1, team=i % 2) for i in range(8)]
 	for when, lengths in [(1000, [5, 5, 3]), (picking.DLC_TRIAL_START, [5, 5, 3, 3])]:
@@ -88,7 +128,7 @@ async def main():
 		assert source.read() == b''
 		total += path.stat().st_size
 	print(json.dumps(dict(nextcord=nextcord.__version__, slash_commands=count,
-		voice_encryption='DAVE', clips=len(manifest), audio_bytes=total, components='passed')))
+		voice_encryption='DAVE', voice_api='passed', clips=len(manifest), audio_bytes=total, components='passed')))
 	await dc.close()
 	db.loop.close()
 

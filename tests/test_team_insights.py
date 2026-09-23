@@ -813,3 +813,20 @@ def test_current_streaks_are_shown_without_history_or_other_storylines(monkeypat
 	assert '**Beta:** **u5** — **3** consecutive wins' in embed.description
 	assert 'leads the match' not in embed.description
 	assert not hasattr(match, 'storyline_ctx'), 'streak summary alone must not invent a payoff'
+
+
+def test_streaks_below_three_do_not_create_an_announcement(monkeypatch):
+	match = _IMatch()
+	match.ranked = True
+	match.streaks = {1: 2, 2: 1, 3: 0, 4: -4, 5: 1, 6: 2, 7: 0, 8: -1}
+	assert _run_insights_build(monkeypatch, match, []) is None
+
+
+def test_only_the_team_with_a_qualifying_streak_is_listed(monkeypatch):
+	match = _IMatch()
+	match.ranked = True
+	match.streaks = {1: 3, 2: 1, 3: 0, 4: -4, 5: 2, 6: 1, 7: 0, 8: -1}
+	embed = _run_insights_build(monkeypatch, match, [])
+	assert '**Alpha:** **u1** — **3** consecutive wins' in embed.description
+	assert 'Beta' not in embed.description
+	assert 'Killing Spree' in embed.description

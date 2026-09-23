@@ -27,17 +27,19 @@ def match_leader(match):
 def summary(match, nick):
 	if not getattr(match, 'ranked', False) or getattr(match, 'streaks', None) is None:
 		return ''
-	lines = ['**🔥 Current win streaks**']
+	lines = []
 	for team in match.teams[:2]:
 		wins, ids = leaders([p.id for p in team], match.streaks)
-		if not ids:
-			text = 'No active win streak'
-		else:
-			names = ', '.join(f'**{nick[uid]}**' for uid in ids)
-			text = f"{names} — **{wins}** consecutive win{'s' if wins != 1 else ''}"
-			if len(ids) > 1:
-				text += ' (tied)'
+		if wins < 3:
+			continue
+		names = ', '.join(f'**{nick[uid]}**' for uid in ids)
+		text = f'{names} — **{wins}** consecutive wins'
+		if len(ids) > 1:
+			text += ' (tied)'
 		lines.append(f'**{team.name}:** {text}')
+	if not lines:
+		return ''
+	lines.insert(0, '**🔥 Current win streaks**')
 	if leader := match_leader(match):
 		uid, wins = leader
 		lines.append(f'👑 **{nick[uid]}** leads the match — **{CLIPS[clip_for(wins)]}!**')

@@ -52,11 +52,53 @@ def test_personal_choice_is_bound_to_user(monkeypatch):
 	assert not bank.placed
 
 
+@pytest.mark.parametrize('side', [0, 1])
+@pytest.mark.parametrize('cid', ['betpick:12', 'betpick:12:0', 'betpick:12:1', 'bet:12:0:50'])
+def test_match_players_go_straight_to_their_own_team_amounts(monkeypatch, side, cid):
+	bank = wire(monkeypatch, team0=[7] if side == 0 else [], team1=[7] if side == 1 else [])
+	i = run(FakeInteraction(custom_id=cid))
+	assert [b.label for b in i.reply_view.children] == ['100', '250', '500']
+	assert all(scoring.parse_personal_bet_id(b.custom_id)[1:3] == (side, 7) for b in i.reply_view.children)
+	assert not bank.placed and not bank.errors
+
+
+def test_spectator_picks_a_side_before_seeing_amounts(monkeypatch):
+	bank = wire(monkeypatch)
+	i = run(FakeInteraction(custom_id='betpick:12'))
+	assert [b.custom_id for b in i.reply_view.children] == ['betpick:12:0', 'betpick:12:1']
+	assert [b.label for b in i.reply_view.children] == ['Alpha', 'Bravo']
+	i = run(FakeInteraction(custom_id=i.reply_view.children[1].custom_id))
+	assert all(scoring.parse_personal_bet_id(b.custom_id)[1] == 1 for b in i.reply_view.children)
+	assert not bank.placed and not bank.errors
+
+
+def test_repeated_presses_of_the_same_amount_have_distinct_transaction_ids(monkeypatch):
+	bank = wire(monkeypatch, place_bet=('ok', 400), bets=[dict(user_id=7, side=0, stake=100)])
+	for click in (456, 457):
+		i = FakeInteraction(custom_id='betstake:12:0:7:50:123')
+		i.id = click
+		run(i)
+		assert '(your total: 100)' in i.reply
+		assert not i.response.sent and len(i.response.edits) == 1
+		assert [b.label for b in i.reply_view.children] == ['50', '125', '250', 'Cancel my bet']
+	assert [b['stake'] for b in bank.placed] == [50, 50]
+	assert bank.interaction_ids == [456, 457]
+	assert not bank.errors
+
+
+def test_empty_wallet_keeps_cancel_but_has_no_more_stake_buttons(monkeypatch):
+	bank = wire(monkeypatch, place_bet=('ok', 0))
+	i = run(FakeInteraction())
+	assert [b.custom_id for b in i.reply_view.children] == ['betcancel:12']
+	assert 'at least 10 gold' in i.reply
+	assert not bank.errors
+
+
 def test_stale_quote_refreshes_without_confirming_a_charge(monkeypatch):
 	bank = wire(monkeypatch, place_bet=('stale', 501))
 	i = run(FakeInteraction())
 	assert 'nothing was charged' in i.reply
-	assert [b.label for b in i.reply_view.children] == ['100', '250', '500']
+	assert [b.label for b in i.reply_view.children] == ['100', '250', '500', 'Cancel my bet']
 	assert bank.errors == []
 
 
@@ -72,15 +114,15 @@ def test_wallet_change_rejects_an_old_amount_before_writing(monkeypatch):
 	assert not fake.sql('UPDATE gold_balances')
 
 
-def test_single_chooser_key_is_recorded_and_duplicate_checked_before_staleness(monkeypatch):
+def test_click_key_is_recorded_and_duplicate_checked_before_staleness(monkeypatch):
 	fake = use_fake(monkeypatch)
 	fake.answers({}, {'balance': 500}, None, {'balance': 450})
-	assert asyncio.run(gold.place_bet(5, 7, 12, 0, 50, 'nick', 1000, chooser_id=123)) == ('ok', 450)
+	assert asyncio.run(gold.place_bet(5, 7, 12, 0, 50, 'nick', 1000, interaction_id=123)) == ('ok', 450)
 	entry = next(c[2] for c in fake.inserts() if c[1] == 'gold_ledger')
 	assert entry['idem_key'] == 'bet:5:7:123'
 	fake.calls.clear()
 	fake.answers({}, {'balance': 501}, {'id': 1})
-	assert asyncio.run(gold.place_bet(5, 7, 12, 0, 50, 'nick', 1000, chooser_id=123)) == ('duplicate', 501)
+	assert asyncio.run(gold.place_bet(5, 7, 12, 0, 50, 'nick', 1000, interaction_id=123)) == ('duplicate', 501)
 	assert not fake.inserts() and not fake.sql('UPDATE gold_balances')
 
 

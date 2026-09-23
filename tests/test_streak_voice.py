@@ -38,8 +38,8 @@ def setup(monkeypatch, *, counts=(1, 3), mode='success'):
 		def permissions_for(self, _member):
 			return self.perms
 
-		async def connect(self, **kwargs):
-			assert kwargs == dict(timeout=8, reconnect=False, self_deaf=True)
+		async def connect(self, *, timeout, reconnect):
+			assert (timeout, reconnect) == (8, False)
 			self.calls += 1
 			self.guild.voice_client = client
 			if mode == 'connect_failure':
@@ -72,7 +72,8 @@ def setup(monkeypatch, *, counts=(1, 3), mode='success'):
 			guild.voice_client = None
 
 	m = match()
-	guild = SimpleNamespace(id=99, me=object(), voice_client=None)
+	guild = SimpleNamespace(id=99, me=object(), voice_client=None,
+		change_voice_state=AsyncMock(side_effect=RuntimeError('deafen failed') if mode == 'deafen_failure' else None))
 	guild.voice_channels = [Channel(guild, i + 10, n) for i, n in enumerate(counts)]
 	app = SimpleNamespace(ready=True, client=SimpleNamespace(get_guild=lambda _id: guild), active_matches=[m])
 	client = Client()
@@ -109,6 +110,7 @@ def test_one_person_is_enough_and_duplicate_events_do_not_replay(monkeypatch):
 	assert client.plays == client.disconnects == 1
 	assert tiers == [5]
 	assert guild.voice_channels[1].calls == 1
+	guild.change_voice_state.assert_awaited_once_with(channel=guild.voice_channels[1], self_deaf=True)
 	assert guild.voice_client is None
 
 
@@ -141,7 +143,7 @@ async def _announce(service, m):
 		await asyncio.gather(*service.tasks.values())
 
 
-@pytest.mark.parametrize('mode', ['connect_failure', 'play_failure', 'callback_failure',
+@pytest.mark.parametrize('mode', ['connect_failure', 'deafen_failure', 'play_failure', 'callback_failure',
 	'empty_after_connect', 'roster_changed', 'permissions_changed', 'match_ended'])
 def test_failures_and_stale_announcements_disconnect_without_raising(monkeypatch, mode):
 	m, guild, _app, client, _tiers, service = setup(monkeypatch, mode=mode)
