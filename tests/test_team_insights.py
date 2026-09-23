@@ -802,3 +802,14 @@ def test_build_insights_embed_does_not_stash_when_there_is_no_tease(monkeypatch)
 	embed = _run_insights_build(monkeypatch, match, [])
 	assert embed is None
 	assert not hasattr(match, "storyline_ctx")
+
+
+def test_current_streaks_are_shown_without_history_or_other_storylines(monkeypatch):
+	match = _IMatch()
+	match.ranked = True
+	match.streaks = {1: 12, 2: 12, 3: -4, 4: 0, 5: 3, 6: 0, 7: -2, 8: 1}
+	embed = _run_insights_build(monkeypatch, match, [])
+	assert '**Alpha:** **u1**, **u2** — **12** consecutive wins (tied)' in embed.description
+	assert '**Beta:** **u5** — **3** consecutive wins' in embed.description
+	assert 'leads the match' not in embed.description
+	assert not hasattr(match, 'storyline_ctx'), 'streak summary alone must not invent a payoff'

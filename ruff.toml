@@ -1,8 +1,7 @@
 # Ruff configuration for NammaPUBobot.
 #
-# We target py311 because that's what the Dockerfile ships (CLAUDE.md
-# says py39+ is the minimum, but Railway builds on 3.11 — if we break
-# that, production breaks, so lint against what actually runs).
+# Retain the py311 syntax baseline while production runs Python 3.12.
+# Enabling newer pyupgrade rewrites is a separate repository-wide change.
 #
 # The rule set is intentionally small: we're dropping ruff into a
 # codebase that has never been linted, so starting strict would mean

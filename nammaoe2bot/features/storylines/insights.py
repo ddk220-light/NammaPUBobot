@@ -30,6 +30,7 @@ import time
 from collections import Counter, namedtuple
 
 from nammaoe2bot.runtime.database import db
+from . import streaks
 
 # ── Tunables ─────────────────────────────────────────────────────────────
 MAX_BULLETS = 4
@@ -889,8 +890,6 @@ async def build_insights_embed(match):
 	since = window_start(time.time())
 	rows = await _fetch_history(match.qc.id, [p.id for p in players], since)
 	hist = _index_history(rows)
-	if not hist.order:
-		return None
 
 	# The freshly-formed match isn't persisted yet, so all of history is "prior".
 	# One seeded RNG for the whole embed: nammaoe2bot/features/storylines/payoff.py recomputes
@@ -898,8 +897,6 @@ async def build_insights_embed(match):
 	rng = random.Random(match.id)
 	chosen = _select(_candidates(hist.order, hist.matches,
 	                             [p.id for p in team0], [p.id for p in team1]), rng=rng)
-	if not chosen:
-		return None
 
 	from nextcord import Colour, Embed
 
@@ -907,6 +904,7 @@ async def build_insights_embed(match):
 	from nammaoe2bot.runtime.utils import get_nick
 
 	nick = {p.id: get_nick(p) for p in players}
+	streak_summary = streaks.summary(match, nick)
 	teams_meta = [
 		{"name": teams[0].name, "emoji": teams[0].emoji},
 		{"name": teams[1].name, "emoji": teams[1].emoji},
@@ -918,11 +916,12 @@ async def build_insights_embed(match):
 			lines.append(_phrase(c, nick, teams_meta, rosters, rng=rng))
 		except Exception as e:
 			log.error(f"Storyline render failed ({c.get('type')}): {e}")
-	if not lines:
+	if not lines and not streak_summary:
 		return None
 	title = "⚔️ Tale of the Tape"
-	embed = Embed(title=title, colour=Colour(0xe67e22), description="\n\n".join(lines))
-	embed.set_footer(text=f"Last {WINDOW_DAYS} days · {len(hist.order)} ranked games · just for fun")
+	description = '\n\n'.join(([streak_summary] if streak_summary else []) + lines)
+	embed = Embed(title=title, colour=Colour(0xe67e22), description=description)
+	embed.set_footer(text=f"Storylines: last {WINDOW_DAYS} days · {len(hist.order)} ranked games · just for fun")
 
 	# The payoff recomputes these storylines at report time. It must recompute
 	# against the same window, the same roster and the same seed, none of which
@@ -931,9 +930,10 @@ async def build_insights_embed(match):
 	# and a redeploy hands a restored match a brand-new id. Stashing the three
 	# is not a retreat from recompute-don't-store — the storylines are still
 	# recomputed, this only pins what they are recomputed *from*.
-	match.storyline_ctx = {
-		"since": since,
-		"seed": match.id,
-		"rosters": rosters,
-	}
+	if lines:
+		match.storyline_ctx = {
+			"since": since,
+			"seed": match.id,
+			"rosters": rosters,
+		}
 	return embed

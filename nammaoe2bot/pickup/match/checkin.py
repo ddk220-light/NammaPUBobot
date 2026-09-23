@@ -171,9 +171,7 @@ class CheckIn:
 		# would reshuffle captains on an unrelated substitution. Nothing has
 		# been drafted during check-in, so a rebuild here is equivalent to the
 		# new roster having been present from the start.
-		self.m.ratings = {
-			p['user_id']: p['rating'] for p in await self.m.qc.rating.get_players((p.id for p in self.m.players))
-		}
+		self.m.set_player_ratings(await self.m.qc.rating.get_players(p.id for p in self.m.players))
 		if out_member in self.m.captains:
 			self.m.init_captains(self.m.cfg['pick_captains'], self.m.cfg['captains_role_id'])
 		self.m.init_teams(self.m.cfg['pick_teams'])

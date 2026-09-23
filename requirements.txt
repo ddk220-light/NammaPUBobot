@@ -2,7 +2,10 @@
 # commit 288edfd. Bump deliberately, not accidentally — unpinned deps are
 # how "worked fine yesterday" becomes "broken at 3am". Indirect deps are
 # left unpinned so pip can pull compatible transitives.
-nextcord==2.6.0
+nextcord[voice]==3.2.0
+# Voice encryption required by Discord; audio itself is prepared offline.
+PyNaCl==1.5.0
+dave-py==0.1.2
 aiomysql==0.3.2
 glicko2==2.1.0
 trueskill==0.4.5
