@@ -172,8 +172,10 @@ _reset.on_autocomplete("queue")(autocomplete.queues)
 @groups.admin_queue.subcommand(name='start', description='Start the queue.')
 async def _start_queue(
 	interaction: Interaction,
-	queue: str
-): await run_slash(queue_commands.start, interaction=interaction, queue=queue)
+	queue: str,
+	skip_check_in: bool = SlashOption(
+		description='Skip check-in for this manually started match only.', required=False, default=False)
+): await run_slash(queue_commands.start, interaction=interaction, queue=queue, skip_check_in=skip_check_in)
 _start_queue.on_autocomplete("queue")(autocomplete.queues)
 
 

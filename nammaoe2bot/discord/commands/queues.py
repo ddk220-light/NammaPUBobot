@@ -100,12 +100,12 @@ async def remove_player(ctx, player: Member, queues: str = None):
 	await remove(ctx, queues=queues)
 
 
-async def start(ctx, queue: str = None):
+async def start(ctx, queue: str = None, skip_check_in: bool = False):
 	""" Manually start a queue """
 	ctx.check_perms(ctx.Perms.MODERATOR)
 	if (q := find(lambda i: i.name.lower() == queue.lower(), ctx.qc.queues)) is None:
 		raise Exc.SyntaxError(f"Queue '{queue}' not found on the channel.")
-	await q.start(ctx)
+	await q.start(ctx, skip_check_in=skip_check_in)
 	await ctx.reply(ctx.qc.topic)
 
 

@@ -51,6 +51,13 @@ async def main():
 	count = sum(command_count(payload) for payload in payloads)
 	assert len(payloads) == 21 and count >= 40
 	assert {'civpick', 'rank', 'add', 'remove', 'report'} <= {p['name'] for p in payloads}
+	queue = next(p for p in payloads if p['name'] == 'queue')
+	start = next(p for p in queue['options'] if p['name'] == 'start')
+	skip = next(p for p in start['options'] if p['name'] == 'skip_check_in')
+	assert skip['type'] == 5 and not skip.get('required'), 'check-in bypass must be an optional boolean'
+	for command in queue['options']:
+		if command['name'] != 'start':
+			assert not any(p['name'] == 'skip_check_in' for p in command.get('options', []))
 	json.dumps(payloads)
 
 	roster = [dict(id=i + 1, team=i % 2) for i in range(8)]

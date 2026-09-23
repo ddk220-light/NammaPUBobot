@@ -414,7 +414,7 @@ class PickupQueue:
 			self.queue.remove(m)
 		return members
 
-	async def start(self, ctx):
+	async def start(self, ctx, *, skip_check_in=False):
 		if len(self.queue) < 2:
 			raise Exc.BotException(self.qc.gt("Not enough players to start the queue."))
 
@@ -425,7 +425,11 @@ class PickupQueue:
 		else:
 			team_size = int(self.cfg.size / 2)
 
-		await Match.new(ctx, self, players, team_size=team_size, **self._match_cfg())
+		match_cfg = self._match_cfg()
+		if skip_check_in:
+			# Override this match's snapshot, never the queue's saved settings.
+			match_cfg['check_in_timeout'] = 0
+		await Match.new(ctx, self, players, team_size=team_size, **match_cfg)
 
 	async def split(self, ctx, group_size: int = None, sort_by_rating: bool = False):
 		group_size = group_size or len(self.queue)//2
