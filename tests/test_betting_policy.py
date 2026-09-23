@@ -140,6 +140,22 @@ def test_thursday_boundaries_and_full_grace():
 	assert tax_amount(9, 0, thursday, False) == 0
 
 
+@pytest.mark.parametrize('balance,expected', [
+	(0, 0), (9, 0), (499, 0), (500, 0), (501, 1), (520, 20),
+	(554, 54), (555, 55), (556, 55), (1000, 100), (1001, 100),
+])
+def test_tax_preserves_500_gold_floor(balance, expected):
+	assert tax_amount(balance, 0, WEEK, False) == expected
+
+
+def test_repeated_weekly_tax_stops_at_floor():
+	balance = 1000
+	for week in range(1, 21):
+		balance -= tax_amount(balance, 0, week * WEEK, False)
+		assert balance >= 500
+	assert balance == 500
+
+
 def test_scheduler_catches_up_only_latest_week_and_then_stays_db_free(monkeypatch):
 	async def scenario():
 		now = int(datetime(2026, 10, 3, 12, tzinfo=ZONE).timestamp())

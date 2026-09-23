@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 WEEK = 7 * 86400
 ZONE = ZoneInfo("Asia/Kolkata")
+TAX_BALANCE_FLOOR = 500
 
 
 def latest_cutoff(now, minute_of_day):
@@ -24,9 +25,9 @@ def first_cutoff(activated_at, minute_of_day):
 
 
 def tax_amount(balance, seeded_at, cutoff, participated):
-	if participated or seeded_at is None or seeded_at > cutoff - WEEK:
+	if balance <= TAX_BALANCE_FLOOR or participated or seeded_at is None or seeded_at > cutoff - WEEK:
 		return 0
-	return max(0, balance) // 10
+	return min(balance // 10, balance - TAX_BALANCE_FLOOR)
 
 
 async def tax_candidates(tx, community_id, cutoff, wallets):
