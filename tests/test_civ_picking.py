@@ -17,12 +17,17 @@ def state(n=8):
 		list(picking.CIVS[:12]), 1, 1000, 3)
 
 
-def test_pool_preserves_every_unused_civ_when_filling_shortage():
-	history = [dict(civ=c, uses=2, last_at=900) for c in picking.CIVS[5:]]
-	history[0]['uses'] = 1
+@pytest.mark.parametrize(('catalog', 'count'), [(picking.BASE_CIVS, 8), (picking.PAID_DLC_CIVS, 4)])
+def test_pool_preserves_every_unused_civ_when_filling_shortage(catalog, count):
+	unused = set(catalog[:count - 2])
+	history = [dict(civ=c, uses=2, last_at=900) for c in picking.CIVS if c not in unused]
+	for row in history:
+		if row['civ'] == catalog[count - 2]:
+			row['uses'] = 1
 	pool = picking.select_pool(history, 1000, rng=random.Random(7))
 	assert len(pool) == len(set(pool)) == 12
-	assert set(picking.CIVS[:6]) <= set(pool)
+	assert unused | {catalog[count - 2]} <= set(pool)
+	assert len(set(pool) & set(catalog)) == count
 
 
 def test_pool_avoids_recent_explicit_choices_when_possible():
@@ -33,7 +38,30 @@ def test_pool_avoids_recent_explicit_choices_when_possible():
 
 def test_pool_prefers_least_frequent_then_oldest_repeats():
 	history = [dict(civ=c, uses=1, last_at=i) for i, c in enumerate(picking.CIVS)]
-	assert set(picking.select_pool(history, 1000)) == set(picking.CIVS[:12])
+	assert set(picking.select_pool(history, 1000)) == set(picking.BASE_CIVS[:8] + picking.PAID_DLC_CIVS[:4])
+
+
+def test_current_catalog_classifies_included_and_paid_expansions():
+	base, paid = set(picking.BASE_CIVS), set(picking.PAID_DLC_CIVS)
+	assert len(base) == 42 and len(paid) == 14
+	assert not base & paid
+	assert set(picking.CIVS) == base | paid
+	assert {'Burgundians', 'Sicilians', 'Bohemians', 'Poles', 'Bengalis', 'Dravidians', 'Gurjaras'} <= base
+	assert paid == {'Romans', 'Armenians', 'Georgians', 'Jurchens', 'Khitan', 'Shu', 'Wei', 'Wu',
+		'Mapuche', 'Muisca', 'Tupi', 'Danes', 'Saxons', 'Varangians'}
+
+
+@pytest.mark.parametrize('now', [1000, picking.DLC_TRIAL_START, picking.DLC_TRIAL_END - 1, picking.DLC_TRIAL_END])
+def test_every_draw_guarantees_eight_base_and_four_paid_choices(now):
+	# Exhausting either group must not allow the other group to take its slots.
+	for used in ((), picking.BASE_CIVS, picking.PAID_DLC_CIVS, picking.CIVS):
+		history = [dict(civ=c, uses=1, last_at=now - 1) for c in used]
+		for seed in range(20):
+			pool = picking.select_pool(history, now, random.Random(seed))
+			assert len(pool) == len(set(pool)) == 12
+			assert len(set(pool) & set(picking.BASE_CIVS)) == 8
+			assert len(set(pool) & set(picking.PAID_DLC_CIVS)) == 4
+			assert not set(pool) & set(picking.bonus_civs(now))
 
 
 def test_only_successful_claim_spends_choice_and_random_is_unlimited():
@@ -625,17 +653,18 @@ def test_pick_history_is_channel_scoped_and_uses_rolling_acceptance_time(monkeyp
 	monkeypatch.setattr(picking.random, 'shuffle', lambda _items: None)
 	async def run():
 		await start(2)
+		chosen = (await store.get(10, 123))['state']['options'][0]
 		clock.now = 1100
 		await pick(1, 0)
 		assert next(iter(db.history.values()))['at'] == 1100
 		await start(2, channel=20)
-		assert picking.CIVS[0] in (await store.get(20, 123))['state']['options']
+		assert chosen in (await store.get(20, 123))['state']['options']
 		clock.now = 1100 + 86400
 		await start(2, redo=True)
-		assert picking.CIVS[0] not in (await store.get(10, 123))['state']['options']
+		assert chosen not in (await store.get(10, 123))['state']['options']
 		clock.now += 31
 		await start(2, redo=True)
-		assert picking.CIVS[0] in (await store.get(10, 123))['state']['options']
+		assert chosen in (await store.get(10, 123))['state']['options']
 		assert not db.history
 	asyncio.run(run())
 

@@ -4,17 +4,23 @@ from datetime import datetime
 
 # Standard AoE2 DE multiplayer catalog, including The Viking Sagas.
 # https://www.ageofempires.com/news/faq-the-viking-sagas/
-# Deliberately excludes Chronicles and Return of Rome civilizations.
+# Excludes Chronicles and the separate Return of Rome game-mode civilizations.
 DLC_CIVS = ('Danes', 'Saxons', 'Varangians')
 # One fixed calendar month in the community's time zone; restarts never extend it.
 DLC_TRIAL_START = int(datetime.fromisoformat('2026-09-23T00:00:00+05:30').timestamp())
 DLC_TRIAL_END = int(datetime.fromisoformat('2026-10-23T00:00:00+05:30').timestamp())
-CIVS = tuple(sorted("""Armenians,Aztecs,Bengalis,Berbers,Bohemians,Britons,Bulgarians,
+# Lords of the West, Dawn of the Dukes and Dynasties of India are included
+# with the base game, including for existing owners, since November 14, 2024.
+# https://www.ageofempires.com/news/celebrate-5-years-of-age-ii-de-with-a-fresh-deal-for-new-players/
+BASE_CIVS = tuple(sorted("""Aztecs,Bengalis,Berbers,Bohemians,Britons,Bulgarians,
 Burgundians,Burmese,Byzantines,Celts,Chinese,Cumans,Dravidians,Ethiopians,Franks,
-Georgians,Goths,Gurjaras,Hindustanis,Huns,Incas,Italians,Japanese,Jurchens,Khitan,
-Khmer,Koreans,Lithuanians,Magyars,Malay,Malians,Mapuche,Mayans,Mongols,Muisca,
-Persians,Poles,Portuguese,Romans,Saracens,Shu,Sicilians,Slavs,Spanish,Tatars,
-Teutons,Turks,Tupi,Vietnamese,Vikings,Wei,Wu""".replace("\n", "").split(",") + list(DLC_CIVS)))
+Goths,Gurjaras,Hindustanis,Huns,Incas,Italians,Japanese,Khmer,Koreans,Lithuanians,
+Magyars,Malay,Malians,Mayans,Mongols,Persians,Poles,Portuguese,Saracens,Sicilians,
+Slavs,Spanish,Tatars,Teutons,Turks,Vietnamese,Vikings""".replace("\n", "").split(",")))
+PAID_DLC_CIVS = tuple(sorted((
+	'Armenians', 'Georgians', 'Jurchens', 'Khitan', 'Mapuche', 'Muisca',
+	'Romans', 'Shu', 'Tupi', 'Wei', 'Wu', *DLC_CIVS)))
+CIVS = tuple(sorted((*BASE_CIVS, *PAID_DLC_CIVS)))
 # Persisted button/choice ID: keep Random at 12 even when bonus civs are offered.
 RANDOM = 12
 
@@ -29,7 +35,7 @@ def bonus_civs(now):
 
 
 def select_pool(history, now, rng=None):
-	"""Fill only the shortage with repeats; shuffle ties and the displayed order."""
+	"""Eight base + four paid civs; fill each group's shortage with least-used repeats."""
 	rng = rng or random
 	recent = {}
 	for row in history:
@@ -37,10 +43,12 @@ def select_pool(history, now, rng=None):
 		uses, last_at = recent.get(key, (0, 0))
 		recent[key] = (uses + int(row['uses']), max(last_at, int(row['last_at'])))
 	bonus = bonus_civs(now)
-	candidates = [c for c in CIVS if c not in bonus]
-	rng.shuffle(candidates)
-	candidates.sort(key=lambda c: recent.get(civ_key(c), (0, 0)))
-	pool = candidates[:12]
+	pool = []
+	for catalog, count in ((BASE_CIVS, 8), (PAID_DLC_CIVS, 4)):
+		candidates = [c for c in catalog if c not in bonus]
+		rng.shuffle(candidates)
+		candidates.sort(key=lambda c: recent.get(civ_key(c), (0, 0)))
+		pool.extend(candidates[:count])
 	rng.shuffle(pool)
 	return pool
 
