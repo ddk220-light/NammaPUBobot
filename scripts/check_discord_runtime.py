@@ -103,6 +103,8 @@ async def main():
 	roster = [dict(id=i + 1, team=i % 2) for i in range(8)]
 	for when, lengths in [(1000, [5, 5, 3]), (picking.DLC_TRIAL_START, [5, 5, 3, 3])]:
 		state = picking.new_round(roster, picking.select_pool([], when), 1, when, 3)
+		assert len(set(state['options']) & set(picking.BASE_CIVS)) == 8
+		assert len(set(state['options']) & set(picking.PAID_DLC_CIVS)) == 4
 		embed, view = card(123, state)
 		assert [len(row['components']) for row in view.to_components()] == lengths
 		assert view.is_persistent() and not view.auto_defer and not view.prevent_update

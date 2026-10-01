@@ -8,7 +8,9 @@ existing, reworked civilization and remain in the regular catalog.
 
 From deployment through October 22, 2026 in Asia/Kolkata, `/civpick` offers the
 usual 12 civilizations and unlimited Random, followed by a separate row of the
-three new DLC civilizations. These three never take a slot in the normal 12
+three new DLC civilizations. Since September 30, the normal twelve are eight
+base-game and four paid-DLC civs, shuffled together without group labels. These
+three bonus civs never take a slot in the normal 12
 during the trial, and appear regardless of recent picks. Each can be claimed by
 only one player per round, using the existing atomic first-successful-claim rule.
 Players choose a civilization they own; there is no account ownership lookup.
