@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
+test-results/
+playwright-report/
+evidence/private/
+
+# Operational data, captures and logs stay private. Publish reviewed prose and
+# the empty billing example explicitly; never commit a live billing snapshot.
+ops/*
+!ops/*.md
+!ops/migration-budget.example.json
+.DS_Store
+._*
+wrangler.operator.json

@@ -1,0 +1,53 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "community-gaming-local",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-12",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "dist/web",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/auth/*", "/interactions", "/health", "/statistics/*", "/ops/*", "/connectors/*"],
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 0.1, "invocation_logs": false },
+  },
+  "durable_objects": {
+    "bindings": [
+      { "name": "COMMUNITIES", "class_name": "Community" },
+      { "name": "AUTH", "class_name": "AuthStore" },
+      { "name": "DISCORD_GATE", "class_name": "DiscordGate" },
+      { "name": "VOICE_PRESENCE", "class_name": "VoicePresence" },
+    ],
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Community", "AuthStore"] },
+    { "tag": "v2", "new_sqlite_classes": ["DiscordGate"] },
+    { "tag": "v3", "new_sqlite_classes": ["VoicePresence"] },
+  ],
+  "vars": { "APP_ENV": "local", "APP_ORIGIN": "http://localhost:8787" },
+  "env": {
+    "staging": {
+      "name": "community-gaming-staging",
+      "vars": {
+        "APP_ENV": "staging",
+        "APP_ORIGIN": "https://community-gaming-staging.deepakdhanavel.workers.dev",
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "COMMUNITIES", "class_name": "Community" },
+          { "name": "AUTH", "class_name": "AuthStore" },
+          { "name": "DISCORD_GATE", "class_name": "DiscordGate" },
+          { "name": "VOICE_PRESENCE", "class_name": "VoicePresence" },
+        ],
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["Community", "AuthStore"] },
+        { "tag": "v2", "new_sqlite_classes": ["DiscordGate"] },
+        { "tag": "v3", "new_sqlite_classes": ["VoicePresence"] },
+      ],
+    },
+  },
+}

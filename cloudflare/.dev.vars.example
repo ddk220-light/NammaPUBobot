@@ -1,0 +1,12 @@
+# Separate staging Discord application. Never use the Railway production token.
+DISCORD_APPLICATION_ID=
+DISCORD_PUBLIC_KEY=
+DISCORD_CLIENT_SECRET=
+DISCORD_BOT_TOKEN=
+# Required by the standalone operator installer for private backups/imports.
+# Generate a private random 32-byte hexadecimal key; leave blank for local-only development.
+OPS_TOKEN=
+# Optional trusted game-end adapter key. Leave absent when no connector is deployed.
+CONNECTOR_TOKEN=
+# APP_ORIGIN must match the registered Discord OAuth redirect origin.
+# For local development, override APP_ORIGIN=http://localhost:8787.
