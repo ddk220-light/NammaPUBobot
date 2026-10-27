@@ -5,18 +5,14 @@ import { mapSettingsSchema } from './maps';
 export const snowflake = z.string().regex(/^\d{17,20}$/, 'Enter a Discord ID.');
 const id = z.uuid();
 const name = z.string().trim().min(1).max(80);
-export const catalog = [
-  { id: 'aoe2', name: 'Age of Empires II' },
-  { id: 'aoe3', name: 'Age of Empires III' },
-  { id: 'aoe4', name: 'Age of Empires IV' },
-  { id: 'aom', name: 'Age of Mythology' },
-  { id: 'generals', name: 'Command & Conquer Generals' },
-] as const;
+export { gameCatalog as catalog } from '../games/catalog';
+import { gameCapabilities } from '../games/catalog';
 
 export const gameSchema = z
   .object({
     id,
     name,
+    connector: z.object({ enabled: z.boolean() }).strict().optional(),
     catalogId: z.enum(['aoe2', 'aoe3', 'aoe4', 'aom', 'generals']).nullable(),
     records: z
       .object({
@@ -130,6 +126,11 @@ export const settingsSchema = z
       catalogs = new Set<string>(),
       defaults = new Set<string>();
     for (const g of s.games) {
+      if (g.connector?.enabled && !gameCapabilities(g.catalogId)?.lobby)
+        ctx.addIssue({
+          code: 'custom',
+          message: 'No lobby connector is available for this game; use manual play.',
+        });
       const taxMinutes = new Set(
         s.queues
           .filter((q) => q.gameId === g.id && q.modules.gold && q.economy?.taxEnabled)

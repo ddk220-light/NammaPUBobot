@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { LobbyBinding } from './lobby';
 import { snowflake, type Queue } from './config';
 import { defaultRatingSettings, type Player } from './rating';
 import type { MapRound } from './maps';
@@ -40,6 +41,8 @@ export interface Match {
     games: number;
   }[];
   mapRound?: MapRound;
+  rosterVersion?: number;
+  lobby?: LobbyBinding;
 }
 export const personSchema = z
   .object({
@@ -88,7 +91,11 @@ export const actionSchema = z
       'map_vote',
       'map_pick',
       'map_redo',
+      'lobby_attach',
+      'lobby_unlink',
+      'lobby_status',
     ]),
+    reference: z.string().trim().min(1).max(300).optional(),
     queue: z.string().max(100).optional(),
     target: personSchema.optional(),
     replacement: personSchema.optional(),

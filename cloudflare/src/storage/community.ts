@@ -1,3 +1,6 @@
+import { gameAdapter } from '../games/registry';
+import { recordActionSchema } from '../domain/records';
+import type { LobbyEvent } from '../domain/lobby';
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env';
 import { settingsSchema, normalizeDefaults, type Settings, type Snapshot } from '../domain/config';
@@ -19,7 +22,7 @@ export class Community extends DurableObject<Env> {
       const version = sql
         .exec<{ version: number }>('SELECT version FROM schema_version')
         .toArray()[0]?.version;
-      if (version && ![1, 2, 3, 4, 5].includes(version))
+      if (version && ![1, 2, 3, 4, 5, 6].includes(version))
         throw new Error('Unsupported storage schema.');
       if (!version) sql.exec('INSERT INTO schema_version (version) VALUES (1)');
       sql.exec(
@@ -48,7 +51,7 @@ export class Community extends DurableObject<Env> {
             sql.exec('UPDATE queues SET config=? WHERE id=?', JSON.stringify(q), q.id);
           }
       }
-      sql.exec('UPDATE schema_version SET version=5');
+      sql.exec('UPDATE schema_version SET version=6');
     });
     this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
     this.recordStore.backfill();
@@ -146,6 +149,7 @@ export class Community extends DurableObject<Env> {
     });
     if (result.ok) {
       this.ctx.storage.transactionSync(() => this.playStore.configure(result.snapshot.settings));
+      this.playStore.reconcileLobbies();
       this.recordStore.configure(guildId, old);
       await this.playStore.schedule();
     }
@@ -274,11 +278,63 @@ export class Community extends DurableObject<Env> {
       };
     }
   }
+  async linkGameProfile(guild: string, input: RecordAction, actor: string, admin: boolean) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false, content: 'Recovery copy is read-only.' };
+    const action = recordActionSchema.parse(input);
+    if (
+      !['link', 'reassign'].includes(action.kind) ||
+      (!admin && (action.userId !== actor || action.kind !== 'link'))
+    )
+      return { ok: false, content: 'Only organizers can assign another player’s profile.' };
+    const game = this.read(guild).settings.games.find((g) => g.id === action.gameId);
+    const adapter = game?.connector?.enabled ? gameAdapter(game.catalogId) : undefined;
+    if (!adapter || !action.externalId)
+      return { ok: false, content: 'Enable an available game connector first.' };
+    const found = await adapter.profile(action.externalId);
+    if (found.status !== 'ok')
+      return {
+        ok: false,
+        content:
+          found.status === 'not_found'
+            ? 'Public profile not found. Check its ID.'
+            : 'Profile provider unavailable; nothing was changed. Try again later.',
+      };
+    try {
+      const current = this.read(guild).settings.games.find((g) => g.id === action.gameId);
+      if (!current?.connector?.enabled || current.catalogId !== adapter.id)
+        throw new PlayError('Game settings changed. Try again.');
+      const result = this.recordStore.action(
+        guild,
+        {
+          ...action,
+          provider: adapter.profileProvider,
+          url: found.value.url,
+          externalId: found.value.id,
+        },
+        actor,
+        admin,
+        true,
+      );
+      this.playStore.reconcileLobbies(action.gameId);
+      await this.playStore.schedule();
+      return result;
+    } catch (error) {
+      return {
+        ok: false,
+        content:
+          error instanceof PlayError ? error.message : 'Profile could not be saved. Try again.',
+      };
+    }
+  }
   async recordAction(guild: string, action: RecordAction, actor: string, admin: boolean) {
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
       return { ok: false as const, content: 'Recovery copy is read-only.', status: 409 };
     try {
       const result = this.recordStore.action(guild, action, actor, admin);
+      if (['link', 'unlink', 'reassign'].includes(action.kind))
+        this.playStore.reconcileLobbies(action.gameId);
       await this.playStore.schedule();
       return result;
     } catch (error) {
@@ -367,8 +423,11 @@ export class Community extends DurableObject<Env> {
         if (required.some((name) => !Array.isArray(backup.tables[name])))
           throw Error('Incomplete backup manifest.');
         const sourceVersion = backup.tables.schema_version[0]?.version;
-        if (sourceVersion === 5 && [...known].some((name) => !Array.isArray(backup.tables[name])))
-          throw Error('Incomplete backup manifest; all schema-5 community tables are required.');
+        if (
+          [5, 6].includes(Number(sourceVersion)) &&
+          [...known].some((name) => !Array.isArray(backup.tables[name]))
+        )
+          throw Error('Incomplete backup manifest; all schema-5/6 community tables are required.');
         for (const [table, rows] of Object.entries(backup.tables)) {
           if (
             table.startsWith('_') ||
@@ -402,7 +461,7 @@ export class Community extends DurableObject<Env> {
         const version = sql
           .exec<{ version: number }>('SELECT version FROM schema_version')
           .toArray()[0]?.version;
-        if (![4, 5].includes(version!)) throw Error('Unsupported backup schema version.');
+        if (![4, 5, 6].includes(version!)) throw Error('Unsupported backup schema version.');
         const imbalance = sql
           .exec(
             'SELECT w.user_id FROM wallets w LEFT JOIN gold_ledger l ON l.game_id=w.game_id AND l.user_id=w.user_id GROUP BY w.game_id,w.user_id HAVING w.balance != COALESCE(SUM(l.amount),0) LIMIT 1',
@@ -455,16 +514,16 @@ export class Community extends DurableObject<Env> {
       };
     }
   }
-  async connectorEnded(
-    guild: string,
-    channel: string,
-    matchId: string,
-    event: string,
-    round: number,
-  ) {
+  async pollLobbies(guild: string) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly')) return;
+    await this.playStore.pollLobbies(guild);
+  }
+  async connectorEnded(guild: string, event: LobbyEvent) {
+    this.identity(guild);
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
       return { accepted: false, reason: 'recovery_read_only' };
-    const result = this.playStore.connectorEnded(guild, channel, matchId, event, round);
+    const result = this.playStore.connectorEnded(guild, event);
     await this.playStore.schedule();
     return result;
   }

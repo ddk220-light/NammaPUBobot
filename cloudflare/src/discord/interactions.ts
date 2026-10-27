@@ -207,6 +207,73 @@ async function playInteraction(
     channelId: i.channel_id,
     admin: canManage(member),
   };
+  if (i.type === 2 && i.data?.name === 'lobby') {
+    if (!ctx || !i.token) return ephemeral('Use a current lobby command.');
+    const sub = i.data.options?.[0],
+      options = sub?.options ?? [];
+    const option = (name: string) => options.find((o) => o.name === name)?.value;
+    if (!['attach', 'unlink', 'status', 'link'].includes(sub?.name ?? ''))
+      return ephemeral('Choose attach, unlink, status or link.');
+    // Acknowledge first. Profile resolution and provider work run after the deferred response.
+    ctx.waitUntil(
+      (async () => {
+        let content = 'Lobby action failed. Check its status before retrying.';
+        const stub = env.COMMUNITIES.getByName(i.guild_id!);
+        try {
+          if (sub!.name === 'link') {
+            const s = await stub.read(i.guild_id!),
+              qs = s.settings.queues.filter((q) => q.channelId === i.channel_id);
+            const name = String(option('queue') ?? '').toLowerCase();
+            const q = name
+              ? qs.find(
+                  (q) =>
+                    q.id === name ||
+                    q.name.toLowerCase() === name ||
+                    q.aliases?.some((a) => a.toLowerCase() === name),
+                )
+              : (qs.find((q) => q.isDefault) ?? (qs.length === 1 ? qs[0] : undefined));
+            if (!q) throw new PlayError('Choose a queue in this channel.');
+            const input = recordActionSchema.parse({
+              id: i.id,
+              kind: 'link',
+              gameId: q.gameId,
+              userId: option('user') ?? actor.id,
+              externalId: option('profile_id'),
+            });
+            content = (await stub.linkGameProfile(i.guild_id!, input, actor.id, canManage(member)))
+              .content;
+          } else {
+            const input = actionSchema.parse({
+              ...action,
+              kind: `lobby_${sub!.name}`,
+              ...(option('match') ? { matchId: option('match') } : {}),
+              ...(option('reference') ? { reference: option('reference') } : {}),
+            });
+            const reply = await stub.play(i.guild_id!, input);
+            content = reply.content;
+          }
+        } catch (error) {
+          content =
+            error instanceof PlayError
+              ? error.message
+              : 'Use valid lobby, match and profile options.';
+        }
+        try {
+          await fetch(
+            `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${i.token}/messages/@original`,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
+              signal: AbortSignal.timeout(5000),
+            },
+          );
+        } catch {}
+        await stub.flush();
+      })(),
+    );
+    return Response.json({ type: 5, data: { flags: 64 } });
+  }
   if (i.type === 2 && i.data?.name === 'rally') {
     if (!ctx || !i.token) return ephemeral('Use a current rally command.');
     const options = i.data.options ?? [],

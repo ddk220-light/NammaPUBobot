@@ -536,6 +536,7 @@ describe('delivery and signed surfaces', () => {
       'add',
       'remove',
       'queue',
+      'lobby',
       'teams',
       'rally',
       'gold',

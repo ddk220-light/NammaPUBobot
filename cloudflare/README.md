@@ -1,6 +1,6 @@
 # Community Games · Cloudflare 0.8
 
-**Work-in-progress handoff, 26 October 2026:** this branch captures the existing Cloudflare app and a draft AoE2 adapter. The adapter is not connected to commands, saved matches or polling, and is not a completed lobby feature. Start with [the handoff](docs/lobby-integration-handoff.md) and [remaining feature plan](ops/remaining-features-plan.md).
+**Lobby integration, 27 October 2026 UTC:** the first backlog item is deployed to the Cloudflare test installation: optional game connectors, profile linking, explicit lobby attachment, durable start/end evidence and manual report prompts. Three live Discord match/economy demos passed with simulated player actions. Actual AoE2 lobby acceptance remains pending, and live occupancy is unavailable. See [deployment evidence](ops/live-demo-2026-10-27.md), [implementation and acceptance](docs/lobby-integration-handoff.md), and the [remaining feature plan](ops/remaining-features-plan.md).
 
 Friends join queues, check in, receive teams and report results in Discord. Organizers configure communities and games in the web app. Each community has its own transactional SQLite Durable Object; queues for the same game share ratings and gold. Catalog and custom games use the same matchmaking behavior.
 
@@ -57,6 +57,11 @@ The optional Thursday tax is off by default, protects 500 gold, grants initial s
 
 ## Deploy your own copy
 
+For agent access to the existing test installation, see the
+[credential and permission setup](docs/agent-access-setup.md), including reading
+Discord conversation history and the distinction between Codex network secrets
+and deployed Worker secrets.
+
 Follow [the operator guide](docs/operator-guide.md). Generate a standalone configuration for your account and use your own Discord application, secrets and storage namespaces. No hosted service or existing bot token is shared. Guild commands can be registered for testing before global registration.
 
 ```sh
@@ -72,7 +77,7 @@ Only the operator creates credentials or accepts provider terms. Base bot permis
 
 Settings revisions reject stale saves. Actions, ratings, bets, payouts, map ballots, deadlines and outgoing work commit together. A shared Discord rate gate coordinates requests. Domain effects are idempotent; Discord delivery uses nonces, bounded reconciliation and visible blocked states when an outcome remains uncertain.
 
-Schema epoch 5 is a forward upgrade from M4 epoch 4. Do not redeploy the old M4 bundle after accepting new feature writes. Use a compatible forward fix, or a reviewed snapshot recovery with one active writer. See [recovery and migration](docs/operator-guide.md#backups-and-recovery).
+Schema epoch 6 adds lobby bindings and shared scheduling to epoch 5. Do not redeploy an epoch-5 or older bundle after accepting epoch-6 writes. Use a compatible forward fix, or a reviewed snapshot recovery with one active writer. See [recovery and migration](docs/operator-guide.md#backups-and-recovery).
 
 Operational backup/restore is private, bearer-protected and separate from community settings. Restore accepts only an empty nonproduction object and leaves it read-only, with alarms and Discord delivery disabled. It is a rehearsal/inspection tool, not an automatic failover switch. OAuth sessions are excluded; users sign in again. Backup files contain private community data and must remain private. There are no organizer-facing settings export/restore controls.
 
@@ -80,7 +85,7 @@ Operational backup/restore is private, bearer-protected and separate from commun
 
 The workerd suite uses real SQLite Durable Objects and mocked Discord transport. It covers queue races, readiness, substitutions, stale controls, expiry, restart recovery, money invariants, map votes, story snapshots and tenant isolation. The 1,000-community local rehearsal checks isolation; its timing is not production latency or billing evidence. Live Discord/web acceptance is recorded separately under `ops/`.
 
-No game API polling, paid AI generation, voice audio or always-live web subscriptions are enabled by this release. `/connectors/game-ended` is an optional authenticated prompt hook; actual game/session adapters remain separate work.
+Game API polling is off by default and runs only for attached active games with a supported connector enabled. No paid AI generation, voice audio or always-live game socket is started. `/lobby link`, `/lobby attach`, `/lobby status` and `/lobby unlink` use the shared game journey. `/connectors/game-ended` is an optional authenticated, binding-checked prompt hook; it never records a result or closes betting.
 
 `npm run cost:check -- BILLING_SNAPSHOT.json` validates the requested $50 cumulative migration warning. It needs dated project-attributed billing data, including storage/backups and staging/production, excluding Railway. Null means unavailable. Connecting the collector/notification path remains a release gate if account access is unavailable; the helper alone is not active monitoring. Never infer actual cost from a load test or included allowances.
 

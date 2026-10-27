@@ -1,3 +1,4 @@
+import { lobbySummary } from '../domain/lobby';
 import type { Queue } from '../domain/config';
 import type { Match } from '../domain/play';
 
@@ -177,7 +178,7 @@ export function matchCard(match: Match): Card {
     embeds: [
       {
         title,
-        description: text,
+        description: match.lobby ? `${text}\n\n${lobbySummary(match.lobby)}` : text,
         color: match.state === 'finished' ? 0xb9e77c : 0x648c78,
         footer: { text: 'Community Games' },
       },

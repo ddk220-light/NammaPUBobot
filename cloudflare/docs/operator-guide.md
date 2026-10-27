@@ -1,5 +1,9 @@
 # Independent operator deployment and recovery
 
+For access to the existing Cloudflare test deployment, use the consolidated
+[agent access setup](agent-access-setup.md) for credential names, Codex network
+secrets, Worker secrets, Discord history permissions and verification steps.
+
 ## Deployment boundary
 
 One installation owns a Cloudflare account, a Worker and its Durable Object namespaces, a Discord application and an interaction endpoint. Community/game identifiers scope ratings and gold. Do not point two applications or Workers at shared active state. The default application has no game API requirement. No PostgreSQL, Neon, Redis or paid AI service is needed for this edition.
@@ -34,7 +38,7 @@ Player and captain commands are unchanged. The previous administrator command pa
 
 1. Install Node 22.12+ and run `npm ci` and `npm run check` in the release directory. Run the two Python converter test scripts if you will import legacy history.
 2. Create your own Cloudflare account or use an existing one. Run `npx wrangler login`. Review the account/plan yourself; this guide does not enroll you in a paid plan.
-3. Create your own Discord application and bot. Record its application ID, public key, OAuth client secret and bot token in a private local environment file. Leave privileged intents off. Generate a 32-byte random hexadecimal `OPS_TOKEN` locally; it protects operator backups/imports. `CONNECTOR_TOKEN` is optional and should exist only when an adapter is used. Never put these files in Git or chat.
+3. Create your own Discord application and bot. Record its application ID, public key, OAuth client secret and bot token in a private local environment file. Privileged intents are unnecessary for the default slash/button flows; reading ordinary channel conversation additionally requires Message Content Intent as described in the [agent access setup](agent-access-setup.md#enable-message-content-intent-to-read-the-conversation). Generate a 32-byte random hexadecimal `OPS_TOKEN` locally; it protects operator backups/imports. `CONNECTOR_TOKEN` is optional and should exist only when an adapter is used. Never put these files in Git or chat.
 4. Generate a unique configuration:
 
    ```sh
@@ -86,7 +90,7 @@ Store a dated checkpoint and SQL backup before upgrades/imports and after each c
 
 Restore rejects a populated object and foreign community ID, verifies known tables/columns and checks every wallet against its ledger. The checksum CLI detects file damage before transmission. The restored copy is read-only: no settings/import/results/actions, alarms, rewards/tax or Discord delivery. It preserves source app identity for inspection. Do not remove this guard to make a recovered bot live; that needs a separate reviewed activation/cutover process with app/message remapping and exactly one writer.
 
-For a failed deployment, first pause new admissions, inspect request IDs/blocked work, and take a backup. Epoch 5 includes additive tables and new match semantics. Redeploying M4 against epoch 5 is unsafe and deliberately rejected. Prefer a compatible forward repair. Rewinding data after paid settlements or newer games can lose accepted actions; reconcile those changes and obtain cutover approval first. The existing Railway production bot remains the rollback service during this pilot.
+For a failed deployment, first pause new admissions, inspect request IDs/blocked work, and take a backup. Epoch 6 adds lobby bindings and shared scheduling to epoch 5's additive tables and match semantics. Do not redeploy an epoch-5 or older bundle against data that has accepted epoch-6 writes; prefer a compatible forward repair. Rewinding data after paid settlements or newer games can lose accepted actions; reconcile those changes and obtain cutover approval first. The existing Railway production bot remains the rollback service during this pilot.
 
 ## Legacy migration rehearsal
 
@@ -130,3 +134,9 @@ The current saved Wrangler credential may not grant the billing API. If denied, 
 - [ ] Production freeze/delta/reconciliation/cutover/rollback approval complete before switching the old bot.
 
 Reference: [Cloudflare SQLite storage and PITR](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/), [Durable Object alarms](https://developers.cloudflare.com/durable-objects/api/alarms/), [Discord interactions](https://docs.discord.com/developers/interactions/receiving-and-responding), [Gateway](https://docs.discord.com/developers/events/gateway), and [Durable Object pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/).
+
+## Optional game lobby connectors
+
+Lobby support defaults off per game. See [the lobby journey, capability matrix and extension contract](lobby-integration-handoff.md) before enabling it. Only the AoE2 HTTP adapter is implemented; live occupancy remains unavailable. Local/hosted egress must permit HTTPS to `data.aoe2companion.com`. Profile existence checks do not prove account ownership.
+
+The first lobby upgrade uses schema epoch 6 and a versioned, binding-checked external completion hook; update any old hook caller before testing. Internal polling needs no hook token. Use isolated staging to validate an actual game's start/end, restart and manual report journey before release. Do not register commands, deploy or migrate production as a side effect of running local tests.

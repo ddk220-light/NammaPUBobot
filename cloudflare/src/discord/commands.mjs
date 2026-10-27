@@ -69,6 +69,29 @@ const operations = [
       ]),
     ],
   },
+  {
+    name: 'lobby',
+    description: 'Link a game profile and track your match lobby',
+    type: 1,
+    options: [
+      sub('attach', 'Captain/admin: attach a lobby to this match', [
+        {
+          name: 'reference',
+          description: 'Lobby ID or supported HTTPS lobby link',
+          type: 3,
+          required: true,
+        },
+        match,
+      ]),
+      sub('unlink', 'Captain/admin: stop tracking the attached lobby', [match]),
+      sub('status', 'Show saved lobby evidence and manual fallback', [match]),
+      sub('link', 'Declare your game profile (does not prove account ownership)', [
+        { name: 'profile_id', description: 'Public game profile ID', type: 3, required: true },
+        queue,
+        { ...user, description: 'Organizer only: assign this player’s profile' },
+      ]),
+    ],
+  },
   { name: 'teams', description: 'Show saved teams and captains', type: 1, options: [match] },
   {
     name: 'rally',

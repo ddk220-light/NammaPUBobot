@@ -26,4 +26,6 @@ export interface GameAdapter {
   profile(id: string): Promise<ProviderResult<{ id: string; name: string; url: string }>>;
   observe(id: string, started: boolean): Promise<ProviderResult<LobbyObservation>>;
   joinUri(id: string): string;
+  /** HTTPS landing page suitable for Discord link buttons. */
+  lobbyUrl(id: string): string;
 }

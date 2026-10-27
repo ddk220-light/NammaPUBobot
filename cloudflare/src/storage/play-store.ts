@@ -1,3 +1,5 @@
+import { LobbyStore } from './lobby-store';
+import type { LobbyEvent } from '../domain/lobby';
 import type { Env } from '../env';
 import type { Queue, Snapshot, Settings } from '../domain/config';
 import {
@@ -142,44 +144,54 @@ export class PlayStore {
   private get economy() {
     return new EconomyStore(this.sql);
   }
-  connectorEnded(guild: string, channel: string, matchId: string, event: string, round: number) {
-    this.read(guild);
-    return this.ctx.storage.transactionSync(() => {
-      const m = this.match(matchId);
-      if (
-        m.queue.channelId !== channel ||
-        m.version !== round ||
-        m.state !== 'playing' ||
-        (m.expiresAt !== undefined && Date.now() >= m.expiresAt)
-      )
-        return { accepted: false, reason: 'stale_or_closed' };
-      const id = `end:${matchId}:${round}`;
-      if (
-        this.sql
-          .exec(
-            'SELECT 1 FROM control_audit WHERE action=? AND match_id=?',
-            'game_end_prompt',
-            matchId,
-          )
-          .toArray().length
-      )
-        return { accepted: false, reason: 'already_prompted' };
-      this.audit('game_end_prompt', 'connector', { event }, matchId, m.queue.id);
-      this.enqueue(id, channel, {
-        content: 'Game finished. Losing captain: report your loss below.',
-        embeds: [],
-        components: [
-          {
-            type: 1,
+  private get lobbies() {
+    return new LobbyStore(
+      this.ctx,
+      () => {
+        const guild = this.sql
+          .exec<{ guild_id: string }>('SELECT guild_id FROM community WHERE id=1')
+          .toArray()[0].guild_id;
+        return this.read(guild).settings;
+      },
+      {
+        match: (id) => this.match(id),
+        save: (m) => this.saveMatch(m),
+        audit: (action, actor, details, m) => this.audit(action, actor, details, m.id, m.queue.id),
+        prompt: (m, event) =>
+          this.enqueue(`end:${m.id}:${event.bindingId}`, m.queue.channelId, {
+            content:
+              'Game finished; declared profiles and teams match. Losing captain: report your loss below.',
+            embeds: [],
             components: [
-              { type: 2, style: 4, label: 'Report loss', custom_id: `m:${m.id}:${m.version}:loss` },
+              {
+                type: 1,
+                components: [
+                  {
+                    type: 2,
+                    style: 4,
+                    label: 'Report loss',
+                    custom_id: `m:${m.id}:${m.version}:loss`,
+                  },
+                ],
+              },
             ],
-          },
-        ],
-        allowed_mentions: { parse: [] },
-      });
-      return { accepted: true };
-    });
+            allowed_mentions: { parse: [] },
+          }),
+      },
+    );
+  }
+  connectorEnded(guild: string, event: LobbyEvent) {
+    this.read(guild);
+    if (event.observation?.phase !== 'finished') return { accepted: false, reason: 'not_finished' };
+    return this.lobbies.accept(guild, event);
+  }
+  async pollLobbies(guild: string) {
+    this.read(guild);
+    await this.lobbies.poll(guild);
+    await this.schedule();
+  }
+  reconcileLobbies(gameId?: string) {
+    this.ctx.storage.transactionSync(() => this.lobbies.reconcile(gameId));
   }
   goldView(
     guild: string,
@@ -652,10 +664,18 @@ export class PlayStore {
   }
   private transientIsCurrent(key: string) {
     const [kind, id, round] = key.split(':');
-    if (!['reminder', 'agreement'].includes(kind)) return true;
+    if (!['reminder', 'agreement', 'end'].includes(kind)) return true;
     const row = this.sql.exec<MatchRow>('SELECT config FROM matches WHERE id=?', id).toArray()[0];
     if (!row) return false;
     const m: Match = JSON.parse(row.config);
+    if (kind === 'end')
+      return (
+        m.state === 'playing' &&
+        m.lobby?.id === round &&
+        m.lobby.state === 'observed' &&
+        m.lobby.prompted &&
+        m.lobby.rosterVersion === (m.rosterVersion ?? 0)
+      );
     return kind === 'reminder'
       ? m.state === 'check_in' &&
           !!m.deadline &&
@@ -675,6 +695,7 @@ export class PlayStore {
       this.retireTransient(key);
   }
   private saveMatch(m: Match) {
+    this.lobbies.sync(m);
     this.sql.exec(
       'INSERT INTO matches VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,config=excluded.config',
       m.id,
@@ -688,7 +709,11 @@ export class PlayStore {
     this.recordStore.index(m);
     if (m.state !== 'check_in' || m.ready.length === m.roster.length) this.finishReminders(m);
     for (const { key } of this.sql
-      .exec<{ key: string }>('SELECT key FROM cards WHERE key LIKE ?', `agreement:${m.id}:%`)
+      .exec<{ key: string }>(
+        'SELECT key FROM cards WHERE key LIKE ? OR key LIKE ?',
+        `agreement:${m.id}:%`,
+        `end:${m.id}:%`,
+      )
       .toArray())
       if (!this.transientIsCurrent(key)) this.retireTransient(key);
     if (m.proposal && ['playing', 'check_in'].includes(m.state))
@@ -1302,6 +1327,7 @@ export class PlayStore {
     this.audit('undo', actor, previous, m.id, m.queue.id);
   }
   private rosterChanged(m: Match, actor: string, details: unknown) {
+    m.rosterVersion = (m.rosterVersion ?? 0) + 1;
     m.teams = m.teams.map((t) => t.slice().sort((a, b) => b.rating - a.rating)) as Match['teams'];
     if (m.teams.some((t) => !t.length) || m.roster.length > 16)
       throw new PlayError('Keep two nonempty teams with at most 16 total players.');
@@ -1399,7 +1425,7 @@ export class PlayStore {
     }
     for (const job of this.sql
       .exec<{ key: string; kind: string; match_id: string; due: number }>(
-        'SELECT key,kind,match_id,due FROM deadlines WHERE due<=? ORDER BY due LIMIT 100',
+        "SELECT key,kind,match_id,due FROM deadlines WHERE kind!='lobby' AND due<=? ORDER BY due LIMIT 100",
         now,
       )
       .toArray()) {
@@ -1532,6 +1558,8 @@ export class PlayStore {
     this.remember(a.actor);
     if (a.target) this.remember(a.target);
     if (a.replacement) this.remember(a.replacement);
+    if (['lobby_attach', 'lobby_unlink', 'lobby_status'].includes(a.kind))
+      return this.lobbies.action(this.selectedMatch(a), a);
     if (['map_vote', 'map_pick', 'map_redo'].includes(a.kind)) {
       const m = this.selectedMatch(a),
         round = m.mapRound;
@@ -2494,6 +2522,7 @@ export class PlayStore {
       this.economy.tax();
       await this.schedule();
     });
+    await this.lobbies.poll(guild);
     await this.returnPlayers(guild);
     await this.schedule();
     await this.flush();
@@ -2850,7 +2879,7 @@ export class PlayStore {
           if (!/^\d{17,20}$/.test(message.id)) throw new Error('Invalid message receipt.');
           // A round may end while Discord accepts its HTTP request. Remove that
           // late receipt rather than leave an expired countdown or agreement.
-          const transient = /^(reminder|agreement):/.test(work.key);
+          const transient = /^(reminder|agreement|end):/.test(work.key);
           const currentPointer = transient
             ? this.sql.exec<Pointer>('SELECT * FROM cards WHERE key=?', work.key).toArray()[0]
             : undefined;

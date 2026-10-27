@@ -80,6 +80,12 @@ describe('M10 operator recovery boundaries', () => {
     s.queues[0].modules.predictions = true;
     const m = await fill(s);
     await act('bet', 8, { matchId: m.id, side: 'alpha', stake: 50 });
+    // Quiesce the source writer before observing the recovery copy's network
+    // calls; the live source's independent alarm can otherwise race this spy.
+    await runInDurableObject(stub(), async (_i, state) => {
+      state.storage.kv.put('recoveryReadOnly', true);
+      await state.storage.deleteAlarm();
+    });
     const backup = await stub().operationalBackup(guild);
     const recovered = env.COMMUNITIES.getByName('recovery:test-copy:' + guild);
     expect(await recovered.operationalRestore(guild, backup as any)).toMatchObject({
@@ -144,21 +150,15 @@ describe('M10 operator recovery boundaries', () => {
       ).status,
     ).toBe(403);
   });
-  it('deduplicates trusted game-end prompts and never converts detection into a result', async () => {
+  it('rejects legacy unbound game-end hooks without changing results', async () => {
     const s = settings();
     s.queues[0].checkIn.enabled = false;
     const m = await fill(s);
-    expect(
-      await stub().connectorEnded(guild, m.queue.channelId, m.id, 'test-end', m.version),
-    ).toMatchObject({ accepted: true });
-    expect(
-      await stub().connectorEnded(guild, m.queue.channelId, m.id, 'test-end-again', m.version),
-    ).toMatchObject({ accepted: false });
+    // The former five-field hook cannot identify a bound game/roster generation.
+    expect(await stub().connectorEnded(guild, { matchId: m.id } as never)).toMatchObject({
+      accepted: false,
+    });
     expect((await current()).state).toBe('playing');
     expect((await stub().records(guild)).changes).toEqual([]);
-    await act('recover_abort', 99, { matchId: m.id, admin: true });
-    expect(
-      await stub().connectorEnded(guild, m.queue.channelId, m.id, 'late-end', m.version),
-    ).toMatchObject({ accepted: false });
   });
 });

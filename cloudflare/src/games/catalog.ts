@@ -1,10 +1,11 @@
-/** Draft capabilities, not wired to setup or the server yet. `lobby` describes adapter intent, not feature availability. */
+/** Capabilities shipped by the adapters, not promises about other games. */
 export const gameCatalog = [
   {
     id: 'aoe2',
     name: 'Age of Empires II',
     selection: 'civilization',
     lobby: true,
+    occupancy: false,
     profileProvider: 'aoe2',
   },
   {
@@ -12,6 +13,7 @@ export const gameCatalog = [
     name: 'Age of Empires III',
     selection: 'civilization',
     lobby: false,
+    occupancy: false,
     profileProvider: null,
   },
   {
@@ -19,14 +21,23 @@ export const gameCatalog = [
     name: 'Age of Empires IV',
     selection: 'civilization',
     lobby: false,
+    occupancy: false,
     profileProvider: null,
   },
-  { id: 'aom', name: 'Age of Mythology', selection: 'god', lobby: false, profileProvider: null },
+  {
+    id: 'aom',
+    name: 'Age of Mythology',
+    selection: 'god',
+    lobby: false,
+    occupancy: false,
+    profileProvider: null,
+  },
   {
     id: 'generals',
     name: 'Command & Conquer Generals',
     selection: 'faction',
     lobby: false,
+    occupancy: false,
     profileProvider: null,
   },
 ] as const;

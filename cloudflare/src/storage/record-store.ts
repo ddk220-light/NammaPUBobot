@@ -494,11 +494,17 @@ export class RecordStore {
     input: RecordAction,
     actor: string,
     admin: boolean,
+    existenceChecked = false,
   ): { ok: true; content: string } {
     const a = recordActionSchema.parse(input),
       s = this.read(guild).settings;
     if (!s.games.some((g) => g.id === a.gameId)) throw new PlayError('Game not found.');
-    const fingerprint = canonical({ a, actor, admin });
+    const fingerprint = canonical({
+      a,
+      actor,
+      admin,
+      ...(existenceChecked ? { existenceChecked } : {}),
+    });
     const old = this.sql
       .exec<{ fingerprint: string; result: string }>(
         'SELECT * FROM record_actions WHERE id=?',
@@ -573,7 +579,11 @@ export class RecordStore {
             admin ? 'admin' : 'player',
             Date.now(),
           );
-          content = 'Profile reference saved. It has not been verified against a game API.';
+          content = existenceChecked
+            ? 'Public profile found. Mapping saved as ' +
+              (admin ? 'organizer-assigned' : 'self-declared') +
+              '; account ownership is not verified.'
+            : 'Profile reference saved. It has not been verified against a game API.';
         }
       }
       this.bump();

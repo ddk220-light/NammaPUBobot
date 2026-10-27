@@ -1,3 +1,4 @@
+import { lobbyEventSchema } from './domain/lobby';
 import { Hono, type Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { z } from 'zod';
@@ -245,24 +246,9 @@ app.post('/ops/communities/:guild/economy-import', async (c) => {
 app.post('/connectors/game-ended', async (c) => {
   if (!secretMatches(c.req.header('Authorization')?.replace(/^Bearer /, ''), c.env.CONNECTOR_TOKEN))
     throw new Problem(403, 'connector_required', 'Connector authorization required.');
-  const event = z
-    .object({
-      guildId: snowflake,
-      channelId: snowflake,
-      matchId: z.uuid(),
-      eventId: z.string().min(1).max(100),
-      version: z.number().int().positive(),
-    })
-    .strict()
-    .parse(await readJson(c.req.raw));
-  const stub = c.env.COMMUNITIES.getByName(event.guildId),
-    result = await stub.connectorEnded(
-      event.guildId,
-      event.channelId,
-      event.matchId,
-      event.eventId,
-      event.version,
-    );
+  const event = lobbyEventSchema.parse(await readJson(c.req.raw));
+  const stub = c.env.COMMUNITIES.getByName(event.communityId),
+    result = await stub.connectorEnded(event.communityId, event);
   c.executionCtx.waitUntil(stub.flush());
   return c.json(result);
 });
