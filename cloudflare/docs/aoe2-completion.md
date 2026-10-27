@@ -46,7 +46,7 @@ Discovery coverage includes name/full/count selection, partial occupancy, known-
 
 Earlier coverage includes exclusive simultaneous claims, interaction retries, hidden choices, unlimited Random, timeout/restart, redo authorization and stale buttons, substitutions, partial/conflicting identities, correction rejection, actual-versus-picked civs, undo exclusion, cutoff/refund ledger reconciliation, stale occupancy, Retry-After with a healthy socket, and bounded post-result enrichment. Golden fixtures generated directly from Railway cover all eight banter types and compare candidate data/scores, pre-game phrases and both outcomes across 17 histories.
 
-Deployment and live verification are recorded in [the release evidence](../ops/aoe2-completion-2026-10-27.md). A real human-operated AoE2 start/end, real Discord button/slash clicks, and OAuth sign-in remain live acceptance checks. The user can run that game later; synthetic provider events and signed request fixtures are not presented as a real played game.
+Deployment, enabled queue settings and preservation are recorded in [the 0.10.0 rollout](../ops/auto-lobby-rollout-2026-10-27.md), alongside the [earlier release evidence](../ops/aoe2-completion-2026-10-27.md). A real human-operated AoE2 start/end, real Discord button/slash clicks, and OAuth sign-in remain live acceptance checks. The user can run that game later; synthetic provider events and signed request fixtures are not presented as a real played game.
 
 ## Authorized staging activation
 

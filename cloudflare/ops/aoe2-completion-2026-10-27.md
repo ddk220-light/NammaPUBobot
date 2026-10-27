@@ -1,5 +1,7 @@
 # AoE2 0.9.0 release evidence
 
+**Follow-up:** [0.10.0 automatic attachment and feature activation](auto-lobby-rollout-2026-10-27.md) supersedes this release’s manual-only attachment and disabled-feature settings. The original 0.9.0 evidence below is retained.
+
 27 October 2026 UTC. Implemented behavior and organizer steps are in [AoE2 feature completion](../docs/aoe2-completion.md).
 
 ## Deployed installation
