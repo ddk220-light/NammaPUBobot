@@ -1,4 +1,5 @@
 import type { LobbyObservation, LobbyPlayer } from './types';
+import { normalizeLobbyName } from '../domain/lobby';
 type Row = Record<string, unknown>;
 type Lobby = { data: Row; slots: Map<number, Row>; addedAt: number };
 const idOf = (x: unknown) => (/^[1-9]\d{0,11}$/.test(String(x)) ? String(x) : null);
@@ -6,6 +7,17 @@ const idOf = (x: unknown) => (/^[1-9]\d{0,11}$/.test(String(x)) ? String(x) : nu
 export class AoE2LobbySnapshot {
   private lobbies = new Map<string, Lobby>();
   lastFrameAt = 0;
+  has(id: string) {
+    return this.lobbies.has(id);
+  }
+  named(name: string, now = Date.now()): LobbyObservation[] {
+    return [...this.lobbies.keys()]
+      .map((id) => this.read(id, now))
+      .filter(
+        (o): o is LobbyObservation =>
+          !!o && normalizeLobbyName(o.name) === normalizeLobbyName(name),
+      );
+  }
   clear() {
     this.lobbies.clear();
     this.lastFrameAt = 0;
@@ -19,12 +31,23 @@ export class AoE2LobbySnapshot {
         d = event.data;
       if (!d || typeof d !== 'object') continue;
       const id = idOf(d.matchId);
-      if (!id || !tracked.has(id)) continue;
+      if (!id) continue;
+      const previous = this.lobbies.get(id);
+      const lobbyName = ['lobbyAdded', 'lobbyUpdated'].includes(event.type ?? '')
+        ? (d.name ?? previous?.data.name)
+        : previous?.data.name;
+      const named = tracked.has(`name:${normalizeLobbyName(String(lobbyName ?? ''))}`);
+      if (!tracked.has(id) && !named) {
+        this.lobbies.delete(id);
+        continue;
+      }
       if (event.type === 'lobbyRemoved') {
         this.lobbies.delete(id);
         continue;
       }
       if (event.type === 'lobbyAdded') {
+        if (!this.lobbies.has(id) && this.lobbies.size >= 1000)
+          throw Error('Too many matching lobbies');
         this.lobbies.set(id, { data: { ...d }, slots: new Map(), addedAt: now });
         continue;
       }
@@ -41,7 +64,12 @@ export class AoE2LobbySnapshot {
       if (event.type === 'slotUpdated' && lobby.slots.has(slot))
         Object.assign(lobby.slots.get(slot)!, d);
     }
-    for (const id of this.lobbies.keys()) if (!tracked.has(id)) this.lobbies.delete(id);
+    for (const [id, lobby] of this.lobbies)
+      if (
+        !tracked.has(id) &&
+        !tracked.has(`name:${normalizeLobbyName(String(lobby.data.name ?? ''))}`)
+      )
+        this.lobbies.delete(id);
     this.lastFrameAt = now;
   }
   read(id: string, now = Date.now()): LobbyObservation | null {

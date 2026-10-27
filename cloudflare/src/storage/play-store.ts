@@ -161,12 +161,18 @@ export class PlayStore {
         return this.read(guild).settings;
       },
       {
-        occupancy: async (id) =>
-          (
-            await this.env.AOE2_LOBBIES.getByName(this.env.DISCORD_APPLICATION_ID ?? 'local').query(
-              id,
-            )
-          ).observation,
+        discover: async (adapterId, name) =>
+          adapterId === 'aoe2'
+            ? this.env.AOE2_LOBBIES.getByName(this.env.DISCORD_APPLICATION_ID ?? 'local').discover(
+                name,
+              )
+            : { healthy: false, observations: [] },
+        occupancy: async (id, name) => {
+          const feed = this.env.AOE2_LOBBIES.getByName(this.env.DISCORD_APPLICATION_ID ?? 'local');
+          return name
+            ? ((await feed.discover(name)).observations.find((o) => o.externalId === id) ?? null)
+            : (await feed.query(id)).observation;
+        },
         started: (m, o, eventId) => this.economy.startObserved(m, o.startedAt!, eventId),
         match: (id) => this.match(id),
         save: (m) => this.saveMatch(m),
@@ -1446,7 +1452,7 @@ export class PlayStore {
     }
     for (const job of this.sql
       .exec<{ key: string; kind: string; match_id: string; due: number }>(
-        "SELECT key,kind,match_id,due FROM deadlines WHERE kind!='lobby' AND due<=? ORDER BY due LIMIT 100",
+        "SELECT key,kind,match_id,due FROM deadlines WHERE kind NOT IN ('lobby','lobby_discovery') AND due<=? ORDER BY due LIMIT 100",
         now,
       )
       .toArray()) {

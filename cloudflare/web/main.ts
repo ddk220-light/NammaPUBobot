@@ -638,7 +638,7 @@ function setupSection() {
     }</span></div>`;
   const inaccessible = [...configured].filter((id) => !channelList.some((c) => c.id === id));
   return `<section class="panel"><div class="section-heading"><h2>Games</h2></div><p class="muted">Add a catalog game or your own. Each game keeps separate ratings and gold.</p>
-    <div class="game-list">${snapshot!.settings.games.map((g) => `<form data-kind="rename" data-id="${g.id}" class="game-row"><label class="sr-only" for="game-${g.id}">Game name</label><input id="game-${g.id}" name="name" maxlength="80" required value="${escape(g.name)}" />${gameCapabilities(g.catalogId)?.lobby ? `<label><input type="checkbox" name="lobbyConnector"${g.connector?.enabled ? ' checked' : ''} /> Track lobby start/end (manual results)</label>` : '<span class="muted">Manual lobby and result reporting</span>'}<button>Save game</button></form>`).join('') || '<p class="empty-state">Add your first game to create a queue.</p>'}</div>
+    <div class="game-list">${snapshot!.settings.games.map((g) => `<form data-kind="rename" data-id="${g.id}" class="game-row"><label class="sr-only" for="game-${g.id}">Game name</label><input id="game-${g.id}" name="name" maxlength="80" required value="${escape(g.name)}" />${gameCapabilities(g.catalogId)?.lobby ? `<label><input type="checkbox" name="lobbyConnector"${g.connector?.enabled ? ' checked' : ''} /> Track lobby start/end (manual results)</label><label><input type="checkbox" name="autoLobby"${g.connector?.autoAttach ? ' checked' : ''} /> Automatically attach matching public lobby</label><label>Lobby name<input name="lobbyName" maxlength="80" value="${escape(g.connector?.autoAttach?.lobbyName ?? 'NammaNomad')}" /></label>` : '<span class="muted">Manual lobby and result reporting</span>'}<button>Save game</button></form>`).join('') || '<p class="empty-state">Add your first game to create a queue.</p>'}</div>
     <form data-kind="game" class="add-game"><label>Game<select name="catalogId"><option value="">Custom game</option>${bootstrap.catalog.map((g) => `<option value="${g.id}">${escape(g.name)}</option>`).join('')}</select></label><label>Custom name<input name="name" maxlength="80" placeholder="Game name" /></label><button class="primary">Add game</button></form></section>
     <section class="panel"><div class="section-heading"><h2>Discord access</h2>${bootstrap.inviteUrl ? `<a class="button" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Invite bot to server</a>` : ''}</div><p class="muted">Check the channels used by your queues.</p><div class="channel-list">${inaccessible.map((id) => `<p class="notice error">The bot cannot access configured channel ${escape(id)}. Check its Discord permissions or choose another channel in Queues.</p>`).join('')}${configuredChannels.map(channelRow).join('')}${!configured.size ? '<p class="empty-state">No queue channels selected yet.</p>' : ''}</div>
     ${otherChannels.length ? `<details class="rating-options"><summary>Other available channels (${otherChannels.length})</summary><div class="channel-list">${otherChannels.map(channelRow).join('')}</div></details>` : ''}${!channelList.length ? '<p class="notice error">No accessible text channels found. Check the bot’s channel permissions.</p>' : ''}<details class="technical-details"><summary>Configuration details</summary><p>Saved settings revision ${snapshot!.revision}</p><p>Community ${escape(guildId)}</p></details></section>`;
@@ -705,7 +705,12 @@ app.addEventListener('submit', (event) => {
       const game = settings.games.find((g) => g.id === form.dataset.id)!;
       game.name = String(data.get('name')).trim();
       if (gameCapabilities(game.catalogId)?.lobby)
-        game.connector = { enabled: data.has('lobbyConnector') };
+        game.connector = {
+          enabled: data.has('lobbyConnector'),
+          ...(data.has('autoLobby')
+            ? { autoAttach: { lobbyName: String(data.get('lobbyName')).trim() } }
+            : {}),
+        };
     } else if (form.dataset.kind === 'queue') {
       const existing = settings.queues.find((q) => q.id === form.dataset.id);
       const q: Queue = {

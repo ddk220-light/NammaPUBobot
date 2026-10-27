@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env';
 import { AoE2LobbySnapshot } from '../games/aoe2-feed';
+import { normalizeLobbyName } from '../domain/lobby';
 /** One outbound feed per application, leased only while tracked matches need occupancy. */
 export class AoE2LobbyFeed extends DurableObject<Env> {
   private socket: WebSocket | null = null;
@@ -19,15 +20,28 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
   }
   async query(id: string) {
     if (!/^[1-9]\d{0,11}$/.test(id)) throw Error('Invalid lobby ID');
+    const healthy = await this.subscribe(id, this.snapshot.has(id));
+    return {
+      observation: healthy ? this.snapshot.read(id) : null,
+      healthy,
+      tracked: this.leases.size,
+      activeMs: this.activeMs + (this.connectedAt ? Date.now() - this.connectedAt : 0),
+    };
+  }
+  async discover(name: string) {
+    if (!name.trim() || name.length > 80) throw Error('Invalid lobby name');
+    const healthy = await this.subscribe(`name:${normalizeLobbyName(name)}`, false);
+    return { healthy, observations: healthy ? this.snapshot.named(name) : [] };
+  }
+  private async subscribe(id: string, alreadyObserved: boolean) {
     this.prune();
-    if (!this.leases.has(id) && this.leases.size >= 200)
-      return { observation: null, healthy: false };
+    if (!this.leases.has(id) && this.leases.size >= 200) return false;
     const added = !this.leases.has(id);
     this.leases.set(id, Date.now() + 120000);
     await this.ctx.storage.put('leases', [...this.leases]);
     // The initial snapshot is the only complete baseline. A new subscription reconnects
     // the shared stream, then all consumers await fresh lobbyAdded + slot events.
-    if (added && this.socket) this.disconnect();
+    if (added && this.socket && !alreadyObserved) this.disconnect();
     if (!this.socket && !this.starting && Date.now() >= this.reconnectAt) {
       this.starting = this.openFeed().finally(() => {
         this.starting = null;
@@ -37,12 +51,7 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
       });
     }
     await this.ctx.storage.setAlarm(Date.now() + 30000);
-    return {
-      observation: this.socket ? this.snapshot.read(id) : null,
-      healthy: !!this.socket,
-      tracked: this.leases.size,
-      activeMs: this.activeMs + (this.connectedAt ? Date.now() - this.connectedAt : 0),
-    };
+    return !!this.socket;
   }
   status() {
     return {

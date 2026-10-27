@@ -1,4 +1,4 @@
-import { lobbySummary } from '../domain/lobby';
+import { lobbySummary, lobbySearchSummary } from '../domain/lobby';
 import type { Queue } from '../domain/config';
 import type { Match } from '../domain/play';
 
@@ -185,6 +185,13 @@ export function matchCard(match: Match): Card {
       description: lobbySummary(match.lobby),
       color: 0x648c78,
       footer: { text: 'Public game evidence · results reported by players' },
+    });
+  else if (match.lobbySearch && match.state === 'playing')
+    extra.push({
+      title: `${match.gameName} lobby`,
+      description: lobbySearchSummary(match.lobbySearch),
+      color: 0x648c78,
+      footer: { text: 'Results reported by captains' },
     });
   if (buttons.length) components.push({ type: 1, components: buttons });
   return {

@@ -413,6 +413,7 @@ input[type='checkbox'] {
 }
 .game-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 12px 0;
@@ -421,6 +422,13 @@ input[type='checkbox'] {
 .game-row input {
   flex: 1;
   max-width: 560px;
+}
+.game-row > label:not(.sr-only) {
+  flex: 1 1 220px;
+}
+.game-row input[type='checkbox'] {
+  flex: none;
+  min-width: 16px;
 }
 .game-icon {
   color: #737c88;

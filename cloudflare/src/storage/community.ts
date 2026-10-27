@@ -97,7 +97,7 @@ export class Community extends DurableObject<Env> {
     expectedRevision: number,
     settings: Settings,
     actorId: string,
-    action: 'save',
+    action: 'save' | 'enable_aoe2_features',
   ) {
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
       return {
@@ -161,6 +161,65 @@ export class Community extends DurableObject<Env> {
     return this.ctx.storage.sql
       .exec('SELECT * FROM settings_audit ORDER BY revision DESC LIMIT 20')
       .toArray();
+  }
+
+  /** Narrow operator rollout: existing AoE2 queues only, no arbitrary settings or player actions. */
+  async enableAoE2Features(
+    guild: string,
+    expectedRevision: number,
+    queueIds: string[],
+    lobbyName: string,
+    apply: boolean,
+  ) {
+    const before = this.read(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false as const, reason: 'Recovery copy is read-only.' };
+    if (before.revision !== expectedRevision)
+      return { ok: false as const, reason: 'Settings changed. Preview again before applying.' };
+    const settings = structuredClone(before.settings);
+    const game = settings.games.find((g) => g.catalogId === 'aoe2');
+    const queues = settings.queues.filter((q) => queueIds.includes(q.id));
+    if (
+      !game ||
+      !queueIds.length ||
+      queues.length !== new Set(queueIds).size ||
+      queues.some((q) => q.gameId !== game.id || !q.enabled)
+    )
+      return { ok: false as const, reason: 'Choose existing enabled AoE2 queues.' };
+    if (
+      this.ctx.storage.sql
+        .exec(
+          "SELECT 1 FROM matches WHERE game_id=? AND state IN ('playing','check_in') LIMIT 1",
+          game.id,
+        )
+        .toArray().length
+    )
+      return { ok: false as const, reason: 'Finish active AoE2 matches before enabling features.' };
+    game.connector = { enabled: true, autoAttach: { lobbyName } };
+    for (const q of queues)
+      Object.assign(q.modules, {
+        civs: true,
+        stories: true,
+        gold: true,
+        predictions: true,
+        maps: true,
+      });
+    const parsed = settingsSchema.parse(settings);
+    const changes = {
+      game: parsed.games.find((g) => g.id === game.id)!,
+      queues: parsed.queues.filter((q) => queueIds.includes(q.id)),
+    };
+    if (!apply || JSON.stringify(parsed) === JSON.stringify(before.settings))
+      return { ok: true as const, applied: false, revision: before.revision, changes };
+    const result = await this.save(
+      guild,
+      expectedRevision,
+      parsed,
+      'operator',
+      'enable_aoe2_features',
+    );
+    if (!result.ok) return result;
+    return { ok: true as const, applied: true, revision: result.snapshot.revision, changes };
   }
   play(guildId: string, action: Action) {
     return this.playStore.act(guildId, action);

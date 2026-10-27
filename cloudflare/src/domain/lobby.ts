@@ -41,6 +41,13 @@ export const lobbyEventSchema = z
   })
   .strict();
 export type LobbyEvent = z.infer<typeof lobbyEventSchema>;
+export interface LobbySearch {
+  name: string;
+  until: number;
+  state: 'searching' | 'ambiguous' | 'unavailable' | 'stopped';
+  candidate?: LobbyObservation;
+  candidateUrl?: string;
+}
 export interface LobbyBinding {
   id: string;
   adapterId: string;
@@ -59,6 +66,28 @@ export interface LobbyBinding {
   rosterVerified: boolean;
   occupancyAvailable: boolean;
   prompted: boolean;
+  automatic?: boolean;
+  discoveredProfiles?: string[];
+}
+
+export const normalizeLobbyName = (name: string) => name.trim().toLocaleLowerCase('en-US');
+export function lobbySearchSummary(search: LobbySearch): string {
+  const o = search.candidate;
+  return [
+    search.state === 'stopped'
+      ? 'Automatic lobby search stopped.'
+      : search.state === 'unavailable'
+        ? 'Lobby search temporarily unavailable; retrying.'
+        : search.state === 'ambiguous'
+          ? 'Several lobbies or matches could fit; waiting for an unambiguous match.'
+          : `Looking for a public lobby named **${search.name}**.`,
+    o
+      ? `Lobby ${o.externalId}: ${o.players.length}/${o.capacity ?? '?'} slots occupied.\n${search.candidateUrl ?? ''}`
+      : '',
+    'Attaches when full with the expected player count. Any match player can also use /lobby attach. Results remain captain-reported.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /** Require positive, internally consistent evidence; absence never advances a game. */
@@ -104,7 +133,7 @@ export function rosterMatches(binding: LobbyBinding, o: LobbyObservation): boole
 }
 
 export function lobbySummary(binding?: LobbyBinding, now = Date.now()): string {
-  if (!binding) return 'No lobby attached. A captain can use /lobby attach.';
+  if (!binding) return 'No lobby attached. Any match player can use /lobby attach.';
   if (['invalidated', 'unlinked', 'stopped'].includes(binding.state))
     return `Lobby tracking ${binding.state}: ${binding.reason ?? 'Use /lobby attach to bind the current roster.'}`;
   const o = binding.observation;

@@ -12,7 +12,13 @@ export const gameSchema = z
   .object({
     id,
     name,
-    connector: z.object({ enabled: z.boolean() }).strict().optional(),
+    connector: z
+      .object({
+        enabled: z.boolean(),
+        autoAttach: z.object({ lobbyName: name }).strict().optional(),
+      })
+      .strict()
+      .optional(),
     catalogId: z.enum(['aoe2', 'aoe3', 'aoe4', 'aom', 'generals']).nullable(),
     records: z
       .object({

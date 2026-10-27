@@ -189,14 +189,14 @@ describe('durable lobby journey', () => {
     expect((await current()).lobby).toMatchObject({ rosterVerified: true, prompted: true });
     expect(await prompts()).toHaveLength(1);
   });
-  it('requires completed formation and never borrows a match from another community', async () => {
+  it('allows explicit attachment during check-in and never borrows a match from another community', async () => {
     const s = settings();
     s.games[0].catalogId = 'aoe2';
     s.games[0].connector = { enabled: true };
     const m = await fill(s);
     expect(
       await act('lobby_attach', 99, { admin: true, reference: '9001', matchId: m.id }),
-    ).toMatchObject({ ok: false });
+    ).toMatchObject({ ok: true });
     const other = '706320010368516299';
     expect(
       await stub(other).play(

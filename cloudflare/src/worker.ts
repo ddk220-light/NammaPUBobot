@@ -176,7 +176,7 @@ app.get('/health', (c) =>
     ok: true,
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.9.0',
+    version: '0.10.0',
   }),
 );
 app.post('/interactions', (c) => interactions(c.req.raw, c.env, c.executionCtx));
@@ -203,6 +203,40 @@ function operationalCommunity(c: Context<App>) {
 app.get('/ops/aoe2/feed', async (c) =>
   c.json(await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').status()),
 );
+app.get('/ops/aoe2/discovery', async (c) => {
+  const name = z.string().trim().min(1).max(80).parse(c.req.query('name'));
+  return c.json(
+    await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').discover(name),
+  );
+});
+app.post('/ops/communities/:guild/features/aoe2', async (c) => {
+  if (c.env.APP_ENV !== 'staging')
+    throw new Problem(403, 'staging_only', 'Feature rollout is limited to staging.');
+  const { guild, stub } = operationalCommunity(c);
+  const input = z
+    .object({
+      expectedRevision: z.number().int().nonnegative(),
+      queueIds: z.array(z.uuid()).min(1).max(200),
+      lobbyName: z.string().trim().min(1).max(80),
+      apply: z.boolean().default(false),
+    })
+    .strict()
+    .parse(await readJson(c.req.raw));
+  const snapshot = await stub.read(guild);
+  await validateChannels(
+    c.env,
+    guild,
+    snapshot.settings.queues.filter((q) => input.queueIds.includes(q.id)),
+  );
+  const result = await stub.enableAoE2Features(
+    guild,
+    input.expectedRevision,
+    input.queueIds,
+    input.lobbyName,
+    input.apply,
+  );
+  return c.json(result, result.ok ? 200 : 409);
+});
 app.get('/ops/aoe2/lobbies/:id', async (c) => {
   const id = z
     .string()
@@ -284,7 +318,7 @@ app.get('/api/bootstrap', async (c) => {
   return c.json({
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.9.0',
+    version: '0.10.0',
     oauthReady,
     discordReady,
     inviteUrl: invite,

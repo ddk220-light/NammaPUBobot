@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { LobbyBinding } from './lobby';
+import type { LobbyBinding, LobbySearch } from './lobby';
 import { snowflake, type Queue } from './config';
 import { defaultRatingSettings, type Player } from './rating';
 import type { MapRound } from './maps';
@@ -44,6 +44,8 @@ export interface Match {
   mapRound?: MapRound;
   rosterVersion?: number;
   lobby?: LobbyBinding;
+  lobbySearch?: LobbySearch;
+  lobbyAutoDisabled?: boolean;
 }
 export const personSchema = z
   .object({

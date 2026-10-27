@@ -74,7 +74,7 @@ const operations = [
     description: 'Link a game profile and track your match lobby',
     type: 1,
     options: [
-      sub('attach', 'Captain/admin: attach a lobby to this match', [
+      sub('attach', 'Match players: attach a lobby ID or link', [
         {
           name: 'reference',
           description: 'Lobby ID or supported HTTPS lobby link',

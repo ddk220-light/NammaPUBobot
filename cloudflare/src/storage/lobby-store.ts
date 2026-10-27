@@ -1,4 +1,5 @@
 import { observeGamePlayers } from './game-records';
+import { discoverLobby, type DiscoveryTarget } from '../domain/lobby-discovery';
 import { gameCapabilities } from '../games/catalog';
 import type { Settings } from '../domain/config';
 import type { Action, Match } from '../domain/play';
@@ -6,16 +7,21 @@ import { PlayError } from '../domain/errors';
 import {
   lobbyEventSchema,
   lobbySummary,
+  lobbySearchSummary,
   rosterMatches,
   validObservation,
   type LobbyBinding,
   type LobbyEvent,
 } from '../domain/lobby';
 import { gameAdapter } from '../games/registry';
-import type { ProviderResult, LobbyObservation } from '../games/types';
+import type { GameAdapter, ProviderResult, LobbyObservation } from '../games/types';
 
 interface Hooks {
-  occupancy?(id: string): Promise<LobbyObservation | null>;
+  occupancy?(id: string, discoveryName?: string): Promise<LobbyObservation | null>;
+  discover?(
+    adapterId: string,
+    name: string,
+  ): Promise<{ healthy: boolean; observations: LobbyObservation[] }>;
   started?(match: Match, observation: LobbyObservation, eventId: string): void;
   match(id: string): Match;
   save(match: Match): void;
@@ -68,13 +74,185 @@ export class LobbyStore {
     const game = this.settings().games.find((g) => g.id === m.queue.gameId);
     return game?.connector?.enabled ? gameAdapter(game.catalogId) : undefined;
   }
+  private searchName(m: Match): string | undefined {
+    const game = this.settings().games.find((g) => g.id === m.queue.gameId);
+    if (
+      !this.enabled(m) ||
+      m.state !== 'playing' ||
+      !active(m) ||
+      m.lobbyAutoDisabled ||
+      Date.now() >= (m.playingAt ?? m.createdAt) + 90 * 60000 ||
+      m.mapRound?.state === 'open' ||
+      m.lobby?.observation?.startedAt ||
+      (m.lobby && !m.lobby.automatic)
+    )
+      return;
+    return game?.connector?.autoAttach?.lobbyName;
+  }
+  private syncSearch(m: Match) {
+    const name = this.searchName(m);
+    const until = Math.min(m.expiresAt ?? Infinity, (m.playingAt ?? m.createdAt) + 90 * 60000);
+    if (!name || Date.now() >= until) {
+      this.sql.exec('DELETE FROM deadlines WHERE key=?', `lobby-search:${m.id}`);
+      if (m.lobbySearch) {
+        m.lobbySearch.state = 'stopped';
+        delete m.lobbySearch.candidate;
+        delete m.lobbySearch.candidateUrl;
+      }
+      return;
+    }
+    if (!m.lobbySearch || m.lobbySearch.name !== name || m.lobbySearch.state === 'stopped')
+      m.lobbySearch = { name, until, state: 'searching' };
+    this.sql.exec(
+      'INSERT OR IGNORE INTO deadlines VALUES(?,?,?,?)',
+      `lobby-search:${m.id}`,
+      'lobby_discovery',
+      m.id,
+      Date.now(),
+    );
+  }
+  private discoveryTargets(m: Match): { targets: DiscoveryTarget[]; claimed: Set<string> } {
+    const matches = this.sql
+      .exec<{ config: string }>("SELECT config FROM matches WHERE state IN ('playing','check_in')")
+      .toArray()
+      .map((row) => JSON.parse(row.config) as Match)
+      .filter(active);
+    const adapter = this.enabled(m)!;
+    const targets = matches
+      .filter((other) => this.enabled(other)?.id === adapter.id && this.searchName(other))
+      .map((other) => ({
+        id: other.id,
+        name: this.searchName(other)!,
+        profiles: this.profiles(other, adapter.profileProvider),
+      }));
+    const claimed = new Set(
+      matches
+        .filter(
+          (other) =>
+            other.id !== m.id &&
+            other.lobby?.adapterId === adapter.id &&
+            ['pending', 'observed', 'unavailable'].includes(other.lobby.state),
+        )
+        .map((other) => other.lobby!.externalId),
+    );
+    return { targets, claimed };
+  }
+  private async pollDiscovery(guild: string) {
+    const due = this.sql
+      .exec<{ match_id: string }>(
+        "SELECT match_id FROM deadlines WHERE kind='lobby_discovery' AND due<=? ORDER BY due LIMIT 4",
+        Date.now(),
+      )
+      .toArray();
+    for (const { match_id } of due) {
+      const request = this.ctx.storage.transactionSync(() => {
+        const m = this.hooks.match(match_id);
+        const oldSearch = JSON.stringify(m.lobbySearch);
+        this.syncSearch(m);
+        const job = this.sql
+          .exec<{ due: number }>('SELECT due FROM deadlines WHERE key=?', `lobby-search:${m.id}`)
+          .toArray()[0];
+        if (!job || job.due > Date.now()) {
+          if (oldSearch !== JSON.stringify(m.lobbySearch)) this.hooks.save(m);
+          return;
+        }
+        this.sql.exec(
+          'UPDATE deadlines SET due=? WHERE key=?',
+          Math.min(Date.now() + 30000, m.lobbySearch!.until),
+          `lobby-search:${m.id}`,
+        );
+        return { m, name: this.searchName(m)!, adapter: this.enabled(m)! };
+      });
+      if (!request) continue;
+      const { m: before, name, adapter } = request;
+      let result: { healthy: boolean; observations: LobbyObservation[] };
+      try {
+        result = (await this.hooks.discover?.(adapter.id, name)) ?? {
+          healthy: false,
+          observations: [],
+        };
+      } catch {
+        result = { healthy: false, observations: [] };
+      }
+      this.ctx.storage.transactionSync(() => {
+        const m = this.hooks.match(before.id);
+        // A player-supplied ID, roster edit, cancellation or setting change wins over an in-flight search.
+        if (
+          m.version !== before.version ||
+          m.rosterVersion !== before.rosterVersion ||
+          this.searchName(m) !== name ||
+          this.enabled(m)?.id !== adapter.id ||
+          !m.lobbySearch ||
+          Date.now() >= m.lobbySearch.until ||
+          m.lobby?.id !== before.lobby?.id
+        )
+          return;
+        const search = m.lobbySearch;
+        delete search.candidate;
+        delete search.candidateUrl;
+        if (!result.healthy) search.state = 'unavailable';
+        else {
+          try {
+            const { targets, claimed } = this.discoveryTargets(m);
+            const selected = discoverLobby(m.id, targets, result.observations, claimed);
+            search.state = selected.state;
+            search.candidate = selected.candidate;
+            search.candidateUrl = selected.candidate
+              ? adapter.lobbyUrl(selected.candidate.externalId)
+              : undefined;
+            const chosen = selected.attach;
+            // A remake may replace an automatically attached, unstarted lobby only with the same players.
+            const previous = m.lobby?.discoveredProfiles?.slice().sort();
+            const samePlayers =
+              !m.lobby ||
+              m.lobby.externalId === chosen?.externalId ||
+              (!!previous?.length &&
+                JSON.stringify(previous) ===
+                  JSON.stringify(chosen?.players.map((p) => p.profileId).sort()));
+            if (
+              chosen &&
+              (chosen.externalId !== m.lobby?.externalId ||
+                ['invalidated', 'stopped'].includes(m.lobby!.state)) &&
+              samePlayers
+            ) {
+              this.bind(m, adapter, chosen.externalId, 'connector', true, chosen);
+              this.accept(guild, {
+                schemaVersion: 1,
+                communityId: guild,
+                gameId: m.queue.gameId,
+                matchId: m.id,
+                bindingId: m.lobby!.id,
+                rosterVersion: m.rosterVersion ?? 0,
+                adapterId: adapter.id,
+                eventId: crypto.randomUUID(),
+                observation: chosen,
+              });
+              return;
+            }
+          } catch (error) {
+            if (!(error instanceof PlayError)) throw error;
+            search.state = 'ambiguous';
+          }
+        }
+        this.hooks.save(m);
+      });
+    }
+  }
   action(m: Match, a: Action) {
-    if (a.kind === 'lobby_status') return { ok: true, content: lobbySummary(m.lobby) };
+    if (a.kind === 'lobby_status')
+      return {
+        ok: true,
+        content:
+          !m.lobby && m.lobbySearch ? lobbySearchSummary(m.lobbySearch) : lobbySummary(m.lobby),
+      };
     if (!['check_in', 'playing'].includes(m.state) || !active(m))
       throw new PlayError('This match is closed.');
-    if (!a.admin && !m.captains.includes(a.actor.id))
-      throw new PlayError('Only a captain or administrator can attach or unlink a lobby.');
+    if (!a.admin && !m.roster.some((p) => p.id === a.actor.id))
+      throw new PlayError('Only a player in this match or an administrator can attach a lobby.');
     if (a.kind === 'lobby_unlink') {
+      if (!a.admin && !m.captains.includes(a.actor.id))
+        throw new PlayError('Only a captain or administrator can unlink a lobby.');
+      m.lobbyAutoDisabled = true;
       if (m.lobby) {
         m.lobby.state = 'unlinked';
         m.lobby.reason = 'Unlinked by a captain or administrator.';
@@ -83,8 +261,6 @@ export class LobbyStore {
       this.hooks.audit('lobby_unlinked', a.actor.id, {}, m);
       return { ok: true, content: 'Lobby unlinked. Manual reporting remains available.' };
     }
-    if (m.state !== 'playing')
-      throw new PlayError('Complete check-in and map selection before attaching a lobby.');
     const adapter = this.enabled(m);
     if (!adapter)
       throw new PlayError(
@@ -99,12 +275,29 @@ export class LobbyStore {
     if (
       m.lobby?.externalId === externalId &&
       ['pending', 'observed', 'unavailable'].includes(m.lobby.state)
-    )
+    ) {
+      // An explicit choice pins even an already auto-discovered lobby.
+      if (m.lobby.automatic)
+        this.hooks.audit('lobby_pinned', a.actor.id, { bindingId: m.lobby.id, externalId }, m);
+      m.lobby.automatic = false;
+      m.lobbyAutoDisabled = true;
+      this.hooks.save(m);
       return { ok: true, content: lobbySummary(m.lobby) };
+    }
+    this.bind(m, adapter, externalId, a.actor.id, false);
+    return { ok: true, content: lobbySummary(m.lobby) };
+  }
+  private bind(
+    m: Match,
+    adapter: GameAdapter,
+    externalId: string,
+    actor: string,
+    automatic: boolean,
+    discovered?: LobbyObservation,
+  ) {
     const others = this.sql
       .exec<{ config: string }>(
-        "SELECT config FROM matches WHERE game_id=? AND state IN ('playing','check_in') AND id!=?",
-        m.queue.gameId,
+        "SELECT config FROM matches WHERE state IN ('playing','check_in') AND id!=?",
         m.id,
       )
       .toArray();
@@ -113,6 +306,7 @@ export class LobbyStore {
         const other: Match = JSON.parse(row.config);
         return (
           active(other) &&
+          other.lobby?.adapterId === adapter.id &&
           other.lobby?.externalId === externalId &&
           ['pending', 'observed', 'unavailable'].includes(other.lobby.state)
         );
@@ -133,20 +327,23 @@ export class LobbyStore {
       failures: 0,
       rosterVerified: false,
       prompted: false,
+      automatic,
+      ...(discovered ? { discoveredProfiles: discovered.players.map((p) => p.profileId) } : {}),
       occupancyAvailable: gameCapabilities(adapter.id)?.occupancy ?? false,
     };
+    if (!automatic) m.lobbyAutoDisabled = true;
     this.arm(m, Date.now());
     this.hooks.save(m);
     this.hooks.audit(
       'lobby_attached',
-      a.actor.id,
-      { bindingId: m.lobby.id, externalId, adapterId: adapter.id },
+      actor,
+      { bindingId: m.lobby.id, externalId, adapterId: adapter.id, automatic },
       m,
     );
-    return { ok: true, content: lobbySummary(m.lobby) };
   }
   /** Called with every match save, including cancellation, reporting and roster changes. */
   sync(m: Match) {
+    this.syncSearch(m);
     const b = m.lobby;
     if (!b) return;
     if (!active(m) && !['unlinked', 'invalidated'].includes(b.state)) {
@@ -215,6 +412,7 @@ export class LobbyStore {
       .toArray()) {
       const m: Match = JSON.parse(row.config);
       if (m.lobby) this.current(m, m.lobby.id);
+      this.hooks.save(m);
     }
   }
   accept(guild: string, input: LobbyEvent, providerRetryAt?: number) {
@@ -329,7 +527,9 @@ export class LobbyStore {
               })
             : gameAdapter(b.adapterId)!.observe(b.externalId, !!b.observation?.startedAt),
           b.adapterId === 'aoe2' && !b.observation?.startedAt
-            ? this.hooks.occupancy?.(b.externalId).catch(() => null)
+            ? this.hooks
+                .occupancy?.(b.externalId, b.automatic ? m.lobbySearch?.name : undefined)
+                .catch(() => null)
             : null,
         ]);
         providerRetryAt =
@@ -386,5 +586,6 @@ export class LobbyStore {
         this.hooks.save(current);
       });
     }
+    await this.pollDiscovery(guild);
   }
 }
