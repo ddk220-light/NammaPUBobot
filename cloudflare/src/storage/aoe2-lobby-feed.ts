@@ -12,6 +12,10 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
   private activeMs = 0;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => {
+      this.leases = new Map((await ctx.storage.get<[string, number][]>('leases')) ?? []);
+      this.prune();
+    });
   }
   async query(id: string) {
     if (!/^[1-9]\d{0,11}$/.test(id)) throw Error('Invalid lobby ID');
@@ -20,6 +24,7 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
       return { observation: null, healthy: false };
     const added = !this.leases.has(id);
     this.leases.set(id, Date.now() + 120000);
+    await this.ctx.storage.put('leases', [...this.leases]);
     // The initial snapshot is the only complete baseline. A new subscription reconnects
     // the shared stream, then all consumers await fresh lobbyAdded + slot events.
     if (added && this.socket) this.disconnect();
@@ -62,10 +67,19 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
     } catch {}
   }
   private async openFeed() {
-    const response = await fetch('https://socket.aoe2companion.com/listen?handler=lobbies', {
-      headers: { Upgrade: 'websocket' },
-      signal: AbortSignal.timeout(6000),
-    });
+    // Bound only the handshake. An AbortSignal.timeout left attached to the
+    // upgraded fetch also aborts the live WebSocket after that timeout.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    let response: Response;
+    try {
+      response = await fetch('https://socket.aoe2companion.com/listen?handler=lobbies', {
+        headers: { Upgrade: 'websocket' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
     const ws = response.webSocket;
     if (!ws) throw Error('Lobby feed unavailable');
     this.socket = ws;
@@ -97,6 +111,7 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
   }
   async alarm() {
     this.prune();
+    await this.ctx.storage.put('leases', [...this.leases]);
     if (!this.leases.size) {
       this.disconnect();
       return;

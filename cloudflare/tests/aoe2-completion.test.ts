@@ -1,3 +1,4 @@
+import { env } from 'cloudflare:workers';
 import { describe, it, expect, vi } from 'vitest';
 import { runInDurableObject, abortAllDurableObjects, runDurableObjectAlarm } from 'cloudflare:test';
 import {
@@ -592,5 +593,20 @@ describe('real lobby event shapes and freshness', () => {
     f.clear();
     f.consume({ type: 'slotAdded', data: { matchId: 1, slot: 1, profileId: 2 } }, ids, now + 3000);
     expect(f.read('1', now + 6000)).toBeNull();
+  });
+});
+
+describe('shared occupancy recovery', () => {
+  it('retains active subscriptions across a process restart and prunes expired leases', async () => {
+    const feed = () => env.AOE2_LOBBIES.getByName('recovery-fixture');
+    await feed().query('9001');
+    await abortAllDurableObjects();
+    expect(await feed().status()).toMatchObject({ healthy: false, tracked: 1 });
+    await runInDurableObject(feed(), async (_i, state) => {
+      await state.storage.put('leases', [['9001', Date.now() - 1]]);
+    });
+    await abortAllDurableObjects();
+    await runDurableObjectAlarm(feed());
+    expect(await feed().status()).toMatchObject({ healthy: false, tracked: 0 });
   });
 });

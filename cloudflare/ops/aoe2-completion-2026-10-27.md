@@ -5,22 +5,22 @@
 ## Deployed installation
 
 - Worker: `community-gaming-staging`, https://community-gaming-staging.deepakdhanavel.workers.dev
-- Final version: **`c56b3fe8-59b4-48c0-a43d-49f784947945`**, deployed at 100%.
+- Final version: **`2c362bac-50c5-4690-a9ce-b44796401f73`**, deployed at 100%.
 - `/health`: HTTP 200, `ok: true`, version `0.9.0`.
 - Discord application `1559284610108752068`, guild `706320010368516198`, channel `1559279290577850368` (`test-bot`). The guild has **18 commands**, including `/civpick`; its match selector is optional and defaults to the caller's active match.
 - Community schema **7**, Worker migration `v4` adds the shared `AoE2LobbyFeed` Durable Object.
-- The deployed source is the source committed with this report. A SHA-256 manifest of `src/`, `web/`, package files and Wrangler configuration is retained with private deployment artifacts for comparison against that commit. Test/release documentation does not enter the Worker bundle.
+- The deployed source is the source committed with this report, including the follow-up feed-recovery fix. A SHA-256 manifest of `src/`, `web/`, package files and Wrangler configuration is retained with private deployment artifacts for comparison against that commit. Test/release documentation does not enter the Worker bundle.
 - One final upload attempt returned Cloudflare error `10013` before the asset-upload session was created. Deployment metadata confirmed the preceding healthy version was still active; the retry succeeded. No credentials were created or access broadened.
 
 This deploy targets the existing Cloudflare test installation. Railway's Python runtime is not migrated to this Worker.
 
 ## Verified behavior
 
-`npm run check` passed **702 tests in 23 files**, server/web type checks, web build and Worker dry-run build. Repository-wide Ruff passed. Legacy conversion: 6 tests passed; economy conversion: 5 tests passed. Golden fixtures generated directly from Railway cover all eight banter families across 17 histories, including thresholds, candidate scores, pre-game wording and both result outcomes.
+`npm run check` passed **704 tests in 24 files**, server/web type checks, web build and Worker dry-run build. Repository-wide Ruff passed. Legacy conversion: 6 tests passed; economy conversion: 5 tests passed. Golden fixtures generated directly from Railway cover all eight banter families across 17 histories, including thresholds, candidate scores, pre-game wording and both result outcomes.
 
 The functional tests use actual SQLite Durable Objects, alarms and restart operations with mocked provider and Discord boundaries. They cover hidden/exclusive civ picks, simultaneous claims, Random, timeout, redo, invalidation, signed interactions, partial/ambiguous/inferred identities, rejected mappings, correct game-ID attribution, substitutions and corrected evidence, actual-civ statistics, result undo, atomic betting closure/refunds, late cancellation, stale status, Retry-After and post-result enrichment. They do not claim a human actually played these fixture games.
 
-Live provider checks succeeded from both this workspace and the deployed Worker. The workspace WebSocket probe received `lobbyAdded/Updated/Removed` and `slotAdded/Updated/Removed` events. The final Worker connected to that same public feed and returned a fresh occupancy snapshot, including capacity and player identities, for public lobby `516624182`. The observed snapshot was **1/1 occupied**, `phase: full`, with **no game-start timestamp**; it was not treated as a start. This validates the transport and snapshot reduction, not an eight-player game-start/end journey. A subsequent status-only probe of an earlier identical feed implementation observed zero active leases/connections; per-instance duration counters may reset on eviction/deploy, so no billing cost or exact shutdown duration is claimed.
+Live provider checks succeeded from both this workspace and the deployed Worker. The workspace WebSocket probe received `lobbyAdded/Updated/Removed` and `slotAdded/Updated/Removed` events. The final Worker connected to that same public feed and returned a fresh occupancy snapshot, including capacity and player identities, for public lobby `516624182`. The observed snapshot was **1/1 occupied**, `phase: full`, with **no game-start timestamp**; it was not treated as a start. This validates the transport and snapshot reduction, not an eight-player game-start/end journey. A longer probe then exposed a connection drop between normal polls: the handshake timeout remained attached to the upgraded WebSocket, and in-memory subscriptions were lost on restart. The follow-up fix clears the timeout after the handshake and persists expiring leases. A regression test spans the original six-second timeout, and another restarts the Durable Object to verify lease recovery. The final live probe returned fresh snapshots at approximately 4, 40 and 75 seconds, across two normal 35-second polling intervals, with one continuous connection (75,248 ms at the last sample). Per-instance duration counters can reset on eviction/deploy, so no billing cost estimate is claimed.
 
 ## Discord previews and read-back
 
