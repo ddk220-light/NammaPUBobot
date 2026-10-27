@@ -1,6 +1,6 @@
 import type { Env } from '../env';
 import { canManage } from './client';
-import { actionSchema, PlayError, type Action, type Match } from '../domain/play';
+import { actionSchema, PlayError, type Action, type Match, type Reply } from '../domain/play';
 import { playerSummary, recordActionSchema, recordPolicy } from '../domain/records';
 import { snowflake } from '../domain/config';
 import { memberIds, resolveMember } from './members';
@@ -9,6 +9,7 @@ import { substitutionPanel } from './player-panels';
 import { queuePicker, type QueueChoice } from './queue-picker';
 import { predictionPanel } from './prediction-panel';
 import { adminCommandRoute } from './commands.mjs';
+import { deferInteractionReply, finishInteractionReply, publicUpdate } from './interaction-replies';
 
 export async function verifyRequest(
   request: Request,
@@ -76,6 +77,39 @@ const ephemeral = (
     type: 4,
     data: { ...extra, content, flags: 64, allowed_mentions: { parse: [] } },
   });
+function actionReply(
+  i: Interaction,
+  env: Env,
+  ctx: Pick<ExecutionContext, 'waitUntil'> | undefined,
+  kind: Action['kind'],
+  reply: Reply,
+) {
+  if (i.type === 3 && publicUpdate(kind) && reply.ok !== false) {
+    // Retire an owned private choice/confirmation panel after applying it. Never
+    // delete a public card through this interaction's webhook.
+    if (
+      ctx &&
+      i.token &&
+      ((i.message?.flags ?? 0) & 64) !== 0 &&
+      i.message?.author?.id === env.DISCORD_APPLICATION_ID
+    )
+      ctx.waitUntil(finishInteractionReply(env, i.token, reply, true));
+    return Response.json({ type: 6 });
+  }
+  return ephemeral(
+    reply.content,
+    reply.link
+      ? {
+          components: [
+            {
+              type: 1,
+              components: [{ type: 2, style: 5, label: reply.link.label, url: reply.link.url }],
+            },
+          ],
+        }
+      : {},
+  );
+}
 export async function interactions(
   request: Request,
   env: Env,
@@ -234,25 +268,12 @@ async function playInteraction(
     }
     const parsed = actionSchema.safeParse(action);
     if (!parsed.success) return ephemeral('Choose a valid match and duration (1–10 minutes).');
-    ctx.waitUntil(
-      (async () => {
-        const stub = env.COMMUNITIES.getByName(i.guild_id!);
-        const reply = await stub.play(i.guild_id!, parsed.data);
-        await stub.flush();
-        try {
-          await fetch(
-            `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${i.token}/messages/@original`,
-            {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content: reply.content, allowed_mentions: { parse: [] } }),
-              signal: AbortSignal.timeout(5000),
-            },
-          );
-        } catch {}
-      })(),
-    );
-    return Response.json({ type: 5, data: { flags: 64 } });
+    return deferInteractionReply(env, ctx, i.token, publicUpdate(parsed.data.kind), async () => {
+      const stub = env.COMMUNITIES.getByName(i.guild_id!);
+      const reply = await stub.play(i.guild_id!, parsed.data);
+      ctx.waitUntil(stub.flush());
+      return reply;
+    });
   }
   if (i.type === 2 && i.data?.name === 'lobby') {
     if (!ctx || !i.token) return ephemeral('Use a current lobby command.');
@@ -261,65 +282,46 @@ async function playInteraction(
     const option = (name: string) => options.find((o) => o.name === name)?.value;
     if (!['attach', 'unlink', 'status', 'link'].includes(sub?.name ?? ''))
       return ephemeral('Choose attach, unlink, status or link.');
-    // Acknowledge first. Profile resolution and provider work run after the deferred response.
-    ctx.waitUntil(
-      (async () => {
-        let content = 'Lobby action failed. Check its status before retrying.';
+    return deferInteractionReply(
+      env,
+      ctx,
+      i.token,
+      ['attach', 'unlink'].includes(sub!.name),
+      async () => {
         const stub = env.COMMUNITIES.getByName(i.guild_id!);
-        try {
-          if (sub!.name === 'link') {
-            const s = await stub.read(i.guild_id!),
-              qs = s.settings.queues.filter((q) => q.channelId === i.channel_id);
-            const name = String(option('queue') ?? '').toLowerCase();
-            const q = name
-              ? qs.find(
-                  (q) =>
-                    q.id === name ||
-                    q.name.toLowerCase() === name ||
-                    q.aliases?.some((a) => a.toLowerCase() === name),
-                )
-              : (qs.find((q) => q.isDefault) ?? (qs.length === 1 ? qs[0] : undefined));
-            if (!q) throw new PlayError('Choose a queue in this channel.');
-            const input = recordActionSchema.parse({
-              id: i.id,
-              kind: 'link',
-              gameId: q.gameId,
-              userId: option('user') ?? actor.id,
-              externalId: option('profile_id'),
-            });
-            content = (await stub.linkGameProfile(i.guild_id!, input, actor.id, canManage(member)))
-              .content;
-          } else {
-            const input = actionSchema.parse({
-              ...action,
-              kind: `lobby_${sub!.name}`,
-              ...(option('match') ? { matchId: option('match') } : {}),
-              ...(option('reference') ? { reference: option('reference') } : {}),
-            });
-            const reply = await stub.play(i.guild_id!, input);
-            content = reply.content;
-          }
-        } catch (error) {
-          content =
-            error instanceof PlayError
-              ? error.message
-              : 'Use valid lobby, match and profile options.';
+        if (sub!.name === 'link') {
+          const s = await stub.read(i.guild_id!),
+            qs = s.settings.queues.filter((q) => q.channelId === i.channel_id);
+          const name = String(option('queue') ?? '').toLowerCase();
+          const q = name
+            ? qs.find(
+                (q) =>
+                  q.id === name ||
+                  q.name.toLowerCase() === name ||
+                  q.aliases?.some((a) => a.toLowerCase() === name),
+              )
+            : (qs.find((q) => q.isDefault) ?? (qs.length === 1 ? qs[0] : undefined));
+          if (!q) throw new PlayError('Choose a queue in this channel.');
+          const input = recordActionSchema.parse({
+            id: i.id,
+            kind: 'link',
+            gameId: q.gameId,
+            userId: option('user') ?? actor.id,
+            externalId: option('profile_id'),
+          });
+          return stub.linkGameProfile(i.guild_id!, input, actor.id, canManage(member));
         }
-        try {
-          await fetch(
-            `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${i.token}/messages/@original`,
-            {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
-              signal: AbortSignal.timeout(5000),
-            },
-          );
-        } catch {}
-        await stub.flush();
-      })(),
+        const input = actionSchema.parse({
+          ...action,
+          kind: `lobby_${sub!.name}`,
+          ...(option('match') ? { matchId: option('match') } : {}),
+          ...(option('reference') ? { reference: option('reference') } : {}),
+        });
+        const reply = await stub.play(i.guild_id!, input);
+        ctx.waitUntil(stub.flush());
+        return reply;
+      },
     );
-    return Response.json({ type: 5, data: { flags: 64 } });
   }
   if (i.type === 2 && i.data?.name === 'rally') {
     if (!ctx || !i.token) return ephemeral('Use a current rally command.');
@@ -335,25 +337,12 @@ async function playInteraction(
     action.queue = queue as string | undefined;
     const parsed = actionSchema.safeParse(action);
     if (!parsed.success) return ephemeral('Choose current queue options.');
-    ctx.waitUntil(
-      (async () => {
-        const stub = env.COMMUNITIES.getByName(i.guild_id!),
-          reply = await stub.rally(i.guild_id!, parsed.data, channel as string | undefined);
-        await stub.flush();
-        try {
-          await fetch(
-            `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${i.token}/messages/@original`,
-            {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ content: reply.content, allowed_mentions: { parse: [] } }),
-              signal: AbortSignal.timeout(5000),
-            },
-          );
-        } catch {}
-      })(),
-    );
-    return Response.json({ type: 5, data: { flags: 64 } });
+    return deferInteractionReply(env, ctx, i.token, publicUpdate('rally'), async () => {
+      const stub = env.COMMUNITIES.getByName(i.guild_id!);
+      const reply = await stub.rally(i.guild_id!, parsed.data, channel as string | undefined);
+      ctx.waitUntil(stub.flush());
+      return reply;
+    });
   }
   if (
     i.type === 2 &&
@@ -479,7 +468,7 @@ async function playInteraction(
         action.mapChoices = i.data.values.map((v) => round.choices[Number(v)]);
         const reply = await stub.play(i.guild_id!, actionSchema.parse(action));
         ctx?.waitUntil(stub.flush());
-        return ephemeral(reply.content);
+        return actionReply(i, env, ctx, action.kind, reply);
       }
       const pick = /^b:([a-f0-9-]{36}):(pick|close)$/.exec(custom);
       const personal = /^(bp|bs|bc):([a-f0-9-]{36}):(?:(a|b):)?(\d{17,20})(?::(\d{1,16}))?$/.exec(
@@ -519,7 +508,10 @@ async function playInteraction(
                 }
               : {}),
           });
-          if (receipt) return predictionReply(receipt.content);
+          if (receipt)
+            return pick?.[2] === 'close'
+              ? actionReply(i, env, ctx, 'bet_close', receipt)
+              : predictionReply(receipt.content);
         }
         const state = await stub.prediction(
           i.guild_id!,
@@ -580,7 +572,9 @@ async function playInteraction(
             );
           }
         }
-        return predictionReply(reply.content);
+        return action.kind === 'bet_close'
+          ? actionReply(i, env, ctx, 'bet_close', reply)
+          : predictionReply(reply.content);
       }
       const queue = /^q:([a-f0-9-]{36}):(join|leave)(?::g\d+)?$/.exec(custom);
       const picker = /^(qs|qp):(add|remove|queue):(\d{1,2})$/.exec(custom);
@@ -632,20 +626,12 @@ async function playInteraction(
             ...(kind === 'rejoin' ? {} : { targetId: i.data!.values![0] }),
           });
           if (receipt)
-            return ephemeral(
-              receipt.content,
-              receipt.link
-                ? {
-                    components: [
-                      {
-                        type: 1,
-                        components: [
-                          { type: 2, style: 5, label: receipt.link.label, url: receipt.link.url },
-                        ],
-                      },
-                    ],
-                  }
-                : {},
+            return actionReply(
+              i,
+              env,
+              ctx,
+              kind === 'rejoin' ? 'add' : kind === 'take' ? 'subfor' : 'subauto',
+              receipt,
             );
         }
         if (['subs', 'take', 'auto', 'rejoin', 'back'].includes(kind)) {
@@ -849,38 +835,17 @@ async function playInteraction(
         return ephemeral('Teams cannot contain duplicate players.');
       if (!ctx || !i.token)
         return ephemeral('This command needs a current Discord interaction. Try again.');
-      // Member resolution is deferred so larger manual rosters cannot miss Discord's acknowledgement deadline.
-      ctx.waitUntil(
-        (async () => {
-          let content: string;
-          try {
-            action.teams = (await Promise.all(
-              ids.map((team) => Promise.all(team.map((id) => resolveMember(env, i.guild_id!, id)))),
-            )) as Action['teams'];
-            const parsed = actionSchema.parse(action);
-            const stub = env.COMMUNITIES.getByName(i.guild_id!);
-            content = (await stub.play(i.guild_id!, parsed)).content;
-            ctx.waitUntil(stub.flush());
-          } catch {
-            content =
-              'The manual record could not be confirmed. Check the web history before retrying; verify all players belong to this server.';
-          }
-          try {
-            await fetch(
-              `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${i.token}/messages/@original`,
-              {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content, allowed_mentions: { parse: [] } }),
-                signal: AbortSignal.timeout(5000),
-              },
-            );
-          } catch {
-            /* Saved domain actions remain inspectable through the web. */
-          }
-        })(),
-      );
-      return Response.json({ type: 5, data: { flags: 64 } });
+      // Member lookup happens after acknowledgement, then the public result card is the receipt.
+      return deferInteractionReply(env, ctx, i.token, publicUpdate('manual_create'), async () => {
+        action.teams = (await Promise.all(
+          ids.map((team) => Promise.all(team.map((id) => resolveMember(env, i.guild_id!, id)))),
+        )) as Action['teams'];
+        const parsed = actionSchema.parse(action),
+          stub = env.COMMUNITIES.getByName(i.guild_id!);
+        const reply = await stub.play(i.guild_id!, parsed);
+        ctx.waitUntil(stub.flush());
+        return reply;
+      });
     }
   }
   const parsed = actionSchema.safeParse(action);
@@ -896,30 +861,17 @@ async function playInteraction(
       const card = matchCard(current.match as Match);
       return ephemeral(card.content, card);
     }
-    // Ordinary unrestricted joins acknowledge after a local transaction. Restricted roster selection uses bounded fresh-role checks.
+    if (i.type === 2 && publicUpdate(parsed.data.kind)) {
+      if (!ctx || !i.token) return ephemeral('Use a current Discord command.');
+      return deferInteractionReply(env, ctx, i.token, true, async () => {
+        const reply = await stub.play(i.guild_id!, parsed.data);
+        ctx.waitUntil(stub.flush());
+        return reply;
+      });
+    }
     const reply = await stub.play(i.guild_id!, parsed.data);
     ctx?.waitUntil(stub.flush());
-    if (
-      i.type === 3 &&
-      i.data?.custom_id?.startsWith('q:') &&
-      (action.kind === 'add' || action.kind === 'remove') &&
-      reply.ok !== false
-    )
-      // Acknowledge the button without a reply; the durable outbox updates the public card.
-      return Response.json({ type: 6 });
-    return ephemeral(
-      reply.content,
-      reply.link
-        ? {
-            components: [
-              {
-                type: 1,
-                components: [{ type: 2, style: 5, label: reply.link.label, url: reply.link.url }],
-              },
-            ],
-          }
-        : {},
-    );
+    return actionReply(i, env, ctx, parsed.data.kind, reply);
   } catch {
     return ephemeral(
       'This action couldn’t be confirmed. Check the latest card before trying again.',

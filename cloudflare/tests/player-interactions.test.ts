@@ -1,4 +1,6 @@
-import { env, exports } from 'cloudflare:workers';
+import { env } from 'cloudflare:workers';
+import { interactions } from '../src/discord/interactions';
+import { matchCard, queueCard } from '../src/discord/cards';
 import { reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyModules, type Settings } from '../src/domain/config';
@@ -61,6 +63,7 @@ async function interaction(data: object, n = 0, rest: object = {}) {
     id: String(seq++),
     type: 3,
     application_id: app,
+    token: 'synthetic-interaction-token',
     guild_id: guild,
     channel_id: channel,
     member: { permissions: '0', user: { id: person(n).id, username: person(n).name } },
@@ -82,7 +85,8 @@ async function interaction(data: object, n = 0, rest: object = {}) {
   const sig = new Uint8Array(
     await crypto.subtle.sign('Ed25519', key, new TextEncoder().encode(timestamp + raw)),
   );
-  const response = await exports.default.fetch(
+  const jobs: Promise<unknown>[] = [];
+  const response = await interactions(
     new Request('https://setup.example/interactions', {
       method: 'POST',
       body: raw,
@@ -91,7 +95,14 @@ async function interaction(data: object, n = 0, rest: object = {}) {
         'X-Signature-Ed25519': Array.from(sig, (b) => b.toString(16).padStart(2, '0')).join(''),
       },
     }),
+    env,
+    { waitUntil: (job) => jobs.push(job) },
   );
+  for (let completed = 0; completed < jobs.length;) {
+    const batch = jobs.slice(completed);
+    completed = jobs.length;
+    await Promise.all(batch);
+  }
   expect(response.status).toBe(200);
   return response.json() as Promise<{
     type: number;
@@ -235,6 +246,50 @@ describe('categorized administrator commands', () => {
 });
 
 describe('player component routes', () => {
+  it('removes slash add/remove thinking responses while persisting the public queue changes', async () => {
+    await configure();
+    for (const name of ['add', 'remove']) {
+      vi.mocked(fetch).mockClear();
+      expect(await interaction({ name }, 0, { type: 2 })).toEqual({ type: 5, data: { flags: 64 } });
+      const callbacks = vi
+        .mocked(fetch)
+        .mock.calls.filter(([url]) => String(url).includes('/webhooks/'));
+      expect(callbacks).toHaveLength(1);
+      expect(callbacks[0][1]?.method).toBe('DELETE');
+      expect(callbacks[0][1]?.body).toBeUndefined();
+      expect((await stub().records(guild)).waiting[0].players).toHaveLength(name === 'add' ? 1 : 0);
+    }
+  });
+  it('silently checks in on the public card without deleting it through a webhook', async () => {
+    const m = await fill();
+    vi.mocked(fetch).mockClear();
+    expect(
+      await interaction({ custom_id: `m:${m.id}:${m.version}:ready` }, 0, {
+        message: { flags: 0, author: { id: app } },
+      }),
+    ).toEqual({ type: 6 });
+    expect((await current()).ready).toContain(person(0).id);
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/webhooks/')),
+    ).toEqual([]);
+  });
+  it('removes an owned private back-out panel only after the confirmed action succeeds', async () => {
+    const m = await fill();
+    const data = { custom_id: `m:${m.id}:${m.version}:confirm_back` },
+      message = { flags: 64, author: { id: app } };
+    vi.mocked(fetch).mockClear();
+    expect((await interaction(data, 9, { message })).data.flags).toBe(64);
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/webhooks/')),
+    ).toEqual([]);
+    expect(await interaction(data, 0, { message })).toEqual({ type: 6 });
+    expect((await current()).state).toBe('check_in_failed');
+    const callbacks = vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).includes('/webhooks/'));
+    expect(callbacks).toHaveLength(1);
+    expect(callbacks[0][1]?.method).toBe('DELETE');
+  });
   it('acknowledges signed additive stakes and replays a lost response even after close', async () => {
     const s = settings();
     s.queues[0].checkIn.enabled = false;
@@ -372,9 +427,10 @@ describe('player component routes', () => {
     const s = settings();
     s.queues.push({ ...s.queues[0], id: otherQueue, name: 'Nomad' });
     await configure(s);
-    expect((await interaction({ name: 'add' }, 0, { type: 2 })).data.content).toContain(
-      'Joined Pickup',
-    );
+    expect(await interaction({ name: 'add' }, 0, { type: 2 })).toEqual({
+      type: 5,
+      data: { flags: 64 },
+    });
     await interaction({ custom_id: `q:${otherQueue}:join` }, 1);
     expect(
       (await stub().records(guild)).waiting.find((q) => q.queueId === otherQueue)!.players,
@@ -416,9 +472,15 @@ describe('player component routes', () => {
     await click(m, 'request');
     await click(m, 'request');
     expect((await current()).subRequests).toEqual([person(0).id]);
+    expect(matchCard(await current()).embeds[0].description).toContain(
+      `**Looking for a substitute:** <@${person(0).id}>`,
+    );
     await click(m, 'cancel');
     await click(m, 'cancel');
     expect((await current()).subRequests).toEqual([]);
+    expect(matchCard(await current()).embeds[0].description).not.toContain(
+      'Looking for a substitute',
+    );
   });
 
   it('rejects retired volunteer selectors without changing a roster', async () => {
@@ -431,7 +493,7 @@ describe('player component routes', () => {
     const m = await fill(true);
     await act('add', 8);
     expect((await click(m, 'subauto', 9)).data.content).toContain('outgoing player');
-    expect((await click(m, 'subauto', 0)).data.content).toContain('replaced');
+    expect(await click(m, 'subauto', 0)).toEqual({ type: 6 });
     expect((await current()).roster.some((p) => p.id === person(8).id)).toBe(true);
   });
 
@@ -491,13 +553,13 @@ describe('player component routes', () => {
     const id = String(seq++),
       data = { custom_id: `m:${m.id}:${m.version}:subauto` };
     const saved = await interaction(data, 0, { id });
-    expect(saved.data.content).toContain('replaced');
+    expect(saved).toEqual({ type: 6 });
     expect(await interaction(data, 0, { id })).toEqual(saved);
     expect((await interaction(data, 9, { id })).data.content).toContain('different input');
     expect((await current()).roster.filter((p) => p.id === person(8).id)).toHaveLength(1);
   });
 
-  it('explains waiting expiry for slash joins and refreshes membership in a manual queue', async () => {
+  it('shows waiting expiry on the queue card and silently refreshes slash membership', async () => {
     const s = settings();
     s.queues[0].autoStart = false;
     s.queues[0].controls = {
@@ -508,7 +570,10 @@ describe('player component routes', () => {
     };
     await configure(s);
     const joined = await interaction({ name: 'add' }, 0, { type: 2 });
-    expect(joined.data.content).toMatch(/Your place expires <t:\d+:R>/);
+    expect(joined).toEqual({ type: 5, data: { flags: 64 } });
+    expect(queueCard(s.queues[0], [person(0)]).embeds[0].description).toContain(
+      'expire after 60 seconds',
+    );
     await runInDurableObject(stub(), (_i, state) => {
       for (let n = 1; n < 4; n++)
         state.storage.sql.exec(
@@ -519,8 +584,7 @@ describe('player component routes', () => {
         );
     });
     const duplicate = await interaction({ name: 'add' }, 0, { type: 2 });
-    expect(duplicate.data.content).toContain('already waiting in Pickup');
-    expect(duplicate.data.content).toContain('Your place expires');
+    expect(duplicate).toEqual({ type: 5, data: { flags: 64 } });
     expect((await stub().records(guild)).waiting[0].players).toHaveLength(4);
   });
   it('records loss immediately and rechecks captain authority', async () => {
@@ -529,7 +593,7 @@ describe('player component routes', () => {
     await click(m, 'loss', 9);
     expect((await current()).state).toBe('playing');
     const reply = await click(m, 'loss', n);
-    expect(reply.data.content).toContain('Result and ratings saved');
+    expect(reply).toEqual({ type: 6 });
     expect(await current()).toMatchObject({ state: 'finished', result: 'beta' });
     await click(m, 'loss', n);
     expect((await stub().records(guild)).changes).toHaveLength(4);

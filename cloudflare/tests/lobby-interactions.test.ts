@@ -98,10 +98,13 @@ describe('lobby command transport', () => {
         .mocked(fetch)
         .mock.calls.filter(([input]) => String(input).includes('/webhooks/'));
       expect(replies).toHaveLength(1);
-      expect(JSON.parse(replies[0][1]!.body as string)).toMatchObject({
-        content: 'Saved lobby',
-        allowed_mentions: { parse: [] },
-      });
+      expect(replies[0][1]!.method).toBe(name === 'status' ? 'PATCH' : 'DELETE');
+      if (name === 'status')
+        expect(JSON.parse(replies[0][1]!.body as string)).toMatchObject({
+          content: 'Saved lobby',
+          allowed_mentions: { parse: [] },
+        });
+      else expect(replies[0][1]!.body).toBeUndefined();
     },
   );
   it('acknowledges profile linking while provider resolution is still pending', async () => {

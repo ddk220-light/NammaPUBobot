@@ -57,6 +57,28 @@ function context() {
   };
 }
 describe('signed civpick transport', () => {
+  it('clears the slash response without waiting for slow public-card delivery', async () => {
+    const c = context();
+    let delivered!: () => void;
+    c.rpc.flush.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          delivered = resolve;
+        }),
+    );
+    const response = await interactions(
+      await signed({ type: 2, data: { name: 'civpick' } }),
+      c.env,
+      c.ctx,
+    );
+    expect(await response.json()).toEqual({ type: 5, data: { flags: 64 } });
+    await c.tasks[0];
+    expect(
+      vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('/webhooks/'))?.[1]?.method,
+    ).toBe('DELETE');
+    delivered();
+    await Promise.all(c.tasks);
+  });
   it('defers privately and preserves exact match/duration/redo options', async () => {
     const c = context(),
       r = await interactions(
@@ -76,6 +98,9 @@ describe('signed civpick transport', () => {
       );
     expect(await r.json()).toEqual({ type: 5, data: { flags: 64 } });
     await Promise.all(c.tasks);
+    expect(
+      vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('/webhooks/'))?.[1]?.method,
+    ).toBe('DELETE');
     expect(c.rpc.play).toHaveBeenCalledWith(
       guild,
       expect.objectContaining({
@@ -101,6 +126,9 @@ describe('signed civpick transport', () => {
       );
     expect(await r.json()).toEqual({ type: 5, data: { flags: 64 } });
     await Promise.all(c.tasks);
+    expect(
+      vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('/webhooks/'))?.[1]?.method,
+    ).toBe('PATCH');
     expect(c.rpc.play).toHaveBeenCalledWith(
       guild,
       expect.objectContaining({ kind: 'civ_claim', generation: 2, choice: 12 }),

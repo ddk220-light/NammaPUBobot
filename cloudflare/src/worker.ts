@@ -176,7 +176,7 @@ app.get('/health', (c) =>
     ok: true,
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.10.2',
+    version: '0.10.3',
   }),
 );
 app.post('/interactions', (c) => interactions(c.req.raw, c.env, c.executionCtx));
@@ -318,7 +318,7 @@ app.get('/api/bootstrap', async (c) => {
   return c.json({
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.10.2',
+    version: '0.10.3',
     oauthReady,
     discordReady,
     inviteUrl: invite,

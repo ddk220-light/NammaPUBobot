@@ -755,7 +755,7 @@ describe('delivery and web repairs', () => {
     const callback = vi
       .mocked(fetch)
       .mock.calls.find(([url]) => String(url).includes('/webhooks/'));
-    expect(callback?.[1]?.method).toBe('PATCH');
-    expect(JSON.parse(callback?.[1]?.body as string).content).toContain('Manual ranked match');
+    expect(callback?.[1]?.method).toBe('DELETE');
+    expect(callback?.[1]?.body).toBeUndefined();
   });
 });

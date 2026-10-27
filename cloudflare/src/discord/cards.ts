@@ -46,6 +46,9 @@ export function queueCard(queue: Queue, players: { id: string }[], held = false)
           !queue.enabled ? 'This queue is paused.' : '',
           held ? "Click Join when you're ready to start again." : '',
           players.length ? `${roster}${more}` : 'No one’s waiting yet.',
+          queue.controls?.waitingSeconds
+            ? `Waiting places expire after ${queue.controls.waitingSeconds} seconds. Join again to renew yours.`
+            : '',
         ]
           .filter(Boolean)
           .join('\n\n'),
@@ -88,6 +91,8 @@ export function matchCard(match: Match): Card {
       })
       .join('\n');
   let text = `**Alpha**\n${team(0)}\n\n**Beta**\n${team(1)}`;
+  if (['check_in', 'playing'].includes(match.state) && match.subRequests?.length)
+    text += `\n\n**Looking for a substitute:** ${match.subRequests.map(mention).join(' · ')}`;
   let title = `${match.queue.name} · ${match.gameName}`;
   const buttons: Button[] = [];
   const components: ActionRow[] = [];

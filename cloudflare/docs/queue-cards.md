@@ -1,8 +1,8 @@
-# Queue cards — 0.10.2
+# Queue cards — 0.10.3
 
 When the waiting roster changes, the bot reads the channel's five most recent public messages. If the current queue card is among them (including fifth), it edits that message in place. Otherwise it posts the updated card at the bottom, records the new message ID, then deletes the previous card. Other people's messages are never deleted. Private ephemeral messages are not part of channel history.
 
-The same rule applies to explicit `/queue` refreshes and the empty waiting list after a match forms. Repeated Join or Leave clicks do not duplicate a player or publish another card. Successful **Join and Leave button** clicks receive a silent Discord acknowledgement; the public roster is the feedback. Rejected actions still explain the problem privately. Slash commands retain their existing replies.
+The same rule applies to explicit `/queue` refreshes and the empty waiting list after a match forms. Repeated Join or Leave clicks do not duplicate a player or publish another card. Successful **Join and Leave button** clicks receive a silent Discord acknowledgement; the public roster is the feedback. `/add`, `/remove` and other public updates clear their temporary slash response after success. Rejected actions still explain the problem privately. See the [complete interaction feedback review](interaction-feedback.md) for the retained private replies.
 
 History is read only when a queue update is due. This adds an HTTP history request to that update, with no Discord Gateway listener or idle polling. The existing bot needs View Channel, Read Message History, Send Messages and Embed Links in the queue channel.
 

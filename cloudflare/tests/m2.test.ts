@@ -1,4 +1,5 @@
 import { env, exports } from 'cloudflare:workers';
+import { interactions } from '../src/discord/interactions';
 import {
   abortAllDurableObjects,
   reset,
@@ -452,15 +453,18 @@ describe('delivery and signed surfaces', () => {
     expect(vi.mocked(fetch).mock.calls.filter(([, i]) => i?.method === 'POST')).toHaveLength(1);
     expect(vi.mocked(fetch).mock.calls.filter(([, i]) => i?.method === 'PATCH')).toHaveLength(1);
   });
-  it('returns a private signed acknowledgement without waiting for Discord delivery', async () => {
+  it('defers signed slash adds promptly and clears the temporary response despite channel rate limits', async () => {
     await setup();
-    vi.mocked(fetch).mockImplementation(async () =>
-      Response.json({ retry_after: 2, global: true }, { status: 429 }),
+    vi.mocked(fetch).mockImplementation(async (input) =>
+      String(input).includes('/webhooks/')
+        ? new Response(null, { status: 204 })
+        : Response.json({ retry_after: 2, global: true }, { status: 429 }),
     );
     const payload = {
       id: String(seq++),
       type: 2,
       application_id: appId,
+      token: 'synthetic-interaction-token',
       guild_id: guild,
       channel_id: channel,
       member: { permissions: '0', user: { ...person(0), username: 'Player0' } },
@@ -483,7 +487,8 @@ describe('delivery and signed surfaces', () => {
       await crypto.subtle.sign('Ed25519', key, new TextEncoder().encode(timestamp + raw)),
     );
     const start = Date.now();
-    const response = await exports.default.fetch(
+    const jobs: Promise<unknown>[] = [];
+    const response = await interactions(
       new Request('https://setup.example/interactions', {
         method: 'POST',
         headers: {
@@ -492,12 +497,19 @@ describe('delivery and signed surfaces', () => {
         },
         body: raw,
       }),
+      env,
+      { waitUntil: (job) => jobs.push(job) },
     );
     expect(Date.now() - start).toBeLessThan(1000);
     expect(await response.json()).toMatchObject({
-      type: 4,
-      data: { flags: 64, content: 'Joined Pickup · 1/4.' },
+      type: 5,
+      data: { flags: 64 },
     });
+    await Promise.all(jobs);
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/webhooks/'))[0]?.[1]
+        ?.method,
+    ).toBe('DELETE');
     await runInDurableObject(stub(), (_i, s) => {
       s.storage.sql.exec("UPDATE outbox SET due=0 WHERE status='pending'");
     });

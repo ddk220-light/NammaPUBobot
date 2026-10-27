@@ -113,6 +113,7 @@ export class CivStore {
     if (a.kind === 'civ_start') {
       if (r && !a.redo)
         return {
+          ok: r.status !== 'invalidated',
           content:
             r.status === 'invalidated'
               ? 'Use /civpick with redo to start a fresh round.'
