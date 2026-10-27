@@ -158,6 +158,11 @@ export const settingsSchema = z
         message: 'Nickname decoration can belong to only one game in each community.',
       });
     for (const q of s.queues) {
+      if (q.modules.civs && s.games.find((g) => g.id === q.gameId)?.catalogId !== 'aoe2')
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Civilization picking is available for AoE2 queues only.',
+        });
       if (q.modules.maps && !q.maps && s.games.find((g) => g.id === q.gameId)?.catalogId !== 'aoe2')
         ctx.addIssue({
           code: 'custom',

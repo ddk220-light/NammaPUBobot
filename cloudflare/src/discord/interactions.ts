@@ -207,6 +207,53 @@ async function playInteraction(
     channelId: i.channel_id,
     admin: canManage(member),
   };
+  if (
+    (i.type === 2 && i.data?.name === 'civpick') ||
+    (i.type === 3 && i.data?.custom_id?.startsWith('civ:'))
+  ) {
+    if (!ctx || !i.token) return ephemeral('Use a current civilization command or button.');
+    if (i.type === 3) {
+      if (i.message?.author?.id !== env.DISCORD_APPLICATION_ID)
+        return ephemeral('Use the bot’s civilization card.');
+      const parts = /^civ:([a-f0-9-]{36}):(\d+):(\d+)$/.exec(i.data!.custom_id!);
+      if (!parts) return ephemeral('Use the latest civilization card.');
+      Object.assign(action, {
+        kind: 'civ_claim',
+        matchId: parts[1],
+        generation: Number(parts[2]),
+        choice: Number(parts[3]),
+      });
+    } else {
+      const option = (n: string) => i.data?.options?.find((o) => o.name === n)?.value;
+      Object.assign(action, {
+        kind: 'civ_start',
+        matchId: option('match'),
+        minutes: option('minutes'),
+        redo: option('redo'),
+      });
+    }
+    const parsed = actionSchema.safeParse(action);
+    if (!parsed.success) return ephemeral('Choose a valid match and duration (1–10 minutes).');
+    ctx.waitUntil(
+      (async () => {
+        const stub = env.COMMUNITIES.getByName(i.guild_id!);
+        const reply = await stub.play(i.guild_id!, parsed.data);
+        await stub.flush();
+        try {
+          await fetch(
+            `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${i.token}/messages/@original`,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: reply.content, allowed_mentions: { parse: [] } }),
+              signal: AbortSignal.timeout(5000),
+            },
+          );
+        } catch {}
+      })(),
+    );
+    return Response.json({ type: 5, data: { flags: 64 } });
+  }
   if (i.type === 2 && i.data?.name === 'lobby') {
     if (!ctx || !i.token) return ephemeral('Use a current lobby command.');
     const sub = i.data.options?.[0],
@@ -387,7 +434,17 @@ async function playInteraction(
             .slice(0, 5)
             .map((c) => `${c.before} → ${c.after}`)
             .join(', ') || 'None'
-        }\nProfile references (unverified): ${p.profiles.map((r) => `${r.provider}: ${r.external_id}`).join(', ') || 'None'}\nSource: ${p.source}`;
+        }\nProfile references (unverified): ${p.profiles.map((r) => `${r.provider}: ${r.external_id}${r.provenance.startsWith('inferred:') ? ' (inferred; /lobby link to confirm or /profile unlink to correct)' : ''}`).join(', ') || 'None'}\nSource: ${p.source}`;
+      if (root === 'profile')
+        content += `\nPlayed civilizations: ${
+          p.civilizations
+            ?.slice(0, 5)
+            .map(
+              (c) =>
+                `${c.selection}: ${c.wins}/${c.games} wins (${((100 * c.wins) / c.games).toFixed(0)}%)${c.inferred ? ' · inferred link' : ''}`,
+            )
+            .join('; ') || 'None recorded yet'
+        }`;
       content += `\nWeb statistics: ${env.APP_ORIGIN}/stats?community=${i.guild_id}&game=${q.gameId}&user=${target}`;
       return ephemeral(content.slice(0, 1900));
     } catch (error) {

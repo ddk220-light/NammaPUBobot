@@ -1,3 +1,5 @@
+import { createGameRecordTables } from './game-records';
+import { CivStore, createCivTables } from './civ-store';
 import { LobbyStore } from './lobby-store';
 import type { LobbyEvent } from '../domain/lobby';
 import type { Env } from '../env';
@@ -53,6 +55,8 @@ type Pointer = {
   reconcile_pages?: number;
 };
 export function createPlayTables(sql: SqlStorage) {
+  createGameRecordTables(sql);
+  createCivTables(sql);
   createUxTables(sql);
   createEconomyTables(sql);
   sql.exec(
@@ -144,6 +148,9 @@ export class PlayStore {
   private get economy() {
     return new EconomyStore(this.sql);
   }
+  private get civs() {
+    return new CivStore(this.sql, (key, channel, card) => this.enqueue(key, channel, card));
+  }
   private get lobbies() {
     return new LobbyStore(
       this.ctx,
@@ -154,6 +161,13 @@ export class PlayStore {
         return this.read(guild).settings;
       },
       {
+        occupancy: async (id) =>
+          (
+            await this.env.AOE2_LOBBIES.getByName(this.env.DISCORD_APPLICATION_ID ?? 'local').query(
+              id,
+            )
+          ).observation,
+        started: (m, o, eventId) => this.economy.startObserved(m, o.startedAt!, eventId),
         match: (id) => this.match(id),
         save: (m) => this.saveMatch(m),
         audit: (action, actor, details, m) => this.audit(action, actor, details, m.id, m.queue.id),
@@ -696,6 +710,7 @@ export class PlayStore {
   }
   private saveMatch(m: Match) {
     this.lobbies.sync(m);
+    this.civs.sync(m);
     this.sql.exec(
       'INSERT INTO matches VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state,config=excluded.config',
       m.id,
@@ -1124,15 +1139,7 @@ export class PlayStore {
       this.armCheckIn(m);
     } else this.playing(m);
     if (q.modules.stories) {
-      const history = this.sql
-        .exec<{ config: string }>(
-          "SELECT config FROM matches WHERE game_id=? AND state='finished' AND created_at>? ORDER BY created_at DESC LIMIT 500",
-          q.gameId,
-          now - 90 * 86400000,
-        )
-        .toArray()
-        .map((r) => JSON.parse(r.config) as Match);
-      m.storiesBefore = beforeStories(m, history);
+      m.storiesBefore = beforeStories(m, this.storyHistory(m));
     }
     this.economy.open(m);
     this.saveMatch(m);
@@ -1326,6 +1333,18 @@ export class PlayStore {
     }
     this.audit('undo', actor, previous, m.id, m.queue.id);
   }
+  private storyHistory(m: Match) {
+    return this.sql
+      .exec<{ config: string }>(
+        "SELECT config FROM matches WHERE game_id=? AND channel_id=? AND state='finished' AND created_at<? AND created_at>? ORDER BY created_at DESC LIMIT 5000",
+        m.queue.gameId,
+        m.queue.channelId,
+        m.createdAt,
+        m.createdAt - 90 * 86400000,
+      )
+      .toArray()
+      .map((r) => JSON.parse(r.config) as Match);
+  }
   private rosterChanged(m: Match, actor: string, details: unknown) {
     m.rosterVersion = (m.rosterVersion ?? 0) + 1;
     m.teams = m.teams.map((t) => t.slice().sort((a, b) => b.rating - a.rating)) as Match['teams'];
@@ -1335,7 +1354,9 @@ export class PlayStore {
     m.agreements = {};
     m.proposal = undefined;
     this.economy.rosterChanged(m);
-    if (m.queue.modules.stories) m.storiesBefore = beforeStories(m, []);
+    if (m.queue.modules.stories) {
+      m.storiesBefore = beforeStories(m, this.storyHistory(m));
+    }
     if (m.mapRound?.state === 'open') {
       m.mapRound.id = crypto.randomUUID();
       m.mapRound.ballots = Object.fromEntries(
@@ -1435,6 +1456,10 @@ export class PlayStore {
         .toArray()[0];
       if (current?.due !== job.due) continue;
       this.sql.exec('DELETE FROM deadlines WHERE key=?', job.key);
+      if (job.kind === 'civ') {
+        this.civs.sync(m, now);
+        continue;
+      }
       if (job.kind === 'lifetime') {
         this.timeoutMatch(m, now);
         continue;
@@ -1558,6 +1583,11 @@ export class PlayStore {
     this.remember(a.actor);
     if (a.target) this.remember(a.target);
     if (a.replacement) this.remember(a.replacement);
+    if (['civ_start', 'civ_claim'].includes(a.kind)) {
+      const m = this.selectedMatch(a);
+      a.matchId = m.id;
+      return this.civs.action(m, a, settings.games.find((g) => g.id === m.queue.gameId)?.catalogId);
+    }
     if (['lobby_attach', 'lobby_unlink', 'lobby_status'].includes(a.kind))
       return this.lobbies.action(this.selectedMatch(a), a);
     if (['map_vote', 'map_pick', 'map_redo'].includes(a.kind)) {
@@ -2398,7 +2428,7 @@ export class PlayStore {
       if (reply.ok !== false) {
         let key =
           a.matchId && !['add', 'remove', 'queue'].includes(a.kind)
-            ? `match:${a.matchId}`
+            ? `${a.kind.startsWith('civ_') ? 'civ' : 'match'}:${a.matchId}`
             : undefined;
         if (['add', 'start'].includes(a.kind)) {
           const active = this.sql
@@ -2426,7 +2456,11 @@ export class PlayStore {
                 .toArray().length)
           )
             reply.link = {
-              label: key.startsWith('match:') ? 'View match' : 'View queue',
+              label: key.startsWith('civ:')
+                ? 'View civilization picks'
+                : key.startsWith('match:')
+                  ? 'View match'
+                  : 'View queue',
               url: `https://discord.com/channels/${guild}/${a.channelId}/${card.message_id}`,
             };
         }

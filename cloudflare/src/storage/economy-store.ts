@@ -13,6 +13,9 @@ import {
 
 export function createEconomyTables(sql: SqlStorage) {
   sql.exec(
+    'CREATE TABLE IF NOT EXISTS bet_start_evidence(book_id TEXT PRIMARY KEY,started_at INTEGER NOT NULL,observed_at INTEGER NOT NULL,event_id TEXT NOT NULL)',
+  );
+  sql.exec(
     `CREATE TABLE IF NOT EXISTS imported_predictions(source_id TEXT NOT NULL,market_id TEXT NOT NULL,game_id TEXT NOT NULL,config TEXT NOT NULL,PRIMARY KEY(source_id,market_id))`,
   );
   sql.exec(
@@ -148,6 +151,7 @@ export class EconomyStore {
     const b = this.book(m.id);
     if (!enabled || !b || b.status !== 'open' || !['playing', 'check_in'].includes(m.state))
       throw new PlayError('Betting is closed.');
+    this.assertPreGame(m);
     this.seed(m.queue.gameId, user);
     const own = m.teams.findIndex((t) => t.some((p) => p.id === user));
     if (own >= 0 && side !== (own === 0 ? 'alpha' : 'beta'))
@@ -181,17 +185,62 @@ export class EconomyStore {
   cancel(m: Match, user: string, id: string) {
     const b = this.book(m.id);
     if (!b || b.status !== 'open') throw new PlayError('Betting is closed.');
+    this.assertPreGame(m);
     const bet = this.bets(b.id).find((b) => b.user_id === user);
     if (!bet) return;
     this.change(b.game_id, user, bet.stake, 'refund', `cancel:${id}`, b.id);
     this.sql.exec('DELETE FROM bets WHERE book_id=? AND user_id=?', b.id, user);
   }
-  freeze(m: Match) {
+  private assertPreGame(m: Match) {
+    const b = m.lobby;
+    if (!b) return; // Manual games retain the established manual-close workflow.
+    if (
+      b.state !== 'observed' ||
+      !b.observation ||
+      b.observation.startedAt ||
+      Date.now() - (b.lastSuccessAt ?? 0) > 60000
+    )
+      throw new PlayError(
+        'Bet changes are paused until fresh pre-game lobby status is available. A captain can still close betting.',
+      );
+  }
+  startObserved(m: Match, startedAt: number, eventId: string) {
+    const b = this.book(m.id);
+    if (!b || ['settled', 'refunded'].includes(b.status)) return;
+    const previous = this.sql
+      .exec<{ started_at: number }>(
+        'SELECT started_at FROM bet_start_evidence WHERE book_id=?',
+        b.id,
+      )
+      .toArray()[0];
+    if (previous) return;
+    this.sql.exec(
+      'INSERT INTO bet_start_evidence VALUES(?,?,?,?)',
+      b.id,
+      startedAt,
+      Date.now(),
+      eventId,
+    );
+    const late = this.sql
+      .exec(
+        "SELECT 1 FROM gold_ledger WHERE book_id=? AND created_at>=? AND (kind='bet' OR id LIKE 'cancel:%') LIMIT 1",
+        b.id,
+        startedAt,
+      )
+      .toArray().length;
+    if (late || b.opened_at > startedAt) {
+      this.sql.exec('DELETE FROM bet_participation WHERE book_id=?', b.id);
+      this.refund(b, 'late_start_evidence');
+      return;
+    }
+    if (b.status === 'open') this.freeze(m, startedAt);
+  }
+  freeze(m: Match, cutoff = Date.now()) {
     const b = this.book(m.id);
     if (!b || b.status !== 'open') throw new PlayError('Betting is already closed.');
     this.sql.exec(
       "UPDATE books SET status='frozen',closed_at=? WHERE id=? AND status='open'",
-      Date.now(),
+      cutoff,
       b.id,
     );
     for (const bet of this.bets(b.id))
@@ -200,7 +249,7 @@ export class EconomyStore {
         b.game_id,
         bet.user_id,
         b.id,
-        Date.now(),
+        cutoff,
       );
     const pools = this.pools(b.id);
     if (!pools.alpha || !pools.beta) this.refund(b, 'one_sided');
@@ -233,16 +282,21 @@ export class EconomyStore {
   finish(m: Match, result: 'alpha' | 'beta' | 'draw' | 'abort') {
     const b = this.book(m.id);
     if (b && !['settled', 'refunded'].includes(b.status)) {
-      if (b.status === 'open' || result === 'draw' || result === 'abort')
+      const unverifiedStart =
+        !!m.lobby &&
+        !this.sql.exec('SELECT 1 FROM bet_start_evidence WHERE book_id=?', b.id).toArray().length;
+      if (b.status === 'open' || result === 'draw' || result === 'abort' || unverifiedStart)
         this.refund(
           b,
-          m.state === 'check_in_failed'
-            ? 'check_in_failed'
-            : result === 'abort'
-              ? 'match_cancelled'
-              : result === 'draw'
-                ? 'draw'
-                : 'reported_while_open',
+          unverifiedStart && result !== 'abort' && result !== 'draw'
+            ? 'unverified_game_start'
+            : m.state === 'check_in_failed'
+              ? 'check_in_failed'
+              : result === 'abort'
+                ? 'match_cancelled'
+                : result === 'draw'
+                  ? 'draw'
+                  : 'reported_while_open',
         );
       else {
         const pools = this.pools(b.id),

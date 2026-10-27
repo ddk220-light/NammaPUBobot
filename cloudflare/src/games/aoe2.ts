@@ -28,6 +28,7 @@ function player(value: unknown, fallbackTeam?: unknown): LobbyPlayer | null {
     id = identifier(p.profileId);
   if (!id) throw Error('Invalid player identity');
   return {
+    ...(text(p.civName) ? { selection: text(p.civName) } : {}),
     profileId: id,
     name: text(p.name, `Player ${id}`),
     team: p.team == null && fallbackTeam == null ? null : String(p.team ?? fallbackTeam),
@@ -178,6 +179,10 @@ export const aoe2Adapter: GameAdapter = {
     } catch {
       return { status: 'unavailable' };
     }
+  },
+  profileUrl(id) {
+    if (!identifier(id)) throw Error('Invalid profile');
+    return `https://www.aoe2companion.com/profile/${id}`;
   },
   lobbyUrl(id) {
     if (!identifier(id)) throw Error('Invalid lobby');

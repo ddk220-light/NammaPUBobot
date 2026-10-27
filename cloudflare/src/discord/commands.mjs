@@ -440,6 +440,22 @@ export function adminCommandRoute(group, action) {
 }
 
 export const commands = [
+  {
+    name: 'civpick',
+    description: 'Start or show hidden civilization picks for a match',
+    type: 1,
+    options: [
+      { type: 3, name: 'match', description: 'Optional match ID; defaults to your active match' },
+      {
+        type: 4,
+        name: 'minutes',
+        description: 'Time to pick (default 3 minutes)',
+        min_value: 1,
+        max_value: 10,
+      },
+      { type: 5, name: 'redo', description: 'Start a new round (initiator or administrator only)' },
+    ],
+  },
   adminCommand,
   ...operations
     .filter((c) => !['setup', 'rating', 'match', 'moderation'].includes(c.name))

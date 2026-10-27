@@ -406,7 +406,7 @@ function queueFields(q?: Queue) {
   )
     .map(
       ([key, label]) =>
-        `<label class="toggle${['quiz', 'civs'].includes(key) ? ' unavailable-option' : ''}"><input type="checkbox" name="module-${key}"${checked(q?.modules[key as keyof typeof emptyModules] ?? false)}${['quiz', 'civs'].includes(key) ? ' disabled data-unavailable="true"' : ''} /> ${label}${['quiz', 'civs'].includes(key) ? ' (not available yet)' : ''}</label>`,
+        `<label class="toggle${['quiz'].includes(key) ? ' unavailable-option' : ''}"><input type="checkbox" name="module-${key}"${checked(q?.modules[key as keyof typeof emptyModules] ?? false)}${['quiz'].includes(key) ? ' disabled data-unavailable="true"' : ''} /> ${label}${['quiz'].includes(key) ? ' (not available yet)' : ''}</label>`,
     )
     .join(
       '',

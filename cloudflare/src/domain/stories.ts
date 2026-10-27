@@ -1,3 +1,6 @@
+import { storyCandidates, selectStories, seededRandom } from './story-candidates';
+import { teasePhrase, payoffPhrase } from './story-phrases';
+import { storyFrame, subjectSide } from './story-framing';
 import type { Match } from './play';
 import type { Player } from './rating';
 const mention = (id: string) => `<@${id}>`;
@@ -21,95 +24,52 @@ export function streakLine(player: Player) {
   return `${mention(player.id)} ${phrase} · ${player.streak} consecutive wins.`;
 }
 export function beforeStories(m: Match, history: Match[]): string[] {
-  const lines: string[] = [];
+  const random = seededRandom(`${m.id}:${m.rosterVersion ?? 0}`),
+    choose = (xs: string[]) => xs[Math.floor(random() * xs.length)];
+  const rosters = m.teams.map((t) => t.map((p) => p.id)),
+    nick = Object.fromEntries(m.roster.map((p) => [p.id, mention(p.id)]));
+  const candidates = selectStories(storyCandidates(m, history), random);
   m.storyFacts = [];
+  m.storyContext = { version: 1, rosters, candidates, seed: `${m.id}:${m.rosterVersion ?? 0}` };
+  const streaks: string[] = [];
   for (const [side, team] of m.teams.entries()) {
     const top = Math.max(...team.map((p) => p.streak));
     if (top < 3) continue;
     const leaders = team.filter((p) => p.streak === top);
-    lines.push(
-      leaders.length === 1
-        ? `${side === 0 ? 'Alpha' : 'Beta'}: ${streakLine(leaders[0])}`
-        : `${side === 0 ? 'Alpha' : 'Beta'}: ${leaders.map((p) => mention(p.id)).join(' and ')} share a ${top}-win streak.`,
+    streaks.push(
+      `**${side ? 'Beta' : 'Alpha'}:** ${leaders.map((p) => mention(p.id)).join(', ')} — **${top}** consecutive wins${leaders.length > 1 ? ' (tied)' : ''}`,
     );
   }
-  let rivalry: { a: string; b: string; wins: number; count: number } | undefined;
-  for (const a of m.teams[0])
-    for (const b of m.teams[1]) {
-      const meetings = history.filter(
-        (h) =>
-          h.state === 'finished' &&
-          h.result !== 'draw' &&
-          h.roster.some((p) => p.id === a.id) &&
-          h.roster.some((p) => p.id === b.id) &&
-          h.teams.some((t) => t.some((p) => p.id === a.id) && !t.some((p) => p.id === b.id)),
-      );
-      if (meetings.length < 5) continue;
-      const aWins = meetings.filter((h) =>
-        h.teams[h.result === 'alpha' ? 0 : 1].some((p) => p.id === a.id),
-      ).length;
-      const wins = Math.max(aWins, meetings.length - aWins);
-      if (wins / meetings.length < 0.7) continue;
-      if (!rivalry || meetings.length > rivalry.count)
-        rivalry = {
-          a: aWins >= meetings.length - aWins ? a.id : b.id,
-          b: aWins >= meetings.length - aWins ? b.id : a.id,
-          wins,
-          count: meetings.length,
-        };
-    }
-  if (rivalry) {
-    lines.push(
-      `${mention(rivalry.a)} leads ${mention(rivalry.b)} ${rivalry.wins}–${rivalry.count - rivalry.wins} in their ${rivalry.count} recent meetings. Time to change that?`,
-    );
-    m.storyFacts.push({
-      kind: 'rivalry',
-      players: [rivalry.a, rivalry.b],
-      side: m.teams[0].some((p) => p.id === rivalry!.a) ? 0 : 1,
-      wins: rivalry.wins,
-      games: rivalry.count,
-    });
-  }
-  for (const [side, team] of m.teams.entries()) {
-    if (lines.length >= 4) break;
-    const groups =
-      team.length >= 3
-        ? [
-            team.map((p) => p.id),
-            ...team.flatMap((p, i) => team.slice(i + 1).map((q) => [p.id, q.id])),
-          ]
-        : team.length === 2
-          ? [team.map((p) => p.id)]
-          : [];
-    for (const group of groups) {
-      const together = history.filter(
-        (h) =>
-          h.state === 'finished' &&
-          h.result !== 'draw' &&
-          h.teams.some((t) => group.every((id) => t.some((p) => p.id === id))),
-      );
-      if (together.length < (group.length >= 3 ? 2 : 5)) continue;
-      const won = together.filter((h) =>
-        group.every((id) => h.teams[h.result === 'alpha' ? 0 : 1].some((p) => p.id === id)),
-      ).length;
-      if (won / together.length < 0.8 && won / together.length > 0.2) continue;
-      const names = group.map(mention).join(' + ');
-      lines.push(
-        `${names}: ${won}/${together.length} wins together recently. ${won / together.length >= 0.8 ? 'Can they keep it going?' : 'A chance to turn it around.'}`,
-      );
-      m.storyFacts.push({
-        kind: group.length >= 3 ? 'lineup' : 'duo',
-        players: group,
-        side: side as 0 | 1,
-        wins: won,
-        games: together.length,
-      });
-      break;
-    }
-  }
-  return lines.slice(0, 4);
+  const top = Math.max(...m.roster.map((p) => p.streak)),
+    leaders = m.roster.filter((p) => p.streak === top);
+  if (top >= 3 && leaders.length === 1) streaks.push(`👑 ${streakLine(leaders[0])}`);
+  return [
+    ...(streaks.length ? [`**🔥 Current win streaks**\n${streaks.join('\n')}`] : []),
+    ...candidates.map((c) => teasePhrase(c, nick, storyFrame(c, rosters, nick, choose), choose)),
+  ];
 }
 export function afterStories(m: Match, rated: Player[]): string[] {
+  if (!m.storyContext) return legacyAfterStories(m, rated);
+  if (m.state !== 'finished') return [];
+  if (m.result === 'draw') return ['Evenly matched — this one ends in a draw.'];
+  const ctx = m.storyContext,
+    rosters = m.teams.map((t) => t.map((p) => p.id));
+  if (
+    rosters.some(
+      (team, i) =>
+        team.length !== ctx.rosters[i].length || team.some((id) => !ctx.rosters[i].includes(id)),
+    )
+  )
+    return [];
+  const random = seededRandom(`${ctx.seed}:payoff`),
+    choose = (xs: string[]) => xs[Math.floor(random() * xs.length)],
+    nick = Object.fromEntries(m.roster.map((p) => [p.id, mention(p.id)]));
+  return ctx.candidates.map((c) => {
+    const won = subjectSide(c, rosters) === (m.result === 'alpha' ? 0 : 1);
+    return payoffPhrase(c, nick, storyFrame(c, rosters, nick, choose, won), choose, won);
+  });
+}
+function legacyAfterStories(m: Match, rated: Player[]): string[] {
   if (m.result === 'draw') return ['Evenly matched — this one ends in a draw.'];
   if (m.state !== 'finished') return [];
   const winners = new Set(m.teams[m.result === 'alpha' ? 0 : 1].map((p) => p.id)),

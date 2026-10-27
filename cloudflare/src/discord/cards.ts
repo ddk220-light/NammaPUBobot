@@ -171,17 +171,32 @@ export function matchCard(match: Match): Card {
     : match.state === 'finished'
       ? match.storiesAfter
       : [];
-  if (stories?.length) text += `\n\n${stories.join('\n')}`;
+  const extra: Card['embeds'] = [];
+  if (stories?.length)
+    extra.push({
+      title: match.state === 'finished' ? '⚔️ Final Tale of the Tape' : '⚔️ Tale of the Tape',
+      description: stories.join('\n\n').slice(0, 4000),
+      color: 0xe67e22,
+      footer: { text: 'Last 90 days · just for fun' },
+    });
+  if (match.lobby)
+    extra.push({
+      title: `${match.gameName} lobby`,
+      description: lobbySummary(match.lobby),
+      color: 0x648c78,
+      footer: { text: 'Public game evidence · results reported by players' },
+    });
   if (buttons.length) components.push({ type: 1, components: buttons });
   return {
     content: '',
     embeds: [
       {
         title,
-        description: match.lobby ? `${text}\n\n${lobbySummary(match.lobby)}` : text,
+        description: text,
         color: match.state === 'finished' ? 0xb9e77c : 0x648c78,
         footer: { text: 'Community Games' },
       },
+      ...extra,
     ],
     components,
     allowed_mentions: { parse: [] },

@@ -1,5 +1,7 @@
 # Lobby integration: implementation and acceptance
 
+Historical phase-1 handoff. Superseded for current capabilities by [AoE2 feature completion 0.9.0](aoe2-completion.md), including live occupancy, automatic betting closure, identity inference, civ recording/picking and full text banter. The phase-1 evidence below is retained unchanged.
+
 27 October 2026 UTC. The first remaining-feature chunk implements the HTTP/manual lobby journey and is deployed to the existing Cloudflare test installation. The test guild has 17 commands, including `/lobby`. Three live Discord match/economy scenarios passed with simulated player actions; the temporary demo controller was then removed. Railway remains production and was not changed. An actual AoE2 start/end lifecycle remains an open acceptance gate. See the [deployment and demo evidence](../ops/live-demo-2026-10-27.md).
 
 ## Player and organizer journey

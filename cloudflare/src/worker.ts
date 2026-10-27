@@ -18,6 +18,7 @@ import { memberIds, resolveMember } from './discord/members';
 import { importSchema, recordActionSchema, recordPolicy } from './domain/records';
 import { economyImportSchema } from './domain/economy-import';
 import { privilegedRankPermissions } from './domain/rank-roles';
+export { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 export { Community } from './storage/community';
 export { AuthStore } from './storage/auth';
 export { DiscordGate } from './storage/discord-gate';
@@ -175,7 +176,7 @@ app.get('/health', (c) =>
     ok: true,
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.8.4',
+    version: '0.9.0',
   }),
 );
 app.post('/interactions', (c) => interactions(c.req.raw, c.env, c.executionCtx));
@@ -199,6 +200,18 @@ function operationalCommunity(c: Context<App>) {
     throw new Problem(400, 'invalid_copy', 'Use a simple recovery copy name.');
   return { guild, stub: c.env.COMMUNITIES.getByName(copy ? `recovery:${copy}:${guild}` : guild) };
 }
+app.get('/ops/aoe2/feed', async (c) =>
+  c.json(await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').status()),
+);
+app.get('/ops/aoe2/lobbies/:id', async (c) => {
+  const id = z
+    .string()
+    .regex(/^[1-9]\d{0,11}$/)
+    .parse(c.req.param('id'));
+  return c.json(
+    await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').query(id),
+  );
+});
 app.get('/ops/communities/:guild/backup', async (c) => {
   const { guild, stub } = operationalCommunity(c);
   return c.json(await stub.operationalBackup(guild));
@@ -271,7 +284,7 @@ app.get('/api/bootstrap', async (c) => {
   return c.json({
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.8.4',
+    version: '0.9.0',
     oauthReady,
     discordReady,
     inviteUrl: invite,

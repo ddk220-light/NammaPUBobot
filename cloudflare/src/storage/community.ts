@@ -22,7 +22,7 @@ export class Community extends DurableObject<Env> {
       const version = sql
         .exec<{ version: number }>('SELECT version FROM schema_version')
         .toArray()[0]?.version;
-      if (version && ![1, 2, 3, 4, 5, 6].includes(version))
+      if (version && ![1, 2, 3, 4, 5, 6, 7].includes(version))
         throw new Error('Unsupported storage schema.');
       if (!version) sql.exec('INSERT INTO schema_version (version) VALUES (1)');
       sql.exec(
@@ -51,7 +51,7 @@ export class Community extends DurableObject<Env> {
             sql.exec('UPDATE queues SET config=? WHERE id=?', JSON.stringify(q), q.id);
           }
       }
-      sql.exec('UPDATE schema_version SET version=6');
+      sql.exec('UPDATE schema_version SET version=7');
     });
     this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
     this.recordStore.backfill();
@@ -424,8 +424,20 @@ export class Community extends DurableObject<Env> {
           throw Error('Incomplete backup manifest.');
         const sourceVersion = backup.tables.schema_version[0]?.version;
         if (
-          [5, 6].includes(Number(sourceVersion)) &&
-          [...known].some((name) => !Array.isArray(backup.tables[name]))
+          [5, 6, 7].includes(Number(sourceVersion)) &&
+          [...known]
+            .filter(
+              (name) =>
+                Number(sourceVersion) >= 7 ||
+                ![
+                  'civ_rounds',
+                  'civ_pick_history',
+                  'identity_rejections',
+                  'played_selections',
+                  'bet_start_evidence',
+                ].includes(name),
+            )
+            .some((name) => !Array.isArray(backup.tables[name]))
         )
           throw Error('Incomplete backup manifest; all schema-5/6 community tables are required.');
         for (const [table, rows] of Object.entries(backup.tables)) {
@@ -461,7 +473,7 @@ export class Community extends DurableObject<Env> {
         const version = sql
           .exec<{ version: number }>('SELECT version FROM schema_version')
           .toArray()[0]?.version;
-        if (![4, 5, 6].includes(version!)) throw Error('Unsupported backup schema version.');
+        if (![4, 5, 6, 7].includes(version!)) throw Error('Unsupported backup schema version.');
         const imbalance = sql
           .exec(
             'SELECT w.user_id FROM wallets w LEFT JOIN gold_ledger l ON l.game_id=w.game_id AND l.user_id=w.user_id GROUP BY w.game_id,w.user_id HAVING w.balance != COALESCE(SUM(l.amount),0) LIMIT 1',

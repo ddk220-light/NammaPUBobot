@@ -151,6 +151,14 @@ export interface PlayerStatistics extends Player {
   eligible: boolean;
   history: RatingHistory[];
   profiles: ProfileReference[];
+  civilizations: {
+    selection: string;
+    games: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    inferred: number;
+  }[];
   recent: {
     id: string;
     at: number;

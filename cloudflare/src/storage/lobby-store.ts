@@ -1,3 +1,4 @@
+import { observeGamePlayers } from './game-records';
 import { gameCapabilities } from '../games/catalog';
 import type { Settings } from '../domain/config';
 import type { Action, Match } from '../domain/play';
@@ -14,13 +15,25 @@ import { gameAdapter } from '../games/registry';
 import type { ProviderResult, LobbyObservation } from '../games/types';
 
 interface Hooks {
+  occupancy?(id: string): Promise<LobbyObservation | null>;
+  started?(match: Match, observation: LobbyObservation, eventId: string): void;
   match(id: string): Match;
   save(match: Match): void;
   prompt(match: Match, event: LobbyEvent): void;
   audit(action: string, actor: string, details: unknown, match: Match): void;
 }
 const active = (m: Match) =>
-  ['check_in', 'playing'].includes(m.state) && Date.now() < (m.expiresAt ?? m.createdAt + 43200000);
+  (['check_in', 'playing'].includes(m.state) &&
+    Date.now() < (m.expiresAt ?? m.createdAt + 43200000)) ||
+  (m.state === 'finished' && !!m.closedAt && Date.now() < m.closedAt + 900000);
+const complete = (m: Match) =>
+  !!m.lobby?.observation?.finishedAt &&
+  (Date.now() > m.lobby.observation.finishedAt + 900000 ||
+    m.lobby.profiles.every(
+      (p) =>
+        !p.profileId ||
+        !!m.lobby?.observation?.players.find((x) => x.profileId === p.profileId)?.selection,
+    ));
 
 /** Durable orchestration shared by all games. Adapters only perform bounded network reads. */
 export class LobbyStore {
@@ -57,7 +70,8 @@ export class LobbyStore {
   }
   action(m: Match, a: Action) {
     if (a.kind === 'lobby_status') return { ok: true, content: lobbySummary(m.lobby) };
-    if (!active(m)) throw new PlayError('This match is closed.');
+    if (!['check_in', 'playing'].includes(m.state) || !active(m))
+      throw new PlayError('This match is closed.');
     if (!a.admin && !m.captains.includes(a.actor.id))
       throw new PlayError('Only a captain or administrator can attach or unlink a lobby.');
     if (a.kind === 'lobby_unlink') {
@@ -142,8 +156,13 @@ export class LobbyStore {
       b.state = 'invalidated';
       b.reason = 'Roster changed; explicitly attach the lobby again.';
     }
-    if (['unlinked', 'invalidated', 'stopped'].includes(b.state) || b.observation?.finishedAt)
+    if (['unlinked', 'invalidated', 'stopped'].includes(b.state) || complete(m))
       this.sql.exec('DELETE FROM deadlines WHERE key=?', `lobby:${m.id}`);
+    else if (
+      m.state === 'finished' &&
+      !this.sql.exec('SELECT 1 FROM deadlines WHERE key=?', `lobby:${m.id}`).toArray().length
+    )
+      this.arm(m, Date.now() + 30000);
   }
   private arm(m: Match, due: number) {
     this.sql.exec(
@@ -151,7 +170,12 @@ export class LobbyStore {
       `lobby:${m.id}`,
       'lobby',
       m.id,
-      Math.min(due, m.expiresAt ?? m.createdAt + 43200000),
+      Math.min(
+        due,
+        m.state === 'finished' && m.closedAt
+          ? m.closedAt + 900000
+          : (m.expiresAt ?? m.createdAt + 43200000),
+      ),
     );
   }
   private current(m: Match, bindingId: string): boolean {
@@ -193,7 +217,7 @@ export class LobbyStore {
       if (m.lobby) this.current(m, m.lobby.id);
     }
   }
-  accept(guild: string, input: LobbyEvent) {
+  accept(guild: string, input: LobbyEvent, providerRetryAt?: number) {
     const parsed = lobbyEventSchema.safeParse(input);
     if (!parsed.success || parsed.data.communityId !== guild)
       return { accepted: false, reason: 'invalid_binding' };
@@ -229,12 +253,24 @@ export class LobbyStore {
       )
         return { accepted: false, reason: 'conflicting_evidence' };
       const changed = b.observation?.phase !== o.phase || b.state !== 'observed';
+      if (providerRetryAt !== undefined) b.providerRetryAt = providerRetryAt;
       b.state = 'observed';
       b.observation = o;
       b.lastSuccessAt = o.observedAt;
       b.lastEventId = event.eventId;
       b.failures = 0;
+      const inferred = observeGamePlayers(
+        this.sql,
+        m,
+        gameAdapter(b.adapterId)!.profileProvider,
+        o,
+      );
+      if (inferred.length) {
+        b.profiles = this.profiles(m, gameAdapter(b.adapterId)!.profileProvider);
+        this.hooks.audit('profiles_inferred', 'connector', { links: inferred, bindingId: b.id }, m);
+      }
       b.rosterVerified = rosterMatches(b, o);
+      if (o.startedAt) this.hooks.started?.(m, o, event.eventId);
       if (o.phase === 'finished' && b.rosterVerified && m.state === 'playing' && !b.prompted) {
         b.prompted = true;
         this.hooks.prompt(m, event);
@@ -252,7 +288,7 @@ export class LobbyStore {
           { phase: o.phase, source: o.source, rosterVerified: b.rosterVerified },
           m,
         );
-      if (!o.finishedAt)
+      if (!complete(m))
         this.arm(m, Date.now() + (o.startedAt ? 120000 : 30000) + Math.floor(Math.random() * 5000));
       this.hooks.save(m);
       return { accepted: true };
@@ -273,7 +309,7 @@ export class LobbyStore {
           .exec<{ due: number }>('SELECT due FROM deadlines WHERE key=?', `lobby:${m.id}`)
           .toArray()[0];
         if (!job || job.due > Date.now()) return;
-        if (!b || !this.current(m, b.id) || b.observation?.finishedAt) {
+        if (!b || !this.current(m, b.id) || complete(m)) {
           this.sql.exec('DELETE FROM deadlines WHERE key=?', `lobby:${m.id}`);
           return;
         }
@@ -283,33 +319,61 @@ export class LobbyStore {
       if (!candidate) continue;
       const { m, b } = candidate;
       let result: ProviderResult<LobbyObservation>;
+      let providerRetryAt = b.providerRetryAt ?? 0;
       try {
-        result = await gameAdapter(b.adapterId)!.observe(b.externalId, !!b.observation?.startedAt);
+        const [observed, occupancy] = await Promise.all([
+          providerRetryAt > Date.now()
+            ? Promise.resolve({
+                status: 'unavailable' as const,
+                retryAfterMs: providerRetryAt - Date.now(),
+              })
+            : gameAdapter(b.adapterId)!.observe(b.externalId, !!b.observation?.startedAt),
+          b.adapterId === 'aoe2' && !b.observation?.startedAt
+            ? this.hooks.occupancy?.(b.externalId).catch(() => null)
+            : null,
+        ]);
+        providerRetryAt =
+          observed.status === 'ok'
+            ? 0
+            : observed.retryAfterMs
+              ? Date.now() + observed.retryAfterMs
+              : providerRetryAt;
+        result =
+          observed.status === 'ok'
+            ? observed
+            : occupancy
+              ? { status: 'ok', value: occupancy }
+              : observed;
       } catch {
         result = { status: 'unavailable' };
       }
       // Network work is complete. Recheck saved binding and roster before any write.
       if (result.status === 'ok') {
-        const accepted = this.accept(guild, {
-          schemaVersion: 1,
-          communityId: guild,
-          gameId: m.queue.gameId,
-          matchId: m.id,
-          bindingId: b.id,
-          rosterVersion: b.rosterVersion,
-          adapterId: b.adapterId,
-          eventId: crypto.randomUUID(),
-          observation: result.value,
-        });
+        const accepted = this.accept(
+          guild,
+          {
+            schemaVersion: 1,
+            communityId: guild,
+            gameId: m.queue.gameId,
+            matchId: m.id,
+            bindingId: b.id,
+            rosterVersion: b.rosterVersion,
+            adapterId: b.adapterId,
+            eventId: crypto.randomUUID(),
+            observation: result.value,
+          },
+          providerRetryAt,
+        );
         if (accepted.accepted) continue;
       }
       this.ctx.storage.transactionSync(() => {
         const current = this.hooks.match(m.id);
         if (!this.current(current, b.id)) return;
         const saved = current.lobby!;
-        if (saved.observation?.finishedAt) return;
+        if (complete(current)) return;
         if (saved.state !== 'unavailable')
           this.hooks.audit('lobby_unavailable', 'connector', { bindingId: b.id }, current);
+        saved.providerRetryAt = providerRetryAt;
         saved.state = 'unavailable';
         saved.failures = Math.min(saved.failures + 1, 10);
         const retry = result.status !== 'ok' ? (result.retryAfterMs ?? 0) : 0;

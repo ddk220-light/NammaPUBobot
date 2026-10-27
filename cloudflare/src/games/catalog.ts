@@ -5,7 +5,7 @@ export const gameCatalog = [
     name: 'Age of Empires II',
     selection: 'civilization',
     lobby: true,
-    occupancy: false,
+    occupancy: true,
     profileProvider: 'aoe2',
   },
   {

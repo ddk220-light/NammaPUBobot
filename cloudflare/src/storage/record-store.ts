@@ -1,3 +1,4 @@
+import { selectionStats } from './game-records';
 import type { Env } from '../env';
 import type { Snapshot } from '../domain/config';
 import { PlayError, policy, type Match } from '../domain/play';
@@ -463,6 +464,7 @@ export class RecordStore {
           relationships: [...relations.values()].filter(
             (r) => r.teammateMatches + r.opponentMatches >= 3,
           ),
+          civilizations: selectionStats(this.sql, game, user!),
           profiles: this.sql
             .exec<ProfileReference & Record<string, SqlStorageValue>>(
               'SELECT provider,external_id,url,provenance FROM profile_refs WHERE game_id=? AND user_id=?',
@@ -560,7 +562,16 @@ export class RecordStore {
             a.provider,
             a.externalId,
           );
-          content = 'Profile reference removed.';
+          this.sql.exec(
+            'INSERT OR REPLACE INTO identity_rejections VALUES(?,?,?,?,?)',
+            a.gameId,
+            a.provider,
+            a.externalId,
+            a.userId,
+            Date.now(),
+          );
+          content =
+            'Profile reference removed. Automatic matching will not restore this rejected link.';
         } else {
           if (!a.url) throw new PlayError('Provide an HTTPS profile URL.');
           if (existing && existing.user_id !== a.userId && a.kind !== 'reassign')
@@ -578,6 +589,21 @@ export class RecordStore {
             a.url,
             admin ? 'admin' : 'player',
             Date.now(),
+          );
+          this.sql.exec(
+            'DELETE FROM identity_rejections WHERE game_id=? AND provider=? AND external_id=? AND user_id=?',
+            a.gameId,
+            a.provider,
+            a.externalId,
+            a.userId,
+          );
+          this.sql.exec(
+            'UPDATE played_selections SET provenance=? WHERE game_id=? AND provider=? AND external_id=? AND user_id=?',
+            admin ? 'admin' : 'player',
+            a.gameId,
+            a.provider,
+            a.externalId,
+            a.userId,
           );
           content = existenceChecked
             ? 'Public profile found. Mapping saved as ' +

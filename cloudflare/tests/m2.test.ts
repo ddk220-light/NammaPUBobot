@@ -532,6 +532,7 @@ describe('delivery and signed surfaces', () => {
   });
   it('keeps command definitions within Discord constraints with admin visibility on privileged groups', () => {
     expect(commands.map((c) => c.name)).toEqual([
+      'civpick',
       'admin',
       'add',
       'remove',

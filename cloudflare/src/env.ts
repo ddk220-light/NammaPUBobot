@@ -1,3 +1,4 @@
+import type { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 import type { Community } from './storage/community';
 import type { AuthStore } from './storage/auth';
 import type { DiscordGate } from './storage/discord-gate';
@@ -7,6 +8,7 @@ export interface Env {
   COMMUNITIES: DurableObjectNamespace<Community>;
   AUTH: DurableObjectNamespace<AuthStore>;
   DISCORD_GATE: DurableObjectNamespace<DiscordGate>;
+  AOE2_LOBBIES: DurableObjectNamespace<AoE2LobbyFeed>;
   VOICE_PRESENCE: DurableObjectNamespace<VoicePresence>;
   APP_ENV: 'local' | 'staging' | 'production';
   APP_ORIGIN: string;

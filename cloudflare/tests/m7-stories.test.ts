@@ -14,8 +14,9 @@ describe('M7 game-agnostic stories', () => {
     const m = await fill();
     m.teams.forEach((t) => t.forEach((p) => (p.streak = 3)));
     const lines = beforeStories(m, []);
-    expect(lines).toHaveLength(2);
-    expect(lines.every((v) => v.includes('share a 3-win streak'))).toBe(true);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].match(/\(tied\)/g)).toHaveLength(2);
+    expect(lines[0]).not.toContain('👑');
   });
   it.each([3, 4, 5, 6, 7, 8, 9, 10, 12])(
     'uses the preserved streak statement at %s',
@@ -36,10 +37,17 @@ describe('M7 game-agnostic stories', () => {
         createdAt: m.createdAt - n - 1,
       }));
     const lines = beforeStories(m, history);
-    expect(lines.some((v) => v.includes('recent meetings'))).toBe(true);
+    expect(m.storyContext?.candidates.length).toBeGreaterThan(0);
+    expect(
+      lines.some((v) => /unbeaten|flawless|Perfect record|cursed|winless|0-5|5-0/.test(v)),
+    ).toBe(true);
     m.state = 'finished';
     m.result = 'beta';
-    expect(afterStories(m, m.roster).some((v) => v.includes('gets one back'))).toBe(true);
+    expect(
+      afterStories(m, m.roster).some((v) =>
+        /drop one|run is over|CURSE BREAKS|on the board/.test(v),
+      ),
+    ).toBe(true);
   });
   it('stores optional stories once across restart and result retries', async () => {
     const s = settings();

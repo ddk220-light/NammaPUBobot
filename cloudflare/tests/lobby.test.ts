@@ -65,7 +65,11 @@ function payload(m: Match, finished = true) {
     finished: finished ? new Date().toISOString() : null,
     teams: m.teams.map((team, side) => ({
       teamId: side + 1,
-      players: team.map((p) => ({ profileId: Number(profileId(p.id)), name: p.name })),
+      players: team.map((p) => ({
+        profileId: Number(profileId(p.id)),
+        name: p.name,
+        civName: 'Franks',
+      })),
     })),
   };
 }
@@ -117,7 +121,7 @@ describe('game adapter contract', () => {
     expect(() => aoe2Adapter.parseLobbyReference(value)).toThrow();
   });
   it('advertises actual capabilities and keeps other games manual', () => {
-    expect(gameCapabilities('aoe2')).toMatchObject({ lobby: true, occupancy: false });
+    expect(gameCapabilities('aoe2')).toMatchObject({ lobby: true, occupancy: true });
     for (const id of ['generals', 'aoe4', 'aoe3', 'aom']) {
       expect(gameAdapter(id)).toBeUndefined();
       const s = settings();
@@ -227,7 +231,7 @@ describe('durable lobby journey', () => {
     ).toMatchObject({ ok: true });
     expect(await jobs()).toHaveLength(0);
   });
-  it('prompts once for verified completion without closing bets or awarding a result', async () => {
+  it('prompts once for verified completion while closing bets and never awarding a result', async () => {
     const m = await linked();
     const e = event(m);
     expect(await stub().connectorEnded(guild, e)).toMatchObject({ accepted: true });
@@ -239,7 +243,7 @@ describe('durable lobby journey', () => {
     expect((await current()).lobby).toMatchObject({ rosterVerified: true, prompted: true });
     const records = await stub().records(guild);
     expect(records.changes).toEqual([]);
-    expect(records.economy.books[0].status).toBe('open');
+    expect(records.economy.books[0].status).toBe('refunded');
     await act('recover_abort', 99, { matchId: m.id, admin: true });
     expect(await prompts()).toHaveLength(0);
     expect(await stub().connectorEnded(guild, event(m))).toMatchObject({ accepted: false });
@@ -270,6 +274,7 @@ describe('durable lobby journey', () => {
     async (kind) => {
       const m = await linked(kind !== 'missing'),
         e = event(m);
+      if (kind === 'missing') e.observation.players.forEach((p) => (p.name = 'Unknown guest'));
       if (kind === 'wrong_player') e.observation.players[0].profileId = '999999';
       if (kind === 'wrong_team') e.observation.players.forEach((p) => (p.team = '1'));
       await stub().connectorEnded(guild, e);
@@ -291,7 +296,7 @@ describe('durable lobby journey', () => {
     await stub().pollLobbies(guild);
     expect((await current()).lobby!.observation!.phase).toBe('started');
     expect(await prompts()).toHaveLength(0);
-    expect((await stub().records(guild)).economy.books[0].status).toBe('open');
+    expect((await stub().records(guild)).economy.books[0].status).toBe('refunded');
     vi.mocked(fetch).mockImplementation(async () => Response.json(payload(m)));
     await due();
     await stub().pollLobbies(guild);
@@ -508,7 +513,7 @@ describe('durable lobby journey', () => {
   it('retains binding evidence in backup and leaves restored polling disabled', async () => {
     const m = await linked();
     const backup = await stub().operationalBackup(guild);
-    expect(backup.tables.schema_version[0].version).toBe(6);
+    expect(backup.tables.schema_version[0].version).toBe(7);
     const copy = env.COMMUNITIES.getByName('lobby-recovery');
     expect(
       await copy.operationalRestore(guild, {

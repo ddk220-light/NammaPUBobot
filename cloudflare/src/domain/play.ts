@@ -33,6 +33,7 @@ export interface Match {
   proposal?: { id: string; requester: string; kind: 'draw' | 'abort'; opposing: string };
   storiesBefore?: string[];
   storiesAfter?: string[];
+  storyContext?: import('./story-candidates').StoryContext;
   storyFacts?: {
     kind: 'rivalry' | 'duo' | 'lineup';
     players: string[];
@@ -91,10 +92,16 @@ export const actionSchema = z
       'map_vote',
       'map_pick',
       'map_redo',
+      'civ_start',
+      'civ_claim',
       'lobby_attach',
       'lobby_unlink',
       'lobby_status',
     ]),
+    minutes: z.number().int().min(1).max(10).optional(),
+    redo: z.boolean().optional(),
+    generation: z.number().int().positive().optional(),
+    choice: z.number().int().min(0).max(12).optional(),
     reference: z.string().trim().min(1).max(300).optional(),
     queue: z.string().max(100).optional(),
     target: personSchema.optional(),

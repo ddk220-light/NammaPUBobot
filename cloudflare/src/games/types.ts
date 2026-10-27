@@ -4,6 +4,7 @@ export interface LobbyPlayer {
   profileId: string;
   name: string;
   team: string | null;
+  selection?: string;
 }
 export interface LobbyObservation {
   externalId: string;
@@ -25,6 +26,7 @@ export interface GameAdapter {
   parseLobbyReference(input: string): string;
   profile(id: string): Promise<ProviderResult<{ id: string; name: string; url: string }>>;
   observe(id: string, started: boolean): Promise<ProviderResult<LobbyObservation>>;
+  profileUrl(id: string): string;
   joinUri(id: string): string;
   /** HTTPS landing page suitable for Discord link buttons. */
   lobbyUrl(id: string): string;

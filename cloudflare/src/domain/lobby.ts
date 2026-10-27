@@ -13,7 +13,12 @@ export const observationSchema = z
     players: z
       .array(
         z
-          .object({ profileId: identifier, name: z.string().max(100), team: identifier.nullable() })
+          .object({
+            profileId: identifier,
+            name: z.string().max(100),
+            team: identifier.nullable(),
+            selection: z.string().min(1).max(100).optional(),
+          })
           .strict(),
       )
       .max(16),
@@ -48,6 +53,7 @@ export interface LobbyBinding {
   reason?: string;
   observation?: LobbyObservation;
   lastEventId?: string;
+  providerRetryAt?: number;
   lastSuccessAt?: number;
   failures: number;
   rosterVerified: boolean;
@@ -91,7 +97,7 @@ export function rosterMatches(binding: LobbyBinding, o: LobbyObservation): boole
   const sides = [new Set<string>(), new Set<string>()];
   for (const p of binding.profiles) {
     const found = o.players.find((r) => r.profileId === p.profileId);
-    if (!found?.team || found.team === '-1' || found.team === '0') return false;
+    if (!found?.team || ['-1', '-2', '0'].includes(found.team)) return false;
     sides[p.side].add(found.team);
   }
   return sides.every((s) => s.size === 1) && [...sides[0]][0] !== [...sides[1]][0];
@@ -107,11 +113,21 @@ export function lobbySummary(binding?: LobbyBinding, now = Date.now()): string {
     `Lobby ${binding.externalId}: ${binding.state === 'unavailable' ? 'unavailable' : (o?.phase ?? 'awaiting evidence')}${stale ? ' · status stale or not yet observed' : ''}.`,
     binding.url,
     binding.occupancyAvailable && o && !stale && ['open', 'full'].includes(o.phase)
-      ? `${binding.profiles.filter((p) => p.profileId && o.players.some((r) => r.profileId === p.profileId)).length}/${binding.profiles.length} declared players observed; ${binding.profiles.filter((p) => !p.profileId).length} unlinked.`
+      ? `${o.players.length}/${o.capacity ?? '?'} lobby slots occupied.\nJoined: ${
+          binding.profiles
+            .filter((p) => p.profileId && o.players.some((r) => r.profileId === p.profileId))
+            .map((p) => `<@${p.userId}>`)
+            .join(', ') || 'No linked players observed'
+        }.\nMissing: ${
+          binding.profiles
+            .filter((p) => p.profileId && !o.players.some((r) => r.profileId === p.profileId))
+            .map((p) => `<@${p.userId}>`)
+            .join(', ') || 'None among linked players'
+        }; ${binding.profiles.filter((p) => !p.profileId).length} unlinked.`
       : 'Live occupancy unavailable. Lobby disappearance is not start evidence.',
     binding.rosterVerified
       ? 'Declared profiles and teams match the game.'
-      : 'Roster not verified. Link each player’s profile, then attach the lobby again if mappings changed.',
+      : `${binding.profiles.filter((p) => p.profileId).length}/${binding.profiles.length} players linked. Unlinked players can keep playing; /lobby link adds a profile.`,
     'Results remain manual: losing captain uses /report loss.',
   ].join('\n');
 }

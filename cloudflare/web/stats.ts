@@ -48,6 +48,9 @@ function playerDetails(p: PlayerStatistics) {
     </dl>
     <p class="form-help">${p.eligible ? 'Included in this game’s leaderboard.' : 'Does not meet this game’s leaderboard requirements.'}</p>
 
+    <h3>Played civilizations</h3>
+    <p class="form-help">Recorded from linked game profiles. Win rate is wins / completed games, including draws. Inferred links can be corrected with /profile unlink and /lobby link.</p>
+    ${p.civilizations?.length ? `<div class="table-wrap"><table><thead><tr><th>Civilization</th><th>Games</th><th>W / L / D</th><th>Win rate</th><th>Inferred identity</th></tr></thead><tbody>${p.civilizations.map((c) => `<tr><td>${esc(c.selection)}</td><td>${c.games}</td><td>${c.wins} / ${c.losses} / ${c.draws}</td><td>${((100 * c.wins) / c.games).toFixed(1)}%</td><td>${c.inferred}</td></tr>`).join('')}</tbody></table></div>` : '<p>No civilizations recorded yet. Unlinked games remain playable.</p>'}
     <h3>Recent rating history</h3>
     ${p.history.length ? `<div class="table-wrap"><table><caption class="sr-only">Recent rating changes for ${esc(p.name)}</caption><thead><tr><th scope="col">Date</th><th scope="col" class="numeric">Before</th><th scope="col" class="numeric">After</th><th scope="col">Reason</th></tr></thead><tbody>${p.history.map((c) => `<tr><td>${date(c.changed_at)}</td><td class="numeric">${c.before}</td><td class="numeric">${c.after}</td><td>${esc(c.reason ?? 'Match or administrator adjustment')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No rating changes recorded.</p>'}
 
