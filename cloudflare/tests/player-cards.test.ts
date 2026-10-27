@@ -52,7 +52,7 @@ function match(state: Match['state'] = 'check_in'): Match {
 const buttons = (card: Card) => card.components.flatMap((row) => row.components);
 const visible = (card: Card) =>
   card.embeds
-    .map((embed) => `${embed.title}\n${embed.description}\n${embed.footer.text}`)
+    .map((embed) => `${embed.title}\n${embed.description}\n${embed.footer?.text ?? ''}`)
     .join('\n');
 
 describe('player-facing cards', () => {

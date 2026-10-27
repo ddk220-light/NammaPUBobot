@@ -24,7 +24,7 @@ Local development uses local SQLite, never remote staging storage. Copy `.dev.va
 
 ## What players use
 
-- Join/Leave on the latest queue card, or `/add` and `/remove`. A channel always has a default queue; an explicit queue name selects another. Paused defaults stay paused. Genuine roster changes publish a fresh card and retire the previous one.
+- Join/Leave on the latest queue card, or `/add` and `/remove`. A channel always has a default queue; an explicit queue name selects another. Paused defaults stay paused. Roster changes edit the existing card when it is among the last five messages; otherwise they publish a fresh card and retire the previous one.
 - Check in once: explicit readiness remains valid for up to 15 minutes in that queue while an incomplete formation is repaired. Leaving, playing, expiry or replacement clears readiness. Manual `/admin queue start skip_check_in:true` remains organizer-only.
 - Teams use captain balance, unrestricted balance or random assignment; captains are the highest-rated member on each side. The formed card has **Sub me**, which takes the next eligible waiting player and rebalances. With no replacement, the player remains in the match.
 - The losing captain uses `/report loss`; a trusted game-end adapter can show the same direct Report loss button. Start a cancellation with `/report abort`; old Cancel match buttons cannot initiate one. Cancellation and draws need both captains' agreement on a separate request card; an admin's command cancels immediately. Terminal cards have no rejoin controls; joining again is manual.
@@ -53,7 +53,7 @@ The optional Thursday tax is off by default, protects 500 gold, grants initial s
 
 **Maps:** off by default. AoE2 gets a starter pool; other games use organizer-entered names. Choose random, captain/admin pick, or player vote; select 1–5 maps, plurality/approval voting, tie/no-vote policy, duration and recent-map avoidance. A chosen list belongs to one rated match; per-map series scoring is not included. Voting can count as check-in. Saved rounds survive restarts, and roster changes invalidate old controls. `/maps show` and `/maps redo` are available.
 
-**Rally:** optional voice-only Gateway adapter for `/rally`. It invites eligible voice members with bounded mentions/cooldown; it never plays audio. Ordinary gameplay does not start it. The on-demand connection stops after an hour without requests. Outbound Gateway sockets have duration cost and do not hibernate; the pilot adapter supports one shard only.
+**Voice presence:** optional queue previews show up to five recent public voice participants who are neither queued nor playing, refreshed every five minutes without notification pings. `/rally` uses the same shared voice-only Gateway adapter to invite eligible members with bounded mentions/cooldown. Neither feature processes audio. The connection stops ten minutes after the last preview refresh, or an hour after the last rally request, whichever is later. Outbound sockets have duration cost and do not hibernate; the adapter supports one shard only. See [voice previews and cost](docs/voice-preview.md).
 
 ## Deploy your own copy
 

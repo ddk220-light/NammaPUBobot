@@ -73,7 +73,7 @@ Queues in one channel have exactly one default; explicit names still select othe
 
 New games without a saved player policy use a one-match leaderboard minimum and 30-day recency. Saved custom thresholds remain in effect. Profiles are created on queue entry, and administrators can seed ratings later outside an active match.
 
-The optional voice rally opens one shared outbound Gateway connection for the installation, never one per guild. It currently refuses deployments needing multiple shards; add reviewed sharding/session-start limits before enabling it at that scale. The connection does not hibernate and has duration cost. Keep rally disabled when unused. No game connector is necessary for matchmaking; the generic game-end hook only prompts a captain and cannot settle results automatically.
+The optional voice preview and voice rally share one outbound Gateway connection for the installation, never one per guild. Queue previews refresh every five minutes, only publish changed lists, and show public voice participants without pinging them. See [voice preview operation and cost](voice-preview.md). It currently refuses deployments needing multiple shards; add reviewed sharding/session-start limits before enabling it at that scale. The connection does not hibernate and has duration cost. Keep voice previews and rally disabled when unused. No game connector is necessary for matchmaking; the generic game-end hook only prompts a captain and cannot settle results automatically.
 
 ## Backups and recovery
 

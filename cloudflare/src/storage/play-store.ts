@@ -21,6 +21,10 @@ import { createUxTables, UxStore } from './ux-store';
 import { createEconomyTables, EconomyStore } from './economy-store';
 import { beforeStories, afterStories } from '../domain/stories';
 import { createMapRound, defaultMaps, resolveMap, voteMap } from '../domain/maps';
+import type { VoiceMember } from '../domain/presence';
+
+const voiceInterval = 5 * 60 * 1000;
+type QueueVoiceCache = { due: number; observedAt: number; members: VoiceMember[] | null };
 
 type Entry = { user_id: string; display_name: string };
 function calculate(m: Match, result: 0 | 1 | null) {
@@ -321,19 +325,83 @@ export class PlayStore {
         .join('\n')
     );
   }
-  configure(settings: Settings) {
+  configure(settings: Settings, previous?: Settings) {
     this.economy.configure(settings);
     for (const q of settings.queues) {
+      if (
+        previous?.queues.some((old) => old.id === q.id && JSON.stringify(old) === JSON.stringify(q))
+      )
+        continue;
       const current = this.sql
         .exec<{ digest: string }>('SELECT digest FROM queue_views WHERE queue_id=?', q.id)
         .toArray()[0];
-      const payload = queueCard(
-        q,
-        this.entries(q.id).map((p) => ({ id: p.user_id })),
-        this.ux.held(q.id),
-      );
+      const payload = this.queuePayload(q);
       if (current && current.digest !== JSON.stringify(payload)) this.touchQueue(q);
     }
+  }
+  private voiceQueues(settings: Settings) {
+    return settings.queues.filter(
+      (q) =>
+        q.enabled &&
+        q.voicePreview &&
+        this.sql.exec('SELECT 1 FROM cards WHERE key=?', `queue:${q.id}`).toArray().length,
+    );
+  }
+  private queuePayload(q: Queue) {
+    const cache = this.ctx.storage.kv.get<QueueVoiceCache>('queueVoice');
+    let voice: string[] | null = null;
+    if (cache?.members && Date.now() - cache.observedAt <= voiceInterval + 30000) {
+      const busy = new Set(
+        this.sql
+          .exec<{ user_id: string }>(
+            'SELECT user_id FROM queue_entries UNION SELECT user_id FROM active_players UNION SELECT user_id FROM noadds WHERE until_ms>?',
+            Date.now(),
+          )
+          .toArray()
+          .map((p) => p.user_id),
+      );
+      voice = cache.members
+        .filter((p) => !busy.has(p.userId))
+        .slice(0, 5)
+        .map((p) => p.userId);
+    }
+    return queueCard(
+      q,
+      this.entries(q.id).map((p) => ({ id: p.user_id })),
+      this.ux.held(q.id),
+      voice,
+    );
+  }
+  private async refreshQueueVoice(guild: string) {
+    if (this.ctx.storage.kv.get('recoveryReadOnly')) return;
+    const queues = this.voiceQueues(this.read(guild).settings);
+    if (!queues.length) {
+      this.ctx.storage.kv.delete('queueVoice');
+      return;
+    }
+    const previous = this.ctx.storage.kv.get<QueueVoiceCache>('queueVoice');
+    if (previous && previous.due > Date.now()) return;
+    let members: VoiceMember[] | null = null;
+    try {
+      const presence = await this.env.VOICE_PRESENCE.getByName(
+        this.env.DISCORD_APPLICATION_ID!,
+      ).query(guild, 'preview');
+      members = presence.preview;
+    } catch {
+      /* Clear stale names on an unavailable feed. */
+    }
+    // Configuration can change during the Gateway query; never reactivate a disabled queue.
+    const current = this.voiceQueues(this.read(guild).settings);
+    if (!current.length) {
+      this.ctx.storage.kv.delete('queueVoice');
+      return;
+    }
+    this.ctx.storage.kv.put('queueVoice', {
+      due: Date.now() + voiceInterval,
+      observedAt: Date.now(),
+      members,
+    });
+    for (const q of current) this.touchQueue(q);
   }
   rallyQueue(guild: string, a: Action) {
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
@@ -597,11 +665,7 @@ export class PlayStore {
     );
   }
   private touchQueue(q: Queue, refresh = false) {
-    const payload = queueCard(
-      q,
-      this.entries(q.id).map((p) => ({ id: p.user_id })),
-      this.ux.held(q.id),
-    );
+    const payload = this.queuePayload(q);
     const digest = JSON.stringify(payload);
     const view = this.sql
       .exec<{ digest: string; generation: number }>(
@@ -2539,6 +2603,7 @@ export class PlayStore {
     });
     await this.lobbies.poll(guild);
     await this.returnPlayers(guild);
+    await this.refreshQueueVoice(guild);
     await this.schedule();
     await this.flush();
   }
@@ -2563,6 +2628,17 @@ export class PlayStore {
             .toArray()[0]?.due,
       )
       .filter((due): due is number => due != null);
+    const identity = this.sql
+      .exec<{ guild_id: string }>('SELECT guild_id FROM community WHERE id=1')
+      .toArray()[0];
+    if (identity && this.voiceQueues(this.read(identity.guild_id).settings).length) {
+      let cache = this.ctx.storage.kv.get<QueueVoiceCache>('queueVoice');
+      if (!cache) {
+        cache = { due: Date.now(), observedAt: 0, members: null };
+        this.ctx.storage.kv.put('queueVoice', cache);
+      }
+      values.push(cache.due);
+    } else this.ctx.storage.kv.delete('queueVoice');
     const next = values.length ? Math.min(...values) : null;
     if (next !== null && next !== undefined)
       await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next));

@@ -2,7 +2,7 @@ import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env';
 import { PresenceSnapshot } from '../domain/presence';
 
-/** Optional shared outbound Gateway client. Never started by the matchmaking object. */
+/** Optional Gateway client shared by voice previews and explicit rally requests. */
 export class VoicePresence extends DurableObject<Env> {
   private socket: WebSocket | null = null;
   private snapshot = new PresenceSnapshot();
@@ -14,11 +14,18 @@ export class VoicePresence extends DurableObject<Env> {
   private awaitingAck = false;
   private identifiedAt = 0;
   private wantedUntil = 0;
+  private connectedAt: number | null = null;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.wantedUntil = ctx.storage.kv.get<number>('wantedUntil') ?? 0;
   }
-  async query(guild: string) {
-    this.wantedUntil = Date.now() + 3600000; // Hour without requests stops the optional idle connection.
+  async query(guild: string, purpose: 'rally' | 'preview' = 'rally') {
+    this.wantedUntil = Math.max(
+      this.wantedUntil,
+      Date.now() + (purpose === 'preview' ? 600000 : 3600000),
+    );
+    this.ctx.storage.kv.put('wantedUntil', this.wantedUntil);
+    await this.ctx.storage.setAlarm(Date.now() + 60000);
     if (!this.socket && !this.starting) {
       this.starting = this.openGateway().finally(() => {
         this.starting = null;
@@ -27,9 +34,20 @@ export class VoicePresence extends DurableObject<Env> {
     }
     return {
       members: this.snapshot.members(guild),
+      preview: this.snapshot.visibleMembers(guild),
       healthy: this.snapshot.healthy,
       scope: 'voice-only',
       idleStopAt: this.wantedUntil,
+    };
+  }
+  status() {
+    return {
+      healthy: this.snapshot.healthy,
+      connected: !!this.socket,
+      guilds: this.snapshot.guilds.size,
+      idleStopAt: this.wantedUntil,
+      connectedMs: this.connectedAt === null ? 0 : Date.now() - this.connectedAt,
+      scope: 'voice-only',
     };
   }
   private async openGateway() {
@@ -60,15 +78,24 @@ export class VoicePresence extends DurableObject<Env> {
       this.seq = null;
       this.snapshot.guilds.clear();
     }
-    const response = await fetch(`${this.resumeUrl}/?v=10&encoding=json`, {
-      headers: { Upgrade: 'websocket' },
-      signal: AbortSignal.timeout(5000),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    let response: Response;
+    try {
+      response = await fetch(`${this.resumeUrl}/?v=10&encoding=json`, {
+        headers: { Upgrade: 'websocket' },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout); // Do not abort the established socket after the handshake.
+    }
     const socket = response.webSocket;
     if (!socket) throw Error('Gateway upgrade failed.');
     this.socket = socket;
+    this.connectedAt = Date.now();
     socket.accept();
     socket.addEventListener('message', (event) => {
+      if (this.socket !== socket) return;
       if (typeof event.data !== 'string' || event.data.length > 1048576) {
         this.disconnect();
         return;
@@ -84,6 +111,7 @@ export class VoicePresence extends DurableObject<Env> {
       if (this.socket !== socket) return;
       this.snapshot.invalidate();
       this.socket = null;
+      this.connectedAt = null;
       clearInterval(this.heartbeat);
       if ([4004, 4010, 4011, 4013, 4014].includes(event.code)) {
         this.ctx.waitUntil(this.ctx.storage.put('reconnectAt', Date.now() + 3600000));
@@ -99,7 +127,9 @@ export class VoicePresence extends DurableObject<Env> {
       if (this.wantedUntil > Date.now())
         this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + 5000));
     });
-    socket.addEventListener('error', () => this.disconnect());
+    socket.addEventListener('error', () => {
+      if (this.socket === socket) this.disconnect();
+    });
     await this.ctx.storage.setAlarm(Date.now() + 60000);
   }
   private send(op: number, d: unknown) {
@@ -164,11 +194,16 @@ export class VoicePresence extends DurableObject<Env> {
         this.resumeUrl = String(data.resume_gateway_url).replace(/^wss:/, 'https:');
         this.snapshot.healthy = true;
       } else if (event.t === 'RESUMED') this.snapshot.healthy = true;
-      else if (event.t === 'GUILD_CREATE' && !data.unavailable)
-        this.snapshot.initialize(data.id, data.voice_states ?? []);
-      else if (event.t === 'GUILD_DELETE') this.snapshot.guilds.delete(data.id);
+      else if (event.t === 'GUILD_CREATE') {
+        if (data.unavailable) this.snapshot.remove(data.id);
+        else this.snapshot.initialize(data.id, data.voice_states ?? [], data);
+      } else if (event.t === 'GUILD_DELETE') this.snapshot.remove(data.id);
+      else if (['CHANNEL_CREATE', 'CHANNEL_UPDATE', 'CHANNEL_DELETE'].includes(event.t ?? ''))
+        this.snapshot.channel(data.guild_id, data, event.t === 'CHANNEL_DELETE');
+      else if (['GUILD_ROLE_CREATE', 'GUILD_ROLE_UPDATE'].includes(event.t ?? ''))
+        this.snapshot.role(data.guild_id, data.role);
       else if (event.t === 'VOICE_STATE_UPDATE')
-        this.snapshot.update(data.guild_id, data.user_id, data.channel_id);
+        this.snapshot.update(data.guild_id, data.user_id, data.channel_id, data.member);
     }
   }
   private disconnect() {
@@ -176,6 +211,7 @@ export class VoicePresence extends DurableObject<Env> {
     clearInterval(this.heartbeat);
     const socket = this.socket;
     this.socket = null;
+    this.connectedAt = null;
     try {
       socket?.close(4000, 'Reconnect');
     } catch {}
@@ -184,10 +220,12 @@ export class VoicePresence extends DurableObject<Env> {
   }
   async stop() {
     this.wantedUntil = 0;
+    this.ctx.storage.kv.delete('wantedUntil');
     this.snapshot.invalidate();
     clearInterval(this.heartbeat);
     const socket = this.socket;
     this.socket = null;
+    this.connectedAt = null;
     try {
       socket?.close(1000, 'Voice adapter idle');
     } catch {}

@@ -26,11 +26,16 @@ export interface ActionRow {
 }
 export interface Card {
   content: string;
-  embeds: { title: string; description: string; color: number; footer: { text: string } }[];
+  embeds: { title: string; description: string; color: number; footer?: { text: string } }[];
   components: ActionRow[];
   allowed_mentions: { parse: string[]; users?: string[] };
 }
-export function queueCard(queue: Queue, players: { id: string }[], held = false): Card {
+export function queueCard(
+  queue: Queue,
+  players: { id: string }[],
+  held = false,
+  voice: string[] | null = null,
+): Card {
   const roster = players
     .slice(0, 16)
     .map((p) => mention(p.id))
@@ -49,10 +54,12 @@ export function queueCard(queue: Queue, players: { id: string }[], held = false)
           queue.controls?.waitingSeconds
             ? `Waiting places expire after ${queue.controls.waitingSeconds} seconds. Join again to renew yours.`
             : '',
+          queue.enabled && queue.voicePreview
+            ? `**In voice · not queued**\n${voice === null ? 'Voice list temporarily unavailable.' : voice.length ? voice.slice(0, 5).map(mention).join(' · ') : 'No other players in public voice channels.'}`
+            : '',
         ]
           .filter(Boolean)
           .join('\n\n'),
-        footer: { text: 'Community Games' },
       },
     ],
     components: [

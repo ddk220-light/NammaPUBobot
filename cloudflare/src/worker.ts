@@ -176,7 +176,7 @@ app.get('/health', (c) =>
     ok: true,
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.10.3',
+    version: '0.11.0',
   }),
 );
 app.post('/interactions', (c) => interactions(c.req.raw, c.env, c.executionCtx));
@@ -203,6 +203,37 @@ function operationalCommunity(c: Context<App>) {
 app.get('/ops/aoe2/feed', async (c) =>
   c.json(await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').status()),
 );
+app.get('/ops/voice', async (c) =>
+  c.json(await c.env.VOICE_PRESENCE.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').status()),
+);
+app.post('/ops/communities/:guild/features/voice-preview', async (c) => {
+  if (c.env.APP_ENV !== 'staging')
+    throw new Problem(403, 'staging_only', 'Feature rollout is limited to staging.');
+  const { guild, stub } = operationalCommunity(c);
+  const input = z
+    .object({
+      expectedRevision: z.number().int().nonnegative(),
+      queueIds: z.array(z.uuid()).min(1).max(200),
+      enabled: z.boolean(),
+      apply: z.boolean().default(false),
+    })
+    .strict()
+    .parse(await readJson(c.req.raw));
+  const snapshot = await stub.read(guild);
+  await validateChannels(
+    c.env,
+    guild,
+    snapshot.settings.queues.filter((q) => input.queueIds.includes(q.id)),
+  );
+  const result = await stub.setVoicePreview(
+    guild,
+    input.expectedRevision,
+    input.queueIds,
+    input.enabled,
+    input.apply,
+  );
+  return c.json(result, result.ok ? 200 : 409);
+});
 app.get('/ops/aoe2/discovery', async (c) => {
   const name = z.string().trim().min(1).max(80).parse(c.req.query('name'));
   return c.json(
@@ -318,7 +349,7 @@ app.get('/api/bootstrap', async (c) => {
   return c.json({
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.10.3',
+    version: '0.11.0',
     oauthReady,
     discordReady,
     inviteUrl: invite,

@@ -97,7 +97,7 @@ export class Community extends DurableObject<Env> {
     expectedRevision: number,
     settings: Settings,
     actorId: string,
-    action: 'save' | 'enable_aoe2_features',
+    action: 'save' | 'enable_aoe2_features' | 'voice_preview',
   ) {
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
       return {
@@ -148,7 +148,9 @@ export class Community extends DurableObject<Env> {
       return { ok: true as const, snapshot: this.read(guildId) };
     });
     if (result.ok) {
-      this.ctx.storage.transactionSync(() => this.playStore.configure(result.snapshot.settings));
+      this.ctx.storage.transactionSync(() =>
+        this.playStore.configure(result.snapshot.settings, old),
+      );
       this.playStore.reconcileLobbies();
       this.recordStore.configure(guildId, old);
       await this.playStore.schedule();
@@ -161,6 +163,34 @@ export class Community extends DurableObject<Env> {
     return this.ctx.storage.sql
       .exec('SELECT * FROM settings_audit ORDER BY revision DESC LIMIT 20')
       .toArray();
+  }
+
+  async setVoicePreview(
+    guild: string,
+    expectedRevision: number,
+    queueIds: string[],
+    enabled: boolean,
+    apply: boolean,
+  ) {
+    if (this.env.APP_ENV !== 'staging' || this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false as const, reason: 'Use the active staging community.' };
+    const before = this.read(guild);
+    if (before.revision !== expectedRevision)
+      return { ok: false as const, reason: 'Settings changed. Preview again.' };
+    const settings = structuredClone(before.settings),
+      queues = settings.queues.filter((q) => queueIds.includes(q.id));
+    if (
+      !queueIds.length ||
+      queues.length !== new Set(queueIds).size ||
+      (enabled && queues.some((q) => !q.enabled))
+    )
+      return { ok: false as const, reason: 'Choose existing enabled queues.' };
+    for (const q of queues) q.voicePreview = enabled;
+    if (!apply || JSON.stringify(settings) === JSON.stringify(before.settings))
+      return { ok: true as const, applied: false, revision: before.revision, queues };
+    const result = await this.save(guild, expectedRevision, settings, 'operator', 'voice_preview');
+    if (!result.ok) return result;
+    return { ok: true as const, applied: true, revision: result.snapshot.revision, queues };
   }
 
   /** Narrow operator rollout: existing AoE2 queues only, no arbitrary settings or player actions. */
