@@ -55,7 +55,7 @@ export function queueCard(
             ? `Waiting places expire after ${queue.controls.waitingSeconds} seconds. Join again to renew yours.`
             : '',
           queue.enabled && queue.voicePreview
-            ? `**In voice · not queued**\n${voice === null ? 'Voice list temporarily unavailable.' : voice.length ? voice.slice(0, 5).map(mention).join(' · ') : 'No other players in public voice channels.'}`
+            ? `**In voice only · not in queue**\n> *${voice === null ? 'Voice list temporarily unavailable.' : voice.length ? voice.slice(0, 5).map(mention).join(' · ') : 'No other players in public voice channels.'}*`
             : '',
         ]
           .filter(Boolean)

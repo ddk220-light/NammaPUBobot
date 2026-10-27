@@ -1,4 +1,4 @@
-# Queue cards — 0.11.0
+# Queue cards — 0.11.1
 
 When the waiting roster changes, the bot reads the channel's five most recent public messages. If the current queue card is among them (including fifth), it edits that message in place. Otherwise it posts the updated card at the bottom, records the new message ID, then deletes the previous card. Other people's messages are never deleted. Private ephemeral messages are not part of channel history.
 
@@ -10,4 +10,4 @@ The durable outbox coalesces pending roster changes and retains its selected mes
 
 Regression coverage lives in `tests/queue-recency.test.ts` and the signed-request tests in `tests/player-interactions.test.ts`: positions one/five/six, replacement ordering, edit and create receipt loss, restart recovery, deleted cards, history outages and rate limits, stale work, match formation, silent joins/leaves and private errors. Discord is mocked in these tests; actual client rendering requires a human button click.
 
-Queue cards no longer have a Community Games footer. Optional voice previews replace that space with an **In voice · not queued** section. They are off until explicitly enabled in a queue’s Voice presence settings. No SQL migration is required; existing queue membership, matches, ratings and wallets are unchanged by deployment. See the voice preview guide before downgrading settings to an older release.
+Queue cards no longer have a Community Games footer. Optional voice previews replace that space with an **In voice only · not in queue** section. They are off until explicitly enabled in a queue’s Voice presence settings. No SQL migration is required; existing queue membership, matches, ratings and wallets are unchanged by deployment. See the voice preview guide before downgrading settings to an older release.

@@ -120,7 +120,7 @@ describe('five-minute queue preview', () => {
     await act('noadd', 99, { admin: true, target: person(7), seconds: 600 });
     await tick();
     const card = latestCard(),
-      text = card.embeds[0].description.split('**In voice · not queued**')[1];
+      text = card.embeds[0].description.split('**In voice only · not in queue**')[1];
     expect(card.embeds[0].footer).toBeUndefined();
     expect(text.match(/<@\d+>/g)).toEqual([6, 5, 4, 3, 2].map((n) => `<@${person(n).id}>`));
     expect(card.allowed_mentions).toEqual({ parse: [] });
@@ -152,7 +152,7 @@ describe('five-minute queue preview', () => {
     await abortAllDurableObjects();
     await act('add', 2);
     await flush();
-    const text = latestCard().embeds[0].description.split('**In voice · not queued**')[1];
+    const text = latestCard().embeds[0].description.split('**In voice only · not in queue**')[1];
     expect(text).toContain(person(1).id);
     expect(text).not.toContain(person(2).id);
     await runInDurableObject(stub(), async (_i, state) => {

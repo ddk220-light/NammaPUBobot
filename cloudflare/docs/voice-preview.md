@@ -1,6 +1,6 @@
-# Queue voice previews — 0.11.0
+# Queue voice previews — 0.11.1
 
-Enable **Voice presence → Show up to five people…** in a queue's organizer settings. The existing queue card gains an **In voice · not queued** section at the bottom, replacing the old Community Games footer. The bot's Discord application name is unchanged.
+Enable **Voice presence → Show up to five people…** in a queue's organizer settings. The existing queue card gains an **In voice only · not in queue** section at the bottom, replacing the old Community Games footer. The voice-only names use italic text in an indented block, visually separate from the normal queue roster. The bot's Discord application name is unchanged.
 
 The list includes up to five verified human members currently in public voice or stage channels in the same server. It excludes anyone waiting in any queue, playing in an active match, or under a local queue restriction. Names render as mentions with `allowed_mentions.parse: []`, so they do not notify anyone. Channels with a View Channel denial in any overwrite are conservatively excluded; the adapter does not reveal occupants of restricted rooms.
 
