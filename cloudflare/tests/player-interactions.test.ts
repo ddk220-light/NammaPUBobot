@@ -347,7 +347,7 @@ describe('player component routes', () => {
       'Cancel bet',
     ]);
   });
-  it('silently acknowledges Join for only the signed member, including duplicate clicks', async () => {
+  it('silently acknowledges Join and Leave for only the signed member, including duplicate clicks', async () => {
     await configure();
     const reply = await interaction({ custom_id: `q:${queue}:join:g14` });
     expect(reply).toEqual({ type: 6 });
@@ -355,9 +355,8 @@ describe('player component routes', () => {
     expect((await stub().records(guild)).waiting[0].players.map((p) => p.id)).toEqual([
       person(0).id,
     ]);
-    expect((await interaction({ custom_id: `q:${queue}:leave` })).data.content).toBe(
-      'Left Pickup.',
-    );
+    expect(await interaction({ custom_id: `q:${queue}:leave:g14` })).toEqual({ type: 6 });
+    expect(await interaction({ custom_id: `q:${queue}:leave` })).toEqual({ type: 6 });
     expect((await stub().records(guild)).waiting[0].players).toHaveLength(0);
   });
   it('still explains rejected Join clicks privately', async () => {
@@ -408,9 +407,8 @@ describe('player component routes', () => {
     expect((await interaction({ custom_id: `q:${queue}:join` }, 1)).data.content).toContain(
       'closed',
     );
-    expect((await interaction({ custom_id: `q:${queue}:leave` })).data.content).toBe(
-      'Left Pickup.',
-    );
+    expect(await interaction({ custom_id: `q:${queue}:leave` })).toEqual({ type: 6 });
+    expect((await stub().records(guild)).waiting[0].players).toHaveLength(0);
   });
   it('retires old substitution panels while preserving manual request intent', async () => {
     const m = await fill(true);

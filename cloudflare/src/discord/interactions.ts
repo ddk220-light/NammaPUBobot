@@ -902,7 +902,7 @@ async function playInteraction(
     if (
       i.type === 3 &&
       i.data?.custom_id?.startsWith('q:') &&
-      action.kind === 'add' &&
+      (action.kind === 'add' || action.kind === 'remove') &&
       reply.ok !== false
     )
       // Acknowledge the button without a reply; the durable outbox updates the public card.
