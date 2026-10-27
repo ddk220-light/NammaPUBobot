@@ -160,7 +160,7 @@ describe('five-minute queue preview', () => {
       expect(await state.storage.getAlarm()).not.toBeNull();
     });
   });
-  it('clears stale names when disconnected, distinguishes an empty list, and stops when paused', async () => {
+  it('hides stale or empty voice lists without placeholders, and stops when paused', async () => {
     await start();
     await occupants([1]);
     await tick();
@@ -168,10 +168,11 @@ describe('five-minute queue preview', () => {
       (i as any).snapshot.invalidate();
     });
     await tick();
-    expect(latestCard().embeds[0].description).toContain('temporarily unavailable');
+    expect(latestCard().embeds[0].description).toBe(`<@${person(0).id}>`);
+    vi.mocked(fetch).mockClear();
     await occupants([]);
     await tick();
-    expect(latestCard().embeds[0].description).toContain('No other players');
+    expect(latestCard()).toBeUndefined();
     const s = await stub().read(guild);
     s.settings.queues[0].enabled = false;
     await stub().save(guild, s.revision, s.settings, person(99).id, 'save');
@@ -224,12 +225,15 @@ describe('bounded voice rollout and shared Gateway', () => {
     });
     vi.mocked(fetch).mockClear();
     await stub().setVoicePreview(guild, 2, [queue], true, true);
-    await flush();
-    const writes = vi
-      .mocked(fetch)
-      .mock.calls.filter(([, init]) => ['POST', 'PATCH', 'DELETE'].includes(init?.method ?? ''));
-    expect(writes.length).toBeGreaterThan(0);
-    expect(writes.every(([url]) => !String(url).includes(s.queues[1].channelId))).toBe(true);
+    // The voice alarm can coalesce this publication while the save is returning.
+    await vi.waitFor(async () => {
+      await flush();
+      const writes = vi
+        .mocked(fetch)
+        .mock.calls.filter(([, init]) => ['POST', 'PATCH', 'DELETE'].includes(init?.method ?? ''));
+      expect(writes.length).toBeGreaterThan(0);
+      expect(writes.every(([url]) => !String(url).includes(s.queues[1].channelId))).toBe(true);
+    });
   });
   it('previews, applies and disables only the selected queue without changing players', async () => {
     await setup();

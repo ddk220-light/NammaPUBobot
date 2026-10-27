@@ -1,4 +1,4 @@
-# Queue voice previews — 0.12.0
+# Queue voice previews — 0.12.1
 
 Enable **Voice presence → Show up to five people…** in a queue's organizer settings. The existing queue card gains an italic voice list in an indented block at the bottom, visually separate from the normal queue roster. It has no extra heading or Community Games footer. The bot's Discord application name is unchanged.
 
@@ -6,7 +6,7 @@ The list includes up to five verified human members currently in public voice or
 
 “Recent” means the latest observed voice join or move, not the date a member joined the server. Mute/deafen changes do not reorder people. Discord provides no original join time for occupants already present when the connection starts: these follow observed joins in stable user-ID order. After an unresumable restart, ordering starts again from the fresh snapshot.
 
-Enabled queues with a published card share a five-minute refresh per community. New or unpublished queues do not start the connection. Queue actions immediately filter newly queued players out of that queue's cached preview. Departures, other queues' changes and new voice arrivals appear on the next refresh. Changed lists use the same last-five-message edit/replacement policy as roster updates. Unchanged lists generate no Discord history/edit calls. An unavailable feed clears names and shows “Voice list temporarily unavailable”; an empty healthy list shows “No other players in public voice channels.” Initial connection startup may take one refresh cycle.
+Enabled queues with a published card share a five-minute refresh per community. New or unpublished queues do not start the connection. Queue actions immediately filter newly queued players out of that queue's cached preview. Departures, other queues' changes and new voice arrivals appear on the next refresh. Changed lists use the same last-five-message edit/replacement policy as roster updates. Unchanged lists generate no Discord history/edit calls. Empty or unavailable voice lists are hidden completely, with no placeholder text. The voice section appears only when there are eligible names to show. Initial connection startup may take one refresh cycle.
 
 ## Ping button
 
