@@ -609,24 +609,6 @@ export class PlayStore {
         q.id,
       )
       .toArray()[0];
-    const current = this.sql
-      .exec<Pointer>('SELECT * FROM cards WHERE key=?', `queue:${q.id}`)
-      .toArray()[0];
-    if (!view && current?.message_id) {
-      this.sql.exec('INSERT INTO queue_views VALUES(?,?,0,0)', q.id, digest);
-      this.enqueue(`queue:${q.id}`, q.channelId, payload);
-      return;
-    }
-    if (view?.digest === digest) {
-      if (current?.message_id) this.enqueue(`queue:${q.id}`, q.channelId, payload);
-      else if (refresh)
-        this.sql.exec(
-          "UPDATE outbox SET status='pending',attempts=0,due=? WHERE key=?",
-          Date.now(),
-          `queue:${q.id}:g${view.generation}`,
-        );
-      return;
-    }
     const pending = view
       ? this.sql
           .exec<{ key: string; state: string }>(
@@ -636,6 +618,18 @@ export class PlayStore {
           )
           .toArray()[0]
       : undefined;
+    if (view?.digest === digest) {
+      if (!refresh) return;
+      if (pending && !['sent', 'superseded'].includes(pending.state)) {
+        // Recover the existing delivery, including uncertain creates, with its original nonce.
+        this.sql.exec(
+          "UPDATE outbox SET status='pending',attempts=0,due=? WHERE key=?",
+          Date.now(),
+          pending.key,
+        );
+        return;
+      }
+    }
     const generation =
       pending?.state === 'pending' ? view!.generation : (view?.generation ?? 0) + 1;
     const key = `queue:${q.id}:g${generation}`;
@@ -1159,16 +1153,6 @@ export class PlayStore {
     for (const id of affected) {
       const other = settings.queues.find((q) => q.id === id);
       if (other) {
-        // Do not post a new empty queue card after the check-in announcement.
-        const key = `queue:${other.id}`;
-        this.enqueue(
-          key,
-          other.channelId,
-          queueCard(
-            other,
-            this.entries(id).map((p) => ({ id: p.user_id })),
-          ),
-        );
         this.sql.exec(
           "DELETE FROM outbox WHERE key IN (SELECT key FROM queue_publications WHERE queue_id=? AND state='pending')",
           id,
@@ -1177,16 +1161,7 @@ export class PlayStore {
           "UPDATE queue_publications SET state='superseded' WHERE queue_id=? AND state='pending'",
           id,
         );
-        this.sql.exec(
-          'UPDATE queue_views SET digest=? WHERE queue_id=?',
-          JSON.stringify(
-            queueCard(
-              other,
-              this.entries(id).map((p) => ({ id: p.user_id })),
-            ),
-          ),
-          id,
-        );
+        this.touchQueue(other, true);
       }
     }
     return m;
@@ -2743,6 +2718,27 @@ export class PlayStore {
         )
         .toArray()[0];
       const card = this.sql.exec<Pointer>('SELECT * FROM cards WHERE key=?', work.key).toArray()[0];
+      if (publication) {
+        const current = this.sql
+          .exec<{ current_generation: number; message_id: string | null }>(
+            'SELECT v.current_generation,c.message_id FROM queue_views v LEFT JOIN cards c ON c.key=? WHERE v.queue_id=?',
+            `queue:${publication.queue_id}`,
+            publication.queue_id,
+          )
+          .toArray()[0];
+        if (
+          publication.state === 'superseded' ||
+          (publication.generation < (current?.current_generation ?? 0) &&
+            ((!card.message_id && !card.reconcile) ||
+              (card.message_id && card.message_id === current?.message_id)))
+        ) {
+          // An older retry may share the current message after an in-place edit.
+          // Discard its work without editing or deleting that shared message.
+          this.sql.exec('DELETE FROM outbox WHERE key=? AND version=?', work.key, work.version);
+          this.sql.exec("UPDATE queue_publications SET state='superseded' WHERE key=?", work.key);
+          continue;
+        }
+      }
       const gate = this.env.DISCORD_GATE.getByName(this.env.DISCORD_APPLICATION_ID!);
       const route = `channel:${card.channel_id}`;
       const at = await gate.reserve(route);
@@ -2773,6 +2769,50 @@ export class PlayStore {
           Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}`,
           'Content-Type': 'application/json',
         };
+        if (publication && !card.message_id && !card.reconcile) {
+          const previous = this.sql
+            .exec<Pointer>('SELECT * FROM cards WHERE key=?', `queue:${publication.queue_id}`)
+            .toArray()[0];
+          if (previous?.message_id) {
+            // Check public channel history only when an actual queue update is due.
+            // Keep a recent card in place; publish and retire it only when it fell below the last five.
+            let latest: { id: string }[];
+            try {
+              const response = await fetch(
+                `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=5`,
+                { headers, signal: AbortSignal.timeout(5000) },
+              );
+              if (!response.ok) {
+                if (response.status >= 500) await this.retry(work, 'queue_history_unavailable');
+                else await this.failed(work, route, response, gate);
+                continue;
+              }
+              await this.rateHeaders(response, route, gate);
+              const rows: unknown = await response.json();
+              if (!Array.isArray(rows) || rows.some((r) => !r || !/^\d{17,20}$/.test(r.id)))
+                throw new Error('Invalid channel history');
+              latest = rows.slice(0, 5);
+            } catch {
+              await this.retry(work, 'queue_history_unavailable');
+              continue;
+            }
+            if (latest.some((r) => r.id === previous.message_id)) {
+              card.message_id = previous.message_id;
+              this.sql.exec('UPDATE cards SET message_id=? WHERE key=?', card.message_id, card.key);
+            }
+            // History and the subsequent edit/create both count against Discord's limits.
+            const next = await gate.reserve(route);
+            if (next > Date.now()) {
+              this.sql.exec(
+                'UPDATE outbox SET due=? WHERE key=? AND version=?',
+                next,
+                work.key,
+                work.version,
+              );
+              continue;
+            }
+          }
+        }
         if (!card.message_id && card.reconcile) {
           const check = await fetch(
             `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=100${card.reconcile_cursor ? `&before=${card.reconcile_cursor}` : ''}`,

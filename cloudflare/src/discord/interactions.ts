@@ -899,6 +899,14 @@ async function playInteraction(
     // Ordinary unrestricted joins acknowledge after a local transaction. Restricted roster selection uses bounded fresh-role checks.
     const reply = await stub.play(i.guild_id!, parsed.data);
     ctx?.waitUntil(stub.flush());
+    if (
+      i.type === 3 &&
+      i.data?.custom_id?.startsWith('q:') &&
+      action.kind === 'add' &&
+      reply.ok !== false
+    )
+      // Acknowledge the button without a reply; the durable outbox updates the public card.
+      return Response.json({ type: 6 });
     return ephemeral(
       reply.content,
       reply.link

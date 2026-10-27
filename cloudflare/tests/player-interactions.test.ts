@@ -347,16 +347,26 @@ describe('player component routes', () => {
       'Cancel bet',
     ]);
   });
-  it('joins and leaves only the signed member, with a private acknowledgement', async () => {
+  it('silently acknowledges Join for only the signed member, including duplicate clicks', async () => {
     await configure();
-    const reply = await interaction({ custom_id: `q:${queue}:join` });
-    expect(reply.data).toMatchObject({ flags: 64, content: 'Joined Pickup · 1/4.' });
+    const reply = await interaction({ custom_id: `q:${queue}:join:g14` });
+    expect(reply).toEqual({ type: 6 });
+    expect(await interaction({ custom_id: `q:${queue}:join` })).toEqual({ type: 6 });
     expect((await stub().records(guild)).waiting[0].players.map((p) => p.id)).toEqual([
       person(0).id,
     ]);
     expect((await interaction({ custom_id: `q:${queue}:leave` })).data.content).toBe(
       'Left Pickup.',
     );
+    expect((await stub().records(guild)).waiting[0].players).toHaveLength(0);
+  });
+  it('still explains rejected Join clicks privately', async () => {
+    const s = settings();
+    s.queues[0].enabled = false;
+    await configure(s);
+    const reply = await interaction({ custom_id: `q:${queue}:join` });
+    expect(reply).toMatchObject({ type: 4, data: { flags: 64 } });
+    expect(reply.data.content).toContain('closed');
     expect((await stub().records(guild)).waiting[0].players).toHaveLength(0);
   });
   it('routes unnamed joins to the channel default and keeps explicit buttons queue-specific', async () => {
@@ -489,7 +499,7 @@ describe('player component routes', () => {
     expect((await current()).roster.filter((p) => p.id === person(8).id)).toHaveLength(1);
   });
 
-  it('explains waiting expiry privately and refreshes membership in a manual queue', async () => {
+  it('explains waiting expiry for slash joins and refreshes membership in a manual queue', async () => {
     const s = settings();
     s.queues[0].autoStart = false;
     s.queues[0].controls = {
@@ -499,7 +509,7 @@ describe('player component routes', () => {
       blockedRole: null,
     };
     await configure(s);
-    const joined = await interaction({ custom_id: `q:${queue}:join` });
+    const joined = await interaction({ name: 'add' }, 0, { type: 2 });
     expect(joined.data.content).toMatch(/Your place expires <t:\d+:R>/);
     await runInDurableObject(stub(), (_i, state) => {
       for (let n = 1; n < 4; n++)
@@ -510,7 +520,7 @@ describe('player component routes', () => {
           person(n).name,
         );
     });
-    const duplicate = await interaction({ custom_id: `q:${queue}:join` });
+    const duplicate = await interaction({ name: 'add' }, 0, { type: 2 });
     expect(duplicate.data.content).toContain('already waiting in Pickup');
     expect(duplicate.data.content).toContain('Your place expires');
     expect((await stub().records(guild)).waiting[0].players).toHaveLength(4);
