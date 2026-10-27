@@ -423,6 +423,65 @@ describe('player component routes', () => {
     expect(reply.data.content).toContain('closed');
     expect((await stub().records(guild)).waiting[0].players).toHaveLength(0);
   });
+  it('acknowledges Ping silently and publishes an invitation without a private success receipt', async () => {
+    const s = settings();
+    s.queues[0].voicePreview = true;
+    const button = queueCard(s.queues[0], [])
+      .components.flatMap((row) => row.components)
+      .find((c) => c.type === 2 && c.label === 'Ping');
+    if (!button?.custom_id) throw Error('The queue must offer a Ping button.');
+    await configure(s);
+    await runInDurableObject(env.VOICE_PRESENCE.getByName(env.DISCORD_APPLICATION_ID!), (i) => {
+      const p = (i as any).snapshot;
+      p.initialize(
+        guild,
+        [{ user_id: person(1).id, channel_id: channel, member: { user: { id: person(1).id } } }],
+        {
+          channels: [{ id: channel, type: 2 }],
+          roles: [{ id: guild, permissions: '1024' }],
+        },
+      );
+      p.healthy = true;
+      (i as any).socket = {};
+    });
+    expect(await interaction({ custom_id: `${button.custom_id}:g14` })).toEqual({ type: 6 });
+    const posts = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(
+      posts.some(
+        ([url, init]) =>
+          String(url).includes('/channels/') &&
+          JSON.parse(init!.body as string).allowed_mentions.users?.includes(person(1).id),
+      ),
+    ).toBe(true);
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes('/webhooks/'))).toBe(
+      false,
+    );
+    vi.mocked(fetch).mockClear();
+    expect(await interaction({ custom_id: `q:${queue}:ping:g14` })).toEqual({ type: 6 });
+    const errors = vi
+      .mocked(fetch)
+      .mock.calls.filter(([url]) => String(url).includes('/webhooks/'));
+    expect(errors).toHaveLength(1);
+    expect(errors[0][1]?.method).toBe('POST');
+    expect(String(errors[0][0])).not.toContain('@original');
+    expect(JSON.parse(errors[0][1]!.body as string)).toMatchObject({
+      flags: 64,
+      content: expect.stringContaining('recently'),
+      allowed_mentions: { parse: [] },
+    });
+  });
+  it('rejects Ping buttons copied into another channel with a private followup and no invitation', async () => {
+    const s = settings();
+    s.queues[0].voicePreview = true;
+    await configure(s);
+    expect(
+      await interaction({ custom_id: `q:${queue}:ping` }, 0, { channel_id: '706320010368516299' }),
+    ).toEqual({ type: 6 });
+    const writes = vi.mocked(fetch).mock.calls.filter(([, init]) => init?.method === 'POST');
+    expect(writes).toHaveLength(1);
+    expect(String(writes[0][0])).toContain('/webhooks/');
+    expect(JSON.parse(writes[0][1]!.body as string).content).toContain('No matching queue');
+  });
   it('routes unnamed joins to the channel default and keeps explicit buttons queue-specific', async () => {
     const s = settings();
     s.queues.push({ ...s.queues[0], id: otherQueue, name: 'Nomad' });

@@ -120,7 +120,7 @@ describe('five-minute queue preview', () => {
     await act('noadd', 99, { admin: true, target: person(7), seconds: 600 });
     await tick();
     const card = latestCard(),
-      text = card.embeds[0].description.split('**In voice only · not in queue**')[1];
+      text = card.embeds[0].description.split('\n\n> *')[1];
     expect(card.embeds[0].footer).toBeUndefined();
     expect(text.match(/<@\d+>/g)).toEqual([6, 5, 4, 3, 2].map((n) => `<@${person(n).id}>`));
     expect(card.allowed_mentions).toEqual({ parse: [] });
@@ -152,7 +152,7 @@ describe('five-minute queue preview', () => {
     await abortAllDurableObjects();
     await act('add', 2);
     await flush();
-    const text = latestCard().embeds[0].description.split('**In voice only · not in queue**')[1];
+    const text = latestCard().embeds[0].description.split('\n\n> *')[1];
     expect(text).toContain(person(1).id);
     expect(text).not.toContain(person(2).id);
     await runInDurableObject(stub(), async (_i, state) => {
@@ -176,7 +176,7 @@ describe('five-minute queue preview', () => {
     s.settings.queues[0].enabled = false;
     await stub().save(guild, s.revision, s.settings, person(99).id, 'save');
     await flush();
-    expect(latestCard().embeds[0].description).not.toContain('In voice');
+    expect(latestCard().embeds[0].description).not.toContain('\n\n> *');
     await runInDurableObject(stub(), async (_i, state) => {
       expect(state.storage.kv.get('queueVoice')).toBeUndefined();
       expect(await state.storage.getAlarm()).toBeNull();

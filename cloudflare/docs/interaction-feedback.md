@@ -38,3 +38,5 @@ Slash commands require an initial response. They acknowledge with a temporary pr
 Webhook cleanup retries at most three times, handles acknowledgement races and respects Retry-After. It never repeats the underlying queue/match/betting action. Tokens remain in memory and are never placed in the durable outbox or logs. Exhausted webhook failures log only the operation, so cleanup may remain incomplete during a Discord outage. Public-card delivery retains its existing durable retry and organizer recovery behavior.
 
 Signed-request integration tests cover queue changes, check-in, organizer actions, substitutions, results, lobby operations, civilization privacy and consumed private panels. Transport tests cover slow work, private errors, lost/rate-limited cleanup, finite retries and credential-safe logging. These use mocked Discord boundaries; client rendering still requires human interaction.
+
+The queue **Ping** button acknowledges silently (type 6) while its public invitation is prepared. Errors and cooldowns use a new ephemeral followup; the public queue card is never edited or deleted through the interaction webhook.

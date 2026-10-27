@@ -1,12 +1,22 @@
-# Queue voice previews — 0.11.1
+# Queue voice previews — 0.12.0
 
-Enable **Voice presence → Show up to five people…** in a queue's organizer settings. The existing queue card gains an **In voice only · not in queue** section at the bottom, replacing the old Community Games footer. The voice-only names use italic text in an indented block, visually separate from the normal queue roster. The bot's Discord application name is unchanged.
+Enable **Voice presence → Show up to five people…** in a queue's organizer settings. The existing queue card gains an italic voice list in an indented block at the bottom, visually separate from the normal queue roster. It has no extra heading or Community Games footer. The bot's Discord application name is unchanged.
 
 The list includes up to five verified human members currently in public voice or stage channels in the same server. It excludes anyone waiting in any queue, playing in an active match, or under a local queue restriction. Names render as mentions with `allowed_mentions.parse: []`, so they do not notify anyone. Channels with a View Channel denial in any overwrite are conservatively excluded; the adapter does not reveal occupants of restricted rooms.
 
 “Recent” means the latest observed voice join or move, not the date a member joined the server. Mute/deafen changes do not reorder people. Discord provides no original join time for occupants already present when the connection starts: these follow observed joins in stable user-ID order. After an unresumable restart, ordering starts again from the fresh snapshot.
 
 Enabled queues with a published card share a five-minute refresh per community. New or unpublished queues do not start the connection. Queue actions immediately filter newly queued players out of that queue's cached preview. Departures, other queues' changes and new voice arrivals appear on the next refresh. Changed lists use the same last-five-message edit/replacement policy as roster updates. Unchanged lists generate no Discord history/edit calls. An unavailable feed clears names and shows “Voice list temporarily unavailable”; an empty healthy list shows “No other players in public voice channels.” Initial connection startup may take one refresh cycle.
+
+## Ping button
+
+Queues with voice previews show **Join**, **Leave** and **Ping**. Any member who meets the queue’s restrictions can press Ping; organizers can also invite players. It posts a new message asking eligible public voice participants to join soon, with explicit user mentions and a Join button. The displayed preview stays quiet; notifications happen only when someone presses Ping.
+
+Ping uses the live Gateway snapshot across public voice/stage channels in that server, not the five-name preview cache. It excludes bots, unknown identities, restricted rooms, players waiting in any queue, active players, pending automatic returns, locally restricted users and anyone who fails the queue’s role requirements. Role-gated queues verify member roles with Discord and stop on API failure/rate limits. Large recipient lists use batches of at most 50 mentions to stay within Discord’s message limits; the preview’s five-person limit does not truncate invitations.
+
+A five-minute cooldown is shared across queues in the community. A recent `/rally` also counts toward this cooldown. The caller receives no private success message; cooldowns and errors appear privately without editing or deleting the public card. Existing organizer/role permissions on `/rally` remain unchanged.
+
+Interaction IDs deduplicate repeat clicks. Recipients and queue availability are checked again immediately before posting. Departed, queued, playing or otherwise ineligible recipients are removed; empty groups are discarded. Paused/full queues, disconnected feeds and invitations older than 30 seconds are not sent. Delivery uses persistent nonces and receipt reconciliation to avoid repeating a notification after a lost HTTP response. Accepted invitations and their recipients are recorded in the existing `rally_runs` and `control_audit` tables; no SQL migration or settings change is needed. Before downgrading to a release without Ping, drain or expire all pending `ping:` outbox entries while running the current version: older delivery code does not recheck these recipients. Automated coverage lives in `tests/queue-ping.test.ts` and the signed interaction tests.
 
 ## Connection and permissions
 

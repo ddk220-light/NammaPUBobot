@@ -318,6 +318,19 @@ export class Community extends DurableObject<Env> {
   ) {
     return this.playStore.predictionReceipt(guild, input);
   }
+  async pingVoice(guild: string, a: Action) {
+    try {
+      return { ok: true, ...(await this.playStore.pingVoice(guild, a)) };
+    } catch (error) {
+      return {
+        ok: false,
+        content:
+          error instanceof PlayError
+            ? error.message
+            : 'The voice list could not be verified. Try again shortly.',
+      };
+    }
+  }
   async rally(guild: string, a: Action, voiceChannel?: string) {
     try {
       return await this.playStore.rally(guild, a, voiceChannel);

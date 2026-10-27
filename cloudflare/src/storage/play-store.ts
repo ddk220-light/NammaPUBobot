@@ -15,7 +15,7 @@ import {
   type Reply,
 } from '../domain/play';
 import { rateTeams, type Player } from '../domain/rating';
-import { matchCard, queueCard, agreementCard, type Card } from '../discord/cards';
+import { matchCard, queueCard, queuePingCard, agreementCard, type Card } from '../discord/cards';
 import { RecordStore } from './record-store';
 import { createUxTables, UxStore } from './ux-store';
 import { createEconomyTables, EconomyStore } from './economy-store';
@@ -402,6 +402,186 @@ export class PlayStore {
       members,
     });
     for (const q of current) this.touchQueue(q);
+  }
+  private pingQueue(guild: string, a: Action) {
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      throw new PlayError('Recovery copy is read-only.');
+    const q = this.queue(a, this.read(guild).settings);
+    if (!q.voicePreview) throw new PlayError('Voice invitations are disabled for this queue.');
+    if (!q.enabled || this.entries(q.id).length >= q.size)
+      throw new PlayError('This queue does not need more players right now.');
+    this.remember(a.actor);
+    if (!a.admin && !this.allowed(q, a.actor.id, true))
+      throw new PlayError('You are not eligible to invite players to this queue.');
+    return q;
+  }
+  private pingCooldown() {
+    const last = this.sql
+      .exec<{ created_at: number }>(
+        'SELECT created_at FROM rally_runs ORDER BY created_at DESC LIMIT 1',
+      )
+      .toArray()[0];
+    if (last && last.created_at + voiceInterval > Date.now())
+      throw new PlayError(
+        `Players were invited recently. Try again in ${Math.ceil((last.created_at + voiceInterval - Date.now()) / 60000)} minute(s).`,
+      );
+  }
+  private pingAvailable(q: Queue, id: string) {
+    return (
+      this.allowed(q, id, true) &&
+      !this.sql
+        .exec(
+          'SELECT 1 FROM queue_entries WHERE user_id=? UNION ALL SELECT 1 FROM active_players WHERE user_id=? UNION ALL SELECT 1 FROM pending_returns WHERE user_id=? LIMIT 1',
+          id,
+          id,
+          id,
+        )
+        .toArray().length
+    );
+  }
+  async pingVoice(guild: string, a: Action) {
+    const q = this.pingQueue(guild, a);
+    const receipt = () => {
+      const old = this.sql
+        .exec<{ queue_id: string; targets: string }>(
+          'SELECT queue_id,targets FROM rally_runs WHERE id=?',
+          a.id,
+        )
+        .toArray()[0];
+      if (!old) return false;
+      const saved = JSON.parse(old.targets);
+      if (old.queue_id !== q.id || saved.kind !== 'queue_ping' || saved.actorId !== a.actor.id)
+        throw new PlayError('This invitation changed. Use the current Ping button.');
+      return true;
+    };
+    if (receipt()) return { content: 'Invitation already accepted.' };
+    this.pingCooldown();
+    const feed = this.env.VOICE_PRESENCE.getByName(this.env.DISCORD_APPLICATION_ID!);
+    const presence = await feed.query(guild, 'preview');
+    if (!presence.preview)
+      throw new PlayError('The voice list is warming up or unavailable. Retry shortly.');
+    // Public voice snapshots already exclude bots. Role-gated queues also need
+    // current member roles; never invite a partially verified group on API failure.
+    if (q.controls?.requiredRole || q.controls?.blockedRole) {
+      const gate = this.env.DISCORD_GATE.getByName(this.env.DISCORD_APPLICATION_ID!);
+      const route = `members:${guild}`;
+      for (const candidate of presence.preview) {
+        if ((await gate.reserve(route)) > Date.now())
+          throw new PlayError('Discord is busy verifying queue eligibility. Try again shortly.');
+        const response = await fetch(
+          `https://discord.com/api/v10/guilds/${guild}/members/${candidate.userId}`,
+          {
+            headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
+            signal: AbortSignal.timeout(1000),
+          },
+        );
+        await this.rateHeaders(response, route, gate);
+        if (response.status === 429) {
+          const body = (await response.json().catch(() => null)) as {
+            retry_after?: number;
+            global?: boolean;
+          } | null;
+          const seconds = Number(body?.retry_after ?? response.headers.get('Retry-After') ?? 1);
+          await gate.pause(
+            route,
+            Date.now() + (Number.isFinite(seconds) ? Math.max(1000, seconds * 1000) : 1000),
+            body?.global === true,
+          );
+          throw new PlayError('Discord is busy verifying queue eligibility. Try again shortly.');
+        }
+        if (response.status === 404) {
+          this.sql.exec('UPDATE members SET available=0 WHERE user_id=?', candidate.userId);
+          continue;
+        }
+        if (!response.ok)
+          throw new PlayError('Discord could not verify queue eligibility. Try again shortly.');
+        const member = (await response.json()) as {
+          roles?: string[];
+          user?: { id?: string; bot?: boolean };
+        };
+        if (
+          member.user?.id !== candidate.userId ||
+          member.user.bot ||
+          !Array.isArray(member.roles) ||
+          member.roles.some((r) => !/^\d{17,20}$/.test(r))
+        )
+          throw new PlayError('Discord could not verify queue eligibility. Try again shortly.');
+        this.remember({ id: candidate.userId, name: candidate.userId, roles: member.roles });
+      }
+    }
+    const fresh = await feed.query(guild, 'preview');
+    const reply = this.ctx.storage.transactionSync(() => {
+      const current = this.pingQueue(guild, a);
+      if (receipt()) return { content: 'Invitation already accepted.' };
+      this.pingCooldown();
+      if (!fresh.preview) throw new PlayError('The voice list could not be verified.');
+      const targets = fresh.preview
+        .filter((p) => this.pingAvailable(current, p.userId))
+        .map((p) => p.userId);
+      if (!targets.length)
+        throw new PlayError('No eligible people in public voice channels need an invitation.');
+      this.sql.exec(
+        'INSERT INTO rally_runs VALUES(?,?,?,?,?)',
+        a.id,
+        current.id,
+        Date.now(),
+        JSON.stringify({ kind: 'queue_ping', actorId: a.actor.id, users: targets }),
+        'pending',
+      );
+      // Keep each invitation under Discord's content/mention limits, including
+      // communities with more candidates than the five-name preview can show.
+      for (let offset = 0; offset < targets.length; offset += 50)
+        this.enqueue(
+          `ping:${a.id}:${offset / 50}`,
+          current.channelId,
+          queuePingCard(
+            current,
+            targets.slice(offset, offset + 50),
+            current.size - this.entries(current.id).length,
+          ),
+        );
+      this.audit('voice_ping', a.actor.id, { targets }, null, current.id);
+      return { content: 'Voice invitation accepted.' };
+    });
+    await this.schedule();
+    return reply;
+  }
+  private async freshPing(work: Work, guild: string): Promise<Card | null> {
+    const saved = this.sql
+      .exec<{ queue_id: string; created_at: number; targets: string }>(
+        'SELECT queue_id,created_at,targets FROM rally_runs WHERE id=?',
+        work.key.split(':')[1],
+      )
+      .toArray()[0];
+    if (
+      !saved ||
+      Date.now() - saved.created_at > 30000 ||
+      this.ctx.storage.kv.get('recoveryReadOnly')
+    )
+      return null;
+    const voice = await this.env.VOICE_PRESENCE.getByName(this.env.DISCORD_APPLICATION_ID!).query(
+      guild,
+      'preview',
+    );
+    const q = this.read(guild).settings.queues.find((q) => q.id === saved.queue_id);
+    if (
+      !voice.preview ||
+      Date.now() - saved.created_at > 30000 ||
+      this.ctx.storage.kv.get('recoveryReadOnly') ||
+      !q?.enabled ||
+      !q.voicePreview ||
+      q.channelId !==
+        this.sql
+          .exec<{ channel_id: string }>('SELECT channel_id FROM cards WHERE key=?', work.key)
+          .toArray()[0]?.channel_id ||
+      this.entries(q.id).length >= q.size
+    )
+      return null;
+    const ids = new Set(voice.preview.map((p) => p.userId));
+    const targets = (JSON.parse(work.payload) as Card).allowed_mentions.users!.filter(
+      (id) => ids.has(id) && this.pingAvailable(q, id),
+    );
+    return targets.length ? queuePingCard(q, targets, q.size - this.entries(q.id).length) : null;
   }
   rallyQueue(guild: string, a: Action) {
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
@@ -2975,7 +3155,20 @@ export class PlayStore {
             continue;
           }
         }
-        const payload = JSON.parse(work.payload);
+        let payload = JSON.parse(work.payload);
+        if (work.key.startsWith('ping:')) {
+          // A recovered receipt means the invitation already exists. Never edit
+          // it or repeat its mentions after a lost HTTP response.
+          if (card.message_id) {
+            this.sql.exec('DELETE FROM outbox WHERE key=? AND version=?', work.key, work.version);
+            continue;
+          }
+          payload = identity ? await this.freshPing(work, identity.guild_id) : null;
+          if (!payload) {
+            this.sql.exec('DELETE FROM outbox WHERE key=? AND version=?', work.key, work.version);
+            continue;
+          }
+        }
         if (!card.message_id) {
           payload.nonce = card.nonce;
           payload.enforce_nonce = true;

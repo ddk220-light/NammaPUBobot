@@ -9,7 +9,12 @@ import { substitutionPanel } from './player-panels';
 import { queuePicker, type QueueChoice } from './queue-picker';
 import { predictionPanel } from './prediction-panel';
 import { adminCommandRoute } from './commands.mjs';
-import { deferInteractionReply, finishInteractionReply, publicUpdate } from './interaction-replies';
+import {
+  deferInteractionReply,
+  deferPublicComponentReply,
+  finishInteractionReply,
+  publicUpdate,
+} from './interaction-replies';
 
 export async function verifyRequest(
   request: Request,
@@ -576,7 +581,18 @@ async function playInteraction(
           ? actionReply(i, env, ctx, 'bet_close', reply)
           : predictionReply(reply.content);
       }
-      const queue = /^q:([a-f0-9-]{36}):(join|leave)(?::g\d+)?$/.exec(custom);
+      const queue = /^q:([a-f0-9-]{36}):(join|leave|ping)(?::g\d+)?$/.exec(custom);
+      if (queue?.[2] === 'ping') {
+        if (!ctx || !i.token) return ephemeral('Use the Ping button on the current queue card.');
+        const input = actionSchema.safeParse({ ...action, kind: 'queue', queue: queue[1] });
+        if (!input.success) return ephemeral('Choose a current queue in this channel.');
+        return deferPublicComponentReply(env, ctx, i.token, async () => {
+          const stub = env.COMMUNITIES.getByName(i.guild_id!);
+          const reply = await stub.pingVoice(i.guild_id!, input.data);
+          if (reply.ok !== false) await stub.flush();
+          return reply;
+        });
+      }
       const picker = /^(qs|qp):(add|remove|queue):(\d{1,2})$/.exec(custom);
       const parsed =
         /^m:([a-f0-9-]{36}):(\d+):(ready|loss|draw|abort|subme|subauto|back|subs|request|cancel|take|auto|rejoin|confirm_loss|confirm_back)$/.exec(

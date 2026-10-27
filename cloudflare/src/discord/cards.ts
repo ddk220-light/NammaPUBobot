@@ -55,7 +55,7 @@ export function queueCard(
             ? `Waiting places expire after ${queue.controls.waitingSeconds} seconds. Join again to renew yours.`
             : '',
           queue.enabled && queue.voicePreview
-            ? `**In voice only · not in queue**\n> *${voice === null ? 'Voice list temporarily unavailable.' : voice.length ? voice.slice(0, 5).map(mention).join(' · ') : 'No other players in public voice channels.'}*`
+            ? `> *${voice === null ? 'Voice list temporarily unavailable.' : voice.length ? voice.slice(0, 5).map(mention).join(' · ') : 'No other players in public voice channels.'}*`
             : '',
         ]
           .filter(Boolean)
@@ -74,10 +74,34 @@ export function queueCard(
             disabled: !queue.enabled,
           },
           { type: 2, style: 2, label: 'Leave', custom_id: `q:${queue.id}:leave` },
+          ...(queue.voicePreview
+            ? [
+                {
+                  type: 2 as const,
+                  style: 2,
+                  label: 'Ping',
+                  custom_id: `q:${queue.id}:ping`,
+                  disabled: !queue.enabled,
+                },
+              ]
+            : []),
         ],
       },
     ],
     allowed_mentions: { parse: [] },
+  };
+}
+export function queuePingCard(queue: Queue, users: string[], needed: number): Card {
+  return {
+    content: `${users.map(mention).join(' ')} — join ${queue.name} soon if you're up for a game! ${needed} more player${needed === 1 ? '' : 's'} needed.`,
+    embeds: [],
+    components: [
+      {
+        type: 1,
+        components: [{ type: 2, style: 3, label: 'Join', custom_id: `q:${queue.id}:join` }],
+      },
+    ],
+    allowed_mentions: { parse: [], users },
   };
 }
 export function matchCard(match: Match): Card {

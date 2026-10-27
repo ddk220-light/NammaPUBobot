@@ -123,3 +123,68 @@ export function deferInteractionReply(
   // Delete this temporary private thinking response after successful public updates.
   return Response.json({ type: 5, data: { flags: 64 } });
 }
+
+/** Acknowledge a public button without creating a private success receipt. */
+export function deferPublicComponentReply(
+  env: Env,
+  ctx: Pick<ExecutionContext, 'waitUntil'>,
+  token: string,
+  work: () => Promise<Reply>,
+) {
+  ctx.waitUntil(
+    (async () => {
+      let reply: Reply;
+      try {
+        reply = await work();
+      } catch (error) {
+        reply = {
+          ok: false,
+          content:
+            error instanceof PlayError
+              ? error.message
+              : 'The invitation could not be confirmed. Check the channel before trying again.',
+        };
+      }
+      if (reply.ok !== false) return;
+      // After a type-6 acknowledgement, @original is the PUBLIC queue card.
+      // Errors must be new ephemeral followups, never edits/deletes of that card.
+      let delay = 100;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await pause(delay);
+        try {
+          const response = await fetch(
+            `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${token}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content: reply.content.slice(0, 1900),
+                flags: 64,
+                allowed_mentions: { parse: [] },
+              }),
+              signal: AbortSignal.timeout(5000),
+            },
+          );
+          if (response.ok) return;
+          if (response.status === 429) {
+            const body = (await response.json().catch(() => null)) as {
+              retry_after?: number;
+            } | null;
+            delay = Number(body?.retry_after ?? response.headers.get('Retry-After') ?? 1) * 1000;
+            if (Number.isFinite(delay) && delay <= 5000) {
+              delay = Math.max(250, delay);
+              continue;
+            }
+          }
+        } catch {
+          /* Do not duplicate an ambiguously delivered private error. */
+        }
+        break;
+      }
+      console.warn(
+        JSON.stringify({ event: 'interaction_reply_failed', operation: 'private_followup' }),
+      );
+    })(),
+  );
+  return Response.json({ type: 6 });
+}
