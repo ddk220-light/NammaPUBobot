@@ -106,8 +106,8 @@ describe('voice snapshot ordering and visibility', () => {
   });
 });
 
-describe('five-minute queue preview', () => {
-  it('replaces the branding with at most five recent non-busy people, without pinging them', async () => {
+describe('queue roster and five-minute invitation feed', () => {
+  it('shows only queued players even when eligible people are in voice, and keeps Ping available', async () => {
     await start();
     await occupants([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     await runInDurableObject(stub(), (_i, state) => {
@@ -119,14 +119,18 @@ describe('five-minute queue preview', () => {
     });
     await act('noadd', 99, { admin: true, target: person(7), seconds: 600 });
     await tick();
-    const card = latestCard(),
-      text = card.embeds[0].description.split('\n\n> *')[1];
+    const card = latestCard();
     expect(card.embeds[0].footer).toBeUndefined();
-    expect(text.match(/<@\d+>/g)).toEqual([6, 5, 4, 3, 2].map((n) => `<@${person(n).id}>`));
+    expect(card.embeds[0].description).toBe(`<@${person(0).id}>`);
+    expect(card.components[0].components.map((b: { label: string }) => b.label)).toEqual([
+      'Join',
+      'Leave',
+      'Ping',
+    ]);
     expect(card.allowed_mentions).toEqual({ parse: [] });
     expect((await stub().records(guild)).waiting[0].players).toHaveLength(1);
   });
-  it('refreshes at five minutes and makes no Discord edits when the displayed list is unchanged', async () => {
+  it('refreshes the feed at five minutes without editing the card when voice occupants change', async () => {
     await start();
     await occupants([1]);
     await tick();
@@ -136,7 +140,7 @@ describe('five-minute queue preview', () => {
     await flush();
     expect(latestCard()).toBeUndefined();
     await tick();
-    expect(latestCard().embeds[0].description).toContain(person(2).id);
+    expect(latestCard()).toBeUndefined();
     vi.mocked(fetch).mockClear();
     await tick();
     expect(latestCard()).toBeUndefined();
@@ -145,22 +149,21 @@ describe('five-minute queue preview', () => {
       expect(cache.due - cache.observedAt).toBe(300000);
     });
   });
-  it('removes someone from the preview immediately when they join, and keeps its clock across restart', async () => {
+  it('shows someone only after they join the queue, and keeps the feed clock across restart', async () => {
     await start();
     await occupants([1, 2]);
     await tick();
     await abortAllDurableObjects();
     await act('add', 2);
     await flush();
-    const text = latestCard().embeds[0].description.split('\n\n> *')[1];
-    expect(text).toContain(person(1).id);
-    expect(text).not.toContain(person(2).id);
+    const text = latestCard().embeds[0].description;
+    expect(text).toBe(`<@${person(0).id}> · <@${person(2).id}>`);
     await runInDurableObject(stub(), async (_i, state) => {
       expect(state.storage.kv.get<any>('queueVoice').due).toBeGreaterThan(Date.now());
       expect(await state.storage.getAlarm()).not.toBeNull();
     });
   });
-  it('hides stale or empty voice lists without placeholders, and stops when paused', async () => {
+  it('keeps the roster unchanged when voice is unavailable or empty, and stops when paused', async () => {
     await start();
     await occupants([1]);
     await tick();

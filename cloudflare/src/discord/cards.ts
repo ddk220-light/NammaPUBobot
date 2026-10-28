@@ -30,12 +30,7 @@ export interface Card {
   components: ActionRow[];
   allowed_mentions: { parse: string[]; users?: string[] };
 }
-export function queueCard(
-  queue: Queue,
-  players: { id: string }[],
-  held = false,
-  voice: string[] | null = null,
-): Card {
+export function queueCard(queue: Queue, players: { id: string }[], held = false): Card {
   const roster = players
     .slice(0, 16)
     .map((p) => mention(p.id))
@@ -53,9 +48,6 @@ export function queueCard(
           players.length ? `${roster}${more}` : 'No one’s waiting yet.',
           queue.controls?.waitingSeconds
             ? `Waiting places expire after ${queue.controls.waitingSeconds} seconds. Join again to renew yours.`
-            : '',
-          queue.enabled && queue.voicePreview && voice?.length
-            ? `> *${voice.slice(0, 5).map(mention).join(' · ')}*`
             : '',
         ]
           .filter(Boolean)

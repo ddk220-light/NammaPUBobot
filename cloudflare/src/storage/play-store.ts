@@ -596,28 +596,10 @@ export class PlayStore {
     }
   }
   private queuePayload(q: Queue) {
-    const cache = this.ctx.storage.kv.get<QueueVoiceCache>('queueVoice');
-    let voice: string[] | null = null;
-    if (cache?.members && Date.now() - cache.observedAt <= voiceInterval + 30000) {
-      const busy = new Set(
-        this.sql
-          .exec<{ user_id: string }>(
-            'SELECT user_id FROM queue_entries UNION SELECT user_id FROM active_players UNION SELECT user_id FROM noadds WHERE until_ms>?',
-            Date.now(),
-          )
-          .toArray()
-          .map((p) => p.user_id),
-      );
-      voice = cache.members
-        .filter((p) => !busy.has(p.userId))
-        .slice(0, 5)
-        .map((p) => p.userId);
-    }
     return queueCard(
       q,
       this.entries(q.id).map((p) => ({ id: p.user_id })),
       this.ux.held(q.id),
-      voice,
     );
   }
   private async refreshQueueVoice(guild: string) {
@@ -636,7 +618,7 @@ export class PlayStore {
       ).query(guild, 'preview');
       members = presence.preview;
     } catch {
-      /* Clear stale names on an unavailable feed. */
+      /* Keep the invitation feed leased; never display its occupants on the queue card. */
     }
     // Configuration can change during the Gateway query; never reactivate a disabled queue.
     const current = this.voiceQueues(this.read(guild).settings);

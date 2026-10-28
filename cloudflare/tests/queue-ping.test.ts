@@ -65,7 +65,7 @@ const invitations = () =>
     .filter((p) => p.content?.includes('soon if you'));
 
 describe('queue Ping invitations', () => {
-  it('invites all eligible public voice participants across channels, beyond the five-name preview', async () => {
+  it('invites all eligible public voice participants across channels', async () => {
     await start();
     await presence([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], true);
     await runInDurableObject(stub(), (_i, state) => {
