@@ -61,7 +61,7 @@ class QueueChannel:
 				"prefix",
 				display="Command prefix",
 				section="General",
-				description="Set the prefix before for the bot`s commands",
+				description="Legacy setting kept for older configs. Commands are slash commands now, so this has no effect.",
 				verify=lambda x: len(x) == 1,
 				verify_message="Command prefix must be exactly one symbol.",
 				default="!",
@@ -81,19 +81,19 @@ class QueueChannel:
 				"admin_role",
 				display="Admin role",
 				section="General",
-				description="Members with this role will be able to change the bot`s settings and use moderation commands."
+				description="Members with this role can change the bot's settings and use moderation commands."
 			),
 			Variables.RoleVar(
 				"moderator_role",
 				display="Moderator role",
 				section="General",
-				description="Members with this role will be able to use the bot`s moderation commands."
+				description="Members with this role can use the bot's moderation commands."
 			),
 			Variables.RoleVar(
 				"promotion_role",
 				display="Promotion role",
 				section="General",
-				description="Set a role to highlight on !promote and !sub commands.",
+				description="The role that gets pinged when a queue needs more players or a match needs a sub.",
 			),
 			Variables.DurationVar(
 				"promotion_delay",
@@ -105,22 +105,25 @@ class QueueChannel:
 			),
 			Variables.BoolVar(
 				"remove_afk",
-				display="Auto remove on AFK status",
+				display="Remove players who go AFK",
 				section="Auto-remove",
 				default=1,
+				description="Take a player out of every queue when their Discord status turns Idle.",
 				notnull=True
 			),
 			Variables.BoolVar(
 				"remove_offline",
-				display="Auto remove on offline status",
+				display="Remove players who go offline",
 				section="Auto-remove",
 				default=1,
+				description="Take a player out of every queue when they go offline on Discord.",
 				notnull=True
 			),
 			Variables.DurationVar(
 				"expire_time",
-				display="Auto remove on timer after last !add command",
+				display="Remove players after a time",
 				section="Auto-remove",
+				description="Take a player out of the queues this long after they last joined. Leave unset to keep them queued.",
 				verify=lambda x: 0 < x <= MAX_EXPIRE_TIME,
 				verify_message=f"Expire time must be less than {seconds_to_str(MAX_EXPIRE_TIME)}"
 			),
@@ -128,13 +131,13 @@ class QueueChannel:
 				"blacklist_role",
 				display="Blacklist role",
 				section="General",
-				description="Players with this role wont be able to add to queues.",
+				description="Players with this role can't join any queue in this channel.",
 			),
 			Variables.RoleVar(
 				"whitelist_role",
 				display="Whitelist role",
 				section="General",
-				description="If set, only players with this role will be able to add to queues."
+				description="When set, only players with this role can join queues in this channel."
 			),
 			Variables.TextVar(
 				"description",

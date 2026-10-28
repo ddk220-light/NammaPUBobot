@@ -241,6 +241,24 @@ async def _cleanup_expired_sessions():
 DISCORD_API = "https://discord.com/api/v10"
 DISCORD_OAUTH_AUTHORIZE = "https://discord.com/api/oauth2/authorize"
 DISCORD_OAUTH_TOKEN = "https://discord.com/api/oauth2/token"
+DISCORD_BOT_INVITE = "https://discord.com/oauth2/authorize"
+
+# What the dashboard's "Add to Discord" wizard asks for, and nothing more:
+# View Channels, Send Messages, Embed Links, Attach Files and Read Message
+# History to run the queue cards; Add Reactions for check-in
+# (pickup/match/checkin.py); Use External Emojis for rank and civ icons; and
+# Manage Roles for rank roles (pickup/channel.py). Grow this list only when a
+# feature starts exercising a new permission.
+BOT_INVITE_PERMISSIONS = (
+	(1 << 6)      # Add Reactions
+	| (1 << 10)   # View Channels
+	| (1 << 11)   # Send Messages
+	| (1 << 14)   # Embed Links
+	| (1 << 15)   # Attach Files
+	| (1 << 16)   # Read Message History
+	| (1 << 18)   # Use External Emojis
+	| (1 << 28)   # Manage Roles
+)
 
 # --- Variable filtering ---
 SKIP_TYPES = (RoleVar, TextChanVar, MemberVar)
@@ -319,6 +337,23 @@ def _oauth_enabled():
 	# Never construct an OAuth redirect from Host/X-Forwarded-Host. A configured
 	# public base URL is part of enabling OAuth, not an optional convenience.
 	return bool(getattr(cfg, "DC_CLIENT_SECRET", "") and _configured_root_url())
+
+
+def _bot_invite_url():
+	"""The Discord link that adds this bot to a server, or None if unconfigured.
+
+	It is public by nature (the client id is in every slash-command payload), so
+	/api/me returns it to anonymous visitors too: adding the bot is the first
+	step of the setup wizard, before there is anything to log in to.
+	"""
+	client_id = str(getattr(cfg, "DC_CLIENT_ID", "") or "").strip()
+	if not client_id.isdigit() or int(client_id) == 0:
+		return None
+	return f"{DISCORD_BOT_INVITE}?" + urlencode({
+		"client_id": client_id,
+		"scope": "bot applications.commands",
+		"permissions": str(BOT_INVITE_PERMISSIONS),
+	})
 
 
 def _get_root_url(request):
@@ -3020,7 +3055,9 @@ async def handle_auth_logout(request):
 async def handle_api_me(request):
 	session = await _get_session(request)
 	if not session:
-		return web.json_response({"logged_in": False, "oauth_enabled": _oauth_enabled()})
+		return web.json_response({
+			"logged_in": False, "oauth_enabled": _oauth_enabled(),
+			"invite_url": _bot_invite_url()})
 	# Lazily issue a CSRF token for any session missing one (e.g. legacy
 	# rows from before the CSRF feature landed). Safe because this endpoint
 	# requires a valid same-origin session cookie — an attacker without
@@ -3043,6 +3080,7 @@ async def handle_api_me(request):
 		"username": session["username"],
 		"avatar": session["avatar"],
 		"csrf": session["csrf"],
+		"invite_url": _bot_invite_url(),
 	})
 
 
@@ -4881,6 +4919,7 @@ def create_app():
 	app.router.add_get('/leaderboard', handle_index)
 	app.router.add_get('/civ-stats', handle_index)
 	app.router.add_get('/dashboard', handle_index)
+	app.router.add_get('/add-bot', handle_index)
 	app.router.add_get('/player/{user_id}', handle_index)
 	app.router.add_get('/player-profile/{user_id}', handle_index)
 	app.router.add_get('/c/{community_id}', handle_index)

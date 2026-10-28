@@ -28,6 +28,7 @@ class PickupQueue:
 				display="Queue name",
 				section="General",
 				notnull=True,
+				description="One word players use to join this queue, for example 4v4.",
 				verify=lambda name: len(name) and not any((c in name for c in ": \t\n")),
 				verify_message="Invalid queue name. A queue name should be one word without +-: characters."
 			),
@@ -41,23 +42,24 @@ class PickupQueue:
 				"size",
 				display="Queue size",
 				section="General",
+				description="How many players fill the queue and start a match.",
 				verify=lambda i: 0 < i < 1001,
 				notnull=True
 			),
 			Variables.BoolVar(
 				"is_default",
-				display="is default",
+				display="Default queue",
 				section="General",
 				default=1,
-				description="Set if users can add to this queue without specifying its name.",
+				description="Players join this queue with a plain /add or ++, without naming it.",
 				notnull=True
 			),
 			Variables.BoolVar(
 				"ranked",
-				display="is ranked",
+				display="Ranked queue",
 				section="General",
 				default=0,
-				description="Enable rating features on this queue.",
+				description="Matches from this queue change player ratings and appear on the leaderboard.",
 				notnull=True
 			),
 			Variables.BoolVar(
@@ -65,6 +67,7 @@ class PickupQueue:
 				display="Start when full",
 				section="General",
 				default=1,
+				description="Start the match automatically as soon as the queue fills up.",
 				notnull=True
 			),
 			Variables.DurationVar(
@@ -181,7 +184,7 @@ class PickupQueue:
 				"promotion_role",
 				display="Promotion role",
 				section="General",
-				description="Set a role to highlight on !promote and !sub commands."
+				description="The role that gets pinged when this queue needs more players or a match needs a sub."
 			),
 			Variables.TextVar(
 				"promotion_msg",
@@ -207,13 +210,13 @@ class PickupQueue:
 				"blacklist_role",
 				display="Blacklist role",
 				section="General",
-				description="Users with this role wont be able to add to this queue."
+				description="Players with this role can't join this queue."
 			),
 			Variables.RoleVar(
 				"whitelist_role",
 				display="Whitelist role",
 				section="General",
-				description="Only users with this role will be able to add to this queue."
+				description="When set, only players with this role can join this queue."
 			),
 			Variables.DurationVar(
 				"match_lifetime",

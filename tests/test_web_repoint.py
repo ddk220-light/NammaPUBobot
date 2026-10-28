@@ -2108,6 +2108,31 @@ def test_oauth_is_disabled_without_an_explicit_safe_public_root(monkeypatch):
 	assert web._oauth_enabled() is False
 
 
+def test_the_add_bot_link_asks_only_for_the_permissions_the_bot_uses(monkeypatch):
+	""" The setup wizard's invite button. A missing client id must hide the
+	button rather than send an admin to a Discord error page. """
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_ID", 0, raising=False)
+	assert web._bot_invite_url() is None
+
+	monkeypatch.setattr(web.cfg, "DC_CLIENT_ID", 1234, raising=False)
+	url = web._bot_invite_url()
+	assert url.startswith(web.DISCORD_BOT_INVITE + "?")
+	assert "client_id=1234" in url
+	assert "scope=bot+applications.commands" in url
+	assert f"permissions={web.BOT_INVITE_PERMISSIONS}" in url
+	# Never Administrator: a bot that only needs to post cards must not ask for
+	# the one permission that bypasses every channel override.
+	assert not web.BOT_INVITE_PERMISSIONS & (1 << 3)
+
+
+def test_the_add_bot_wizard_route_serves_the_spa():
+	paths = {path for _method, path, _handler in web.create_app().router.routes}
+	assert "/add-bot" in paths
+	page = Path(_REPO_ROOT, "nammaoe2bot", "web", "page.html").read_text()
+	assert "function renderAddBotWizard()" in page
+	assert "currentUser.invite_url" in page
+
+
 def test_login_redirects_to_discord_with_the_state_it_just_stored(monkeypatch):
 	""" The redirect target is the whole point of the handler, and it was
 	unreachable: `location` came from kwargs while nammaoe2bot/web/server.py passes it

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
-<title>nammaoe2bot.__main__ web-ui</title>
+<title>NammaAoE2Bot</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500&family=Outfit:wght@300;400;500;600;700&display=swap');
 
@@ -24,469 +24,782 @@ body { margin: 0; padding: 0; overflow: hidden; background: #36393f; color: #dcd
   display: flex; flex-direction: row; align-items: stretch; flex: 1 1 auto;
 }
 
-/* ─── Title Bar ─── */
-#titlebar {
-  display: flex; align-items: center; z-index: 5;
-  height: 52px; color: white; background: #484c54;
-  box-shadow: 0 5px 5px -3px rgba(0,0,0,0.5);
+/* ─── Design tokens (dashboard, setup wizard, title bar) ─── */
+:root {
+  --ui-bg: #313338;
+  --ui-sunken: #1e1f22;
+  --ui-panel: #2b2d31;
+  --ui-raised: #383a40;
+  --ui-line: rgba(255,255,255,0.07);
+  --ui-line-strong: rgba(255,255,255,0.13);
+  --ui-text: #f2f3f5;
+  --ui-body: #dbdee1;
+  --ui-muted: #a8acb3;
+  --ui-faint: #80848e;
+  --ui-accent: #5865f2;
+  --ui-accent-hi: #7983f5;
+  --ui-accent-soft: rgba(88,101,242,0.16);
+  --ui-gold: #e4b54a;
+  --ui-gold-soft: rgba(228,181,74,0.14);
+  --ui-ok: #3fbf7a;
+  --ui-ok-soft: rgba(63,191,122,0.14);
+  --ui-warn: #f0b232;
+  --ui-warn-soft: rgba(240,178,50,0.14);
+  --ui-danger: #f2585c;
+  --ui-danger-soft: rgba(242,88,92,0.14);
+  --ui-radius: 14px;
+  --ui-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --ui-ease: cubic-bezier(.2,.8,.2,1);
 }
 
+/* ─── Title Bar ─── */
+#titlebar {
+  display: flex; align-items: center; gap: 4px; z-index: 5;
+  height: 56px; padding: 0 12px; color: white;
+  background: linear-gradient(180deg, #26282d, #1f2125);
+  border-bottom: 1px solid var(--ui-line);
+  box-shadow: 0 8px 20px -14px rgba(0,0,0,0.9);
+}
+
+#tb-brand {
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; padding-right: 14px; margin-right: 6px;
+  border-right: 1px solid var(--ui-line);
+}
+
+.tb-logo {
+  width: 32px; height: 32px; border-radius: 10px; flex: 0 0 auto;
+  display: grid; place-items: center; color: #2a1d05;
+  background: linear-gradient(135deg, #ffd88a, var(--ui-gold) 55%, #b97a26);
+  box-shadow: 0 4px 14px -4px rgba(228,181,74,0.7);
+}
+.tb-logo svg { width: 18px; height: 18px; }
+
 #tb-botinfo {
-  font-family: 'Oswald', sans-serif; font-weight: 400;
-  font-size: 22px; letter-spacing: 1px; padding-left: 14px;
+  font-family: 'Oswald', sans-serif; font-weight: 500;
+  font-size: 20px; letter-spacing: 0.6px;
 }
 
 #tb-botinfo-version {
-  padding: 6px 10px 0 5px;
-  font-family: 'Oswald', sans-serif; font-weight: 300; font-size: 15px;
-  color: #b9bbbe;
+  font-size: 11px; font-weight: 600; color: #c9cdd4; letter-spacing: 0.3px;
+  background: rgba(255,255,255,0.07); border-radius: 999px; padding: 2px 8px;
 }
 
 .tb-link {
-  display: flex; align-items: center;
-  color: #b9bbbe; background: #2f3136; border-radius: 10px;
-  cursor: pointer; padding: 6px 14px; margin: 0 0 0 10px;
-  font-size: 15px; font-weight: 500; transition: color 0.15s, background 0.15s;
+  display: flex; align-items: center; gap: 7px;
+  color: #b5bac1; background: transparent; border-radius: 8px;
+  cursor: pointer; padding: 7px 12px; white-space: nowrap;
+  font-size: 14.5px; font-weight: 500; transition: color 0.15s, background 0.15s;
 }
-
-.tb-link:hover { color: white; background: #383b41; }
-.tb-link img { height: 20px; margin-right: 5px; }
+.tb-link svg { width: 16px; height: 16px; opacity: 0.85; }
+.tb-link:hover { color: white; background: rgba(255,255,255,0.06); }
+.tb-link.active { color: white; background: rgba(255,255,255,0.1); }
 
 #tb-whitespace { flex: 2 1 auto; }
 
-#tb-user { color: white; padding-right: 5px; }
-#tb-user * { font-family: 'Outfit', sans-serif; font-weight: 400; font-size: 15px; }
+#tb-user { display: flex; align-items: center; gap: 8px; color: white; padding: 0 6px; }
+#tb-user * { font-family: 'Outfit', sans-serif; font-weight: 500; font-size: 14.5px; }
+.tb-avatar {
+  width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex: 0 0 auto;
+  display: grid; place-items: center; background: var(--ui-accent); color: white; font-weight: 700;
+}
+#tb-auth { display: flex; align-items: center; gap: 6px; }
 
-#tb-logout { padding: 3px 10px 0 10px; }
-#tb-logout img { width: 20px; height: 20px; cursor: pointer; }
+.tb-cta {
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  padding: 8px 14px; border-radius: 9px; color: white; font-weight: 600; font-size: 14px;
+  background: linear-gradient(135deg, #6b77f7, var(--ui-accent));
+  box-shadow: 0 6px 18px -8px rgba(88,101,242,0.9), inset 0 1px 0 rgba(255,255,255,0.18);
+  transition: transform 0.15s var(--ui-ease), box-shadow 0.15s;
+}
+.tb-cta svg { width: 17px; height: 17px; }
+.tb-cta:hover { transform: translateY(-1px); box-shadow: 0 10px 22px -8px rgba(88,101,242,1), inset 0 1px 0 rgba(255,255,255,0.2); }
 
 /* ─── Guild Nav (left icon strip) ─── */
 #guild_nav {
-  display: flex; flex-direction: column; align-items: center;
-  width: 72px; min-width: 72px; padding-top: 15px;
-  background: #202225; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  width: 72px; min-width: 72px; padding-top: 14px;
+  background: var(--ui-sunken); overflow-y: auto;
 }
 
-.gn_guild, .gn_action {
-  display: flex; align-items: center;
-  width: 48px; height: 48px; margin: 5px; position: relative;
-  cursor: pointer;
+.gn_guild {
+  position: relative; display: grid; place-items: center;
+  width: 48px; height: 48px; cursor: pointer;
 }
-
-.gn_guild img, .gn_action img { width: 48px; height: 48px; }
-.gn_guild img { border-radius: 50%; transition: border-radius 0.15s; }
-.gn_guild:hover img { border-radius: 25%; }
-.gn_guild.selected img { border-radius: 25%; border-left: 3px white solid; }
-
-.gn_guild span, .gn_action span {
-  z-index: 10; visibility: hidden; position: absolute; left: 58px;
-  background: #111; color: white; border-radius: 6px; padding: 6px 10px;
-  white-space: nowrap; font-size: 14px; font-weight: 500; pointer-events: none;
+.gn_guild::before {
+  content: ''; position: absolute; left: -12px; top: 50%; width: 4px; height: 8px;
+  border-radius: 0 4px 4px 0; background: white; transform: translateY(-50%) scale(0);
+  transition: transform 0.2s var(--ui-ease), height 0.2s var(--ui-ease);
 }
+.gn_guild:hover::before { transform: translateY(-50%) scale(1); height: 20px; }
+.gn_guild.selected::before { transform: translateY(-50%) scale(1); height: 40px; }
+.gn_guild img, .gn_letter {
+  width: 48px; height: 48px; border-radius: 50%; object-fit: cover;
+  transition: border-radius 0.2s var(--ui-ease), background 0.2s;
+}
+.gn_letter { display: grid; place-items: center; background: var(--ui-raised); color: white; font-weight: 600; font-size: 18px; }
+.gn_guild:hover img, .gn_guild.selected img, .gn_guild:hover .gn_letter, .gn_guild.selected .gn_letter { border-radius: 16px; }
+.gn_guild:hover .gn_letter, .gn_guild.selected .gn_letter { background: var(--ui-accent); }
+.gn_add .gn_letter { color: var(--ui-ok); }
+.gn_add:hover .gn_letter { background: var(--ui-ok); color: white; }
+.gn_add .gn_letter svg { width: 22px; height: 22px; }
+.gn_sep { width: 32px; height: 2px; border-radius: 1px; background: var(--ui-line-strong); }
 
-.gn_guild:hover span, .gn_action:hover span { visibility: visible; }
-
-#guild_nav hr { border: 1px gray solid; width: 50%; margin: 10px 0; }
-.gn_action img:hover { filter: brightness(125%); }
+.gn_tip {
+  z-index: 10; visibility: hidden; opacity: 0; position: absolute; left: 60px;
+  background: #111214; color: white; border-radius: 8px; padding: 6px 10px;
+  white-space: nowrap; font-size: 14px; font-weight: 600; pointer-events: none;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.5); transition: opacity 0.12s;
+}
+.gn_guild:hover .gn_tip { visibility: visible; opacity: 1; }
 
 /* ─── Guild Menu (channel/queue sidebar) ─── */
 #guild_menu {
-  display: flex; flex-direction: column; align-items: center;
-  width: 250px; min-width: 250px; background: #2f3136;
-  padding-top: 25px; overflow-y: auto;
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
+  width: 250px; min-width: 250px; background: var(--ui-panel);
+  padding: 14px 10px 24px; overflow-y: auto; border-right: 1px solid rgba(0,0,0,0.25);
 }
+.gm_header { padding: 2px 8px 12px; margin-bottom: 6px; border-bottom: 1px solid var(--ui-line); }
+.gm_header b { display: block; color: white; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gm_header span { color: var(--ui-faint); font-size: 12px; }
+.gm_label { padding: 12px 8px 6px; color: var(--ui-faint); font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 
-.gm_channel, .gm_queue, .gm_link {
-  display: flex; align-items: center;
-  height: 32px; width: 88%; color: #b9bbbe; background: #2f3136;
-  border-radius: 8px; cursor: pointer; padding: 6px 12px;
+.gm_channel, .gm_queue {
+  display: flex; align-items: center; gap: 8px; min-height: 34px;
+  color: var(--ui-muted); border-radius: 8px; cursor: pointer; padding: 6px 10px;
   transition: background 0.12s, color 0.12s;
 }
-
-.gm_channel:hover, .gm_queue:hover { background: #383b41; color: #dcddde; }
-.selected.gm_channel, .selected.gm_queue { color: white; background: #42464d; font-weight: 500; }
-
-.gm_icon { height: 16px; padding-right: 5px; }
-.gm_channel span, .gm_queue span { flex: 1 1 auto; font-size: 15px; }
-
-.gm_dropdown { width: 20px; height: 20px; visibility: hidden; position: relative; }
-.gm_channel:hover .gm_dropdown, .gm_queue:hover .gm_dropdown { visibility: visible; }
-
-.gm_dropdown_opts {
-  display: flex; flex-direction: column; visibility: hidden;
-  position: absolute; right: 0; top: 20px;
-  z-index: 8; min-width: 160px;
-  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
-}
-
-.gm_dropdown:hover .gm_dropdown_opts { visibility: visible; }
-
-.gm_dropdown_opts a {
-  width: 100%; z-index: 9; color: #b9bbbe;
-  background: #2f3136; padding: 10px; font-size: 14px;
-}
-
-.gm_dropdown_opts a:hover { filter: brightness(120%); }
-.gm_dropdown_opts .urgent { color: #e21d1d; }
+.gm_channel svg, .gm_queue svg { width: 16px; height: 16px; flex: 0 0 auto; opacity: 0.75; }
+.gm_channel:hover, .gm_queue:hover { background: rgba(255,255,255,0.05); color: var(--ui-text); }
+.selected.gm_channel, .selected.gm_queue { color: white; background: rgba(255,255,255,0.09); font-weight: 600; }
+.selected.gm_channel svg, .selected.gm_queue svg { opacity: 1; }
+.gm_channel span, .gm_queue span { flex: 1 1 auto; font-size: 14.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gm_channel.gm_overview svg { color: var(--ui-accent-hi); }
+.gm_add { color: var(--ui-faint); }
+.gm_add:hover { color: var(--ui-ok); }
 
 .gm_queue_menu {
-  display: flex; flex-direction: column; align-items: center;
-  width: 92%; margin-left: 16px;
-  border-left: #596068 1px solid; padding-right: 0;
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 2px 0 6px 18px; padding-left: 8px;
+  border-left: 1px solid var(--ui-line-strong);
 }
-
-#guild_menu hr { border: 1px #596068 solid; width: 70%; margin: 10px 0; }
+.gm_queue .gm_pill {
+  flex: 0 0 auto; font-size: 9px; font-weight: 800; letter-spacing: 0.04em; padding: 2px 5px; border-radius: 4px;
+  background: var(--ui-gold-soft); color: var(--ui-gold);
+}
 
 /* ─── Main Area ─── */
 #main_area {
-  background: #36393f; flex: 1 1 auto;
-  overflow-y: auto; height: calc(100vh - 52px);
+  background: #36393f; flex: 1 1 auto; min-width: 0;
+  overflow-y: auto; height: calc(100vh - 56px);
 }
+#page-dashboard, #page-add-bot { min-height: 100%; background: var(--ui-bg); }
 
-/* ─── Settings Layout ─── */
-#st_layout {
-  display: flex; flex-direction: column; align-items: center;
-  width: 780px; margin: 0 auto; padding-bottom: 32px;
+/* ─── Shared buttons ─── */
+.ui-btn, .setup-action, .seed-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  border: 1px solid transparent; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  padding: 0.55rem 0.95rem; font: 600 0.86rem 'Outfit', sans-serif; line-height: 1.2;
+  background: var(--ui-accent); color: white;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s var(--ui-ease), box-shadow 0.15s;
 }
-
-/* Section tabs */
-#st_sections {
-  display: flex; justify-content: space-around; width: 100%;
+.ui-btn svg, .setup-action svg, .seed-button svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.ui-btn:hover, .setup-action:hover, .seed-button:hover { background: var(--ui-accent-hi); }
+.ui-btn:focus-visible, .setup-action:focus-visible, .seed-button:focus-visible {
+  outline: none; box-shadow: 0 0 0 3px rgba(88,101,242,0.45);
 }
-
-#st_sections div {
-  flex: 1 1 auto; margin: 0 8px; cursor: pointer;
-  padding: 28px 20px 14px; text-align: center;
-  font-family: 'Oswald', sans-serif; font-weight: 400;
-  font-size: 18px; letter-spacing: 0.5px;
-  border-radius: 0 0 6px 6px;
-  background: #484c54; color: #b9bbbe;
-  box-shadow: 0 5px 5px -3px rgba(0,0,0,0.5);
-  transition: background 0.15s, color 0.15s;
+.ui-btn.ghost, .seed-button.secondary {
+  background: rgba(255,255,255,0.05); border-color: var(--ui-line-strong); color: var(--ui-body);
 }
-
-#st_sections div.selected {
-  background: #5b6270; color: white;
-  box-shadow: 0 5px 8px -3px rgba(0,0,0,0.4);
+.ui-btn.ghost:hover, .seed-button.secondary:hover { background: rgba(255,255,255,0.1); color: white; }
+.ui-btn.success, .seed-button.apply { background: #248046; border-color: transparent; }
+.ui-btn.success:hover, .seed-button.apply:hover { background: #2d9653; }
+.ui-btn.big { padding: 0.8rem 1.3rem; font-size: 1rem; border-radius: 11px; }
+.ui-btn.discord {
+  background: linear-gradient(135deg, #6b77f7, var(--ui-accent));
+  box-shadow: 0 10px 24px -10px rgba(88,101,242,0.95), inset 0 1px 0 rgba(255,255,255,0.18);
 }
-#st_sections div:hover { background: #5b6270; color: white; }
+.ui-btn.discord:hover { transform: translateY(-1px); }
+.ui-btn:disabled, .seed-button:disabled { cursor: not-allowed; opacity: 0.42; transform: none; }
 
-/* Settings fields */
-#st_fields {
-  display: flex; flex-direction: column; align-items: stretch;
-  padding: 16px 8px; width: 100%;
-}
-
-.st_variable {
-  display: flex; flex-direction: column; align-items: stretch;
-  padding: 2px 0;
-}
-
-.st_separator {
-  border: 0; border-top: 1px #2a2c30 solid; width: 96%;
-  align-self: center; margin: 2px 0;
-}
-
-/* Variable header row */
-.var_header {
-  display: flex; align-items: center; padding: 10px 4px;
-}
-
-.vh_title {
-  font-family: 'Oswald', sans-serif; font-weight: 300;
-  letter-spacing: 0.8px; font-size: 19px; color: #ffffff;
-}
-
-.vh_icons { display: flex; align-items: center; }
-.vh_icons div { padding: 0 0 0 6px; position: relative; }
-.vh_icons img { cursor: pointer; width: 18px; height: 18px; opacity: 0.5; transition: opacity 0.15s; }
-.vh_icons img:hover { opacity: 1; filter: brightness(150%); }
-
-.vh_icons span {
-  display: none; position: absolute; margin-top: 30px; z-index: 9;
-  background: #191919; color: #d4d5d9; text-align: left;
-  border: 1px solid #333; border-radius: 6px; padding: 8px 10px;
-  white-space: pre; font-size: 14px; max-width: 320px;
-  line-height: 1.5; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-}
-
-.vh_icons div:hover span { display: block; }
-.vh_whitespace { flex: 1 1 auto; }
-
-/* Toggle switch for nullable fields */
-.vh_switch {
-  position: relative; display: inline-block;
-  width: 42px; height: 26px; margin-right: 10px;
-}
-
-.vh_switch input { opacity: 0; width: 0; height: 0; }
-
-.vh_switch .slider {
-  position: absolute; cursor: pointer;
-  top: 0; left: 0; right: 0; bottom: 0;
-  border-radius: 34px; background-color: #376ace;
-  transition: background 0.15s;
-}
-
-.vh_switch .slider:before {
-  position: absolute; content: "";
-  height: 20px; width: 20px; left: 19px; bottom: 3px;
-  border-radius: 50%; background-color: white;
-  transition: left 0.15s;
-}
-
-.vh_switch input:checked + .slider { background-color: #202225; }
-.vh_switch input:checked + .slider:before { left: 4px; }
-
-/* Variable content (shown/hidden by toggle) */
-.var_content { padding: 6px 4px 12px 4px; }
-.var_content.hidden { display: none; padding: 0; height: 0; }
-
-/* ─── Boolean tri-state (X / V) ─── */
-.field_boolean {
-  display: flex; align-items: center;
-  border: 1px solid #1a1a1a; width: 96px;
-  border-radius: 6px; overflow: hidden;
-}
-
-.field_boolean input[type=radio] { display: none; }
-
-.field_boolean label {
-  flex: 1 1 auto; cursor: pointer; line-height: 34px;
-  text-align: center; user-select: none;
-  font-family: 'Outfit', sans-serif; font-weight: 400;
-  font-size: 16px; transition: background 0.1s;
-}
-
-.field_boolean label:hover { background: #484c54; }
-.field_boolean input[type=radio]:disabled + label { background: #484c54; opacity: 0.5; }
-
-.boolean_on { color: #4cc764; }
-.field_boolean input[type=radio]:checked + label.boolean_on { background: #00ad02; color: white; }
-
-.boolean_null { color: #85868a; }
-.field_boolean input[type=radio]:checked + label.boolean_null { background: #6b6e74; color: white; }
-
-.boolean_off { color: #e05050; }
-.field_boolean input[type=radio]:checked + label.boolean_off { background: #e01a1a; color: white; }
-
-/* ─── Form inputs ─── */
-.field_select, .field_string, .field_number, .field_slider, .field_text {
-  color: #dcddde; font-family: 'Outfit', sans-serif; font-size: 15px;
-  background: #202225; border: 1px solid #1a1a1a; border-radius: 5px;
-  padding: 7px 10px; outline: none;
-  transition: border-color 0.15s;
-}
-
-.field_select:focus, .field_string:focus, .field_number:focus, .field_text:focus {
-  border-color: #376ace;
-}
-
-.field_select { width: 100%; padding: 6px 8px; }
-.field_select option { background: #202225; }
-.field_string { width: 100%; }
-.field_number { width: 100px; }
-.field_text { width: 100%; height: 100px; resize: vertical; }
-
-/* Slider */
-.slider_container {
-  display: flex; align-items: center;
-}
-
-.slider_bar_wrap {
-  flex: 1 1 auto; margin: 0 12px;
-  height: 8px; background: #202225; border: 1px solid #1a1a1a;
-  border-radius: 4px; position: relative; cursor: pointer;
-}
-
-.slider_bar_fill {
-  height: 100%; background: #b9bbbe; border-radius: 4px;
-}
-
-.field_slider { width: 72px; margin: 0 6px 0 12px; text-align: center; }
-
-.slider_container span { color: #dcddde; font-size: 15px; font-weight: 500; }
-
-/* Duration picker */
-.field_duration {
-  color: #dcddde; font-family: 'Outfit', sans-serif; font-size: 15px;
-  background: #202225; border: 1px solid #1a1a1a; border-radius: 5px;
-  padding: 7px 10px; outline: none; width: 100%;
-  transition: border-color 0.15s;
-}
-
-.field_duration:focus { border-color: #376ace; }
-
-/* ─── Editable table ─── */
-.field_table { padding-left: 0; width: 100%; }
-
-.editable_table {
-  min-width: 100%; text-align: left;
-  color: #dcddde; background: #202225;
-  border: 1px solid #1a1a1a; border-collapse: collapse;
-}
-
-.editable_table td { padding: 10px 12px; }
-.editable_table tr:hover { background: #2c3034; }
-
-.editable_table thead td {
-  padding: 14px 12px; background-color: #3d724f;
-  color: white; text-align: center; white-space: nowrap;
-  font-size: 15px; font-weight: 600; letter-spacing: 0.3px;
-}
-
-.editable_table tbody td {
-  border-bottom: 1px solid #2c3034;
-}
-
-.editable_table tbody td input {
-  background: transparent; border: none; color: #dcddde;
-  font-size: 15px; width: 100%; outline: none;
-  padding: 4px 2px; font-family: 'Outfit', sans-serif;
-}
-
-.editable_table tbody td input:focus {
-  background: #2c3034; border-radius: 3px;
-}
-
-td.et_remove { width: 24px; text-align: center; }
-
-.et_remove_btn {
-  background: #e01a1a; color: white; border: none;
-  width: 22px; height: 22px; border-radius: 4px;
-  cursor: pointer; font-size: 13px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.15s;
-}
-
-.et_remove_btn:hover { background: #c01515; }
-
-.et_add {
-  padding: 14px; text-align: center;
-  cursor: pointer; background: #2c3034;
-  color: #b9bbbe; font-size: 15px; font-weight: 500;
-  transition: background 0.15s, color 0.15s;
-}
-
-.et_add:hover { background: #71632b; color: white; }
-
-/* ─── Save button ─── */
-.field_submit {
-  font-family: 'Outfit', sans-serif; font-weight: 600;
-  letter-spacing: 3px; font-size: 18px;
-  align-self: center; margin-top: 28px; margin-bottom: 28px;
-  background: #3d724f; color: #e0e0e0;
-  width: 80%; border: 1px #2a5a3a solid; border-radius: 4px;
-  text-align: center; line-height: 44px;
-  box-shadow: 0 4px 8px -2px rgba(0,0,0,0.4);
-  cursor: pointer; transition: color 0.15s, background 0.15s, border-color 0.15s;
-}
-
-.field_submit:hover { color: white; background: #478a5c; border-color: #3d724f; }
-
-/* ─── Dashboard views ─── */
-.dash-login-prompt {
-  text-align: center; padding: 4rem 2rem;
-  color: #b9bbbe; font-size: 1.1rem; line-height: 1.8;
-}
-
-.dash-login-prompt a { color: #5b8cee; font-weight: 600; font-size: 1.1rem; }
-.dash-login-prompt a:hover { text-decoration: underline; }
-
-.community-overview { max-width: 1120px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
-.overview-hero {
-  display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
-  padding: 1.1rem 1.2rem; background: #2f3136; border: 1px solid #484c54;
-  border-radius: 9px; margin-bottom: 1rem;
-}
-.overview-hero h1 { margin: 0; color: white; font: 400 1.45rem 'Oswald', sans-serif; letter-spacing: 0.5px; }
-.overview-hero p { margin: 0.35rem 0 0; color: #aeb1b7; line-height: 1.45; }
-.overview-progress { min-width: 150px; text-align: right; color: #b9bbbe; font-size: 0.8rem; }
-.overview-progress strong { display: block; color: white; font-size: 1.25rem; margin-bottom: 0.35rem; }
-.overview-progress-bar { height: 7px; border-radius: 999px; background: #202225; overflow: hidden; }
-.overview-progress-bar span { display: block; height: 100%; background: #57d98b; border-radius: inherit; }
-.overview-section { margin-top: 1.15rem; }
-.overview-section h2 { margin: 0 0 0.65rem; color: white; font: 400 1.1rem 'Oswald', sans-serif; letter-spacing: 0.5px; }
-.overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 0.75rem; }
-.overview-card {
-  background: #2f3136; border: 1px solid #484c54; border-radius: 8px;
-  padding: 0.85rem 0.95rem; min-width: 0;
-}
-.overview-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem; }
-.overview-card h3 { margin: 0; color: #f1f2f3; font-size: 0.95rem; }
-.overview-card p { margin: 0.45rem 0 0; color: #a9adb5; font-size: 0.8rem; line-height: 1.45; }
-.overview-card-note { color: #d8c47d !important; }
+/* ─── Status pills ─── */
 .overview-badge {
-  flex: 0 0 auto; padding: 0.14rem 0.48rem; border-radius: 999px;
-  font-size: 0.65rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
-  background: rgba(185,187,190,0.12); color: #c8c9cd; border: 1px solid rgba(185,187,190,0.22);
+  display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+  padding: 0.18rem 0.6rem; border-radius: 999px; white-space: nowrap;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  background: rgba(255,255,255,0.06); color: #c8cbd0; border: 1px solid var(--ui-line-strong);
 }
+.overview-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.85; }
 .overview-badge.active, .overview-badge.complete, .overview-badge.ready, .overview-badge.healthy,
-.overview-badge.new, .overview-badge.unrated, .overview-badge.ok {
-  color: #9ce5b5; background: rgba(87,217,139,0.1); border-color: rgba(87,217,139,0.28);
+.overview-badge.new, .overview-badge.unrated, .overview-badge.ok, .overview-badge.public {
+  color: #8be3b2; background: var(--ui-ok-soft); border-color: rgba(63,191,122,0.32);
 }
 .overview-badge.required, .overview-badge.setup_required, .overview-badge.attention, .overview-badge.invalid,
 .overview-badge.conflict, .overview-badge.not_member, .overview-badge.critical {
-  color: #ffb0b4; background: rgba(255,109,115,0.1); border-color: rgba(255,109,115,0.28);
+  color: #ffadb0; background: var(--ui-danger-soft); border-color: rgba(242,88,92,0.32);
 }
-.overview-badge.recommended, .overview-badge.partial, .overview-badge.warning {
-  color: #f0d587; background: rgba(224,185,67,0.1); border-color: rgba(224,185,67,0.28);
+.overview-badge.recommended, .overview-badge.partial, .overview-badge.warning,
+.overview-badge.not_configured, .overview-badge.available {
+  color: #f6d38a; background: var(--ui-warn-soft); border-color: rgba(240,178,50,0.32);
 }
-.overview-metrics { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; margin-top: 0.55rem; }
-.overview-metric { color: #858a93; font-size: 0.72rem; }
-.overview-metric b { color: #dcddde; margin-right: 0.2rem; }
-.setup-list { display: grid; gap: 0.5rem; }
+
+/* ─── Dashboard: sign-in and empty states ─── */
+.dash-empty {
+  max-width: 560px; margin: 4.5rem auto; padding: 2.4rem 2rem; text-align: center;
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 20px;
+  box-shadow: 0 30px 60px -40px rgba(0,0,0,0.9);
+  animation: ui-rise 0.4s var(--ui-ease) both;
+}
+.dash-empty-icon {
+  width: 64px; height: 64px; margin: 0 auto 1.1rem; border-radius: 18px;
+  display: grid; place-items: center; color: white;
+  background: linear-gradient(135deg, #6b77f7, var(--ui-accent));
+  box-shadow: 0 14px 30px -12px rgba(88,101,242,0.9);
+}
+.dash-empty-icon svg { width: 30px; height: 30px; }
+.dash-empty h2 { margin: 0; color: var(--ui-text); font: 500 1.6rem 'Oswald', sans-serif; letter-spacing: 0.4px; }
+.dash-empty p { margin: 0.6rem auto 0; color: var(--ui-muted); line-height: 1.6; max-width: 420px; }
+.dash-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.6rem; margin-top: 1.5rem; }
+.dash-login-prompt { text-align: center; padding: 4rem 2rem; color: var(--ui-muted); font-size: 1.05rem; line-height: 1.8; }
+.dash-login-prompt a { color: var(--ui-accent-hi); font-weight: 600; }
+
+/* ─── Community overview ─── */
+.community-overview { max-width: 1120px; margin: 0 auto; padding: 1.4rem 1.5rem 3.5rem; animation: ui-rise 0.35s var(--ui-ease) both; }
+.overview-hero {
+  position: relative; overflow: hidden;
+  display: flex; justify-content: space-between; align-items: center; gap: 1.5rem;
+  padding: 1.6rem 1.7rem; border-radius: 18px; margin-bottom: 1.4rem;
+  background:
+    radial-gradient(600px 220px at 0% 0%, rgba(88,101,242,0.28), transparent 70%),
+    radial-gradient(500px 200px at 100% 100%, rgba(228,181,74,0.16), transparent 70%),
+    var(--ui-panel);
+  border: 1px solid var(--ui-line);
+}
+.overview-hero-main { display: flex; align-items: center; gap: 1.1rem; min-width: 0; }
+.overview-guild-icon {
+  width: 64px; height: 64px; border-radius: 18px; flex: 0 0 auto; object-fit: cover;
+  display: grid; place-items: center; color: white; font: 600 1.6rem 'Oswald', sans-serif;
+  background: linear-gradient(135deg, #6b77f7, #4752c4); box-shadow: 0 10px 24px -12px rgba(0,0,0,0.9);
+}
+.overview-hero h1 { margin: 0; color: white; font: 500 1.75rem 'Oswald', sans-serif; letter-spacing: 0.5px; }
+.overview-hero p { margin: 0.3rem 0 0; color: var(--ui-muted); line-height: 1.5; }
+.overview-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.9rem; }
+.overview-ring { position: relative; width: 112px; height: 112px; flex: 0 0 auto; }
+.overview-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.overview-ring .ring-track { stroke: rgba(255,255,255,0.08); }
+.overview-ring .ring-fill { stroke: url(#ring-grad); stroke-linecap: round; transition: stroke-dashoffset 0.9s var(--ui-ease); }
+.overview-ring-label { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.overview-ring-label b { color: white; font: 600 1.45rem 'Oswald', sans-serif; line-height: 1; }
+.overview-ring-label span { color: var(--ui-muted); font-size: 0.72rem; margin-top: 0.25rem; }
+
+.overview-section { margin-top: 1.8rem; }
+.overview-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
+.overview-section h2 {
+  display: flex; align-items: center; gap: 0.55rem; margin: 0;
+  color: white; font: 500 1.2rem 'Oswald', sans-serif; letter-spacing: 0.5px;
+}
+.overview-section-sub { color: var(--ui-faint); font-size: 0.85rem; }
+
+.setup-list { position: relative; display: grid; gap: 0.6rem; }
 .setup-row {
-  display: grid; grid-template-columns: minmax(150px, 0.7fr) minmax(240px, 1.3fr) auto;
-  gap: 0.75rem; align-items: center; background: #2f3136; border: 1px solid #484c54;
-  border-radius: 7px; padding: 0.7rem 0.85rem;
+  position: relative; display: grid; grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 0.95rem; align-items: center; padding: 0.95rem 1.05rem;
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: var(--ui-radius);
+  transition: border-color 0.15s, transform 0.15s var(--ui-ease);
 }
-.setup-row strong { color: #e8e9eb; font-size: 0.86rem; }
-.setup-row span { color: #a9adb5; font-size: 0.78rem; line-height: 1.35; }
-.setup-controls { display: flex; justify-content: flex-end; align-items: center; gap: 0.45rem; }
-.diagnostic-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0.6rem; }
-.diagnostic-cell { background: #202225; border-radius: 6px; padding: 0.65rem 0.75rem; }
-.diagnostic-cell span { display: block; color: #858a93; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
-.diagnostic-cell b { display: block; color: #f1f2f3; font-size: 1rem; margin-top: 0.2rem; }
-.setup-action, .seed-button {
-  border: 1px solid #4d76ca; border-radius: 5px; background: #376ace; color: white;
-  padding: 0.42rem 0.72rem; font: 700 0.76rem 'Outfit', sans-serif; cursor: pointer;
+.setup-row:hover { border-color: var(--ui-line-strong); }
+.setup-row.is-complete { opacity: 0.82; }
+.setup-row.is-next { border-color: rgba(88,101,242,0.55); box-shadow: 0 0 0 3px rgba(88,101,242,0.12); }
+.setup-num {
+  width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  font: 700 0.9rem 'Outfit', sans-serif; color: var(--ui-muted);
+  background: var(--ui-sunken); border: 1px solid var(--ui-line-strong);
 }
-.setup-action:hover, .seed-button:hover { background: #4679dd; }
-.overview-actions { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 0.7rem; }
-.diagnostic-checks { display: grid; gap: 0.65rem; }
-.diagnostic-check .overview-metrics { margin-bottom: 0.55rem; }
-.seed-button.secondary { background: #2f3136; border-color: #5a5f69; color: #dcddde; }
-.seed-button.secondary:hover { background: #3a3d43; }
-.seed-button.apply { background: #3d724f; border-color: #4d8e63; }
-.seed-button.apply:hover { background: #478a5c; }
-.seed-button:disabled { cursor: not-allowed; opacity: 0.42; }
-.seed-shell { max-width: 1000px; margin: 0 auto; padding: 1.25rem 1.5rem 3rem; }
-.seed-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
-.seed-header h1 { margin: 0; color: white; font: 400 1.45rem 'Oswald', sans-serif; }
-.seed-header p { margin: 0.35rem 0 0; color: #aeb1b7; line-height: 1.45; }
-.settings-fields { display: grid; gap: 0.8rem; }
-.setting-field { background: #202225; border: 1px solid #484c54; border-radius: 8px; padding: 0.9rem; }
-.setting-field label { display: block; color: #f1f2f3; font-size: 0.88rem; font-weight: 700; }
-.setting-field select, .setting-field input[type="number"] { width: 100%; box-sizing: border-box; margin-top: 0.55rem; background: #2f3136; color: white; border: 1px solid #5a5f69; border-radius: 5px; padding: 0.55rem; }
-.setting-field input[type="checkbox"] { margin-right: 0.45rem; }
-.field-description { color: #a9adb5; font-size: 0.78rem; line-height: 1.45; margin-top: 0.55rem; }
+.setup-num svg { width: 18px; height: 18px; }
+.is-complete .setup-num { background: var(--ui-ok); border-color: transparent; color: #0b2a18; }
+.is-next .setup-num { background: var(--ui-accent); border-color: transparent; color: white; }
+.setup-row strong { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; color: var(--ui-text); font-size: 0.98rem; font-weight: 600; }
+.setup-row .setup-detail { display: block; color: var(--ui-muted); font-size: 0.86rem; line-height: 1.45; margin-top: 0.2rem; }
+.setup-optional { color: var(--ui-faint); font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.setup-controls { display: flex; justify-content: flex-end; align-items: center; gap: 0.5rem; }
+
+.overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 0.8rem; }
+.overview-card {
+  display: flex; flex-direction: column; gap: 0.55rem; min-width: 0;
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: var(--ui-radius);
+  padding: 1rem 1.05rem; transition: border-color 0.15s, transform 0.15s var(--ui-ease);
+}
+.overview-card:hover { border-color: var(--ui-line-strong); transform: translateY(-2px); }
+.overview-card-top { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
+.overview-card-title { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+.overview-card h3 { margin: 0; color: var(--ui-text); font-size: 1rem; font-weight: 600; }
+.overview-card p { margin: 0; color: var(--ui-muted); font-size: 0.86rem; line-height: 1.5; }
+.overview-card-note { color: #f0d38a !important; }
+.overview-card .setup-action { align-self: flex-start; margin-top: auto; }
+.ui-icon-tile {
+  width: 34px; height: 34px; border-radius: 10px; flex: 0 0 auto;
+  display: grid; place-items: center; color: var(--ui-accent-hi); background: var(--ui-accent-soft);
+}
+.ui-icon-tile svg { width: 18px; height: 18px; }
+.ui-icon-tile.gold { color: var(--ui-gold); background: var(--ui-gold-soft); }
+.ui-icon-tile.green { color: var(--ui-ok); background: var(--ui-ok-soft); }
+.overview-metrics { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.overview-metric {
+  color: var(--ui-faint); font-size: 0.74rem; background: rgba(255,255,255,0.04);
+  border-radius: 6px; padding: 0.15rem 0.45rem;
+}
+.overview-metric b { color: var(--ui-body); margin-right: 0.25rem; }
+
+.channel-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.7rem; }
+.channel-card {
+  display: flex; align-items: center; gap: 0.75rem; text-align: left; cursor: pointer;
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: var(--ui-radius);
+  padding: 0.85rem 0.95rem; color: var(--ui-text); font: inherit;
+  transition: border-color 0.15s, background 0.15s;
+}
+.channel-card:hover { border-color: rgba(88,101,242,0.6); background: #2f3137; }
+.channel-card b { display: block; font-weight: 600; }
+.channel-card span { color: var(--ui-faint); font-size: 0.8rem; }
+.channel-card .chev { margin-left: auto; color: var(--ui-faint); }
+.channel-card .chev svg { width: 16px; height: 16px; }
+.channel-card.add { border-style: dashed; color: var(--ui-muted); }
+
+.diagnostic-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.6rem; }
+.diagnostic-cell {
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 12px; padding: 0.8rem 0.9rem;
+}
+.diagnostic-cell span { display: flex; align-items: center; gap: 0.4rem; color: var(--ui-faint); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.diagnostic-cell b { display: block; color: var(--ui-text); font: 500 1.3rem 'Oswald', sans-serif; margin-top: 0.3rem; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ui-faint); display: inline-block; }
+.status-dot.on { background: var(--ui-ok); box-shadow: 0 0 0 3px rgba(63,191,122,0.2); }
+.status-dot.off { background: var(--ui-danger); box-shadow: 0 0 0 3px rgba(242,88,92,0.2); }
+.diagnostic-checks { display: grid; gap: 0.7rem; }
+.diagnostic-check .overview-metrics { margin-bottom: 0.2rem; }
+
+/* ─── Setup wizard ("Add to Discord") ─── */
+.addbot { max-width: 1040px; margin: 0 auto; padding: 1.6rem 1.5rem 4rem; }
+.addbot-hero {
+  position: relative; overflow: hidden; isolation: isolate;
+  display: grid; grid-template-columns: minmax(0, 1fr) 190px; align-items: center; gap: 2rem;
+  padding: 2.6rem 2.4rem; border-radius: 22px; border: 1px solid var(--ui-line-strong);
+  background: linear-gradient(135deg, #252a63 0%, #1b1d36 48%, #2a2113 100%);
+  box-shadow: 0 40px 80px -50px rgba(0,0,0,1);
+}
+.addbot-orb { position: absolute; z-index: -1; border-radius: 50%; filter: blur(46px); opacity: 0.6; animation: ui-orb 14s ease-in-out infinite alternate; }
+.addbot-orb.a { width: 340px; height: 340px; left: -90px; top: -150px; background: #5865f2; }
+.addbot-orb.b { width: 300px; height: 300px; right: -60px; bottom: -170px; background: #e4b54a; animation-delay: -5s; opacity: 0.4; }
+.addbot-orb.c { width: 200px; height: 200px; left: 45%; top: 30%; background: #8b5cf6; animation-delay: -9s; opacity: 0.3; }
+.addbot-grid-bg {
+  position: absolute; inset: 0; z-index: -1; opacity: 0.22;
+  background-image: linear-gradient(rgba(255,255,255,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px);
+  background-size: 34px 34px;
+  -webkit-mask-image: radial-gradient(ellipse at 30% 40%, black, transparent 75%);
+  mask-image: radial-gradient(ellipse at 30% 40%, black, transparent 75%);
+}
+.addbot-eyebrow {
+  display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.3rem 0.75rem; border-radius: 999px;
+  color: #ffe2a3; background: rgba(228,181,74,0.13); border: 1px solid rgba(228,181,74,0.3);
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.addbot-eyebrow svg { width: 14px; height: 14px; }
+.addbot-hero h1 { margin: 0.9rem 0 0; color: white; font: 600 2.6rem/1.08 'Oswald', sans-serif; letter-spacing: 0.4px; }
+.addbot-hero h1 .grad {
+  background: linear-gradient(90deg, #ffe29a, #e4b54a 45%, #fff1c9);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.addbot-hero p { margin: 0.9rem 0 0; color: #c9ccd8; font-size: 1.05rem; line-height: 1.6; max-width: 560px; }
+.addbot-chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-top: 1.3rem; }
+.addbot-chip {
+  display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.7rem; border-radius: 999px;
+  color: #e6e8ef; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+  font-size: 0.82rem; backdrop-filter: blur(6px);
+}
+.addbot-chip svg { width: 14px; height: 14px; color: var(--ui-gold); }
+.addbot-mark { position: relative; width: 170px; height: 170px; justify-self: center; display: grid; place-items: center; }
+.addbot-mark .ring {
+  position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid rgba(228,181,74,0.45);
+  animation: ui-pulse 3.2s ease-out infinite;
+}
+.addbot-mark .ring.r2 { animation-delay: 1.05s; }
+.addbot-mark .ring.r3 { animation-delay: 2.1s; }
+.addbot-mark .core {
+  position: relative; width: 112px; height: 112px; border-radius: 32px; display: grid; place-items: center;
+  color: #2a1d05; background: linear-gradient(135deg, #ffe09a, var(--ui-gold) 55%, #b4741f);
+  box-shadow: 0 24px 50px -16px rgba(228,181,74,0.75), inset 0 2px 0 rgba(255,255,255,0.45);
+  animation: ui-float 5s ease-in-out infinite;
+}
+.addbot-mark .core svg { width: 58px; height: 58px; }
+
+.addbot-stepper { position: relative; display: grid; gap: 0.5rem; margin: 2rem 0 1.2rem; }
+.addbot-track { position: absolute; left: 10%; right: 10%; top: 19px; height: 3px; border-radius: 3px; background: rgba(255,255,255,0.08); }
+.addbot-track span {
+  display: block; height: 100%; border-radius: inherit; width: 0;
+  background: linear-gradient(90deg, var(--ui-ok), var(--ui-accent));
+  transition: width 0.6s var(--ui-ease);
+}
+.addbot-node {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+  background: none; border: 0; padding: 0; cursor: pointer; color: var(--ui-faint); font: inherit;
+}
+.addbot-node .dot {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--ui-sunken); border: 2px solid rgba(255,255,255,0.12);
+  font-weight: 700; color: var(--ui-muted);
+  transition: background 0.25s, border-color 0.25s, box-shadow 0.25s, transform 0.25s var(--ui-ease);
+}
+.addbot-node .dot svg { width: 18px; height: 18px; }
+.addbot-node .lbl { font-size: 0.82rem; font-weight: 600; text-align: center; }
+.addbot-node.done .dot { background: var(--ui-ok); border-color: var(--ui-ok); color: #082414; }
+.addbot-node.done { color: var(--ui-body); }
+.addbot-node.current .dot {
+  background: var(--ui-accent); border-color: #8f98ff; color: white; transform: scale(1.08);
+  box-shadow: 0 0 0 6px rgba(88,101,242,0.22), 0 10px 24px -8px rgba(88,101,242,0.9);
+}
+.addbot-node.current { color: white; }
+.addbot-node:focus-visible { outline: none; }
+.addbot-node:focus-visible .dot { box-shadow: 0 0 0 4px rgba(88,101,242,0.5); }
+
+.addbot-card {
+  display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 2rem; align-items: center;
+  padding: 2rem; border-radius: 20px; background: var(--ui-panel); border: 1px solid var(--ui-line);
+  box-shadow: 0 30px 60px -45px rgba(0,0,0,1);
+  animation: ui-rise 0.45s var(--ui-ease) both;
+}
+.addbot-step-kicker { color: var(--ui-accent-hi); font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.addbot-card h2 { margin: 0.45rem 0 0; color: white; font: 500 1.75rem 'Oswald', sans-serif; letter-spacing: 0.3px; }
+.addbot-card > div > p { margin: 0.6rem 0 0; color: var(--ui-muted); font-size: 0.98rem; line-height: 1.65; }
+.addbot-list { list-style: none; margin: 1.1rem 0 0; padding: 0; display: grid; gap: 0.55rem; }
+.addbot-list li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 0.6rem; align-items: start; color: var(--ui-body); font-size: 0.92rem; line-height: 1.5; }
+.addbot-list li svg { width: 18px; height: 18px; margin-top: 2px; color: var(--ui-ok); }
+.addbot-list li small { display: block; color: var(--ui-faint); font-size: 0.8rem; }
+.addbot-note {
+  display: flex; gap: 0.6rem; align-items: flex-start; margin-top: 1rem; padding: 0.7rem 0.85rem; border-radius: 11px;
+  background: var(--ui-gold-soft); border: 1px solid rgba(228,181,74,0.28); color: #f3dca4; font-size: 0.86rem; line-height: 1.5;
+}
+.addbot-note svg { width: 17px; height: 17px; flex: 0 0 auto; margin-top: 1px; }
+.addbot-note.info { background: var(--ui-accent-soft); border-color: rgba(88,101,242,0.35); color: #cdd2ff; }
+.addbot-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-top: 1.4rem; }
+.addbot-actions .spacer { flex: 1 1 auto; }
+.addbot-status { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--ui-ok); font-weight: 600; font-size: 0.9rem; }
+.addbot-status svg { width: 18px; height: 18px; }
+
+.code-copy {
+  display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; padding: 0.55rem 0.55rem 0.55rem 0.95rem;
+  background: var(--ui-sunken); border: 1px solid var(--ui-line-strong); border-radius: 12px;
+}
+.code-copy code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; color: #e6e9ff; font: 500 0.95rem var(--ui-mono); }
+.code-copy code .arg { color: var(--ui-gold); }
+.code-copy button {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;
+  padding: 0.45rem 0.7rem; border-radius: 8px; border: 1px solid var(--ui-line-strong);
+  background: rgba(255,255,255,0.05); color: var(--ui-body); font: 600 0.8rem 'Outfit', sans-serif;
+}
+.code-copy button:hover { background: rgba(255,255,255,0.1); color: white; }
+.code-copy button.copied { color: #8be3b2; border-color: rgba(63,191,122,0.45); }
+.code-copy button svg { width: 14px; height: 14px; }
+
+/* Discord-style preview on the right of each wizard step */
+.dc-mock {
+  position: relative; border-radius: 16px; overflow: hidden; border: 1px solid var(--ui-line-strong);
+  background: #313338; box-shadow: 0 30px 60px -30px rgba(0,0,0,0.95);
+}
+.dc-mock-bar {
+  display: flex; align-items: center; gap: 0.45rem; padding: 0.65rem 0.9rem;
+  background: #2b2d31; border-bottom: 1px solid rgba(0,0,0,0.35); color: #f2f3f5; font-weight: 600; font-size: 0.88rem;
+}
+.dc-mock-bar .hash { color: #80848e; font-size: 1.1rem; }
+.dc-mock-body { padding: 0.95rem; display: grid; gap: 0.85rem; min-height: 210px; align-content: start; }
+.dc-msg { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 0.65rem; animation: ui-rise 0.5s var(--ui-ease) both; }
+.dc-msg:nth-child(2) { animation-delay: 0.45s; }
+.dc-msg:nth-child(3) { animation-delay: 0.9s; }
+.dc-ava { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: white; background: #5865f2; }
+.dc-ava.bot { color: #2a1d05; background: linear-gradient(135deg, #ffe09a, var(--ui-gold)); }
+.dc-ava svg { width: 20px; height: 20px; }
+.dc-name { color: #f2f3f5; font-weight: 600; font-size: 0.88rem; display: flex; align-items: center; gap: 0.35rem; }
+.dc-tag { font-size: 0.6rem; font-weight: 700; padding: 0.05rem 0.3rem; border-radius: 4px; background: #5865f2; color: white; }
+.dc-text { color: #dbdee1; font-size: 0.88rem; line-height: 1.45; margin-top: 0.1rem; }
+.dc-cmd { color: #c9cdfb; background: rgba(88,101,242,0.18); border-radius: 4px; padding: 0 0.25rem; font-family: var(--ui-mono); font-size: 0.82rem; }
+.dc-embed {
+  margin-top: 0.35rem; padding: 0.55rem 0.75rem; border-radius: 4px; background: #2b2d31;
+  border-left: 4px solid var(--ui-ok); color: #dbdee1; font-size: 0.85rem; line-height: 1.45;
+}
+.dc-embed.gold { border-left-color: var(--ui-gold); }
+.dc-embed b { color: white; }
+.dc-input {
+  margin: 0 0.95rem 0.95rem; padding: 0.6rem 0.8rem; border-radius: 9px; background: #383a40;
+  color: #949ba4; font-size: 0.85rem; display: flex; align-items: center; gap: 0.5rem;
+}
+.dc-input .typed { color: #dbdee1; font-family: var(--ui-mono); font-size: 0.82rem; }
+.dc-input .caret { width: 2px; height: 16px; background: #dbdee1; animation: ui-blink 1s steps(1) infinite; }
+.dc-auth { padding: 1.3rem; display: grid; gap: 0.85rem; justify-items: center; text-align: center; }
+.dc-auth .pair { display: flex; align-items: center; gap: 0.7rem; }
+.dc-auth .pair .dots { display: flex; gap: 4px; }
+.dc-auth .pair .dots i { width: 5px; height: 5px; border-radius: 50%; background: #80848e; animation: ui-blink 1.2s infinite; }
+.dc-auth .pair .dots i:nth-child(2) { animation-delay: 0.2s; }
+.dc-auth .pair .dots i:nth-child(3) { animation-delay: 0.4s; }
+.dc-auth h4 { margin: 0; color: white; font-size: 1rem; }
+.dc-auth .perm-row {
+  width: 100%; display: flex; align-items: center; gap: 0.55rem; text-align: left;
+  padding: 0.5rem 0.65rem; border-radius: 8px; background: #2b2d31; color: #dbdee1; font-size: 0.82rem;
+}
+.dc-auth .perm-row svg { width: 16px; height: 16px; color: var(--ui-ok); flex: 0 0 auto; }
+.dc-auth .fake-btn { width: 100%; padding: 0.6rem; border-radius: 6px; background: #5865f2; color: white; font-weight: 600; font-size: 0.86rem; }
+.dc-queue { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
+.dc-queue span { padding: 0.2rem 0.5rem; border-radius: 6px; background: #383a40; color: #dbdee1; font-size: 0.78rem; animation: ui-pop 0.4s var(--ui-ease) both; }
+.dc-queue span.empty { color: #6d717a; background: transparent; border: 1px dashed #4e5058; }
+
+/* Confetti on the wizard's last step */
+.confetti-piece {
+  position: fixed; top: -14px; z-index: 100; width: 9px; height: 15px; border-radius: 2px;
+  pointer-events: none; animation: ui-confetti linear forwards;
+}
+
+/* ─── Settings (channel / queue config) ─── */
+.cfg-shell { max-width: 1100px; margin: 0 auto; padding: 1.2rem 1.5rem 8rem; animation: ui-rise 0.35s var(--ui-ease) both; }
+.cfg-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.cfg-head-icon {
+  width: 52px; height: 52px; border-radius: 15px; flex: 0 0 auto; display: grid; place-items: center; color: white;
+  background: linear-gradient(135deg, #6b77f7, #4752c4); box-shadow: 0 10px 24px -12px rgba(88,101,242,0.95);
+}
+.cfg-head-icon.queue { color: #2a1d05; background: linear-gradient(135deg, #ffe09a, var(--ui-gold) 60%, #b4741f); box-shadow: 0 10px 24px -12px rgba(228,181,74,0.9); }
+.cfg-head-icon svg { width: 24px; height: 24px; }
+.cfg-head h1 { margin: 0; color: white; font: 500 1.65rem 'Oswald', sans-serif; letter-spacing: 0.4px; }
+.cfg-head p { margin: 0.2rem 0 0; color: var(--ui-muted); font-size: 0.92rem; }
+.cfg-search { position: relative; margin-left: auto; width: 300px; max-width: 100%; }
+.cfg-search svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--ui-faint); pointer-events: none; }
+.cfg-search input {
+  width: 100%; padding: 0.65rem 0.8rem 0.65rem 2.3rem; border-radius: 11px;
+  background: var(--ui-sunken); border: 1px solid var(--ui-line-strong); color: var(--ui-text);
+  font: 0.92rem 'Outfit', sans-serif; outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cfg-search input:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px rgba(88,101,242,0.25); }
+.cfg-readonly { margin-bottom: 1rem; }
+.cfg-body { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 1.4rem; align-items: start; }
+.cfg-nav {
+  position: sticky; top: 1rem; display: flex; flex-direction: column; gap: 3px; padding: 0.5rem;
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 16px;
+}
+.cfg-nav-title { padding: 0.45rem 0.7rem 0.35rem; color: var(--ui-faint); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.cfg-nav button {
+  display: flex; align-items: center; gap: 0.65rem; width: 100%; text-align: left; cursor: pointer;
+  padding: 0.62rem 0.7rem; border-radius: 10px; border: 0; background: none;
+  color: var(--ui-muted); font: 500 0.93rem 'Outfit', sans-serif; transition: background 0.15s, color 0.15s;
+}
+.cfg-nav button svg { width: 17px; height: 17px; flex: 0 0 auto; }
+.cfg-nav button:hover { background: rgba(255,255,255,0.05); color: var(--ui-text); }
+.cfg-nav button.active { background: var(--ui-accent-soft); color: white; }
+.cfg-nav button.active svg { color: var(--ui-accent-hi); }
+.cfg-nav .count { margin-left: auto; font-size: 0.72rem; color: var(--ui-faint); background: rgba(255,255,255,0.06); border-radius: 999px; padding: 0.05rem 0.5rem; }
+.cfg-nav .dirty-dot { display: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ui-gold); margin-left: -0.3rem; }
+.cfg-nav button.has-dirty .dirty-dot { display: inline-block; }
+
+.cfg-section { display: none; }
+.cfg-section.active { display: block; animation: ui-rise 0.3s var(--ui-ease) both; }
+.cfg-shell.searching .cfg-section { display: block; margin-bottom: 1.4rem; animation: none; }
+.cfg-shell.searching .cfg-section.no-match { display: none; }
+.cfg-section-head { display: flex; align-items: center; gap: 0.8rem; margin: 0.15rem 0 0.85rem; }
+.cfg-section-head h2 { margin: 0; color: white; font: 500 1.3rem 'Oswald', sans-serif; letter-spacing: 0.4px; }
+.cfg-section-head p { margin: 0.1rem 0 0; color: var(--ui-muted); font-size: 0.88rem; line-height: 1.45; }
+.cfg-list { background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 16px; }
+.cfg-var {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 340px);
+  gap: 0.6rem 1.4rem; align-items: center; padding: 1.05rem 1.2rem; border-top: 1px solid var(--ui-line);
+  transition: background 0.15s;
+}
+.cfg-var:first-child { border-top: 0; border-radius: 16px 16px 0 0; }
+.cfg-var:last-child { border-radius: 0 0 16px 16px; }
+.cfg-var:only-child { border-radius: 16px; }
+.cfg-var:hover { background: rgba(255,255,255,0.015); }
+.cfg-var.wide { grid-template-columns: minmax(0, 1fr); }
+.cfg-var.is-dirty { box-shadow: inset 3px 0 0 var(--ui-gold); }
+.cfg-var.search-hidden { display: none; }
+.cfg-var-title { display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem; color: var(--ui-text); font-size: 0.98rem; font-weight: 600; }
+.cfg-var-desc { margin: 0.3rem 0 0; color: var(--ui-muted); font-size: 0.87rem; line-height: 1.55; }
+.cfg-var-desc:empty { display: none; }
+.cfg-key { color: var(--ui-faint); background: rgba(255,255,255,0.05); border-radius: 5px; padding: 0.05rem 0.4rem; font: 500 0.72rem var(--ui-mono); }
+.cfg-modified {
+  display: none; color: var(--ui-gold); background: var(--ui-gold-soft); border-radius: 999px;
+  padding: 0.05rem 0.5rem; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+}
+.cfg-var.is-dirty .cfg-modified { display: inline-block; }
+.cfg-control { display: flex; align-items: center; justify-content: flex-end; gap: 0.5rem; min-width: 0; }
+.cfg-var.wide .cfg-control { justify-content: stretch; align-items: flex-start; }
+.cfg-control-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 0.45rem; }
+.cfg-var.wide .cfg-control-main { align-items: stretch; }
+.cfg-option-help { width: 100%; color: var(--ui-faint); font-size: 0.8rem; line-height: 1.45; text-align: right; }
+.cfg-option-help:empty { display: none; }
+
+.cfg-input, .cfg-select, .cfg-textarea {
+  width: 100%; min-width: 0; padding: 0.6rem 0.8rem; border-radius: 10px;
+  background: var(--ui-sunken); border: 1px solid var(--ui-line-strong); color: var(--ui-text);
+  font: 0.93rem 'Outfit', sans-serif; outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.cfg-input:focus, .cfg-select:focus, .cfg-textarea:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px rgba(88,101,242,0.25); }
+.cfg-input:disabled, .cfg-select:disabled, .cfg-textarea:disabled { opacity: 0.6; cursor: not-allowed; }
+.cfg-input.number { width: 140px; text-align: right; font-variant-numeric: tabular-nums; }
+.cfg-select {
+  appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 2.2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8acb3' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 0.7rem center;
+}
+.cfg-select option { background: var(--ui-sunken); }
+.cfg-textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+
+.cfg-switch { position: relative; display: inline-flex; align-items: center; gap: 0.6rem; cursor: pointer; user-select: none; }
+.cfg-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.cfg-switch .track {
+  position: relative; width: 44px; height: 24px; border-radius: 999px; flex: 0 0 auto;
+  background: #4e5058; transition: background 0.2s;
+}
+.cfg-switch .track::after {
+  content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%;
+  background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.35); transition: transform 0.2s var(--ui-ease);
+}
+.cfg-switch input:checked + .track { background: var(--ui-ok); }
+.cfg-switch input:checked + .track::after { transform: translateX(20px); }
+.cfg-switch input:focus-visible + .track { box-shadow: 0 0 0 3px rgba(88,101,242,0.45); }
+.cfg-switch input:disabled + .track { opacity: 0.5; }
+.cfg-switch .state { min-width: 2.2rem; color: var(--ui-muted); font-size: 0.86rem; font-weight: 600; }
+.cfg-switch .state::before { content: attr(data-off); }
+.cfg-switch input:checked ~ .state { color: var(--ui-text); }
+.cfg-switch input:checked ~ .state::before { content: attr(data-on); }
+.cfg-nullable { display: flex; flex-direction: column; align-items: flex-end; gap: 0.6rem; width: 100%; }
+.cfg-var.wide .cfg-nullable { align-items: stretch; }
+.cfg-nullable-field { width: 100%; display: flex; justify-content: flex-end; }
+.cfg-nullable-field.hidden { display: none; }
+
+.cfg-range { display: flex; align-items: center; gap: 0.7rem; width: 100%; }
+.cfg-range input[type=range] { flex: 1 1 auto; min-width: 0; accent-color: var(--ui-accent); cursor: pointer; }
+.cfg-range .cfg-input.number { width: 84px; }
+.cfg-range .unit { color: var(--ui-muted); font-weight: 600; font-size: 0.88rem; }
+
+.cfg-reset {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 9px; border: 0; cursor: pointer;
+  display: grid; place-items: center; background: transparent; color: var(--ui-faint);
+  opacity: 0; transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.cfg-reset svg { width: 16px; height: 16px; }
+.cfg-var:hover .cfg-reset, .cfg-reset:focus-visible { opacity: 1; }
+.cfg-reset:hover { background: rgba(255,255,255,0.07); color: white; }
+@media (hover: none) { .cfg-reset { opacity: 0.8; } }
+
+.info-tip { position: relative; display: inline-flex; }
+.info-tip > button {
+  width: 19px; height: 19px; border-radius: 50%; border: 0; padding: 0; cursor: help;
+  display: grid; place-items: center; background: rgba(255,255,255,0.08); color: var(--ui-muted);
+  transition: background 0.15s, color 0.15s;
+}
+.info-tip > button svg { width: 13px; height: 13px; }
+.info-tip > button:hover, .info-tip > button:focus-visible { background: var(--ui-accent); color: white; outline: none; }
+.info-tip .tip {
+  position: absolute; left: -14px; bottom: calc(100% + 10px); z-index: 30; width: 300px; max-width: 78vw;
+  padding: 0.75rem 0.85rem; border-radius: 12px; text-align: left;
+  background: #111214; border: 1px solid var(--ui-line-strong); color: var(--ui-body);
+  font-size: 0.82rem; font-weight: 400; line-height: 1.5; letter-spacing: 0; text-transform: none;
+  box-shadow: 0 18px 40px -12px rgba(0,0,0,0.9);
+  opacity: 0; visibility: hidden; transform: translateY(4px);
+  transition: opacity 0.15s, transform 0.15s var(--ui-ease), visibility 0.15s;
+}
+.info-tip .tip::after {
+  content: ''; position: absolute; left: 18px; top: 100%; border: 7px solid transparent; border-top-color: #111214;
+}
+.info-tip:hover .tip, .info-tip:focus-within .tip { opacity: 1; visibility: visible; transform: translateY(0); }
+.tip-row { display: flex; gap: 0.5rem; padding: 0.15rem 0; }
+.tip-row b { color: var(--ui-faint); font-weight: 600; min-width: 64px; }
+.tip-row code { color: #e6e9ff; font: 0.76rem var(--ui-mono); word-break: break-word; }
+.tip-options { margin: 0.45rem 0 0.25rem; padding-top: 0.45rem; border-top: 1px solid var(--ui-line); display: grid; gap: 0.3rem; }
+.tip-options div b { color: white; font-weight: 600; }
+
+.field_table { width: 100%; overflow-x: auto; }
+.editable_table {
+  width: 100%; border-collapse: separate; border-spacing: 0; text-align: left; color: var(--ui-body);
+  background: var(--ui-sunken); border: 1px solid var(--ui-line-strong); border-radius: 12px; overflow: hidden;
+}
+.editable_table thead td {
+  padding: 0.6rem 0.75rem; background: rgba(255,255,255,0.03); color: var(--ui-faint);
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap;
+}
+.editable_table tbody td { padding: 0.3rem 0.45rem; border-top: 1px solid var(--ui-line); }
+.editable_table tbody td input {
+  width: 100%; padding: 0.45rem 0.4rem; border-radius: 7px; border: 1px solid transparent; outline: none;
+  background: transparent; color: var(--ui-text); font: 0.9rem 'Outfit', sans-serif;
+}
+.editable_table tbody td input:focus { background: var(--ui-panel); border-color: var(--ui-accent); }
+td.et_remove { width: 40px; text-align: center; }
+.et_remove_btn {
+  width: 28px; height: 28px; border-radius: 8px; border: 0; cursor: pointer; display: grid; place-items: center;
+  background: transparent; color: var(--ui-faint); transition: background 0.15s, color 0.15s;
+}
+.et_remove_btn svg { width: 15px; height: 15px; }
+.et_remove_btn:hover { background: var(--ui-danger-soft); color: var(--ui-danger); }
+.et_add {
+  padding: 0.65rem; text-align: center; cursor: pointer; color: var(--ui-muted); font-weight: 600; font-size: 0.86rem;
+  border-top: 1px dashed var(--ui-line-strong); transition: background 0.15s, color 0.15s;
+}
+.et_add:hover { background: var(--ui-accent-soft); color: white; }
+.et_empty td { padding: 0.9rem; color: var(--ui-faint); font-size: 0.85rem; text-align: center; }
+
+.cfg-empty { padding: 3rem 1rem; text-align: center; color: var(--ui-muted); background: var(--ui-panel); border: 1px dashed var(--ui-line-strong); border-radius: 16px; }
+.cfg-empty svg { width: 30px; height: 30px; color: var(--ui-faint); margin-bottom: 0.5rem; }
+
+.cfg-savebar {
+  position: fixed; left: 50%; bottom: 22px; z-index: 40; width: min(660px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 0.8rem; padding: 0.6rem 0.6rem 0.6rem 1.1rem;
+  background: #111214; border: 1px solid var(--ui-line-strong); border-radius: 14px;
+  box-shadow: 0 22px 50px -14px rgba(0,0,0,0.95);
+  transform: translate(-50%, 160%); opacity: 0; pointer-events: none;
+  transition: transform 0.3s var(--ui-ease), opacity 0.3s;
+}
+.cfg-savebar.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+.cfg-savebar.nudge { animation: ui-nudge 0.4s; }
+.cfg-savebar .msg { flex: 1 1 auto; color: var(--ui-body); font-size: 0.92rem; display: flex; align-items: center; gap: 0.5rem; }
+.cfg-savebar .msg svg { width: 17px; height: 17px; color: var(--ui-gold); flex: 0 0 auto; }
+
+/* ─── Shared motion ─── */
+@keyframes ui-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes ui-pop { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: none; } }
+@keyframes ui-orb { from { transform: translate(0, 0) scale(1); } to { transform: translate(40px, 30px) scale(1.15); } }
+@keyframes ui-pulse { from { transform: scale(0.65); opacity: 0.9; } to { transform: scale(1.25); opacity: 0; } }
+@keyframes ui-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+@keyframes ui-blink { 50% { opacity: 0; } }
+@keyframes ui-nudge { 25% { transform: translate(calc(-50% - 6px), 0); } 75% { transform: translate(calc(-50% + 6px), 0); } }
+@keyframes ui-confetti { to { transform: translate3d(var(--dx), 105vh, 0) rotate(var(--rot)); } }
+@media (prefers-reduced-motion: reduce) {
+  .addbot-orb, .addbot-mark .ring, .addbot-mark .core, .dc-input .caret, .dc-auth .pair .dots i { animation: none; }
+  .community-overview, .cfg-shell, .cfg-section.active, .addbot-card, .dash-empty, .dc-msg, .dc-queue span { animation: none; }
+  .confetti-piece { display: none; }
+}
+.seed-shell { max-width: 1000px; margin: 0 auto; padding: 1.4rem 1.5rem 3.5rem; animation: ui-rise 0.35s var(--ui-ease) both; }
+.seed-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.2rem; }
+.seed-header h1 { margin: 0; color: white; font: 500 1.65rem 'Oswald', sans-serif; letter-spacing: 0.4px; }
+.seed-header p { margin: 0.35rem 0 0; color: var(--ui-muted); line-height: 1.55; }
+.settings-fields { display: grid; gap: 0; background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 16px; overflow: hidden; }
+.setting-field { padding: 1.05rem 1.2rem; border-top: 1px solid var(--ui-line); }
+.setting-field:first-child { border-top: 0; }
+.setting-field label { display: flex; align-items: center; gap: 0.5rem; color: var(--ui-text); font-size: 0.98rem; font-weight: 600; }
+.setting-field select, .setting-field input[type="number"] {
+  width: 100%; box-sizing: border-box; margin-top: 0.6rem; background: var(--ui-sunken); color: var(--ui-text);
+  border: 1px solid var(--ui-line-strong); border-radius: 10px; padding: 0.6rem 0.8rem; font: 0.93rem 'Outfit', sans-serif; outline: none;
+}
+.setting-field select:focus, .setting-field input[type="number"]:focus { border-color: var(--ui-accent); box-shadow: 0 0 0 3px rgba(88,101,242,0.25); }
+.setting-field input[type="checkbox"] { width: 18px; height: 18px; margin: 0; accent-color: var(--ui-ok); }
+.field-description { color: var(--ui-muted); font-size: 0.86rem; line-height: 1.55; margin-top: 0.45rem; }
 .seed-target {
-  background: #202225; border: 1px solid #484c54; border-radius: 8px; padding: 0.8rem 0.9rem;
-  margin-bottom: 0.85rem;
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 14px; padding: 0.9rem 1rem;
+  margin-bottom: 0.9rem;
 }
-.seed-target label { display: block; color: #858a93; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; }
-.seed-target select { width: 100%; margin-top: 0.4rem; background: #2f3136; color: white; border: 1px solid #5a5f69; border-radius: 5px; padding: 0.55rem; }
+.seed-target label { display: block; color: var(--ui-faint); font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.seed-target select { width: 100%; margin-top: 0.45rem; background: var(--ui-sunken); color: var(--ui-text); border: 1px solid var(--ui-line-strong); border-radius: 10px; padding: 0.6rem 0.8rem; }
 .seed-methods { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
 .seed-method {
-  background: #2f3136; border: 1px solid #484c54; border-radius: 8px; padding: 0.9rem;
+  background: var(--ui-panel); border: 1px solid var(--ui-line); border-radius: 14px; padding: 1rem 1.05rem;
 }
 .seed-method h2 { margin: 0; color: #f1f2f3; font-size: 1rem; }
 .seed-method p { color: #a9adb5; font-size: 0.8rem; line-height: 1.45; min-height: 2.3rem; }
 .seed-fields { display: grid; grid-template-columns: 1.3fr 0.8fr 0.8fr; gap: 0.5rem; margin: 0.75rem 0; }
 .seed-fields input, .seed-file {
-  min-width: 0; background: #202225; color: #f1f2f3; border: 1px solid #5a5f69;
-  border-radius: 5px; padding: 0.55rem; font: 0.82rem 'Outfit', sans-serif;
+  min-width: 0; background: var(--ui-sunken); color: var(--ui-text); border: 1px solid var(--ui-line-strong);
+  border-radius: 9px; padding: 0.55rem 0.7rem; font: 0.86rem 'Outfit', sans-serif;
 }
 .seed-file { display: block; width: 100%; box-sizing: border-box; margin: 0.75rem 0; }
 .seed-safety { color: #d8c47d; font-size: 0.77rem; line-height: 1.45; margin: 0.85rem 0 0; }
@@ -538,14 +851,17 @@ td.et_remove { width: 24px; text-align: center; }
 
 /* ─── Breadcrumb ─── */
 .breadcrumb {
-  display: flex; align-items: center; gap: 0.4rem;
-  font-size: 15px; color: #b9bbbe; padding: 1.2rem 2rem 0;
+  display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;
+  max-width: 1100px; margin: 0 auto; padding: 1.1rem 1.5rem 0;
+  font-size: 0.88rem; color: var(--ui-muted);
 }
-
-.breadcrumb a { color: #5b8cee; cursor: pointer; font-weight: 500; }
-.breadcrumb a:hover { text-decoration: underline; }
-.breadcrumb .separator { color: #85868a; }
+.breadcrumb:empty { display: none; }
+.breadcrumb a { color: var(--ui-muted); cursor: pointer; font-weight: 500; transition: color 0.15s; }
+.breadcrumb a:hover { color: white; }
+.breadcrumb .separator { display: inline-flex; color: var(--ui-faint); }
+.breadcrumb .separator svg { width: 14px; height: 14px; }
 .breadcrumb .current { color: white; font-weight: 600; }
+.et_add svg { width: 15px; height: 15px; vertical-align: -3px; }
 
 /* ─── Civ Stats ─── */
 .stats-container { padding: 2rem; max-width: 1400px; }
@@ -930,8 +1246,16 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
 @media (max-width: 900px) {
   #main_layout { min-width: 0; }
   #guild_nav { display: none !important; }
-  #guild_menu { width: 180px; min-width: 180px; }
-  #st_layout { width: 100%; }
+  #guild_menu { width: 200px; min-width: 200px; }
+  .tb-link .tb-text { display: none; }
+  .tb-link { padding: 8px 10px; }
+  .cfg-body { grid-template-columns: minmax(0, 1fr); }
+  .cfg-nav { position: static; flex-direction: row; overflow-x: auto; scrollbar-width: none; }
+  .cfg-nav-title { display: none; }
+  .cfg-nav button { width: auto; flex: 0 0 auto; white-space: nowrap; }
+  .addbot-hero { grid-template-columns: minmax(0, 1fr); }
+  .addbot-mark { display: none; }
+  .addbot-card { grid-template-columns: minmax(0, 1fr); }
   table.stats-table { min-width: 600px; }
   .tag-map-body { grid-template-columns: 1fr; }
 }
@@ -941,12 +1265,15 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   #main_layout { min-width: 0; }
 
   /* Titlebar: compact */
-  #titlebar { height: auto; min-height: 48px; flex-wrap: wrap; padding: 6px 0; }
-  #tb-botinfo { font-size: 18px; padding-left: 10px; }
-  #tb-botinfo-version { font-size: 12px; padding: 4px 6px 0 3px; }
-  .tb-link { font-size: 13px; padding: 4px 10px; margin: 0 0 0 6px; }
+  #titlebar { height: auto; min-height: 52px; flex-wrap: wrap; padding: 6px 8px; row-gap: 4px; }
+  #tb-brand { border-right: 0; padding-right: 4px; }
+  #tb-botinfo { font-size: 18px; }
+  #tb-botinfo-version { display: none; }
+  .tb-link { font-size: 13px; padding: 6px 9px; }
   #tb-whitespace { flex: 1 1 auto; min-width: 0; }
-  #tb-user * { font-size: 13px; }
+  #tb-user .tb-username { display: none; }
+  .tb-cta { padding: 7px 10px; font-size: 13px; }
+  .tb-cta .tb-text { display: none; }
 
   /* Hamburger visible */
   #mobile-menu-btn { display: block; }
@@ -964,24 +1291,28 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   #mobile-overlay.mobile-open { display: block; }
 
   /* Main area: full width */
-  #main_area { height: calc(100vh - 48px); }
+  #main_area { height: calc(100vh - 52px); }
 
   /* Settings layout */
-  #st_layout { width: 100%; padding: 0 4px 24px; }
-  #st_sections { flex-wrap: wrap; gap: 4px; }
-  #st_sections div { font-size: 14px; padding: 16px 8px 10px; margin: 0 2px; }
-  #st_fields { padding: 10px 4px; }
+  .cfg-shell { padding: 0.9rem 1rem 7rem; }
+  .cfg-search { width: 100%; margin-left: 0; }
+  .cfg-var { grid-template-columns: minmax(0, 1fr); padding: 0.95rem 1rem; }
+  .cfg-control, .cfg-control-main, .cfg-nullable { justify-content: flex-start; align-items: stretch; }
+  .cfg-nullable-field { justify-content: flex-start; }
+  .cfg-option-help { text-align: left; }
+  .cfg-reset { opacity: 0.8; }
+  .cfg-savebar { bottom: 12px; padding-left: 0.85rem; }
+  .cfg-savebar .msg span { display: none; }
+  .info-tip .tip { width: 260px; }
 
-  /* Form controls */
-  .field_number { width: 80px; }
-  .slider_container { flex-wrap: wrap; }
-  .field_slider { width: 60px; }
-
-  /* Tables */
-  .field_table { overflow-x: auto; }
-  .editable_table { font-size: 13px; }
-  .editable_table td { padding: 8px 6px; }
-  .editable_table thead td { font-size: 13px; padding: 10px 6px; }
+  /* Setup wizard */
+  .addbot { padding: 1rem 1rem 3rem; }
+  .addbot-hero { padding: 1.8rem 1.3rem; border-radius: 18px; }
+  .addbot-hero h1 { font-size: 2rem; }
+  .addbot-node .lbl { display: none; }
+  .addbot-card { padding: 1.3rem; }
+  .addbot-card h2 { font-size: 1.45rem; }
+  .dash-empty { margin: 2rem 1rem; padding: 1.8rem 1.2rem; }
 
   /* Stats page */
   .stats-container { padding: 1rem 0.75rem; }
@@ -1008,21 +1339,18 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
   .card-grid { grid-template-columns: 1fr; padding: 1rem; }
 
   /* Breadcrumb */
-  .breadcrumb { padding: 0.8rem 0.75rem 0; font-size: 13px; flex-wrap: wrap; }
+  .breadcrumb { padding: 0.8rem 1rem 0; font-size: 13px; }
 
   /* Toast */
   .toast-container { left: 0.5rem; right: 0.5rem; bottom: 0.75rem; }
   .toast { max-width: 100%; font-size: 13px; }
 
-  /* Save button */
-  .field_submit { width: 95%; font-size: 16px; letter-spacing: 2px; }
-
   .content-title { font-size: 1.1rem; padding: 1rem 0.75rem 0; }
-  .community-overview { padding: 0.8rem 0.7rem 2rem; }
-  .overview-hero { flex-direction: column; }
-  .overview-progress { width: 100%; text-align: left; }
-  .setup-row { grid-template-columns: 1fr; gap: 0.35rem; }
-  .setup-controls { justify-content: flex-start; }
+  .community-overview { padding: 1rem 1rem 2.5rem; }
+  .overview-hero { flex-direction: column; align-items: flex-start; padding: 1.3rem; }
+  .overview-ring { width: 96px; height: 96px; }
+  .setup-row { grid-template-columns: 36px minmax(0, 1fr); }
+  .setup-controls { grid-column: 2; justify-content: flex-start; }
   .seed-shell { padding: 0.8rem 0.7rem 2rem; }
   .seed-header { flex-direction: column; }
   .seed-methods { grid-template-columns: 1fr; }
@@ -1118,24 +1446,32 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
   <button id="mobile-menu-btn" onclick="toggleMobileMenu()" aria-label="Menu">
     <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
   </button>
-  <div id="tb-botinfo">nammaoe2bot.__main__</div>
-  <div id="tb-botinfo-version">v0.8-Beta</div>
+  <div id="tb-brand" onclick="showPage('leaderboard')" title="NammaAoE2Bot">
+    <span class="tb-logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z"/><path d="m9 12 2 2 4-4"/></svg></span>
+    <div id="tb-botinfo">NammaAoE2Bot</div>
+    <div id="tb-botinfo-version">v0.8 beta</div>
+  </div>
 
-  <div class="tb-link" onclick="showPage('leaderboard')" style="cursor:pointer;">
-    <span>Leaderboard</span>
-  </div>
-  <div class="tb-link" onclick="showPage('match-stats')" style="cursor:pointer;">
-    <span>Match Stats</span>
-  </div>
-  <div class="tb-link" onclick="showPage('civ-stats')" style="cursor:pointer;">
-    <span>Civ Stats</span>
-  </div>
-  <div class="tb-link" onclick="showPage('strategies')" style="cursor:pointer;">
-    <span>Strategies</span>
-  </div>
-  <div class="tb-link" onclick="showPage('dashboard')" style="cursor:pointer;">
-    <span>nammaoe2bot.__main__ Config</span>
-  </div>
+  <a class="tb-link" data-page="leaderboard" onclick="showPage('leaderboard');return false" href="/leaderboard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg>
+    <span class="tb-text">Leaderboard</span>
+  </a>
+  <a class="tb-link" data-page="match-stats" onclick="showPage('match-stats');return false" href="/match-stats">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg>
+    <span class="tb-text">Match Stats</span>
+  </a>
+  <a class="tb-link" data-page="civ-stats" onclick="showPage('civ-stats');return false" href="/civ-stats">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4a1 1 0 0 1 1-1h11l-2 4 2 4H5"/></svg>
+    <span class="tb-text">Civ Stats</span>
+  </a>
+  <a class="tb-link" data-page="strategies" onclick="showPage('strategies');return false" href="/strategies">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>
+    <span class="tb-text">Strategies</span>
+  </a>
+  <a class="tb-link" data-page="dashboard" onclick="showPage('dashboard');return false" href="/dashboard">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    <span class="tb-text">Settings</span>
+  </a>
 
   <div id="tb-whitespace"></div>
 
@@ -1389,6 +1725,11 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
     </div>
   </div>
 
+  <!-- Add-to-Discord setup wizard -->
+  <div class="page" id="page-add-bot">
+    <div id="addbot-content"></div>
+  </div>
+
   <!-- Dashboard Page -->
   <div class="page" id="page-dashboard">
     <div id="dash-breadcrumb" class="breadcrumb"></div>
@@ -1404,6 +1745,7 @@ table.stats-table tr.strat-mixed td, table.stats-table tr.strat-mixed td:first-c
 <script>
 /* ─── State ─── */
 var currentUser = null;
+var botInviteUrl = null;
 var currentPage = 'leaderboard';
 
 // Civ stats
@@ -1453,6 +1795,73 @@ function esc(s) {
   var d = document.createElement('div');
   d.appendChild(document.createTextNode(String(s)));
   return d.innerHTML.replace(/'/g, '&#39;');
+}
+
+// esc() leaves double quotes alone, so a value it produces must never sit inside
+// a double-quoted attribute; attr() is the attribute-safe form.
+function attr(s) {
+  return esc(s).replace(/"/g, '&quot;');
+}
+
+function cssEsc(s) {
+  return window.CSS && CSS.escape ? CSS.escape(String(s)) : String(s).replace(/["\\]/g, '\\$&');
+}
+
+/* ─── Icons ─── */
+// Inline stroke icons: the CSP allows no icon font, and inline SVG inherits
+// currentColor so one glyph serves every state.
+var UI_ICONS = {
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  sliders: '<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>',
+  palette: '<path d="M12 2a10 10 0 0 0 0 20c1 0 1.7-.8 1.7-1.7 0-.5-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1 0-.9.8-1.7 1.7-1.7H16a6 6 0 0 0 6-6c0-4.6-4.5-8.4-10-8.4z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="15.5" cy="8.5" r="1"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  trophy: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>',
+  map: '<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/>',
+  chart: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
+  crest: '<path d="M12 2 4 5v6c0 5 3.4 9.3 8 11 4.6-1.7 8-6 8-11V5l-8-3z"/><path d="m9 12 2 2 4-4"/>',
+  queue: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  coins: '<circle cx="8" cy="8" r="6"/><path d="M18.1 10.4A6 6 0 1 1 10.3 18M7 6h1v4"/>',
+  quiz: '<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/>',
+  radio: '<circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.5M7.8 16.2a6 6 0 0 1 0-8.5M19.1 4.9a10 10 0 0 1 0 14.2M4.9 19.1a10 10 0 0 1 0-14.2"/>',
+  film: '<rect x="2" y="2" width="20" height="20" rx="2"/><path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z"/>',
+  zap: '<path d="M13 2 3 14h9l-1 8 10-12h-9z"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  arrowRight: '<path d="M5 12h14M12 5l7 7-7 7"/>',
+  arrowLeft: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  external: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/>',
+  sparkles: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 3v4M17 5h4"/>',
+  alert: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  home: '<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'
+};
+var DISCORD_GLYPH = '<path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>';
+
+function icon(name) {
+  if (name === 'discord') return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">' + DISCORD_GLYPH + '</svg>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+    + (UI_ICONS[name] || UI_ICONS.info) + '</svg>';
+}
+
+function avatarHtml(user, cls) {
+  var id = String(user.user_id || '');
+  if (user.avatar && /^\d+$/.test(id) && /^[a-zA-Z0-9_]+$/.test(user.avatar)) {
+    return '<img class="' + cls + '" alt="" src="https://cdn.discordapp.com/avatars/' + id + '/' + user.avatar + '.png?size=64">';
+  }
+  return '<span class="' + cls + '">' + esc(String(user.username || '?').charAt(0).toUpperCase()) + '</span>';
 }
 
 async function authFetch(url, opts) {
@@ -1508,6 +1917,8 @@ function publicApi(path) {
 }
 
 function routePath(page) {
+  // The setup wizard is not community-scoped: it is how a community comes to exist.
+  if (page === 'add-bot') return '/add-bot';
   if (page === 'player-profile' && playerProfileUserId) return publicPath('/player/' + encodeURIComponent(playerProfileUserId));
   return publicPath({
     strategies: '/strategies',
@@ -1592,6 +2003,8 @@ function applyRouteFromLocation() {
       showPage('civ-stats', { route: false });
     } else if (path === '/dashboard') {
       showPage('dashboard', { route: false });
+    } else if (path === '/add-bot') {
+      showPage('add-bot', { route: false });
     } else if (path === '/strategies') {
       stratView = q.get('view') === 'player' ? 'player' : 'total';
       stratPlayer = q.get('player') || stratPlayer;
@@ -1606,6 +2019,8 @@ function applyRouteFromLocation() {
 
 function showPage(page, opts) {
   opts = opts || {};
+  if (opts.route !== false && currentPage === 'dashboard' && page !== 'dashboard' && !confirmDiscard()) return;
+  var pageChanged = currentPage !== page;
   currentPage = page;
   closeMobileMenu();
   document.querySelectorAll('.page').forEach(function(el) { el.classList.remove('active'); });
@@ -1615,6 +2030,7 @@ function showPage(page, opts) {
   if (page === 'strategies') initStrategies();
   if (page === 'civ-stats') initCivStats();
   if (page === 'dashboard') loadDashboard();
+  if (page === 'add-bot') renderAddBotWizard();
   if (page === 'match-stats') initMatchStats();
   if (page === 'leaderboard') initLeaderboard();
   // Show/hide guild nav + menu for dashboard only
@@ -1622,6 +2038,11 @@ function showPage(page, opts) {
   document.getElementById('guild_nav').style.display = isDash ? 'flex' : 'none';
   document.getElementById('guild_menu').style.display = isDash ? 'flex' : 'none';
   document.getElementById('mobile-menu-btn').style.display = isDash ? '' : 'none';
+  document.querySelectorAll('.tb-link[data-page]').forEach(function (link) {
+    var tab = page === 'player-profile' ? 'leaderboard' : page;
+    link.classList.toggle('active', link.dataset.page === tab);
+  });
+  if (pageChanged) document.getElementById('main_area').scrollTop = 0;
   syncStickyOffsets();
 }
 
@@ -1656,24 +2077,42 @@ async function checkAuth() {
     // csrf is returned by /api/me for logged-in sessions and is required
     // by authFetch on every state-changing request. Cache it on
     // currentUser so every dashboard POST picks it up automatically.
-    if (d.logged_in) currentUser = { user_id: d.user_id, username: d.username, avatar: d.avatar, csrf: d.csrf, oauth_enabled: d.oauth_enabled };
-    else currentUser = d.oauth_enabled ? { oauth_enabled: true, logged_in: false } : null;
+    // invite_url is public (it is the "Add to Discord" link), so it arrives
+    // whether or not anyone is signed in; botInviteUrl keeps it when web
+    // sign-in is not configured and currentUser stays null.
+    botInviteUrl = d.invite_url || null;
+    if (d.logged_in) currentUser = { user_id: d.user_id, username: d.username, avatar: d.avatar, csrf: d.csrf, oauth_enabled: d.oauth_enabled, invite_url: d.invite_url };
+    else currentUser = d.oauth_enabled ? { oauth_enabled: true, logged_in: false, invite_url: d.invite_url } : null;
   } catch(e) { currentUser = null; }
   renderAuth();
+}
+
+function inviteUrl() {
+  return (currentUser && currentUser.invite_url) || botInviteUrl;
 }
 
 function renderAuth() {
   var u = document.getElementById('tb-user');
   var a = document.getElementById('tb-auth');
-  if (!currentUser) { u.innerHTML = ''; a.innerHTML = ''; return; }
+  var cta = '<a class="tb-cta" href="/add-bot" onclick="showPage(\'add-bot\');return false">'
+    + icon('discord') + '<span class="tb-text">Add to Discord</span></a>';
+  if (!currentUser) { u.innerHTML = ''; a.innerHTML = cta; return; }
   if (currentUser.logged_in === false && currentUser.oauth_enabled) {
-    u.innerHTML = ''; a.innerHTML = '<a class="tb-link" href="/auth/login" style="background:#376ace;color:white">Login with Discord</a>';
+    u.innerHTML = '';
+    a.innerHTML = cta + '<a class="tb-link" href="/auth/login" onclick="rememberLoginReturn()">' + icon('lock') + '<span class="tb-text">Login</span></a>';
     return;
   }
   if (currentUser.username) {
-    u.innerHTML = '<span>' + esc(currentUser.username) + '</span>';
-    a.innerHTML = '<a class="tb-link" href="/auth/logout" style="margin-right:8px">Logout</a>';
+    u.innerHTML = avatarHtml(currentUser, 'tb-avatar') + '<span class="tb-username">' + esc(currentUser.username) + '</span>';
+    a.innerHTML = cta + '<a class="tb-link" href="/auth/logout" title="Log out" aria-label="Log out">' + icon('logout') + '</a>';
   }
+}
+
+// The OAuth callback always lands on "/", so remember where sign-in started
+// and send the admin back there afterwards (see bootApp).
+var LOGIN_RETURN_KEY = 'nammaoe2bot.loginReturn';
+function rememberLoginReturn(page) {
+  try { sessionStorage.setItem(LOGIN_RETURN_KEY, page || currentPage || 'leaderboard'); } catch (e) {}
 }
 
 /* ─── Civ Stats ─── */
@@ -3852,80 +4291,395 @@ function renderStratPlayer() {
   document.getElementById('strat-body').innerHTML = html || '<tr><td colspan="6" class="loading">No data for this player.</td></tr>';
 }
 
+/* ─── Setup wizard ("Add to Discord") ─── */
+// Steps 3 and 4 happen inside Discord, where this page cannot observe them, so
+// progress is what the admin has walked through. The final step asks the
+// server, and only a real community counts as finished.
+var ADDBOT_STEPS = ['Sign in', 'Invite', 'Enable channel', 'Create queue', 'Launch'];
+var ADDBOT_STORE_KEY = 'nammaoe2bot.addBot';
+var addBotStep = null, addBotInvited = false, addBotFound = null, addBotChecking = false;
+
+function addBotSignedIn() { return !!(currentUser && currentUser.username); }
+
+function addBotRestore() {
+  try {
+    var saved = JSON.parse(sessionStorage.getItem(ADDBOT_STORE_KEY) || 'null');
+    if (saved) { addBotStep = typeof saved.step === 'number' ? saved.step : null; addBotInvited = !!saved.invited; }
+  } catch (e) {}
+}
+
+function addBotPersist() {
+  try { sessionStorage.setItem(ADDBOT_STORE_KEY, JSON.stringify({ step: addBotStep, invited: addBotInvited })); } catch (e) {}
+}
+
+function goAddBotStep(step) {
+  addBotStep = Math.max(0, Math.min(ADDBOT_STEPS.length - 1, step));
+  addBotPersist();
+  renderAddBotWizard();
+  if (addBotStep === ADDBOT_STEPS.length - 1 && addBotSignedIn() && addBotFound === null) addBotCheck();
+}
+
+function openAddBotAt(step) {
+  addBotStep = step; addBotPersist();
+  showPage('add-bot');
+}
+
+function addBotMarkInvited() {
+  addBotInvited = true; addBotPersist();
+  // Let the browser open Discord's tab first, then show the "next" state here.
+  setTimeout(renderAddBotWizard, 250);
+}
+
+function addBotBeforeLogin() {
+  addBotStep = 1; addBotPersist();
+  rememberLoginReturn('add-bot');
+}
+
+function renderAddBotWizard() {
+  var root = document.getElementById('addbot-content');
+  if (!root) return;
+  if (addBotStep === null) addBotRestore();
+  if (addBotStep === null) addBotStep = addBotSignedIn() ? 1 : 0;
+  if (addBotStep === 0 && addBotSignedIn()) addBotStep = 1;
+  var last = ADDBOT_STEPS.length - 1;
+
+  var html = '<div class="addbot">';
+  html += '<section class="addbot-hero"><div class="addbot-orb a"></div><div class="addbot-orb b"></div><div class="addbot-orb c"></div><div class="addbot-grid-bg"></div>';
+  html += '<div><span class="addbot-eyebrow">' + icon('sparkles') + 'Set up in about two minutes</span>';
+  html += '<h1>Bring <span class="grad">ranked AoE2 pickups</span><br>to your Discord server</h1>';
+  html += '<p>NammaAoE2Bot runs your queues, balances teams by rating, records every result and keeps a live leaderboard. Follow the steps below and your first match can start today.</p>';
+  html += '<div class="addbot-chips">'
+    + [['users', 'Rating-balanced teams'], ['trophy', 'Elo leaderboards'], ['radio', 'Live lobby tracking'], ['coins', 'Gold betting'], ['quiz', 'Daily AoE2 quiz']]
+      .map(function (c) { return '<span class="addbot-chip">' + icon(c[0]) + esc(c[1]) + '</span>'; }).join('')
+    + '</div></div>';
+  html += '<div class="addbot-mark" aria-hidden="true"><span class="ring"></span><span class="ring r2"></span><span class="ring r3"></span><span class="core">' + icon('crest') + '</span></div>';
+  html += '</section>';
+
+  html += '<nav class="addbot-stepper" aria-label="Setup progress" style="grid-template-columns:repeat(' + ADDBOT_STEPS.length + ',minmax(0,1fr))">';
+  html += '<div class="addbot-track"><span style="width:' + (100 * addBotStep / last) + '%"></span></div>';
+  ADDBOT_STEPS.forEach(function (label, i) {
+    var done = i < addBotStep || (i === last && addBotFound && addBotFound.length);
+    var cls = i === addBotStep ? 'current' : (done ? 'done' : '');
+    html += '<button type="button" class="addbot-node ' + cls + '" onclick="goAddBotStep(' + i + ')"' + (i === addBotStep ? ' aria-current="step"' : '') + '>';
+    html += '<span class="dot">' + (done && i !== addBotStep ? icon('check') : (i + 1)) + '</span><span class="lbl">' + esc(label) + '</span></button>';
+  });
+  html += '</nav>';
+
+  html += '<section class="addbot-card" aria-live="polite">' + addBotStepHtml(addBotStep) + '</section>';
+  html += '</div>';
+  root.innerHTML = html;
+}
+
+function addBotList(items) {
+  return '<ul class="addbot-list">' + items.map(function (item) {
+    return '<li>' + icon('check') + '<div>' + esc(item[0]) + (item[1] ? '<small>' + esc(item[1]) + '</small>' : '') + '</div></li>';
+  }).join('') + '</ul>';
+}
+
+function addBotNote(kind, text) {
+  return '<div class="addbot-note' + (kind === 'info' ? ' info' : '') + '">' + icon(kind === 'info' ? 'info' : 'alert') + '<div>' + text + '</div></div>';
+}
+
+function codeCopy(command) {
+  var shown = esc(command).replace(/(\w+):/g, '<span class="arg">$1:</span>');
+  return '<div class="code-copy"><code>' + shown + '</code>'
+    + '<button type="button" data-copy="' + attr(command) + '" onclick="copyCommand(this)">' + icon('copy') + 'Copy</button></div>';
+}
+
+function copyCommand(button) {
+  var text = button.dataset.copy || '';
+  var done = function () {
+    button.classList.add('copied');
+    button.innerHTML = icon('check') + 'Copied';
+    setTimeout(function () { button.classList.remove('copied'); button.innerHTML = icon('copy') + 'Copy'; }, 1600);
+  };
+  var fallback = function () {
+    var area = document.createElement('textarea');
+    area.value = text; area.setAttribute('readonly', ''); area.style.position = 'fixed'; area.style.opacity = '0';
+    document.body.appendChild(area); area.select();
+    try { document.execCommand('copy'); done(); } catch (e) { showToast('Copy failed: select the command and copy it by hand', 'error'); }
+    area.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+  else fallback();
+}
+
+function addBotNav(backStep, nextHtml) {
+  var html = '<div class="addbot-actions">';
+  if (backStep !== null) html += '<button type="button" class="ui-btn ghost" onclick="goAddBotStep(' + backStep + ')">' + icon('arrowLeft') + 'Back</button>';
+  html += '<span class="spacer"></span>' + (nextHtml || '') + '</div>';
+  return html;
+}
+
+function addBotNextButton(step, label) {
+  return '<button type="button" class="ui-btn" onclick="goAddBotStep(' + step + ')">' + esc(label) + icon('arrowRight') + '</button>';
+}
+
+function addBotStepHtml(step) {
+  var total = ADDBOT_STEPS.length;
+  var kicker = '<div class="addbot-step-kicker">Step ' + (step + 1) + ' of ' + total + '</div>';
+  var text = '', mock = '';
+
+  if (step === 0) {
+    text = kicker + '<h2>Sign in with Discord</h2>'
+      + '<p>Signing in lets this site confirm which servers you manage. Discord only shares your username and avatar, never your password or messages.</p>'
+      + addBotList([
+        ['Manage settings from the web', 'For servers where you have the Manage Server permission'],
+        ['Pick up where you left off', 'You come straight back to this guide after signing in']
+      ]);
+    var oauth = currentUser && currentUser.oauth_enabled;
+    if (addBotSignedIn()) {
+      text += addBotNav(null, '<span class="addbot-status">' + icon('check') + 'Signed in as ' + esc(currentUser.username) + '</span>' + addBotNextButton(1, 'Next'));
+    } else if (oauth) {
+      text += addBotNav(null, '<button type="button" class="ui-btn ghost" onclick="goAddBotStep(1)">Skip for now</button>'
+        + '<a class="ui-btn discord big" href="/auth/login" onclick="addBotBeforeLogin()">' + icon('discord') + 'Continue with Discord</a>');
+    } else {
+      text += addBotNote('info', 'Web sign-in is not set up on this installation, so settings are changed in Discord with <b>/channel set</b> and <b>/queue set</b>. You can still add the bot.')
+        + addBotNav(null, addBotNextButton(1, 'Next'));
+    }
+    mock = '<div class="dc-mock"><div class="dc-auth">'
+      + '<div class="pair"><span class="dc-ava bot">' + icon('crest') + '</span><span class="dots"><i></i><i></i><i></i></span>'
+      + (addBotSignedIn() ? avatarHtml(currentUser, 'dc-ava') : '<span class="dc-ava">' + icon('users') + '</span>') + '</div>'
+      + '<h4>NammaAoE2Bot wants to access your account</h4>'
+      + '<div class="perm-row">' + icon('check') + 'Know your username and avatar</div>'
+      + '<div class="perm-row">' + icon('check') + 'Recognise you when you come back</div>'
+      + '<div class="fake-btn">Authorize</div></div></div>';
+  }
+
+  if (step === 1) {
+    text = kicker + '<h2>Invite the bot to your server</h2>'
+      + '<p>Discord asks which server to add it to. Pick one where you have the <b>Manage Server</b> permission, then press <b>Authorize</b>.</p>'
+      + addBotList([
+        ['Read and post in the channels you allow', 'View Channels, Send Messages, Embed Links, Attach Files, Read Message History'],
+        ['Run one-click check-ins', 'Add Reactions, so players can ready up'],
+        ['Show rank and civ icons', 'Use External Emojis'],
+        ['Hand out rank roles', 'Manage Roles, only for roles below its own'],
+        ['Add its slash commands', '/add, /report, /rank and the rest appear in your server']
+      ]);
+    var url = inviteUrl();
+    if (url) {
+      text += addBotNote('info', 'The bot never asks for Administrator. You can remove it at any time from <b>Server Settings → Integrations</b>.');
+      var next = addBotInvited
+        ? '<span class="addbot-status">' + icon('check') + 'Invite opened</span>' + addBotNextButton(2, 'Next: enable a channel')
+        : '<button type="button" class="ui-btn ghost" onclick="addBotInvited=true;goAddBotStep(2)">It\'s already in my server</button>';
+      text += '<div class="addbot-actions"><a class="ui-btn discord big" href="' + attr(url) + '" target="_blank" rel="noopener" onclick="addBotMarkInvited()">'
+        + icon('discord') + 'Add to Discord' + icon('external') + '</a></div>';
+      text += addBotNav(0, next);
+    } else {
+      text += addBotNote('warn', 'This installation has no invite link configured (<b>DC_CLIENT_ID</b> is missing). Ask whoever runs the bot for its invite link, add it, then continue.')
+        + addBotNav(0, '<button type="button" class="ui-btn" onclick="addBotInvited=true;goAddBotStep(2)">I\'ve added it' + icon('arrowRight') + '</button>');
+    }
+    mock = '<div class="dc-mock"><div class="dc-auth">'
+      + '<div class="pair"><span class="dc-ava bot">' + icon('crest') + '</span></div>'
+      + '<h4>Add NammaAoE2Bot to a server</h4>'
+      + '<div class="perm-row">' + icon('hash') + '<span style="flex:1">Your AoE2 server</span>' + icon('chevronRight') + '</div>'
+      + '<div class="perm-row">' + icon('check') + 'Send messages and embeds</div>'
+      + '<div class="perm-row">' + icon('check') + 'Add reactions</div>'
+      + '<div class="perm-row">' + icon('check') + 'Manage roles</div>'
+      + '<div class="fake-btn">Authorize</div></div></div>';
+  }
+
+  if (step === 2) {
+    text = kicker + '<h2>Turn on a pickup channel</h2>'
+      + '<p>Open the text channel where players should queue, for example <b>#pickups</b>, and run this command. It needs the <b>Administrator</b> permission.</p>'
+      + codeCopy('/channel enable')
+      + addBotList([
+        ['The bot replies “The bot has been enabled.”', null],
+        ['Each channel keeps its own queues, ratings and leaderboard', 'Enable more channels later for separate ladders']
+      ])
+      + addBotNote('info', 'Command not showing up? Slash commands can take a minute to appear after the bot joins. Reopening Discord usually helps.')
+      + addBotNav(1, addBotNextButton(3, 'Done, next step'));
+    mock = '<div class="dc-mock"><div class="dc-mock-bar"><span class="hash">#</span>pickups</div><div class="dc-mock-body">'
+      + '<div class="dc-msg"><span class="dc-ava">' + icon('users') + '</span><div><div class="dc-name">You</div><div class="dc-text">used <span class="dc-cmd">/channel enable</span></div></div></div>'
+      + '<div class="dc-msg"><span class="dc-ava bot">' + icon('crest') + '</span><div><div class="dc-name">NammaAoE2Bot <span class="dc-tag">APP</span></div><div class="dc-embed">The bot has been enabled.</div></div></div>'
+      + '</div><div class="dc-input"><span class="typed">/channel enable</span><span class="caret"></span></div></div>';
+  }
+
+  if (step === 3) {
+    text = kicker + '<h2>Create your first queue</h2>'
+      + '<p>A queue fills up with players and starts a match when it is full. Give it a one-word name and the number of players it needs.</p>'
+      + codeCopy('/queue create_pickup name:4v4 size:8')
+      + addBotList([
+        ['Players join with /add, or by typing ++', 'And leave with /remove or --'],
+        ['When it fills, players check in and teams are balanced by rating', null]
+      ])
+      + addBotNote('info', 'New queues start unranked. Turn on <b>Ranked queue</b> in the queue\'s settings to track ratings and fill the leaderboard.')
+      + addBotNav(2, addBotNextButton(4, 'Done, check my server'));
+    var names = ['Arthas', 'Tatoh', 'Hera'];
+    mock = '<div class="dc-mock"><div class="dc-mock-bar"><span class="hash">#</span>pickups</div><div class="dc-mock-body">'
+      + '<div class="dc-msg"><span class="dc-ava">' + icon('users') + '</span><div><div class="dc-name">You</div><div class="dc-text">used <span class="dc-cmd">/queue create_pickup</span></div></div></div>'
+      + '<div class="dc-msg"><span class="dc-ava bot">' + icon('crest') + '</span><div><div class="dc-name">NammaAoE2Bot <span class="dc-tag">APP</span></div>'
+      + '<div class="dc-embed gold"><b>4v4</b> · 3/8 players<div class="dc-queue">'
+      + names.map(function (n, i) { return '<span style="animation-delay:' + (1 + i * 0.25) + 's">' + n + '</span>'; }).join('')
+      + '<span class="empty">open</span><span class="empty">open</span></div></div></div></div>'
+      + '</div><div class="dc-input"><span class="typed">++</span><span class="caret"></span></div></div>';
+  }
+
+  if (step === 4) {
+    var found = addBotFound && addBotFound.length;
+    text = kicker + '<h2>' + (found ? 'You\'re all set!' : 'Check your server') + '</h2>';
+    if (!addBotSignedIn()) {
+      text += '<p>Everything in Discord is ready. Sign in to manage queues, ratings and the daily quiz from this site.</p>';
+      text += (currentUser && currentUser.oauth_enabled)
+        ? addBotNav(3, '<a class="ui-btn discord big" href="/auth/login" onclick="rememberLoginReturn(\'add-bot\')">' + icon('discord') + 'Sign in to finish</a>')
+        : addBotNote('info', 'Web sign-in is not set up here. Manage settings in Discord with <b>/channel set</b> and <b>/queue set</b>.') + addBotNav(3, '');
+    } else if (addBotChecking) {
+      text += '<p>Looking for servers where the bot is running and you can manage settings…</p>' + addBotNav(3, '<button type="button" class="ui-btn" disabled>Checking…</button>');
+    } else if (found) {
+      text += '<p>The bot is live. Open a server to fine-tune its queues, ratings and features, or share the leaderboard with your players.</p>';
+      text += '<div class="channel-cards" style="margin-top:1rem">' + addBotFound.map(function (c, i) {
+        return '<button type="button" class="channel-card" onclick="openFoundCommunity(' + i + ')">'
+          + (c.icon ? '<img class="gn_letter" style="width:38px;height:38px;border-radius:12px" alt="" src="' + attr(c.icon) + '">' : '<span class="ui-icon-tile">' + icon('home') + '</span>')
+          + '<div><b>' + esc(c.name) + '</b><span>' + esc(c.channels || 0) + ' channel' + (c.channels === 1 ? '' : 's') + ' enabled</span></div>'
+          + '<span class="chev">' + icon('chevronRight') + '</span></button>';
+      }).join('') + '</div>';
+      text += addBotNav(3, '<button type="button" class="ui-btn success big" onclick="openFoundCommunity(0)">Open settings' + icon('arrowRight') + '</button>');
+    } else {
+      text += '<p>Let\'s confirm everything is connected. We look for servers where the bot is running and you can manage settings.</p>';
+      if (addBotFound !== null) {
+        text += addBotNote('warn', 'No server found yet. Make sure <b>/channel enable</b> replied “The bot has been enabled.”, and that you have the Manage Server permission there. Then check again.');
+      }
+      text += addBotNav(3, '<button type="button" class="ui-btn big" onclick="addBotCheck()">' + icon('refresh') + (addBotFound === null ? 'Check my server' : 'Check again') + '</button>');
+    }
+    mock = '<div class="dc-mock"><div class="dc-mock-bar"><span class="hash">#</span>pickups</div><div class="dc-mock-body">'
+      + '<div class="dc-msg"><span class="dc-ava bot">' + icon('crest') + '</span><div><div class="dc-name">NammaAoE2Bot <span class="dc-tag">APP</span></div>'
+      + '<div class="dc-embed gold"><b>Match #1 is ready!</b><br>Team 1 · avg 1524 &nbsp;vs&nbsp; Team 2 · avg 1519<br>Teams balanced by rating. GLHF!</div></div></div>'
+      + '<div class="dc-msg"><span class="dc-ava">' + icon('users') + '</span><div><div class="dc-name">Hera</div><div class="dc-text">used <span class="dc-cmd">/report</span></div></div></div>'
+      + '<div class="dc-msg"><span class="dc-ava bot">' + icon('crest') + '</span><div><div class="dc-name">NammaAoE2Bot <span class="dc-tag">APP</span></div><div class="dc-embed">Result recorded. Leaderboard updated.</div></div></div>'
+      + '</div></div>';
+  }
+
+  return '<div>' + text + '</div>' + mock;
+}
+
+async function addBotCheck() {
+  if (!addBotSignedIn() || addBotChecking) return;
+  addBotChecking = true; renderAddBotWizard();
+  var hadFound = !!(addBotFound && addBotFound.length);
+  try {
+    var resp = await authFetch('/api/admin/communities');
+    var data = await resp.json();
+    if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+    addBotFound = data.communities || [];
+  } catch (e) {
+    addBotFound = [];
+    showToast('Could not check your servers: ' + e.message, 'error');
+  }
+  addBotChecking = false;
+  renderAddBotWizard();
+  if (!hadFound && addBotFound.length) launchConfetti();
+}
+
+function openFoundCommunity(index) {
+  var community = addBotFound && addBotFound[index];
+  if (!community) return;
+  publicCommunityId = String(community.id);
+  showPage('dashboard');
+}
+
+function launchConfetti() {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var colors = ['#5865f2', '#e4b54a', '#3fbf7a', '#f2585c', '#ffffff', '#8b5cf6'];
+  for (var i = 0; i < 90; i++) {
+    var piece = document.createElement('span');
+    piece.className = 'confetti-piece';
+    piece.style.left = (Math.random() * 100) + 'vw';
+    piece.style.background = colors[i % colors.length];
+    piece.style.setProperty('--dx', (Math.random() * 240 - 120) + 'px');
+    piece.style.setProperty('--rot', (Math.random() * 900 - 450) + 'deg');
+    piece.style.animationDuration = (1.8 + Math.random() * 1.6) + 's';
+    piece.style.animationDelay = (Math.random() * 0.4) + 's';
+    document.body.appendChild(piece);
+    setTimeout(piece.remove.bind(piece), 4200);
+  }
+}
+
 /* ─── Dashboard ─── */
 
 function renderGuildNav() {
   var nav = document.getElementById('guild_nav'); var html = '';
-  dashGuilds.forEach(function(g) {
-    var sel = dashGuildId === g.id ? ' selected' : '';
-    if (g.icon) {
-      html += '<a class="gn_guild'+sel+'" onclick="selectGuild(\''+esc(g.id)+'\',\''+esc(g.name)+'\');return false" href="#">';
-      html += '<img src="'+esc(g.icon)+'"><span>'+esc(g.name)+'</span></a>';
-    } else {
-      html += '<a class="gn_guild'+sel+'" onclick="selectGuild(\''+esc(g.id)+'\',\''+esc(g.name)+'\');return false" href="#">';
-      html += '<span style="width:48px;height:48px;background:#484c54;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:18px;">'+esc(g.name.charAt(0))+'</span>';
-      html += '<span>'+esc(g.name)+'</span></a>';
-    }
+  // Index-based handlers: a guild or channel name is user text, and splicing it
+  // into an inline handler string breaks on the first quote.
+  dashGuilds.forEach(function(g, i) {
+    var sel = String(dashGuildId) === String(g.id) ? ' selected' : '';
+    html += '<a class="gn_guild'+sel+'" href="#" onclick="selectGuildAt('+i+');return false">';
+    html += g.icon ? '<img alt="" src="'+attr(g.icon)+'">' : '<span class="gn_letter">'+esc(String(g.name || '?').charAt(0).toUpperCase())+'</span>';
+    html += '<span class="gn_tip">'+esc(g.name)+'</span></a>';
   });
+  if (currentUser && currentUser.username) {
+    if (dashGuilds.length) html += '<div class="gn_sep"></div>';
+    html += '<a class="gn_guild gn_add" href="/add-bot" onclick="openAddBotAt(1);return false">';
+    html += '<span class="gn_letter">'+icon('plus')+'</span><span class="gn_tip">Add the bot to a server</span></a>';
+  }
   nav.innerHTML = html;
+}
+
+function selectGuildAt(index) {
+  var g = dashGuilds[index];
+  if (g) selectGuild(g.id, g.name);
+}
+
+function selectChannelAt(index) {
+  var ch = dashChannels[index];
+  if (ch) selectChannel(ch.id, ch.name);
+}
+
+function selectQueueAt(index) {
+  var q = dashQueues[index];
+  if (q) selectQueue(q.name);
 }
 
 function renderGuildMenu() {
   var menu = document.getElementById('guild_menu'); var html = '';
+  if (!dashGuildId) { menu.innerHTML = ''; return; }
 
-  if (dashChannels.length) {
-    dashChannels.forEach(function(ch) {
-      var sel = dashChannelId === ch.id ? ' selected' : '';
-      html += '<div class="gm_channel'+sel+'" onclick="selectChannel(\''+esc(ch.id)+'\',\''+esc(ch.name)+'\');return false">';
-      html += '<span style="color:#85868a;margin-right:4px;font-size:14px;">#</span>';
-      html += '<span>'+esc(ch.name)+'</span></div>';
+  html += '<div class="gm_header"><b>'+esc(dashGuildName)+'</b><span>Server settings</span></div>';
+  html += '<div class="gm_channel gm_overview'+(dashChannelId ? '' : ' selected')+'" onclick="backToOverview()">'+icon('home')+'<span>Overview</span></div>';
+  html += '<div class="gm_label">Pickup channels</div>';
+  dashChannels.forEach(function(ch, i) {
+    var sel = String(dashChannelId) === String(ch.id) && !dashQueueName ? ' selected' : '';
+    html += '<div class="gm_channel'+sel+'" title="Channel settings" onclick="selectChannelAt('+i+')">'+icon('hash')+'<span>'+esc(ch.name)+'</span></div>';
 
-      // Show queues under selected channel
-      if (dashChannelId === ch.id && dashQueues.length) {
-        html += '<div class="gm_queue_menu">';
-        dashQueues.forEach(function(q) {
-          var qsel = dashQueueName === q.name ? ' selected' : '';
-          html += '<div class="gm_queue'+qsel+'" onclick="selectQueue(\''+esc(q.name)+'\');return false">';
-          html += '<span style="background:#376ace;color:white;font-size:9px;font-weight:700;padding:1px 4px;border-radius:2px;margin-right:5px;">PQ</span>';
-          html += '<span>'+esc(q.name)+'</span></div>';
-        });
-        html += '<div class="gm_queue" onclick="showToast(\'Create queues via Discord commands\',\'info\')">';
-        html += '<span style="color:#85868a;margin-right:5px;">+</span><span>create queue</span></div>';
-        html += '</div>';
-      }
-    });
-    html += '<div class="gm_channel" onclick="showToast(\'Add channels via Discord commands\',\'info\')">';
-    html += '<span style="color:#85868a;margin-right:5px;">+</span><span>add channel</span></div>';
-  }
+    // Show queues under selected channel
+    if (String(dashChannelId) === String(ch.id)) {
+      html += '<div class="gm_queue_menu">';
+      dashQueues.forEach(function(q, qi) {
+        var qsel = dashQueueName === q.name ? ' selected' : '';
+        html += '<div class="gm_queue'+qsel+'" title="Queue settings" onclick="selectQueueAt('+qi+')">'+icon('queue')+'<span>'+esc(q.name)+'</span></div>';
+      });
+      html += '<div class="gm_queue gm_add" onclick="openAddBotAt(3)">'+icon('plus')+'<span>Create a queue</span></div>';
+      html += '</div>';
+    }
+  });
+  html += '<div class="gm_channel gm_add" onclick="openAddBotAt(2)">'+icon('plus')+'<span>Enable a channel</span></div>';
 
   menu.innerHTML = html;
 }
 
-function renderBreadcrumb() {
-  var bc = document.getElementById('dash-breadcrumb');
-  if (!dashGuildId) { bc.innerHTML = ''; return; }
-  var parts = ['<a onclick="resetDashboard();return false" href="#">nammaoe2bot.__main__ Config</a>'];
-  if (dashGuildId && !dashChannelId) {
-    parts.push('<span class="current">'+esc(dashGuildName)+'</span>');
-  } else if (dashChannelId && !dashQueueName) {
-    parts.push('<a onclick="selectGuild(\''+esc(dashGuildId)+'\',\''+esc(dashGuildName)+'\');return false" href="#">'+esc(dashGuildName)+'</a>');
-    parts.push('<span class="current">#'+esc(dashChannelName)+'</span>');
-  } else if (dashQueueName) {
-    parts.push('<a onclick="selectGuild(\''+esc(dashGuildId)+'\',\''+esc(dashGuildName)+'\');return false" href="#">'+esc(dashGuildName)+'</a>');
-    parts.push('<a onclick="selectChannel(\''+esc(dashChannelId)+'\',\''+esc(dashChannelName)+'\');return false" href="#">#'+esc(dashChannelName)+'</a>');
-    parts.push('<span class="current">'+esc(dashQueueName)+'</span>');
-  }
-  bc.innerHTML = parts.join('<span class="separator"> &#8250; </span>');
+function backToOverview() {
+  if (!confirmDiscard()) return;
+  dashChannelId=null; dashChannelName=null; dashQueueName=null; dashQueues=[]; dashActiveTab=null;
+  renderBreadcrumb(); renderGuildMenu(); closeMobileMenu();
+  renderCommunityOverview();
 }
 
-function resetDashboard() {
-  dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null;
-  dashQueueName=null; dashChannels=[]; dashQueues=[]; dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashDiagnosticsData=null; dashActiveTab=null;
-  dashRatingSeedSource=null; dashRatingSeedPreview=null;
-  dashTeamRatingPreview=null;
-  dashIdentitySource=null; dashIdentityPreview=null;
-  dashMigrationSource=null; dashMigrationPreview=null;
-  loadDashboard();
+function renderBreadcrumb() {
+  var bc = document.getElementById('dash-breadcrumb');
+  if (!dashGuildId || !dashChannelId) { bc.innerHTML = ''; return; }
+  var parts = ['<a onclick="backToOverview();return false" href="#">'+esc(dashGuildName)+'</a>'];
+  if (!dashQueueName) {
+    parts.push('<span class="current">#'+esc(dashChannelName)+'</span>');
+  } else {
+    var channelIndex = dashChannels.findIndex(function(ch) { return String(ch.id) === String(dashChannelId); });
+    parts.push('<a onclick="selectChannelAt('+channelIndex+');return false" href="#">#'+esc(dashChannelName)+'</a>');
+    parts.push('<span class="current">'+esc(dashQueueName)+'</span>');
+  }
+  bc.innerHTML = parts.join('<span class="separator">'+icon('chevronRight')+'</span>');
+}
+
+function dashEmptyState(iconName, title, text, actions) {
+  return '<div class="dash-empty"><div class="dash-empty-icon">'+icon(iconName)+'</div><h2>'+esc(title)+'</h2><p>'+text+'</p>'
+    + '<div class="dash-empty-actions">'+actions+'</div></div>';
 }
 
 async function loadDashboard() {
@@ -3933,7 +4687,14 @@ async function loadDashboard() {
   if (!currentUser || !currentUser.username) {
     dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
     renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
-    content.innerHTML = '<div class="dash-login-prompt">Login with Discord to configure channels.<br><br><a href="/auth/login">Login with Discord</a></div>';
+    var addLink = '<a class="ui-btn ghost" href="/add-bot" onclick="showPage(\'add-bot\');return false">'+icon('plus')+'New here? Add the bot</a>';
+    content.innerHTML = (currentUser && currentUser.oauth_enabled)
+      ? dashEmptyState('lock', 'Sign in to manage your server',
+        'Settings are tied to your Discord account, so only people who manage a server can change them.',
+        '<a class="ui-btn discord big" href="/auth/login" onclick="rememberLoginReturn(\'dashboard\')">'+icon('discord')+'Continue with Discord</a>'+addLink)
+      : dashEmptyState('lock', 'Web settings are turned off',
+        'This installation has no web sign-in configured. Change settings in Discord with <b>/channel set</b> and <b>/queue set</b>.',
+        addLink);
     return;
   }
   dashGuildId=null; dashGuildName=null; dashChannelId=null; dashChannelName=null; dashQueueName=null;
@@ -3943,7 +4704,7 @@ async function loadDashboard() {
   dashIdentitySource=null; dashIdentityPreview=null;
   dashMigrationSource=null; dashMigrationPreview=null;
   renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
-  content.innerHTML = '<div class="loading">Loading communities...</div>';
+  content.innerHTML = '<div class="loading">Loading your servers…</div>';
   try {
     var resp = await authFetch(publicCommunityId
       ? adminCommunityApi(publicCommunityId, '')
@@ -3952,13 +4713,21 @@ async function loadDashboard() {
     var data = await resp.json(); if (data.error) throw new Error(data.error);
     dashGuilds = data.community ? [data.community] : (data.communities || []);
     renderGuildNav(); renderGuildMenu();
-    if (!dashGuilds.length) { content.innerHTML = '<div class="dash-login-prompt">No communities you can administer were found.</div>'; return; }
+    if (!dashGuilds.length) {
+      renderGuildNav();
+      content.innerHTML = dashEmptyState('discord', 'No servers yet',
+        'We couldn\'t find a server where NammaAoE2Bot is running and you can manage settings. Add the bot and enable a channel; it takes about two minutes.',
+        '<button type="button" class="ui-btn discord big" onclick="openAddBotAt(1)">'+icon('plus')+'Add the bot to a server</button>'
+        + '<button type="button" class="ui-btn ghost" onclick="loadDashboard()">'+icon('refresh')+'Check again</button>');
+      return;
+    }
     // Auto-select the explicit community, or the first administered one.
     selectGuild(dashGuilds[0].id, dashGuilds[0].name);
   } catch(e) { content.innerHTML = '<div class="error">Failed to load communities: '+esc(e.message)+'</div>'; }
 }
 
 async function selectGuild(id, name) {
+  if (!confirmDiscard()) return;
   dashGuildId=id; dashGuildName=name; dashChannelId=null; dashChannelName=null;
   dashQueueName=null; dashChannels=[]; dashQueues=[];
   dashConfigData=null; dashOverviewData=null; dashPolicyData=null; dashQuizData=null; dashDiagnosticsData=null; dashActiveTab=null;
@@ -3973,7 +4742,7 @@ async function selectGuild(id, name) {
   }
   renderBreadcrumb(); renderGuildNav(); renderGuildMenu();
   var content = document.getElementById('dash-content');
-  content.innerHTML = '<div class="loading">Loading community settings...</div>';
+  content.innerHTML = '<div class="loading">Loading server settings…</div>';
   try {
     var results = await Promise.all([
       authFetch(adminCommunityApi(id, '/overview')),
@@ -4006,63 +4775,128 @@ function overviewMetrics(metrics) {
   }).join('');
 }
 
+var FEATURE_ICONS = {
+  pickup: ['users', ''], ratings: ['trophy', 'gold'], predictions: ['zap', ''], gold: ['coins', 'gold'],
+  quiz: ['quiz', ''], lobby: ['radio', 'green'], replay_analysis: ['film', ''], public_dashboard: ['globe', 'green']
+};
+
+function iconTile(name, tone) {
+  return '<span class="ui-icon-tile'+(tone ? ' '+tone : '')+'">'+icon(name)+'</span>';
+}
+
+function progressRing(complete, required) {
+  var r = 46, circumference = 2 * Math.PI * r;
+  var share = required ? complete / required : 1;
+  var offset = circumference * (1 - share);
+  return '<div class="overview-ring" role="img" aria-label="'+complete+' of '+required+' required setup steps complete">'
+    + '<svg viewBox="0 0 112 112"><defs><linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">'
+    + '<stop offset="0" stop-color="#3fbf7a"/><stop offset="1" stop-color="#7983f5"/></linearGradient></defs>'
+    + '<circle class="ring-track" cx="56" cy="56" r="'+r+'" fill="none" stroke-width="10"/>'
+    + '<circle class="ring-fill" cx="56" cy="56" r="'+r+'" fill="none" stroke-width="10" stroke-dasharray="'+circumference.toFixed(1)+'" stroke-dashoffset="'+offset.toFixed(1)+'"/></svg>'
+    + '<div class="overview-ring-label"><b>'+complete+'/'+required+'</b><span>setup steps</span></div></div>';
+}
+
+function setupStepAction(step) {
+  if (step.action === 'seed_ratings') return '<button type="button" class="setup-action" onclick="openRatingSeed()">'+icon('trophy')+'Seed ratings</button>';
+  if (step.action === 'map_identities') return '<button type="button" class="setup-action" onclick="openIdentityImport()">'+icon('link')+'Map profiles</button>';
+  if (step.action === 'migrate_history') return '<button type="button" class="setup-action" onclick="openHistoricalMigration()">'+icon('upload')+'Import history</button>';
+  if (step.status === 'complete') return '';
+  // The two Discord-side steps have no web action; point at the guided steps instead.
+  if (step.key === 'channels') return '<button type="button" class="setup-action" onclick="openAddBotAt(2)">Show me how'+icon('arrowRight')+'</button>';
+  if (step.key === 'queues') return '<button type="button" class="setup-action" onclick="openAddBotAt(3)">Show me how'+icon('arrowRight')+'</button>';
+  return '';
+}
+
 function renderCommunityOverview() {
   var content = document.getElementById('dash-content');
   var data = dashOverviewData;
   if (!data) { content.innerHTML = '<div class="error">Community overview is unavailable.</div>'; return; }
+  dashDirty = {};
   var onboarding = data.onboarding || {steps:[], completed_required:0, required_steps:0, status:'needs_setup'};
   var required = onboarding.required_steps || 0;
   var complete = onboarding.completed_required || 0;
-  var progress = required ? Math.round(100 * complete / required) : 100;
   var diagnostics = data.diagnostics || {};
   var channelState = diagnostics.channel_consistency || {};
   var stored = diagnostics.data || {};
-  var html = '<div class="community-overview">';
-  html += '<div class="overview-hero"><div><h1>'+esc((data.community||{}).name || dashGuildName)+'</h1>';
-  html += '<p>Setup, feature availability and tenant-scoped runtime health.</p>';
-  html += '<div class="overview-actions"><button type="button" class="setup-action" onclick="openCommunityDiagnostics()">Run diagnostics</button>';
-  html += '<button type="button" class="setup-action" onclick="openCommunityPolicy()">Access &amp; compute</button></div></div>';
-  html += '<div class="overview-progress"><strong>'+complete+' / '+required+'</strong>required setup steps';
-  html += '<div class="overview-progress-bar"><span style="width:'+progress+'%"></span></div></div></div>';
+  var name = (data.community||{}).name || dashGuildName;
+  var guild = dashGuilds.find(function(g) { return String(g.id) === String(dashGuildId); }) || {};
 
-  html += '<section class="overview-section"><h2>Onboarding</h2><div class="setup-list">';
-  (onboarding.steps || []).forEach(function(step) {
-    html += '<div class="setup-row"><strong>'+esc(step.title)+'</strong><span>'+esc(step.detail)+'</span>';
-    html += '<div class="setup-controls"><span class="overview-badge '+esc(step.status)+'">'+esc(overviewStatusLabel(step.status))+'</span>';
-    if (step.action === 'seed_ratings') html += '<button type="button" class="setup-action" onclick="openRatingSeed()">Seed ratings</button>';
-    if (step.action === 'map_identities') html += '<button type="button" class="setup-action" onclick="openIdentityImport()">Map profiles</button>';
-    if (step.action === 'migrate_history') html += '<button type="button" class="setup-action" onclick="openHistoricalMigration()">Import history</button>';
+  var html = '<div class="community-overview">';
+  html += '<section class="overview-hero"><div class="overview-hero-main">';
+  html += guild.icon ? '<img class="overview-guild-icon" alt="" src="'+attr(guild.icon)+'">'
+    : '<span class="overview-guild-icon">'+esc(String(name || '?').charAt(0).toUpperCase())+'</span>';
+  html += '<div><h1>'+esc(name)+'</h1>';
+  html += '<p>'+(required && complete >= required
+    ? 'Everything required is set up. Fine-tune channels, queues and features below.'
+    : 'Finish the highlighted step to get this community playing.')+'</p>';
+  html += '<div class="overview-actions">';
+  html += '<button type="button" class="ui-btn ghost" onclick="openCommunityDiagnostics()">'+icon('activity')+'Run diagnostics</button>';
+  html += '<button type="button" class="ui-btn ghost" onclick="openCommunityPolicy()">'+icon('lock')+'Access &amp; compute</button>';
+  html += '<button type="button" class="ui-btn ghost" onclick="openAddBotAt(2)">'+icon('plus')+'Add a channel</button>';
+  html += '</div></div></div>';
+  html += progressRing(complete, required);
+  html += '</section>';
+
+  var steps = onboarding.steps || [];
+  var next = steps.find(function(step) { return step.required && step.status !== 'complete'; })
+    || steps.find(function(step) { return step.status !== 'complete'; });
+  html += '<section class="overview-section"><div class="overview-section-head"><h2>Setup checklist</h2>';
+  html += '<span class="overview-section-sub">'+complete+' of '+required+' required steps done</span></div><div class="setup-list">';
+  steps.forEach(function(step, i) {
+    var done = step.status === 'complete';
+    var title = String(step.title || '').replace(/\s*\(optional\)\s*$/i, '');
+    html += '<div class="setup-row'+(done ? ' is-complete' : '')+(step === next ? ' is-next' : '')+'">';
+    html += '<span class="setup-num">'+(done ? icon('check') : (i + 1))+'</span>';
+    html += '<div><strong>'+esc(title)+(step.required ? '' : '<span class="setup-optional">Optional</span>')+'</strong>';
+    html += '<span class="setup-detail">'+esc(step.detail)+'</span></div>';
+    html += '<div class="setup-controls"><span class="overview-badge '+attr(step.status)+'">'+esc(overviewStatusLabel(step.status))+'</span>';
+    html += setupStepAction(step);
     html += '</div></div>';
   });
   html += '</div></section>';
 
-  html += '<section class="overview-section"><h2>Features</h2><div class="overview-grid">';
+  html += '<section class="overview-section"><div class="overview-section-head"><h2>Pickup channels</h2>';
+  html += '<span class="overview-section-sub">Open a channel to edit its settings and queues</span></div><div class="channel-cards">';
+  dashChannels.forEach(function(ch, i) {
+    html += '<button type="button" class="channel-card" onclick="selectChannelAt('+i+')">'+iconTile('hash')
+      + '<div><b>#'+esc(ch.name)+'</b><span>Channel and queue settings</span></div><span class="chev">'+icon('chevronRight')+'</span></button>';
+  });
+  html += '<button type="button" class="channel-card add" onclick="openAddBotAt(2)">'+iconTile('plus', 'green')
+    + '<div><b>Enable a channel</b><span>Run /channel enable in Discord</span></div></button>';
+  html += '</div></section>';
+
+  html += '<section class="overview-section"><div class="overview-section-head"><h2>Features</h2>';
+  html += '<span class="overview-section-sub">What is switched on in this community</span></div><div class="overview-grid">';
   (data.capabilities || []).forEach(function(feature) {
-    html += '<article class="overview-card"><div class="overview-card-top"><h3>'+esc(feature.title)+'</h3>';
-    html += '<span class="overview-badge '+esc(feature.status)+'">'+esc(overviewStatusLabel(feature.status))+'</span></div>';
+    var look = FEATURE_ICONS[feature.key] || ['sparkles', ''];
+    html += '<article class="overview-card"><div class="overview-card-top"><div class="overview-card-title">'+iconTile(look[0], look[1]);
+    html += '<h3>'+esc(feature.title)+'</h3></div>';
+    html += '<span class="overview-badge '+attr(feature.status)+'">'+esc(overviewStatusLabel(feature.status))+'</span></div>';
     html += '<p>'+esc(feature.summary)+'</p><div class="overview-metrics">';
     html += '<span class="overview-metric"><b>'+esc(feature.scope)+'</b>scope</span>';
     html += '<span class="overview-metric"><b>'+(feature.configurable?'editable':'read only')+'</b>control</span>';
     html += overviewMetrics(feature.metrics)+'</div>';
     if (feature.note) html += '<p class="overview-card-note">'+esc(feature.note)+'</p>';
-    if (feature.key === 'quiz') html += '<button type="button" class="setup-action" onclick="openQuizSettings()">Configure quiz</button>';
+    if (feature.key === 'quiz') html += '<button type="button" class="setup-action" onclick="openQuizSettings()">'+icon('sliders')+'Configure quiz</button>';
     html += '</article>';
   });
   html += '</div></section>';
 
-  html += '<section class="overview-section"><h2>Diagnostics <span class="overview-badge '+esc(diagnostics.status)+'">'+esc(overviewStatusLabel(diagnostics.status))+'</span></h2>';
+  html += '<section class="overview-section"><div class="overview-section-head"><h2>Health <span class="overview-badge '+attr(diagnostics.status)+'">'+esc(overviewStatusLabel(diagnostics.status))+'</span></h2>';
+  html += '<button type="button" class="ui-btn ghost" onclick="openCommunityDiagnostics()">'+icon('activity')+'Run full diagnostics</button></div>';
   html += '<div class="diagnostic-grid">';
+  var dot = function(on) { return '<i class="status-dot '+(on ? 'on' : 'off')+'"></i>'; };
   [
-    ['Discord', diagnostics.discord_connected ? 'Connected' : 'Disconnected'],
-    ['Bot runtime', diagnostics.bot_ready ? 'Ready' : 'Starting'],
-    ['Loaded channels', channelState.loaded || 0],
-    ['Channel mismatches', (channelState.enrolled_not_loaded||0)+(channelState.loaded_not_enrolled||0)+(channelState.discord_unavailable||0)],
-    ['Seeded players', stored.players || 0],
-    ['Linked profiles', stored.linked_profiles || 0],
-    ['Recorded matches', stored.matches || 0],
-    ['Parsed replays', stored.parsed_replays || 0]
+    ['Discord', diagnostics.discord_connected ? 'Connected' : 'Disconnected', dot(diagnostics.discord_connected)],
+    ['Bot runtime', diagnostics.bot_ready ? 'Ready' : 'Starting', dot(diagnostics.bot_ready)],
+    ['Loaded channels', channelState.loaded || 0, ''],
+    ['Channel mismatches', (channelState.enrolled_not_loaded||0)+(channelState.loaded_not_enrolled||0)+(channelState.discord_unavailable||0), ''],
+    ['Seeded players', stored.players || 0, ''],
+    ['Linked profiles', stored.linked_profiles || 0, ''],
+    ['Recorded matches', stored.matches || 0, ''],
+    ['Parsed replays', stored.parsed_replays || 0, '']
   ].forEach(function(item) {
-    html += '<div class="diagnostic-cell"><span>'+esc(item[0])+'</span><b>'+esc(item[1])+'</b></div>';
+    html += '<div class="diagnostic-cell"><span>'+item[2]+esc(item[0])+'</span><b>'+esc(item[1])+'</b></div>';
   });
   html += '</div></section></div>';
   content.innerHTML = html;
@@ -4095,7 +4929,7 @@ function renderCommunityDiagnostics() {
   var summary = data.summary || {};
   var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Community diagnostics</h1>';
   html += '<p>Live, aggregate checks restricted to '+esc((data.community||{}).name || dashGuildName)+'. No member or credential data is exposed.</p></div>';
-  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
   html += '<div class="overview-actions"><span class="overview-badge '+esc(data.status)+'">'+esc(overviewStatusLabel(data.status))+'</span>';
   html += '<span class="overview-metric"><b>'+esc(summary.critical || 0)+'</b>critical</span>';
   html += '<span class="overview-metric"><b>'+esc(summary.warnings || 0)+'</b>warnings</span>';
@@ -4133,7 +4967,7 @@ function openCommunityPolicy() {
       : 'Replay parsing runs on this self-hosted installation only when this community opts in.';
   var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Access &amp; compute</h1>';
   html += '<p>Choose who may read this community dashboard and whether local replay analysis is requested.</p></div>';
-  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
   html += '<div class="settings-fields"><div class="setting-field"><label>Dashboard visibility</label>';
   html += '<select id="policy-dashboard-visibility">'+options+'</select>';
   html += '<div class="field-description">Private dashboards return not found until the viewer proves membership or administrator access through Discord.</div></div>';
@@ -4168,7 +5002,7 @@ function openQuizSettings(channelId) {
   var channels = data.channels || [];
   if (!channels.length) {
     content.innerHTML = '<div class="dash-login-prompt">Enroll a Discord channel before enabling the quiz.<br><br>'
-      + '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+      + '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
     return;
   }
   channelId = String(channelId || data.active_channel_id || channels[0].id);
@@ -4184,7 +5018,7 @@ function openQuizSettings(channelId) {
   var windowHours = Math.max(0.25, Math.min(24, Number(selected.open_window || 86400) / 3600));
   var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Daily quiz</h1>';
   html += '<p>One quiz channel per community, with an independent schedule and reward history.</p></div>';
-  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
   html += '<div class="settings-fields"><div class="setting-field"><label>Quiz channel</label>';
   html += '<select id="quiz-channel" onchange="openQuizSettings(this.value)">'+options+'</select>';
   html += '<div class="field-description">Enabling this channel automatically disables the previous quiz channel in this community only.</div></div>';
@@ -4238,7 +5072,7 @@ function renderRatingSeedForm(channelId) {
   var content = document.getElementById('dash-content');
   if (!dashChannels.length) {
     content.innerHTML = '<div class="dash-login-prompt">Configure a pickup channel before seeding ratings.<br><br>'
-      + '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+      + '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
     return;
   }
   channelId = String(channelId || dashChannels[0].id);
@@ -4247,7 +5081,7 @@ function renderRatingSeedForm(channelId) {
   }).join('');
   var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Seed player ratings</h1>';
   html += '<p>Initialize ratings for a new community without replacing anyone already rated.</p></div>';
-  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
   html += '<div class="seed-target"><label>Pickup channel<select id="rating-seed-channel" onchange="changeRatingSeedChannel(this.value)">';
   html += options+'</select></label></div>';
   html += '<div class="seed-methods"><section class="seed-method"><h2>Manual seed</h2>';
@@ -4484,7 +5318,7 @@ function renderHistoricalMigrationForm(channelId) {
   var content = document.getElementById('dash-content');
   if (!dashChannels.length) {
     content.innerHTML = '<div class="dash-login-prompt">Configure a pickup channel before importing history.<br><br>'
-      + '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+      + '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
     return;
   }
   channelId = String(channelId || dashChannels[0].id);
@@ -4495,7 +5329,7 @@ function renderHistoricalMigrationForm(channelId) {
   try { browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch(_e) {}
   var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Migrate historical matches</h1>';
   html += '<p>Bring a complete Pubobot match and rating history into a new community.</p></div>';
-  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
   html += '<div class="seed-target"><label>Pickup channel<select id="migration-channel" onchange="changeHistoricalMigrationChannel(this.value)">';
   html += options+'</select></label><label>Timezone used by the export<input id="migration-timezone" class="seed-file" type="text" maxlength="64" value="'+esc(browserTimezone)+'" placeholder="America/Los_Angeles"></label></div>';
   html += '<div class="seed-methods" style="grid-template-columns:1fr"><section class="seed-method"><h2>Complete export ZIP</h2>';
@@ -4598,7 +5432,7 @@ function openIdentityImport() {
   var content = document.getElementById('dash-content');
   var html = '<div class="seed-shell"><div class="seed-header"><div><h1>Map AoE2 profiles</h1>';
   html += '<p>Connect current Discord members to the AoE2 profile IDs used by lobby and replay analysis.</p></div>';
-  html += '<button type="button" class="seed-button secondary" onclick="renderCommunityOverview()">Back to overview</button></div>';
+  html += '<button type="button" class="seed-button secondary" onclick="backToOverview()">'+icon('arrowLeft')+'Back to overview</button></div>';
   html += '<div class="seed-methods"><section class="seed-method"><h2>Manual mapping</h2>';
   html += '<p>Add one profile as an additional account. Existing accounts owned by the member remain linked.</p>';
   html += '<div class="seed-fields" style="grid-template-columns:1fr 1fr"><input id="identity-user-id" type="text" inputmode="numeric" placeholder="Discord user ID">';
@@ -4693,11 +5527,14 @@ async function applyIdentityImport() {
   }
 }
 
-async function selectChannel(id, name) {
+async function selectChannel(id, name, opts) {
+  opts = opts || {};
+  if (!opts.keepTab && !confirmDiscard()) return;
+  var keepTab = opts.keepTab && !dashQueueName ? dashActiveTab : null;
   dashChannelId=id; dashChannelName=name; dashQueueName=null; dashActiveTab=null;
   renderBreadcrumb();
   var content = document.getElementById('dash-content');
-  content.innerHTML = '<div class="loading">Loading configuration...</div>';
+  if (!opts.keepTab) content.innerHTML = '<div class="loading">Loading channel settings…</div>';
   try {
     var results = await Promise.all([
       authFetch(adminCommunityApi(dashGuildId, '/channels/'+encodeURIComponent(id)+'/config')),
@@ -4708,16 +5545,19 @@ async function selectChannel(id, name) {
     var jsons = await Promise.all([results[0].json(), results[1].json()]);
     if (jsons[0].error) throw new Error(jsons[0].error);
     dashConfigData = jsons[0]; dashQueues = jsons[1].queues || [];
-    dashActiveTab = dashConfigData.sections ? dashConfigData.sections[0] : 'General';
-    renderGuildMenu(); renderConfigView();
+    dashActiveTab = keepTab || (dashConfigData.sections ? dashConfigData.sections[0] : 'General');
+    renderBreadcrumb(); renderGuildMenu(); renderConfigView();
   } catch(e) { content.innerHTML = '<div class="error">Failed to load config: '+esc(e.message)+'</div>'; }
 }
 
-async function selectQueue(name) {
+async function selectQueue(name, opts) {
+  opts = opts || {};
+  if (!opts.keepTab && !confirmDiscard()) return;
+  var keepTab = opts.keepTab ? dashActiveTab : null;
   dashQueueName=name; dashActiveTab=null;
   renderBreadcrumb(); renderGuildMenu();
   var content = document.getElementById('dash-content');
-  content.innerHTML = '<div class="loading">Loading queue config...</div>';
+  if (!opts.keepTab) content.innerHTML = '<div class="loading">Loading queue settings…</div>';
   try {
     var resp = await authFetch(adminCommunityApi(
       dashGuildId,
@@ -4725,292 +5565,474 @@ async function selectQueue(name) {
     if (!resp.ok) throw new Error('HTTP '+resp.status);
     var data = await resp.json(); if (data.error) throw new Error(data.error);
     dashConfigData = data;
-    dashActiveTab = data.sections ? data.sections[0] : 'General';
+    dashActiveTab = keepTab || (data.sections ? data.sections[0] : 'General');
     renderGuildMenu(); renderConfigView();
   } catch(e) { content.innerHTML = '<div class="error">Failed to load queue config: '+esc(e.message)+'</div>'; }
 }
 
-function switchTab(tab) { dashActiveTab = tab; renderConfigView(); }
+/* ─── Settings editor ─── */
+// Only the settings an admin actually touched are sent on save (dashDirty), so
+// saving one category never rewrites another with whatever the form shows.
+var dashDirty = {};
+
+var SECTION_INFO = {
+  'General': { icon: 'sliders', channel: 'The basics: language, staff roles and who may join queues here.',
+    queue: 'The basics: name, size, ranked play, check-in and who may join.' },
+  'Appearance': { icon: 'palette', channel: 'What the bot says and shows.',
+    queue: 'What the bot posts: help text, start messages, server info and promotions.' },
+  'Auto-remove': { icon: 'clock', channel: 'Keep queues fresh by removing players who go idle, offline or wait too long.' },
+  'Leaderboard': { icon: 'trophy', channel: 'Who appears on the leaderboard and how ranks show up in the server.' },
+  'Maps': { icon: 'map', queue: 'The map pool, how many maps are offered and map voting.' },
+  'Rating': { icon: 'chart', channel: 'How ratings are calculated, scaled and decayed over time.' },
+  'Teams': { icon: 'users', queue: 'How teams and captains are picked, plus team names and emojis.' }
+};
+
+var SETTING_FORMATS = {
+  duration: 'A length of time, such as 30m, 1h 30m, 2d or 01:30:00',
+  int: 'A whole number',
+  str: 'Text',
+  text: 'Text; line breaks are kept',
+  table: 'One row per entry; empty rows are dropped',
+  bool: 'On or off'
+};
+
+function sectionInfo(section) {
+  var info = SECTION_INFO[section] || {};
+  return {
+    icon: info.icon || 'sliders',
+    blurb: (dashQueueName ? (info.queue || info.channel) : (info.channel || info.queue)) || ''
+  };
+}
+
+function secondsToHms(total) {
+  total = Math.round(Number(total) || 0);
+  return [Math.floor(total / 3600), Math.floor(total % 3600 / 60), total % 60]
+    .map(function(n) { return String(n).padStart(2, '0'); }).join(':');
+}
+
+// Defaults arrive raw (1/0, seconds); current values arrive in the bot's readable form.
+function settingReadable(meta, value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (meta.type === 'bool') return (value === true || value === 1 || value === '1' || String(value).toLowerCase() === 'on') ? 'On' : 'Off';
+  if (meta.type === 'duration') return typeof value === 'number' ? (value ? secondsToHms(value) : null) : String(value);
+  if (meta.type === 'slider') return value + (meta.unit || '%');
+  if (meta.type === 'table') return Array.isArray(value) && value.length ? value.length + ' row' + (value.length === 1 ? '' : 's') : 'Empty';
+  return String(value);
+}
+
+// Descriptions are plain text with an optional option list ("  name - meaning").
+// The prose becomes the visible help line; the list feeds the info tooltip and
+// the live "what does the chosen option do" line under a select.
+function settingHelp(meta) {
+  var summary = [], options = [];
+  String(meta.description || '').replace(/`/g, "'").split('\n').forEach(function(line) {
+    var m = line.match(/^\s+(.+?)\s+-\s+(.+)$/);
+    if (m) options.push([m[1].trim(), m[2].trim()]);
+    else if (line.trim()) summary.push(line.trim());
+  });
+  var text = summary.join(' ');
+  if (options.length) text = text.replace(/:\s*$/, '.');
+  return { summary: text, options: options };
+}
+
+function optionHelp(help, value) {
+  for (var i = 0; i < help.options.length; i++) {
+    if (help.options[i][0] === String(value)) return help.options[i][1];
+  }
+  return '';
+}
+
+function settingTip(name, meta, help) {
+  var rows = [];
+  var def = settingReadable(meta, meta.default);
+  rows.push(['Default', def === null ? 'Not set' : def]);
+  var format = meta.type === 'slider'
+    ? 'From ' + (meta.min || 0) + ' to ' + (meta.max || 100) + (meta.unit || '%')
+    : meta.type === 'option' && !help.options.length ? 'One of: ' + (meta.options || []).join(', ') : SETTING_FORMATS[meta.type];
+  if (format) rows.push(['Format', format]);
+  var command = dashQueueName ? '/queue set queue:' + dashQueueName + ' variable:' + name : '/channel set variable:' + name;
+  var html = '<span class="info-tip"><button type="button" aria-label="More about this setting">' + icon('info') + '</button><span class="tip" role="tooltip">';
+  rows.forEach(function(row) { html += '<div class="tip-row"><b>' + esc(row[0]) + '</b><span>' + esc(row[1]) + '</span></div>'; });
+  html += '<div class="tip-row"><b>In Discord</b><code>' + esc(command) + '</code></div>';
+  if (help.options.length) {
+    html += '<div class="tip-options">' + help.options.map(function(option) {
+      return '<div><b>' + esc(option[0]) + '</b>: ' + esc(option[1]) + '</div>';
+    }).join('') + '</div>';
+  }
+  return html + '</span></span>';
+}
 
 function renderConfigView() {
   var content = document.getElementById('dash-content');
   var data = dashConfigData;
   var isAdmin = data.is_admin;
-  var formId = dashQueueName ? 'queue-config-form' : 'channel-config-form';
-
-  // Section tabs
-  var html = '<div id="st_layout"><div id="st_sections">';
-  (data.sections || []).forEach(function(sec) {
-    html += '<div class="'+(sec===dashActiveTab?'selected':'')+'" onclick="switchTab(\''+esc(sec)+'\')">'+esc(sec)+'</div>';
+  var isQueue = !!dashQueueName;
+  var formId = isQueue ? 'queue-config-form' : 'channel-config-form';
+  var variables = data.variables || {};
+  var counts = {};
+  Object.keys(variables).forEach(function(name) {
+    var section = variables[name].section || 'General';
+    counts[section] = (counts[section] || 0) + 1;
   });
-  html += '</div>';
+  // Role/channel/member settings are filtered server-side, which can empty a section.
+  var sections = (data.sections || []).filter(function(section) { return counts[section]; });
+  if (sections.indexOf(dashActiveTab) < 0) dashActiveTab = sections[0];
+  dashDirty = {};
 
-  // Settings form
-  html += '<form autocomplete="off" id="'+formId+'" onsubmit="return false"><div id="st_fields">';
-  html += renderConfigSection(data.variables, dashActiveTab, isAdmin);
+  var html = '<div class="cfg-shell" id="cfg-shell">';
+  html += '<div class="cfg-head"><span class="cfg-head-icon' + (isQueue ? ' queue' : '') + '">' + icon(isQueue ? 'queue' : 'hash') + '</span>';
+  html += '<div><h1>' + esc(isQueue ? dashQueueName : '#' + dashChannelName) + '</h1>';
+  html += '<p>' + (isQueue
+    ? 'Queue settings in #' + esc(dashChannelName) + '. These shape how this queue fills and plays.'
+    : 'Channel settings. These apply to every queue in this channel.') + '</p></div>';
+  html += '<label class="cfg-search">' + icon('search') + '<input id="settings-search" type="search" placeholder="Search settings…" aria-label="Search settings" oninput="filterSettings(this.value)"></label></div>';
+  if (!isAdmin) html += '<div class="addbot-note info cfg-readonly">' + icon('lock') + '<div>You can view these settings, but only server managers can change them.</div></div>';
 
-  // Save button
+  html += '<div class="cfg-body"><nav class="cfg-nav" aria-label="Setting categories"><div class="cfg-nav-title">Categories</div>';
+  sections.forEach(function(section) {
+    html += '<button type="button" data-section="' + attr(section) + '" class="' + (section === dashActiveTab ? 'active' : '') + '" onclick="switchTab(this.dataset.section)">'
+      + icon(sectionInfo(section).icon) + '<span>' + esc(section) + '</span><i class="dirty-dot" title="Unsaved changes"></i><span class="count">' + counts[section] + '</span></button>';
+  });
+  html += '</nav>';
+
+  html += '<form autocomplete="off" id="' + formId + '" onsubmit="return false">';
+  sections.forEach(function(section) {
+    var info = sectionInfo(section);
+    html += '<section class="cfg-section' + (section === dashActiveTab ? ' active' : '') + '" data-section="' + attr(section) + '">';
+    html += '<div class="cfg-section-head">' + iconTile(info.icon) + '<div><h2>' + esc(section) + '</h2>' + (info.blurb ? '<p>' + esc(info.blurb) + '</p>' : '') + '</div></div>';
+    html += '<div class="cfg-list">' + renderConfigSection(variables, section, isAdmin) + '</div></section>';
+  });
+  html += '<div class="cfg-empty" id="cfg-empty" hidden>' + icon('search') + '<div>No settings match your search.</div></div>';
+  html += '</form></div>';
+
   if (isAdmin) {
-    if (dashQueueName) {
-      html += '<div class="field_submit" onclick="saveQueueConfig()">SAVE</div>';
-    } else {
-      html += '<div class="field_submit" onclick="saveChannelConfig()">SAVE</div>';
-    }
+    html += '<div class="cfg-savebar" id="cfg-savebar" role="status"><div class="msg">' + icon('alert')
+      + '<b id="cfg-dirty-count">Unsaved changes</b><span>Save to apply them to the bot.</span></div>'
+      + '<button type="button" class="ui-btn ghost" onclick="discardConfigChanges()">Discard</button>'
+      + '<button type="button" class="ui-btn success" id="cfg-save-btn" onclick="' + (isQueue ? 'saveQueueConfig()' : 'saveChannelConfig()') + '">' + icon('check') + 'Save changes</button></div>';
   }
-
-  html += '</div></form></div>';
+  html += '</div>';
   content.innerHTML = html;
+
+  var form = document.getElementById(formId);
+  form.addEventListener('input', onConfigEdit);
+  form.addEventListener('change', onConfigEdit);
+}
+
+function switchTab(tab) {
+  dashActiveTab = tab;
+  var search = document.getElementById('settings-search');
+  if (search && search.value) { search.value = ''; filterSettings(''); }
+  document.querySelectorAll('.cfg-nav button[data-section]').forEach(function(button) {
+    button.classList.toggle('active', button.dataset.section === tab);
+  });
+  document.querySelectorAll('.cfg-section[data-section]').forEach(function(section) {
+    section.classList.toggle('active', section.dataset.section === tab);
+  });
+}
+
+function filterSettings(query) {
+  var shell = document.getElementById('cfg-shell');
+  if (!shell) return;
+  var q = String(query || '').trim().toLowerCase();
+  shell.classList.toggle('searching', !!q);
+  var anyMatch = false;
+  shell.querySelectorAll('.cfg-section').forEach(function(section) {
+    var sectionMatch = false;
+    section.querySelectorAll('.cfg-var').forEach(function(row) {
+      var match = !q || row.dataset.search.indexOf(q) >= 0;
+      row.classList.toggle('search-hidden', !match);
+      if (match) sectionMatch = true;
+    });
+    section.classList.toggle('no-match', !sectionMatch);
+    if (sectionMatch) anyMatch = true;
+  });
+  document.getElementById('cfg-empty').hidden = !q || anyMatch;
 }
 
 function renderConfigSection(variables, section, editable) {
-  var html = ''; var first = true;
+  var html = '';
   Object.keys(variables).forEach(function(name) {
     var meta = variables[name];
     if ((meta.section || 'General') !== section) return;
-
-    if (!first) html += '<hr class="st_separator">';
-    first = false;
-
-    html += '<div class="st_variable">';
-    html += '<div class="var_header">';
-    html += '<div class="vh_title">'+esc(meta.display || name)+'</div>';
-    html += '<div class="vh_icons">';
-    if (meta.description) {
-      html += '<div><span>'+esc(meta.description)+'</span><img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'18\' height=\'18\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2385868a\' stroke-width=\'2\'%3E%3Ccircle cx=\'12\' cy=\'12\' r=\'10\'/%3E%3Cpath d=\'M12 16v-4\'/%3E%3Cpath d=\'M12 8h.01\'/%3E%3C/svg%3E"></div>';
-    }
-    html += '<div><span>Reset to default</span><img src="data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'18\' height=\'18\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%2385868a\' stroke-width=\'2\'%3E%3Cpath d=\'M1 4v6h6\'/%3E%3Cpath d=\'M3.51 15a9 9 0 1 0 2.13-9.36L1 10\'/%3E%3C/svg%3E"></div>';
-    html += '</div>';
-    html += '<div class="vh_whitespace"></div>';
-
-    if (meta.type === 'table') {
-      // No toggle for tables
-      html += '</div>'; // close var_header
-      html += '<div class="var_content">';
-      html += renderTableControl(name, meta, editable);
-      html += '</div>';
-    } else if (meta.type === 'bool') {
-      // Tri-state boolean (X / V)
-      html += renderBoolControl(name, meta, editable);
-      html += '</div>'; // close var_header
-    } else if (!meta.notnull && meta.value === null && meta.type !== 'option') {
-      // Nullable with toggle switch (null = toggle on, has value = toggle off)
-      var isNull = meta.value === null || meta.value === undefined || meta.value === '';
-      html += '<div><label class="vh_switch"><input type="checkbox" data-null-for="'+esc(name)+'"'+(isNull?' checked':'')+' onchange="toggleNullField(this,\''+esc(name)+'\')"'+(editable?'':' disabled')+'><span class="slider"></span></label></div>';
-      html += '</div>'; // close var_header
-      html += '<div class="var_content'+(isNull?' hidden':'')+'" data-field-for="'+esc(name)+'">';
-      html += renderInputControl(name, meta, editable);
-      html += '</div>';
-    } else {
-      html += '</div>'; // close var_header
-      html += '<div class="var_content">';
-      html += renderInputControl(name, meta, editable);
-      html += '</div>';
-    }
-
-    html += '</div>'; // close st_variable
+    html += renderVariable(name, meta, editable);
   });
   return html;
+}
+
+function renderVariable(name, meta, editable) {
+  var help = settingHelp(meta);
+  var title = meta.display || name;
+  var search = [title, name, help.summary].concat(help.options.map(function(o) { return o.join(' '); })).join(' ').toLowerCase();
+  var wide = meta.type === 'table' || meta.type === 'text';
+  var html = '<div class="cfg-var' + (wide ? ' wide' : '') + '" data-variable="' + attr(name) + '" data-search="' + attr(search) + '">';
+  html += '<div><div class="cfg-var-title">' + esc(title) + settingTip(name, meta, help) + '<span class="cfg-modified">Unsaved</span></div>';
+  html += '<p class="cfg-var-desc">' + esc(help.summary) + '</p></div>';
+  html += '<div class="cfg-control"><div class="cfg-control-main">' + renderSettingControl(name, meta, editable, help) + '</div>';
+  if (editable) {
+    html += '<button type="button" class="cfg-reset" title="Reset to default" aria-label="Reset ' + attr(title) + ' to default" data-reset="' + attr(name) + '" onclick="resetSetting(this.dataset.reset)">' + icon('reset') + '</button>';
+  }
+  return html + '</div></div>';
+}
+
+function renderSettingControl(name, meta, editable, help) {
+  if (meta.type === 'table') return renderTableControl(name, meta, editable);
+  if (meta.type === 'bool') return renderBoolControl(name, meta, editable);
+  var input = renderInputControl(name, meta, editable);
+  if (meta.type === 'option' && help.options.length) {
+    input += '<div class="cfg-option-help" data-option-help>' + esc(optionHelp(help, meta.value)) + '</div>';
+  }
+  if (meta.notnull || meta.type === 'option') return input;
+  // Nullable: a switch decides between "not set" (null) and a custom value.
+  var isSet = !(meta.value === null || meta.value === undefined || meta.value === '');
+  return '<div class="cfg-nullable"><label class="cfg-switch"><input type="checkbox" data-set-for="' + attr(name) + '"' + (isSet ? ' checked' : '') + (editable ? '' : ' disabled')
+    + ' onchange="toggleNullField(this, this.dataset.setFor)"><span class="track"></span><span class="state" data-on="Custom value" data-off="Not set"></span></label>'
+    + '<div class="cfg-nullable-field' + (isSet ? '' : ' hidden') + '" data-field-for="' + attr(name) + '">' + input + '</div></div>';
 }
 
 function renderBoolControl(name, meta, editable) {
   var val = meta.value;
   var isOn = (val === true || val === 'on' || val === 'On' || val === 1 || val === '1');
-  var isOff = (val === false || val === 'off' || val === 'Off' || val === 0 || val === '0');
-  var isNull = !isOn && !isOff;
-  var dis = editable ? '' : ' disabled';
-
-  var html = '<div class="field_boolean" id="var_'+esc(name)+'">';
-  html += '<input id="var_'+esc(name)+'_off" type="radio" name="'+esc(name)+'" value="off"'+(isOff?' checked':'')+dis+'>';
-  html += '<label class="boolean_off" for="var_'+esc(name)+'_off">x</label>';
-  html += '<input id="var_'+esc(name)+'_none" type="radio" name="'+esc(name)+'" value="none" disabled>';
-  html += '<label class="boolean_null" for="var_'+esc(name)+'_none">/</label>';
-  html += '<input id="var_'+esc(name)+'_on" type="radio" name="'+esc(name)+'" value="on"'+(isOn?' checked':'')+dis+'>';
-  html += '<label class="boolean_on" for="var_'+esc(name)+'_on">v</label>';
-  html += '</div>';
-  return html;
+  return '<label class="cfg-switch"><input type="checkbox" data-var="' + attr(name) + '" data-type="bool"' + (isOn ? ' checked' : '') + (editable ? '' : ' disabled')
+    + '><span class="track"></span><span class="state" data-on="On" data-off="Off"></span></label>';
 }
 
 function renderInputControl(name, meta, editable) {
   var val = meta.value;
   var dis = editable ? '' : ' disabled';
+  var key = ' data-var="' + attr(name) + '"';
+  var text = val !== null && val !== undefined ? val : '';
 
   switch (meta.type) {
     case 'option':
-      var opts = meta.options || [];
-      var h = '<select class="field_select" data-var="'+esc(name)+'" data-type="option"'+dis+'>';
-      if (!meta.notnull) h += '<option value=""'+(val==null||val===''?' selected':'')+'>None</option>';
-      opts.forEach(function(o) { h += '<option value="'+esc(o)+'"'+(String(val)===String(o)?' selected':'')+'>'+esc(o)+'</option>'; });
-      return h+'</select>';
+      var h = '<select class="cfg-select"' + key + ' data-type="option"' + dis + '>';
+      if (!meta.notnull) h += '<option value=""' + (val == null || val === '' ? ' selected' : '') + '>Not set</option>';
+      (meta.options || []).forEach(function(o) { h += '<option value="' + attr(o) + '"' + (String(val) === String(o) ? ' selected' : '') + '>' + esc(o) + '</option>'; });
+      return h + '</select>';
 
     case 'slider':
-      var n = parseFloat(val) || meta.min || 0;
-      var u = meta.unit ? esc(meta.unit) : '%';
-      return '<div class="slider_container"><input class="field_slider" type="number" data-var="'+esc(name)+'" data-type="slider" value="'+n+'" min="'+(meta.min||0)+'" max="'+(meta.max||100)+'"'+dis+'><span>'+u+'</span></div>';
+      var min = meta.min || 0, max = meta.max || 100;
+      var n = val === null || val === undefined || val === '' ? min : parseFloat(val);
+      return '<div class="cfg-range"><input type="range" min="' + min + '" max="' + max + '" step="1" value="' + n + '" data-range-for aria-label="' + attr(meta.display || name) + '"' + dis + '>'
+        + '<input class="cfg-input number" type="number"' + key + ' data-type="slider" value="' + n + '" min="' + min + '" max="' + max + '"' + dis + '>'
+        + '<span class="unit">' + esc(meta.unit || '%') + '</span></div>';
 
     case 'int':
-      var iv = val !== null && val !== undefined ? val : '';
-      return '<input class="field_number" type="number" data-var="'+esc(name)+'" data-type="int" value="'+esc(iv)+'"'+dis+'>';
+      return '<input class="cfg-input number" type="number" step="1"' + key + ' data-type="int" value="' + attr(text) + '"' + dis + '>';
 
     case 'duration':
-      var dv = val !== null && val !== undefined ? val : '';
-      return '<input class="field_duration" type="text" data-var="'+esc(name)+'" data-type="duration" value="'+esc(dv)+'" placeholder="HH:MM:SS"'+dis+'>';
+      return '<input class="cfg-input" type="text"' + key + ' data-type="duration" value="' + attr(text) + '" placeholder="e.g. 1h 30m or 01:30:00"' + dis + '>';
 
     case 'text':
-      var tv = val !== null && val !== undefined ? val : '';
-      return '<textarea class="field_text" data-var="'+esc(name)+'" data-type="text"'+dis+'>'+esc(tv)+'</textarea>';
+      return '<textarea class="cfg-textarea"' + key + ' data-type="text"' + dis + '>' + esc(text) + '</textarea>';
 
     case 'str':
     default:
-      var sv = val !== null && val !== undefined ? val : '';
-      return '<input class="field_string" type="text" data-var="'+esc(name)+'" data-type="str" value="'+esc(sv)+'"'+dis+'>';
+      return '<input class="cfg-input" type="text"' + key + ' data-type="str" value="' + attr(text) + '"' + dis + '>';
   }
+}
+
+function tableRowHtml(columns, row, editable) {
+  var html = '<tr>';
+  columns.forEach(function(col, i) {
+    var cell = row && typeof row === 'object' && !Array.isArray(row) ? row[col] : (Array.isArray(row) ? row[i] : row);
+    html += '<td><input type="text" data-col="' + attr(col) + '" value="' + attr(cell == null ? '' : cell) + '" aria-label="' + attr(col) + '"' + (editable ? '' : ' disabled') + '></td>';
+  });
+  html += editable
+    ? '<td class="et_remove"><button type="button" class="et_remove_btn" aria-label="Remove row" onclick="removeTableRow(this)">' + icon('x') + '</button></td>'
+    : '<td></td>';
+  return html + '</tr>';
 }
 
 function renderTableControl(name, meta, editable) {
   var columns = meta.columns || ['value'];
-  var rows = meta.value || [];
-  if (!Array.isArray(rows)) rows = [];
-  var dis = editable ? '' : ' disabled';
-
-  var html = '<div class="field_table"><table class="editable_table" data-var="'+esc(name)+'" data-type="table" data-columns=\''+JSON.stringify(columns)+'\'>';
-
-  // Header
-  html += '<thead><tr>';
-  columns.forEach(function(col) {
-    html += '<td>'+esc(col);
-    if (col === 'rating') html += ' <span style="font-size:11px;opacity:0.6;">&#9432;</span>';
-    if (col === 'role') html += ' <span style="font-size:11px;opacity:0.6;">&#9432;</span>';
-    html += '</td>';
-  });
-  html += '<td class="et_remove"></td></tr></thead>';
-
-  // Body
-  html += '<tbody>';
-  rows.forEach(function(row) {
-    html += '<tr>';
-    if (typeof row === 'object' && row !== null && !Array.isArray(row)) {
-      columns.forEach(function(col) {
-        html += '<td><input type="text" data-col="'+esc(col)+'" value="'+esc(row[col]||'')+'"'+dis+'></td>';
-      });
-    } else {
-      columns.forEach(function(col,i) {
-        var cv = Array.isArray(row) ? (row[i]||'') : row;
-        html += '<td><input type="text" data-col="'+esc(col)+'" value="'+esc(cv)+'"'+dis+'></td>';
-      });
-    }
-    if (editable) html += '<td class="et_remove"><button class="et_remove_btn" onclick="this.closest(\'tr\').remove()">&times;</button></td>';
-    else html += '<td></td>';
-    html += '</tr>';
-  });
+  var rows = Array.isArray(meta.value) ? meta.value : [];
+  var html = '<div class="field_table"><table class="editable_table" data-var="' + attr(name) + '" data-type="table" data-columns="' + attr(JSON.stringify(columns)) + '">';
+  html += '<thead><tr>' + columns.map(function(col) { return '<td>' + esc(col) + '</td>'; }).join('') + '<td class="et_remove"></td></tr></thead><tbody>';
+  html += rows.length ? rows.map(function(row) { return tableRowHtml(columns, row, editable); }).join('')
+    : '<tr class="et_empty"><td colspan="' + (columns.length + 1) + '">No entries yet.</td></tr>';
   html += '</tbody>';
-
-  // Footer (add more)
-  if (editable) {
-    html += '<tfoot><tr><td colspan="'+(columns.length+1)+'" class="et_add" onclick="addTableRow(this.closest(\'table\'))">add more</td></tr></tfoot>';
-  }
-
-  html += '</table></div>';
-  return html;
+  if (editable) html += '<tfoot><tr><td colspan="' + (columns.length + 1) + '" class="et_add" onclick="addTableRow(this.closest(\'table\'))">' + icon('plus') + ' Add row</td></tr></tfoot>';
+  return html + '</table></div>';
 }
 
 function toggleNullField(checkbox, name) {
-  var field = document.querySelector('[data-field-for="'+name+'"]');
+  var field = document.querySelector('[data-field-for="' + cssEsc(name) + '"]');
   if (!field) return;
-  if (checkbox.checked) { field.classList.add('hidden'); }
-  else { field.classList.remove('hidden'); }
+  field.classList.toggle('hidden', !checkbox.checked);
+  var input = checkbox.checked && field.querySelector('input, select, textarea');
+  if (input) input.focus();
 }
 
 function addTableRow(table) {
   var columns = JSON.parse(table.dataset.columns || '["value"]');
   var tbody = table.querySelector('tbody');
-  var tr = document.createElement('tr');
-  columns.forEach(function(col) {
-    var td = document.createElement('td');
-    td.innerHTML = '<input type="text" data-col="'+esc(col)+'" value="">';
-    tr.appendChild(td);
+  var empty = tbody.querySelector('.et_empty');
+  if (empty) empty.remove();
+  tbody.insertAdjacentHTML('beforeend', tableRowHtml(columns, null, true));
+  var first = tbody.lastElementChild.querySelector('input');
+  if (first) first.focus();
+  var row = table.closest('.cfg-var');
+  if (row) markDirty(row.dataset.variable);
+}
+
+function removeTableRow(button) {
+  var row = button.closest('.cfg-var');
+  button.closest('tr').remove();
+  if (row) markDirty(row.dataset.variable);
+}
+
+function onConfigEdit(e) {
+  var target = e.target;
+  var row = target.closest ? target.closest('.cfg-var[data-variable]') : null;
+  if (!row) return;
+  if (target.type === 'range') {
+    var number = row.querySelector('input[data-type="slider"]');
+    if (number) number.value = target.value;
+  } else if (target.dataset.type === 'slider' && target.value !== '') {
+    var range = row.querySelector('input[type="range"]');
+    if (range) range.value = target.value;
+  }
+  if (target.dataset.type === 'option') {
+    var helpLine = row.querySelector('[data-option-help]');
+    var meta = dashConfigData.variables[row.dataset.variable];
+    if (helpLine && meta) helpLine.textContent = optionHelp(settingHelp(meta), target.value);
+  }
+  markDirty(row.dataset.variable);
+}
+
+function markDirty(name) {
+  dashDirty[name] = true;
+  var row = document.querySelector('.cfg-var[data-variable="' + cssEsc(name) + '"]');
+  if (row) row.classList.add('is-dirty');
+  updateSavebar();
+}
+
+function updateSavebar() {
+  var bar = document.getElementById('cfg-savebar');
+  if (!bar) return;
+  var count = Object.keys(dashDirty).length;
+  bar.classList.toggle('show', count > 0);
+  var label = document.getElementById('cfg-dirty-count');
+  if (label) label.textContent = count === 1 ? '1 unsaved change' : count + ' unsaved changes';
+  document.querySelectorAll('.cfg-nav button[data-section]').forEach(function(button) {
+    var section = document.querySelector('.cfg-section[data-section="' + cssEsc(button.dataset.section) + '"]');
+    button.classList.toggle('has-dirty', !!(section && section.querySelector('.cfg-var.is-dirty')));
   });
-  var tdBtn = document.createElement('td');
-  tdBtn.className = 'et_remove';
-  tdBtn.innerHTML = '<button class="et_remove_btn" onclick="this.closest(\'tr\').remove()">&times;</button>';
-  tr.appendChild(tdBtn);
-  tbody.appendChild(tr);
+}
+
+function hasUnsavedConfig() {
+  return Object.keys(dashDirty).length > 0 && !!document.getElementById('cfg-savebar');
+}
+
+function confirmDiscard() {
+  if (!hasUnsavedConfig()) return true;
+  if (!window.confirm('You have unsaved setting changes. Leave without saving?')) {
+    var bar = document.getElementById('cfg-savebar');
+    if (bar) { bar.classList.remove('nudge'); void bar.offsetWidth; bar.classList.add('nudge'); }
+    return false;
+  }
+  dashDirty = {};
+  return true;
+}
+
+function discardConfigChanges() {
+  renderConfigView();
+  showToast('Changes discarded', 'info');
+}
+
+function resetSetting(name) {
+  var meta = dashConfigData && dashConfigData.variables[name];
+  var row = document.querySelector('.cfg-var[data-variable="' + cssEsc(name) + '"]');
+  if (!meta || !row) return;
+  var value = meta.default;
+  if (meta.type === 'bool') value = settingReadable(meta, value) === 'On' ? 'on' : 'off';
+  else if (meta.type === 'duration') value = typeof value === 'number' ? (value ? secondsToHms(value) : null) : value;
+  else if (meta.type === 'table') value = Array.isArray(value) ? value : [];
+  var holder = document.createElement('div');
+  holder.innerHTML = renderVariable(name, Object.assign({}, meta, { value: value }), true);
+  row.replaceWith(holder.firstElementChild);
+  markDirty(name);
+  showToast('"' + (meta.display || name) + '" reset to its default. Save to apply.', 'info');
 }
 
 function collectFormData(formId) {
   var form = document.getElementById(formId);
   if (!form) return {};
   var data = {};
+  form.querySelectorAll('.cfg-var[data-variable]').forEach(function(row) {
+    var name = row.dataset.variable;
+    if (!dashDirty[name]) return;
+    var setToggle = row.querySelector('input[data-set-for]');
+    if (setToggle && !setToggle.checked) { data[name] = null; return; }
 
-  // Bool radios
-  form.querySelectorAll('.field_boolean').forEach(function(fb) {
-    var checked = fb.querySelector('input[type=radio]:checked');
-    if (!checked) return;
-    var name = checked.name;
-    data[name] = checked.value; // 'on', 'off', 'none'
+    var table = row.querySelector('table.editable_table');
+    if (table) {
+      var rows = [];
+      table.querySelectorAll('tbody tr').forEach(function(tr) {
+        var inputs = tr.querySelectorAll('input[data-col]');
+        if (!inputs.length) return;
+        var rd = {}, hasValue = false;
+        inputs.forEach(function(inp) { rd[inp.dataset.col] = inp.value.trim(); if (inp.value.trim()) hasValue = true; });
+        if (hasValue) rows.push(rd);
+      });
+      data[name] = rows;
+      return;
+    }
+
+    var el = row.querySelector('[data-var]');
+    if (!el) return;
+    var type = el.dataset.type;
+    if (type === 'bool') data[name] = el.checked ? 'on' : 'off';
+    else if (type === 'slider' || type === 'int') data[name] = el.value === '' ? null : Number(el.value);
+    else if (type === 'option') data[name] = el.value === '' ? null : el.value;
+    else data[name] = el.value || null;
   });
-
-  // Null toggles: if checked, value is null
-  form.querySelectorAll('input[data-null-for]').forEach(function(cb) {
-    var name = cb.dataset.nullFor;
-    if (cb.checked) data[name] = null;
-  });
-
-  // Simple controls
-  form.querySelectorAll('[data-var]').forEach(function(el) {
-    var vn = el.dataset.var, vt = el.dataset.type;
-    if (vt === 'table') return;
-    // Skip if null-toggled
-    var nullCb = form.querySelector('input[data-null-for="'+vn+'"]');
-    if (nullCb && nullCb.checked) return;
-
-    if (vt === 'slider' || vt === 'int') data[vn] = el.value === '' ? null : Number(el.value);
-    else if (vt === 'option') data[vn] = el.value === '' ? null : el.value;
-    else data[vn] = el.value || null;
-  });
-
-  // Tables
-  form.querySelectorAll('table.editable_table[data-var]').forEach(function(table) {
-    var vn = table.dataset.var;
-    var cols = JSON.parse(table.dataset.columns || '["value"]');
-    var rows = [];
-    table.querySelectorAll('tbody tr').forEach(function(tr) {
-      var inputs = tr.querySelectorAll('input[data-col]');
-      if (!inputs.length) return;
-      var rd = {}, hv = false;
-      inputs.forEach(function(inp) { rd[inp.dataset.col] = inp.value.trim(); if (inp.value.trim()) hv=true; });
-      if (hv) rows.push(rd);
-    });
-    data[vn] = rows;
-  });
-
   return data;
 }
 
-async function saveChannelConfig() {
-  var data = collectFormData('channel-config-form');
+async function saveSettings(formId, configPath) {
+  var data = collectFormData(formId);
+  if (!Object.keys(data).length) { updateSavebar(); return; }
+  var button = document.getElementById('cfg-save-btn');
+  if (button) { button.disabled = true; button.textContent = 'Saving…'; }
   try {
-    var resp = await authFetch(adminCommunityApi(
-      dashGuildId, '/channels/'+encodeURIComponent(dashChannelId)+'/config'), {
+    var resp = await authFetch(adminCommunityApi(dashGuildId, configPath), {
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data),
     });
     var r = await resp.json();
     if (!resp.ok || r.error) throw new Error(r.error || 'HTTP '+resp.status);
-    showToast('Configuration saved.', 'success');
-  } catch(e) { showToast('Failed: '+e.message, 'error'); }
+    return data;
+  } catch(e) {
+    showToast('Could not save: '+e.message, 'error');
+    if (button) { button.disabled = false; button.innerHTML = icon('check') + 'Save changes'; }
+    var bar = document.getElementById('cfg-savebar');
+    if (bar) { bar.classList.remove('nudge'); void bar.offsetWidth; bar.classList.add('nudge'); }
+    return null;
+  }
+}
+
+async function saveChannelConfig() {
+  var saved = await saveSettings('channel-config-form', '/channels/'+encodeURIComponent(dashChannelId)+'/config');
+  if (!saved) return;
+  dashDirty = {};
+  // Re-read so every field shows what the bot actually stored after validation.
+  await selectChannel(dashChannelId, dashChannelName, { keepTab: true });
+  showToast('Channel settings saved', 'success');
 }
 
 async function saveQueueConfig() {
-  var data = collectFormData('queue-config-form');
-  try {
-    var resp = await authFetch(adminCommunityApi(
-      dashGuildId,
-      '/channels/'+encodeURIComponent(dashChannelId)+'/queues/'+encodeURIComponent(dashQueueName)+'/config'), {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data),
-    });
-    var r = await resp.json();
-    if (!resp.ok || r.error) throw new Error(r.error || 'HTTP '+resp.status);
-    showToast('Queue config saved.', 'success');
-  } catch(e) { showToast('Failed: '+e.message, 'error'); }
+  var saved = await saveSettings('queue-config-form',
+    '/channels/'+encodeURIComponent(dashChannelId)+'/queues/'+encodeURIComponent(dashQueueName)+'/config');
+  if (!saved) return;
+  dashDirty = {};
+  if (saved.name && saved.name !== dashQueueName) {
+    // A rename moves the queue's URL; refresh the sidebar's list first.
+    var queuesResp = await authFetch(adminCommunityApi(dashGuildId, '/channels/'+encodeURIComponent(dashChannelId)+'/queues'));
+    if (queuesResp.ok) dashQueues = (await queuesResp.json()).queues || [];
+  }
+  await selectQueue(saved.name || dashQueueName, { keepTab: true });
+  showToast('Queue settings saved', 'success');
 }
 
 /* ─── Mobile Menu ─── */
@@ -5028,9 +6050,9 @@ function closeMobileMenu() {
 
 // Close mobile menu when selecting a channel/queue
 var _origSelectChannel = selectChannel;
-selectChannel = async function(id, name) { closeMobileMenu(); return _origSelectChannel(id, name); };
+selectChannel = async function(id, name, opts) { closeMobileMenu(); return _origSelectChannel(id, name, opts); };
 var _origSelectQueue = selectQueue;
-selectQueue = async function(name) { closeMobileMenu(); return _origSelectQueue(name); };
+selectQueue = async function(name, opts) { closeMobileMenu(); return _origSelectQueue(name, opts); };
 
 document.addEventListener('click', function (e) {
   var picker = document.getElementById('match-player-picker');
@@ -5047,6 +6069,19 @@ document.addEventListener('click', function (e) {
 
 window.addEventListener('popstate', applyRouteFromLocation);
 
+window.addEventListener('beforeunload', function (e) {
+  if (hasUnsavedConfig()) { e.preventDefault(); e.returnValue = ''; }
+});
+
+// Ctrl/Cmd+S saves the settings form instead of saving the web page.
+document.addEventListener('keydown', function (e) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S') && hasUnsavedConfig()) {
+    e.preventDefault();
+    var button = document.getElementById('cfg-save-btn');
+    if (button && !button.disabled) button.click();
+  }
+});
+
 /* ─── Init ─── */
 // Hide sidebar panels initially (shown when dashboard loads)
 document.getElementById('guild_nav').style.display = 'none';
@@ -5055,6 +6090,12 @@ document.getElementById('mobile-menu-btn').style.display = 'none';
 
 async function bootApp() {
   await checkAuth();
+  var resume = null;
+  try { resume = sessionStorage.getItem(LOGIN_RETURN_KEY); sessionStorage.removeItem(LOGIN_RETURN_KEY); } catch (e) {}
+  if (resume && currentUser && currentUser.username && (window.location.pathname === '/' || window.location.pathname === '')) {
+    if (resume === 'add-bot') history.replaceState({ page: 'add-bot' }, '', '/add-bot');
+    else if (resume === 'dashboard') history.replaceState({ page: 'dashboard' }, '', '/dashboard');
+  }
   applyRouteFromLocation();
 }
 
