@@ -1,7 +1,8 @@
 import { commands } from '../src/discord/commands.mjs';
 import { stagingCredentials, discordRequest, verifyStagingApplication } from './env.mjs';
 
-const credentials = await stagingCredentials();
+// Command registration uses the bot token, not the website's OAuth client secret.
+const credentials = await stagingCredentials({ requireClientSecret: false });
 await verifyStagingApplication(credentials);
 const guildId = process.env.STAGING_GUILD_ID;
 if (!/^\d{17,20}$/.test(guildId ?? ''))

@@ -9,7 +9,7 @@ export async function stagingConfig() {
   return config.env.staging;
 }
 
-export async function stagingCredentials() {
+export async function stagingCredentials({ requireClientSecret = true } = {}) {
   // Native env-file parsing handles quoted secrets without shell interpolation.
   try {
     process.loadEnvFile('.dev.vars.staging');
@@ -19,7 +19,7 @@ export async function stagingCredentials() {
   const names = [
     'DISCORD_APPLICATION_ID',
     'DISCORD_PUBLIC_KEY',
-    'DISCORD_CLIENT_SECRET',
+    ...(requireClientSecret ? ['DISCORD_CLIENT_SECRET'] : []),
     'DISCORD_BOT_TOKEN',
   ];
   const missing = names.filter((n) => !process.env[n]);
