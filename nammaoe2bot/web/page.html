@@ -52,6 +52,15 @@ body { margin: 0; padding: 0; overflow: hidden; background: #36393f; color: #dcd
   --ui-ease: cubic-bezier(.2,.8,.2,1);
 }
 
+/* The page-wide `*` rule pins every element to 15px Outfit, so nested text
+   would never inherit a component's size. Inside the redesigned surfaces,
+   let children inherit again; :where() keeps this at zero specificity so any
+   class rule still wins. */
+:where(#titlebar, #guild_nav, #guild_menu, .breadcrumb, .addbot, .dash-empty, .community-overview,
+  .cfg-shell, .cfg-savebar) * {
+  font-size: inherit; font-family: inherit;
+}
+
 /* ─── Title Bar ─── */
 #titlebar {
   display: flex; align-items: center; gap: 4px; z-index: 5;
@@ -330,7 +339,7 @@ body { margin: 0; padding: 0; overflow: hidden; background: #36393f; color: #dcd
   padding: 1rem 1.05rem; transition: border-color 0.15s, transform 0.15s var(--ui-ease);
 }
 .overview-card:hover { border-color: var(--ui-line-strong); transform: translateY(-2px); }
-.overview-card-top { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
+.overview-card-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.6rem; }
 .overview-card-title { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
 .overview-card h3 { margin: 0; color: var(--ui-text); font-size: 1rem; font-weight: 600; }
 .overview-card p { margin: 0; color: var(--ui-muted); font-size: 0.86rem; line-height: 1.5; }
@@ -1284,10 +1293,9 @@ footer { text-align: center; padding: 1.5rem; font-size: 0.8rem; color: #85868a;
     position: fixed !important; top: 0; left: 0; bottom: 0; z-index: 50;
     width: 260px !important; min-width: 0 !important;
     transform: translateX(-100%); transition: transform 0.25s ease;
-    box-shadow: 4px 0 20px rgba(0,0,0,0.5);
     padding-top: 60px;
   }
-  #guild_menu.mobile-open { transform: translateX(0); }
+  #guild_menu.mobile-open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
   #mobile-overlay.mobile-open { display: block; }
 
   /* Main area: full width */
@@ -4316,6 +4324,10 @@ function goAddBotStep(step) {
   addBotStep = Math.max(0, Math.min(ADDBOT_STEPS.length - 1, step));
   addBotPersist();
   renderAddBotWizard();
+  var stepper = document.querySelector('.addbot-stepper');
+  if (stepper && stepper.getBoundingClientRect().top < 0 || stepper && stepper.getBoundingClientRect().top > window.innerHeight * 0.5) {
+    stepper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   if (addBotStep === ADDBOT_STEPS.length - 1 && addBotSignedIn() && addBotFound === null) addBotCheck();
 }
 
@@ -5703,15 +5715,16 @@ function renderConfigView() {
     html += '<div class="cfg-list">' + renderConfigSection(variables, section, isAdmin) + '</div></section>';
   });
   html += '<div class="cfg-empty" id="cfg-empty" hidden>' + icon('search') + '<div>No settings match your search.</div></div>';
-  html += '</form></div>';
+  html += '</form></div></div>';
 
+  // Outside .cfg-shell: its entrance animation makes it the containing block
+  // for position:fixed, which would pin the bar to the form instead of the viewport.
   if (isAdmin) {
     html += '<div class="cfg-savebar" id="cfg-savebar" role="status"><div class="msg">' + icon('alert')
       + '<b id="cfg-dirty-count">Unsaved changes</b><span>Save to apply them to the bot.</span></div>'
       + '<button type="button" class="ui-btn ghost" onclick="discardConfigChanges()">Discard</button>'
       + '<button type="button" class="ui-btn success" id="cfg-save-btn" onclick="' + (isQueue ? 'saveQueueConfig()' : 'saveChannelConfig()') + '">' + icon('check') + 'Save changes</button></div>';
   }
-  html += '</div>';
   content.innerHTML = html;
 
   var form = document.getElementById(formId);
