@@ -85,8 +85,48 @@ const operations = [
       ]),
       sub('unlink', 'Captain/admin: stop tracking the attached lobby', [match]),
       sub('status', 'Show saved lobby evidence and manual fallback', [match]),
+      sub('confirm', 'Captain/admin: confirm the attached lobby and roster', [
+        {
+          name: 'binding_id',
+          description: 'Association ID shown by /lobby status',
+          type: 3,
+          required: true,
+        },
+        match,
+      ]),
+      sub('facts', 'Declare your faction; captains may add map, duration and recording reference', [
+        {
+          name: 'selection',
+          description: 'Your actual civilization, faction, god, clan or race',
+          type: 3,
+          max_length: 100,
+        },
+        { name: 'map', description: 'Captain/admin: map played', type: 3, max_length: 100 },
+        {
+          name: 'elapsed_seconds',
+          description: 'Captain/admin: elapsed game duration in seconds',
+          type: 4,
+          min_value: 0,
+          max_value: 31536000,
+        },
+        {
+          name: 'recording_url',
+          description: 'Captain/admin: external HTTPS recording reference (no file upload)',
+          type: 3,
+          max_length: 2000,
+        },
+        match,
+      ]),
+      sub('replays', 'Refresh provider recording availability and links (no file download)', [
+        match,
+      ]),
       sub('link', 'Declare your game profile (does not prove account ownership)', [
-        { name: 'profile_id', description: 'Public game profile ID', type: 3, required: true },
+        {
+          name: 'profile_id',
+          description: 'Native profile ID, SteamID64, region:realm:profile or network:id',
+          type: 3,
+          required: true,
+        },
         queue,
         { ...user, description: 'Organizer only: assign this player’s profile' },
       ]),
@@ -181,7 +221,7 @@ const operations = [
           required: true,
         },
         { name: 'profile_id', description: 'External profile ID', type: 3, required: true },
-        { name: 'url', description: 'HTTPS profile URL', type: 3, required: true },
+        { name: 'url', description: 'HTTPS profile URL when available', type: 3 },
         queue,
       ]),
       sub('unlink', 'Remove your profile reference', [
@@ -190,6 +230,7 @@ const operations = [
         queue,
       ]),
       sub('show', 'Show your linked profiles and detailed stats', [queue]),
+      sub('verify', 'Verify control of your supported Steam, Battle.net or BAR account', [queue]),
     ],
   },
   {
@@ -440,6 +481,29 @@ export function adminCommandRoute(group, action) {
 }
 
 export const commands = [
+  {
+    name: 'test',
+    description: 'Admins and bot moderators: populate a live queue or mark a match as a test',
+    type: 1,
+    default_member_permissions: null,
+    dm_permission: false,
+    options: [
+      sub('populate', 'Add random real members to a live queue (default 8)', [
+        queue,
+        {
+          name: 'count',
+          description: 'Number of players to add (default 8)',
+          type: 4,
+          min_value: 2,
+          max_value: 16,
+        },
+      ]),
+      sub('checkin', 'Mark the live match as TEST and check everyone in; no recorded result', [
+        { ...match, description: 'Match ID from /admin; required when several matches are active' },
+        queue,
+      ]),
+    ],
+  },
   {
     name: 'admin',
     description: 'Open queue status, match history and administrator controls',

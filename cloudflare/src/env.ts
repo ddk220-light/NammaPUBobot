@@ -1,3 +1,4 @@
+import type { ProviderCoordinator } from './storage/provider-coordinator';
 import type { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 import type { Community } from './storage/community';
 import type { AuthStore } from './storage/auth';
@@ -9,6 +10,14 @@ export interface Env {
   AUTH: DurableObjectNamespace<AuthStore>;
   DISCORD_GATE: DurableObjectNamespace<DiscordGate>;
   AOE2_LOBBIES: DurableObjectNamespace<AoE2LobbyFeed>;
+  PROVIDERS?: DurableObjectNamespace<ProviderCoordinator>;
+  CONNECTOR_ACCEPTED_GAMES?: string;
+  CONNECTOR_DISABLED?: string;
+  GENERALS_ONLINE_API_KEY?: string;
+  BATTLENET_CLIENT_ID?: string;
+  BATTLENET_CLIENT_SECRET?: string;
+  BAR_CLIENT_ID?: string;
+  BAR_CLIENT_SECRET?: string;
   VOICE_PRESENCE: DurableObjectNamespace<VoicePresence>;
   APP_ENV: 'local' | 'staging' | 'production';
   APP_ORIGIN: string;

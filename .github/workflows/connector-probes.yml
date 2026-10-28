@@ -1,0 +1,77 @@
+name: Connector provider probes
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+    inputs:
+      games:
+        description: Comma-separated catalog IDs, or all
+        type: string
+        default: all
+permissions:
+  contents: read
+concurrency:
+  group: connector-provider-probes
+  cancel-in-progress: false
+jobs:
+  read-only-probes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+      - run: npm ci
+      - name: Check bounded public metadata and configured credentialed operations
+        env:
+          PROBE_GAMES: ${{ inputs.games || 'all' }}
+          GENERALS_ONLINE_API_KEY: ${{ secrets.GENERALS_ONLINE_API_KEY }}
+          BATTLE_NET_ACCESS_TOKEN: ${{ secrets.BATTLE_NET_ACCESS_TOKEN }}
+          BATTLENET_CLIENT_ID: ${{ secrets.BATTLENET_CLIENT_ID }}
+          BATTLENET_CLIENT_SECRET: ${{ secrets.BATTLENET_CLIENT_SECRET }}
+          CONNECTOR_PROBE_SC2_PROFILE_ID: ${{ vars.CONNECTOR_PROBE_SC2_PROFILE_ID }}
+          CONNECTOR_PROBE_ZERO_HOUR_MATCH_ID: ${{ vars.CONNECTOR_PROBE_ZERO_HOUR_MATCH_ID }}
+          CONNECTOR_PROBE_AOE2_PROFILE_ID: ${{ vars.CONNECTOR_PROBE_AOE2_PROFILE_ID }}
+          CONNECTOR_PROBE_AOE2_MATCH_ID: ${{ vars.CONNECTOR_PROBE_AOE2_MATCH_ID }}
+          CONNECTOR_PROBE_AOE3_PROFILE_ID: ${{ vars.CONNECTOR_PROBE_AOE3_PROFILE_ID }}
+          CONNECTOR_PROBE_AOE3_MATCH_ID: ${{ vars.CONNECTOR_PROBE_AOE3_MATCH_ID }}
+          CONNECTOR_PROBE_AOE4_PROFILE_ID: ${{ vars.CONNECTOR_PROBE_AOE4_PROFILE_ID }}
+          CONNECTOR_PROBE_AOE4_MATCH_ID: ${{ vars.CONNECTOR_PROBE_AOE4_MATCH_ID }}
+          CONNECTOR_PROBE_AOM_PROFILE_ID: ${{ vars.CONNECTOR_PROBE_AOM_PROFILE_ID }}
+          CONNECTOR_PROBE_AOM_MATCH_ID: ${{ vars.CONNECTOR_PROBE_AOM_MATCH_ID }}
+          CONNECTOR_PROBE_BAR_PROFILE_ID: ${{ vars.CONNECTOR_PROBE_BAR_PROFILE_ID }}
+          CONNECTOR_PROBE_BAR_MATCH_ID: ${{ vars.CONNECTOR_PROBE_BAR_MATCH_ID }}
+        run: |
+          if [ "$PROBE_GAMES" = all ]; then
+            npm run provider:check -- --output dist/provider-check.json
+          else
+            npm run provider:check -- --game "$PROBE_GAMES" --output dist/provider-check.json
+          fi
+      - name: Summarize passed, failed, blocked and unsupported checks
+        if: always()
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+          if (!existsSync('dist/provider-check.json')) process.exit(0);
+          const report = JSON.parse(readFileSync('dist/provider-check.json', 'utf8'));
+          const lines = [
+            `Provider metadata checked ${report.checkedAt}. This is not controlled-game acceptance.`, '',
+            ...Object.entries(report.counts).map(([status, count]) => `- ${status}: ${count}`), '',
+            '| Game | Operation | Status | Diagnostic |', '| --- | --- | --- | --- |',
+            ...report.results.map((row) => `| ${row.game} | ${row.operation} | ${row.status} | ${row.detail} |`),
+          ];
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: connector-provider-diagnostics
+          path: cloudflare/dist/provider-check.json
+          retention-days: 14
+          if-no-files-found: warn

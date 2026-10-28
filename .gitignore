@@ -34,3 +34,6 @@ data/.replay_extract_cache/
 # luck analysis local artifacts
 data/analysis.db
 data/.luck_calib.json
+
+# JavaScript dependency and runner caches in worktrees.
+node_modules/

@@ -1,9 +1,19 @@
 name: Cloudflare foundation
 on:
   pull_request:
-    paths: ['cloudflare/**', '.github/workflows/cloudflare.yml']
+    paths:
+      [
+        "cloudflare/**",
+        ".github/workflows/cloudflare.yml",
+        ".github/workflows/connector-probes.yml",
+      ]
   push:
-    paths: ['cloudflare/**', '.github/workflows/cloudflare.yml']
+    paths:
+      [
+        "cloudflare/**",
+        ".github/workflows/cloudflare.yml",
+        ".github/workflows/connector-probes.yml",
+      ]
   workflow_dispatch:
     inputs:
       deploy_staging:
@@ -26,7 +36,8 @@ jobs:
           cache: npm
           cache-dependency-path: cloudflare/package-lock.json
       - run: npm ci
-      - run: npm run check
+      - name: Typecheck, deterministic adapter contracts, Durable Object workflows and dry-run builds
+        run: npm run check
       - run: python3 scripts/test-legacy-converter.py
       - run: python3 scripts/test-economy-converter.py
   staging:

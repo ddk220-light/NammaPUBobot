@@ -1,4 +1,7 @@
 import { gameCapabilities } from '../src/games/catalog';
+import { operations } from '../src/games/types';
+import { connectorSettings, matchConnectorDetails, type ConnectorDiagnostics } from './connectors';
+import { showAccountLink } from './account-link';
 import './style.css';
 import { onboarding, onboardingSubmit, applyImport } from './onboarding';
 import { showStats } from './stats';
@@ -70,6 +73,7 @@ let bootstrap: Bootstrap,
   moderatorRoles: ModeratorRole[] = [];
 let busy = false;
 let records: Records | null = null;
+let connectorDiagnostics: ConnectorDiagnostics | null = null;
 const organizerViews = ['queues', 'matches', 'players', 'setup'] as const;
 type OrganizerView = (typeof organizerViews)[number];
 const viewNames: Record<OrganizerView, string> = {
@@ -337,6 +341,9 @@ async function save(settings: Settings) {
     method: 'PUT',
     body: JSON.stringify({ expectedRevision: snapshot.revision, settings }),
   });
+  connectorDiagnostics = await api<ConnectorDiagnostics>(communityUrl('connectors')).catch(
+    () => null,
+  );
   render();
   notice('Settings saved.');
 }
@@ -344,23 +351,28 @@ async function loadCommunity(id: string) {
   guildId = id;
   snapshot = null;
   records = null;
+  connectorDiagnostics = null;
   channelList = [];
   moderatorRoles = [];
   const url = new URL(location.href);
   url.searchParams.set('community', id);
   history.replaceState(null, '', url);
   render();
-  const result = await api<{
-    snapshot: Snapshot;
-    channels: Channel[];
-    moderatorRoles: ModeratorRole[];
-    records: Records;
-  }>(communityUrl('setup'));
+  const [result, connectors] = await Promise.all([
+    api<{
+      snapshot: Snapshot;
+      channels: Channel[];
+      moderatorRoles: ModeratorRole[];
+      records: Records;
+    }>(communityUrl('setup')),
+    api<ConnectorDiagnostics>(communityUrl('connectors')).catch(() => null),
+  ]);
   if (guildId !== id) return;
   snapshot = result.snapshot;
   channelList = result.channels;
   moderatorRoles = result.moderatorRoles;
   records = result.records;
+  connectorDiagnostics = connectors;
   refreshedAt = new Date();
   render();
 }
@@ -626,7 +638,7 @@ function recordSection() {
         }[m.state];
   return `<section class="panel"><div class="section-heading"><h2>Matches</h2></div><p class="muted">Recent games and their recorded results.</p>${matchFilters}${blocked.length ? `<p class="notice error">${blocked.length} Discord card delivery task(s) need attention. Check channel permissions in Setup, then refresh the affected match under Administrator actions.</p>` : ''}
     ${returns.length ? `<details><summary>Players awaiting return after a timeout</summary><p class="muted">Overflow waits for a free place. Blocked returns need a fresh join after checking membership and roles.</p>${returns.map((r) => `<p>${escape(r.name)} · ${escape(snapshot?.settings.queues.find((q) => q.id === r.queue_id)?.name ?? r.queue_id)} · ${escape(r.status)}</p>`).join('')}</details>` : ''}
-    <div class="record-list">${records.matches.map((m) => `<details class="match-record" data-match-record data-queue="${m.queue.id}" data-state="${m.state}"${['playing', 'check_in'].includes(m.state) ? ' open' : ''}><summary>${escape(m.queue.name)} · ${escape(m.gameName)} <span class="status-pill">${escape(stateName(m))}</span><span class="record-meta">${escape(new Date(m.createdAt).toLocaleString())}</span></summary><div class="record-teams">${m.teams.map((team, side) => `<div><strong>${side === 0 ? 'Alpha' : 'Beta'}</strong>${team.map((p) => `<p>${escape(p.name)} · ${p.rating}${m.captains[side] === p.id ? ' · captain' : ''}</p>`).join('')}</div>`).join('')}</div>${m.changes.length ? `<h3>Rating changes</h3><p>${m.changes.map((c) => `${escape(m.roster.find((p) => p.id === c.userId)?.name ?? c.userId)}: ${c.before} → ${c.after}`).join(' · ')}</p>` : ''}${m.note ? `<p>${escape(m.note)}</p>` : ''}${matchRepairs(m)}<details class="technical-details"><summary>Record identifiers</summary><p>Match ${escape(m.id)}</p>${m.roster.map((p) => `<p>${escape(p.name)} · ${escape(p.id)}</p>`).join('')}</details></details>`).join('')}<p class="empty-state" data-filter-empty="match" hidden></p></div>
+    <div class="record-list">${records.matches.map((m) => `<details class="match-record" data-match-record data-queue="${m.queue.id}" data-state="${m.state}"${['playing', 'check_in'].includes(m.state) ? ' open' : ''}><summary>${escape(m.queue.name)} · ${escape(m.gameName)} <span class="status-pill">${escape(stateName(m))}</span><span class="record-meta">${escape(new Date(m.createdAt).toLocaleString())}</span></summary><div class="record-teams">${m.teams.map((team, side) => `<div><strong>${side === 0 ? 'Alpha' : 'Beta'}</strong>${team.map((p) => `<p>${escape(p.name)} · ${p.rating}${m.captains[side] === p.id ? ' · captain' : ''}</p>`).join('')}</div>`).join('')}</div>${m.changes.length ? `<h3>Rating changes</h3><p>${m.changes.map((c) => `${escape(m.roster.find((p) => p.id === c.userId)?.name ?? c.userId)}: ${c.before} → ${c.after}`).join(' · ')}</p>` : ''}${m.note ? `<p>${escape(m.note)}</p>` : ''}${matchConnectorDetails(m)}${matchRepairs(m)}<details class="technical-details"><summary>Record identifiers</summary><p>Match ${escape(m.id)}</p>${m.roster.map((p) => `<p>${escape(p.name)} · ${escape(p.id)}</p>`).join('')}</details></details>`).join('')}<p class="empty-state" data-filter-empty="match" hidden></p></div>
     ${queueAdministration()}${diagnostics()}</section>`;
 }
 function playerSection() {
@@ -663,7 +675,7 @@ function setupSection() {
     }</span></div>`;
   const inaccessible = [...configured].filter((id) => !channelList.some((c) => c.id === id));
   return `<section class="panel"><div class="section-heading"><h2>Games</h2></div><p class="muted">Add a catalog game or your own. Each game keeps separate ratings and gold.</p>
-    <div class="game-list">${snapshot!.settings.games.map((g) => `<form data-kind="rename" data-id="${g.id}" class="game-row"><label class="sr-only" for="game-${g.id}">Game name</label><input id="game-${g.id}" name="name" maxlength="80" required value="${escape(g.name)}" />${gameCapabilities(g.catalogId)?.lobby ? `<label><input type="checkbox" name="lobbyConnector"${g.connector?.enabled ? ' checked' : ''} /> Track lobby start/end (manual results)</label><label><input type="checkbox" name="autoLobby"${g.connector?.autoAttach ? ' checked' : ''} /> Automatically attach matching public lobby</label><label>Lobby name<input name="lobbyName" maxlength="80" value="${escape(g.connector?.autoAttach?.lobbyName ?? 'NammaNomad')}" /></label>` : '<span class="muted">Manual lobby and result reporting</span>'}<button>Save game</button></form>`).join('') || '<p class="empty-state">Add your first game to create a queue.</p>'}</div>
+    <div class="game-list">${snapshot!.settings.games.map((g) => `<form data-kind="rename" data-id="${g.id}" class="game-row"><label class="sr-only" for="game-${g.id}">Game name</label><input id="game-${g.id}" name="name" maxlength="80" required value="${escape(g.name)}" />${connectorSettings(g, guildId, connectorDiagnostics)}<button>Save game</button></form>`).join('') || '<p class="empty-state">Add your first game to create a queue.</p>'}</div>
     <form data-kind="game" class="add-game"><label>Game<select name="catalogId"><option value="">Custom game</option>${bootstrap.catalog.map((g) => `<option value="${g.id}">${escape(g.name)}</option>`).join('')}</select></label><label>Custom name<input name="name" maxlength="80" placeholder="Game name" /></label><button class="primary">Add game</button></form></section>
     <section class="panel"><div class="section-heading"><h2>Discord access</h2>${bootstrap.inviteUrl ? `<a class="button" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Invite bot to server</a>` : ''}</div><p class="muted">Check the channels used by your queues.</p><div class="channel-list">${inaccessible.map((id) => `<p class="notice error">The bot cannot access configured channel ${escape(id)}. Check its Discord permissions or choose another channel in Queues.</p>`).join('')}${configuredChannels.map(channelRow).join('')}${!configured.size ? '<p class="empty-state">No queue channels selected yet.</p>' : ''}</div>
     ${otherChannels.length ? `<details class="rating-options"><summary>Other available channels (${otherChannels.length})</summary><div class="channel-list">${otherChannels.map(channelRow).join('')}</div></details>` : ''}${!channelList.length ? '<p class="notice error">No accessible text channels found. Check the bot’s channel permissions.</p>' : ''}<details class="technical-details"><summary>Configuration details</summary><p>Saved settings revision ${snapshot!.revision}</p><p>Community ${escape(guildId)}</p></details></section>`;
@@ -729,10 +741,17 @@ app.addEventListener('submit', (event) => {
     } else if (form.dataset.kind === 'rename') {
       const game = settings.games.find((g) => g.id === form.dataset.id)!;
       game.name = String(data.get('name')).trim();
-      if (gameCapabilities(game.catalogId)?.lobby)
+      const catalog = gameCapabilities(game.catalogId);
+      if (catalog)
         game.connector = {
-          enabled: data.has('lobbyConnector'),
-          ...(data.has('autoLobby')
+          enabled: catalog.lobby && data.has('lobbyConnector'),
+          capabilities: Object.fromEntries(
+            operations
+              .filter((operation) => catalog.manifest.capabilities[operation] !== 'unsupported')
+              .map((operation) => [operation, data.has(`capability-${operation}`)]),
+          ),
+          ...(catalog.manifest.capabilities.lobbyDiscovery !== 'unsupported' &&
+          data.has('autoLobby')
             ? { autoAttach: { lobbyName: String(data.get('lobbyName')).trim() } }
             : {}),
         };
@@ -948,6 +967,11 @@ async function start() {
   bootstrap = await api<Bootstrap>('/api/bootstrap');
   document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
+  if (location.pathname === '/link') {
+    await showAccountLink(app, bootstrap);
+    app.setAttribute('aria-busy', 'false');
+    return;
+  }
   if (bootstrap.user) {
     guilds = (await api<{ communities: Guild[] }>('/api/communities')).communities;
     render();

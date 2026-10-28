@@ -70,6 +70,7 @@ async function accept(m: Match, o: LobbyObservation) {
   const s = await stub().read(guild);
   return runInDurableObject(stub(), (_i, state) =>
     new LobbyStore(state, () => s.settings, {
+      availability: () => 'available',
       match: (id) =>
         JSON.parse(
           state.storage.sql
@@ -272,8 +273,8 @@ describe('identity evidence and actual civilizations', () => {
     expect(nameSimilarity('TheGreatWarrior', 'TheGreatWarriorX')).toBeGreaterThan(0.9);
   });
   it('records only established links, never picker choices, and respects unlink rejection', async () => {
-    const m = await fill(config()),
-      o = observation(m);
+    let m = await fill(config());
+    const o = observation(m);
     o.players.forEach((p) => (p.name = 'unmatchable'));
     await stub().recordAction(
       guild,
@@ -289,6 +290,9 @@ describe('identity evidence and actual civilizations', () => {
       person(0).id,
       false,
     );
+    m = await attach(m);
+    await act('lobby_confirm', 99, { admin: true, matchId: m.id, reference: m.lobby!.id });
+    m = await current();
     await runInDurableObject(stub(), (_i, state) => {
       observeGamePlayers(state.storage.sql, m, 'aoe2', o);
       observeGamePlayers(state.storage.sql, m, 'aoe2', o);
@@ -322,20 +326,36 @@ describe('identity evidence and actual civilizations', () => {
     expect(stats.player?.profiles).toHaveLength(0);
     expect(stats.player?.civilizations).toEqual([]);
   });
-  it('adds unique inferred links with provenance and excludes undone matches from civ rates', async () => {
+  it('keeps name matches as suggestions until declared confirmation and excludes undone civ rates', async () => {
     let m = await fill(config());
     m = await attach(m);
-    const o = observation(m, m.createdAt + 1);
-    o.observedAt = Math.max(Date.now(), o.startedAt!);
-    o.startedAt = Math.min(o.startedAt!, Date.now());
+    const o = observation(m, Date.now());
     expect(await accept(m, o)).toMatchObject({ accepted: true });
-    const stats = await stub().statistics(guild, game, person(0).id, 0, true, person(0).id);
-    expect(stats.player?.profiles[0].provenance).toContain('inferred:name');
+    let stats = await stub().statistics(guild, game, person(0).id, 0, true, person(0).id);
+    expect(stats.player?.profiles).toEqual([]);
+    expect(stats.player?.civilizations).toEqual([]);
+    expect((await current()).lobby?.identitySuggestions).toHaveLength(4);
+    await stub().recordAction(
+      guild,
+      {
+        id: crypto.randomUUID(),
+        kind: 'link',
+        gameId: game,
+        userId: person(0).id,
+        provider: 'aoe2',
+        externalId: '100',
+        url: 'https://www.aoe2companion.com/profile/100',
+      },
+      person(0).id,
+      false,
+    );
+    m = await attach(await current());
+    await act('lobby_confirm', 99, { admin: true, matchId: m.id, reference: m.lobby!.id });
+    m = await current();
+    expect(await accept(m, observation(m, Date.now()))).toMatchObject({ accepted: true });
     await act('loss', Number(BigInt(m.captains[1]) - 100000000000000100n), { matchId: m.id });
-    expect(
-      (await stub().statistics(guild, game, person(0).id, 0, true, person(0).id)).player
-        ?.civilizations[0].inferred,
-    ).toBe(1);
+    stats = await stub().statistics(guild, game, person(0).id, 0, true, person(0).id);
+    expect(stats.player?.civilizations[0]).toMatchObject({ games: 1, inferred: 0 });
     await act('undo', 99, { admin: true, matchId: m.id, reason: 'fixture correction' });
     expect(
       (await stub().statistics(guild, game, person(0).id, 0, true, person(0).id)).player
@@ -364,8 +384,25 @@ describe('civilization attribution corrections', () => {
     ).toEqual([]);
   });
   it('updates an existing observation’s identity and side when corrected evidence is captured', async () => {
-    const m = await fill(config()),
-      o = observation(m, m.createdAt);
+    let m = await fill(config());
+    await stub().recordAction(
+      guild,
+      {
+        id: crypto.randomUUID(),
+        kind: 'link',
+        gameId: game,
+        userId: person(0).id,
+        provider: 'aoe2',
+        externalId: '100',
+        url: 'https://www.aoe2companion.com/profile/100',
+      },
+      person(0).id,
+      false,
+    );
+    m = await attach(m);
+    await act('lobby_confirm', 99, { admin: true, matchId: m.id, reference: m.lobby!.id });
+    m = await current();
+    const o = observation(m, m.createdAt);
     await runInDurableObject(stub(), (_i, state) => {
       const sql = state.storage.sql;
       observeGamePlayers(sql, m, 'aoe2', o);
@@ -395,7 +432,8 @@ describe('automatic betting cutoff', () => {
     await act('bet', 40, { matchId: m.id, side: 'alpha', stake: 50 });
     await act('bet', 41, { matchId: m.id, side: 'beta', stake: 50 });
     m = await attach(m);
-    return m;
+    await act('lobby_confirm', 99, { admin: true, matchId: m.id, reference: m.lobby!.id });
+    return current();
   }
   it('closes both-sided pools at positive start once and settles through the existing ledger', async () => {
     const m = await market();
@@ -490,6 +528,7 @@ describe('provider retry and bounded enrichment', () => {
       runInDurableObject(stub(), async (_i, state) => {
         state.storage.sql.exec("UPDATE deadlines SET due=0 WHERE kind='lobby'");
         const store = new LobbyStore(state, () => snapshot.settings, {
+          availability: () => 'available',
           match: (id) =>
             JSON.parse(
               state.storage.sql
@@ -520,6 +559,21 @@ describe('provider retry and bounded enrichment', () => {
   });
   it('continues civilization enrichment briefly after manual reporting, without reopening bets', async () => {
     let m = await fill(config());
+    for (const p of m.roster)
+      await stub().recordAction(
+        guild,
+        {
+          id: crypto.randomUUID(),
+          kind: 'link',
+          gameId: game,
+          userId: p.id,
+          provider: 'aoe2',
+          externalId: String(BigInt(p.id) - 100000000000000000n),
+          url: `https://www.aoe2companion.com/profile/${BigInt(p.id) - 100000000000000000n}`,
+        },
+        p.id,
+        false,
+      );
     m = await attach(m);
     await act('loss', Number(BigInt(m.captains[1]) - 100000000000000100n), { matchId: m.id });
     m = await current();

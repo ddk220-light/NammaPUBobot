@@ -1,0 +1,573 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-28T20:00:37.353Z",
+  "scope": "read-only provider metadata; not real-game acceptance",
+  "results": [
+    {
+      "game": "aoe2",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:40.733Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:41.791Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:42.096Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:42.941Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:43.092Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:43.130Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-28T20:00:43.130Z",
+      "requests": 0
+    },
+    {
+      "game": "aoe3",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:43.758Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:44.000Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:44.162Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:44.347Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:44.443Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:44.567Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-28T20:00:44.567Z",
+      "requests": 0
+    },
+    {
+      "game": "aoe4",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:44.744Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:44.847Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:45.021Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:45.480Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:45.630Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:45.738Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-28T20:00:45.738Z",
+      "requests": 0
+    },
+    {
+      "game": "aom",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:46.310Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:46.739Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:46.842Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:47.326Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:47.464Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "generals",
+      "operation": "lobbyDiscovery",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "generals",
+      "operation": "accountLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "generals",
+      "operation": "matchLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "generals",
+      "operation": "historyLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "generals",
+      "operation": "replayReferences",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "generals",
+      "operation": "lobbyObservation",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "generals",
+      "operation": "ownershipVerification",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "lobbyDiscovery",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "accountLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "matchLookup",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "historyLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "replayReferences",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "lobbyObservation",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "ownershipVerification",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "sc2",
+      "operation": "lobbyDiscovery",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "sc2",
+      "operation": "accountLookup",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "sc2",
+      "operation": "matchLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "sc2",
+      "operation": "historyLookup",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "sc2",
+      "operation": "replayReferences",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "sc2",
+      "operation": "lobbyObservation",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "sc2",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-28T20:00:47.584Z",
+      "requests": 0
+    },
+    {
+      "game": "bar",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:49.258Z",
+      "requests": 1
+    },
+    {
+      "game": "bar",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:51.143Z",
+      "requests": 1
+    },
+    {
+      "game": "bar",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:51.467Z",
+      "requests": 1
+    },
+    {
+      "game": "bar",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:57.726Z",
+      "requests": 7
+    },
+    {
+      "game": "bar",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:58.250Z",
+      "requests": 1
+    },
+    {
+      "game": "bar",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 1
+    },
+    {
+      "game": "bar",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 0
+    },
+    {
+      "game": "northgard",
+      "operation": "lobbyDiscovery",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 0
+    },
+    {
+      "game": "northgard",
+      "operation": "accountLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 0
+    },
+    {
+      "game": "northgard",
+      "operation": "matchLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 0
+    },
+    {
+      "game": "northgard",
+      "operation": "historyLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 0
+    },
+    {
+      "game": "northgard",
+      "operation": "replayReferences",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 0
+    },
+    {
+      "game": "northgard",
+      "operation": "lobbyObservation",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 0
+    },
+    {
+      "game": "northgard",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-28T20:00:59.242Z",
+      "requests": 0
+    },
+    {
+      "game": "tempest_rising",
+      "operation": "lobbyDiscovery",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.243Z",
+      "requests": 0
+    },
+    {
+      "game": "tempest_rising",
+      "operation": "accountLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.243Z",
+      "requests": 0
+    },
+    {
+      "game": "tempest_rising",
+      "operation": "matchLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.243Z",
+      "requests": 0
+    },
+    {
+      "game": "tempest_rising",
+      "operation": "historyLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.243Z",
+      "requests": 0
+    },
+    {
+      "game": "tempest_rising",
+      "operation": "replayReferences",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.243Z",
+      "requests": 0
+    },
+    {
+      "game": "tempest_rising",
+      "operation": "lobbyObservation",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-28T20:00:59.243Z",
+      "requests": 0
+    },
+    {
+      "game": "tempest_rising",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-28T20:00:59.243Z",
+      "requests": 0
+    }
+  ],
+  "counts": {
+    "passed": 30,
+    "failed": 0,
+    "access-blocked": 14,
+    "unsupported": 26
+  }
+}

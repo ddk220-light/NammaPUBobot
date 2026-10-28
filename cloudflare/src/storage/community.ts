@@ -1,16 +1,32 @@
-import { gameAdapter } from '../games/registry';
+import { runtimeAdapter, connectorAvailability } from '../games/runtime';
+import { operations, type ProviderProfile } from '../games/types';
+import { supportsOwnership, type GameAccountProof } from '../auth/game-accounts';
+import { parseSteamAccountReference } from '../games/manual';
 import { recordActionSchema } from '../domain/records';
 import type { LobbyEvent } from '../domain/lobby';
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env';
-import { settingsSchema, normalizeDefaults, type Settings, type Snapshot } from '../domain/config';
+import {
+  settingsSchema,
+  normalizeDefaults,
+  snowflake,
+  type Settings,
+  type Snapshot,
+} from '../domain/config';
 import { createPlayTables, PlayStore } from './play-store';
-import { PlayError, type Action } from '../domain/play';
-import { createRecordTables, RecordStore } from './record-store';
+import { PlayError, type Action, type Match } from '../domain/play';
+import {
+  createRecordTables,
+  backfillProfileClaims,
+  RecordStore,
+  type VerifiedAccountClaim,
+} from './record-store';
 import type { ImportBundle, RecordAction } from '../domain/records';
 import { EconomyStore } from './economy-store';
 import { adminRequestSchema, type AdminRequest } from '../domain/admin';
 import type { EconomyImport } from '../domain/economy-import';
+import { testRequestSchema, type RetiredTestSession } from '../domain/testing';
+import { testMembers } from '../discord/test-members';
 
 export class Community extends DurableObject<Env> {
   private playStore: PlayStore;
@@ -23,7 +39,7 @@ export class Community extends DurableObject<Env> {
       const version = sql
         .exec<{ version: number }>('SELECT version FROM schema_version')
         .toArray()[0]?.version;
-      if (version && ![1, 2, 3, 4, 5, 6, 7].includes(version))
+      if (version && ![1, 2, 3, 4, 5, 6, 7, 8].includes(version))
         throw new Error('Unsupported storage schema.');
       if (!version) sql.exec('INSERT INTO schema_version (version) VALUES (1)');
       sql.exec(
@@ -52,11 +68,16 @@ export class Community extends DurableObject<Env> {
             sql.exec('UPDATE queues SET config=? WHERE id=?', JSON.stringify(q), q.id);
           }
       }
-      sql.exec('UPDATE schema_version SET version=7');
+      sql.exec('UPDATE schema_version SET version=8');
     });
     this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
-    this.recordStore.backfill();
+    if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
     this.playStore = new PlayStore(ctx, env, (guild) => this.read(guild), this.recordStore);
+    const retiredTest = ctx.storage.kv.get<RetiredTestSession>('testSession');
+    if (ctx.storage.kv.get('testMode') && retiredTest) {
+      retiredTest.expiresAt = 0;
+      ctx.storage.kv.put('testSession', retiredTest);
+    }
     // Adopt periodic queue visibility for existing communities on their next wake.
     ctx.blockConcurrencyWhile(() => this.playStore.schedule());
   }
@@ -161,7 +182,7 @@ export class Community extends DurableObject<Env> {
         this.playStore.configure(result.snapshot.settings, old),
       );
       this.playStore.reconcileLobbies();
-      this.recordStore.configure(guildId, old);
+      if (!this.ctx.storage.kv.get('testMode')) this.recordStore.configure(guildId, old);
       await this.playStore.schedule();
     }
     return result;
@@ -262,6 +283,43 @@ export class Community extends DurableObject<Env> {
   }
   play(guildId: string, action: Action) {
     return this.playStore.act(guildId, action);
+  }
+  async testCommand(guild: string, input: unknown) {
+    try {
+      const request = testRequestSchema.parse(input);
+      const { queue } = this.playStore.testContext(guild, request);
+      const previous = this.playStore.testReceipt(request);
+      if (previous) return previous;
+      let members: Action['actor'][] = [];
+      if (request.op === 'populate') {
+        const known = this.ctx.storage.sql
+          .exec<{ user_id: string }>(
+            'SELECT user_id FROM profiles WHERE game_id=? UNION SELECT user_id FROM queue_entries LIMIT 1000',
+            queue.gameId,
+          )
+          .toArray()
+          .map((r) => r.user_id);
+        members = await testMembers(
+          this.env,
+          guild,
+          request.channelId,
+          request.count ?? 8,
+          known,
+          (member) => this.playStore.testEligible(queue, member),
+        );
+      }
+      const reply = await this.playStore.testAction(guild, request, members);
+      this.ctx.waitUntil(this.playStore.flush());
+      return reply;
+    } catch (error) {
+      return {
+        ok: false,
+        content:
+          error instanceof PlayError
+            ? error.message
+            : 'The test command could not be confirmed. Check the regular queue or match card before retrying.',
+      };
+    }
   }
   playerMatch(
     guildId: string,
@@ -393,51 +451,273 @@ export class Community extends DurableObject<Env> {
     this.identity(guild);
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
       return { ok: false, content: 'Recovery copy is read-only.' };
-    const action = recordActionSchema.parse(input);
-    if (
-      !['link', 'reassign'].includes(action.kind) ||
-      (!admin && (action.userId !== actor || action.kind !== 'link'))
-    )
-      return { ok: false, content: 'Only organizers can assign another player’s profile.' };
-    const game = this.read(guild).settings.games.find((g) => g.id === action.gameId);
-    const adapter = game?.connector?.enabled ? gameAdapter(game.catalogId) : undefined;
-    if (!adapter || !action.externalId)
-      return { ok: false, content: 'Enable an available game connector first.' };
-    const found = await adapter.profile(action.externalId);
-    if (found.status !== 'ok')
-      return {
-        ok: false,
-        content:
-          found.status === 'not_found'
-            ? 'Public profile not found. Check its ID.'
-            : 'Profile provider unavailable; nothing was changed. Try again later.',
-      };
     try {
+      const action = recordActionSchema.parse(input);
+      if (
+        !['link', 'reassign'].includes(action.kind) ||
+        (!admin && (action.userId !== actor || action.kind !== 'link'))
+      )
+        throw new PlayError('Only organizers can assign another player’s profile.');
+      const game = this.read(guild).settings.games.find((g) => g.id === action.gameId);
+      const adapter = runtimeAdapter(this.env, game?.catalogId, game?.connector?.capabilities);
+      if (!adapter || !action.externalId)
+        throw new PlayError('Choose a registered game and account ID.');
+      const id = adapter.parseAccountReference?.(action.externalId) ?? action.externalId.trim();
+      // profileUrl performs the provider-specific identifier validation even in manual mode.
+      const declaredUrl = adapter.profileUrl(id);
+      const availability =
+        game?.connector?.capabilities?.accountLookup === false
+          ? 'disabled'
+          : connectorAvailability(this.env, adapter, 'accountLookup');
+      const found =
+        availability === 'available'
+          ? await adapter.profile(id)
+          : {
+              status:
+                availability === 'credentials_required'
+                  ? ('authentication_required' as const)
+                  : ('unsupported' as const),
+            };
+      if (found.status === 'not_found')
+        throw new PlayError(
+          'Public profile not found. Check its ID or use /profile link to declare an unsupported identity.',
+        );
+      if (found.status === 'ok' && found.value.id !== id)
+        throw new PlayError('The provider returned a different account. Nothing was linked.');
       const current = this.read(guild).settings.games.find((g) => g.id === action.gameId);
-      if (!current?.connector?.enabled || current.catalogId !== adapter.id)
+      if (
+        !current ||
+        current.catalogId !== adapter.id ||
+        this.ctx.storage.kv.get('recoveryReadOnly')
+      )
         throw new PlayError('Game settings changed. Try again.');
+      const url = found.status === 'ok' ? found.value.url : declaredUrl;
       const result = this.recordStore.action(
         guild,
         {
           ...action,
           provider: adapter.profileProvider,
-          url: found.value.url,
-          externalId: found.value.id,
+          externalId: id,
+          ...(url ? { url } : { url: undefined }),
         },
         actor,
         admin,
-        true,
+        found.status === 'ok',
       );
       this.playStore.reconcileLobbies(action.gameId);
       await this.playStore.schedule();
-      return result;
+      return found.status === 'ok'
+        ? result
+        : {
+            ...result,
+            content: `${result.content} Provider lookup: ${(availability === 'available' ? found.status : availability).replaceAll('_', ' ')}. Manual play remains available.`,
+          };
+    } catch (error) {
+      return {
+        ok: false,
+        content: error instanceof Error ? error.message : 'Profile could not be saved. Try again.',
+      };
+    }
+  }
+  /** Internal RPC target for the authenticated, session-bound identity callback. */
+  async linkVerifiedGameAccount(guild: string, proof: GameAccountProof) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false, content: 'Recovery copy is read-only.' };
+    try {
+      const game = this.read(guild).settings.games.find((g) => g.id === proof.gameId);
+      const adapter = runtimeAdapter(this.env, game?.catalogId, game?.connector?.capabilities);
+      const provider = proof.provider === 'battle-net' ? 'battlenet' : proof.provider;
+      if (
+        proof.communityId !== guild ||
+        !adapter ||
+        game?.catalogId !== proof.catalogId ||
+        !supportsOwnership(adapter.id, provider) ||
+        !snowflake.safeParse(proof.discordUserId).success ||
+        !Number.isSafeInteger(proof.verifiedAt) ||
+        proof.verifiedAt > Date.now() + 30000 ||
+        Date.now() - proof.verifiedAt > 15 * 60000
+      )
+        throw new PlayError(
+          'Account verification does not match this community, game or current session.',
+        );
+      const expected = {
+        steam: 'steam-openid',
+        'battle-net': 'battlenet-oauth',
+        bar: 'bar-oauth',
+      } as const;
+      if (proof.verifiedBy !== expected[proof.provider])
+        throw new PlayError('Unexpected ownership verification method.');
+      if (
+        game.connector?.capabilities?.ownershipVerification === false ||
+        connectorAvailability(this.env, adapter, 'ownershipVerification') !== 'available'
+      )
+        throw new PlayError(
+          'Ownership verification is disabled or requires credentials. Declared linking remains available.',
+        );
+      const claims: VerifiedAccountClaim[] = [];
+      let linkedNative = false;
+      if (proof.provider === 'steam') {
+        const steamId = parseSteamAccountReference(proof.externalId);
+        claims.push({
+          gameId: game.id,
+          provider: 'steam',
+          externalId: steamId,
+          userId: proof.discordUserId,
+          url: `https://steamcommunity.com/profiles/${steamId}`,
+          edition: adapter.manifest.edition,
+          namespace: 'steam',
+          verifiedBy: proof.verifiedBy,
+          verifiedAt: proof.verifiedAt,
+          platformId: steamId,
+        });
+        if (adapter.profileProvider === 'steam') linkedNative = true;
+        else if (
+          game.connector?.capabilities?.accountLookup !== false &&
+          connectorAvailability(this.env, adapter, 'accountLookup') === 'available'
+        ) {
+          const candidates: ProviderProfile[] = [];
+          if (adapter.resolveSteam) {
+            const resolved = await adapter.resolveSteam(steamId);
+            if (resolved.status === 'ok' && resolved.value.platformId === steamId)
+              candidates.push(resolved.value);
+          }
+          // Companion exposes a native profile's Steam ID even when reverse lookup is absent.
+          const existing = this.recordStore
+            .references(game.id, proof.discordUserId)
+            .filter((r) => r.provider === adapter.profileProvider && r.trust !== 'suggested');
+          if (!candidates.length)
+            for (const account of existing.slice(0, 8)) {
+              const found = await adapter.profile(account.external_id);
+              if (
+                found.status === 'ok' &&
+                found.value.id === account.external_id &&
+                found.value.platformId === steamId
+              )
+                candidates.push(found.value);
+            }
+          const unique = [...new Map(candidates.map((p) => [p.id, p])).values()];
+          // Ambiguous mappings remain declarations; a Steam proof alone does not select a character.
+          if (unique.length === 1) {
+            const native = unique[0];
+            claims.push({
+              gameId: game.id,
+              provider: adapter.profileProvider,
+              externalId: native.id,
+              userId: proof.discordUserId,
+              url: native.url,
+              edition: adapter.manifest.edition,
+              namespace: adapter.manifest.accountNamespace,
+              verifiedBy: proof.verifiedBy,
+              verifiedAt: proof.verifiedAt,
+              platformId: steamId,
+            });
+            linkedNative = true;
+          }
+        }
+      } else {
+        const id = adapter.parseAccountReference?.(proof.externalId) ?? proof.externalId;
+        claims.push({
+          gameId: game.id,
+          provider: adapter.profileProvider,
+          externalId: id,
+          userId: proof.discordUserId,
+          url: adapter.profileUrl(id),
+          edition: adapter.manifest.edition,
+          namespace: adapter.manifest.accountNamespace,
+          verifiedBy: proof.verifiedBy,
+          verifiedAt: proof.verifiedAt,
+          platformId: proof.platformId,
+        });
+        linkedNative = true;
+      }
+      const current = this.read(guild).settings.games.find((g) => g.id === proof.gameId);
+      if (
+        current?.catalogId !== adapter.id ||
+        current.connector?.capabilities?.ownershipVerification === false ||
+        connectorAvailability(this.env, adapter, 'ownershipVerification') !== 'available' ||
+        this.ctx.storage.kv.get('recoveryReadOnly')
+      )
+        throw new PlayError('Game settings changed. Start verification again.');
+      if (
+        proof.provider === 'steam' &&
+        adapter.profileProvider !== 'steam' &&
+        (current.connector?.capabilities?.accountLookup === false ||
+          connectorAvailability(this.env, adapter, 'accountLookup') !== 'available')
+      ) {
+        claims.splice(1);
+        linkedNative = false;
+      }
+      this.recordStore.verifyAccounts(guild, claims, proof.discordUserId);
+      this.playStore.reconcileLobbies(game.id);
+      await this.playStore.schedule();
+      return {
+        ok: true,
+        content: linkedNative
+          ? 'Account ownership verified. Existing ratings and participation are unchanged.'
+          : 'Steam ownership verified. The native game account could not be established; existing native trust was not changed. Manual play remains available.',
+      };
     } catch (error) {
       return {
         ok: false,
         content:
-          error instanceof PlayError ? error.message : 'Profile could not be saved. Try again.',
+          error instanceof PlayError
+            ? error.message
+            : 'Ownership could not be saved. Start verification again.',
       };
     }
+  }
+  connectorStatus(guild: string) {
+    const settings = this.read(guild).settings;
+    const lastObserved = new Map(
+      this.ctx.storage.sql
+        .exec<{ game_id: string; last_success: number }>(
+          "SELECT game_id,MAX(json_extract(config,'$.lobby.lastSuccessAt')) AS last_success FROM matches WHERE json_type(config,'$.lobby.lastSuccessAt')='integer' GROUP BY game_id",
+        )
+        .toArray()
+        .map((r) => [r.game_id, r.last_success]),
+    );
+    const matches = this.ctx.storage.sql
+      .exec<{ config: string }>("SELECT config FROM matches WHERE state IN ('check_in','playing')")
+      .toArray()
+      .map((r) => JSON.parse(r.config) as Match);
+    return {
+      games: settings.games.map((game) => {
+        const adapter = runtimeAdapter(this.env, game.catalogId);
+        const bindings = matches
+          .filter((m) => m.queue.gameId === game.id)
+          .map((m) => m.lobby)
+          .filter((b) => !!b);
+        const lastSuccessAt = lastObserved.get(game.id);
+        const capabilities = Object.fromEntries(
+          operations.map((operation) => [
+            operation,
+            !adapter || adapter.manifest.capabilities[operation] === 'unsupported'
+              ? 'unsupported'
+              : game.connector?.capabilities?.[operation] === false ||
+                  (!game.connector?.enabled &&
+                    ['lobbyDiscovery', 'lobbyObservation'].includes(operation))
+                ? 'disabled'
+                : connectorAvailability(this.env, adapter, operation),
+          ]),
+        );
+        return {
+          gameId: game.id,
+          catalogId: game.catalogId,
+          capabilities,
+          lastSuccessAt,
+          failures: bindings.reduce((n, b) => n + b.failures, 0),
+          unresolvedBindings: bindings.filter((b) => !b.rosterVerified && !b.confirmedBy).length,
+          ...(lastSuccessAt ? { observationDelayMs: Math.max(0, Date.now() - lastSuccessAt) } : {}),
+        };
+      }),
+    };
+  }
+  async refreshLobbyReplays(guild: string, action: Action) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false, content: 'Recovery copy is read-only.' };
+    return this.playStore.refreshLobbyReplays(guild, action);
   }
   async recordAction(guild: string, action: RecordAction, actor: string, admin: boolean) {
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
@@ -550,22 +830,23 @@ export class Community extends DurableObject<Env> {
           throw Error('Incomplete backup manifest.');
         const sourceVersion = backup.tables.schema_version[0]?.version;
         if (
-          [5, 6, 7].includes(Number(sourceVersion)) &&
+          [5, 6, 7, 8].includes(Number(sourceVersion)) &&
           [...known]
             .filter(
               (name) =>
-                Number(sourceVersion) >= 7 ||
-                ![
-                  'civ_rounds',
-                  'civ_pick_history',
-                  'identity_rejections',
-                  'played_selections',
-                  'bet_start_evidence',
-                ].includes(name),
+                (name !== 'profile_claims' || Number(sourceVersion) >= 8) &&
+                (Number(sourceVersion) >= 7 ||
+                  ![
+                    'civ_rounds',
+                    'civ_pick_history',
+                    'identity_rejections',
+                    'played_selections',
+                    'bet_start_evidence',
+                  ].includes(name)),
             )
             .some((name) => !Array.isArray(backup.tables[name]))
         )
-          throw Error('Incomplete backup manifest; all schema-5/6 community tables are required.');
+          throw Error('Incomplete backup manifest; all tables for the source schema are required.');
         for (const [table, rows] of Object.entries(backup.tables)) {
           if (
             table.startsWith('_') ||
@@ -599,7 +880,9 @@ export class Community extends DurableObject<Env> {
         const version = sql
           .exec<{ version: number }>('SELECT version FROM schema_version')
           .toArray()[0]?.version;
-        if (![4, 5, 6, 7].includes(version!)) throw Error('Unsupported backup schema version.');
+        if (![4, 5, 6, 7, 8].includes(version!)) throw Error('Unsupported backup schema version.');
+        backfillProfileClaims(sql);
+        sql.exec('UPDATE schema_version SET version=8');
         const imbalance = sql
           .exec(
             'SELECT w.user_id FROM wallets w LEFT JOIN gold_ledger l ON l.game_id=w.game_id AND l.user_id=w.user_id GROUP BY w.game_id,w.user_id HAVING w.balance != COALESCE(SUM(l.amount),0) LIMIT 1',

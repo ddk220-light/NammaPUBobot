@@ -1,4 +1,6 @@
 import type { Env } from '../env';
+import { gameCapabilities } from '../games/catalog';
+import { testInteraction } from './test-interactions';
 import { canManage } from './client';
 import { actionSchema, PlayError, type Action, type Match, type Reply } from '../domain/play';
 import { playerSummary, recordActionSchema, recordPolicy } from '../domain/records';
@@ -157,6 +159,8 @@ export async function interactions(
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID)
     return new Response('Wrong application.', { status: 401 });
   if (interaction.type === 1) return Response.json({ type: 1 });
+  if (interaction.type === 2 && interaction.data?.name === 'test')
+    return testInteraction(interaction, env, ctx);
   if (
     (interaction.type === 2 &&
       interaction.data?.name === 'admin' &&
@@ -294,13 +298,17 @@ async function playInteraction(
     const sub = i.data.options?.[0],
       options = sub?.options ?? [];
     const option = (name: string) => options.find((o) => o.name === name)?.value;
-    if (!['attach', 'unlink', 'status', 'link'].includes(sub?.name ?? ''))
-      return ephemeral('Choose attach, unlink, status or link.');
+    if (
+      !['attach', 'unlink', 'status', 'link', 'confirm', 'facts', 'replays'].includes(
+        sub?.name ?? '',
+      )
+    )
+      return ephemeral('Choose attach, unlink, status, link, confirm, facts or replays.');
     return deferInteractionReply(
       env,
       ctx,
       i.token,
-      ['attach', 'unlink'].includes(sub!.name),
+      ['attach', 'unlink', 'confirm', 'facts'].includes(sub!.name),
       async () => {
         const stub = env.COMMUNITIES.getByName(i.guild_id!);
         if (sub!.name === 'link') {
@@ -330,8 +338,26 @@ async function playInteraction(
           kind: `lobby_${sub!.name}`,
           ...(option('match') ? { matchId: option('match') } : {}),
           ...(option('reference') ? { reference: option('reference') } : {}),
+          ...(sub!.name === 'confirm' ? { reference: option('binding_id') } : {}),
+          ...(sub!.name === 'facts'
+            ? {
+                facts: {
+                  ...(option('map') !== undefined ? { map: option('map') } : {}),
+                  ...(option('elapsed_seconds') !== undefined
+                    ? { elapsedSeconds: option('elapsed_seconds') }
+                    : {}),
+                  ...(option('selection') !== undefined ? { selection: option('selection') } : {}),
+                  ...(option('recording_url') !== undefined
+                    ? { recordingUrl: option('recording_url') }
+                    : {}),
+                },
+              }
+            : {}),
         });
-        const reply = await stub.play(i.guild_id!, input);
+        const reply =
+          sub!.name === 'replays'
+            ? await stub.refreshLobbyReplays(i.guild_id!, input)
+            : await stub.play(i.guild_id!, input);
         ctx.waitUntil(stub.flush());
         return reply;
       },
@@ -383,6 +409,38 @@ async function playInteraction(
         : (qs.find((q) => q.isDefault) ?? (qs.length === 1 ? qs[0] : undefined));
       if (!q) return ephemeral('Choose a queue name for this channel.');
       const target = String(option('user') ?? actor.id);
+      if (root === 'profile' && top[0]?.name === 'verify') {
+        const game = s.settings.games.find((g) => g.id === q.gameId);
+        const catalogId = game?.catalogId;
+        const provider =
+          catalogId === 'sc2'
+            ? 'battlenet'
+            : catalogId === 'bar'
+              ? 'bar'
+              : ['aoe2', 'aoe3', 'aoe4', 'aom', 'northgard', 'tempest_rising'].includes(
+                    catalogId ?? '',
+                  )
+                ? 'steam'
+                : undefined;
+        if (
+          !provider ||
+          gameCapabilities(catalogId)?.manifest.capabilities.ownershipVerification ===
+            'unsupported' ||
+          game?.connector?.capabilities?.ownershipVerification === false
+        )
+          return ephemeral(
+            'Account ownership verification is unavailable for this game. Use /lobby link to declare your account; manual play remains available.',
+          );
+        const link = new URL('/link', env.APP_ORIGIN);
+        link.search = new URLSearchParams({
+          community: i.guild_id!,
+          game: q.gameId,
+          provider,
+        }).toString();
+        return ephemeral(
+          `Verify your account: ${link.toString()}\nSign in with your Discord account, then authorize ${provider === 'battlenet' ? 'Battle.net' : provider === 'bar' ? 'BAR' : 'Steam'}. Declared links remain available if verification is not configured.`,
+        );
+      }
       if (root === 'rating' || (root === 'profile' && top[0]?.name !== 'show')) {
         const kind = root === 'rating' ? top[0]?.name : top[0]?.name;
         const parsed = recordActionSchema.parse({
@@ -420,9 +478,9 @@ async function playInteraction(
       const p = stats.player;
       if (!p)
         return ephemeral(
-          'No visible player record for this game yet. Play a match or ask an organizer to seed your rating.',
+          'No visible player record for this game yet. You can link an account with /lobby link or /profile verify before playing.',
         );
-      let content = `**${stats.gameName} · ${p.rank ?? 'Unranked'}**\n${playerSummary(p)}\n${p.matchCount} matches · ${p.winRate === null ? 'no win rate' : `${(p.winRate * 100).toFixed(1)}% wins`} · streak ${p.streak} · peak ${p.peak}`;
+      let content = `**${stats.gameName} · ${p.rank ?? 'Unranked'}**\n${playerSummary(p)}\n${p.matchCount} matches · ${p.winRate === null ? 'no win rate' : `${(p.winRate * 100).toFixed(1)}% wins`} · streak ${p.streak} · peak ${p.rated === false ? 'Unrated' : p.peak}`;
       if (option('detailed') || root === 'profile')
         content += `\nRecent: ${
           p.recent
@@ -437,9 +495,9 @@ async function playInteraction(
             .slice(0, 5)
             .map((c) => `${c.before} → ${c.after}`)
             .join(', ') || 'None'
-        }\nProfile references (unverified): ${p.profiles.map((r) => `${r.provider}: ${r.external_id}${r.provenance.startsWith('inferred:') ? ' (inferred; /lobby link to confirm or /profile unlink to correct)' : ''}`).join(', ') || 'None'}\nSource: ${p.source}`;
+        }\nProfile references: ${p.profiles.map((r) => `${r.provider}: ${r.external_id} (${r.trust === 'ownership_verified' ? 'ownership verified' : r.trust === 'organizer_assigned' ? 'organizer assigned' : r.trust === 'suggested' || r.provenance.startsWith('inferred:') ? 'suggested; /lobby link to confirm' : 'declared'})`).join(', ') || 'None'}\nSource: ${p.source}`;
       if (root === 'profile')
-        content += `\nPlayed civilizations: ${
+        content += `\nPlayed civilizations / factions: ${
           p.civilizations
             ?.slice(0, 5)
             .map(

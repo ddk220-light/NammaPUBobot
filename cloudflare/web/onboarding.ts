@@ -31,7 +31,7 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
     sync: 'Retry rank and nickname sync',
   };
   return `<section class="settings-section" aria-labelledby="player-settings-heading"><h2 id="player-settings-heading">Player settings</h2>
-    <p class="view-description">Ratings and gold are separate for each community and game. External profile links are optional and unverified.</p>
+    <p class="view-description">Ratings and gold are separate for each community and game. Account links show whether they were declared, assigned by an organizer or verified by signing in.</p>
     ${
       s.games.length
         ? s.games
@@ -73,7 +73,7 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
     ${
       s.games.length
         ? `<details class="rating-options"><summary>Visibility and profile links</summary>
-      <p class="form-help">Hide a player from other players’ statistics, manage unverified profile links, or retry their Discord rank updates.</p>
+      <p class="form-help">Hide a player from other players’ statistics, manage declared profile links, or retry their Discord rank updates.</p>
       <form data-kind="player-record"><div class="fields">
         <label>Game<select name="gameId">${games}</select></label>
         <label>Player Discord ID<input name="userId" required pattern="[0-9]{17,20}" inputmode="numeric" spellcheck="false" /></label>

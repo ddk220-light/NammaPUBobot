@@ -139,8 +139,16 @@ export interface ProfileReference {
   external_id: string;
   url: string;
   provenance: string;
+  edition?: string;
+  namespace?: string;
+  trust?: 'declared' | 'organizer_assigned' | 'ownership_verified' | 'suggested';
+  verifiedBy?: string;
+  verifiedAt?: number;
+  platformId?: string;
 }
 export interface PlayerStatistics extends Player {
+  /** False for linked accounts that have never entered this game's rating system. */
+  rated?: boolean;
   hidden: boolean;
   lastRankedAt: number | null;
   source: string;
@@ -188,8 +196,8 @@ export interface Statistics {
   leaderboard: (Player & { lastRankedAt: number | null; rank: string | null })[];
   player: PlayerStatistics | null;
 }
-export const playerSummary = (p: Player) =>
-  `${p.name}: ${p.rating} ±${p.deviation} · ${p.wins}W/${p.losses}L/${p.draws}D`;
+export const playerSummary = (p: Player & { rated?: boolean }) =>
+  `${p.name}: ${p.rated === false ? 'Unrated' : `${p.rating} ±${p.deviation}`} · ${p.wins}W/${p.losses}L/${p.draws}D`;
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value && typeof value === 'object')

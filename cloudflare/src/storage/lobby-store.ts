@@ -6,17 +6,28 @@ import type { Action, Match } from '../domain/play';
 import { PlayError } from '../domain/errors';
 import {
   lobbyEventSchema,
+  observationSchema,
   lobbySummary,
   lobbySearchSummary,
   rosterMatches,
+  normalizeObservation,
+  suggestedResult,
   validObservation,
   type LobbyBinding,
   type LobbyEvent,
 } from '../domain/lobby';
 import { gameAdapter } from '../games/registry';
-import type { GameAdapter, ProviderResult, LobbyObservation } from '../games/types';
+import { externalRecordingReference } from '../games/manual';
+import type {
+  ConnectorOperation,
+  GameAdapter,
+  ProviderResult,
+  LobbyObservation,
+} from '../games/types';
 
 interface Hooks {
+  adapter?(id: string): GameAdapter | undefined;
+  availability?(adapter: GameAdapter, operation: ConnectorOperation): string;
   occupancy?(id: string, discoveryName?: string): Promise<LobbyObservation | null>;
   discover?(
     adapterId: string,
@@ -32,14 +43,7 @@ const active = (m: Match) =>
   (['check_in', 'playing'].includes(m.state) &&
     Date.now() < (m.expiresAt ?? m.createdAt + 43200000)) ||
   (m.state === 'finished' && !!m.closedAt && Date.now() < m.closedAt + 900000);
-const complete = (m: Match) =>
-  !!m.lobby?.observation?.finishedAt &&
-  (Date.now() > m.lobby.observation.finishedAt + 900000 ||
-    m.lobby.profiles.every(
-      (p) =>
-        !p.profileId ||
-        !!m.lobby?.observation?.players.find((x) => x.profileId === p.profileId)?.selection,
-    ));
+const complete = (m: Match) => m.lobby?.observation?.phase === 'finished';
 
 /** Durable orchestration shared by all games. Adapters only perform bounded network reads. */
 export class LobbyStore {
@@ -52,38 +56,81 @@ export class LobbyStore {
     return this.ctx.storage.sql;
   }
   private profiles(m: Match, provider: string) {
+    const manifest = this.enabled(m)?.manifest;
     return m.teams.flatMap((team, side) =>
       team.map((p) => {
         const refs = this.sql
-          .exec<{ external_id: string }>(
-            'SELECT external_id FROM profile_refs WHERE game_id=? AND provider=? AND user_id=? ORDER BY external_id',
+          .exec<{
+            external_id: string;
+            provenance: string;
+            edition: string | null;
+            namespace: string | null;
+          }>(
+            'SELECT r.external_id,r.provenance,c.edition,c.namespace FROM profile_refs r LEFT JOIN profile_claims c ON c.game_id=r.game_id AND c.provider=r.provider AND c.external_id=r.external_id AND c.user_id=r.user_id WHERE r.game_id=? AND r.provider=? AND r.user_id=? ORDER BY r.external_id',
             m.queue.gameId,
             provider,
             p.id,
           )
-          .toArray();
-        if (refs.length > 1)
+          .toArray()
+          .filter(
+            (r) =>
+              !r.provenance.startsWith('inferred:') &&
+              !!manifest &&
+              ((r.edition === manifest.edition && r.namespace === manifest.accountNamespace) ||
+                (manifest.id === 'aoe2' &&
+                  provider === 'aoe2' &&
+                  r.edition === null &&
+                  r.namespace === null)),
+          );
+        if (refs.length > 1 && this.availability(m, 'lobbyObservation') === 'available')
           throw new PlayError(
             'A player has several profiles for this provider. Remove ambiguous links before attaching.',
           );
-        return { userId: p.id, profileId: refs[0]?.external_id ?? null, side };
+        return {
+          userId: p.id,
+          profileId:
+            refs.length !== 1 || refs[0]?.provenance.startsWith('inferred:')
+              ? null
+              : (refs[0]?.external_id ?? null),
+          side,
+        };
       }),
     );
   }
   private enabled(m: Match) {
     const game = this.settings().games.find((g) => g.id === m.queue.gameId);
-    return game?.connector?.enabled ? gameAdapter(game.catalogId) : undefined;
+    return game?.catalogId ? this.adapter(game.catalogId) : undefined;
+  }
+  private adapter(id: string) {
+    return this.hooks.adapter?.(id) ?? gameAdapter(id);
+  }
+  private availability(m: Match, operation: ConnectorOperation): string {
+    const game = this.settings().games.find((g) => g.id === m.queue.gameId);
+    const adapter = this.enabled(m);
+    if (!adapter) return 'unsupported';
+    const state =
+      this.hooks.availability?.(adapter, operation) ??
+      (adapter.manifest.capabilities[operation] === 'unsupported'
+        ? 'unsupported'
+        : adapter.manifest.acceptance === 'legacy'
+          ? 'available'
+          : 'acceptance_required');
+    if (state !== 'available') return state;
+    if (game?.connector?.capabilities?.[operation] === false) return 'disabled';
+    if (['lobbyObservation', 'lobbyDiscovery'].includes(operation) && !game?.connector?.enabled)
+      return 'disabled';
+    return 'available';
   }
   private searchName(m: Match): string | undefined {
     const game = this.settings().games.find((g) => g.id === m.queue.gameId);
     if (
-      !this.enabled(m) ||
+      this.availability(m, 'lobbyDiscovery') !== 'available' ||
       m.state !== 'playing' ||
       !active(m) ||
       m.lobbyAutoDisabled ||
       Date.now() >= (m.playingAt ?? m.createdAt) + 90 * 60000 ||
       m.mapRound?.state === 'open' ||
-      m.lobby?.observation?.startedAt ||
+      ['started', 'finished'].includes(m.lobby?.observation?.phase ?? '') ||
       (m.lobby && !m.lobby.automatic)
     )
       return;
@@ -217,7 +264,7 @@ export class LobbyStore {
             ) {
               this.bind(m, adapter, chosen.externalId, 'connector', true, chosen);
               this.accept(guild, {
-                schemaVersion: 1,
+                schemaVersion: 2,
                 communityId: guild,
                 gameId: m.queue.gameId,
                 matchId: m.id,
@@ -261,10 +308,70 @@ export class LobbyStore {
       this.hooks.audit('lobby_unlinked', a.actor.id, {}, m);
       return { ok: true, content: 'Lobby unlinked. Manual reporting remains available.' };
     }
+    if (a.kind === 'lobby_confirm') {
+      if (!a.admin && !m.captains.includes(a.actor.id))
+        throw new PlayError('Only a captain or administrator can confirm the lobby.');
+      const b = m.lobby;
+      if (!b || b.id !== a.reference || !this.current(m, b.id))
+        throw new PlayError('Check /lobby status and confirm its current binding ID.');
+      b.confirmedBy = a.actor.id;
+      b.confirmedAt = Date.now();
+      if (b.observation) {
+        b.observation.confidence = 'confirmed';
+        if (b.observation.startedAt) this.hooks.started?.(m, b.observation, `confirm:${b.id}`);
+        observeGamePlayers(this.sql, m, this.adapter(b.adapterId)!.profileProvider, b.observation);
+      }
+      this.hooks.save(m);
+      this.hooks.audit('lobby_confirmed', a.actor.id, { bindingId: b.id }, m);
+      return { ok: true, content: lobbySummary(b) };
+    }
+    if (a.kind === 'lobby_facts') {
+      const b = m.lobby;
+      if (!b || !this.current(m, b.id)) throw new PlayError('Attach the current lobby first.');
+      if (!a.facts || !Object.keys(a.facts).length)
+        throw new PlayError('Provide a faction, map, duration or external recording reference.');
+      const f = a.facts;
+      if (
+        (f.map !== undefined || f.elapsedSeconds !== undefined || f.recordingUrl) &&
+        !a.admin &&
+        !m.captains.includes(a.actor.id)
+      )
+        throw new PlayError('Only a captain or administrator can declare shared match facts.');
+      const facts: NonNullable<LobbyBinding['manualFacts']> = b.manualFacts ?? {
+        players: [],
+        declaredBy: a.actor.id,
+        declaredAt: Date.now(),
+      };
+      if (f.selection) {
+        const side = m.teams.findIndex((team) => team.some((p) => p.id === a.actor.id));
+        if (side < 0) throw new PlayError('Only a participant can declare their faction.');
+        facts.players = facts.players.filter((p) => p.userId !== a.actor.id);
+        facts.players.push({ userId: a.actor.id, side, selection: f.selection });
+      }
+      if (f.map !== undefined) facts.map = f.map;
+      if (f.elapsedSeconds !== undefined) facts.elapsedSeconds = f.elapsedSeconds;
+      if (f.recordingUrl) {
+        const reference = externalRecordingReference(f.recordingUrl, m.id);
+        facts.recordingLinks = [
+          ...new Set([...(facts.recordingLinks ?? []), reference.sourceUrl!]),
+        ].slice(-8);
+      }
+      facts.declaredBy = a.actor.id;
+      facts.declaredAt = Date.now();
+      b.manualFacts = facts;
+      this.hooks.save(m);
+      this.hooks.audit(
+        'lobby_facts_declared',
+        a.actor.id,
+        { bindingId: b.id, fields: Object.keys(f) },
+        m,
+      );
+      return { ok: true, content: lobbySummary(b) };
+    }
     const adapter = this.enabled(m);
     if (!adapter)
       throw new PlayError(
-        'Enable an available lobby connector in this game’s settings first. Manual play remains available.',
+        'Choose a supported catalog game in settings. Manual result reporting remains available.',
       );
     let externalId: string;
     try {
@@ -328,11 +435,12 @@ export class LobbyStore {
       rosterVerified: false,
       prompted: false,
       automatic,
+      availability: this.availability(m, 'lobbyObservation'),
       ...(discovered ? { discoveredProfiles: discovered.players.map((p) => p.profileId) } : {}),
       occupancyAvailable: gameCapabilities(adapter.id)?.occupancy ?? false,
     };
     if (!automatic) m.lobbyAutoDisabled = true;
-    this.arm(m, Date.now());
+    if (this.availability(m, 'lobbyObservation') === 'available') this.arm(m, Date.now());
     this.hooks.save(m);
     this.hooks.audit(
       'lobby_attached',
@@ -353,10 +461,14 @@ export class LobbyStore {
       b.state = 'invalidated';
       b.reason = 'Roster changed; explicitly attach the lobby again.';
     }
-    if (['unlinked', 'invalidated', 'stopped'].includes(b.state) || complete(m))
+    b.availability = this.availability(m, 'lobbyObservation');
+    if (
+      ['unlinked', 'invalidated', 'stopped'].includes(b.state) ||
+      complete(m) ||
+      b.availability !== 'available'
+    )
       this.sql.exec('DELETE FROM deadlines WHERE key=?', `lobby:${m.id}`);
     else if (
-      m.state === 'finished' &&
       !this.sql.exec('SELECT 1 FROM deadlines WHERE key=?', `lobby:${m.id}`).toArray().length
     )
       this.arm(m, Date.now() + 30000);
@@ -430,7 +542,14 @@ export class LobbyStore {
       if (m.queue.gameId !== event.gameId || !this.current(m, event.bindingId))
         return { accepted: false, reason: 'stale_or_closed' };
       const b = m.lobby!,
-        o = event.observation;
+        inputObservation = event.observation;
+      if (this.availability(m, 'lobbyObservation') !== 'available')
+        return { accepted: false, reason: 'capability_unavailable' };
+      if (!validObservation(inputObservation, Date.now()))
+        return { accepted: false, reason: 'invalid_evidence' };
+      if (inputObservation.bindingGeneration && inputObservation.bindingGeneration !== b.id)
+        return { accepted: false, reason: 'invalid_binding' };
+      const o = normalizeObservation(inputObservation, b.id);
       if (
         event.adapterId !== b.adapterId ||
         event.rosterVersion !== b.rosterVersion ||
@@ -450,6 +569,18 @@ export class LobbyStore {
         (b.observation?.finishedAt && b.observation.finishedAt !== o.finishedAt)
       )
         return { accepted: false, reason: 'conflicting_evidence' };
+      const phaseOrder = { open: 0, full: 0, started: 1, finished: 2 };
+      if (
+        b.observation &&
+        (phaseOrder[o.phase] < phaseOrder[b.observation.phase] ||
+          (b.observation.nativeMatchId &&
+            o.nativeMatchId &&
+            b.observation.nativeMatchId !== o.nativeMatchId) ||
+          (b.observation.nativeLobbyId &&
+            o.nativeLobbyId &&
+            b.observation.nativeLobbyId !== o.nativeLobbyId))
+      )
+        return { accepted: false, reason: 'conflicting_evidence' };
       const changed = b.observation?.phase !== o.phase || b.state !== 'observed';
       if (providerRetryAt !== undefined) b.providerRetryAt = providerRetryAt;
       b.state = 'observed';
@@ -457,19 +588,25 @@ export class LobbyStore {
       b.lastSuccessAt = o.observedAt;
       b.lastEventId = event.eventId;
       b.failures = 0;
+      b.rosterVerified = rosterMatches(b, o);
+      o.confidence = b.confirmedBy ? 'confirmed' : b.rosterVerified ? 'roster' : 'provisional';
+      b.suggestedResult = suggestedResult(b, o);
       const inferred = observeGamePlayers(
         this.sql,
         m,
-        gameAdapter(b.adapterId)!.profileProvider,
+        this.adapter(b.adapterId)!.profileProvider,
         o,
       );
-      if (inferred.length) {
-        b.profiles = this.profiles(m, gameAdapter(b.adapterId)!.profileProvider);
-        this.hooks.audit('profiles_inferred', 'connector', { links: inferred, bindingId: b.id }, m);
-      }
-      b.rosterVerified = rosterMatches(b, o);
-      if (o.startedAt) this.hooks.started?.(m, o, event.eventId);
-      if (o.phase === 'finished' && b.rosterVerified && m.state === 'playing' && !b.prompted) {
+      b.identitySuggestions = inferred;
+      if (o.startedAt && (b.rosterVerified || b.confirmedBy))
+        this.hooks.started?.(m, o, event.eventId);
+      if (
+        o.phase === 'finished' &&
+        b.rosterVerified &&
+        b.suggestedResult &&
+        m.state === 'playing' &&
+        !b.prompted
+      ) {
         b.prompted = true;
         this.hooks.prompt(m, event);
         this.hooks.audit(
@@ -487,9 +624,72 @@ export class LobbyStore {
           m,
         );
       if (!complete(m))
-        this.arm(m, Date.now() + (o.startedAt ? 120000 : 30000) + Math.floor(Math.random() * 5000));
+        this.arm(
+          m,
+          Date.now() +
+            (['started', 'finished'].includes(o.phase) ? 120000 : 30000) +
+            Math.floor(Math.random() * 5000),
+        );
       this.hooks.save(m);
       return { accepted: true };
+    });
+  }
+  async refreshReplays(m: Match, a: Action) {
+    if (!a.admin && !m.roster.some((p) => p.id === a.actor.id))
+      throw new PlayError('Only a participant or administrator can refresh recording references.');
+    const before = m.lobby;
+    if (!before || ['unlinked', 'invalidated'].includes(before.state))
+      throw new PlayError('Attach a valid lobby first.');
+    const adapter = this.enabled(m);
+    if (!adapter?.replays || this.availability(m, 'replayReferences') !== 'available')
+      return {
+        ok: false,
+        content:
+          'Provider recording references are unavailable. External recording links can be declared with /lobby facts.',
+      };
+    const matchId =
+      before.observation?.replayReferences?.[0]?.matchId ?? before.observation?.nativeMatchId;
+    if (!matchId)
+      return {
+        ok: false,
+        content: 'A native match or replay identifier has not been established yet.',
+      };
+    const result = await adapter.replays(matchId);
+    if (result.status !== 'ok')
+      return {
+        ok: false,
+        content: `Recording metadata: ${result.status}. No recording has been downloaded or archived.`,
+      };
+    const references = observationSchema.shape.replayReferences.parse(result.value)!;
+    return this.ctx.storage.transactionSync(() => {
+      const current = this.hooks.match(m.id);
+      const b = current.lobby;
+      if (
+        !b ||
+        b.id !== before.id ||
+        b.rosterVersion !== before.rosterVersion ||
+        ['unlinked', 'invalidated'].includes(b.state) ||
+        this.enabled(current)?.id !== adapter.id ||
+        this.availability(current, 'replayReferences') !== 'available' ||
+        !b.observation
+      )
+        return {
+          ok: false,
+          content: 'The lobby binding changed. Refresh its current status first.',
+        };
+      b.observation.replayReferences = references;
+      this.hooks.save(current);
+      return {
+        ok: true,
+        content: references.length
+          ? references
+              .map(
+                (r) =>
+                  `${r.provider}: ${r.expiresAt && r.expiresAt <= Date.now() ? 'expired' : r.availability}${r.sourceUrl && r.availability === 'available' && (!r.expiresAt || r.expiresAt > Date.now()) ? ` — ${r.sourceUrl}` : ''}`,
+              )
+              .join('\n')
+          : 'No provider recording references are available.',
+      };
     });
   }
   async poll(guild: string) {
@@ -507,7 +707,12 @@ export class LobbyStore {
           .exec<{ due: number }>('SELECT due FROM deadlines WHERE key=?', `lobby:${m.id}`)
           .toArray()[0];
         if (!job || job.due > Date.now()) return;
-        if (!b || !this.current(m, b.id) || complete(m)) {
+        if (
+          !b ||
+          !this.current(m, b.id) ||
+          complete(m) ||
+          this.availability(m, 'lobbyObservation') !== 'available'
+        ) {
           this.sql.exec('DELETE FROM deadlines WHERE key=?', `lobby:${m.id}`);
           return;
         }
@@ -525,7 +730,17 @@ export class LobbyStore {
                 status: 'unavailable' as const,
                 retryAfterMs: providerRetryAt - Date.now(),
               })
-            : gameAdapter(b.adapterId)!.observe(b.externalId, !!b.observation?.startedAt),
+            : this.adapter(b.adapterId)!.observe(
+                b.externalId,
+                ['started', 'finished'].includes(b.observation?.phase ?? ''),
+                {
+                  matchCreatedAt: m.createdAt,
+                  attachedAt: b.attachedAt,
+                  profileIds: b.profiles.flatMap((p) => (p.profileId ? [p.profileId] : [])),
+                  nativeMatchId: b.observation?.nativeMatchId,
+                  previous: b.observation,
+                },
+              ),
           b.adapterId === 'aoe2' && !b.observation?.startedAt
             ? this.hooks
                 .occupancy?.(b.externalId, b.automatic ? m.lobbySearch?.name : undefined)
@@ -552,7 +767,7 @@ export class LobbyStore {
         const accepted = this.accept(
           guild,
           {
-            schemaVersion: 1,
+            schemaVersion: 2,
             communityId: guild,
             gameId: m.queue.gameId,
             matchId: m.id,
@@ -575,6 +790,7 @@ export class LobbyStore {
           this.hooks.audit('lobby_unavailable', 'connector', { bindingId: b.id }, current);
         saved.providerRetryAt = providerRetryAt;
         saved.state = 'unavailable';
+        saved.failure = result.status === 'ok' ? 'invalid_response' : result.status;
         saved.failures = Math.min(saved.failures + 1, 10);
         const retry = result.status !== 'ok' ? (result.retryAfterMs ?? 0) : 0;
         this.arm(

@@ -1,0 +1,22 @@
+{
+  "provenance": "Synthetic examples of Blizzard OAuth sample AccountResponse/Summary and documented legacy history contracts; no authenticated live player capture. Checked 2026-10-28.",
+  "characters": [
+    { "name": "US Character", "profileId": "123", "regionId": "1", "realmId": "1" },
+    { "name": "EU Character", "profileId": "9007199254740993", "regionId": "2", "realmId": "2" }
+  ],
+  "profile": {
+    "summary": {
+      "id": "123",
+      "realm": 1,
+      "displayName": "US Character",
+      "totalAchievementPoints": 100
+    }
+  },
+  "history": {
+    "matches": [
+      { "date": 1761000000, "map": "Test Arena", "type": "1v1", "decision": "WIN" },
+      { "date": 1761000120, "map": "Test Arena", "type": "1v1", "decision": "LOSS" },
+      { "date": 1761000060, "map": "Custom Map", "type": "CUSTOM", "decision": "UNKNOWN" }
+    ]
+  }
+}

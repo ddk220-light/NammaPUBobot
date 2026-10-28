@@ -1,0 +1,41 @@
+{
+  "fixtureVersion": 1,
+  "capturedAt": "2026-10-28T18:56:59.952375+00:00",
+  "source": "Companion /api/matches/{id}, read-only research capture",
+  "sanitization": "Native/profile IDs and display names replaced. Match facts retained; no recording bytes or signed URLs captured.",
+  "match": {
+    "started": "2026-10-28T18:32:02.000Z",
+    "finished": "2026-10-28T18:52:01.000Z",
+    "mapName": "TG2 - Regicide Fortress (Custom)",
+    "speed": 2,
+    "matchId": 9002,
+    "teams": [
+      {
+        "teamId": 5,
+        "players": [
+          {
+            "profileId": 101,
+            "name": "Player 1",
+            "civ": "vietnamese",
+            "civName": "Vietnamese",
+            "won": false,
+            "replay": false
+          }
+        ]
+      },
+      {
+        "teamId": 6,
+        "players": [
+          {
+            "profileId": 102,
+            "name": "Player 2",
+            "civ": "wei",
+            "civName": "Wei",
+            "won": true,
+            "replay": false
+          }
+        ]
+      }
+    ]
+  }
+}

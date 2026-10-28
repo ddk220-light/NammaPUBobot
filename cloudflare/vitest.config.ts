@@ -9,6 +9,9 @@ export default defineConfig({
       miniflare: {
         bindings: {
           APP_ENV: 'staging',
+          // Deterministic lifecycle fixtures exercise the explicitly enabled AoE2 path.
+          // Deployment vars deliberately contain no acceptance approval.
+          CONNECTOR_ACCEPTED_GAMES: 'aoe2',
           APP_ORIGIN: 'https://setup.example',
           DISCORD_APPLICATION_ID: '100000000000000001',
           // Public RFC 8032 test vector; this is not a deployed application's key.

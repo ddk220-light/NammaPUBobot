@@ -18,6 +18,9 @@ export const observationSchema = z
             name: z.string().max(100),
             team: identifier.nullable(),
             selection: z.string().min(1).max(100).optional(),
+            selectionId: identifier.optional(),
+            outcome: z.enum(['win', 'loss', 'draw', 'unknown']).optional(),
+            accountNamespace: identifier.optional(),
           })
           .strict(),
       )
@@ -25,11 +28,49 @@ export const observationSchema = z
     capacity: z.number().int().min(1).max(16).nullable(),
     map: z.string().max(100).nullable(),
     source: identifier,
+    schemaVersion: z.literal(2).optional(),
+    edition: identifier.optional(),
+    provider: identifier.optional(),
+    accountNamespace: identifier.optional(),
+    nativeLobbyId: identifier.optional(),
+    nativeMatchId: identifier.optional(),
+    platformLobbyId: identifier.optional(),
+    gameBuild: identifier.optional(),
+    elapsedDuration: z
+      .object({ value: z.number().nonnegative().max(31536000), unit: z.literal('seconds') })
+      .strict()
+      .optional(),
+    simulationDuration: z
+      .object({ value: z.number().nonnegative().max(31536000), unit: z.literal('seconds') })
+      .strict()
+      .optional(),
+    confidence: z.enum(['provisional', 'roster', 'confirmed']).optional(),
+    bindingGeneration: identifier.optional(),
+    visibility: z.enum(['public', 'private', 'unknown']).optional(),
+    mode: identifier.optional(),
+    replayReferences: z
+      .array(
+        z
+          .object({
+            provider: identifier,
+            matchId: identifier,
+            perspectiveId: identifier.optional(),
+            availability: z.enum(['available', 'unavailable', 'unknown', 'expired']),
+            sourceUrl: z
+              .url({ protocol: /^https$/ })
+              .max(4096)
+              .optional(),
+            expiresAt: z.number().int().nonnegative().optional(),
+          })
+          .strict(),
+      )
+      .max(32)
+      .optional(),
   })
   .strict();
 export const lobbyEventSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.union([z.literal(1), z.literal(2)]),
     communityId: z.string().regex(/^\d{17,20}$/),
     gameId: z.uuid(),
     matchId: z.uuid(),
@@ -68,6 +109,20 @@ export interface LobbyBinding {
   prompted: boolean;
   automatic?: boolean;
   discoveredProfiles?: string[];
+  confirmedBy?: string;
+  confirmedAt?: number;
+  availability?: string;
+  failure?: string;
+  suggestedResult?: 'alpha' | 'beta' | 'draw';
+  identitySuggestions?: { userId: string; profileId: string; method: string; confidence: number }[];
+  manualFacts?: {
+    map?: string;
+    elapsedSeconds?: number;
+    players: { userId: string; side: number; selection: string }[];
+    recordingLinks?: string[];
+    declaredBy: string;
+    declaredAt: number;
+  };
 }
 
 export const normalizeLobbyName = (name: string) => name.trim().toLocaleLowerCase('en-US');
@@ -104,14 +159,16 @@ export function validObservation(value: unknown, now: number): value is LobbyObs
     return false;
   if (
     o.finishedAt !== null &&
-    (o.startedAt === null ||
-      o.finishedAt < o.startedAt ||
+    ((o.startedAt === null && o.schemaVersion !== 2) ||
+      (o.startedAt !== null && o.finishedAt < o.startedAt) ||
       o.finishedAt > o.observedAt ||
       o.finishedAt > now)
   )
     return false;
-  if (o.phase === 'finished') return o.startedAt !== null && o.finishedAt !== null;
-  if (o.phase === 'started') return o.startedAt !== null && o.finishedAt === null;
+  if (o.phase === 'finished')
+    return o.schemaVersion === 2 || (o.startedAt !== null && o.finishedAt !== null);
+  if (o.phase === 'started')
+    return (o.schemaVersion === 2 || o.startedAt !== null) && o.finishedAt === null;
   return o.startedAt === null && o.finishedAt === null;
 }
 
@@ -137,10 +194,33 @@ export function lobbySummary(binding?: LobbyBinding, now = Date.now()): string {
   if (['invalidated', 'unlinked', 'stopped'].includes(binding.state))
     return `Lobby tracking ${binding.state}: ${binding.reason ?? 'Use /lobby attach to bind the current roster.'}`;
   const o = binding.observation;
+  const manual = binding.availability && binding.availability !== 'available';
   const stale = !o?.finishedAt && (!binding.lastSuccessAt || now - binding.lastSuccessAt > 180000);
   return [
     `Lobby ${binding.externalId}: ${binding.state === 'unavailable' ? 'unavailable' : (o?.phase ?? 'awaiting evidence')}${stale ? ' · status stale or not yet observed' : ''}.`,
     binding.url,
+    `Binding: ${binding.id}${binding.confirmedBy ? ' · confirmed by host/captain' : ' · use /lobby confirm with this binding ID after checking the lobby'}.`,
+    manual
+      ? `Automatic observations: ${binding.availability}. Manual facts and captain reporting remain available.`
+      : '',
+    binding.lastSuccessAt
+      ? `Last observed: <t:${Math.floor(binding.lastSuccessAt / 1000)}:R>.`
+      : '',
+    o?.elapsedDuration ? `Elapsed duration: ${o.elapsedDuration.value} seconds.` : '',
+    o?.simulationDuration ? `Simulation duration: ${o.simulationDuration.value} seconds.` : '',
+    binding.suggestedResult
+      ? `Provider suggests ${binding.suggestedResult}; captains must confirm through the existing reporting controls.`
+      : '',
+    binding.identitySuggestions?.length
+      ? `Suggested account links (unconfirmed): ${binding.identitySuggestions.map((p) => `<@${p.userId}> → ${p.profileId}`).join(', ')}. Use /lobby link to confirm.`
+      : '',
+    binding.manualFacts
+      ? `Declared facts: ${binding.manualFacts.map ?? 'map unknown'}; ${binding.manualFacts.elapsedSeconds ?? '?'} seconds; ${binding.manualFacts.players.map((p) => `<@${p.userId}>: ${p.selection}`).join(', ')}.`
+      : '',
+    ...(o?.replayReferences ?? []).map(
+      (r) =>
+        `Recording ${r.perspectiveId ?? r.matchId}: ${r.expiresAt && r.expiresAt <= now ? 'expired; request /lobby replays to refresh' : r.availability}${r.sourceUrl && r.availability === 'available' && (!r.expiresAt || r.expiresAt > now) ? ` · ${r.sourceUrl}` : ''}`,
+    ),
     binding.occupancyAvailable && o && !stale && ['open', 'full'].includes(o.phase)
       ? `${o.players.length}/${o.capacity ?? '?'} lobby slots occupied.\nJoined: ${
           binding.profiles
@@ -159,4 +239,35 @@ export function lobbySummary(binding?: LobbyBinding, now = Date.now()): string {
       : `${binding.profiles.filter((p) => p.profileId).length}/${binding.profiles.length} players linked. Unlinked players can keep playing; /lobby link adds a profile.`,
     'Results remain manual: losing captain uses /report loss.',
   ].join('\n');
+}
+
+/** Compatibility normalizer; absent legacy facts remain unknown. */
+export function normalizeObservation(o: LobbyObservation, generation?: string): LobbyObservation {
+  return {
+    ...o,
+    schemaVersion: 2,
+    ...(o.nativeLobbyId
+      ? { nativeLobbyId: o.nativeLobbyId }
+      : o.schemaVersion !== 2
+        ? { nativeLobbyId: o.externalId }
+        : {}),
+    confidence: 'provisional',
+    ...(generation ? { bindingGeneration: generation } : {}),
+  };
+}
+/** Supporting evidence only. This function cannot write a reported result. */
+export function suggestedResult(
+  binding: LobbyBinding,
+  observation: LobbyObservation,
+): 'alpha' | 'beta' | 'draw' | undefined {
+  if (observation.phase !== 'finished' || !rosterMatches(binding, observation)) return;
+  const results = [0, 1].map((side) =>
+    binding.profiles
+      .filter((p) => p.side === side)
+      .map((p) => observation.players.find((x) => x.profileId === p.profileId)?.outcome),
+  );
+  if (results.some((r) => !r.length || r.some((x) => !x || x === 'unknown'))) return;
+  if (results.every((r) => r.every((x) => x === 'draw'))) return 'draw';
+  if (results[0].every((x) => x === 'win') && results[1].every((x) => x === 'loss')) return 'alpha';
+  if (results[1].every((x) => x === 'win') && results[0].every((x) => x === 'loss')) return 'beta';
 }

@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env';
+import { parseProviderJson } from '../games/transport';
 import { AoE2LobbySnapshot } from '../games/aoe2-feed';
 import { normalizeLobbyName } from '../domain/lobby';
 /** One outbound feed per application, leased only while tracked matches need occupancy. */
@@ -103,7 +104,7 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
       }
       try {
         if (event.data !== 'pong')
-          this.snapshot.consume(JSON.parse(event.data), new Set(this.leases.keys()));
+          this.snapshot.consume(parseProviderJson(event.data), new Set(this.leases.keys()));
       } catch {
         this.disconnect();
         this.reconnectAt = Date.now() + 30000;

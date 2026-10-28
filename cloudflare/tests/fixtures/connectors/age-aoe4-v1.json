@@ -1,0 +1,1021 @@
+{
+  "fixtureVersion": 1,
+  "capturedAt": "2026-10-28",
+  "sanitization": "Aliases, platform identities and replay URLs replaced; response shapes and numeric native IDs preserved. Compressed options/slotinfo and unrelated counters removed.",
+  "profile": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "statGroups": [
+      {
+        "id": 16903,
+        "name": "",
+        "type": 1,
+        "members": [
+          {
+            "profile_id": 4635035,
+            "name": "/steam/76561198000000001",
+            "alias": "Player 1"
+          }
+        ]
+      }
+    ]
+  },
+  "lobbies": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matches": [
+      {
+        "id": 257816169,
+        "steamlobbyid": "109775242664684411",
+        "host_profile_id": 8984826,
+        "state": 0,
+        "description": "Community test lobby",
+        "visible": 1,
+        "mapname": "cba final",
+        "maxplayers": 16,
+        "matchtype_id": 0,
+        "matchmembers": [
+          {
+            "match_id": 257816169,
+            "profile_id": 8984826,
+            "civilization_id": 129267,
+            "teamid": 0
+          }
+        ]
+      },
+      {
+        "id": 257816137,
+        "steamlobbyid": "109775242664682812",
+        "host_profile_id": 17844910,
+        "state": 0,
+        "description": "Community test lobby",
+        "visible": 1,
+        "mapname": "generated_map",
+        "maxplayers": 16,
+        "matchtype_id": 0,
+        "matchmembers": [
+          {
+            "match_id": 257816137,
+            "profile_id": 17844910,
+            "civilization_id": 9000860,
+            "teamid": 0
+          }
+        ]
+      }
+    ],
+    "avatars": [
+      {
+        "profile_id": 17844910,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 8984826,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      }
+    ]
+  },
+  "match": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matchHistory": [
+      {
+        "id": 257612387,
+        "creator_profile_id": 25938484,
+        "mapname": "generated_map",
+        "maxplayers": 16,
+        "matchtype_id": 3,
+        "description": "AUTOMATCH",
+        "startgametime": 1793088658,
+        "completiontime": 1793090288,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25938484,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 131384,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 5742611,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 2121949,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25938482,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 5000002,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 1676172,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 9000860,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 4635035,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 5000002,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25467839,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 9000850,
+            "counters": "{\"gt\": 1497}"
+          }
+        ],
+        "matchurls": [
+          {
+            "profile_id": 1676172,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888143,
+            "datatype": 0
+          },
+          {
+            "profile_id": 1676172,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211346,
+            "datatype": 1
+          },
+          {
+            "profile_id": 4635035,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888143,
+            "datatype": 0
+          },
+          {
+            "profile_id": 4635035,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211343,
+            "datatype": 1
+          },
+          {
+            "profile_id": 25467839,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888140,
+            "datatype": 0
+          },
+          {
+            "profile_id": 25467839,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211343,
+            "datatype": 1
+          },
+          {
+            "profile_id": 25938482,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888146,
+            "datatype": 0
+          },
+          {
+            "profile_id": 25938482,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211337,
+            "datatype": 1
+          },
+          {
+            "profile_id": 5742611,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888144,
+            "datatype": 0
+          },
+          {
+            "profile_id": 5742611,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211335,
+            "datatype": 1
+          },
+          {
+            "profile_id": 25938484,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888183,
+            "datatype": 0
+          },
+          {
+            "profile_id": 25938484,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211336,
+            "datatype": 1
+          }
+        ],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25938484,
+            "civilization_id": 131384,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 5742611,
+            "civilization_id": 2121949,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25938482,
+            "civilization_id": 5000002,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 4635035,
+            "civilization_id": 5000002,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 1676172,
+            "civilization_id": 9000860,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25467839,
+            "civilization_id": 9000850,
+            "teamid": 1,
+            "outcome": 0
+          }
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "profile_id": 25938482,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 25938484,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      },
+      {
+        "profile_id": 5742611,
+        "name": "/steam/76561198000000003",
+        "alias": "Player 3"
+      },
+      {
+        "profile_id": 1676172,
+        "name": "/steam/76561198000000004",
+        "alias": "Player 4"
+      },
+      {
+        "profile_id": 4635035,
+        "name": "/steam/76561198000000005",
+        "alias": "Player 5"
+      },
+      {
+        "profile_id": 25467839,
+        "name": "/steam/76561198000000006",
+        "alias": "Player 6"
+      }
+    ]
+  },
+  "history": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matchHistoryStats": [
+      {
+        "id": 257612387,
+        "creator_profile_id": 25938484,
+        "mapname": "generated_map",
+        "maxplayers": 16,
+        "matchtype_id": 3,
+        "description": "AUTOMATCH",
+        "startgametime": 1793088658,
+        "completiontime": 1793090288,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25938484,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 131384,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 5742611,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 2121949,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25938482,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 5000002,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 1676172,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 9000860,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 4635035,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 5000002,
+            "counters": "{\"gt\": 1497}"
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25467839,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 9000850,
+            "counters": "{\"gt\": 1497}"
+          }
+        ],
+        "matchurls": [
+          {
+            "profile_id": 1676172,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888143,
+            "datatype": 0
+          },
+          {
+            "profile_id": 1676172,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211346,
+            "datatype": 1
+          },
+          {
+            "profile_id": 4635035,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888143,
+            "datatype": 0
+          },
+          {
+            "profile_id": 4635035,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211343,
+            "datatype": 1
+          },
+          {
+            "profile_id": 25467839,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888140,
+            "datatype": 0
+          },
+          {
+            "profile_id": 25467839,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211343,
+            "datatype": 1
+          },
+          {
+            "profile_id": 25938482,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888146,
+            "datatype": 0
+          },
+          {
+            "profile_id": 25938482,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211337,
+            "datatype": 1
+          },
+          {
+            "profile_id": 5742611,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888144,
+            "datatype": 0
+          },
+          {
+            "profile_id": 5742611,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211335,
+            "datatype": 1
+          },
+          {
+            "profile_id": 25938484,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 888183,
+            "datatype": 0
+          },
+          {
+            "profile_id": 25938484,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 211336,
+            "datatype": 1
+          }
+        ],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25938484,
+            "civilization_id": 131384,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 5742611,
+            "civilization_id": 2121949,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25938482,
+            "civilization_id": 5000002,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 4635035,
+            "civilization_id": 5000002,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 1676172,
+            "civilization_id": 9000860,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 257612387,
+            "profile_id": 25467839,
+            "civilization_id": 9000850,
+            "teamid": 1,
+            "outcome": 0
+          }
+        ]
+      },
+      {
+        "id": 257612220,
+        "creator_profile_id": 15231760,
+        "mapname": "generated_map",
+        "maxplayers": 16,
+        "matchtype_id": 2,
+        "description": "AUTOMATCH",
+        "startgametime": 1793088520,
+        "completiontime": 1793088563,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 257612220,
+            "profile_id": 15231760,
+            "resulttype": 0,
+            "teamid": 0,
+            "civilization_id": 2109886,
+            "counters": "{\"gt\": 22}"
+          },
+          {
+            "matchhistory_id": 257612220,
+            "profile_id": 4635035,
+            "resulttype": 0,
+            "teamid": 0,
+            "civilization_id": 5000002,
+            "counters": "{\"gt\": 22}"
+          },
+          {
+            "matchhistory_id": 257612220,
+            "profile_id": 21366811,
+            "resulttype": 1,
+            "teamid": 1,
+            "civilization_id": 131384,
+            "counters": "{\"gt\": 22}"
+          },
+          {
+            "matchhistory_id": 257612220,
+            "profile_id": 24063981,
+            "resulttype": 1,
+            "teamid": 1,
+            "civilization_id": 5000003,
+            "counters": "{\"gt\": 22}"
+          }
+        ],
+        "matchurls": [
+          {
+            "profile_id": 4635035,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 3961,
+            "datatype": 0
+          },
+          {
+            "profile_id": 4635035,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 1514,
+            "datatype": 1
+          },
+          {
+            "profile_id": 15231760,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 5234,
+            "datatype": 0
+          },
+          {
+            "profile_id": 15231760,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 1669,
+            "datatype": 1
+          },
+          {
+            "profile_id": 21366811,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 7313,
+            "datatype": 0
+          },
+          {
+            "profile_id": 21366811,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 1985,
+            "datatype": 1
+          },
+          {
+            "profile_id": 24063981,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 7311,
+            "datatype": 0
+          },
+          {
+            "profile_id": 24063981,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 1988,
+            "datatype": 1
+          }
+        ],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 257612220,
+            "profile_id": 15231760,
+            "civilization_id": 2109886,
+            "teamid": 0,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 257612220,
+            "profile_id": 4635035,
+            "civilization_id": 5000002,
+            "teamid": 0,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 257612220,
+            "profile_id": 24063981,
+            "civilization_id": 5000003,
+            "teamid": 1,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 257612220,
+            "profile_id": 21366811,
+            "civilization_id": 131384,
+            "teamid": 1,
+            "outcome": 1
+          }
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "profile_id": 24063981,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 5742611,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      },
+      {
+        "profile_id": 21366811,
+        "name": "/steam/76561198000000003",
+        "alias": "Player 3"
+      },
+      {
+        "profile_id": 4635035,
+        "name": "/steam/76561198000000004",
+        "alias": "Player 4"
+      },
+      {
+        "profile_id": 25938482,
+        "name": "/steam/76561198000000005",
+        "alias": "Player 5"
+      },
+      {
+        "profile_id": 25938484,
+        "name": "/steam/76561198000000006",
+        "alias": "Player 6"
+      },
+      {
+        "profile_id": 15231760,
+        "name": "/steam/76561198000000007",
+        "alias": "Player 7"
+      },
+      {
+        "profile_id": 1676172,
+        "name": "/steam/76561198000000008",
+        "alias": "Player 8"
+      },
+      {
+        "profile_id": 25467839,
+        "name": "/steam/76561198000000009",
+        "alias": "Player 9"
+      }
+    ]
+  },
+  "replays": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "expiryUnix": 1793213991,
+    "replayFiles": [
+      {
+        "profile_id": 1676172,
+        "matchhistory_id": 257612387,
+        "size": 888143,
+        "datatype": 0,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 1676172,
+        "matchhistory_id": 257612387,
+        "size": 211346,
+        "datatype": 1,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 4635035,
+        "matchhistory_id": 257612387,
+        "size": 888143,
+        "datatype": 0,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 4635035,
+        "matchhistory_id": 257612387,
+        "size": 211343,
+        "datatype": 1,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 25467839,
+        "matchhistory_id": 257612387,
+        "size": 888140,
+        "datatype": 0,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 25467839,
+        "matchhistory_id": 257612387,
+        "size": 211343,
+        "datatype": 1,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 25938482,
+        "matchhistory_id": 257612387,
+        "size": 888146,
+        "datatype": 0,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 25938482,
+        "matchhistory_id": 257612387,
+        "size": 211337,
+        "datatype": 1,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 5742611,
+        "matchhistory_id": 257612387,
+        "size": 888144,
+        "datatype": 0,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 5742611,
+        "matchhistory_id": 257612387,
+        "size": 211335,
+        "datatype": 1,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 25938484,
+        "matchhistory_id": 257612387,
+        "size": 888183,
+        "datatype": 0,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      },
+      {
+        "profile_id": 25938484,
+        "matchhistory_id": 257612387,
+        "size": 211336,
+        "datatype": 1,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture"
+      }
+    ]
+  },
+  "custom": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matchHistory": [
+      {
+        "id": 253035448,
+        "creator_profile_id": 1697241,
+        "mapname": "generated_map",
+        "maxplayers": 16,
+        "matchtype_id": 0,
+        "description": "unnamed_session",
+        "startgametime": 1790227877,
+        "completiontime": 1790228578,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 1697241,
+            "resulttype": 0,
+            "teamid": 0,
+            "civilization_id": 129267,
+            "counters": "{\"gt\": 651}"
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 4479324,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 134522,
+            "counters": "{\"gt\": 651}"
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 5543902,
+            "resulttype": 1,
+            "teamid": 2,
+            "civilization_id": 199703,
+            "counters": "{\"gt\": 651}"
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 4635035,
+            "resulttype": 0,
+            "teamid": 3,
+            "civilization_id": 5000002,
+            "counters": "{\"gt\": 651}"
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 6675383,
+            "resulttype": 1,
+            "teamid": 4,
+            "civilization_id": 2121949,
+            "counters": "{\"gt\": 651}"
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 7158010,
+            "resulttype": 1,
+            "teamid": 5,
+            "civilization_id": 2058393,
+            "counters": "{\"gt\": 651}"
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 7154454,
+            "resulttype": 1,
+            "teamid": 6,
+            "civilization_id": 131384,
+            "counters": "{\"gt\": 651}"
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 12245887,
+            "resulttype": 0,
+            "teamid": 7,
+            "civilization_id": 199703,
+            "counters": "{\"gt\": 651}"
+          }
+        ],
+        "matchurls": [
+          {
+            "profile_id": 1697241,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 333311,
+            "datatype": 0
+          },
+          {
+            "profile_id": 1697241,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 55959,
+            "datatype": 1
+          },
+          {
+            "profile_id": 5543902,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 337790,
+            "datatype": 0
+          },
+          {
+            "profile_id": 5543902,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 57031,
+            "datatype": 1
+          },
+          {
+            "profile_id": 4479324,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 339019,
+            "datatype": 0
+          },
+          {
+            "profile_id": 4479324,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 57501,
+            "datatype": 1
+          },
+          {
+            "profile_id": 6675383,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 340409,
+            "datatype": 0
+          },
+          {
+            "profile_id": 6675383,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 57797,
+            "datatype": 1
+          },
+          {
+            "profile_id": 12245887,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 340410,
+            "datatype": 0
+          },
+          {
+            "profile_id": 12245887,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 57790,
+            "datatype": 1
+          },
+          {
+            "profile_id": 7154454,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 340410,
+            "datatype": 0
+          },
+          {
+            "profile_id": 7154454,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 57797,
+            "datatype": 1
+          },
+          {
+            "profile_id": 4635035,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": -1,
+            "datatype": 0
+          },
+          {
+            "profile_id": 4635035,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": -1,
+            "datatype": 1
+          }
+        ],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 1697241,
+            "civilization_id": 129267,
+            "teamid": 0,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 4479324,
+            "civilization_id": 134522,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 5543902,
+            "civilization_id": 199703,
+            "teamid": 2,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 4635035,
+            "civilization_id": 5000002,
+            "teamid": 3,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 6675383,
+            "civilization_id": 2121949,
+            "teamid": 4,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 7158010,
+            "civilization_id": 2058393,
+            "teamid": 5,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 7154454,
+            "civilization_id": 131384,
+            "teamid": 6,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 253035448,
+            "profile_id": 12245887,
+            "civilization_id": 199703,
+            "teamid": 7,
+            "outcome": 0
+          }
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "profile_id": 4479324,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 5543902,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      },
+      {
+        "profile_id": 6675383,
+        "name": "/steam/76561198000000003",
+        "alias": "Player 3"
+      },
+      {
+        "profile_id": 1697241,
+        "name": "/steam/76561198000000004",
+        "alias": "Player 4"
+      },
+      {
+        "profile_id": 7158010,
+        "name": "/steam/76561198000000005",
+        "alias": "Player 5"
+      },
+      {
+        "profile_id": 12245887,
+        "name": "/steam/76561198000000006",
+        "alias": "Player 6"
+      },
+      {
+        "profile_id": 7154454,
+        "name": "/steam/76561198000000007",
+        "alias": "Player 7"
+      },
+      {
+        "profile_id": 4635035,
+        "name": "/steam/76561198000000008",
+        "alias": "Player 8"
+      }
+    ]
+  }
+}

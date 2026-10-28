@@ -1,0 +1,81 @@
+{
+  "capture": {
+    "version": 1,
+    "date": "2026-10-28",
+    "source": "https://api.bar-rts.com",
+    "notes": "Public response projection; user IDs and names replaced; unused IP/country/settings/spectators omitted."
+  },
+  "battle": {
+    "battleId": 71,
+    "game": "Beyond All Reason test-31740-57a02af",
+    "map": "Project SD-129 v1.0",
+    "maxPlayers": 2,
+    "passworded": false,
+    "title": "Fixture BAR room",
+    "players": [
+      {
+        "userId": 1001,
+        "username": "Fixture player 1-1",
+        "teamId": 0,
+        "status": {
+          "bot": false
+        }
+      },
+      {
+        "userId": 1009,
+        "username": "Fixture player 2-1",
+        "teamId": 1,
+        "status": {
+          "bot": false
+        }
+      }
+    ],
+    "lobbyStatus": "waiting"
+  },
+  "replay": {
+    "id": "4842e26a56a1bef5da914e8b4ae29c9a",
+    "fileName": "2026-10-28_18-43-20-892_Aethermoor Creek 1.0_2026.07.04.sdfz",
+    "engineVersion": "2026.07.04",
+    "gameVersion": "Beyond All Reason test-31740-57a02af",
+    "startTime": "2026-10-28T18:43:20.000Z",
+    "durationMs": 403900,
+    "fullDurationMs": 470000,
+    "gameEndedNormally": true,
+    "hasBots": false,
+    "preset": "duel",
+    "Map": {
+      "scriptName": "Aethermoor Creek 1.0"
+    },
+    "AllyTeams": [
+      {
+        "allyTeamId": 0,
+        "winningTeam": true,
+        "Players": [
+          {
+            "userId": 1001,
+            "name": "Fixture player 1-1",
+            "teamId": 0,
+            "faction": "Armada"
+          }
+        ],
+        "AIs": []
+      },
+      {
+        "allyTeamId": 1,
+        "winningTeam": false,
+        "Players": [
+          {
+            "userId": 1009,
+            "name": "Fixture player 2-1",
+            "teamId": 1,
+            "faction": "Armada"
+          }
+        ],
+        "AIs": []
+      }
+    ],
+    "hostSettings": {
+      "server_match_id": "11287420"
+    }
+  }
+}
