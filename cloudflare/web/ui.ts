@@ -16,10 +16,65 @@ export class ApiError extends Error {
   }
 }
 
+export async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+  if (options.body) headers.set('Content-Type', 'application/json');
+  const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
+  const parsed = await response.json().catch(() => null);
+  const body = parsed && typeof parsed === 'object' ? parsed : {};
+  if (!response.ok)
+    throw new ApiError(
+      response.status,
+      body.code ?? 'request_failed',
+      body.error ?? 'Request failed.',
+      body.requestId ?? response.headers.get('X-Request-ID') ?? undefined,
+      body.issues,
+    );
+  return body as T;
+}
+
+/** Resolve focus again after a render replaces the original control. */
+export function rememberFocus(target = document.activeElement as HTMLElement | null) {
+  const form = target?.closest<HTMLFormElement>('form[data-config]')?.dataset.config;
+  const name = target?.getAttribute('name');
+  const attribute = [
+    'data-edit',
+    'data-action',
+    'data-view',
+    'data-help-title',
+    'data-queue-select',
+  ].find((key) => target?.hasAttribute(key));
+  const selector = target?.id
+    ? `#${CSS.escape(target.id)}`
+    : form && name
+      ? `[data-config="${CSS.escape(form)}"] [name="${CSS.escape(name)}"]`
+      : attribute
+        ? `[${attribute}="${CSS.escape(target!.getAttribute(attribute)!)}"]`
+        : '';
+  return () => {
+    const candidates = [
+      target,
+      ...(selector ? document.querySelectorAll<HTMLElement>(selector) : []),
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-edit="drawer"], #community, [data-view][aria-selected="true"]',
+      ),
+    ];
+    candidates
+      .find(
+        (el) =>
+          el?.isConnected &&
+          el !== document.body &&
+          !el.matches(':disabled') &&
+          el.getClientRects().length,
+      )
+      ?.focus();
+  };
+}
+
 /** A native top-layer dialog keeps focus and fixed overlays outside page animations. */
 export function openDialog(title: string, content: string, kind: 'drawer' | 'sheet' = 'sheet') {
   document.querySelector<HTMLDialogElement>('#app-dialog')?.close();
-  const trigger = document.activeElement as HTMLElement | null;
+  const restoreFocus = rememberFocus();
   const dialog = document.createElement('dialog');
   dialog.id = 'app-dialog';
   dialog.className = kind;
@@ -56,7 +111,7 @@ export function openDialog(title: string, content: string, kind: 'drawer' | 'she
     'close',
     () => {
       dialog.remove();
-      if (trigger?.isConnected) trigger.focus();
+      requestAnimationFrame(restoreFocus);
     },
     { once: true },
   );

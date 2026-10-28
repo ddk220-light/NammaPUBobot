@@ -1,3 +1,11 @@
+import type { Queue } from './config';
+
+export interface GameState {
+  id: string;
+  ratingEngineLocked: boolean;
+  ratingEngine: Queue['ratingEngine'] | null;
+}
+
 /** Shipped capabilities, independent of a community's enabled modules. */
 export const capabilities = {
   matchmaking: true,

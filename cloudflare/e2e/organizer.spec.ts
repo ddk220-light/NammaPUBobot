@@ -384,7 +384,22 @@ test('a 500-player import remains reviewable, duplicate imports have no Apply ac
   });
   await form.getByRole('button', { name: 'Preview import' }).click();
   await page.locator('.import-rows > summary').click();
-  await expect(page.locator('.import-player-card')).toHaveCount(500);
+  const reviewed = new Set<string>();
+  for (let batch = 0; batch < 10; batch++) {
+    await expect(page.locator('[data-import-range]')).toContainText(
+      `Showing ${batch * 50 + 1}–${(batch + 1) * 50} of 500`,
+    );
+    await expect(page.locator('.import-player-card')).toHaveCount(50);
+    for (const name of await page.locator('.import-player-card h4').allTextContents())
+      reviewed.add(name);
+    if (batch < 9)
+      await page.getByRole('button', { name: 'Next player records', exact: true }).click();
+  }
+  expect(reviewed.size).toBe(500);
+  expect(reviewed.has('Player 499')).toBe(true);
+  await expect(
+    page.getByRole('button', { name: 'Next player records', exact: true }),
+  ).toBeDisabled();
   await page.locator('.import-player-card').last().scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: 'Apply reviewed import' })).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

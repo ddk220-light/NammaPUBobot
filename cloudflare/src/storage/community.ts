@@ -123,7 +123,12 @@ export class Community extends DurableObject<Env> {
         this.playStore.assertSettings(this.read(guildId).settings, parsed);
       } catch (error) {
         if (!(error instanceof PlayError)) throw error;
-        return { ok: false as const, revision: row.revision, reason: error.message };
+        return {
+          ok: false as const,
+          revision: row.revision,
+          reason: error.message,
+          issues: error.issues,
+        };
       }
       const sql = this.ctx.storage.sql;
       const queueIds = new Set(parsed.queues.map((q) => q.id)),

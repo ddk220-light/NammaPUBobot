@@ -8,6 +8,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyModules, settingsSchema, type Settings } from '../src/domain/config';
 import { channelPermissions, type Role } from '../src/discord/client';
+import { defaultRatingSettings } from '../src/domain/rating';
+import { defaultRecords } from '../src/domain/records';
+import { defaultMaps } from '../src/domain/maps';
 
 const guild = '706320010368516198',
   otherGuild = '706320010368516199';
@@ -641,7 +644,9 @@ describe('responsive organizer contracts', () => {
       expect(body.snapshot.revision).toBe(1);
       expect(body.access.status).toBe(status === 503 ? 'unavailable' : 'needs_access');
       expect(body.channels).toEqual([]);
-      expect(body.gameState).toEqual([{ id: settings.games[0].id, ratingEngineLocked: false }]);
+      expect(body.gameState).toEqual([
+        { id: settings.games[0].id, ratingEngineLocked: false, ratingEngine: 'aoe2' },
+      ]);
       admin = false;
       expect((await http(`/api/communities/${guild}/setup`, { headers: headers() })).status).toBe(
         403,
@@ -668,9 +673,83 @@ describe('responsive organizer contracts', () => {
     });
     expect(await (await save(guild, mismatch, 1)).json()).toMatchObject({
       code: 'settings_conflict',
+      issues: expect.arrayContaining([
+        expect.objectContaining({ path: ['settings', 'queues', 1, 'ratingEngine'] }),
+      ]),
     });
     expect(await (await save(guild, settings, 0)).json()).toMatchObject({
       code: 'revision_conflict',
     });
+  });
+  it('returns paths for cross-field rating, map and rank validation', async () => {
+    await session();
+    const invalid = structuredClone(settings);
+    invalid.queues[0].ratingSettings = {
+      ...defaultRatingSettings,
+      deviation: 100,
+      minDeviation: 200,
+    };
+    invalid.queues[0].maps = { ...defaultMaps(['Arena', 'arena']), count: 3 };
+    invalid.games[0].records = {
+      ...structuredClone(defaultRecords),
+      ranks: [
+        { threshold: 0, label: 'First', roleId: null },
+        { threshold: 0, label: 'Duplicate', roleId: null },
+      ],
+    };
+    const response = await save(guild, invalid);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: 'invalid_settings',
+      requestId: expect.any(String),
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          path: ['settings', 'queues', 0, 'ratingSettings', 'minDeviation'],
+        }),
+        expect.objectContaining({ path: ['settings', 'queues', 0, 'maps', 'pool'] }),
+        expect.objectContaining({ path: ['settings', 'queues', 0, 'maps', 'count'] }),
+        expect.objectContaining({
+          path: ['settings', 'games', 0, 'records', 'ranks', 0, 'threshold'],
+        }),
+        expect.objectContaining({
+          path: ['settings', 'games', 0, 'records', 'ranks', 1, 'threshold'],
+        }),
+      ]),
+    });
+  });
+  it('identifies unavailable roles and the channel needing permissions without revision conflicts', async () => {
+    await session();
+    const invalid = structuredClone(settings),
+      missing = '100000000000000099';
+    invalid.queues[0].controls = {
+      requiredRole: missing,
+      blockedRole: null,
+      waitingSeconds: 0,
+      matchSeconds: 0,
+    };
+    invalid.games[0].records = {
+      ...structuredClone(defaultRecords),
+      ranks: [{ threshold: 0, label: 'Rank', roleId: missing }],
+    };
+    const response = await save(guild, invalid);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: 'wrong_role',
+      requestId: expect.any(String),
+      issues: [
+        expect.objectContaining({ path: ['settings', 'queues', 0, 'controls', 'requiredRole'] }),
+        expect.objectContaining({
+          path: ['settings', 'games', 0, 'records', 'ranks', 0, 'roleId'],
+        }),
+      ],
+    });
+    botPermissions = '1024';
+    const permissions = await save();
+    expect(permissions.status).toBe(409);
+    expect(await permissions.json()).toMatchObject({
+      code: 'missing_permissions',
+      issues: [expect.objectContaining({ path: ['settings', 'queues', 0, 'channelId'] })],
+    });
+    expect((await env.COMMUNITIES.getByName(guild).read(guild)).revision).toBe(0);
   });
 });

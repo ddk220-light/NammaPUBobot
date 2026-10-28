@@ -1,4 +1,4 @@
-import type { DiscordSetup } from '../src/domain/setup';
+import type { DiscordSetup, GameState } from '../src/domain/setup';
 import { capabilities } from '../src/domain/setup';
 import { defaultRatingSettings } from '../src/domain/rating';
 import { defaultRecords } from '../src/domain/records';
@@ -18,7 +18,7 @@ export const categories = {
 };
 export type Category = keyof typeof categories;
 export interface EditorSetup extends DiscordSetup {
-  gameState: { id: string; ratingEngineLocked: boolean }[];
+  gameState: GameState[];
 }
 
 type Choice = { id: string; name: string; disabled?: boolean };
@@ -389,7 +389,10 @@ export function gameEditors(draft: SettingsDraft, setup: EditorSetup) {
       const p = g.records ?? defaultRecords;
       const q = queues.find((q) => q.gameId === g.id);
       const rating = q?.ratingSettings ?? defaultRatingSettings;
-      const locked = setup.gameState.some((state) => state.id === g.id && state.ratingEngineLocked);
+      const state = setup.gameState.find((state) => state.id === g.id);
+      const locked = Boolean(state?.ratingEngineLocked);
+      const engineChanged =
+        locked && state?.ratingEngine && q && q.ratingEngine !== state.ratingEngine;
       const rankRoles = [
         { id: '', name: 'Label only — no Discord role' },
         ...setup.roles.map((r) => ({
@@ -462,7 +465,7 @@ export function gameEditors(draft: SettingsDraft, setup: EditorSetup) {
           .map((i) => rankRow(i, p.ranks[i], rankRoles))
           .join('')}</div><button type="button" data-add-rank>Add rank</button></fieldset></form>` +
         (q
-          ? `<form data-config="rating:${g.id}" novalidate><h3>Ratings shared by every queue</h3>${select('ratingEngine', 'Rating system', q.ratingEngine, choices({ aoe2: 'AoE2-style Elo', glicko2: 'Glicko2', trueskill: 'TrueSkill', flat: 'Flat' }), locked ? 'Locked because this game has player ratings.' : 'The engine becomes fixed after the first player rating is stored.', locked)}${Object.entries(
+          ? `<form data-config="rating:${g.id}" novalidate><h3>Ratings shared by every queue</h3>${select('ratingEngine', 'Rating system', q.ratingEngine, choices({ aoe2: 'AoE2-style Elo', glicko2: 'Glicko2', trueskill: 'TrueSkill', flat: 'Flat' }), locked ? 'Locked because this game has player ratings.' : 'The engine becomes fixed after the first player rating is stored.', locked)}${engineChanged ? `<p class="notice error">Player ratings now use ${esc(state!.ratingEngine)}. Restore that rating system before saving. Your other edits will be kept.</p><button type="button" data-restore-engine="${g.id}">Use saved rating system</button>` : ''}${Object.entries(
               {
                 initial: 'Starting rating',
                 deviation: 'Initial deviation',

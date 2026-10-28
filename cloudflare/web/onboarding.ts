@@ -16,7 +16,33 @@ interface Preview {
   warnings: string[];
   counts: Record<string, number>;
 }
-let pending: { bundle: ImportBundle; preview: Preview; url: string } | null = null;
+let pending: { bundle: ImportBundle; preview: Preview; url: string; snapshot: Snapshot } | null =
+  null;
+let completed: {
+  url: string;
+  sourceId: string;
+  alreadyApplied: boolean;
+  counts: Record<string, number>;
+  refreshError?: string;
+} | null = null;
+const countLabels: Record<string, string> = {
+  players: 'Players in source',
+  newPlayers: 'New players',
+  existingPlayers: 'Existing players retained',
+  matches: 'Matches',
+  changes: 'Rating history rows',
+};
+const countList = (counts: Record<string, number>) =>
+  `<dl class="import-counts">${Object.entries(counts)
+    .map(([key, count]) => `<div><dt>${esc(countLabels[key] ?? key)}</dt><dd>${count}</dd></div>`)
+    .join('')}</dl>`;
+function resultMarkup(url: string) {
+  if (!completed || completed.url !== url) return '';
+  return `<section class="import-result" role="status"><h3 tabindex="-1" data-import-result-heading>${completed.alreadyApplied ? 'Already imported' : 'Import applied'}</h3><p>Source: ${esc(completed.sourceId)}. ${completed.alreadyApplied ? 'No duplicate changes were made.' : 'The server confirmed this import. Existing seed records were retained.'}</p>${countList(completed.counts)}${completed.refreshError ? `<p class="notice error">The import succeeded, but records could not refresh: ${esc(completed.refreshError)}</p><button type="button" data-action="refresh-records">Retry record refresh</button>` : ''}</section>`;
+}
+export function importRecordsRefreshed(url: string) {
+  if (completed?.url === url) delete completed.refreshError;
+}
 let generation = 0;
 export function invalidateImport() {
   pending = null;
@@ -26,6 +52,7 @@ export function invalidateImport() {
 }
 export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
   const s = snapshot.settings;
+  const result = resultMarkup(`/api/communities/${snapshot.communityId}/import/apply`);
   const games = s.games.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
   const queues = s.queues.map((q) => `<option value="${q.id}">${esc(q.name)}</option>`).join('');
   const playerActions = {
@@ -57,7 +84,8 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
         : ''
     }
 
-    <details class="rating-options" data-import-section><summary>Import player records</summary>
+    <details class="rating-options" data-import-section ${result ? 'open' : ''}><summary>Import player records</summary>
+      <div id="import-result" aria-live="polite">${result}</div>
       <p class="view-description">Seed imports add new players without changing existing records. Full history needs an empty destination game and matching result and rating-history totals.</p>
       ${
         s.games.length && s.queues.length
@@ -79,13 +107,6 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
 }
 
 function importReview(bundle: ImportBundle, preview: Preview, snapshot: Snapshot) {
-  const countLabels: Record<string, string> = {
-    players: 'Players in source',
-    newPlayers: 'New players',
-    existingPlayers: 'Existing players retained',
-    matches: 'Matches',
-    changes: 'Rating history rows',
-  };
   const destinations = bundle.mappings
     .map((mapping) => {
       const game = snapshot.settings.games.find((g) => g.id === mapping.gameId);
@@ -109,10 +130,120 @@ function importReview(bundle: ImportBundle, preview: Preview, snapshot: Snapshot
     <div class="table-wrap"><table><caption>Import destinations</caption><thead><tr><th scope="col">Source ladder</th><th scope="col">Game</th><th scope="col">Queue mappings</th></tr></thead><tbody>${destinations}</tbody></table></div>
     ${preview.errors.length ? `<div class="notice error"><h4>Fix before importing</h4><ul class="review-issues">${preview.errors.map((message) => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
     ${preview.warnings.length ? `<div class="review-warnings"><h4>Review these notes</h4><ul class="review-issues">${preview.warnings.map((message) => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
-    <details class="import-rows"><summary>Review ${bundle.players.length} player records</summary><div class="import-player-cards">${bundle.players.map(({ player }) => `<article class="import-player-card"><h4>${esc(player.name)}</h4><dl><div><dt>Discord ID</dt><dd>${esc(player.id)}</dd></div><div><dt>Rating</dt><dd>${esc(player.rating)}</dd></div><div><dt>Deviation</dt><dd>${esc(player.deviation)}</dd></div></dl></article>`).join('')}</div></details>
-    <details class="technical-details"><summary>Technical mappings and preview</summary><pre>${esc(JSON.stringify({ source: bundle.source, mode: bundle.mode, mappings: bundle.mappings, ...preview }, null, 2))}</pre></details>
+    ${(['players', 'matches', 'changes'] as const)
+      .filter((kind) => bundle[kind].length)
+      .map(
+        (kind) =>
+          `<details class="import-rows" data-import-history="${kind}"><summary>Review ${bundle[kind].length} ${reviewLabels[kind]}</summary><div data-import-page-content>${reviewPage(bundle, snapshot, kind, 0)}</div></details>`,
+      )
+      .join('')}
+    <details class="technical-details"><summary>Technical mappings and preview</summary><pre>${esc(JSON.stringify({ version: bundle.version, source: bundle.source, mode: bundle.mode, mappings: bundle.mappings, unsupported: bundle.unsupported, ...preview }, null, 2))}</pre></details>
     ${preview.ok && !preview.alreadyApplied ? '<div class="actions import-apply"><button type="button" data-discard-import>Discard preview</button><button type="button" class="primary" data-action="apply-import" aria-describedby="import-review-summary">Apply reviewed import</button></div>' : ''}
   </section>`;
+}
+function reviewCard(
+  title: string,
+  values: Record<string, unknown>,
+  className = 'import-history-card',
+) {
+  return `<article class="${className}"><h4>${esc(title)}</h4><dl>${Object.entries(values)
+    .map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`)
+    .join('')}</dl></article>`;
+}
+function destination(
+  bundle: ImportBundle,
+  snapshot: Snapshot,
+  ladder: string,
+  sourceQueue?: string,
+) {
+  const mapping = bundle.mappings.find((m) => m.ladder === ladder);
+  if (!mapping) return 'Missing mapping';
+  const game = snapshot.settings.games.find((g) => g.id === mapping.gameId);
+  if (sourceQueue === undefined) return `${game?.name ?? 'Unavailable game'} · ${mapping.gameId}`;
+  const id = mapping.queues[sourceQueue];
+  const queue = snapshot.settings.queues.find((q) => q.id === id);
+  return `${queue?.name ?? 'Unavailable queue'} · ${id ?? 'Missing mapping'}`;
+}
+const reviewLabels = {
+  players: 'player records',
+  matches: 'matches',
+  changes: 'rating history rows',
+};
+type ReviewKind = keyof typeof reviewLabels;
+function reviewRows(bundle: ImportBundle, snapshot: Snapshot, kind: ReviewKind, offset: number) {
+  if (kind === 'players')
+    return bundle.players
+      .slice(offset, offset + 50)
+      .map((row) =>
+        reviewCard(
+          row.player.name,
+          {
+            'Discord ID': row.player.id,
+            'Source ladder': row.ladder,
+            'Destination game': destination(bundle, snapshot, row.ladder),
+            Rating: row.player.rating,
+            Deviation: row.player.deviation,
+            Wins: row.player.wins,
+            Losses: row.player.losses,
+            Draws: row.player.draws,
+            Streak: row.player.streak,
+            'Hidden from statistics': row.hidden ? 'Yes' : 'No',
+            'Last ranked match':
+              row.lastRankedAt == null ? 'Not recorded' : new Date(row.lastRankedAt).toISOString(),
+          },
+          'import-player-card',
+        ),
+      )
+      .join('');
+  if (kind === 'matches')
+    return bundle.matches
+      .slice(offset, offset + 50)
+      .map((m) =>
+        reviewCard(m.sourceId, {
+          'Source match ID': m.sourceId,
+          'Source ladder': m.ladder,
+          'Source queue': m.queue,
+          'Destination game': destination(bundle, snapshot, m.ladder),
+          'Destination queue': destination(bundle, snapshot, m.ladder, m.queue),
+          'Started at': new Date(m.at).toISOString(),
+          'Ended at': new Date(m.endedAt).toISOString(),
+          Result: m.result,
+          'Alpha Discord IDs': m.teams[0].join(', '),
+          'Beta Discord IDs': m.teams[1].join(', '),
+        }),
+      )
+      .join('');
+  return bundle.changes
+    .slice(offset, offset + 50)
+    .map((c) =>
+      reviewCard(c.sourceId, {
+        'Source change ID': c.sourceId,
+        'Source ladder': c.ladder,
+        'Destination game': destination(bundle, snapshot, c.ladder),
+        'Player Discord ID': c.userId,
+        'Source match ID': c.matchId ?? 'No match',
+        'Changed at': new Date(c.at).toISOString(),
+        'Rating before': c.before,
+        'Rating after': c.after,
+        'Deviation before': c.deviationBefore,
+        'Deviation after': c.deviationAfter,
+        Reason: c.reason,
+      }),
+    )
+    .join('');
+}
+function reviewPage(bundle: ImportBundle, snapshot: Snapshot, kind: ReviewKind, offset: number) {
+  const total = bundle[kind].length;
+  return `<p tabindex="-1" data-import-range role="status">Showing ${offset + 1}–${Math.min(total, offset + 50)} of ${total} ${reviewLabels[kind]}</p><div class="import-player-cards">${reviewRows(bundle, snapshot, kind, offset)}</div>${total > 50 ? `<div class="actions"><button type="button" data-import-page="${kind}" data-offset="${offset - 50}" ${offset === 0 ? 'disabled data-unavailable="true"' : ''}>Previous ${reviewLabels[kind]}</button><button type="button" data-import-page="${kind}" data-offset="${offset + 50}" ${offset + 50 >= total ? 'disabled data-unavailable="true"' : ''}>Next ${reviewLabels[kind]}</button></div>` : ''}`;
+}
+export function pageImportRows(button: HTMLElement) {
+  if (!pending) return;
+  const kind = button.dataset.importPage as ReviewKind;
+  const offset = Number(button.dataset.offset);
+  if (offset < 0 || offset >= pending.bundle[kind].length) return;
+  const content = button.closest('[data-import-page-content]')!;
+  content.innerHTML = reviewPage(pending.bundle, pending.snapshot, kind, offset);
+  content.querySelector<HTMLElement>('[data-import-range]')?.focus();
 }
 interface Helpers {
   api: <T>(path: string, options?: RequestInit) => Promise<T>;
@@ -178,7 +309,7 @@ export async function onboardingSubmit(
       body: JSON.stringify(bundle),
     });
     if (current !== generation || !previewBox.isConnected) return true;
-    pending = { bundle, preview, url: h.url('import/apply') };
+    pending = { bundle, preview, url: h.url('import/apply'), snapshot };
     previewBox.innerHTML = importReview(bundle, preview, snapshot);
     previewBox.querySelector<HTMLElement>('#import-review-heading')?.focus();
     return true;
@@ -193,18 +324,32 @@ export async function applyImport(h: Helpers) {
     pending.url !== h.url('import/apply')
   )
     throw new Error('Preview the import first.');
+  const review = pending;
   const result = await h.api<{ alreadyApplied: boolean; counts: Record<string, number> }>(
     h.url('import/apply'),
     {
       method: 'POST',
-      body: JSON.stringify({ bundle: pending.bundle, target: pending.preview.target }),
+      body: JSON.stringify({ bundle: review.bundle, target: review.preview.target }),
     },
   );
-  pending = null;
-  await h.reload();
+  invalidateImport();
+  completed = { ...result, sourceId: review.bundle.sourceId, url: review.url };
+  const showResult = () => {
+    const box = document.querySelector('#import-result');
+    if (box && h.url('import/apply') === review.url) {
+      box.innerHTML = resultMarkup(review.url);
+      box.closest('details')!.open = true;
+      box.querySelector<HTMLElement>('[data-import-result-heading]')?.focus();
+    }
+  };
+  showResult();
+  try {
+    await h.reload();
+  } catch (error) {
+    completed.refreshError = error instanceof Error ? error.message : 'Try again.';
+  }
+  showResult();
   h.notice(
-    result.alreadyApplied
-      ? 'This import was already applied.'
-      : 'Import applied. Existing seed records were retained.',
+    `${result.alreadyApplied ? 'This import was already applied.' : 'Import applied. Existing seed records were retained.'}${completed.refreshError ? ' Records could not refresh; retry the refresh below.' : ''}`,
   );
 }

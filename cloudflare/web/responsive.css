@@ -606,29 +606,36 @@ dialog::backdrop {
   gap: 12px;
   margin: 16px 0;
 }
-.import-player-card {
+.import-player-card,
+.import-history-card {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 18px;
   min-width: 0;
 }
-.import-player-card h4 {
+.import-player-card h4,
+.import-history-card h4 {
   margin: 0 0 12px;
+  overflow-wrap: anywhere;
 }
-.import-player-card dl {
+.import-player-card dl,
+.import-history-card dl {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin: 0;
 }
-.import-player-card dl > div:first-child {
+.import-player-card dl > div:first-child,
+.import-history-card dl > div:first-child {
   grid-column: 1/-1;
 }
-.import-player-card dt {
+.import-player-card dt,
+.import-history-card dt {
   color: var(--muted);
   font-size: 12px;
 }
-.import-player-card dd {
+.import-player-card dd,
+.import-history-card dd {
   margin: 2px 0 0;
   overflow-wrap: anywhere;
 }
@@ -681,10 +688,12 @@ summary {
   padding-bottom: 10px;
 }
 table .link-button,
-table a {
+table a,
+.actions a {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
+  min-width: 44px;
 }
 @media (max-width: 900px) {
   .organizer-layout {

@@ -7,17 +7,32 @@ import {
   type Category,
   type EditorSetup,
 } from './settings';
-import { ApiError, openDialog, labelTables, installViewport } from './ui';
+import {
+  ApiError,
+  openDialog,
+  labelTables,
+  installViewport,
+  requestJson,
+  rememberFocus,
+} from './ui';
+import type { GameState } from '../src/domain/setup';
 import { gameCatalog } from '../src/games/catalog';
 import './style.css';
 import './responsive.css';
-import { onboarding, onboardingSubmit, applyImport, invalidateImport } from './onboarding';
+import {
+  onboarding,
+  onboardingSubmit,
+  applyImport,
+  invalidateImport,
+  importRecordsRefreshed,
+  pageImportRows,
+} from './onboarding';
 import { showStats } from './stats';
 import { type Settings, type Snapshot } from '../src/domain/config';
 import { type Player } from '../src/domain/rating';
 import type { Action, Match } from '../src/domain/play';
 interface Records {
-  gameState: { id: string; ratingEngineLocked: boolean }[];
+  gameState: GameState[];
   economy: {
     wallets: { game_id: string; user_id: string; balance: number }[];
     ledger: {
@@ -97,6 +112,24 @@ let settingsSearch = '';
 let conflict = false;
 let loadSequence = 0;
 let awaitingDiscordReturn = false;
+type Issue = { path: (string | number)[]; message: string };
+type FieldIssue = Issue & { form: string; name: string };
+let validationIssues: FieldIssue[] = [];
+let currentNotice: { message: string; error: boolean } | null = null;
+let historyIndex = Number(history.state?.organizerIndex ?? 0);
+let acceptedUrl = location.href;
+let restoringHistory = false;
+function writeRoute(url: URL, mode: 'push' | 'replace' = 'push') {
+  if (url.href !== location.href || mode === 'replace') {
+    if (mode === 'push') historyIndex++;
+    history[mode === 'push' ? 'pushState' : 'replaceState'](
+      { organizerIndex: historyIndex },
+      '',
+      url,
+    );
+  }
+  acceptedUrl = url.href;
+}
 const canLeave = () =>
   !draft?.dirty || confirm('Discard your unsaved settings and leave this community?');
 const organizerViews = ['overview', 'queues', 'matches', 'players', 'setup'] as const;
@@ -108,7 +141,6 @@ const viewNames: Record<OrganizerView, string> = {
   players: 'Players',
   setup: 'Setup',
 };
-const viewsByCommunity = new Map<string, OrganizerView>();
 interface OrganizerFilters {
   playerGame: string;
   playerSearch: string;
@@ -116,8 +148,6 @@ interface OrganizerFilters {
   matchState: string;
 }
 const filtersByCommunity = new Map<string, OrganizerFilters>();
-const requestedView = new URL(location.href).searchParams.get('view');
-let initialViewUsed = false;
 let refreshedAt: Date | null = null;
 const escape = (s: unknown) =>
   String(s).replace(
@@ -129,23 +159,13 @@ const isOrganizerView = (value: string | null): value is OrganizerView =>
   organizerViews.includes(value as OrganizerView);
 
 function currentView(): OrganizerView {
-  const saved = viewsByCommunity.get(guildId);
-  if (saved) return saved;
-  const view =
-    !initialViewUsed && isOrganizerView(requestedView)
-      ? requestedView
-      : snapshot?.settings.queues.length
-        ? 'overview'
-        : 'setup';
-  initialViewUsed = true;
-  viewsByCommunity.set(guildId, view);
-  return view;
+  const view = new URL(location.href).searchParams.get('view');
+  return isOrganizerView(view) ? view : snapshot?.settings.queues.length ? 'overview' : 'setup';
 }
 function selectView(view: OrganizerView, focus = false, push = true) {
-  viewsByCommunity.set(guildId, view);
   const url = new URL(location.href);
   url.searchParams.set('view', view);
-  if (push && url.href !== location.href) history.pushState(null, '', url);
+  if (push) writeRoute(url);
   app.querySelectorAll<HTMLButtonElement>('[role=tab][data-view]').forEach((button) => {
     const active = button.dataset.view === view;
     button.setAttribute('aria-selected', String(active));
@@ -311,27 +331,12 @@ async function loadMorePlayers() {
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (options.body) headers.set('Content-Type', 'application/json');
   if (bootstrap?.csrf) headers.set('X-CSRF-Token', bootstrap.csrf);
-  const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
-  const body = (await response.json().catch(() => ({}))) as {
-    error?: string;
-    requestId?: string;
-    code?: string;
-    issues?: { path: (string | number)[]; message: string }[];
-  };
-  if (!response.ok)
-    throw new ApiError(
-      response.status,
-      body.code ?? 'request_failed',
-      body.error ?? 'Request failed.',
-      body.requestId ?? response.headers.get('X-Request-ID') ?? undefined,
-      body.issues,
-    );
-  return body as T;
+  return requestJson<T>(path, { ...options, headers });
 }
 const communityUrl = (suffix: string) => `/api/communities/${guildId}/${suffix}`;
-function notice(message: string, error = false) {
+function notice(message: string, error = false, focus = true) {
+  currentNotice = { message, error };
   const box = document.querySelector<HTMLElement>('#notice');
   if (box) {
     box.textContent = message;
@@ -340,13 +345,15 @@ function notice(message: string, error = false) {
     box.hidden = false;
     if (error) {
       box.tabIndex = -1;
-      if (!app.querySelector('[aria-invalid="true"]')) box.focus();
+      if (focus && !app.querySelector('[aria-invalid="true"]')) box.focus();
     }
   }
 }
 async function run(action: () => Promise<void>) {
   if (busy) return;
+  const restoreFocus = rememberFocus();
   busy = true;
+  currentNotice = null;
   const previousNotice = app.querySelector<HTMLElement>('#notice');
   if (previousNotice) {
     previousNotice.hidden = true;
@@ -377,7 +384,11 @@ async function run(action: () => Promise<void>) {
       >('input, select, button, textarea')
       .forEach((b) => (b.disabled = b.dataset.unavailable === 'true' || disabled.get(b) === true));
     updateDirty();
-    app.querySelector<HTMLElement>('[aria-invalid="true"]:not(:disabled)')?.focus();
+    const invalid = [
+      ...app.querySelectorAll<HTMLElement>('[aria-invalid="true"]:not(:disabled)'),
+    ].find((el) => el.getClientRects().length);
+    if (invalid) invalid.focus();
+    else if (document.activeElement === document.body) restoreFocus();
   }
 }
 async function save(settings: Settings) {
@@ -385,39 +396,51 @@ async function save(settings: Settings) {
   const community = guildId;
   const saved = await api<Snapshot>(communityUrl('config'), {
     method: 'PUT',
-    body: JSON.stringify({ expectedRevision: snapshot.revision, settings }),
+    body: JSON.stringify({ expectedRevision: draft!.saved.revision, settings }),
   });
   if (community !== guildId) return;
   snapshot = saved;
-  draft = new SettingsDraft(saved);
+  draft = new SettingsDraft(saved, setup.gameState);
+  validationIssues = [];
   conflict = false;
   invalidateImport();
   render();
   notice('Settings saved. Discord delivery may still be pending.');
 }
-async function loadCommunity(id: string) {
+async function loadCommunity(id: string, navigation: 'push' | 'replace' | 'none' = 'none') {
   const sequence = ++loadSequence;
+  const url = new URL(location.href);
+  if (navigation === 'push') {
+    url.searchParams.set('view', currentView());
+    for (const key of ['queue', 'game', 'section']) url.searchParams.delete(key);
+  }
+  url.searchParams.set('community', id);
+  if (navigation !== 'none') writeRoute(url, navigation);
+  selectedQueue = url.searchParams.get('queue') ?? '';
+  category = (url.searchParams.get('section') ?? 'basics') as Category;
+  settingsSearch = '';
   guildId = id;
   snapshot = null;
   draft = null;
   records = null;
   channelList = [];
+  validationIssues = [];
+  currentNotice = null;
   invalidateImport();
-  const url = new URL(location.href);
-  url.searchParams.set('community', id);
-  history.replaceState(null, '', url);
   render();
   const result = await api<EditorSetup & { snapshot: Snapshot; records: Records }>(
     communityUrl('setup'),
   );
   if (guildId !== id || sequence !== loadSequence) return;
   snapshot = result.snapshot;
-  draft = new SettingsDraft(snapshot);
+  draft = new SettingsDraft(snapshot, result.gameState);
   setup = result;
   channelList = result.channels;
   records = result.records;
   refreshedAt = new Date();
   conflict = false;
+  url.searchParams.set('view', currentView());
+  writeRoute(url, 'replace');
   render();
 }
 async function refreshRecords() {
@@ -425,7 +448,9 @@ async function refreshRecords() {
   const result = await api<Records>(communityUrl('records'));
   if (id !== guildId) return;
   records = result;
+  importRecordsRefreshed(communityUrl('import/apply'));
   setup.gameState = result.gameState ?? setup.gameState;
+  if (draft) draft.gameState = setup.gameState;
   refreshedAt = new Date();
   render();
 }
@@ -440,11 +465,13 @@ async function refreshSetup() {
   channelList = result.channels;
   records = result.records;
   refreshedAt = new Date();
+  snapshot = result.snapshot;
+  draft.gameState = result.gameState;
   if (!draft.dirty) {
-    snapshot = result.snapshot;
-    draft = new SettingsDraft(snapshot);
+    draft = new SettingsDraft(snapshot, result.gameState);
+    validationIssues = [];
     conflict = false;
-  } else if (result.snapshot.revision !== snapshot.revision) conflict = true;
+  } else if (snapshot.revision !== draft.saved.revision) conflict = true;
   render();
   notice(
     conflict
@@ -453,65 +480,146 @@ async function refreshSetup() {
     conflict || setup.access.status !== 'ready',
   );
 }
-function showIssues(issues: { path: (string | number)[]; message: string }[]) {
-  for (const issue of issues) {
-    const path = issue.path.filter((p) => p !== 'settings');
-    let input: HTMLElement | null = null;
-    if (path[0] === 'queues' && typeof path[1] === 'number') {
-      const q = draft?.working.queues[path[1]];
-      selectedQueue = q?.id ?? selectedQueue;
+function fieldIssue(issue: Issue): FieldIssue {
+  const path = issue.path[0] === 'settings' ? issue.path.slice(1) : issue.path;
+  const settings = draft!.materialize();
+  let form = '',
+    name = String(path[2] ?? '');
+  const key = path
+    .slice(2)
+    .filter((part) => typeof part === 'string')
+    .join('.');
+  if (path[0] === 'queues') {
+    const q = settings.queues[Number(path[1])];
+    if (q) {
+      form = `queue:${q.id}`;
+      const names: Record<string, string> = {
+        'checkIn.enabled': 'checkIn',
+        'checkIn.seconds': 'seconds',
+        'checkIn.reuseSeconds': 'reuseSeconds',
+        'controls.requiredRole': 'requiredRole',
+        'controls.blockedRole': 'blockedRole',
+        'controls.waitingSeconds': 'waitingSeconds',
+        'controls.matchSeconds': 'matchSeconds',
+        'rally.enabled': 'rallyEnabled',
+        'rally.channels': 'rallyChannels',
+        'rally.roles': 'rallyRoles',
+        'rally.cooldownSeconds': 'rallyCooldown',
+        'rally.mentionLimit': 'rallyMentions',
+        'economy.taxEnabled': 'taxEnabled',
+        maps: 'mapPool',
+        'maps.pool': 'mapPool',
+        'maps.mode': 'mapMode',
+        'maps.count': 'mapCount',
+        'maps.shortlist': 'mapShortlist',
+        'maps.voting': 'mapVoting',
+        'maps.tie': 'mapTie',
+        'maps.noVotes': 'mapNoVotes',
+        'maps.seconds': 'mapSeconds',
+        'maps.recentAvoid': 'mapRecent',
+        'maps.countsAsCheckIn': 'mapCheckIn',
+      };
+      name = names[key] ?? (path[2] === 'modules' ? `module-${path[3]}` : name);
       if (
-        q &&
-        (path[2] === 'ratingSettings' ||
-          path[2] === 'ratingEngine' ||
-          (path[2] === 'economy' && path[3] === 'taxMinuteUtc'))
+        ['ratingSettings', 'ratingEngine'].includes(String(path[2])) ||
+        key === 'economy.taxMinuteUtc'
       ) {
-        selectView('setup');
-        render();
-        const name = String(path[3] ?? path[2]);
-        input = app.querySelector<HTMLElement>(
-          `[data-config="rating:${q.gameId}"] [name="${name}"]`,
-        );
-      } else {
-        selectView('queues');
-        render();
+        form = `rating:${q.gameId}`;
+        name = String(path[3] ?? path[2]);
+        if (name === 'ratingSettings') name = 'initial';
       }
-    } else if (path[0] === 'games') {
-      selectView('setup');
-      render();
-      const game = draft?.working.games[Number(path[1])];
-      const form = app.querySelector<HTMLFormElement>(`[data-config="game:${game?.id}"]`);
-      if (path[2] === 'records' && path[3] === 'ranks' && typeof path[4] === 'number') {
-        const row = form?.querySelectorAll('[data-rank-row]')[path[4]];
-        input =
-          row?.querySelector<HTMLElement>(
-            `[name$="-${path[5] === 'roleId' ? 'role' : path[5]}"]`,
-          ) ?? null;
-      } else if (form && typeof path.at(-1) === 'string')
-        input = form.querySelector<HTMLElement>(`[name="${path.at(-1)}"]`);
     }
-    input ??= app.querySelector<HTMLElement>(
-      `[data-issue-path="${path.join('.').replaceAll('"', '')}"]`,
-    );
-    if (input) {
-      input.setAttribute('aria-invalid', 'true');
-      input.closest('details')?.setAttribute('open', '');
-      const panel = input.closest<HTMLElement>('[data-category-panel]');
-      if (panel) {
-        category = panel.dataset.categoryPanel as Category;
-        settingsSearch = '';
-        applyCategories();
+  } else if (path[0] === 'games') {
+    const g = settings.games[Number(path[1])];
+    if (g) {
+      form = `game:${g.id}`;
+      if (path[2] === 'records' && path[3] === 'ranks' && typeof path[4] === 'number') {
+        const indexes = draft!.raw.has(form)
+          ? Object.keys(draft!.raw.get(form)!)
+              .filter((k) => /^rank-\d+-threshold$/.test(k))
+              .map((k) => k.split('-')[1])
+          : (g.records?.ranks ?? []).map((_, i) => String(i));
+        name = `rank-${indexes[path[4]]}-${path[5] === 'roleId' ? 'role' : (path[5] ?? 'threshold')}`;
+      } else {
+        const names: Record<string, string> = {
+          'connector.enabled': 'lobbyConnector',
+          'connector.autoAttach.lobbyName': 'lobbyName',
+          'records.inactivity.enabled': 'decay',
+        };
+        name = names[key] ?? String(path.at(-1));
       }
-      const id = `error-${path.join('-')}`;
-      input.setAttribute('aria-describedby', id);
-      input.insertAdjacentHTML(
-        'afterend',
-        `<p id="${escape(id)}" class="field-error" role="alert">${escape(issue.message)}</p>`,
-      );
-      input.focus();
-      break;
     }
   }
+  return { ...issue, form, name };
+}
+function issueInputs(issue: FieldIssue) {
+  return [
+    ...app.querySelectorAll<HTMLElement>(
+      `[data-config="${CSS.escape(issue.form)}"] [name="${CSS.escape(issue.name)}"]`,
+    ),
+  ];
+}
+function paintIssues() {
+  app.querySelectorAll('[data-validation-error]').forEach((el) => el.remove());
+  app.querySelectorAll('[aria-invalid]').forEach((el) => {
+    el.removeAttribute('aria-invalid');
+    const ids = el
+      .getAttribute('aria-describedby')
+      ?.split(' ')
+      .filter((id) => !id.startsWith('field-error-'));
+    if (ids?.length) el.setAttribute('aria-describedby', ids.join(' '));
+    else el.removeAttribute('aria-describedby');
+  });
+  validationIssues.forEach((issue, index) => {
+    const inputs = issueInputs(issue);
+    if (!inputs.length) return;
+    const id = `field-error-${index}`;
+    for (const input of inputs) {
+      input.setAttribute('aria-invalid', 'true');
+      input.setAttribute(
+        'aria-describedby',
+        [input.getAttribute('aria-describedby'), id].filter(Boolean).join(' '),
+      );
+    }
+    const container = inputs[0].closest('.choice-list') ?? inputs[0];
+    container.insertAdjacentHTML(
+      'afterend',
+      `<p id="${id}" data-validation-error class="field-error" role="alert">${escape(issue.message)}</p>`,
+    );
+  });
+}
+function showIssues(issues: Issue[]) {
+  validationIssues = [
+    ...new Map(
+      issues.map((issue) => {
+        const field = fieldIssue(issue);
+        return [`${field.form}:${field.name}:${field.message}`, field] as const;
+      }),
+    ).values(),
+  ];
+  const first = validationIssues.find((issue) => issue.form);
+  if (first) {
+    const url = new URL(location.href);
+    if (first.form.startsWith('queue:')) {
+      selectedQueue = first.form.slice(6);
+      url.searchParams.set('view', 'queues');
+      url.searchParams.set('queue', selectedQueue);
+    } else {
+      url.searchParams.set('view', 'setup');
+      url.searchParams.set('game', first.form.split(':')[1]);
+    }
+    writeRoute(url);
+  }
+  render();
+  const input = first && issueInputs(first)[0];
+  const panel = input?.closest<HTMLElement>('[data-category-panel]');
+  if (panel) {
+    category = panel.dataset.categoryPanel as Category;
+    settingsSearch = '';
+    editRoute(undefined, 'replace');
+    applyCategories();
+  }
+  input?.focus();
 }
 function updateDirty() {
   const dirty = Boolean(draft?.dirty);
@@ -618,6 +726,7 @@ async function repair(
   );
   records = result.records;
   setup.gameState = records.gameState ?? setup.gameState;
+  if (draft) draft.gameState = setup.gameState;
   render();
   notice(result.reply.content);
 }
@@ -805,11 +914,9 @@ function overviewSection() {
   return `<div class="page-heading"><div><p class="eyebrow">Your community, ready to play</p><h1>Overview</h1><p class="view-description">Organize games here. Join and play together in Discord.</p></div><button type="button" data-view="queues" class="primary">Manage queues</button></div>${setupJourney()}<div class="overview-grid"><section class="panel metric"><span>Games</span><strong>${saved.games.length}</strong></section><section class="panel metric"><span>Enabled queues</span><strong>${saved.queues.filter((q) => q.enabled).length}</strong></section><section class="panel metric"><span>Active in recent matches</span><strong>${active}</strong><small>From the latest ${records?.matches.length ?? 0} records</small></section></div><section class="panel"><h2>Delivery health</h2>${problems.length ? problems.map((p) => `<p class="notice error">${escape(p.error)}</p>`).join('') : '<p>No errors in the loaded delivery tasks.</p>'}<p class="form-help">Shows recent tasks, not an all-time health total.</p><button type="button" data-view="matches">Open delivery diagnostics</button></section>`;
 }
 function render() {
+  const restoreFocus = rememberFocus();
   // A render replaces the import inputs, so any previous review must expire with them.
   invalidateImport();
-  const openGames = [...app.querySelectorAll<HTMLDetailsElement>('.game-settings[open]')].map(
-    (el) => el.id,
-  );
   if (!bootstrap.user) {
     document.body.classList.remove('organizer');
     app.innerHTML = `<section class="intro"><p class="eyebrow">A better game night</p><h1>Your community.<br>Your rules.</h1><p class="lead">Set up Discord queues, manage game-night rules and review results in one place.</p><div class="actions">${bootstrap.oauthReady ? `<a class="button primary" href="/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}">Sign in with Discord</a>` : '<p class="notice">Discord sign-in is not configured yet.</p>'}${bootstrap.inviteUrl ? `<a class="button" href="${escape(bootstrap.inviteUrl)}">Add to Discord</a>` : ''}</div><div id="notice" hidden></div></section>`;
@@ -845,17 +952,23 @@ function render() {
     updateDirty();
     const search = app.querySelector<HTMLInputElement>('[data-settings-search]');
     if (search) search.value = settingsSearch;
-    openGames.forEach((id) => document.getElementById(id)?.setAttribute('open', ''));
-    const selectedGame = new URL(location.href).searchParams.get('game');
-    if (selectedGame)
-      document.getElementById(`game-settings-${selectedGame}`)?.setAttribute('open', '');
+    applyGameRoute();
+    paintIssues();
     if (busy)
       app
         .querySelectorAll<
           HTMLInputElement | HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement
         >('input,button,select,textarea')
         .forEach((el) => (el.disabled = true));
+    else restoreFocus();
   }
+  if (currentNotice) notice(currentNotice.message, currentNotice.error, false);
+}
+function applyGameRoute() {
+  const game = new URL(location.href).searchParams.get('game');
+  app.querySelectorAll<HTMLDetailsElement>('.game-settings').forEach((details) => {
+    details.open = details.id === `game-settings-${game}`;
+  });
 }
 app.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -927,7 +1040,7 @@ app.addEventListener('click', (event) => {
       case 'logout':
         if (!canLeave()) break;
         await api('/api/logout', { method: 'POST' });
-        draft = snapshot ? new SettingsDraft(snapshot) : null;
+        draft = snapshot ? new SettingsDraft(snapshot, setup.gameState) : null;
         location.reload();
         break;
       case 'check-access':
@@ -977,7 +1090,7 @@ app.addEventListener('change', (event) => {
   const form = input.closest('form');
   if (form?.dataset.review) cancelRepair(form);
   if (input.id === 'community' && input.value) {
-    if (canLeave()) void run(() => loadCommunity(input.value));
+    if (input.value !== guildId && canLeave()) void run(() => loadCommunity(input.value, 'push'));
     else input.value = guildId;
   }
 });
@@ -986,19 +1099,22 @@ app.addEventListener('input', (event) => {
   if (input.dataset.filter === 'player-search') updateFilter(input);
 });
 
-function editRoute() {
+function editRoute(view?: OrganizerView, mode: 'push' | 'replace' = 'push') {
   const url = new URL(location.href);
+  if (view) url.searchParams.set('view', view);
   url.searchParams.set('queue', selectedQueue);
   url.searchParams.set('section', category);
-  if (url.href !== location.href) history.pushState(null, '', url);
+  writeRoute(url, mode);
 }
 function captureEdit(event: Event) {
   const input = event.target as HTMLInputElement;
   const form = input.closest<HTMLFormElement>('form[data-config]');
   if (form && draft) {
     draft.capture(form);
-    input.removeAttribute('aria-invalid');
-    input.parentElement?.querySelector('.field-error')?.remove();
+    validationIssues = validationIssues.filter(
+      (issue) => issue.form !== form.dataset.config || issue.name !== input.name,
+    );
+    paintIssues();
     if (input.type === 'checkbox') {
       const text = input.closest('.switch-control')?.querySelector('.switch-text');
       if (text) text.textContent = input.checked ? 'On' : 'Off';
@@ -1010,7 +1126,7 @@ function captureEdit(event: Event) {
     settingsSearch = input.value;
     applyCategories();
   }
-  if (input.hasAttribute('data-queue-select')) {
+  if (input.hasAttribute('data-queue-select') && event.type === 'change') {
     selectedQueue = input.value;
     settingsSearch = '';
     editRoute();
@@ -1022,14 +1138,34 @@ app.addEventListener('input', captureEdit);
 app.addEventListener('change', captureEdit);
 function handleEditorClick(event: MouseEvent): boolean {
   const target = event.target as Element;
+  const more = target.closest<HTMLElement>('[data-import-page]');
+  if (more && !busy) {
+    pageImportRows(more);
+    return true;
+  }
   if (target.closest('[data-discord-invite]')) awaitingDiscordReturn = true;
   const gameSummary = target.closest<HTMLElement>('.game-settings > summary');
   if (gameSummary) {
+    event.preventDefault();
+    if (busy) return true;
     const details = gameSummary.parentElement as HTMLDetailsElement;
     const url = new URL(location.href);
     if (details.open) url.searchParams.delete('game');
     else url.searchParams.set('game', details.id.replace('game-settings-', ''));
-    if (url.href !== location.href) history.pushState(null, '', url);
+    writeRoute(url);
+    applyGameRoute();
+    return true;
+  }
+  const engine = target.closest<HTMLElement>('[data-restore-engine]');
+  if (engine && draft && !busy) {
+    const game = engine.dataset.restoreEngine!;
+    draft.restoreEngine(game);
+    validationIssues = validationIssues.filter(
+      (issue) => issue.form !== `rating:${game}` || issue.name !== 'ratingEngine',
+    );
+    render();
+    notice('Saved rating system restored. Your other edits are preserved.');
+    return true;
   }
   if (target.closest('[data-discard-import]')) {
     invalidateImport();
@@ -1061,10 +1197,12 @@ function handleEditorClick(event: MouseEvent): boolean {
   }
   const gameLink = target.closest<HTMLElement>('[data-game-link]');
   if (gameLink) {
-    selectView('setup');
     const url = new URL(location.href);
+    url.searchParams.set('view', 'setup');
     url.searchParams.set('game', gameLink.dataset.gameLink!);
-    history.replaceState(null, '', url);
+    writeRoute(url);
+    selectView('setup', false, false);
+    applyGameRoute();
     const details = document.getElementById(
       `game-settings-${gameLink.dataset.gameLink}`,
     ) as HTMLDetailsElement;
@@ -1113,13 +1251,13 @@ function handleEditorClick(event: MouseEvent): boolean {
       if (!b) return;
       if (b.dataset.community && (b.dataset.community === guildId || canLeave())) {
         dialog.close();
-        if (b.dataset.community !== guildId) void run(() => loadCommunity(b.dataset.community!));
+        if (b.dataset.community !== guildId)
+          void run(() => loadCommunity(b.dataset.community!, 'push'));
       }
       if (b.dataset.drawerQueue) {
         selectedQueue = b.dataset.drawerQueue;
         dialog.close();
-        selectView('queues');
-        editRoute();
+        editRoute('queues');
         render();
       }
       if (b.hasAttribute('data-drawer-setup')) {
@@ -1149,7 +1287,9 @@ function handleEditorClick(event: MouseEvent): boolean {
     action.dataset.edit === 'discard' &&
     confirm('Discard all unsaved settings for this community?')
   ) {
-    draft = new SettingsDraft(snapshot);
+    draft = new SettingsDraft(snapshot, setup.gameState);
+    validationIssues = [];
+    currentNotice = null;
     conflict = false;
     render();
   }
@@ -1177,20 +1317,29 @@ window.addEventListener('beforeunload', (event) => {
 });
 window.addEventListener('popstate', () => {
   if (location.pathname === '/stats') return;
-  const url = new URL(location.href);
-  const id = url.searchParams.get('community');
-  if (id && id !== guildId) {
-    if (!busy && canLeave()) void run(() => loadCommunity(id));
-    else {
-      url.searchParams.set('community', guildId);
-      history.pushState(null, '', url);
-    }
+  if (restoringHistory) {
+    restoringHistory = false;
     return;
   }
-  const view = url.searchParams.get('view');
-  if (isOrganizerView(view)) viewsByCommunity.set(guildId, view);
+  const url = new URL(location.href);
+  const id = url.searchParams.get('community');
+  const nextIndex = history.state?.organizerIndex;
+  if (busy || (id && id !== guildId && !canLeave())) {
+    if (typeof nextIndex === 'number' && nextIndex !== historyIndex) {
+      restoringHistory = true;
+      history.go(historyIndex - nextIndex);
+    } else writeRoute(new URL(acceptedUrl), 'replace');
+    return;
+  }
+  historyIndex = typeof nextIndex === 'number' ? nextIndex : historyIndex;
+  acceptedUrl = url.href;
+  if (id && id !== guildId) {
+    void run(() => loadCommunity(id));
+    return;
+  }
   selectedQueue = url.searchParams.get('queue') ?? '';
   category = (url.searchParams.get('section') ?? 'basics') as Category;
+  settingsSearch = '';
   render();
 });
 installViewport();
@@ -1203,6 +1352,7 @@ window.addEventListener('focus', recheckAfterDiscord);
 document.addEventListener('visibilitychange', recheckAfterDiscord);
 
 async function start() {
+  writeRoute(new URL(location.href), 'replace');
   bootstrap = await api<Bootstrap>('/api/bootstrap');
   document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
@@ -1211,14 +1361,13 @@ async function start() {
     render();
     const requested = new URL(location.href).searchParams.get('community');
     const first = guilds.find((g) => g.id === requested) ?? guilds[0];
-    if (first) await loadCommunity(first.id);
+    if (first) await loadCommunity(first.id, 'replace');
   } else render();
   app.setAttribute('aria-busy', 'false');
 }
 (location.pathname === '/stats' ? showStats(app) : start()).catch((error) => {
   if (!document.querySelector('#notice'))
-    app.innerHTML =
-      '<h1>Setup could not load.</h1><div id="notice" role="alert"></div><a class="button" href="/">Try again</a>';
+    app.innerHTML = `<h1>${location.pathname === '/stats' ? 'Statistics' : 'Setup'} could not load.</h1><div id="notice" role="alert"></div><a class="button" href="${escape(location.pathname + location.search)}">Try again</a>`;
   notice(error instanceof Error ? error.message : 'Try again.', true);
   app.setAttribute('aria-busy', 'false');
 });

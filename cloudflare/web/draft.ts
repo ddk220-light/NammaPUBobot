@@ -8,6 +8,7 @@ import {
 import { defaultRatingSettings } from '../src/domain/rating';
 import { defaultMaps, aoe2Maps } from '../src/domain/maps';
 import { defaultRecords } from '../src/domain/records';
+import type { GameState } from '../src/domain/setup';
 
 export type Fields = Record<string, string[]>;
 export const value = (f: Fields, name: string) => f[name]?.[0] ?? '';
@@ -46,8 +47,45 @@ export class SettingsDraft {
   working: Settings;
   raw = new Map<string, Fields>();
   private initial = new Map<string, Fields>();
-  constructor(public saved: Snapshot) {
+  private policies = new Map<
+    string,
+    Pick<Queue, 'ratingEngine' | 'ratingSettings'> & { taxMinuteUtc: number }
+  >();
+  gameState: GameState[];
+  constructor(
+    public saved: Snapshot,
+    gameState: GameState[] = [],
+  ) {
     this.working = structuredClone(saved.settings);
+    this.gameState = gameState;
+    for (const q of this.working.queues) this.ensurePolicy(q.gameId, q);
+  }
+  private ensurePolicy(gameId: string, queue?: Queue) {
+    if (!this.policies.has(gameId)) {
+      const state = this.gameState.find((g) => g.id === gameId);
+      this.policies.set(gameId, {
+        ratingEngine:
+          state?.ratingEngineLocked && state.ratingEngine
+            ? state.ratingEngine
+            : (queue?.ratingEngine ?? 'aoe2'),
+        ratingSettings: structuredClone(queue?.ratingSettings ?? defaultRatingSettings),
+        taxMinuteUtc: queue?.economy?.taxMinuteUtc ?? 0,
+      });
+    }
+    return this.policies.get(gameId)!;
+  }
+  restoreEngine(gameId: string) {
+    const state = this.gameState.find((g) => g.id === gameId);
+    if (!state?.ratingEngineLocked || !state.ratingEngine) return;
+    this.ensurePolicy(gameId).ratingEngine = state.ratingEngine;
+    for (const q of this.working.queues.filter((q) => q.gameId === gameId))
+      q.ratingEngine = state.ratingEngine;
+    const key = `rating:${gameId}`;
+    const raw = this.raw.get(key);
+    if (raw) {
+      raw.ratingEngine = [state.ratingEngine];
+      if (JSON.stringify(raw) === JSON.stringify(this.initial.get(key))) this.raw.delete(key);
+    }
   }
   get dirty() {
     return (
@@ -213,9 +251,18 @@ export class SettingsDraft {
     }
     // Rating policy and tax time have one editor per game, despite queue-based storage.
     for (const g of settings.games) {
+      const queues = settings.queues.filter((q) => q.gameId === g.id);
+      if (!queues.length) continue;
+      const policy = this.ensurePolicy(g.id, queues[0]);
       const f = this.raw.get(`rating:${g.id}`);
-      if (!f) continue;
-      for (const q of settings.queues.filter((q) => q.gameId === g.id)) {
+      for (const q of queues) {
+        q.ratingEngine = policy.ratingEngine;
+        q.ratingSettings = structuredClone(policy.ratingSettings);
+        q.economy = {
+          taxEnabled: q.economy?.taxEnabled ?? false,
+          taxMinuteUtc: policy.taxMinuteUtc,
+        };
+        if (!f) continue;
         q.ratingEngine = value(f, 'ratingEngine') as Queue['ratingEngine'];
         q.ratingSettings = {
           ...defaultRatingSettings,
@@ -242,12 +289,32 @@ export class SettingsDraft {
     return settings;
   }
   validate() {
-    return settingsSchema.safeParse(this.materialize());
+    return settingsSchema
+      .superRefine((settings, ctx) => {
+        settings.queues.forEach((q, index) => {
+          const state = this.gameState.find((g) => g.id === q.gameId);
+          if (
+            state?.ratingEngineLocked &&
+            state.ratingEngine &&
+            state.ratingEngine !== q.ratingEngine
+          )
+            ctx.addIssue({
+              code: 'custom',
+              path: ['queues', index, 'ratingEngine'],
+              message:
+                'This game now has player ratings. Use its saved rating system to keep your other edits.',
+            });
+        });
+      })
+      .safeParse(this.materialize());
   }
   addQueue(gameId: string, channelId: string) {
     const current = this.materialize();
     const game = current.games.find((g) => g.id === gameId)!;
-    const peer = current.queues.find((q) => q.gameId === gameId);
+    const peer = this.ensurePolicy(
+      gameId,
+      current.queues.find((q) => q.gameId === gameId),
+    );
     const q: Queue = {
       id: crypto.randomUUID(),
       gameId,
@@ -259,7 +326,7 @@ export class SettingsDraft {
       teamMethod: 'captain',
       ratingEngine: peer?.ratingEngine ?? 'aoe2',
       ratingSettings: structuredClone(peer?.ratingSettings ?? defaultRatingSettings),
-      economy: { taxEnabled: false, taxMinuteUtc: peer?.economy?.taxMinuteUtc ?? 0 },
+      economy: { taxEnabled: false, taxMinuteUtc: peer.taxMinuteUtc },
       modules: { ...emptyModules },
       ...(game.catalogId === 'aoe2' ? { maps: defaultMaps(aoe2Maps) } : {}),
     };

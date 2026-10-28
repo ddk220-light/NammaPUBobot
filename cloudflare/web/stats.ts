@@ -1,4 +1,4 @@
-import { labelTables } from './ui';
+import { ApiError, labelTables, requestJson } from './ui';
 import type { Statistics as Stats, PlayerStatistics } from '../src/domain/records';
 
 const esc = (s: unknown) =>
@@ -98,9 +98,7 @@ function playerDetails(p: PlayerStatistics) {
 
 export async function showStats(app: HTMLElement) {
   document.title = 'Community Games — statistics';
-  const bootstrapResponse = await fetch('/api/bootstrap', { credentials: 'same-origin' });
-  if (!bootstrapResponse.ok) throw new Error('Could not load statistics. Reload to retry.');
-  const bootstrap = (await bootstrapResponse.json()) as { environment: string; version: string };
+  const bootstrap = await requestJson<{ environment: string; version: string }>('/api/bootstrap');
   document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
   const query = new URL(location.href).searchParams,
@@ -142,17 +140,11 @@ export async function showStats(app: HTMLElement) {
     const request = ++sequence;
     app.setAttribute('aria-busy', 'true');
     try {
-      const response = await fetch(
+      const data = await requestJson<Stats>(
         `/statistics/${encodeURIComponent(community)}/${encodeURIComponent(game)}?page=${page}${user ? `&user=${encodeURIComponent(user)}` : ''}`,
         { credentials: 'same-origin' },
       );
-      const data = (await response.json()) as Stats & { error?: string };
       if (request !== sequence) return;
-      if (!response.ok) {
-        const needsAccess = response.status === 401 || response.status === 403;
-        app.innerHTML = `<section class="panel stats-section"><h1>${needsAccess ? 'Statistics need access' : 'Statistics unavailable'}</h1><p role="alert">${esc(data.error ?? 'Try again shortly.')}</p><div class="actions">${needsAccess ? `<a class="button primary" href="/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}">Sign in with Discord</a>` : ''}<button data-stats="reload">Retry</button><a href="/">Community setup</a></div></section>`;
-        return;
-      }
       const p = data.player;
       app.innerHTML = `<div class="page-heading"><div><h1>${esc(data.gameName)}</h1><p class="view-description">Community statistics</p></div><div class="actions"><a href="/?community=${encodeURIComponent(community)}">Organizer setup</a><button data-stats="reload">Reload statistics</button></div></div>
         <section class="panel stats-section" aria-labelledby="leaderboard-heading"><div class="section-heading"><h2 id="leaderboard-heading">Leaderboard</h2></div>
@@ -166,7 +158,8 @@ export async function showStats(app: HTMLElement) {
       if (focusPlayer && p) app.querySelector<HTMLElement>('#player-statistics-heading')?.focus();
     } catch (error) {
       if (request !== sequence) return;
-      app.innerHTML = `<section class="panel stats-section"><h1>Statistics unavailable</h1><p role="alert">${esc(error instanceof Error ? error.message : 'Request failed.')}</p><div class="actions"><button data-stats="reload">Retry</button><a href="/">Community setup</a></div></section>`;
+      const needsAccess = error instanceof ApiError && [401, 403].includes(error.status);
+      app.innerHTML = `<section class="panel stats-section"><h1>${needsAccess ? 'Statistics need access' : 'Statistics unavailable'}</h1><p role="alert">${esc(error instanceof Error ? error.message : 'Request failed.')}</p><div class="actions">${needsAccess ? `<a class="button primary" href="/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}">Sign in with Discord</a>` : ''}<button data-stats="reload">Retry</button><a href="/">Community setup</a></div></section>`;
     } finally {
       if (request === sequence) app.setAttribute('aria-busy', 'false');
     }

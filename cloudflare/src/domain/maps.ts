@@ -33,14 +33,19 @@ export const mapSettingsSchema = z
   .strict()
   .superRefine((s, c) => {
     if (new Set(s.pool.map((v) => v.toLowerCase())).size !== s.pool.length)
-      c.addIssue({ code: 'custom', message: 'Map names must be unique.' });
+      c.addIssue({ code: 'custom', message: 'Map names must be unique.', path: ['pool'] });
     if (s.count > s.pool.length || s.count > s.shortlist)
       c.addIssue({
         code: 'custom',
         message: 'Provide enough pool and shortlist maps for the selected count.',
+        path: ['count'],
       });
     if (s.countsAsCheckIn && s.mode !== 'vote')
-      c.addIssue({ code: 'custom', message: 'Only participant voting can count as check-in.' });
+      c.addIssue({
+        code: 'custom',
+        message: 'Only participant voting can count as check-in.',
+        path: ['countsAsCheckIn'],
+      });
   });
 export type MapSettings = z.infer<typeof mapSettingsSchema>;
 export const defaultMaps = (pool = aoe2Maps): MapSettings => ({

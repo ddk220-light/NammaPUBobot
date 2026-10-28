@@ -2960,6 +2960,12 @@ export class PlayStore {
       )
         throw new PlayError(
           'Changing the rating engine for an established game requires an explicit conversion; keep the current engine.',
+          [
+            {
+              path: ['settings', 'queues', next.queues.indexOf(after), 'ratingEngine'],
+              message: `Player ratings use ${engine}. Keep this game's saved rating system.`,
+            },
+          ],
         );
     }
     for (const game of old.games)
@@ -2986,6 +2992,19 @@ export class PlayStore {
       if (busy && (!after || after.gameId !== q.gameId || after.channelId !== q.channelId))
         throw new PlayError(
           'Empty the waiting queue and finish its active matches before removing or moving it.',
+          after
+            ? [
+                {
+                  path: [
+                    'settings',
+                    'queues',
+                    next.queues.indexOf(after),
+                    after.gameId !== q.gameId ? 'gameId' : 'channelId',
+                  ],
+                  message: 'Empty this queue and finish its active matches before moving it.',
+                },
+              ]
+            : [],
         );
     }
     for (const q of next.queues) {
@@ -2999,6 +3018,15 @@ export class PlayStore {
       )
         throw new PlayError(
           'Queues for the same game share ratings and must use the same rating engine and settings.',
+          peers.map((peer) => ({
+            path: [
+              'settings',
+              'queues',
+              next.queues.indexOf(peer),
+              peer.ratingEngine !== q.ratingEngine ? 'ratingEngine' : 'ratingSettings',
+            ],
+            message: 'Use the same rating system and policy for every queue of this game.',
+          })),
         );
     }
   }
@@ -3126,6 +3154,15 @@ export class PlayStore {
     return {
       gameState: snapshot.settings.games.map((g) => ({
         id: g.id,
+        ratingEngine:
+          this.sql
+            .exec<{ engine: Queue['ratingEngine'] }>(
+              'SELECT engine FROM rating_engines WHERE game_id=?',
+              g.id,
+            )
+            .toArray()[0]?.engine ??
+          snapshot.settings.queues.find((q) => q.gameId === g.id)?.ratingEngine ??
+          null,
         ratingEngineLocked:
           this.sql.exec('SELECT 1 FROM profiles WHERE game_id=? LIMIT 1', g.id).toArray().length >
           0,

@@ -20,6 +20,7 @@ import { memberIds, resolveMember } from './discord/members';
 import { importSchema, recordActionSchema, recordPolicy } from './domain/records';
 import { economyImportSchema } from './domain/economy-import';
 import { privilegedRankPermissions } from './domain/rank-roles';
+import type { FieldIssue } from './domain/errors';
 export { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 export { Community } from './storage/community';
 export { AuthStore } from './storage/auth';
@@ -33,6 +34,7 @@ class Problem extends Error {
     public status: number,
     public code: string,
     message: string,
+    public issues: FieldIssue[] = [],
   ) {
     super(message);
   }
@@ -177,7 +179,9 @@ app.onError((error, c) => {
       requestId: c.get('requestId'),
       ...(error instanceof z.ZodError
         ? { issues: error.issues.map(({ path, message }) => ({ path, message })) }
-        : {}),
+        : (error instanceof Problem || error instanceof PlayError) && error.issues.length
+          ? { issues: error.issues }
+          : {}),
     },
     status as 400,
   );
@@ -704,15 +708,31 @@ async function validateChannels(
 ) {
   if (!queues.length) return;
   const valid = await channels(env, guildId);
-  for (const q of queues) {
+  for (const [index, q] of queues.entries()) {
     const channel = valid.find((v) => v.id === q.channelId);
     if (!channel)
-      throw new Problem(400, 'wrong_channel', 'Choose a text channel belonging to this community.');
+      throw new Problem(
+        400,
+        'wrong_channel',
+        'Choose a text channel belonging to this community.',
+        [
+          {
+            path: ['settings', 'queues', index, 'channelId'],
+            message: 'Choose an available text channel in this community.',
+          },
+        ],
+      );
     if (q.enabled && channel.permissions.some((p) => !p.granted))
       throw new Problem(
         409,
         'missing_permissions',
         `Fix permissions in #${channel.name} before enabling its queue.`,
+        [
+          {
+            path: ['settings', 'queues', index, 'channelId'],
+            message: `Fix permissions in #${channel.name}, choose another channel, or pause this queue.`,
+          },
+        ],
       );
   }
 }
@@ -720,57 +740,99 @@ app.put('/api/communities/:guild/config', async (c) => {
   const { expectedRevision, settings } = saveSchema.parse(await readJson(c.req.raw));
   const guildId = c.req.param('guild');
   await validateChannels(c.env, guildId, settings.queues);
-  const roles = settings.queues
-    .flatMap((q) => [q.controls?.requiredRole, q.controls?.blockedRole])
-    .filter((id): id is string => !!id);
-  const rankRoles = settings.games.flatMap(
-    (g) => g.records?.ranks.map((r) => r.roleId).filter((id): id is string => !!id) ?? [],
+  const roleFields: {
+    id: string;
+    path: (string | number)[];
+    kind: 'access' | 'moderator' | 'rank';
+    game?: string;
+  }[] = [];
+  settings.queues.forEach((q, qi) => {
+    for (const field of ['requiredRole', 'blockedRole'] as const) {
+      const id = q.controls?.[field];
+      if (id)
+        roleFields.push({
+          id,
+          path: ['settings', 'queues', qi, 'controls', field],
+          kind: 'access',
+        });
+    }
+    q.adminRoles?.forEach((id, ri) =>
+      roleFields.push({
+        id,
+        path: ['settings', 'queues', qi, 'adminRoles', ri],
+        kind: 'moderator',
+      }),
+    );
+  });
+  settings.games.forEach((g, gi) =>
+    g.records?.ranks.forEach((r, ri) => {
+      if (r.roleId)
+        roleFields.push({
+          id: r.roleId,
+          path: ['settings', 'games', gi, 'records', 'ranks', ri, 'roleId'],
+          kind: 'rank',
+          game: g.id,
+        });
+    }),
   );
-  const moderatorRoles = settings.queues.flatMap((q) => q.adminRoles ?? []);
-  roles.push(...rankRoles, ...moderatorRoles);
-  if (roles.length) {
+  if (roleFields.length) {
     const available = await discord<{ id: string; managed?: boolean; permissions?: string }[]>(
       `/guilds/${guildId}/roles`,
       c.env.DISCORD_BOT_TOKEN!,
     );
-    if (roles.some((id) => !available.some((r) => r.id === id)))
-      throw new Problem(400, 'wrong_role', 'Choose role IDs belonging to this Discord server.');
-    if (moderatorRoles.some((id) => id === guildId || available.find((r) => r.id === id)?.managed))
-      throw new Problem(
-        400,
-        'wrong_role',
-        'Bot moderator roles must be ordinary roles, not @everyone or managed integration roles.',
-      );
-    if (rankRoles.some((id) => id === guildId || available.find((r) => r.id === id)?.managed))
-      throw new Problem(
-        400,
-        'wrong_role',
-        'Rank roles must be ordinary roles, not @everyone or managed integration roles.',
-      );
-    if (
-      rankRoles.some(
-        (id) =>
-          BigInt(available.find((r) => r.id === id)?.permissions ?? '0') &
-          privilegedRankPermissions,
-      )
-    )
-      throw new Problem(
-        400,
-        'privileged_rank_role',
-        'Rank roles cannot grant administrator, moderation or server-management permissions. Create cosmetic rank roles.',
-      );
-    const owners = new Map<string, string>();
-    for (const g of settings.games)
-      for (const r of g.records?.ranks ?? [])
-        if (r.roleId) {
-          if (owners.has(r.roleId) && owners.get(r.roleId) !== g.id)
-            throw new Problem(
-              400,
-              'shared_rank_role',
-              'Use separate rank roles for each game to avoid conflicting assignments.',
-            );
-          owners.set(r.roleId, g.id);
-        }
+    const reject = (code: string, message: string, fields: typeof roleFields) => {
+      if (fields.length)
+        throw new Problem(
+          400,
+          code,
+          message,
+          fields.map(({ path }) => ({ path, message })),
+        );
+    };
+    reject(
+      'wrong_role',
+      'Choose role IDs belonging to this Discord server.',
+      roleFields.filter(({ id }) => !available.some((r) => r.id === id)),
+    );
+    reject(
+      'wrong_role',
+      'Bot moderator roles must be ordinary roles, not @everyone or managed integration roles.',
+      roleFields.filter(
+        ({ id, kind }) =>
+          kind === 'moderator' && (id === guildId || available.find((r) => r.id === id)?.managed),
+      ),
+    );
+    reject(
+      'wrong_role',
+      'Rank roles must be ordinary roles, not @everyone or managed integration roles.',
+      roleFields.filter(
+        ({ id, kind }) =>
+          kind === 'rank' && (id === guildId || available.find((r) => r.id === id)?.managed),
+      ),
+    );
+    reject(
+      'privileged_rank_role',
+      'Rank roles cannot grant administrator, moderation or server-management permissions. Create cosmetic rank roles.',
+      roleFields.filter(
+        ({ id, kind }) =>
+          kind === 'rank' &&
+          Boolean(
+            BigInt(available.find((r) => r.id === id)?.permissions ?? '0') &
+            privilegedRankPermissions,
+          ),
+      ),
+    );
+    reject(
+      'shared_rank_role',
+      'Use separate rank roles for each game to avoid conflicting assignments.',
+      roleFields.filter(
+        (field) =>
+          field.kind === 'rank' &&
+          roleFields.some(
+            (other) => other.kind === 'rank' && other.id === field.id && other.game !== field.game,
+          ),
+      ),
+    );
   }
   const result = await c.env.COMMUNITIES.getByName(guildId).save(
     guildId,
@@ -785,6 +847,7 @@ app.put('/api/communities/:guild/config', async (c) => {
       'reason' in result ? 'settings_conflict' : 'revision_conflict',
       ('reason' in result ? result.reason : null) ??
         'Settings changed in another tab. Refresh before saving.',
+      'issues' in result ? result.issues : [],
     );
   return c.json(result.snapshot);
 });

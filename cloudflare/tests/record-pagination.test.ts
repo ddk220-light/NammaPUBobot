@@ -34,8 +34,44 @@ describe('organizer player pagination', () => {
     expect((await stub().records(guild, undefined, 2)).players).toHaveLength(0);
     // Engine eligibility cannot be inferred from the currently loaded player page.
     expect((await stub().records(guild, undefined, 2)).gameState).toContainEqual({
-      id: game, ratingEngineLocked: true,
+      id: game,
+      ratingEngineLocked: true,
+      ratingEngine: 'aoe2',
     });
+  });
+  it('returns the persisted engine after removing the last queue and validates a replacement', async () => {
+    const config = settings();
+    config.queues[0].ratingEngine = 'glicko2';
+    await setup(config);
+    await runInDurableObject(stub(), (_i, state) => {
+      state.storage.sql.exec('INSERT INTO rating_engines VALUES(?,?)', game, 'glicko2');
+      state.storage.sql.exec(
+        'INSERT INTO profiles VALUES(?,?,?)',
+        game,
+        person(0).id,
+        JSON.stringify({
+          ...person(0),
+          rating: 1000,
+          deviation: 200,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          streak: 0,
+        }),
+      );
+    });
+    const removed = { ...config, queues: [] };
+    expect((await stub().save(guild, 1, removed, person(99).id, 'save')).ok).toBe(true);
+    expect((await stub().records(guild)).gameState).toEqual([
+      { id: game, ratingEngineLocked: true, ratingEngine: 'glicko2' },
+    ]);
+    config.queues[0].ratingEngine = 'aoe2';
+    expect(await stub().save(guild, 2, config, person(99).id, 'save')).toMatchObject({
+      ok: false,
+      issues: [{ path: ['settings', 'queues', 0, 'ratingEngine'] }],
+    });
+    config.queues[0].ratingEngine = 'glicko2';
+    expect((await stub().save(guild, 2, config, person(99).id, 'save')).ok).toBe(true);
   });
   it('counts and pages only the selected game', async () => {
     const config = settings(),

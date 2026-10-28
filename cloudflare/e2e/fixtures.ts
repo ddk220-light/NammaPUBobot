@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import type { Snapshot } from '../src/domain/config';
-import { emptyModules } from '../src/domain/config';
+import { emptyModules, settingsSchema } from '../src/domain/config';
 import { defaultRatingSettings } from '../src/domain/rating';
 import { defaultRecords } from '../src/domain/records';
 import { defaultMaps } from '../src/domain/maps';
@@ -52,11 +52,14 @@ export async function mockApp(page: Page) {
   const state = {
     snapshot: initialSnapshot(),
     saved: [] as Snapshot['settings'][],
+    saveRevisions: [] as number[],
     signedIn: true,
     access: 'ready',
     failSave: '',
     saveWait: undefined as Promise<void> | undefined,
     locked: false,
+    storedEngine: 'aoe2' as Snapshot['settings']['queues'][number]['ratingEngine'],
+    playerName: 'A player with a long name — Καλημέρα',
     rolesAvailable: true,
     importOk: true,
     importApplied: false,
@@ -65,7 +68,9 @@ export async function mockApp(page: Page) {
   };
   const player = {
     id: user,
-    name: 'A player with a long name — Καλημέρα',
+    get name() {
+      return state.playerName;
+    },
     rating: 1450,
     deviation: 120,
     wins: 10,
@@ -74,7 +79,7 @@ export async function mockApp(page: Page) {
     streak: 2,
   };
   const recordData = () => ({
-    gameState: [{ id: game, ratingEngineLocked: state.locked }],
+    gameState: [{ id: game, ratingEngineLocked: state.locked, ratingEngine: state.storedEngine }],
     matches: [
       {
         id: 'match-one',
@@ -130,7 +135,7 @@ export async function mockApp(page: Page) {
       ? [{ id: '100000000000000003', name: 'Game hosts', rankEligible: true, reason: null }]
       : [],
     voiceChannels: [{ id: '100000000000000004', name: 'Game night voice' }],
-    gameState: [{ id: game, ratingEngineLocked: state.locked }],
+    gameState: [{ id: game, ratingEngineLocked: state.locked, ratingEngine: state.storedEngine }],
     access: {
       status: state.access,
       message:
@@ -166,8 +171,9 @@ export async function mockApp(page: Page) {
     if (path.endsWith('/setup')) return json(setupData(path.split('/')[3]));
     if (path.endsWith('/records')) return json(recordData());
     if (path.endsWith('/config') && route.request().method() === 'PUT') {
-      const { settings } = route.request().postDataJSON();
+      const { settings, expectedRevision } = route.request().postDataJSON();
       state.saved.push(settings);
+      state.saveRevisions.push(expectedRevision);
       if (state.saveWait) await state.saveWait;
       if (state.failSave)
         return json(
@@ -176,6 +182,27 @@ export async function mockApp(page: Page) {
             error: 'Settings changed in another tab. Your changes have not been saved.',
             requestId: 'test-conflict',
           },
+          409,
+        );
+      if (expectedRevision !== state.snapshot.revision)
+        return json({ code: 'revision_conflict', error: 'Settings changed in another tab.' }, 409);
+      const valid = settingsSchema.safeParse(settings);
+      if (!valid.success)
+        return json(
+          { code: 'invalid_settings', error: 'Invalid settings', issues: valid.error.issues },
+          400,
+        );
+      const inconsistent = valid.data.queues.some((q) =>
+        valid.data.queues.some(
+          (peer) =>
+            peer.gameId === q.gameId &&
+            (peer.ratingEngine !== q.ratingEngine ||
+              JSON.stringify(peer.ratingSettings) !== JSON.stringify(q.ratingSettings)),
+        ),
+      );
+      if (inconsistent)
+        return json(
+          { code: 'settings_conflict', error: 'Queues for the same game share rating policy.' },
           409,
         );
       state.snapshot = { ...state.snapshot, revision: state.snapshot.revision + 1, settings };
@@ -192,8 +219,8 @@ export async function mockApp(page: Page) {
           players: bundle.players.length,
           newPlayers: bundle.players.length,
           existingPlayers: 0,
-          matches: 0,
-          changes: 0,
+          matches: bundle.matches.length,
+          changes: bundle.changes.length,
         },
         errors: state.importOk ? [] : ['Destination cannot accept this import.'],
         warnings: [],
@@ -202,7 +229,15 @@ export async function mockApp(page: Page) {
     if (path.endsWith('/import/apply')) {
       state.importCalls++;
       state.importApplied = true;
-      return json({ alreadyApplied: false, counts: {} });
+      const { bundle } = route.request().postDataJSON();
+      return json({
+        alreadyApplied: false,
+        counts: {
+          players: bundle.players.length,
+          matches: bundle.matches.length,
+          changes: bundle.changes.length,
+        },
+      });
     }
     if (path.endsWith('/player')) return json({ content: 'Player updated.' });
     if (path.endsWith('/actions'))
