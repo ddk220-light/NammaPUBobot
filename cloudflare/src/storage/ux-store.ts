@@ -17,6 +17,15 @@ export function createUxTables(sql: SqlStorage) {
   sql.exec(
     `CREATE TABLE IF NOT EXISTS queue_publications(key TEXT PRIMARY KEY,queue_id TEXT NOT NULL,generation INTEGER NOT NULL,state TEXT NOT NULL DEFAULT 'pending',UNIQUE(queue_id,generation))`,
   );
+  if (
+    !sql
+      .exec<{ name: string }>('PRAGMA table_info(queue_publications)')
+      .toArray()
+      .some((column) => column.name === 'visibility_only')
+  )
+    sql.exec(
+      'ALTER TABLE queue_publications ADD COLUMN visibility_only INTEGER NOT NULL DEFAULT 0',
+    );
   sql.exec(
     `CREATE TABLE IF NOT EXISTS rally_runs(id TEXT PRIMARY KEY,queue_id TEXT NOT NULL,created_at INTEGER NOT NULL,targets TEXT NOT NULL,status TEXT NOT NULL)`,
   );

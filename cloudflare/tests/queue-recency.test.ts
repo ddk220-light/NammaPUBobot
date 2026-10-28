@@ -1,4 +1,4 @@
-import { abortAllDurableObjects, runInDurableObject } from 'cloudflare:test';
+import { abortAllDurableObjects, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
 import {
   act,
@@ -66,6 +66,273 @@ async function waiting() {
   await act('add', 0);
   await flush();
 }
+
+async function visibilityTick() {
+  await runInDurableObject(stub(), (_i, state) => state.storage.kv.put('queueVisibilityDue', 0));
+  await runDurableObjectAlarm(stub());
+  await flush();
+}
+
+describe('periodic queue visibility', () => {
+  it('recreates a manually deleted card without changing the roster', async () => {
+    const d = discord();
+    await waiting();
+    const old = d.messages.shift()!;
+    await visibilityTick();
+    expect(d.messages).toHaveLength(1);
+    expect(d.messages[0].id).not.toBe(old.id);
+    expect(d.messages[0].payload.embeds).toEqual(old.payload.embeds);
+  });
+
+  it('does not restart a blocked publication or reset its retry budget', async () => {
+    const d = discord();
+    await waiting();
+    await act('add', 1);
+    await runInDurableObject(stub(), (_i, state) =>
+      state.storage.sql.exec(
+        "UPDATE outbox SET status='blocked',attempts=10,error='discord_403' WHERE key=?",
+        `queue:${queue}:g2`,
+      ),
+    );
+    d.calls.length = 0;
+    await visibilityTick();
+    expect(d.calls).toEqual([]);
+    await runInDurableObject(stub(), (_i, state) =>
+      expect(
+        state.storage.sql
+          .exec('SELECT status,attempts,error FROM outbox WHERE key=?', `queue:${queue}:g2`)
+          .toArray(),
+      ).toEqual([{ status: 'blocked', attempts: 10, error: 'discord_403' }]),
+    );
+  });
+
+  it('cleans up a lost create receipt after opt-out without deleting the original card', async () => {
+    const d = discord();
+    await waiting();
+    const original = d.messages[0];
+    for (let n = 0; n < 5; n++) d.add();
+    let lost = false;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const response = await d.handler(input, init);
+      if (init?.method === 'POST' && !lost) {
+        lost = true;
+        throw new Error('Lost receipt');
+      }
+      return response;
+    });
+    await visibilityTick();
+    expect(lost).toBe(true);
+    expect(d.messages).toHaveLength(7);
+    const s = await stub().read(guild);
+    s.settings.queues[0].keepQueueVisible = false;
+    await stub().save(guild, s.revision, s.settings, person(99).id, 'save');
+    await abortAllDurableObjects();
+    await flush();
+    expect(d.messages).toHaveLength(6);
+    expect(d.messages).toContain(original);
+    expect(d.calls.filter((c) => c.method === 'POST')).toHaveLength(2); // Initial and uncertain replacement only.
+  });
+
+  it.each([1, 5])(
+    'checks position %i without editing, deleting or creating a message',
+    async (position) => {
+      const d = discord();
+      await waiting();
+      const original = d.messages[0];
+      for (let n = 1; n < position; n++) d.add();
+      d.calls.length = 0;
+      await visibilityTick();
+      expect(d.calls).toEqual([{ method: 'GET', id: undefined, limit: '5' }]);
+      expect(d.messages[position - 1]).toBe(original);
+    },
+  );
+
+  it('moves a buried card without player activity and preserves all player data', async () => {
+    const d = discord();
+    await waiting();
+    const before = await stub().operationalBackup(guild);
+    const original = d.messages[0];
+    for (let n = 0; n < 5; n++) d.add({ content: `Chat ${n}` });
+    d.calls.length = 0;
+    await visibilityTick();
+    expect(d.calls.map((c) => c.method)).toEqual(['GET', 'GET', 'POST', 'DELETE']);
+    expect(d.calls.at(-1)?.id).toBe(original.id);
+    expect(d.messages).toHaveLength(6);
+    expect(d.messages[0].payload.embeds).toEqual(original.payload.embeds);
+    expect(d.messages[0].payload.allowed_mentions).toEqual({ parse: [] });
+    const after = await stub().operationalBackup(guild);
+    for (const table of [
+      'queue_entries',
+      'active_players',
+      'matches',
+      'profiles',
+      'wallets',
+      'gold_ledger',
+      'queues',
+      'games',
+      'community',
+    ])
+      expect(after.tables[table]).toEqual(before.tables[table]);
+  });
+
+  it('keeps the 15-minute deadline through restart and does not check early', async () => {
+    const d = discord();
+    await waiting();
+    const due = await runInDurableObject(stub(), (_i, state) =>
+      state.storage.kv.get<number>('queueVisibilityDue')!,
+    );
+    expect(due - Date.now()).toBeGreaterThan(890000);
+    expect(due - Date.now()).toBeLessThanOrEqual(900000);
+    await abortAllDurableObjects();
+    d.calls.length = 0;
+    await runDurableObjectAlarm(stub());
+    await flush();
+    expect(d.calls).toEqual([]);
+    await runInDurableObject(stub(), (_i, state) =>
+      expect(state.storage.kv.get('queueVisibilityDue')).toBe(due),
+    );
+    await visibilityTick();
+    expect(d.calls).toHaveLength(1);
+    d.calls.length = 0;
+    await runDurableObjectAlarm(stub());
+    await flush();
+    expect(d.calls).toEqual([]);
+  });
+
+  it('shares one history check for multiple queues in the same channel', async () => {
+    const d = discord();
+    const s = settings();
+    s.queues.push({ ...structuredClone(s.queues[0]), id: crypto.randomUUID(), name: 'Second' });
+    await setup(s);
+    await act('queue', 0, { queue: 'Pickup' });
+    await act('queue', 0, { queue: 'Second' });
+    await flush();
+    expect(d.messages).toHaveLength(2);
+    d.calls.length = 0;
+    await visibilityTick();
+    expect(d.calls).toEqual([{ method: 'GET', id: undefined, limit: '5' }]);
+  });
+
+  it('persists the opt-out and leaves normal queue updates working', async () => {
+    const d = discord();
+    await waiting();
+    const original = d.messages[0];
+    const s = await stub().read(guild);
+    s.settings.queues[0].keepQueueVisible = false;
+    expect((await stub().save(guild, s.revision, s.settings, person(99).id, 'save')).ok).toBe(true);
+    await abortAllDurableObjects();
+    await runInDurableObject(stub(), async (_i, state) => {
+      expect(state.storage.kv.get('queueVisibilityDue')).toBeUndefined();
+      expect(await state.storage.getAlarm()).toBeNull();
+    });
+    for (let n = 0; n < 5; n++) d.add();
+    d.calls.length = 0;
+    await visibilityTick();
+    expect(d.calls).toEqual([]);
+    await act('add', 1);
+    await flush();
+    expect(d.messages[0].id).not.toBe(original.id);
+    expect(d.messages[0].payload.embeds[0].title).toContain('2/4');
+  });
+
+  it.each(['unpublished', 'paused', 'recovery'])('does not poll %s queues', async (kind) => {
+    const d = discord();
+    if (kind === 'unpublished') await setup();
+    else {
+      await waiting();
+      if (kind === 'paused') {
+        const s = await stub().read(guild);
+        s.settings.queues[0].enabled = false;
+        await stub().save(guild, s.revision, s.settings, person(99).id, 'save');
+        await flush();
+      } else
+        await runInDurableObject(stub(), (_i, state) =>
+          state.storage.kv.put('recoveryReadOnly', true),
+        );
+    }
+    d.calls.length = 0;
+    await visibilityTick();
+    expect(d.calls).toEqual([]);
+    await runInDurableObject(stub(), async (_i, state) =>
+      expect(await state.storage.getAlarm()).toBeNull(),
+    );
+  });
+
+  it.each(['invalid', 'transport', 'forbidden', 'unavailable', 'rate-limit'])(
+    'preserves cards on %s history and waits for the next check',
+    async (kind) => {
+      const d = discord();
+      await waiting();
+      const original = d.messages[0];
+      for (let n = 0; n < 5; n++) d.add();
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        if (new Request(input, init).method === 'GET') {
+          if (kind === 'transport') throw new Error('Network failure');
+          if (kind === 'invalid') return Response.json({ unexpected: true });
+          return Response.json(
+            { retry_after: 900, global: true },
+            { status: kind === 'rate-limit' ? 429 : kind === 'forbidden' ? 403 : 503 },
+          );
+        }
+        return d.handler(input, init);
+      });
+      d.calls.length = 0;
+      await visibilityTick();
+      expect(d.calls).toEqual([]);
+      expect(d.messages).toContain(original);
+      await runInDurableObject(stub(), (_i, state) => {
+        expect(state.storage.kv.get<number>('queueVisibilityDue')! - Date.now()).toBeGreaterThan(
+          890000,
+        );
+        expect(state.storage.sql.exec('SELECT * FROM outbox').toArray()).toHaveLength(0);
+      });
+      if (kind === 'rate-limit') {
+        const { env } = await import('cloudflare:workers');
+        const gate = env.DISCORD_GATE.getByName('100000000000000001');
+        expect(await gate.reserve('channel:another')).toBeGreaterThan(Date.now());
+        await runInDurableObject(gate, (_i, state) => state.storage.sql.exec('DELETE FROM limits'));
+      }
+      vi.mocked(fetch).mockImplementation(d.handler);
+      await visibilityTick();
+      expect(d.messages).not.toContain(original);
+    },
+  );
+
+  it('cancels an undelivered periodic move when the setting is switched off', async () => {
+    const d = discord();
+    await waiting();
+    const original = d.messages[0];
+    for (let n = 0; n < 5; n++) d.add();
+    await runInDurableObject(stub(), async (instance, state) => {
+      state.storage.kv.put('queueVisibilityDue', 0);
+      await (instance as any).playStore.refreshQueueVisibility(guild);
+    });
+    const s = await stub().read(guild);
+    s.settings.queues[0].keepQueueVisible = false;
+    await stub().save(guild, s.revision, s.settings, person(99).id, 'save');
+    d.calls.length = 0;
+    await flush();
+    expect(d.calls.filter((c) => c.method !== 'GET')).toEqual([]);
+    expect(d.messages).toContain(original);
+  });
+
+  it('coalesces a player update into a pending bump even when automatic visibility is then disabled', async () => {
+    const d = discord();
+    await waiting();
+    for (let n = 0; n < 5; n++) d.add();
+    await runInDurableObject(stub(), async (instance, state) => {
+      state.storage.kv.put('queueVisibilityDue', 0);
+      await (instance as any).playStore.refreshQueueVisibility(guild);
+    });
+    const s = await stub().read(guild);
+    s.settings.queues[0].keepQueueVisible = false;
+    await stub().save(guild, s.revision, s.settings, person(99).id, 'save');
+    await act('add', 1);
+    await flush();
+    expect(d.messages[0].payload.embeds[0].title).toContain('2/4');
+    expect(d.messages).toHaveLength(6);
+  });
+});
 
 describe('queue card recency', () => {
   it.each([1, 5])(

@@ -314,6 +314,7 @@ describe('community authority and durable settings', () => {
     const config = structuredClone(settings);
     config.games.push({ id: crypto.randomUUID(), name: 'Custom RTS', catalogId: null });
     config.games[0].name = 'AoE friends';
+    config.queues[0].keepQueueVisible = false;
     expect((await save(guild, config, 1)).status).toBe(200);
     await abortAllDurableObjects();
     const one = await env.COMMUNITIES.getByName(guild).read(guild),
@@ -321,6 +322,7 @@ describe('community authority and durable settings', () => {
     expect(one.revision).toBe(2);
     expect(one.settings.games).toContainEqual(config.games[0]);
     expect(one.settings.games).toContainEqual(config.games[1]);
+    expect(one.settings.queues[0].keepQueueVisible).toBe(false);
     expect(two).toEqual({
       communityId: otherGuild,
       revision: 0,

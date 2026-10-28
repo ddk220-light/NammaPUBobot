@@ -56,6 +56,8 @@ export class Community extends DurableObject<Env> {
     this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
     this.recordStore.backfill();
     this.playStore = new PlayStore(ctx, env, (guild) => this.read(guild), this.recordStore);
+    // Adopt periodic queue visibility for existing communities on their next wake.
+    ctx.blockConcurrencyWhile(() => this.playStore.schedule());
   }
 
   private identity(guildId: string) {

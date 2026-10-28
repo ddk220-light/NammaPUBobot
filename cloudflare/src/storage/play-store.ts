@@ -24,6 +24,7 @@ import { createMapRound, defaultMaps, resolveMap, voteMap } from '../domain/maps
 import type { VoiceMember } from '../domain/presence';
 
 const voiceInterval = 5 * 60 * 1000;
+const queueVisibilityInterval = 15 * 60 * 1000;
 type QueueVoiceCache = { due: number; observedAt: number; members: VoiceMember[] | null };
 
 type Entry = { user_id: string; display_name: string };
@@ -346,6 +347,79 @@ export class PlayStore {
         q.voicePreview &&
         this.sql.exec('SELECT 1 FROM cards WHERE key=?', `queue:${q.id}`).toArray().length,
     );
+  }
+  private visibilityQueues(settings: Settings) {
+    return settings.queues.filter(
+      (q) =>
+        q.enabled &&
+        q.keepQueueVisible !== false &&
+        this.sql
+          .exec(
+            'SELECT 1 FROM cards WHERE key=? AND channel_id=? AND message_id IS NOT NULL',
+            `queue:${q.id}`,
+            q.channelId,
+          )
+          .toArray().length,
+    );
+  }
+  private queueDeliveryPending(id: string) {
+    // Do not reset failed/ambiguous deliveries or create overlapping publications.
+    return (
+      this.sql.exec('SELECT 1 FROM outbox WHERE key GLOB ? LIMIT 1', `queue:${id}:g*`).toArray()
+        .length > 0
+    );
+  }
+  private async refreshQueueVisibility(guild: string) {
+    if (this.ctx.storage.kv.get('recoveryReadOnly')) return;
+    const due = this.ctx.storage.kv.get<number>('queueVisibilityDue');
+    if (due === undefined || due > Date.now()) return;
+    // Claim this interval before I/O; other alarms/restarts never poll in a tight loop.
+    this.ctx.storage.kv.put('queueVisibilityDue', Date.now() + queueVisibilityInterval);
+    if (!this.env.DISCORD_BOT_TOKEN || !this.env.DISCORD_APPLICATION_ID) return;
+    const queues = this.visibilityQueues(this.read(guild).settings).filter(
+      (q) => !this.queueDeliveryPending(q.id),
+    );
+    const gate = this.env.DISCORD_GATE.getByName(this.env.DISCORD_APPLICATION_ID);
+    for (const channel of new Set(queues.map((q) => q.channelId))) {
+      const route = `channel:${channel}`;
+      if ((await gate.reserve(route)) > Date.now()) continue;
+      try {
+        const response = await fetch(
+          `https://discord.com/api/v10/channels/${channel}/messages?limit=5`,
+          {
+            headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
+            signal: AbortSignal.timeout(5000),
+          },
+        );
+        if (response.status === 429) {
+          const body = (await response.json().catch(() => null)) as {
+            retry_after?: number;
+            global?: boolean;
+          } | null;
+          const seconds = Number(body?.retry_after ?? response.headers.get('Retry-After') ?? 1);
+          await gate.pause(
+            route,
+            Date.now() + (Number.isFinite(seconds) ? Math.max(1000, seconds * 1000) : 1000),
+            body?.global === true,
+          );
+        }
+        if (!response.ok) continue; // Preserve the card; retry at the next 15-minute check.
+        await this.rateHeaders(response, route, gate);
+        const rows: unknown = await response.json();
+        if (!Array.isArray(rows) || rows.some((r) => !r || !/^\d{17,20}$/.test(r.id))) continue;
+        const recent = new Set(rows.slice(0, 5).map((r) => r.id));
+        // Settings/rosters may have changed while Discord was responding.
+        for (const q of this.visibilityQueues(this.read(guild).settings)) {
+          if (q.channelId !== channel || this.queueDeliveryPending(q.id)) continue;
+          const card = this.sql
+            .exec<Pointer>('SELECT * FROM cards WHERE key=?', `queue:${q.id}`)
+            .toArray()[0];
+          if (card.message_id && !recent.has(card.message_id)) this.touchQueue(q, true, true);
+        }
+      } catch {
+        // A slow or unavailable Discord API must not remove a usable queue card.
+      }
+    }
   }
   private queuePayload(q: Queue) {
     const cache = this.ctx.storage.kv.get<QueueVoiceCache>('queueVoice');
@@ -844,7 +918,7 @@ export class PlayStore {
       Date.now(),
     );
   }
-  private touchQueue(q: Queue, refresh = false) {
+  private touchQueue(q: Queue, refresh = false, visibilityOnly = false) {
     const payload = this.queuePayload(q);
     const digest = JSON.stringify(payload);
     const view = this.sql
@@ -871,6 +945,8 @@ export class PlayStore {
           Date.now(),
           pending.key,
         );
+        if (!visibilityOnly)
+          this.sql.exec('UPDATE queue_publications SET visibility_only=0 WHERE key=?', pending.key);
         return;
       }
     }
@@ -884,10 +960,11 @@ export class PlayStore {
       generation,
     );
     this.sql.exec(
-      'INSERT OR IGNORE INTO queue_publications(key,queue_id,generation) VALUES(?,?,?)',
+      'INSERT INTO queue_publications(key,queue_id,generation,visibility_only) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET visibility_only=excluded.visibility_only',
       key,
       q.id,
       generation,
+      visibilityOnly ? 1 : 0,
     );
     for (const row of payload.components)
       for (const button of row.components)
@@ -2784,6 +2861,7 @@ export class PlayStore {
     await this.lobbies.poll(guild);
     await this.returnPlayers(guild);
     await this.refreshQueueVoice(guild);
+    await this.refreshQueueVisibility(guild);
     await this.schedule();
     await this.flush();
   }
@@ -2819,6 +2897,14 @@ export class PlayStore {
       }
       values.push(cache.due);
     } else this.ctx.storage.kv.delete('queueVoice');
+    if (identity && this.visibilityQueues(this.read(identity.guild_id).settings).length) {
+      let due = this.ctx.storage.kv.get<number>('queueVisibilityDue');
+      if (due === undefined) {
+        due = Date.now() + queueVisibilityInterval;
+        this.ctx.storage.kv.put('queueVisibilityDue', due);
+      }
+      values.push(due);
+    } else this.ctx.storage.kv.delete('queueVisibilityDue');
     const next = values.length ? Math.min(...values) : null;
     if (next !== null && next !== undefined)
       await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next));
@@ -2968,7 +3054,7 @@ export class PlayStore {
         }
       }
       const publication = this.sql
-        .exec<{ queue_id: string; generation: number; state: string }>(
+        .exec<{ queue_id: string; generation: number; state: string; visibility_only: number }>(
           'SELECT * FROM queue_publications WHERE key=?',
           work.key,
         )
@@ -3156,6 +3242,32 @@ export class PlayStore {
           }
         }
         let payload = JSON.parse(work.payload);
+        if (
+          publication?.visibility_only &&
+          identity &&
+          this.sql
+            .exec<{ visibility_only: number }>(
+              'SELECT visibility_only FROM queue_publications WHERE key=?',
+              work.key,
+            )
+            .toArray()[0]?.visibility_only
+        ) {
+          const q = this.read(identity.guild_id).settings.queues.find(
+            (q) => q.id === publication.queue_id,
+          );
+          if (!q?.enabled || q.keepQueueVisible === false || q.channelId !== card.channel_id) {
+            // A settings change cancels a queued bump. Reconcile a lost create first,
+            // then remove only that orphan, never the current public card.
+            const current = this.sql
+              .exec<Pointer>('SELECT * FROM cards WHERE key=?', `queue:${publication.queue_id}`)
+              .toArray()[0];
+            if (card.message_id && card.message_id !== current?.message_id)
+              this.retireMessage(work.key, card.channel_id, card.message_id);
+            this.sql.exec('DELETE FROM outbox WHERE key=? AND version=?', work.key, work.version);
+            this.sql.exec("UPDATE queue_publications SET state='superseded' WHERE key=?", work.key);
+            continue;
+          }
+        }
         if (work.key.startsWith('ping:')) {
           // A recovered receipt means the invitation already exists. Never edit
           // it or repeat its mentions after a lost HTTP response.

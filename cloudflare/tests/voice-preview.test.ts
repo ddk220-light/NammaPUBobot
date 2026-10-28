@@ -212,7 +212,7 @@ describe('bounded voice rollout and shared Gateway', () => {
     await act('queue', 0, { queue: 'Old demo', channelId: s.queues[1].channelId });
     await flush();
     const saved = await stub().read(guild);
-    saved.settings.queues[1].enabled = false;
+    saved.settings.queues.find((q) => q.id === second)!.enabled = false;
     await stub().save(guild, saved.revision, saved.settings, person(99).id, 'save');
     await flush();
     // Its saved card predates the renderer change in this release.
@@ -224,7 +224,9 @@ describe('bounded voice rollout and shared Gateway', () => {
       );
     });
     vi.mocked(fetch).mockClear();
-    await stub().setVoicePreview(guild, 2, [queue], true, true);
+    expect(await stub().setVoicePreview(guild, 2, [queue], true, true)).toMatchObject({
+      applied: true,
+    });
     // The voice alarm can coalesce this publication while the save is returning.
     await vi.waitFor(async () => {
       await flush();

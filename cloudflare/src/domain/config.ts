@@ -90,6 +90,7 @@ export const queueSchema = z
     aliases: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
     isDefault: z.boolean().optional(),
     voicePreview: z.boolean().optional(),
+    keepQueueVisible: z.boolean().optional(),
     economy: z
       .object({ taxEnabled: z.boolean(), taxMinuteUtc: z.number().int().min(0).max(1439) })
       .strict()

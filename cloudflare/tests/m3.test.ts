@@ -354,9 +354,13 @@ describe('no-shows, queue expiry and match timeouts', () => {
       s.storage.sql.exec("UPDATE outbox SET due=0 WHERE status='pending'");
     });
     await stub().flush();
-    await runInDurableObject(stub(), async (_i, s) =>
-      expect(await s.storage.getAlarm()).toBeNull(),
-    );
+    await runInDurableObject(stub(), async (_i, s) => {
+      // No retry loop remains; only the new, infrequent queue visibility check.
+      const visibility = s.storage.kv.get<number>('queueVisibilityDue');
+      expect(await s.storage.getAlarm()).toBe(visibility);
+      expect(visibility! - Date.now()).toBeGreaterThan(890000);
+      expect(s.storage.sql.exec('SELECT * FROM deadlines').toArray()).toEqual([]);
+    });
   });
   it('refreshes waiting expiry on a repeated add and expires queued players after restart', async () => {
     const c = structuredClone(config);
