@@ -113,6 +113,17 @@ async function configured(maps = false, count = 8) {
 }
 
 describe('isolated setup tests', () => {
+  it('does not let a delayed duplicate reset delete a newer test session', async () => {
+    discord();
+    await configured();
+    await test('populate');
+    const reset = request('reset');
+    await stub().testCommand(guild, reset);
+    for (let i = 0; i < 4; i++) await flushTest();
+    expect((await test('populate')).ok).toBe(true);
+    await stub().testCommand(guild, reset);
+    expect((await data(sandbox())).queue_entries).toHaveLength(8);
+  });
   it('runs eight real members through queue, check-in and result without touching live data or writing ratings/history', async () => {
     const d = discord();
     const source = await configured();

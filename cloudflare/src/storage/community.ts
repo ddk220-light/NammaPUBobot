@@ -350,6 +350,20 @@ export class Community extends DurableObject<Env> {
     this.ctx.storage.kv.put('testMode', true);
     if (request.op === 'status') return this.playStore.testStatus();
     if (request.op === 'reset') {
+      const receipts =
+        this.ctx.storage.kv.get<{ id: string; expires: number }[]>('testReceipts') ?? [];
+      // A delayed duplicate reset must not erase a newer session.
+      if (receipts.some((r) => r.id === request.id))
+        return {
+          ok: true,
+          content:
+            'This test cleanup request was already handled. Use /test status to see the current session.',
+        };
+      receipts.push({ id: request.id, expires: Date.now() + 86400000 });
+      this.ctx.storage.kv.put(
+        'testReceipts',
+        receipts.filter((r) => r.expires > Date.now()).slice(-64),
+      );
       this.ctx.waitUntil(this.playStore.resetTest(true));
       return {
         ok: true,
