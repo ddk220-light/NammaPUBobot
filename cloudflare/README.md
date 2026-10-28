@@ -33,7 +33,7 @@ Local development uses local SQLite, never remote staging storage. Copy `.dev.va
 
 ## Setup rehearsal
 
-Administrators and configured bot moderators can use `/test populate`, `/test start`, `/test checkin`, `/test maps`, `/test result`, `/test status` and `/test reset` to run a temporary rehearsal with randomly selected real server members. Test results do not affect real ratings, wallets or match history, and no players are pinged. See [setup testing](docs/setup-testing.md) for isolation, limits and cleanup.
+Administrators and configured bot moderators have two helpers: `/test populate` adds eight random real members to the selected **live queue** (optional `queue` and `count`), and `/test checkin` tags the active match as **TEST** and checks in its roster (optional `queue` and `match`). Use the regular queue, map, lobby, civilization, admin and captain controls for everything else. Tag the match before reporting it: population alone is ordinary queue activity. Test results never update ratings or match history. See [setup testing](docs/setup-testing.md).
 
 ## Administrator commands
 

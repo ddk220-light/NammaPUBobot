@@ -7,6 +7,7 @@ import { PlayError } from './errors';
 export { PlayError } from './errors';
 
 export interface Match {
+  test?: { markedBy: string; markedAt: number };
   id: string;
   queue: Queue;
   gameName: string;

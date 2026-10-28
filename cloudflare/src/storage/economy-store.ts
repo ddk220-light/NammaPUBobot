@@ -125,7 +125,7 @@ export class EconomyStore {
     };
   }
   open(m: Match) {
-    if (!m.queue.modules.predictions || !m.queue.modules.gold) return;
+    if (m.test || !m.queue.modules.predictions || !m.queue.modules.gold) return;
     const old = this.book(m.id);
     if (old && ['open', 'frozen', 'settled'].includes(old.status)) return;
     this.sql.exec(
@@ -279,7 +279,20 @@ export class EconomyStore {
       this.open(m);
     } else if (b?.status === 'frozen') this.refund(b, 'roster_changed_after_close');
   }
+  markTest(m: Match) {
+    const books = this.sql.exec<Book>('SELECT * FROM books WHERE match_id=?', m.id).toArray();
+    if (books.some((b) => b.status === 'settled'))
+      throw new PlayError('This match already has settled predictions and cannot become a test.');
+    for (const book of books) {
+      this.refund(book, 'test_match');
+      this.sql.exec('DELETE FROM bet_participation WHERE book_id=?', book.id);
+    }
+  }
   finish(m: Match, result: 'alpha' | 'beta' | 'draw' | 'abort') {
+    if (m.test) {
+      this.markTest(m);
+      return;
+    }
     const b = this.book(m.id);
     if (b && !['settled', 'refunded'].includes(b.status)) {
       const unverifiedStart =

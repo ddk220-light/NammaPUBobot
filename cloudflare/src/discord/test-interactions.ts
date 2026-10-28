@@ -30,19 +30,15 @@ export function testInteraction(
   const sub = i.data?.options?.[0];
   if (i.data?.options?.length !== 1 || sub?.type !== 1) return fail();
   const args = sub.options ?? [];
-  const allowed =
-    sub.name === 'populate'
-      ? ['queue', 'count']
-      : sub.name === 'result'
-        ? ['queue', 'result']
-        : ['queue'];
+  const allowed = sub.name === 'populate' ? ['queue', 'count'] : ['queue', 'match'];
   if (
     new Set(args.map((o) => o.name)).size !== args.length ||
     args.some((o) => !allowed.includes(o.name) || o.options)
   )
     return fail();
   const input = testRequestSchema.safeParse({
-    ...Object.fromEntries(args.map((o) => [o.name, o.value])),
+    ...Object.fromEntries(args.filter((o) => o.name !== 'match').map((o) => [o.name, o.value])),
+    matchId: args.find((o) => o.name === 'match')?.value,
     id: i.id,
     op: sub.name,
     channelId: i.channel_id,
@@ -59,12 +55,8 @@ export function testInteraction(
     },
   });
   if (!input.success) return fail();
-  // Queries/reset need a private receipt; mutations are already visible on TEST cards.
-  return deferInteractionReply(
-    env,
-    ctx,
-    i.token,
-    !['status', 'reset'].includes(input.data.op),
-    () => env.COMMUNITIES.getByName(i.guild_id!).testCommand(i.guild_id!, input.data),
+  // The regular queue/match card already shows successful changes.
+  return deferInteractionReply(env, ctx, i.token, true, () =>
+    env.COMMUNITIES.getByName(i.guild_id!).testCommand(i.guild_id!, input.data),
   );
 }

@@ -24,6 +24,7 @@ export async function testMembers(
   channel: string,
   count: number,
   known: string[],
+  eligible: (member: Action['actor']) => boolean = () => true,
 ): Promise<Action['actor'][]> {
   const token = env.DISCORD_BOT_TOKEN;
   if (!token) throw new PlayError('Discord bot access is unavailable.');
@@ -48,7 +49,8 @@ export async function testMembers(
           }),
         ]),
     );
-    if (humans.size >= count) return shuffled([...humans.values()]).slice(0, count);
+    const available = [...humans.values()].filter(eligible);
+    if (available.length >= count) return shuffled(available).slice(0, count);
     known = [...known, ...humans.keys()];
   } catch (error) {
     // Listing members can require the privileged Server Members intent. Do not
@@ -69,7 +71,8 @@ export async function testMembers(
   // Bounded requests; do not scan an entire large server for a demo.
   for (const id of candidates.slice(0, 32)) {
     try {
-      selected.push(await resolveMember(env, guild, id));
+      const member = await resolveMember(env, guild, id);
+      if (eligible(member)) selected.push(member);
     } catch (error) {
       if (
         !(error instanceof PlayError) &&
@@ -80,6 +83,6 @@ export async function testMembers(
     if (selected.length === count) return selected;
   }
   throw new PlayError(
-    `Only ${selected.length} current human members could be verified. Use /test populate count:${Math.max(2, selected.length)} after more people have used this channel. Nothing was added.`,
+    `Only ${selected.length} eligible human members could be verified. Use /test populate count:${Math.max(2, selected.length)} after more people have used this channel. Nothing was added.`,
   );
 }

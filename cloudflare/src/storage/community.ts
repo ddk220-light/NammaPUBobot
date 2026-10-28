@@ -11,14 +11,7 @@ import type { ImportBundle, RecordAction } from '../domain/records';
 import { EconomyStore } from './economy-store';
 import { adminRequestSchema, type AdminRequest } from '../domain/admin';
 import type { EconomyImport } from '../domain/economy-import';
-import {
-  testLifetime,
-  testObjectName,
-  testRequestSchema,
-  testSettings,
-  type TestRequest,
-  type TestSession,
-} from '../domain/testing';
+import { testRequestSchema, type TestRequest, type TestSession } from '../domain/testing';
 import { testMembers } from '../discord/test-members';
 
 export class Community extends DurableObject<Env> {
@@ -66,6 +59,12 @@ export class Community extends DurableObject<Env> {
     this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
     if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
     this.playStore = new PlayStore(ctx, env, (guild) => this.read(guild), this.recordStore);
+    // Retire the previous isolated test sessions; new /test commands use live storage.
+    const retiredTest = ctx.storage.kv.get<TestSession>('testSession');
+    if (ctx.storage.kv.get('testMode') && retiredTest) {
+      retiredTest.expiresAt = 0;
+      ctx.storage.kv.put('testSession', retiredTest);
+    }
     // Adopt periodic queue visibility for existing communities on their next wake.
     ctx.blockConcurrencyWhile(() => this.playStore.schedule());
   }
@@ -274,148 +273,40 @@ export class Community extends DurableObject<Env> {
   }
   async testCommand(guild: string, input: TestRequest) {
     try {
-      if (this.ctx.storage.kv.get('recoveryReadOnly') || this.ctx.storage.kv.get('testMode'))
-        throw new PlayError('Use the active community for test commands.');
       const request = testRequestSchema.parse(input);
-      const authorize = () => {
-        const settings = this.read(guild).settings;
-        let queues = settings.queues.filter(
-          (q) =>
-            q.channelId === request.channelId &&
-            (!request.queue ||
-              q.id === request.queue ||
-              [q.name, ...(q.aliases ?? [])].some(
-                (name) => name.toLowerCase() === request.queue!.toLowerCase(),
-              )),
-        );
-        if (!request.queue && queues.length > 1) queues = queues.filter((q) => q.isDefault);
-        if (queues.length !== 1)
-          throw new PlayError('Choose a configured queue in this channel with the queue option.');
-        const queue = queues[0];
-        if (
-          !request.manager &&
-          !(queue.adminRoles ?? []).some((id) => request.actor.roles?.includes(id))
-        )
-          throw new PlayError(
-            'Only server administrators, members with Manage Server, and this queue’s bot moderators can use /test.',
-          );
-        if (!queue.enabled && !['status', 'reset'].includes(request.op))
-          throw new PlayError('Enable this queue before testing it.');
-        return { settings, queue };
-      };
-      let source = authorize();
+      const { queue } = this.playStore.testContext(guild, request);
+      const previous = this.playStore.testReceipt(request);
+      if (previous) return previous;
       let members: Action['actor'][] = [];
       if (request.op === 'populate') {
         const known = this.ctx.storage.sql
           .exec<{ user_id: string }>(
             'SELECT user_id FROM profiles WHERE game_id=? UNION SELECT user_id FROM queue_entries LIMIT 1000',
-            source.queue.gameId,
+            queue.gameId,
           )
           .toArray()
           .map((r) => r.user_id);
-        members = await testMembers(this.env, guild, request.channelId, request.count ?? 8, known);
-        source = authorize(); // Settings/role assignments may have changed during Discord I/O.
+        members = await testMembers(
+          this.env,
+          guild,
+          request.channelId,
+          request.count ?? 8,
+          known,
+          (member) => this.playStore.testEligible(queue, member),
+        );
       }
-      const sandbox = this.env.COMMUNITIES.getByName(testObjectName(guild, source.queue.id));
-      return await sandbox.runTest(
-        guild,
-        request,
-        testSettings(source.settings, source.queue),
-        members,
-      );
+      const reply = await this.playStore.testAction(guild, request, members);
+      this.ctx.waitUntil(this.playStore.flush());
+      return reply;
     } catch (error) {
       return {
         ok: false,
         content:
           error instanceof PlayError
             ? error.message
-            : 'The setup test could not be confirmed. Check /test status before retrying.',
+            : 'The test command could not be confirmed. Check the regular queue or match card before retrying.',
       };
     }
-  }
-  async runTest(
-    guild: string,
-    request: TestRequest,
-    settings: Settings,
-    members: Action['actor'][],
-  ) {
-    // This RPC is internal; public interaction routing always authorizes against
-    // live settings first. Never allow it to initialize the real guild object.
-    if (
-      !this.ctx.id.equals(
-        this.env.COMMUNITIES.idFromName(testObjectName(guild, settings.queues[0].id)),
-      )
-    )
-      return { ok: false, content: 'Test storage identity mismatch.' };
-    this.ctx.storage.kv.put('testMode', true);
-    if (request.op === 'status') return this.playStore.testStatus();
-    if (request.op === 'reset') {
-      const receipts =
-        this.ctx.storage.kv.get<{ id: string; expires: number }[]>('testReceipts') ?? [];
-      // A delayed duplicate reset must not erase a newer session.
-      if (receipts.some((r) => r.id === request.id))
-        return {
-          ok: true,
-          content:
-            'This test cleanup request was already handled. Use /test status to see the current session.',
-        };
-      receipts.push({ id: request.id, expires: Date.now() + 86400000 });
-      this.ctx.storage.kv.put(
-        'testReceipts',
-        receipts.filter((r) => r.expires > Date.now()).slice(-64),
-      );
-      this.ctx.waitUntil(this.playStore.resetTest(true));
-      return {
-        ok: true,
-        content:
-          'Test cleanup requested. Use /test status to confirm completion; real queues and player records are unchanged.',
-      };
-    }
-    const result = await this.ctx.blockConcurrencyWhile(async () => {
-      const session = this.ctx.storage.kv.get<TestSession>('testSession');
-      const receipts =
-        this.ctx.storage.kv.get<{ id: string; expires: number }[]>('testReceipts') ?? [];
-      if (receipts.some((r) => r.id === request.id))
-        return { content: 'This test command was already applied.' };
-      if (session && (session.cleaning || session.expiresAt <= Date.now())) {
-        this.ctx.waitUntil(this.playStore.resetTest());
-        return {
-          ok: false,
-          content:
-            'The test expired or is being cleaned up. Check /test status, then populate a new test.',
-        };
-      }
-      if (!session) {
-        if (request.op !== 'populate') return { ok: false, content: 'Use /test populate first.' };
-        const revision = this.read(guild).revision;
-        const saved = await this.save(guild, revision, settings, request.actor.id, 'save');
-        if (!saved.ok)
-          return { ok: false, content: saved.reason ?? 'Test settings could not be copied.' };
-        this.ctx.storage.kv.put('testSession', {
-          id: crypto.randomUUID(),
-          expiresAt: Date.now() + testLifetime,
-          cleaning: false,
-        } satisfies TestSession);
-      }
-      try {
-        const reply = this.playStore.testAction(guild, request, members);
-        receipts.push({ id: request.id, expires: Date.now() + 86400000 });
-        this.ctx.storage.kv.put(
-          'testReceipts',
-          receipts.filter((r) => r.expires > Date.now()).slice(-64),
-        );
-        await this.playStore.schedule();
-        return reply;
-      } catch (error) {
-        await this.playStore.schedule();
-        if (!(error instanceof PlayError)) throw error;
-        return { ok: false, content: error.message };
-      }
-    });
-    // Durable outbox + alarms handle rate limits/restarts; don't make the slash
-    // command wait for every public message to be delivered.
-    this.ctx.waitUntil(this.playStore.flush());
-    return result;
   }
   playerMatch(
     guildId: string,

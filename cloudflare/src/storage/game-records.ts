@@ -17,7 +17,7 @@ export function observeGamePlayers(
   provider: string,
   o: LobbyObservation,
 ) {
-  if (!o.startedAt) return [];
+  if (m.test || !o.startedAt) return [];
   const refs = sql
     .exec<{ user_id: string; external_id: string; provenance: string }>(
       'SELECT user_id,external_id,provenance FROM profile_refs WHERE game_id=? AND provider=?',
@@ -99,7 +99,7 @@ export function selectionStats(sql: SqlStorage, game: string, user: string) {
       draws: number;
       inferred: number;
     }>(
-      `SELECT s.selection,COUNT(*) AS games,SUM(CASE WHEN json_extract(m.config,'$.result')=CASE s.side WHEN 0 THEN 'alpha' ELSE 'beta' END THEN 1 ELSE 0 END) AS wins,SUM(CASE WHEN json_extract(m.config,'$.result')=CASE s.side WHEN 0 THEN 'beta' ELSE 'alpha' END THEN 1 ELSE 0 END) AS losses,SUM(CASE WHEN json_extract(m.config,'$.result')='draw' THEN 1 ELSE 0 END) AS draws,SUM(CASE WHEN s.provenance LIKE 'inferred:%' THEN 1 ELSE 0 END) AS inferred FROM played_selections s JOIN matches m ON m.id=s.match_id JOIN profile_refs r ON r.game_id=s.game_id AND r.provider=s.provider AND r.external_id=s.external_id AND r.user_id=s.user_id WHERE s.game_id=? AND s.user_id=? AND m.state='finished' AND EXISTS (SELECT 1 FROM json_each(m.config, '$.teams[' || s.side || ']') p WHERE json_extract(p.value,'$.id')=s.user_id) GROUP BY s.selection ORDER BY games DESC,s.selection`,
+      `SELECT s.selection,COUNT(*) AS games,SUM(CASE WHEN json_extract(m.config,'$.result')=CASE s.side WHEN 0 THEN 'alpha' ELSE 'beta' END THEN 1 ELSE 0 END) AS wins,SUM(CASE WHEN json_extract(m.config,'$.result')=CASE s.side WHEN 0 THEN 'beta' ELSE 'alpha' END THEN 1 ELSE 0 END) AS losses,SUM(CASE WHEN json_extract(m.config,'$.result')='draw' THEN 1 ELSE 0 END) AS draws,SUM(CASE WHEN s.provenance LIKE 'inferred:%' THEN 1 ELSE 0 END) AS inferred FROM played_selections s JOIN matches m ON m.id=s.match_id JOIN profile_refs r ON r.game_id=s.game_id AND r.provider=s.provider AND r.external_id=s.external_id AND r.user_id=s.user_id WHERE s.game_id=? AND s.user_id=? AND m.state='finished' AND json_extract(m.config,'$.test') IS NULL AND EXISTS (SELECT 1 FROM json_each(m.config, '$.teams[' || s.side || ']') p WHERE json_extract(p.value,'$.id')=s.user_id) GROUP BY s.selection ORDER BY games DESC,s.selection`,
       game,
       user,
     )

@@ -156,101 +156,170 @@ export class PlayStore {
     return this.ctx.storage.sql;
   }
   private get testMode() {
+    // Legacy isolated namespace flag. New test matches use Match.test instead.
     return this.ctx.storage.kv.get<boolean>('testMode') === true;
   }
-  testAction(guild: string, request: TestRequest, members: Action['actor'][] = []): Reply {
-    if (!this.testMode) throw new PlayError('Test commands require isolated storage.');
-    return this.ctx.storage.transactionSync(() => {
-      const settings = this.read(guild).settings,
-        q = settings.queues[0];
-      this.expire(Date.now(), settings);
-      const matches = this.sql
-        .exec<MatchRow>('SELECT config FROM matches ORDER BY created_at DESC')
-        .toArray()
-        .map((r) => JSON.parse(r.config) as Match);
-      const m = matches[0];
-      const action = (kind: Action['kind'], extra: Partial<Action> = {}) =>
-        this.dispatch(
-          {
-            id: request.id,
-            actor: request.actor,
-            channelId: request.channelId,
-            queue: q.id,
-            admin: true,
-            kind,
-            ...extra,
-          },
-          settings,
-        );
-      if (request.op === 'populate') {
-        if (matches.length || this.entries(q.id).length)
-          throw new PlayError('A test already exists. Use /test reset before populating again.');
-        if (members.length !== (request.count ?? 8))
-          throw new PlayError('Could not verify the requested number of test players.');
-        for (const target of members) action('add', { target });
-      } else if (request.op === 'start') {
-        if (matches.length)
-          throw new PlayError('This test already started. Use /test reset to run another.');
-        action('start');
-      } else {
-        if (!m) throw new PlayError('Use /test populate and /test start first.');
-        const maps = () => {
-          const round = this.match(m.id).mapRound;
-          if (!round || round.state !== 'open') return;
-          if (round.settings.mode === 'direct')
-            action('map_pick', {
-              matchId: m.id,
-              roundId: round.id,
-              mapChoices: round.choices.slice(0, round.settings.count),
-            });
-          else
-            for (const [index, player] of m.roster.entries())
-              action('map_vote', {
-                matchId: m.id,
-                actor: { id: player.id, name: player.name },
-                roundId: round.id,
-                mapChoices: [round.choices[index % round.choices.length]],
-              });
-        };
-        if (request.op === 'checkin') {
-          if (m.state !== 'check_in')
-            throw new PlayError('This test is not in check-in. Check /test status or reset it.');
-          if (m.mapRound?.state === 'open' && m.mapRound.settings.countsAsCheckIn) maps();
-          else
-            for (const player of m.roster.filter((p) => !m.ready.includes(p.id)))
-              action('ready', { matchId: m.id, actor: { id: player.id, name: player.name } });
-        } else if (request.op === 'maps') {
-          if (!m.mapRound || m.mapRound.state !== 'open')
-            throw new PlayError('There is no open map selection in this test.');
-          maps();
-        } else if (request.op === 'result') {
-          if (!request.result) throw new PlayError('Choose Alpha, Beta, draw or abort.');
-          if (m.state !== 'playing' && request.result !== 'abort')
-            throw new PlayError(
-              'Finish test check-in and map selection before reporting a result.',
-            );
-          action('admin_report', { matchId: m.id, result: request.result });
-        }
-      }
-      return {
-        ok: true,
-        content: 'Test updated. Real ratings, wallets and match history are unchanged.',
-      };
-    });
+  testContext(guild: string, request: TestRequest) {
+    if (this.ctx.storage.kv.get('recoveryReadOnly') || this.testMode)
+      throw new PlayError('Use the live community queue for /test.');
+    const settings = this.read(guild).settings;
+    const explicit = request.matchId ? this.match(request.matchId) : undefined;
+    if (explicit && explicit.queue.channelId !== request.channelId)
+      throw new PlayError('Choose a match in this channel.');
+    const q = this.queue(
+      {
+        id: request.id,
+        actor: request.actor,
+        channelId: request.channelId,
+        admin: request.manager,
+        kind: 'queue',
+        queue: request.queue ?? explicit?.queue.id,
+      },
+      settings,
+    );
+    if (explicit && explicit.queue.id !== q.id)
+      throw new PlayError('That match belongs to a different queue.');
+    if (!request.manager && !(q.adminRoles ?? []).some((id) => request.actor.roles?.includes(id)))
+      throw new PlayError(
+        'Only server administrators, members with Manage Server, and this queue’s bot moderators can use /test.',
+      );
+    if (request.op === 'populate') {
+      if (!q.enabled) throw new PlayError('Enable this queue before populating it.');
+      if (request.matchId) throw new PlayError('Choose a queue, not a match, for population.');
+      return { queue: q, match: undefined, settings };
+    }
+    const active = explicit
+      ? [explicit]
+      : this.sql
+          .exec<MatchRow>(
+            "SELECT config FROM matches WHERE queue_id=? AND channel_id=? AND state IN ('check_in','playing') ORDER BY created_at DESC LIMIT 2",
+            q.id,
+            request.channelId,
+          )
+          .toArray()
+          .map((r) => JSON.parse(r.config) as Match);
+    if (active.length !== 1)
+      throw new PlayError(
+        active.length
+          ? 'Several matches are active. Choose one with /test checkin match:<ID>.'
+          : 'No active match in this queue. Start it with the regular queue controls first.',
+      );
+    return { queue: q, match: active[0], settings };
   }
-  testStatus(): Reply {
-    const session = this.ctx.storage.kv.get<TestSession>('testSession');
-    if (!session) return { content: 'No test session. Use /test populate, then /test start.' };
-    const m = this.sql.exec<MatchRow>('SELECT config FROM matches LIMIT 1').toArray()[0];
-    const match = m ? (JSON.parse(m.config) as Match) : undefined;
-    const jobs = this.sql
-      .exec<{ status: string; count: number }>(
-        'SELECT status,COUNT(*) AS count FROM outbox GROUP BY status',
+  testEligible(q: Queue, member: Action['actor']) {
+    // Do not pull anyone out of another queue or an ongoing match.
+    if (
+      this.sql
+        .exec(
+          'SELECT 1 FROM queue_entries WHERE user_id=? UNION ALL SELECT 1 FROM active_players WHERE user_id=? UNION ALL SELECT 1 FROM pending_returns WHERE user_id=?',
+          member.id,
+          member.id,
+          member.id,
+        )
+        .toArray().length
+    )
+      return false;
+    if (
+      this.sql
+        .exec('SELECT 1 FROM noadds WHERE user_id=? AND until_ms>?', member.id, Date.now())
+        .toArray().length
+    )
+      return false;
+    return (
+      (!q.controls?.requiredRole || !!member.roles?.includes(q.controls.requiredRole)) &&
+      (!q.controls?.blockedRole || !member.roles?.includes(q.controls.blockedRole))
+    );
+  }
+  testReceipt(request: TestRequest): Reply | null {
+    const previous = this.sql
+      .exec<{ fingerprint: string; reply: string }>(
+        'SELECT fingerprint,reply FROM play_actions WHERE id=?',
+        request.id,
       )
-      .toArray();
-    return {
-      content: `**Setup test** · ${session.cleaning ? 'cleanup pending' : `expires <t:${Math.floor(session.expiresAt / 1000)}:R>`}\n${match ? `Match ${match.id}: ${match.state}; ${match.ready.length}/${match.roster.length} checked in${match.mapRound ? `; maps ${match.mapRound.state}` : ''}${match.result ? `; result ${match.result}` : ''}.` : `${this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM queue_entries').toArray()[0].n} waiting.`}\nDelivery: ${jobs.map((j) => `${j.count} ${j.status}`).join(', ') || 'up to date'}.\n/test checkin · /test maps · /test result · /test reset\nNo real ratings, statistics, payouts or match history. Test ratings use defaults; external lobbies, civilization picks and banter are not simulated.`,
-    };
+      .toArray()[0];
+    if (!previous) return null;
+    if (previous.fingerprint !== JSON.stringify({ test: request }))
+      throw new PlayError('This interaction was already used for another action.');
+    return JSON.parse(previous.reply) as Reply;
+  }
+  async testAction(
+    guild: string,
+    request: TestRequest,
+    members: Action['actor'][] = [],
+  ): Promise<Reply> {
+    const initial = this.testContext(guild, request);
+    if (request.op === 'populate') await this.refreshCandidates(guild, [initial.queue]);
+    const reply = this.ctx.storage.transactionSync(() => {
+      const { queue: q, match, settings } = this.testContext(guild, request);
+      const fingerprint = JSON.stringify({ test: request });
+      const previous = this.testReceipt(request);
+      if (previous) return previous;
+      let reply: Reply;
+      if (request.op === 'populate') {
+        if (
+          members.length !== (request.count ?? 8) ||
+          new Set(members.map((p) => p.id)).size !== members.length ||
+          members.some((p) => !this.testEligible(q, p))
+        )
+          throw new PlayError(
+            'The available players changed or too few are eligible. Nothing was added; retry /test populate.',
+          );
+        for (const target of members)
+          this.dispatch(
+            {
+              id: request.id,
+              actor: request.actor,
+              channelId: request.channelId,
+              queue: q.id,
+              admin: true,
+              kind: 'add',
+              target,
+            },
+            settings,
+          );
+        reply = {
+          ok: true,
+          content: `Added ${members.length} players to ${q.name}. Use the regular controls, then /test checkin to mark the match as a test before reporting it.`,
+        };
+      } else {
+        const m = match!;
+        if (
+          !['check_in', 'playing'].includes(m.state) ||
+          (m.expiresAt && m.expiresAt <= Date.now()) ||
+          (m.state === 'check_in' &&
+            m.deadline &&
+            m.ready.length < m.roster.length &&
+            m.deadline <= Date.now())
+        )
+          throw new PlayError(
+            'That match is closed or its check-in expired. Existing results cannot be changed into tests.',
+          );
+        m.test ??= { markedBy: request.actor.id, markedAt: Date.now() };
+        this.economy.markTest(m);
+        this.sql.exec('DELETE FROM played_selections WHERE match_id=?', m.id);
+        m.ready = m.roster.map((p) => p.id);
+        // Simulated readiness must not carry into the players’ next real match.
+        for (const p of m.roster) this.ux.clear(p.id, m.queue.id);
+        m.version++;
+        if (m.state === 'check_in') this.playing(m);
+        this.saveMatch(m);
+        this.audit('test_checkin', request.actor.id, { ready: m.ready.length }, m.id, q.id);
+        reply = {
+          ok: true,
+          content: `Match ${m.id} is TEST; everyone is checked in. Use the regular match controls. Its result and ratings will not be recorded.`,
+        };
+      }
+      this.sql.exec(
+        'INSERT INTO play_actions VALUES(?,?,?,?)',
+        request.id,
+        fingerprint,
+        JSON.stringify(reply),
+        Date.now(),
+      );
+      return reply;
+    });
+    await this.schedule();
+    return reply;
   }
   private get ux() {
     return new UxStore(this.sql);
@@ -1541,7 +1610,7 @@ export class PlayStore {
       if (!rules) throw new PlayError('Add a map pool in queue settings before enabling maps.');
       const history = this.sql
         .exec<{ config: string }>(
-          "SELECT config FROM matches WHERE queue_id=? AND state='finished' ORDER BY created_at DESC LIMIT 20",
+          "SELECT config FROM matches WHERE queue_id=? AND state='finished' AND json_extract(config,'$.test') IS NULL ORDER BY created_at DESC LIMIT 20",
           q.id,
         )
         .toArray()
@@ -1630,6 +1699,12 @@ export class PlayStore {
     if (result === 'abort') {
       m.state = 'aborted';
       m.result = null;
+    } else if (m.test) {
+      m.state = 'finished';
+      m.result = null;
+      m.changes = [];
+      m.ratedPlayers = undefined;
+      m.storiesAfter = undefined;
     } else if (this.testMode) {
       m.state = 'finished';
       m.result = result;
@@ -1664,26 +1739,27 @@ export class PlayStore {
       m.state = 'finished';
       m.result = result;
     }
-    if (m.queue.modules.stories && m.state === 'finished')
+    if (!m.test && m.queue.modules.stories && m.state === 'finished')
       m.storiesAfter = afterStories(m, m.ratedPlayers ?? []);
     m.closedAt = Date.now();
     m.version++;
     this.clearDeadlines(m);
     this.sql.exec('DELETE FROM active_players WHERE match_id=?', m.id);
     this.saveMatch(m);
-    this.audit(
-      'report',
-      actor,
-      { result, generation: m.generation ?? 0, changes: m.changes },
-      m.id,
-      m.queue.id,
-    );
+    if (!m.test)
+      this.audit(
+        'report',
+        actor,
+        { result, generation: m.generation ?? 0, changes: m.changes },
+        m.id,
+        m.queue.id,
+      );
   }
   private recomputeStreak(gameId: string, userId: string) {
     let streak = 0;
     let ended = false;
     const rows = this.sql.exec<{ config: string }>(
-      "SELECT config FROM matches WHERE game_id=? AND state='finished' ORDER BY json_extract(config,'$.closedAt') DESC,created_at DESC,id DESC",
+      "SELECT config FROM matches WHERE game_id=? AND state='finished' AND json_extract(config,'$.test') IS NULL ORDER BY json_extract(config,'$.closedAt') DESC,created_at DESC,id DESC",
       gameId,
     );
     for (const row of rows) {
@@ -1708,6 +1784,7 @@ export class PlayStore {
     return !ended && (!streak || Math.sign(streak) === Math.sign(value)) ? streak + value : streak;
   }
   private undo(m: Match, actor: string) {
+    if (m.test) throw new PlayError('Test matches have no recorded result to undo or re-rate.');
     if (m.state !== 'finished') throw new PlayError('Only a finished ranked match can be undone.');
     if (m.changes.length !== m.roster.length)
       throw new PlayError(
@@ -1773,7 +1850,7 @@ export class PlayStore {
   private storyHistory(m: Match) {
     return this.sql
       .exec<{ config: string }>(
-        "SELECT config FROM matches WHERE game_id=? AND channel_id=? AND state='finished' AND created_at<? AND created_at>? ORDER BY created_at DESC LIMIT 5000",
+        "SELECT config FROM matches WHERE game_id=? AND channel_id=? AND state='finished' AND json_extract(config,'$.test') IS NULL AND created_at<? AND created_at>? ORDER BY created_at DESC LIMIT 5000",
         m.queue.gameId,
         m.queue.channelId,
         m.createdAt,
@@ -2192,7 +2269,9 @@ export class PlayStore {
       if (a.kind === 'loss') {
         this.close(m, side === 0 ? 'beta' : 'alpha', a.actor.id);
         return {
-          content: `${side === 0 ? 'Beta' : 'Alpha'} wins. Result and ratings saved.`,
+          content: m.test
+            ? 'Test match completed. Results and ratings were not recorded.'
+            : `${side === 0 ? 'Beta' : 'Alpha'} wins. Result and ratings saved.`,
         };
       }
       const vote = a.kind as 'draw' | 'abort';
@@ -2211,8 +2290,9 @@ export class PlayStore {
       if (m.captains.every((id) => m.agreements[id] === vote)) {
         this.close(m, vote, a.actor.id);
         return {
-          content:
-            vote === 'draw'
+          content: m.test
+            ? 'Test match completed. Results and ratings were not recorded.'
+            : vote === 'draw'
               ? 'Draw recorded. Ratings updated.'
               : 'Match cancelled. No ratings changed.',
         };
@@ -2456,7 +2536,9 @@ export class PlayStore {
         }
         this.close(m, a.result, a.actor.id);
         return {
-          content: `Administrator recorded ${a.result} for match ${m.id}. Ratings and web history updated once.`,
+          content: m.test
+            ? `Test match ${m.id} completed. Results and ratings were not recorded.`
+            : `Administrator recorded ${a.result} for match ${m.id}. Ratings and web history updated once.`,
         };
       }
       if (!['check_in', 'playing'].includes(m.state))
@@ -2828,7 +2910,10 @@ export class PlayStore {
           )
           .toArray()[0]?.roster_revision ?? 0,
       latest: matches('', 1)[0] ?? null,
-      recent: matches("AND state NOT IN ('check_in','playing')", 5),
+      recent: matches(
+        "AND state NOT IN ('check_in','playing') AND json_extract(config,'$.test') IS NULL",
+        5,
+      ),
       active,
       selected: selected ?? active[0] ?? null,
     };
@@ -3203,7 +3288,7 @@ export class PlayStore {
       .toArray()[0].count;
     const matches = this.sql
       .exec<{ config: string }>(
-        `SELECT config FROM matches ${gameId ? 'WHERE game_id=?' : ''} ORDER BY created_at DESC LIMIT 20`,
+        `SELECT config FROM matches WHERE json_extract(config,'$.test') IS NULL ${gameId ? 'AND game_id=?' : ''} ORDER BY created_at DESC LIMIT 20`,
         ...(gameId ? [gameId] : []),
       )
       .toArray()

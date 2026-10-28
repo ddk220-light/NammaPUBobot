@@ -158,6 +158,10 @@ export class RecordStore {
     // A substitute replaces the participant; the outgoing player must not
     // acquire a finished match or last-played date from the replacement's game.
     this.sql.exec('DELETE FROM participants WHERE match_id=?', m.id);
+    if (m.test) {
+      this.bump();
+      return;
+    }
     for (const p of m.roster)
       this.sql.exec(
         'INSERT INTO participants VALUES(?,?,?,?,?) ON CONFLICT(match_id,user_id) DO UPDATE SET at=excluded.at,state=excluded.state',
