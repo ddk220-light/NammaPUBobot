@@ -372,6 +372,8 @@ function queueFields(q?: Queue) {
   </div><details class="rating-options"><summary>Queue controls and access</summary><p class="muted">Zero disables waiting expiry. Match lifetime is at most 12 hours. Role IDs can be copied from Discord with Developer Mode.</p><div class="fields">
     <label class="toggle"><input type="checkbox" name="autoStart"${checked(q?.autoStart ?? true)} /> Start automatically at capacity</label>
     <label class="toggle"><input type="checkbox" name="isDefault"${checked(q?.isDefault ?? false)} /> Default queue in this channel</label>
+    <label>Additional queue admin role IDs<input name="adminRoles" value="${escape(q?.adminRoles?.join(', ') ?? '')}" placeholder="Comma-separated role IDs; optional" /></label>
+    <p class="muted">Administrator and Manage Server permissions always allow access. These additional roles can use /admin for this queue. Also allow those roles to use /admin in Discord’s Server Settings → Integrations → this bot. They do not gain access to website settings or /manage.</p>
     <label class="toggle"><input type="checkbox" name="keepQueueVisible"${checked(q?.keepQueueVisible ?? true)} /> Keep queue card near the bottom</label>
     <p class="muted">Every 15 minutes, move the queue card to the bottom if it is outside the channel’s last five messages. Turning this off stops periodic checks; player updates still refresh the card.</p>
     <label>Queue aliases<input name="aliases" value="${escape(q?.aliases?.join(', ') ?? '')}" placeholder="Comma-separated nicknames" /></label>
@@ -758,6 +760,10 @@ app.addEventListener('submit', (event) => {
         },
         voicePreview: data.has('voicePreview'),
         keepQueueVisible: data.has('keepQueueVisible'),
+        adminRoles: String(data.get('adminRoles') ?? '')
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean),
         rally: {
           enabled: data.has('rallyEnabled'),
           channels: String(data.get('rallyChannels') ?? '')

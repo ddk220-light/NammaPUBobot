@@ -9,6 +9,7 @@ import { substitutionPanel } from './player-panels';
 import { queuePicker, type QueueChoice } from './queue-picker';
 import { predictionPanel } from './prediction-panel';
 import { adminCommandRoute } from './commands.mjs';
+import { adminInteraction } from './admin-interactions';
 import {
   deferInteractionReply,
   deferPublicComponentReply,
@@ -43,7 +44,7 @@ export async function verifyRequest(
     return false;
   }
 }
-interface Interaction {
+export interface Interaction {
   id?: string;
   type: number;
   application_id: string;
@@ -156,7 +157,15 @@ export async function interactions(
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID)
     return new Response('Wrong application.', { status: 401 });
   if (interaction.type === 1) return Response.json({ type: 1 });
-  if (interaction.type === 2 && interaction.data?.name === 'admin') {
+  if (
+    (interaction.type === 2 &&
+      interaction.data?.name === 'admin' &&
+      !interaction.data.options?.some((o) => o.type === 2)) ||
+    (interaction.type === 3 && interaction.data?.custom_id?.startsWith('adm:'))
+  )
+    return adminInteraction(interaction, env, ctx);
+  // Accept old registered /admin subcommands during command propagation.
+  if (interaction.type === 2 && ['admin', 'manage'].includes(interaction.data?.name ?? '')) {
     if (
       !interaction.guild_id ||
       !interaction.channel_id ||
@@ -165,17 +174,17 @@ export async function interactions(
       !canManage(interaction.member)
     )
       return ephemeral('Manage Server permission is required for administrator commands.');
-    const group = interaction.data.options?.[0];
+    const group = interaction.data?.options?.[0];
     const action = group?.options?.[0];
     const route = group && action && adminCommandRoute(group.name, action.name);
     if (
       !route ||
-      interaction.data.options?.length !== 1 ||
+      interaction.data?.options?.length !== 1 ||
       group?.type !== 2 ||
       group.options?.length !== 1 ||
       action?.type !== 1
     )
-      return ephemeral('Choose an action under /admin setup, queue, match or player.');
+      return ephemeral('Choose an action under /manage setup, queue, match or player.');
     const args = action.options ?? [];
     if (
       route.required.some(
@@ -211,7 +220,7 @@ export async function interactions(
     return ephemeral(
       `Configure this community: ${env.APP_ORIGIN}/?community=${interaction.guild_id}`,
     );
-  if (command !== 'status') return ephemeral('Use /admin setup status or /admin setup web.');
+  if (command !== 'status') return ephemeral('Use /manage setup status or /manage setup web.');
   const snapshot = await env.COMMUNITIES.getByName(interaction.guild_id).read(interaction.guild_id);
   const here = snapshot.settings.queues.filter((q) => q.channelId === interaction.channel_id);
   return ephemeral(

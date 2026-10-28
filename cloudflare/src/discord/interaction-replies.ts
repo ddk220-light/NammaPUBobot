@@ -1,5 +1,6 @@
 import { PlayError, type Action, type Reply } from '../domain/play';
 import type { Env } from '../env';
+import type { Card } from './cards';
 
 // Every action must choose a feedback surface. Public means its queue, match,
 // agreement or picker card already communicates the successful result.
@@ -53,7 +54,7 @@ const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function finishInteractionReply(
   env: Env,
   token: string,
-  reply: Reply,
+  reply: Reply & Partial<Pick<Card, 'embeds' | 'components'>>,
   quiet: boolean,
 ) {
   const remove = quiet && reply.ok !== false;
@@ -72,6 +73,8 @@ export async function finishInteractionReply(
             ? undefined
             : JSON.stringify({
                 content: reply.content.slice(0, 1900),
+                ...(reply.embeds ? { embeds: reply.embeds } : {}),
+                ...(reply.components ? { components: reply.components } : {}),
                 allowed_mentions: { parse: [] },
               }),
           signal: AbortSignal.timeout(5000),

@@ -544,8 +544,9 @@ describe('delivery and signed surfaces', () => {
   });
   it('keeps command definitions within Discord constraints with admin visibility on privileged groups', () => {
     expect(commands.map((c) => c.name)).toEqual([
-      'civpick',
       'admin',
+      'civpick',
+      'manage',
       'add',
       'remove',
       'queue',
@@ -568,6 +569,9 @@ describe('delivery and signed surfaces', () => {
       expect(c.options?.length ?? 0).toBeLessThanOrEqual(25);
     }
     const admin = adminCommand;
+    const panel = commands.find((c) => c.name === 'admin')!;
+    expect(panel.default_member_permissions).toBe('32');
+    expect(panel.options?.every((o) => o.type !== 1 && o.type !== 2)).toBe(true);
     expect(admin.default_member_permissions).toBe('32');
     expect(admin.options.map((g) => g.name)).toEqual(['setup', 'queue', 'match', 'player']);
     for (const group of admin.options) {

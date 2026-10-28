@@ -40,3 +40,7 @@ Webhook cleanup retries at most three times, handles acknowledgement races and r
 Signed-request integration tests cover queue changes, check-in, organizer actions, substitutions, results, lobby operations, civilization privacy and consumed private panels. Transport tests cover slow work, private errors, lost/rate-limited cleanup, finite retries and credential-safe logging. These use mocked Discord boundaries; client rendering still requires human interaction.
 
 The queue **Ping** button acknowledges silently (type 6) while its public invitation is prepared. Errors and cooldowns use a new ephemeral followup; the public queue card is never edited or deleted through the interaction webhook.
+
+## Administrator control panel
+
+`/admin` is an explicit private status/control view. It keeps and edits the caller's private panel, including result/destructive-action confirmation screens. It adds no separate success receipt alongside public queue/match updates. Permission failures clear its controls. Detailed administrator commands are now under `/manage` and retain the public/private feedback choices above. See [the admin panel guide](admin-panel.md).

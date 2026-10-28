@@ -398,7 +398,7 @@ const adminGroups = [
   },
 ];
 export const adminCommand = {
-  name: 'admin',
+  name: 'manage',
   description: 'Community administration: setup, queues, matches and players',
   type: 1,
   default_member_permissions: '32',
@@ -440,6 +440,14 @@ export function adminCommandRoute(group, action) {
 }
 
 export const commands = [
+  {
+    name: 'admin',
+    description: 'Open queue status, match history and administrator controls',
+    type: 1,
+    default_member_permissions: '32',
+    dm_permission: false,
+    options: [queue],
+  },
   {
     name: 'civpick',
     description: 'Start or show hidden civilization picks for a match',

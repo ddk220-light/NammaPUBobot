@@ -9,6 +9,7 @@ import { PlayError, type Action } from '../domain/play';
 import { createRecordTables, RecordStore } from './record-store';
 import type { ImportBundle, RecordAction } from '../domain/records';
 import { EconomyStore } from './economy-store';
+import { adminRequestSchema, type AdminRequest } from '../domain/admin';
 import type { EconomyImport } from '../domain/economy-import';
 
 export class Community extends DurableObject<Env> {
@@ -108,6 +109,12 @@ export class Community extends DurableObject<Env> {
         reason: 'Recovery copy is read-only.',
       };
     const parsed = normalizeDefaults(settingsSchema.parse(settings));
+    if (parsed.queues.some((q) => q.adminRoles?.includes(guildId)))
+      return {
+        ok: false as const,
+        revision: this.identity(guildId).revision,
+        reason: 'The @everyone role cannot administer queues.',
+      };
     const old = this.read(guildId).settings;
     const result = this.ctx.storage.transactionSync(() => {
       const row = this.identity(guildId);
@@ -461,6 +468,21 @@ export class Community extends DurableObject<Env> {
       .exec<{ guild_id: string }>('SELECT guild_id FROM community WHERE id=1')
       .toArray()[0];
     if (row) await this.playStore.alarm(row.guild_id);
+  }
+  async adminPanel(guild: string, input: AdminRequest) {
+    try {
+      const request = adminRequestSchema.parse(input);
+      const view = await this.playStore.adminPanel(guild, request);
+      return { ok: true as const, ...view };
+    } catch (error) {
+      return {
+        ok: false as const,
+        content:
+          error instanceof PlayError
+            ? error.message
+            : 'The admin panel could not be loaded. Try /admin again.',
+      };
+    }
   }
   async operationalBackup(guild: string) {
     this.identity(guild);

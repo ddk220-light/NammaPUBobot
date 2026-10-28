@@ -22,6 +22,12 @@ import { createEconomyTables, EconomyStore } from './economy-store';
 import { beforeStories, afterStories } from '../domain/stories';
 import { createMapRound, defaultMaps, resolveMap, voteMap } from '../domain/maps';
 import type { VoiceMember } from '../domain/presence';
+import {
+  adminAllowed,
+  confirmedAdminOps,
+  type AdminRequest,
+  type AdminView,
+} from '../domain/admin';
 
 const voiceInterval = 5 * 60 * 1000;
 const queueVisibilityInterval = 15 * 60 * 1000;
@@ -950,6 +956,13 @@ export class PlayStore {
         return;
       }
     }
+    // Unlike publication generations, this revision also changes when multiple
+    // roster updates coalesce into the same pending Discord message.
+    if (view?.digest !== digest)
+      this.sql.exec(
+        'INSERT INTO queue_runtime(queue_id,roster_revision) VALUES(?,1) ON CONFLICT(queue_id) DO UPDATE SET roster_revision=roster_revision+1',
+        q.id,
+      );
     const generation =
       pending?.state === 'pending' ? view!.generation : (view?.generation ?? 0) + 1;
     const key = `queue:${q.id}:g${generation}`;
@@ -2288,7 +2301,7 @@ export class PlayStore {
       if (a.kind === 'undo') {
         this.undo(m, a.actor.id);
         return {
-          content: `Match ${m.id} undone. Recorded rating deltas and match counts reversed; audit retained. Use /admin match report to record the corrected result.`,
+          content: `Match ${m.id} undone. Recorded rating deltas and match counts reversed; audit retained. Use /manage match report to record the corrected result.`,
         };
       }
       if (a.kind === 'admin_report') {
@@ -2645,7 +2658,126 @@ export class PlayStore {
       }
     }
   }
-  async act(guild: string, input: Action): Promise<Reply> {
+  private adminView(guild: string, request: AdminRequest): AdminView {
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      throw new PlayError('Recovery copy is read-only.');
+    const queues = this.read(guild).settings.queues.filter(
+      (q) => q.channelId === request.channelId && adminAllowed(q, request),
+    );
+    if (!queues.length)
+      throw new PlayError(
+        'Administrator, Manage Server, or a configured queue admin role is required.',
+      );
+    const selected = request.matchId ? this.match(request.matchId) : null;
+    const name = request.queue?.toLowerCase();
+    const queue = selected
+      ? queues.find(
+          (q) => q.id === selected.queue.id && selected.queue.channelId === request.channelId,
+        )
+      : name
+        ? queues.find((q) =>
+            [q.id, q.name, ...(q.aliases ?? [])].some((value) => value.toLowerCase() === name),
+          )
+        : (queues.find((q) => q.isDefault) ?? queues[0]);
+    if (!queue) throw new PlayError('Choose a queue you administer in this channel.');
+    const matches = (filter: string, limit: number) =>
+      this.sql
+        .exec<MatchRow>(
+          `SELECT config FROM matches WHERE queue_id=? AND channel_id=? ${filter} ORDER BY created_at DESC,id DESC LIMIT ?`,
+          queue.id,
+          request.channelId,
+          limit,
+        )
+        .toArray()
+        .map((row) => JSON.parse(row.config) as Match);
+    const active = matches("AND state IN ('check_in','playing')", 25);
+    return {
+      queue,
+      queues: queues.map((q) => ({ id: q.id, name: q.name })),
+      waiting: this.entries(queue.id).length,
+      held: this.ux.held(queue.id),
+      queueVersion:
+        this.sql
+          .exec<{ roster_revision: number }>(
+            'SELECT roster_revision FROM queue_runtime WHERE queue_id=?',
+            queue.id,
+          )
+          .toArray()[0]?.roster_revision ?? 0,
+      latest: matches('', 1)[0] ?? null,
+      recent: matches("AND state NOT IN ('check_in','playing')", 5),
+      active,
+      selected: selected ?? active[0] ?? null,
+    };
+  }
+  async adminPanel(guild: string, request: AdminRequest) {
+    const view = this.adminView(guild, request);
+    if (['view', 'match'].includes(request.op)) return { view };
+    const matchOps = ['alpha_loss', 'beta_loss', 'draw', 'cancel', 'recover', 'close_betting'];
+    const validate = () => {
+      const current = this.adminView(guild, request); // Recheck current role configuration after I/O.
+      if (matchOps.includes(request.op)) {
+        const m = current.selected;
+        if (!request.matchId || !m || m.version !== request.version)
+          throw new PlayError('This match changed. Refresh the admin panel.');
+        if (!['check_in', 'playing'].includes(m.state))
+          throw new PlayError('This match has ended. Refresh the admin panel.');
+        if (['alpha_loss', 'beta_loss', 'draw'].includes(request.op) && m.state !== 'playing')
+          throw new PlayError('Wait for check-in to finish before recording a result.');
+      } else if (request.version !== current.queueVersion)
+        throw new PlayError('This queue changed. Refresh the admin panel.');
+    };
+    validate();
+    if (confirmedAdminOps.has(request.op) && !request.confirm)
+      return { view, confirmation: request.op };
+    const kind = (
+      {
+        start: 'start',
+        clear: 'clear',
+        queue: 'queue',
+        alpha_loss: 'admin_report',
+        beta_loss: 'admin_report',
+        draw: 'admin_report',
+        cancel: 'recover_abort',
+        recover: 'recover',
+        close_betting: 'bet_close',
+      } as const
+    )[request.op as Exclude<AdminRequest['op'], 'view' | 'match'>];
+    const reply = await this.act(
+      guild,
+      {
+        id: request.id,
+        actor: request.actor,
+        channelId: request.channelId,
+        admin: true,
+        kind,
+        queue: view.queue.id,
+        ...(matchOps.includes(request.op)
+          ? { matchId: request.matchId, version: request.version }
+          : {}),
+        ...(['alpha_loss', 'beta_loss', 'draw'].includes(request.op)
+          ? {
+              result:
+                request.op === 'alpha_loss'
+                  ? ('beta' as const)
+                  : request.op === 'beta_loss'
+                    ? ('alpha' as const)
+                    : ('draw' as const),
+            }
+          : {}),
+      },
+      validate,
+    );
+    if (reply.ok === false) throw new PlayError(reply.content);
+    return {
+      view: this.adminView(guild, {
+        ...request,
+        queue: view.queue.id,
+        matchId: undefined,
+        op: 'view',
+      }),
+    };
+  }
+  async act(guild: string, input: Action, validate?: () => void): Promise<Reply> {
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
       return {
         ok: false,
@@ -2722,7 +2854,10 @@ export class PlayStore {
       let reply: Reply;
       // A rejected action rolls back its own partial changes, while expired deadlines remain committed.
       try {
-        reply = this.ctx.storage.transactionSync(() => this.dispatch(a, snapshot.settings));
+        reply = this.ctx.storage.transactionSync(() => {
+          validate?.();
+          return this.dispatch(a, snapshot.settings);
+        });
       } catch (e) {
         if (!(e instanceof PlayError)) throw e;
         reply = { content: e.message, ok: false };

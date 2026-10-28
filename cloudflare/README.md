@@ -26,21 +26,23 @@ Local development uses local SQLite, never remote staging storage. Copy `.dev.va
 
 - Join/Leave on the latest queue card, or `/add` and `/remove`. A channel always has a default queue; an explicit queue name selects another. Paused defaults stay paused. Roster changes edit the existing card when it is among the last five messages; otherwise they publish a fresh card and retire the previous one.
 - Enabled queues also check every 15 minutes and move a buried card to the bottom. Disable **Keep queue card near the bottom** in the queue's web settings to stop periodic checks. See [queue visibility behavior and the 50-community cost estimate](docs/queue-cards.md).
-- Check in once: explicit readiness remains valid for up to 15 minutes in that queue while an incomplete formation is repaired. Leaving, playing, expiry or replacement clears readiness. Manual `/admin queue start skip_check_in:true` remains organizer-only.
+- Check in once: explicit readiness remains valid for up to 15 minutes in that queue while an incomplete formation is repaired. Leaving, playing, expiry or replacement clears readiness. Manual `/manage queue start skip_check_in:true` remains organizer-only.
 - Teams use captain balance, unrestricted balance or random assignment; captains are the highest-rated member on each side. The formed card has **Sub me**, which takes the next eligible waiting player and rebalances. With no replacement, the player remains in the match.
 - The losing captain uses `/report loss`; a trusted game-end adapter can show the same direct Report loss button. Start a cancellation with `/report abort`; old Cancel match buttons cannot initiate one. Cancellation and draws need both captains' agreement on a separate request card; an admin's command cancels immediately. Terminal cards have no rejoin controls; joining again is manual.
 - New matches have a maximum lifetime of 12 hours, measured from creation. A timeout cancels without ratings, refunds predictions, checks returning members' eligibility and holds the queue until someone explicitly resumes it. Settings can shorten the lifetime. Legacy active matches retain their original semantics.
 
 ## Administrator commands
 
-Administrator commands are grouped under `/admin` with Setup, Queue, Match and Player categories. Discord suggests the full command paths as you type; choose an action and fill its options. Manage Server or Administrator permission is required.
+`/admin` opens a private queue-status and match-history panel with action buttons. Administrator and Manage Server permissions work by default; optional queue admin roles are configured by ID in the website and allowed to use the command in Discord's Integrations settings. See the [admin panel guide](docs/admin-panel.md).
 
-- `/admin setup`: `status`, `web`.
-- `/admin queue`: `add`, `remove`, `start`, `clear`, `split`, `rally`.
-- `/admin match`: `cancel`, `report`, `undo`, `recover`, `substitute`, `put`, `record`, `maps-redo`, `close-betting`.
-- `/admin player`: `seed`, `hide`, `unhide`, `sync`, `restrict`, `unrestrict`.
+Detailed administrator commands are grouped under `/manage` with Setup, Queue, Match and Player categories. Discord suggests the full paths as you type. These commands retain their Manage Server or Administrator requirement.
 
-`cancel` immediately cancels an unfinished match; `record` records an already-played game. `restrict` temporarily blocks queue entry, and `unrestrict` removes that block. Optional maps, predictions and rally still require their feature configuration. Match administration uses an explicit match ID from the web organizer. Queue creation and configuration remain in the web app opened by `/admin setup web`.
+- `/manage setup`: `status`, `web`.
+- `/manage queue`: `add`, `remove`, `start`, `clear`, `split`, `rally`.
+- `/manage match`: `cancel`, `report`, `undo`, `recover`, `substitute`, `put`, `record`, `maps-redo`, `close-betting`.
+- `/manage player`: `seed`, `hide`, `unhide`, `sync`, `restrict`, `unrestrict`.
+
+`cancel` immediately cancels an unfinished match; `record` records an already-played game. `restrict` temporarily blocks queue entry, and `unrestrict` removes that block. Optional maps, predictions and rally still require their feature configuration. Match administration uses an explicit match ID from the web organizer. Queue creation and configuration remain in the web app opened by `/manage setup web`.
 
 Everyday player/captain commands and card buttons keep their existing names, including `/add`, `/remove`, `/report loss`, `/report abort`, `/maps redo` and `/predictions close`.
 

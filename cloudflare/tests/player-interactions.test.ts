@@ -122,7 +122,7 @@ function adminCommand(
   const people = [...Array.from({ length: 10 }, (_, n) => person(n)), person(99)];
   return interaction(
     {
-      name: 'admin',
+      name: 'manage',
       options: [
         {
           type: 2,
@@ -159,6 +159,338 @@ beforeEach(() => {
 afterEach(async () => {
   await reset();
   vi.restoreAllMocks();
+});
+
+describe('private administrator panel', () => {
+  const role = '100000000000000777';
+  const identity = (permissions = '32', roles: string[] = [], n = 99) => ({
+    permissions,
+    roles,
+    user: { id: person(n).id, username: person(n).name },
+  });
+  async function panel(data: object = { name: 'admin' }, rest: object = {}) {
+    const start = vi.mocked(fetch).mock.calls.length;
+    const response = await interaction(data, 99, { type: 2, member: identity(), ...rest });
+    const patch = vi
+      .mocked(fetch)
+      .mock.calls.slice(start)
+      .filter(([url, init]) => String(url).includes('/webhooks/') && init?.method === 'PATCH')
+      .at(-1);
+    return { response, card: patch ? JSON.parse(patch[1]!.body as string) : response.data };
+  }
+  const control = (card: any, label: string) =>
+    card.components.flatMap((row: any) => row.components).find((c: any) => c.label === label);
+  const press = (card: any, label: string, rest: object = {}) =>
+    panel(
+      { custom_id: control(card, label).custom_id },
+      {
+        type: 3,
+        message: { flags: 64, author: { id: app } },
+        ...rest,
+      },
+    );
+  const bodyText = (card: any) => JSON.stringify(card.embeds);
+
+  it.each(['8', '32'])(
+    'opens a private status panel for Discord permission %s',
+    async (permissions) => {
+      await configure();
+      await act('add', 0);
+      const { response, card } = await panel({ name: 'admin' }, { member: identity(permissions) });
+      expect(response).toEqual({ type: 5, data: { flags: 64 } });
+      expect(bodyText(card)).toContain('1/4 waiting');
+      expect(bodyText(card)).toContain('No matches yet');
+      expect(control(card, 'Start queue').disabled).toBe(true);
+      expect(control(card, 'Settings').url).toContain(`community=${guild}`);
+      expect(card.allowed_mentions).toEqual({ parse: [] });
+    },
+  );
+
+  it('denies a regular member even when Discord command visibility was overridden', async () => {
+    await configure();
+    const { card } = await panel({ name: 'admin' }, { member: identity('0') });
+    expect(card.content).toContain('configured queue admin role');
+    expect(card.components).toEqual([]);
+    expect(card.embeds).toEqual([]);
+  });
+
+  it('allows a configured role only for its queue, without website or /manage authority', async () => {
+    const s = settings();
+    s.queues[0].adminRoles = [role];
+    s.queues.push({
+      ...structuredClone(s.queues[0]),
+      id: otherQueue,
+      name: 'Private queue',
+      adminRoles: [],
+    });
+    await configure(s);
+    const allowed = await panel({ name: 'admin' }, { member: identity('0', [role]) });
+    expect(bodyText(allowed.card)).toContain('Pickup');
+    expect(control(allowed.card, 'Settings')).toBeUndefined();
+    expect(JSON.stringify(allowed.card)).not.toContain('Private queue');
+    const denied = await panel(
+      { name: 'admin', options: [{ name: 'queue', value: otherQueue }] },
+      { member: identity('0', [role]) },
+    );
+    expect(denied.card.content).toContain('you administer');
+    expect(
+      (await adminCommand('setup', 'status', {}, '0', { member: identity('0', [role]) })).data
+        .content,
+    ).toContain('Manage Server');
+  });
+
+  it.each(['member', 'configuration'])(
+    'rechecks %s role removal before a button action',
+    async (removal) => {
+      const s = settings();
+      s.queues[0].adminRoles = [role];
+      await configure(s);
+      await act('add', 0);
+      const { card } = await panel({ name: 'admin' }, { member: identity('0', [role]) });
+      if (removal === 'configuration') {
+        const saved = await stub().read(guild);
+        saved.settings.queues[0].adminRoles = [];
+        await stub().save(guild, saved.revision, saved.settings, person(99).id, 'save');
+      }
+      const denied = await press(card, 'Clear queue', {
+        member: identity('0', removal === 'member' ? [] : [role]),
+      });
+      expect(denied.card.content).toContain('configured queue admin role');
+      expect((await stub().records(guild)).waiting[0].players).toHaveLength(1);
+    },
+  );
+
+  it.each(['owner', 'public', 'author', 'channel', 'guild'])(
+    'rejects a panel with the wrong %s',
+    async (wrong) => {
+      await configure();
+      await act('add', 0);
+      const { card } = await panel();
+      const rest =
+        wrong === 'owner'
+          ? { member: identity('32', [], 98) }
+          : wrong === 'public'
+            ? { message: { flags: 0, author: { id: app } } }
+            : wrong === 'author'
+              ? { message: { flags: 64, author: { id: person(0).id } } }
+              : wrong === 'channel'
+                ? { channel_id: '100000000000000888' }
+                : { guild_id: '100000000000000888' };
+      const denied = await press(card, 'Clear queue', rest);
+      expect(denied.card.content).toMatch(/panel|role/);
+      expect((await stub().records(guild)).waiting[0].players).toHaveLength(1);
+    },
+  );
+
+  it('starts a queued roster with the saved check-in rules and rejects old start buttons', async () => {
+    const s = settings();
+    s.queues[0].autoStart = false;
+    await configure(s);
+    for (let n = 0; n < 4; n++) await act('add', n);
+    const { card } = await panel();
+    expect(control(card, 'Start queue').disabled).toBe(false);
+    const started = await press(card, 'Start queue');
+    const match = await current();
+    expect(match.state).toBe('check_in');
+    expect(bodyText(started.card)).toContain(match.id);
+    expect(control(started.card, 'Alpha lost').disabled).toBe(true);
+    expect((await press(card, 'Start queue')).card.content).toContain('queue changed');
+    expect((await stub().records(guild)).matches).toHaveLength(1);
+  });
+
+  it('confirms a result, updates the same private panel, and cannot settle twice', async () => {
+    const m = await fill(true);
+    const { card } = await panel();
+    expect(bodyText(card)).toContain(m.id);
+    const prompt = await press(card, 'Alpha lost');
+    expect(prompt.response.type).toBe(6);
+    expect(bodyText(prompt.card)).toContain('Beta wins');
+    expect((await current()).state).toBe('playing');
+    const completed = await press(prompt.card, 'Confirm');
+    expect((await current()).result).toBe('beta');
+    expect(bodyText(completed.card)).toContain('Beta won');
+    expect(control(completed.card, 'Alpha lost')).toBeUndefined();
+    const before = await stub().operationalBackup(guild);
+    expect((await press(prompt.card, 'Confirm')).card.content).toMatch(/changed|ended/);
+    const after = await stub().operationalBackup(guild);
+    for (const table of ['matches', 'profiles', 'rating_changes', 'wallets', 'gold_ledger'])
+      expect(after.tables[table]).toEqual(before.tables[table]);
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(
+          ([url, init]) => String(url).includes('/webhooks/') && init?.method === 'DELETE',
+        ),
+    ).toBe(false);
+  });
+
+  it('requires confirmation to clear waiting players and rejects a changed queue', async () => {
+    await configure();
+    await act('add', 0);
+    const { card } = await panel();
+    const prompt = await press(card, 'Clear queue');
+    expect((await stub().records(guild)).waiting[0].players).toHaveLength(1);
+    await act('add', 1);
+    expect((await press(prompt.card, 'Confirm')).card.content).toContain('queue changed');
+    const fresh = await panel();
+    const clear = await press(fresh.card, 'Clear queue');
+    await press(clear.card, 'Confirm');
+    expect((await stub().records(guild)).waiting[0].players).toEqual([]);
+  });
+
+  it('cancels an ongoing match through a confirmation without rating it', async () => {
+    const m = await fill();
+    const { card } = await panel();
+    const prompt = await press(card, 'Cancel match');
+    expect((await current()).state).toBe('check_in');
+    await press(prompt.card, 'Confirm');
+    expect((await current()).state).toBe('aborted');
+    expect((await current()).changes).toEqual([]);
+    expect(bodyText((await panel()).card)).toContain(m.id);
+  });
+
+  it.each(['Beta lost', 'Draw'])('records %s with the existing settlement rules', async (label) => {
+    const s = settings();
+    s.queues[0].checkIn.enabled = false;
+    s.queues[0].modules.gold = true;
+    s.queues[0].modules.predictions = true;
+    await configure(s);
+    for (let n = 0; n < 4; n++) await act('add', n);
+    const { card } = await panel();
+    const close = await press(card, 'Close betting');
+    await press(close.card, 'Confirm');
+    const fresh = await panel();
+    const prompt = await press(fresh.card, label);
+    await press(prompt.card, 'Confirm');
+    expect((await current()).result).toBe(label === 'Draw' ? 'draw' : 'alpha');
+    const backup = await stub().operationalBackup(guild);
+    expect(backup.tables.books.every((b) => b.status !== 'open')).toBe(true);
+    await runInDurableObject(stub(), (_i, state) =>
+      expect(
+        state.storage.sql
+          .exec(
+            'SELECT w.user_id FROM wallets w LEFT JOIN gold_ledger l ON l.game_id=w.game_id AND l.user_id=w.user_id GROUP BY w.game_id,w.user_id HAVING w.balance!=COALESCE(SUM(l.amount),0)',
+          )
+          .toArray(),
+      ).toEqual([]),
+    );
+  });
+
+  it('selects another ongoing match explicitly and keeps refresh controls within Discord limits', async () => {
+    const s = settings();
+    s.queues[0].checkIn.enabled = false;
+    s.queues.push({ ...structuredClone(s.queues[0]), id: otherQueue, name: 'Second' });
+    await configure(s);
+    for (let n = 0; n < 8; n++) await act('add', n, { queue: 'Pickup' });
+    const matches = (await stub().records(guild)).matches as Match[];
+    const { card } = await panel({ name: 'admin', options: [{ name: 'queue', value: 'Pickup' }] });
+    expect(card.components).toHaveLength(5);
+    const menu = card.components
+      .flatMap((r: any) => r.components)
+      .find((c: any) => c.custom_id?.endsWith(':selectm'));
+    const selected = await panel(
+      { custom_id: menu.custom_id, values: [matches[1].id] },
+      { type: 3, message: { flags: 64, author: { id: app } } },
+    );
+    expect(
+      selected.card.embeds.find((e: any) => e.title === 'Selected match').description,
+    ).toContain(matches[1].id);
+    const refreshed = await press(selected.card, 'Refresh match card');
+    expect(refreshed.response.type).toBe(6);
+    expect((await stub().records(guild)).matches).toHaveLength(2);
+    expect(
+      card.components
+        .flatMap((r: any) => r.components)
+        .every((c: any) => !c.custom_id || c.custom_id.length <= 100),
+    ).toBe(true);
+  });
+
+  it('rechecks queue admin grants after asynchronous start eligibility checks', async () => {
+    const s = settings();
+    s.queues[0].autoStart = false;
+    s.queues[0].adminRoles = [role];
+    await configure(s);
+    for (let n = 0; n < 4; n++) await act('add', n);
+    const saved = await stub().read(guild);
+    saved.settings.queues[0].controls = {
+      requiredRole: role,
+      blockedRole: null,
+      waitingSeconds: 0,
+      matchSeconds: 0,
+    };
+    await stub().save(guild, saved.revision, saved.settings, person(99).id, 'save');
+    const { card } = await panel({ name: 'admin' }, { member: identity('0', [role]) });
+    const normal = vi.mocked(fetch).getMockImplementation()!;
+    let revoked: Promise<unknown> | undefined;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const member = /\/members\/(\d+)$/.exec(new Request(input, init).url);
+      if (!member) return normal(input, init);
+      revoked ??= (async () => {
+        const now = await stub().read(guild);
+        now.settings.queues[0].adminRoles = [];
+        return stub().save(guild, now.revision, now.settings, person(99).id, 'save');
+      })();
+      await revoked;
+      return Response.json({ user: { id: member[1] }, roles: [role] });
+    });
+    const rejected = await press(card, 'Start queue', { member: identity('0', [role]) });
+    expect(revoked).toBeDefined();
+    expect(rejected.card.content).toContain('configured queue admin role');
+    expect((await stub().records(guild)).matches).toEqual([]);
+    expect((await stub().records(guild)).waiting[0].players).toHaveLength(4);
+  });
+
+  it('shows the last five results for the selected queue even with newer matches elsewhere', async () => {
+    const m = await fill(true);
+    const own: string[] = [];
+    await runInDurableObject(stub(), (_i, state) => {
+      for (let n = 0; n < 32; n++) {
+        const next = structuredClone(m);
+        next.id = crypto.randomUUID();
+        next.createdAt += n + 1;
+        next.state = 'finished';
+        next.result = n % 2 ? 'alpha' : 'beta';
+        next.closedAt = next.createdAt + 1;
+        if (n >= 7) next.queue.id = otherQueue;
+        else own.push(next.id);
+        state.storage.sql.exec(
+          'INSERT INTO matches VALUES(?,?,?,?,?,?,?)',
+          next.id,
+          game,
+          next.queue.id,
+          channel,
+          next.state,
+          next.createdAt,
+          JSON.stringify(next),
+        );
+      }
+    });
+    const { card } = await panel();
+    const recent = card.embeds.find((e: any) => e.title === 'Last 5 completed matches').description;
+    expect(own.slice(2).every((id) => recent.includes(id))).toBe(true);
+    expect(own.slice(0, 2).some((id) => recent.includes(id))).toBe(false);
+    expect(card.embeds[0].description).toContain(own.at(-1));
+    expect(card.embeds[1].description).toContain(m.id); // Older ongoing match remains actionable.
+    expect(card.components.length).toBeLessThanOrEqual(5);
+    expect(
+      card.components
+        .flatMap((r: any) => r.components)
+        .every((c: any) => !c.custom_id || c.custom_id.length <= 100),
+    ).toBe(true);
+    expect(
+      card.embeds.reduce((n: number, e: any) => n + e.title.length + e.description.length, 0),
+    ).toBeLessThanOrEqual(6000);
+  });
+
+  it('refuses @everyone as an admin role and keeps recovery copies read-only', async () => {
+    const s = settings();
+    s.queues[0].adminRoles = [guild];
+    expect((await stub().save(guild, 0, s, person(99).id, 'save')).ok).toBe(false);
+    expect((await stub().read(guild)).settings.queues).toEqual([]);
+    await configure();
+    await runInDurableObject(stub(), (_i, state) => state.storage.kv.put('recoveryReadOnly', true));
+    expect((await panel()).card.content).toContain('read-only');
+  });
 });
 
 describe('categorized administrator commands', () => {

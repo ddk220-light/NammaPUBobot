@@ -91,6 +91,11 @@ export const queueSchema = z
     isDefault: z.boolean().optional(),
     voicePreview: z.boolean().optional(),
     keepQueueVisible: z.boolean().optional(),
+    adminRoles: z
+      .array(snowflake)
+      .max(20)
+      .refine((roles) => new Set(roles).size === roles.length, 'Choose each admin role once.')
+      .optional(),
     economy: z
       .object({ taxEnabled: z.boolean(), taxMinuteUtc: z.number().int().min(0).max(1439) })
       .strict()

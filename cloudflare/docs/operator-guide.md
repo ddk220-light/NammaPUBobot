@@ -21,18 +21,20 @@ Switching views preserves unsaved inputs. Refresh intentionally reloads the save
 
 ## Discord administrator menu
 
-Use `/admin` to find the Setup, Queue, Match and Player command categories. Discord's command explorer suggests full command paths; the base `/admin` alone is not an executable command. All categories require Manage Server or Administrator permission, checked by both command visibility and the handler.
+Use `/admin` to open the private queue and match control panel. It shows queue status, the latest match ID, five recent completed outcomes and controls with confirmations for results, cancellations and clearing. Additional role IDs can be granted panel access per queue without server-wide permissions; also allow those roles to use `/admin` in Discord's Integrations settings. See the [admin panel and authorization guide](admin-panel.md).
+
+The detailed Setup, Queue, Match and Player categories are now under `/manage`. Discord's command explorer suggests the full paths. All categories retain their Manage Server or Administrator requirement, checked by command visibility and the handler.
 
 | Category | Actions |
 |---|---|
-| `/admin setup` | `status`, `web` |
-| `/admin queue` | `add`, `remove`, `start`, `clear`, `split`, `rally` |
-| `/admin match` | `cancel`, `report`, `undo`, `recover`, `substitute`, `put`, `record`, `maps-redo`, `close-betting` |
-| `/admin player` | `seed`, `hide`, `unhide`, `sync`, `restrict`, `unrestrict` |
+| `/manage setup` | `status`, `web` |
+| `/manage queue` | `add`, `remove`, `start`, `clear`, `split`, `rally` |
+| `/manage match` | `cancel`, `report`, `undo`, `recover`, `substitute`, `put`, `record`, `maps-redo`, `close-betting` |
+| `/manage player` | `seed`, `hide`, `unhide`, `sync`, `restrict`, `unrestrict` |
 
-Examples: `/admin queue start skip_check_in:true`, `/admin player seed user:@player rating:1200`, `/admin match cancel match:MATCH_ID`. Match IDs are available in the web organizer. Recording a game with `/admin match record` immediately writes a completed ranked result; starting a new queued game uses `/admin queue start`.
+Examples: `/manage queue start skip_check_in:true`, `/manage player seed user:@player rating:1200`, `/manage match cancel match:MATCH_ID`. Match IDs are available in the web organizer. Recording a game with `/manage match record` immediately writes a completed ranked result; starting a new queued game uses `/manage queue start`.
 
-Player and captain commands are unchanged. The previous administrator command paths are no longer registered in the slash menu. The handler accepts already-issued older interactions during Discord client refresh; their permission checks remain in force. Queue settings and bulk imports remain in the web organizer opened by `/admin setup web`.
+Player and captain commands are unchanged. The previous administrator command paths are no longer registered in the slash menu. The handler accepts already-issued older interactions during Discord client refresh; their permission checks remain in force. Queue settings and bulk imports remain in the web organizer opened by `/manage setup web`.
 
 ## First installation
 
