@@ -309,6 +309,7 @@ class QueueChannel:
 			),
 			VariableTable(
 				'ranks', display="Rating ranks", section="Leaderboard",
+				description="Rank labels shown next to player names. A player gets the highest rank whose rating they have reached.",
 				variables=[
 					Variables.StrVar("rank", default="〈F〉"),
 					Variables.IntVar("rating", default=0, description="The rank will be given on this rating or higher."),
