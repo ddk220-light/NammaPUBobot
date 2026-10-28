@@ -94,7 +94,7 @@ export const queueSchema = z
     adminRoles: z
       .array(snowflake)
       .max(20)
-      .refine((roles) => new Set(roles).size === roles.length, 'Choose each admin role once.')
+      .refine((roles) => new Set(roles).size === roles.length, 'Choose each bot moderator role once.')
       .optional(),
     economy: z
       .object({ taxEnabled: z.boolean(), taxMinuteUtc: z.number().int().min(0).max(1439) })

@@ -35,6 +35,13 @@ export interface Member {
 export interface Role {
   id: string;
   permissions: string;
+  name?: string;
+  position?: number;
+  managed?: boolean;
+}
+export interface ModeratorRole {
+  id: string;
+  name: string;
 }
 export class DiscordFailure extends Error {
   constructor(
@@ -122,7 +129,7 @@ export function channelPermissions(
   if (personal) bits = (bits & ~BigInt(personal.deny)) | BigInt(personal.allow);
   return PERMISSIONS.map((p) => ({ name: p.name, granted: !!(bits & p.bit) && !!(bits & 1024n) }));
 }
-export async function channels(env: Env, guildId: string) {
+export async function guildSetup(env: Env, guildId: string) {
   if (!env.DISCORD_BOT_TOKEN || !env.DISCORD_APPLICATION_ID) throw new DiscordFailure(503);
   const token = env.DISCORD_BOT_TOKEN;
   const [list, roles, member] = await Promise.all([
@@ -130,11 +137,19 @@ export async function channels(env: Env, guildId: string) {
     discord<Role[]>(`/guilds/${guildId}/roles`, token),
     discord<Member>(`/guilds/${guildId}/members/${env.DISCORD_APPLICATION_ID}`, token),
   ]);
-  return list
+  const accessibleChannels = list
     .filter((c) => c.type === 0 || c.type === 5)
     .map((c) => ({
       id: c.id,
       name: c.name,
       permissions: channelPermissions(guildId, env.DISCORD_APPLICATION_ID!, roles, member, c),
     }));
+  const moderatorRoles: ModeratorRole[] = roles
+    .filter((r) => r.id !== guildId && !r.managed && typeof r.name === 'string')
+    .sort((a, b) => (b.position ?? 0) - (a.position ?? 0) || a.id.localeCompare(b.id))
+    .map((r) => ({ id: r.id, name: r.name! }));
+  return { channels: accessibleChannels, moderatorRoles };
+}
+export async function channels(env: Env, guildId: string) {
+  return (await guildSetup(env, guildId)).channels;
 }

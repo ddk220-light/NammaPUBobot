@@ -164,9 +164,9 @@ function combinations<T>(items: T[], count: number): T[][] {
   return result;
 }
 export function balance(players: Player[], method: Queue['teamMethod']): [Player[], Player[]] {
-  if (players.length < 2 || players.length > 16 || players.length % 2)
-    throw new PlayError('Select an even roster of 2–16 players.');
-  const half = players.length / 2,
+  if (players.length < 2 || players.length > 16)
+    throw new PlayError('Select a roster of 2–16 players.');
+  const half = Math.floor(players.length / 2),
     total = players.reduce((s, p) => s + p.rating, 0);
   const sum = (t: Player[]) => t.reduce((s, p) => s + p.rating, 0);
   const diff = (t: Player[]) => Math.abs(2 * sum(t) - total);

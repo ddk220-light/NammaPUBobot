@@ -7,7 +7,7 @@ import {
 } from 'cloudflare:test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyModules, settingsSchema, type Settings } from '../src/domain/config';
-import { channelPermissions } from '../src/discord/client';
+import { channelPermissions, type Role } from '../src/discord/client';
 
 const guild = '706320010368516198',
   otherGuild = '706320010368516199';
@@ -40,6 +40,7 @@ const settings: Settings = {
 let admin = true,
   botPermissions = '84992',
   discordStatus = 200;
+let availableRoles: Role[] = [];
 let guildRows = [
   { id: guild, name: 'Friends', permissions: '32', owner: false },
   { id: otherGuild, name: 'Other friends', permissions: '32', owner: false },
@@ -101,6 +102,7 @@ beforeEach(() => {
   admin = true;
   botPermissions = '84992';
   discordStatus = 200;
+  availableRoles = [];
   guildRows = [
     { id: guild, name: 'Friends', permissions: '32', owner: false },
     { id: otherGuild, name: 'Other friends', permissions: '32', owner: false },
@@ -138,7 +140,10 @@ beforeEach(() => {
         },
       ]);
     if (url.pathname.endsWith('/roles'))
-      return Response.json([{ id: g, permissions: botPermissions }]);
+      return Response.json([
+        { id: g, name: '@everyone', permissions: botPermissions },
+        ...availableRoles,
+      ]);
     if (url.pathname.endsWith(`/members/${appId}`)) return Response.json({ roles: [] });
     throw new Error(`Unexpected Discord path ${url.pathname}`);
   });
@@ -269,6 +274,101 @@ describe('OAuth and session security', () => {
 });
 
 describe('community authority and durable settings', () => {
+  const moderatorRole = '100000000000000777';
+  const integrationRole = '100000000000000778';
+  it('loads named human roles with setup without another Discord roles request', async () => {
+    await session();
+    availableRoles = [
+      {
+        id: integrationRole,
+        name: 'Bot integration',
+        permissions: '8',
+        managed: true,
+        position: 9,
+      },
+      { id: moderatorRole, name: 'Game organizers', permissions: '0', position: 2 },
+      { id: '100000000000000779', name: 'Server admins', permissions: '8', position: 3 },
+    ];
+    const response = await http(`/api/communities/${guild}/setup`, { headers: headers() });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      moderatorRoles: [
+        { id: '100000000000000779', name: 'Server admins' },
+        { id: moderatorRole, name: 'Game organizers' },
+      ],
+      channels: [{ id: channel, name: 'test-bot' }],
+    });
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/roles')),
+    ).toHaveLength(1);
+  });
+  it.each(['8', '32', 'owner'])(
+    'lets a server authority (%s) save moderator roles and revoke their panel access',
+    async (permission) => {
+      await session();
+      guildRows[0].permissions = permission === 'owner' ? '0' : permission;
+      guildRows[0].owner = permission === 'owner';
+      availableRoles = [{ id: moderatorRole, name: 'Organizers', permissions: '0' }];
+      const config = structuredClone(settings);
+      config.queues[0].adminRoles = [moderatorRole];
+      expect((await save(guild, config)).status).toBe(200);
+      const community = env.COMMUNITIES.getByName(guild);
+      const panel = () =>
+        community.adminPanel(guild, {
+          id: '100000000000000800',
+          actor: { id: userId, name: 'Moderator', roles: [moderatorRole] },
+          manager: false,
+          channelId: channel,
+          op: 'view',
+        });
+      await abortAllDurableObjects();
+      expect(await panel()).toMatchObject({ ok: true, view: { canModerate: true } });
+      expect((await community.read(guild)).settings.queues[0].adminRoles).toEqual([moderatorRole]);
+      // Names can change; the stored Discord ID continues to identify the role.
+      availableRoles[0].name = 'Renamed organizers';
+      expect((await save(guild, config, 1)).status).toBe(200);
+      config.queues[0].adminRoles = [];
+      expect((await save(guild, config, 2)).status).toBe(200);
+      expect(await panel()).toMatchObject({ ok: true, view: { canModerate: false } });
+      expect((await community.audit(guild))[0]).toMatchObject({ actor_id: userId, revision: 3 });
+    },
+  );
+  it.each(['foreign', 'everyone', 'managed'])(
+    'rejects %s moderator roles before saving any settings',
+    async (kind) => {
+      await session();
+      availableRoles = [
+        { id: integrationRole, name: 'Integration', permissions: '0', managed: true },
+      ];
+      const config = structuredClone(settings);
+      config.queues[0].adminRoles = [
+        kind === 'everyone' ? guild : kind === 'managed' ? integrationRole : moderatorRole,
+      ];
+      expect((await save(guild, config)).status).toBe(400);
+      expect((await env.COMMUNITIES.getByName(guild).read(guild)).revision).toBe(0);
+    },
+  );
+  it('requires removal of deleted roles and denies website settings to delegated moderators', async () => {
+    await session();
+    availableRoles = [{ id: moderatorRole, name: 'Organizers', permissions: '0' }];
+    const config = structuredClone(settings);
+    config.queues[0].adminRoles = [moderatorRole];
+    expect((await save(guild, config)).status).toBe(200);
+    // The signed-in person is a configured bot moderator, without server permissions.
+    admin = false;
+    expect((await save(guild, config, 1)).status).toBe(403);
+    expect((await http(`/api/communities/${guild}/setup`, { headers: headers() })).status).toBe(
+      403,
+    );
+    admin = true;
+    availableRoles = [];
+    expect((await save(guild, config, 1)).status).toBe(400);
+    expect(
+      (await env.COMMUNITIES.getByName(guild).read(guild)).settings.queues[0].adminRoles,
+    ).toEqual([moderatorRole]);
+    config.queues[0].adminRoles = [];
+    expect((await save(guild, config, 1)).status).toBe(200);
+  });
   it('requires authentication, same-origin mutations and session-bound CSRF', async () => {
     expect((await save()).status).toBe(401);
     await session();

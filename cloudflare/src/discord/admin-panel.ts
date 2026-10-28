@@ -50,10 +50,11 @@ export function adminPanelCard(
   request: AdminRequest,
   settingsUrl: string,
   confirmation?: string,
+  legacyPrivate = false,
 ): Card {
   const q = view.queue,
     m = view.selected,
-    owner = request.actor.id;
+    owner = legacyPrivate ? request.actor.id : 'public';
   const refresh = () => button(owner, m ? 'match' : 'view', m?.id ?? q.id, 0, 'Refresh panel');
   if (confirmation) {
     const labels: Record<string, string> = {
@@ -125,7 +126,7 @@ export function adminPanelCard(
         q.id,
         view.queueVersion,
         'Start queue',
-        !q.enabled || view.waiting < q.size,
+        !q.enabled || view.waiting < 2,
         3,
       ),
       button(owner, 'queue', q.id, view.queueVersion, 'Refresh queue card'),
@@ -167,6 +168,8 @@ export function adminPanelCard(
         description: [
           `**Queue:** ${view.waiting}/${q.size} waiting · ${!q.enabled ? 'Paused' : view.held ? 'Waiting for a fresh join' : 'Open'}`,
           `Automatic start: ${(q.autoStart ?? true) ? 'on' : 'off'} · Check-in: ${q.checkIn.enabled ? `${q.checkIn.seconds}s` : 'off'}`,
+          'Anyone can start with at least two waiting players, up to queue capacity. Odd counts use uneven teams.',
+          'Captains can report their own team’s loss. Clearing, other results, cancellation and betting closure require an administrator or bot moderator.',
           `**Latest match**\n${view.latest ? matchLine(view.latest) : 'No matches yet.'}`,
           ...(view.queues.length > 25
             ? ['Use `/admin queue:name` to select queues beyond this menu.']

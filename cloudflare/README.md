@@ -33,7 +33,7 @@ Local development uses local SQLite, never remote staging storage. Copy `.dev.va
 
 ## Administrator commands
 
-`/admin` opens a private queue-status and match-history panel with action buttons. Administrator and Manage Server permissions work by default; optional queue admin roles are configured by ID in the website and allowed to use the command in Discord's Integrations settings. See the [admin panel guide](docs/admin-panel.md).
+`/admin` opens a public queue-status and match-history panel with action buttons. Anyone can open it and start matches, including uneven teams; `/queue start` does the same. Clearing and result overrides require Administrator, Manage Server, or a bot moderator role selected by name in the website. Captains can report their own team’s loss. See the [admin panel guide](docs/admin-panel.md).
 
 Detailed administrator commands are grouped under `/manage` with Setup, Queue, Match and Player categories. Discord suggests the full paths as you type. These commands retain their Manage Server or Administrator requirement.
 

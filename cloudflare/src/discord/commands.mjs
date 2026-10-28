@@ -444,7 +444,7 @@ export const commands = [
     name: 'admin',
     description: 'Open queue status, match history and administrator controls',
     type: 1,
-    default_member_permissions: '32',
+    default_member_permissions: null,
     dm_permission: false,
     options: [queue],
   },
@@ -468,6 +468,17 @@ export const commands = [
   ...operations
     .filter((c) => !['setup', 'rating', 'match', 'moderation'].includes(c.name))
     .map((c) =>
-      c.name === 'queue' ? { ...c, options: c.options.filter((o) => o.name === 'show') } : c,
+      c.name === 'queue'
+        ? {
+            ...c,
+            options: c.options
+              .filter((o) => ['show', 'start'].includes(o.name))
+              .map((o) =>
+                o.name === 'start'
+                  ? sub('start', 'Start with waiting players, including uneven teams', [queue])
+                  : o,
+              ),
+          }
+        : c,
     ),
 ];

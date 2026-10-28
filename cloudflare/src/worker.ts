@@ -7,6 +7,7 @@ import { catalog, saveSchema, snowflake } from './domain/config';
 import {
   canManage,
   channels,
+  guildSetup,
   discord,
   userGuilds,
   DiscordFailure,
@@ -176,7 +177,7 @@ app.get('/health', (c) =>
     ok: true,
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.14.0',
+    version: '0.15.0',
   }),
 );
 app.post('/interactions', (c) => interactions(c.req.raw, c.env, c.executionCtx));
@@ -349,7 +350,7 @@ app.get('/api/bootstrap', async (c) => {
   return c.json({
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.14.0',
+    version: '0.15.0',
     oauthReady,
     discordReady,
     inviteUrl: invite,
@@ -520,7 +521,11 @@ app.use('/api/communities/:guild/*', async (c, next) => {
   const guildId = snowflake.parse(c.req.param('guild'));
   const guild = (await userGuilds(c.get('session').accessToken)).find((g) => g.id === guildId);
   if (!guild || !canManage(guild))
-    throw new Problem(403, 'forbidden', 'Manage Server permission is required for this community.');
+    throw new Problem(
+      403,
+      'forbidden',
+      'Administrator or Manage Server permission is required for this community.',
+    );
   await next();
 });
 
@@ -534,7 +539,7 @@ app.get('/api/communities/:guild/setup', async (c) => {
   const guildId = c.req.param('guild');
   return c.json({
     snapshot: await c.env.COMMUNITIES.getByName(guildId).read(guildId),
-    channels: await channels(c.env, guildId),
+    ...(await guildSetup(c.env, guildId)),
     records: await c.env.COMMUNITIES.getByName(guildId).records(guildId),
   });
 });
@@ -694,7 +699,8 @@ app.put('/api/communities/:guild/config', async (c) => {
   const rankRoles = settings.games.flatMap(
     (g) => g.records?.ranks.map((r) => r.roleId).filter((id): id is string => !!id) ?? [],
   );
-  roles.push(...rankRoles);
+  const moderatorRoles = settings.queues.flatMap((q) => q.adminRoles ?? []);
+  roles.push(...rankRoles, ...moderatorRoles);
   if (roles.length) {
     const available = await discord<{ id: string; managed?: boolean; permissions?: string }[]>(
       `/guilds/${guildId}/roles`,
@@ -702,6 +708,12 @@ app.put('/api/communities/:guild/config', async (c) => {
     );
     if (roles.some((id) => !available.some((r) => r.id === id)))
       throw new Problem(400, 'wrong_role', 'Choose role IDs belonging to this Discord server.');
+    if (moderatorRoles.some((id) => id === guildId || available.find((r) => r.id === id)?.managed))
+      throw new Problem(
+        400,
+        'wrong_role',
+        'Bot moderator roles must be ordinary roles, not @everyone or managed integration roles.',
+      );
     if (rankRoles.some((id) => id === guildId || available.find((r) => r.id === id)?.managed))
       throw new Problem(
         400,

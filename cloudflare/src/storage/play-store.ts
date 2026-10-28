@@ -1382,13 +1382,19 @@ export class PlayStore {
         m.playingAt + m.queue.controls.matchSeconds * 1000,
       );
   }
-  private createMatch(q: Queue, settings: Settings, skip: boolean, chosen?: Entry[]) {
+  private createMatch(
+    q: Queue,
+    settings: Settings,
+    skip: boolean,
+    chosen?: Entry[],
+    manualActor?: string,
+  ) {
     playable(q);
     const entries = chosen ?? this.available(q),
       count = chosen ? entries.length : Math.min(entries.length, q.size);
-    const even = count - (count % 2);
-    if (even < 2) throw new PlayError('At least two players are needed to start.');
-    const selected = entries.slice(0, even);
+    const rosterSize = manualActor ? count : count - (count % 2);
+    if (rosterSize < 2) throw new PlayError('At least two players are needed to start.');
+    const selected = entries.slice(0, rosterSize);
     const roster = selected.map((e) =>
       this.profile(q.gameId, { id: e.user_id, name: e.display_name }, q),
     );
@@ -1479,7 +1485,7 @@ export class PlayStore {
     this.saveMatch(m);
     this.audit(
       'start',
-      'system',
+      manualActor ?? 'system',
       { roster: roster.map((p) => p.id), skipCheckIn: skip },
       m.id,
       q.id,
@@ -2005,7 +2011,7 @@ export class PlayStore {
     }
     const control = this.control(a, settings);
     if (control) return control;
-    const adminKinds = ['start', 'seed', 'recover_abort'];
+    const adminKinds = ['seed', 'recover_abort'];
     if (adminKinds.includes(a.kind) && !a.admin)
       throw new PlayError('Manage Server permission is required for this action.');
     if (a.target && a.target.id !== a.actor.id && !a.admin && ['add', 'remove'].includes(a.kind))
@@ -2166,8 +2172,12 @@ export class PlayStore {
       throw new PlayError(`${q.name} is closed. Ask an organizer when it will reopen.`);
     playable(q);
     if (a.kind === 'start') {
+      if (a.skipCheckIn && !a.admin)
+        throw new PlayError(
+          'Only an administrator can skip check-in. Use /queue start with the saved rules.',
+        );
       this.ux.hold(q.id, false);
-      const m = this.createMatch(q, settings, a.skipCheckIn ?? false);
+      const m = this.createMatch(q, settings, a.skipCheckIn ?? false, undefined, a.actor.id);
       return {
         content: `${q.name} match created. ${m.mapRound?.state === 'open' ? 'Choose the maps on the match card.' : m.state === 'check_in' ? 'Check in on the match card.' : 'Teams are ready to play.'}`,
       };
@@ -2662,12 +2672,9 @@ export class PlayStore {
     if (this.ctx.storage.kv.get('recoveryReadOnly'))
       throw new PlayError('Recovery copy is read-only.');
     const queues = this.read(guild).settings.queues.filter(
-      (q) => q.channelId === request.channelId && adminAllowed(q, request),
+      (q) => q.channelId === request.channelId,
     );
-    if (!queues.length)
-      throw new PlayError(
-        'Administrator, Manage Server, or a configured queue admin role is required.',
-      );
+    if (!queues.length) throw new PlayError('No queues are configured in this channel.');
     const selected = request.matchId ? this.match(request.matchId) : null;
     const name = request.queue?.toLowerCase();
     const queue = selected
@@ -2679,7 +2686,7 @@ export class PlayStore {
             [q.id, q.name, ...(q.aliases ?? [])].some((value) => value.toLowerCase() === name),
           )
         : (queues.find((q) => q.isDefault) ?? queues[0]);
-    if (!queue) throw new PlayError('Choose a queue you administer in this channel.');
+    if (!queue) throw new PlayError('Choose a queue in this channel.');
     const matches = (filter: string, limit: number) =>
       this.sql
         .exec<MatchRow>(
@@ -2693,6 +2700,7 @@ export class PlayStore {
     const active = matches("AND state IN ('check_in','playing')", 25);
     return {
       queue,
+      canModerate: adminAllowed(queue, request),
       queues: queues.map((q) => ({ id: q.id, name: q.name })),
       waiting: this.entries(queue.id).length,
       held: this.ux.held(queue.id),
@@ -2715,6 +2723,13 @@ export class PlayStore {
     const matchOps = ['alpha_loss', 'beta_loss', 'draw', 'cancel', 'recover', 'close_betting'];
     const validate = () => {
       const current = this.adminView(guild, request); // Recheck current role configuration after I/O.
+      const ownLoss =
+        (request.op === 'alpha_loss' && current.selected?.captains[0] === request.actor.id) ||
+        (request.op === 'beta_loss' && current.selected?.captains[1] === request.actor.id);
+      if (!['start', 'queue', 'recover'].includes(request.op) && !current.canModerate && !ownLoss)
+        throw new PlayError(
+          'Administrator, Manage Server, or a configured bot moderator role is required. Captains can report only their own team’s loss.',
+        );
       if (matchOps.includes(request.op)) {
         const m = current.selected;
         if (!request.matchId || !m || m.version !== request.version)
@@ -2729,26 +2744,31 @@ export class PlayStore {
     validate();
     if (confirmedAdminOps.has(request.op) && !request.confirm)
       return { view, confirmation: request.op };
-    const kind = (
-      {
-        start: 'start',
-        clear: 'clear',
-        queue: 'queue',
-        alpha_loss: 'admin_report',
-        beta_loss: 'admin_report',
-        draw: 'admin_report',
-        cancel: 'recover_abort',
-        recover: 'recover',
-        close_betting: 'bet_close',
-      } as const
-    )[request.op as Exclude<AdminRequest['op'], 'view' | 'match'>];
+    const kind =
+      !view.canModerate && ['alpha_loss', 'beta_loss'].includes(request.op)
+        ? 'loss'
+        : !view.canModerate && request.op === 'recover'
+          ? 'teams'
+          : (
+              {
+                start: 'start',
+                clear: 'clear',
+                queue: 'queue',
+                alpha_loss: 'admin_report',
+                beta_loss: 'admin_report',
+                draw: 'admin_report',
+                cancel: 'recover_abort',
+                recover: 'recover',
+                close_betting: 'bet_close',
+              } as const
+            )[request.op as Exclude<AdminRequest['op'], 'view' | 'match'>];
     const reply = await this.act(
       guild,
       {
         id: request.id,
         actor: request.actor,
         channelId: request.channelId,
-        admin: true,
+        admin: view.canModerate,
         kind,
         queue: view.queue.id,
         ...(matchOps.includes(request.op)
@@ -2815,7 +2835,7 @@ export class PlayStore {
       )
       .toArray();
     candidateQueues.push(...overdue.map((row) => this.match(row.match_id).queue));
-    if (['start', 'split'].includes(a.kind) && !a.admin) candidateQueues = [];
+    if (a.kind === 'split' && !a.admin) candidateQueues = [];
     // Roles are refreshed only at restricted roster selection, never by an idle loop.
     await this.refreshCandidates(guild, candidateQueues);
     const result = await this.ctx.storage.transaction(async () => {

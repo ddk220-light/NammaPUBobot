@@ -53,6 +53,10 @@ interface Channel {
   name: string;
   permissions: { name: string; granted: boolean }[];
 }
+interface ModeratorRole {
+  id: string;
+  name: string;
+}
 interface Guild {
   id: string;
   name: string;
@@ -62,7 +66,8 @@ let bootstrap: Bootstrap,
   guilds: Guild[] = [],
   guildId = '',
   snapshot: Snapshot | null = null,
-  channelList: Channel[] = [];
+  channelList: Channel[] = [],
+  moderatorRoles: ModeratorRole[] = [];
 let busy = false;
 let records: Records | null = null;
 const organizerViews = ['queues', 'matches', 'players', 'setup'] as const;
@@ -340,18 +345,35 @@ async function loadCommunity(id: string) {
   snapshot = null;
   records = null;
   channelList = [];
+  moderatorRoles = [];
   const url = new URL(location.href);
   url.searchParams.set('community', id);
   history.replaceState(null, '', url);
   render();
-  const result = await api<{ snapshot: Snapshot; channels: Channel[]; records: Records }>(
-    communityUrl('setup'),
-  );
+  const result = await api<{
+    snapshot: Snapshot;
+    channels: Channel[];
+    moderatorRoles: ModeratorRole[];
+    records: Records;
+  }>(communityUrl('setup'));
+  if (guildId !== id) return;
   snapshot = result.snapshot;
   channelList = result.channels;
+  moderatorRoles = result.moderatorRoles;
   records = result.records;
   refreshedAt = new Date();
   render();
+}
+function moderatorRoleFields(q?: Queue) {
+  const chosen = q?.adminRoles ?? [];
+  const unavailable = chosen.filter((id) => !moderatorRoles.some((r) => r.id === id));
+  return `<fieldset class="moderator-roles"><legend>Bot moderator roles</legend>
+    <p class="muted">Server owners and members with Administrator or Manage Server permission already have access. Anyone can open /admin and start a match. Select additional roles that can clear this queue and report results without being captain.</p>
+    <div class="moderator-role-list">${moderatorRoles.map((r) => `<label class="toggle"><input type="checkbox" name="adminRoles" value="${escape(r.id)}"${checked(chosen.includes(r.id))} /><span>${escape(r.name)} <small>${escape(r.id)}</small></span></label>`).join('')}
+    ${unavailable.map((id) => `<label class="toggle"><input type="checkbox" name="adminRoles" value="${escape(id)}" checked /><span>Unavailable role <small>${escape(id)}</small> — deselect to remove access</span></label>`).join('')}</div>
+    ${!moderatorRoles.length ? '<p class="muted">No selectable roles. Create a role in Discord and refresh this page.</p>' : ''}
+    <p class="muted">These roles also allow match cancellation and betting closure. They do not grant access to website settings or /manage. No Discord Administrator permission is needed for a bot moderator.</p>
+    </fieldset>`;
 }
 function queueFields(q?: Queue) {
   const s = snapshot!.settings;
@@ -372,8 +394,6 @@ function queueFields(q?: Queue) {
   </div><details class="rating-options"><summary>Queue controls and access</summary><p class="muted">Zero disables waiting expiry. Match lifetime is at most 12 hours. Role IDs can be copied from Discord with Developer Mode.</p><div class="fields">
     <label class="toggle"><input type="checkbox" name="autoStart"${checked(q?.autoStart ?? true)} /> Start automatically at capacity</label>
     <label class="toggle"><input type="checkbox" name="isDefault"${checked(q?.isDefault ?? false)} /> Default queue in this channel</label>
-    <label>Additional queue admin role IDs<input name="adminRoles" value="${escape(q?.adminRoles?.join(', ') ?? '')}" placeholder="Comma-separated role IDs; optional" /></label>
-    <p class="muted">Administrator and Manage Server permissions always allow access. These additional roles can use /admin for this queue. Also allow those roles to use /admin in Discord’s Server Settings → Integrations → this bot. They do not gain access to website settings or /manage.</p>
     <label class="toggle"><input type="checkbox" name="keepQueueVisible"${checked(q?.keepQueueVisible ?? true)} /> Keep queue card near the bottom</label>
     <p class="muted">Every 15 minutes, move the queue card to the bottom if it is outside the channel’s last five messages. Turning this off stops periodic checks; player updates still refresh the card.</p>
     <label>Queue aliases<input name="aliases" value="${escape(q?.aliases?.join(', ') ?? '')}" placeholder="Comma-separated nicknames" /></label>
@@ -381,7 +401,7 @@ function queueFields(q?: Queue) {
     <label>Match timeout seconds<input type="number" min="0" max="43200" name="matchSeconds" value="${q?.controls?.matchSeconds || 43200}" required /></label>
     <label>Required role ID<input name="requiredRole" value="${escape(q?.controls?.requiredRole ?? '')}" placeholder="Blank allows everyone" /></label>
     <label>Blocked role ID<input name="blockedRole" value="${escape(q?.controls?.blockedRole ?? '')}" placeholder="Blank blocks no role" /></label>
-  </div></details><details class="rating-options"><summary>Rating settings</summary><p class="muted">Shared by all queues for this game. The rating system cannot change once the game has player records. Starting ratings can be set in Players.</p><div class="fields">${Object.entries(
+  </div>${moderatorRoleFields(q)}</details><details class="rating-options"><summary>Rating settings</summary><p class="muted">Shared by all queues for this game. The rating system cannot change once the game has player records. Starting ratings can be set in Players.</p><div class="fields">${Object.entries(
     {
       initial: 'Starting rating',
       deviation: 'Initial deviation',
@@ -760,10 +780,7 @@ app.addEventListener('submit', (event) => {
         },
         voicePreview: data.has('voicePreview'),
         keepQueueVisible: data.has('keepQueueVisible'),
-        adminRoles: String(data.get('adminRoles') ?? '')
-          .split(',')
-          .map((v) => v.trim())
-          .filter(Boolean),
+        adminRoles: data.getAll('adminRoles').map(String),
         rally: {
           enabled: data.has('rallyEnabled'),
           channels: String(data.get('rallyChannels') ?? '')

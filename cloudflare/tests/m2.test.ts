@@ -139,7 +139,7 @@ describe('preserved legacy calculations', () => {
     expect(roundEven(1000.5)).toBe(1000);
     expect(roundEven(1001.5)).toBe(1002);
   });
-  it('bounds work at supported rosters and rejects unassigned odd rosters', () => {
+  it('bounds work at supported rosters and rejects fewer than two players', () => {
     expect(() => balance([person(0) as Player], 'captain')).toThrow();
     expect(() =>
       balance(
@@ -148,6 +148,38 @@ describe('preserved legacy calculations', () => {
       ),
     ).toThrow();
   });
+  it.each(['captain', 'balanced', 'random'] as const)(
+    'includes every odd-roster player once with %s teams',
+    (method) => {
+      for (const count of [3, 5, 7, 15]) {
+        const players = Array.from({ length: count }, (_, n) => ({
+          ...person(n),
+          rating: 800 + n * 70,
+          deviation: 200,
+          wins: 0,
+          losses: 0,
+          draws: 0,
+          streak: 0,
+        }));
+        const teams = balance(players, method);
+        expect(teams.map((t) => t.length)).toEqual([Math.floor(count / 2), Math.ceil(count / 2)]);
+        expect(
+          teams
+            .flat()
+            .map((p) => p.id)
+            .sort(),
+        ).toEqual(players.map((p) => p.id).sort());
+        for (const engine of ['aoe2', 'flat', 'glicko2', 'trueskill'] as const) {
+          const rated = rateTeams(teams, 0, defaultRatingSettings, engine);
+          expect(
+            rated.flat().every((p) => Number.isFinite(p.rating) && Number.isFinite(p.deviation)),
+          ).toBe(true);
+          expect(rated[0].every((p) => p.wins === 1)).toBe(true);
+          expect(rated[1].every((p) => p.losses === 1)).toBe(true);
+        }
+      }
+    },
+  );
 });
 
 describe('durable queue and match journey', () => {
@@ -176,21 +208,23 @@ describe('durable queue and match journey', () => {
     expect((await act('add', 0, { channelId: channel2 })).content).toContain('active match');
     expect((await act('add', 0, {}, otherGuild)).content).toContain('Joined');
   });
-  it('manually starts below capacity, retains an odd waiting player, and scopes skip-check-in to this start', async () => {
+  it('manually starts below capacity with everyone and scopes admin skip-check-in to this start', async () => {
     await setup();
     for (let i = 0; i < 3; i++) await act('add', i);
-    expect((await act('start', 9)).content).toContain('Manage Server');
+    expect((await act('start', 9, { skipCheckIn: true })).content).toContain(
+      'Only an administrator',
+    );
     await act('start', 9, { admin: true, skipCheckIn: true });
     const m = await match();
     expect(m.state).toBe('playing');
-    expect(m.roster).toHaveLength(2);
+    expect(m.roster).toHaveLength(3);
     expect(
       (await stub().read(guild)).settings.queues.find((q) => q.id === queue)!.checkIn.enabled,
     ).toBe(true);
     await runInDurableObject(stub(), (_i, s) =>
       expect(
         s.storage.sql.exec('SELECT user_id FROM queue_entries WHERE queue_id=?', queue).toArray(),
-      ).toEqual([{ user_id: person(2).id }]),
+      ).toEqual([]),
     );
   });
   it('requires admin authority for other-player changes and seeds; rejects rating changes during active matches', async () => {
@@ -570,7 +604,7 @@ describe('delivery and signed surfaces', () => {
     }
     const admin = adminCommand;
     const panel = commands.find((c) => c.name === 'admin')!;
-    expect(panel.default_member_permissions).toBe('32');
+    expect(panel.default_member_permissions).toBeNull();
     expect(panel.options?.every((o) => o.type !== 1 && o.type !== 2)).toBe(true);
     expect(admin.default_member_permissions).toBe('32');
     expect(admin.options.map((g) => g.name)).toEqual(['setup', 'queue', 'match', 'player']);
@@ -588,7 +622,14 @@ describe('delivery and signed surfaces', () => {
         0,
       ) + [...(o.options ?? []), ...(o.choices ?? [])].reduce((n, o) => n + characters(o), 0);
     expect(characters(admin)).toBeLessThanOrEqual(8000);
-    expect(commands.find((c) => c.name === 'queue')!.options.map((o) => o.name)).toEqual(['show']);
+    expect(commands.find((c) => c.name === 'queue')!.options.map((o) => o.name)).toEqual([
+      'show',
+      'start',
+    ]);
+    const queueStart = commands
+      .find((c) => c.name === 'queue')!
+      .options.find((o) => o.name === 'start')!;
+    expect('options' in queueStart && queueStart.options?.map((o) => o.name)).toEqual(['queue']);
     expect(defaultRatingSettings.initial).toBe(1000);
   });
 });

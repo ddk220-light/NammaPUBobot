@@ -30,6 +30,7 @@ export const adminRequestSchema = z
 export type AdminRequest = z.infer<typeof adminRequestSchema>;
 export type AdminView = {
   queue: Queue;
+  canModerate: boolean;
   queues: { id: string; name: string }[];
   waiting: number;
   held: boolean;

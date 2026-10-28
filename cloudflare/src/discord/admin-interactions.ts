@@ -8,7 +8,7 @@ import {
   type AdminView,
 } from '../domain/admin';
 import { adminPanelCard } from './admin-panel';
-import { finishInteractionReply } from './interaction-replies';
+import { deferPublicComponentReply, finishInteractionReply } from './interaction-replies';
 
 export function adminInteraction(
   i: Interaction,
@@ -26,6 +26,7 @@ export function adminInteraction(
   )
     return fail('Use /admin in a server channel.');
   const owner = i.member.user.id;
+  const legacyPrivate = i.type === 3 && ((i.message?.flags ?? 0) & 64) !== 0;
   const input: Partial<AdminRequest> = {
     id: i.id,
     channelId: i.channel_id,
@@ -50,14 +51,11 @@ export function adminInteraction(
       return fail('Use /admin with an optional queue name.');
     input.queue = options[0]?.value as string | undefined;
   } else {
-    if (
-      i.message?.author?.id !== env.DISCORD_APPLICATION_ID ||
-      ((i.message?.flags ?? 0) & 64) === 0
-    )
-      return fail('Use your private /admin panel.');
+    if (i.message?.author?.id !== env.DISCORD_APPLICATION_ID)
+      return fail('Use a current /admin panel from this bot.');
     const parts = i.data?.custom_id?.split(':') ?? [];
-    if (parts[0] !== 'adm' || parts[1] !== owner)
-      return fail('This admin panel belongs to someone else. Open /admin yourself.');
+    if (parts[0] !== 'adm' || parts[1] !== (legacyPrivate ? owner : 'public'))
+      return fail('Use a current public /admin panel, or open /admin again.');
     const op = parts[2];
     if (['selectq', 'selectm'].includes(op) && parts.length === 3 && i.data?.values?.length === 1) {
       input.op = op === 'selectq' ? 'view' : 'match';
@@ -80,45 +78,43 @@ export function adminInteraction(
   }
   const parsed = adminRequestSchema.safeParse(input);
   if (!parsed.success) return fail('Use a current admin panel command or button.');
+  const work = async () => {
+    try {
+      const stub = env.COMMUNITIES.getByName(i.guild_id!);
+      const result = await stub.adminPanel(i.guild_id!, parsed.data);
+      if (!result.ok) return result;
+      if (!['view', 'match'].includes(parsed.data.op) && !result.confirmation)
+        ctx.waitUntil(stub.flush());
+      const card = adminPanelCard(
+        result.view as AdminView,
+        parsed.data,
+        `${env.APP_ORIGIN}/?community=${i.guild_id}`,
+        result.confirmation,
+        legacyPrivate,
+      );
+      // Authorized clicks update this shared control panel. Queue/match cards use the outbox.
+      await finishInteractionReply(env, i.token!, card, false);
+      return { ok: true as const, content: '' };
+    } catch {
+      return {
+        ok: false as const,
+        content: 'The admin panel could not be updated. Open /admin to check the current state.',
+      };
+    }
+  };
+  // An unauthorized/stale click must never overwrite the shared public panel.
+  if (i.type === 3 && !legacyPrivate) return deferPublicComponentReply(env, ctx, i.token, work);
   ctx.waitUntil(
     (async () => {
-      try {
-        const stub = env.COMMUNITIES.getByName(i.guild_id!);
-        const result = await stub.adminPanel(i.guild_id!, parsed.data);
-        if (!result.ok) {
-          await finishInteractionReply(
-            env,
-            i.token!,
-            { ...result, embeds: [], components: [] },
-            false,
-          );
-          return;
-        }
-        if (!['view', 'match'].includes(parsed.data.op) && !result.confirmation)
-          ctx.waitUntil(stub.flush());
-        const card = adminPanelCard(
-          result.view as AdminView,
-          parsed.data,
-          `${env.APP_ORIGIN}/?community=${i.guild_id}`,
-          result.confirmation,
-        );
-        // Only the organizer's existing private panel is updated; public cards use the outbox.
-        await finishInteractionReply(env, i.token!, card, false);
-      } catch {
+      const result = await work();
+      if (!result.ok)
         await finishInteractionReply(
           env,
           i.token!,
-          {
-            ok: false,
-            content:
-              'The admin panel could not be updated. Open /admin to check the current state.',
-            embeds: [],
-            components: [],
-          },
+          { ...result, embeds: [], components: [] },
           false,
         );
-      }
     })(),
   );
-  return Response.json(i.type === 3 ? { type: 6 } : { type: 5, data: { flags: 64 } });
+  return Response.json(i.type === 3 ? { type: 6 } : { type: 5 });
 }

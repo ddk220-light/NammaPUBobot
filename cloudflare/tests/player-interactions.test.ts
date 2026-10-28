@@ -161,7 +161,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-describe('private administrator panel', () => {
+describe('public administrator panel', () => {
   const role = '100000000000000777';
   const identity = (permissions = '32', roles: string[] = [], n = 99) => ({
     permissions,
@@ -174,7 +174,10 @@ describe('private administrator panel', () => {
     const patch = vi
       .mocked(fetch)
       .mock.calls.slice(start)
-      .filter(([url, init]) => String(url).includes('/webhooks/') && init?.method === 'PATCH')
+      .filter(
+        ([url, init]) =>
+          String(url).includes('/webhooks/') && ['PATCH', 'POST'].includes(init?.method ?? ''),
+      )
       .at(-1);
     return { response, card: patch ? JSON.parse(patch[1]!.body as string) : response.data };
   }
@@ -185,19 +188,19 @@ describe('private administrator panel', () => {
       { custom_id: control(card, label).custom_id },
       {
         type: 3,
-        message: { flags: 64, author: { id: app } },
+        message: { flags: 0, author: { id: app } },
         ...rest,
       },
     );
   const bodyText = (card: any) => JSON.stringify(card.embeds);
 
   it.each(['8', '32'])(
-    'opens a private status panel for Discord permission %s',
+    'opens a public status panel for Discord permission %s',
     async (permissions) => {
       await configure();
       await act('add', 0);
       const { response, card } = await panel({ name: 'admin' }, { member: identity(permissions) });
-      expect(response).toEqual({ type: 5, data: { flags: 64 } });
+      expect(response).toEqual({ type: 5 });
       expect(bodyText(card)).toContain('1/4 waiting');
       expect(bodyText(card)).toContain('No matches yet');
       expect(control(card, 'Start queue').disabled).toBe(true);
@@ -206,12 +209,13 @@ describe('private administrator panel', () => {
     },
   );
 
-  it('denies a regular member even when Discord command visibility was overridden', async () => {
+  it('lets a regular member open and refresh the public panel', async () => {
     await configure();
     const { card } = await panel({ name: 'admin' }, { member: identity('0') });
-    expect(card.content).toContain('configured queue admin role');
-    expect(card.components).toEqual([]);
-    expect(card.embeds).toEqual([]);
+    expect(bodyText(card)).toContain('Pickup');
+    const refreshed = await press(card, 'Refresh panel', { member: identity('0') });
+    expect(refreshed.response).toEqual({ type: 6 });
+    expect(bodyText(refreshed.card)).toContain('Pickup');
   });
 
   it('allows a configured role only for its queue, without website or /manage authority', async () => {
@@ -227,12 +231,13 @@ describe('private administrator panel', () => {
     const allowed = await panel({ name: 'admin' }, { member: identity('0', [role]) });
     expect(bodyText(allowed.card)).toContain('Pickup');
     expect(control(allowed.card, 'Settings')).toBeUndefined();
-    expect(JSON.stringify(allowed.card)).not.toContain('Private queue');
-    const denied = await panel(
+    expect(JSON.stringify(allowed.card)).toContain('Private queue');
+    const other = await panel(
       { name: 'admin', options: [{ name: 'queue', value: otherQueue }] },
       { member: identity('0', [role]) },
     );
-    expect(denied.card.content).toContain('you administer');
+    const denied = await press(other.card, 'Clear queue', { member: identity('0', [role]) });
+    expect(denied.card.content).toContain('configured bot moderator role');
     expect(
       (await adminCommand('setup', 'status', {}, '0', { member: identity('0', [role]) })).data
         .content,
@@ -255,29 +260,27 @@ describe('private administrator panel', () => {
       const denied = await press(card, 'Clear queue', {
         member: identity('0', removal === 'member' ? [] : [role]),
       });
-      expect(denied.card.content).toContain('configured queue admin role');
+      expect(denied.card.content).toContain('configured bot moderator role');
       expect((await stub().records(guild)).waiting[0].players).toHaveLength(1);
     },
   );
 
-  it.each(['owner', 'public', 'author', 'channel', 'guild'])(
+  it.each(['private', 'author', 'channel', 'guild'])(
     'rejects a panel with the wrong %s',
     async (wrong) => {
       await configure();
       await act('add', 0);
       const { card } = await panel();
       const rest =
-        wrong === 'owner'
-          ? { member: identity('32', [], 98) }
-          : wrong === 'public'
-            ? { message: { flags: 0, author: { id: app } } }
-            : wrong === 'author'
-              ? { message: { flags: 64, author: { id: person(0).id } } }
-              : wrong === 'channel'
-                ? { channel_id: '100000000000000888' }
-                : { guild_id: '100000000000000888' };
+        wrong === 'private'
+          ? { message: { flags: 64, author: { id: app } } }
+          : wrong === 'author'
+            ? { message: { flags: 64, author: { id: person(0).id } } }
+            : wrong === 'channel'
+              ? { channel_id: '100000000000000888' }
+              : { guild_id: '100000000000000888' };
       const denied = await press(card, 'Clear queue', rest);
-      expect(denied.card.content).toMatch(/panel|role/);
+      expect(denied.card.content).toMatch(/panel|role|queue/);
       expect((await stub().records(guild)).waiting[0].players).toHaveLength(1);
     },
   );
@@ -298,7 +301,135 @@ describe('private administrator panel', () => {
     expect((await stub().records(guild)).matches).toHaveLength(1);
   });
 
-  it('confirms a result, updates the same private panel, and cannot settle twice', async () => {
+  it.each([2, 6, 7])(
+    'manually starts an eight-player queue with %s waiting players',
+    async (count) => {
+      const s = settings();
+      s.queues[0].size = 8;
+      await configure(s);
+      for (let n = 0; n < count; n++) await act('add', n);
+      const { card } = await panel();
+      expect(control(card, 'Start queue').disabled).toBe(false);
+      await press(card, 'Start queue', { member: identity('0', [], 98) });
+      const m = await current();
+      expect(m.state).toBe('check_in');
+      expect(m.roster).toHaveLength(count);
+      expect(m.teams.map((t) => t.length)).toEqual([Math.floor(count / 2), Math.ceil(count / 2)]);
+      expect((await stub().records(guild)).waiting[0].players).toHaveLength(0);
+    },
+  );
+
+  it.each(['8', '32', 'moderator'])(
+    'lets another authorized person (%s) operate the shared panel',
+    async (permission) => {
+      const s = settings();
+      s.queues[0].adminRoles = [role];
+      await configure(s);
+      await act('add', 0);
+      const { card } = await panel();
+      const member = identity(permission === 'moderator' ? '0' : permission, [role], 98);
+      const prompt = await press(card, 'Clear queue', { member });
+      expect(bodyText(prompt.card)).toContain('Clear all 1');
+      await press(prompt.card, 'Confirm', { member });
+      expect((await stub().records(guild)).waiting[0].players).toHaveLength(0);
+      await runInDurableObject(stub(), (_i, state) => {
+        expect(
+          state.storage.sql
+            .exec<{ actor_id: string }>(
+              "SELECT actor_id FROM control_audit WHERE action='queue_clear'",
+            )
+            .toArray()[0].actor_id,
+        ).toBe(person(98).id);
+      });
+    },
+  );
+
+  it.each([0, 1])('cannot create a two-team match from %s waiting players', async (count) => {
+    await configure();
+    for (let n = 0; n < count; n++) await act('add', n);
+    const { card } = await panel({ name: 'admin' }, { member: identity('0') });
+    expect(control(card, 'Start queue').disabled).toBe(true);
+    const denied = await press(card, 'Start queue', { member: identity('0') });
+    expect(denied.card.content).toContain('At least two');
+    expect((await stub().records(guild)).matches).toHaveLength(0);
+  });
+
+  it.each([0, 1])(
+    'lets anyone use /queue start and only captain %s report their own uneven team’s loss',
+    async (side) => {
+      const s = settings();
+      s.queues[0].size = 8;
+      s.queues[0].modules.gold = true;
+      s.queues[0].modules.predictions = true;
+      await configure(s);
+      for (let n = 0; n < 7; n++) await act('add', n);
+      const response = await interaction({ name: 'queue', options: [{ name: 'start' }] }, 99, {
+        type: 2,
+      });
+      expect(response).toEqual({ type: 5, data: { flags: 64 } });
+      let m = await current();
+      expect(m.teams.map((t) => t.length)).toEqual([3, 4]);
+      expect(m.state).toBe('check_in');
+      for (let n = 0; n < 7; n++) await act('ready', n, { matchId: m.id });
+      m = await current();
+      expect(m.state).toBe('playing');
+      const captain = Number(BigInt(m.captains[side]) - 100000000000000100n);
+      const member = identity('0', [], captain);
+      const { card } = await panel({ name: 'admin' }, { member: identity('0', [], 98) });
+      const refreshed = await press(card, 'Refresh match card', { member: identity('0', [], 98) });
+      expect(bodyText(refreshed.card)).toContain(m.id);
+      const forbidden = await press(card, side ? 'Alpha lost' : 'Beta lost', { member });
+      expect(forbidden.card.content).toContain('Captains can report only their own');
+      const prompt = await press(card, side ? 'Beta lost' : 'Alpha lost', { member });
+      expect(bodyText(prompt.card)).toContain(side ? 'Alpha wins' : 'Beta wins');
+      const outsider = await press(prompt.card, 'Confirm', { member: identity('0', [], 98) });
+      expect(outsider.card.flags).toBe(64);
+      expect((await current()).state).toBe('playing');
+      await press(prompt.card, 'Confirm', { member });
+      const result = await current();
+      expect(result.result).toBe(side ? 'alpha' : 'beta');
+      expect(result.changes).toHaveLength(7);
+      const backup = await stub().operationalBackup(guild);
+      expect(backup.tables.active_players).toHaveLength(0);
+      expect(backup.tables.books.every((b) => b.status !== 'open')).toBe(true);
+      expect(result.changes.every((change) => Number.isFinite(change.after))).toBe(true);
+    },
+  );
+
+  it('denies member clicks and confirmations privately without editing the public panel', async () => {
+    await configure();
+    await act('add', 0);
+    const { card } = await panel();
+    const prompt = await press(card, 'Clear queue');
+    for (const [source, label] of [
+      [card, 'Clear queue'],
+      [prompt.card, 'Confirm'],
+    ] as const) {
+      const start = vi.mocked(fetch).mock.calls.length;
+      const denied = await press(source, label, { member: identity('0', [], 0) });
+      expect(denied.response).toEqual({ type: 6 });
+      expect(denied.card).toMatchObject({ flags: 64, allowed_mentions: { parse: [] } });
+      expect(denied.card.content).toContain('configured bot moderator role');
+      const calls = vi
+        .mocked(fetch)
+        .mock.calls.slice(start)
+        .filter(([url]) => String(url).includes('/webhooks/'));
+      expect(calls.map(([, init]) => init?.method)).toEqual(['POST']);
+      expect((await stub().records(guild)).waiting[0].players).toHaveLength(1);
+    }
+  });
+
+  it('keeps old ephemeral panels private and bound to their original caller', async () => {
+    await configure();
+    const legacy = { custom_id: `adm:${person(99).id}:view:${queue}:0` };
+    const message = { flags: 64, author: { id: app } };
+    const { card } = await panel(legacy, { type: 3, message });
+    expect(control(card, 'Refresh panel').custom_id).toContain(`adm:${person(99).id}:`);
+    const denied = await panel(legacy, { type: 3, message, member: identity('32', [], 98) });
+    expect(denied.response).toMatchObject({ type: 4, data: { flags: 64 } });
+  });
+
+  it('confirms a result, updates the same public panel, and cannot settle twice', async () => {
     const m = await fill(true);
     const { card } = await panel();
     expect(bodyText(card)).toContain(m.id);
@@ -390,7 +521,7 @@ describe('private administrator panel', () => {
       .find((c: any) => c.custom_id?.endsWith(':selectm'));
     const selected = await panel(
       { custom_id: menu.custom_id, values: [matches[1].id] },
-      { type: 3, message: { flags: 64, author: { id: app } } },
+      { type: 3, message: { flags: 0, author: { id: app } } },
     );
     expect(
       selected.card.embeds.find((e: any) => e.title === 'Selected match').description,
@@ -405,7 +536,7 @@ describe('private administrator panel', () => {
     ).toBe(true);
   });
 
-  it('rechecks queue admin grants after asynchronous start eligibility checks', async () => {
+  it('refreshes roster eligibility for public starts even if moderator access is revoked during the check', async () => {
     const s = settings();
     s.queues[0].autoStart = false;
     s.queues[0].adminRoles = [role];
@@ -433,11 +564,11 @@ describe('private administrator panel', () => {
       await revoked;
       return Response.json({ user: { id: member[1] }, roles: [role] });
     });
-    const rejected = await press(card, 'Start queue', { member: identity('0', [role]) });
+    const started = await press(card, 'Start queue', { member: identity('0', [role]) });
     expect(revoked).toBeDefined();
-    expect(rejected.card.content).toContain('configured queue admin role');
-    expect((await stub().records(guild)).matches).toEqual([]);
-    expect((await stub().records(guild)).waiting[0].players).toHaveLength(4);
+    expect(bodyText(started.card)).toContain('Checking in');
+    expect((await stub().records(guild)).matches).toHaveLength(1);
+    expect((await stub().records(guild)).waiting[0].players).toHaveLength(0);
   });
 
   it('shows the last five results for the selected queue even with newer matches elsewhere', async () => {
