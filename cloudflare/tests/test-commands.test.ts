@@ -386,6 +386,37 @@ describe('isolated setup tests', () => {
     expect((await data()).queue_entries).toEqual([]);
     expect((await test('status')).content).toContain('No test session');
   });
+  it('retains a lost reminder receipt through check-in and removes it on reset without a Discord nonce', async () => {
+    const d = discord();
+    await configured();
+    await test('populate');
+    await test('start');
+    for (let n = 0; n < 3; n++) await flushTest();
+    let lost = false;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const response = await d.handler(input, init);
+      if (
+        init?.method === 'POST' &&
+        d.messages[0]?.embeds?.[0]?.title === 'TEST · Check-in reminder'
+      ) {
+        lost = true;
+        delete d.messages[0].nonce;
+        throw new Error('Lost reminder response');
+      }
+      return response;
+    });
+    await runInDurableObject(sandbox(), (_i, s) =>
+      s.storage.sql.exec("UPDATE deadlines SET due=0 WHERE kind='reminder'"),
+    );
+    await runDurableObjectAlarm(sandbox());
+    expect(lost).toBe(true);
+    vi.mocked(fetch).mockImplementation(d.handler);
+    await test('checkin');
+    await test('reset');
+    for (let n = 0; n < 4; n++) await flushTest();
+    expect(d.messages).toEqual([]);
+    expect((await test('status')).content).toContain('No test session');
+  });
   it('never adopts or deletes a live queue card while recovering a lost test receipt', async () => {
     const d = discord();
     await configured();

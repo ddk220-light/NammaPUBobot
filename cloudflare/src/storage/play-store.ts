@@ -1115,6 +1115,9 @@ export class PlayStore {
   private retireTransient(key: string) {
     const card = this.sql.exec<Pointer>('SELECT * FROM cards WHERE key=?', key).toArray()[0];
     this.sql.exec('DELETE FROM outbox WHERE key=?', key);
+    // An expired test reminder may have reached Discord without a receipt.
+    // Stop sending it, but preserve its identity for reset/expiry cleanup.
+    if (this.testMode && card?.reconcile && !card.message_id) return;
     if (card?.message_id) this.retireMessage(key, card.channel_id, card.message_id);
     this.sql.exec('DELETE FROM cards WHERE key=?', key);
   }
@@ -3794,6 +3797,12 @@ export class PlayStore {
           }
         }
         if (this.testMode) {
+          if (!payload.embeds.length && !work.key.startsWith('retire:'))
+            payload.embeds.push({
+              title: 'Check-in reminder',
+              description: payload.content || 'Temporary setup update.',
+              color: 0x648c78,
+            });
           payload.content =
             '**SETUP TEST — no ratings or match history**\nUse /test checkin · /test maps · /test result · /test reset';
           payload.allowed_mentions = { parse: [] };
