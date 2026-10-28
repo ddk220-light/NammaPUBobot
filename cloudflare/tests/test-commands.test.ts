@@ -302,10 +302,13 @@ describe('isolated setup tests', () => {
     s.queues[0].checkIn.seconds = 180;
     await setup(s);
     await test('populate', { count: 7 });
+    const beforeStart = Date.now();
     await test('start');
+    const afterStart = Date.now();
     const m = await match();
     expect(m.teams.map((t) => t.length).sort()).toEqual([3, 4]);
-    expect(m.deadline! - m.createdAt).toBe(180000);
+    expect(m.deadline).toBeGreaterThanOrEqual(beforeStart + 180000);
+    expect(m.deadline).toBeLessThanOrEqual(afterStart + 180000);
     expect((await test('result', { result: 'abort' })).ok).toBe(true);
     await test('reset');
     for (let n = 0; n < 4; n++) await flushTest();
