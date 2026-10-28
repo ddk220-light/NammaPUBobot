@@ -101,6 +101,9 @@ describe('durable civilization picker', () => {
     expect((await round(m.id)).status).toBe('open');
   });
   it('keeps choices private, rejects collisions, allows unlimited Random and reveals once', async () => {
+    // This test inspects queued card payloads. Successful background delivery removes
+    // those rows, so keep delivery pending while checking privacy and reveal content.
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 503 }));
     const m = await fill(config());
     await act('civ_start', 0, { matchId: m.id });
     let r = await round(m.id);
