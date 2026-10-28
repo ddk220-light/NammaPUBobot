@@ -184,13 +184,13 @@ class PickupQueue:
 				"promotion_role",
 				display="Promotion role",
 				section="General",
-				description="The role that gets pinged when this queue needs more players or a match needs a sub."
+				description="Currently unused: the promote command was removed, so nothing pings this role."
 			),
 			Variables.TextVar(
 				"promotion_msg",
 				display="Promotion message",
 				section="Appearance",
-				description="Replace default promotion message. You can use {name}, {role} and {left} placeholders in the text."
+				description="Currently unused: the promote command was removed. Placeholders were {name}, {role} and {left}."
 			),
 			Variables.BoolVar(
 				"show_streamers",

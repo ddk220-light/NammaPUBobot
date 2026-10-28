@@ -93,13 +93,13 @@ class QueueChannel:
 				"promotion_role",
 				display="Promotion role",
 				section="General",
-				description="The role that gets pinged when a queue needs more players or a match needs a sub.",
+				description="Currently unused: the promote command was removed, so nothing pings this role.",
 			),
 			Variables.DurationVar(
 				"promotion_delay",
 				display="Promotion delay",
 				section="General",
-				description="Set time delay between players can promote queues.",
+				description="Currently unused: the promote command was removed.",
 				verify=lambda x: 0 <= MAX_PROMOTION_DELAY,  # noqa: SIM300
 				verify_message=f"Promotion delay time must be less than {seconds_to_str(MAX_EXPIRE_TIME)}"
 			),
@@ -108,7 +108,7 @@ class QueueChannel:
 				display="Remove players who go AFK",
 				section="Auto-remove",
 				default=1,
-				description="Take a player out of every queue when their Discord status turns Idle.",
+				description="Take a player out of every queue when their Discord status turns Idle. Skipped while their timed auto-remove is running.",
 				notnull=True
 			),
 			Variables.BoolVar(
