@@ -10,6 +10,7 @@ import {
 } from '../src/domain/maps';
 import { matchCard } from '../src/discord/cards';
 import { settingsSchema } from '../src/domain/config';
+import type { Match } from '../src/domain/play';
 harness();
 const config = (mode: 'direct' | 'random' | 'vote' = 'vote', check = true) => {
   const s = settings();
@@ -19,6 +20,34 @@ const config = (mode: 'direct' | 'random' | 'vote' = 'vote', check = true) => {
   return s;
 };
 describe('M8 optional map selection', () => {
+  it('applies a saved timer and disabled voting to new matches while preserving an existing match and map preferences', async () => {
+    const s = config();
+    s.queues[0].checkIn.seconds = 120;
+    const first = await fill(s);
+    expect(first.deadline!).toBeGreaterThanOrEqual(first.createdAt + 120000);
+    expect(first.deadline!).toBeLessThanOrEqual(Date.now() + 120000);
+    const saved = await stub().read(guild);
+    saved.settings.queues[0].checkIn.seconds = 180;
+    saved.settings.queues[0].modules.maps = false;
+    expect(
+      (await stub().save(guild, saved.revision, saved.settings, person(99).id, 'save')).ok,
+    ).toBe(true);
+    await abortAllDurableObjects();
+    expect((await stub().read(guild)).settings.queues[0].maps).toEqual(s.queues[0].maps);
+    for (let n = 4; n < 8; n++) await act('add', n);
+    const matches = (await stub().records(guild)).matches as Match[];
+    expect(matches.find((m) => m.id === first.id)?.deadline).toBe(first.deadline);
+    expect(matches.find((m) => m.id === first.id)?.mapRound).toEqual(first.mapRound);
+    const second = matches.find((m) => m.id !== first.id)!;
+    expect(second.deadline!).toBeGreaterThanOrEqual(second.createdAt + 180000);
+    expect(second.deadline!).toBeLessThanOrEqual(Date.now() + 180000);
+    expect(second.mapRound).toBeUndefined();
+    expect(JSON.stringify(matchCard(second))).not.toContain('map_vote');
+    for (let n = 4; n < 8; n++) await act('ready', n, { matchId: second.id });
+    expect((await stub().records(guild)).matches.find((m) => m.id === second.id)?.state).toBe(
+      'playing',
+    );
+  });
   it('stays off by default and preloads AoE2 only when enabled', async () => {
     const s = settings();
     s.games[0].catalogId = 'aoe2';

@@ -97,3 +97,5 @@ Game API polling is off by default and runs only for attached active games with 
 This project retains behavior and reference fixtures derived from [PUBobot2](https://github.com/Leshaka/PUBobot2) by Leshaka. Copyright (C) 2020 Leshaka and contributors to this fork.
 
 GPL-3.0-only; preserve [LICENSE](LICENSE) and upstream acknowledgements when distributing. The Python production app is unchanged. Historical M1–M4 acceptance notes are in [the pilot archive](docs/m1-m4-pilot-history.md); those describe earlier UI behavior, not this release.
+
+Match starts publish the check-in/match card followed by a fresh queue card for the next game. In the queue editor, **Check-in time limit (seconds)** configures readiness timing and **Enable map selection / voting** can disable the map stage for new matches. See [queue cards](docs/queue-cards.md).

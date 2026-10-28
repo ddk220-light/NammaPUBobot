@@ -26,6 +26,13 @@ export function createUxTables(sql: SqlStorage) {
     sql.exec(
       'ALTER TABLE queue_publications ADD COLUMN visibility_only INTEGER NOT NULL DEFAULT 0',
     );
+  if (
+    !sql
+      .exec<{ name: string }>('PRAGMA table_info(queue_publications)')
+      .toArray()
+      .some((column) => column.name === 'after_matches')
+  )
+    sql.exec("ALTER TABLE queue_publications ADD COLUMN after_matches TEXT NOT NULL DEFAULT '[]'");
   sql.exec(
     `CREATE TABLE IF NOT EXISTS rally_runs(id TEXT PRIMARY KEY,queue_id TEXT NOT NULL,created_at INTEGER NOT NULL,targets TEXT NOT NULL,status TEXT NOT NULL)`,
   );

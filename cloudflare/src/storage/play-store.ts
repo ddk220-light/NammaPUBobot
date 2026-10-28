@@ -924,7 +924,7 @@ export class PlayStore {
       Date.now(),
     );
   }
-  private touchQueue(q: Queue, refresh = false, visibilityOnly = false) {
+  private touchQueue(q: Queue, refresh = false, visibilityOnly = false, afterMatch?: string) {
     const payload = this.queuePayload(q);
     const digest = JSON.stringify(payload);
     const view = this.sql
@@ -935,14 +935,22 @@ export class PlayStore {
       .toArray()[0];
     const pending = view
       ? this.sql
-          .exec<{ key: string; state: string }>(
-            'SELECT key,state FROM queue_publications WHERE queue_id=? AND generation=?',
+          .exec<{ key: string; state: string; after_matches: string }>(
+            'SELECT key,state,after_matches FROM queue_publications WHERE queue_id=? AND generation=?',
             q.id,
             view.generation,
           )
           .toArray()[0]
       : undefined;
-    if (view?.digest === digest) {
+    const afterMatches = [
+      ...new Set<string>([
+        ...(pending && pending.state !== 'sent'
+          ? (JSON.parse(pending.after_matches) as string[])
+          : []),
+        ...(afterMatch ? [afterMatch] : []),
+      ]),
+    ];
+    if (view?.digest === digest && !afterMatch) {
       if (!refresh) return;
       if (pending && !['sent', 'superseded'].includes(pending.state)) {
         // Recover the existing delivery, including uncertain creates, with its original nonce.
@@ -973,11 +981,12 @@ export class PlayStore {
       generation,
     );
     this.sql.exec(
-      'INSERT INTO queue_publications(key,queue_id,generation,visibility_only) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET visibility_only=excluded.visibility_only',
+      'INSERT INTO queue_publications(key,queue_id,generation,visibility_only,after_matches) VALUES(?,?,?,?,?) ON CONFLICT(key) DO UPDATE SET visibility_only=excluded.visibility_only,after_matches=excluded.after_matches',
       key,
       q.id,
       generation,
       visibilityOnly ? 1 : 0,
+      JSON.stringify(afterMatches),
     );
     for (const row of payload.components)
       for (const button of row.components)
@@ -1501,7 +1510,7 @@ export class PlayStore {
           "UPDATE queue_publications SET state='superseded' WHERE queue_id=? AND state='pending'",
           id,
         );
-        this.touchQueue(other, true);
+        this.touchQueue(other, true, false, id === q.id ? m.id : undefined);
       }
     }
     return m;
@@ -3209,10 +3218,13 @@ export class PlayStore {
         }
       }
       const publication = this.sql
-        .exec<{ queue_id: string; generation: number; state: string; visibility_only: number }>(
-          'SELECT * FROM queue_publications WHERE key=?',
-          work.key,
-        )
+        .exec<{
+          queue_id: string;
+          generation: number;
+          state: string;
+          visibility_only: number;
+          after_matches: string;
+        }>('SELECT * FROM queue_publications WHERE key=?', work.key)
         .toArray()[0];
       const card = this.sql.exec<Pointer>('SELECT * FROM cards WHERE key=?', work.key).toArray()[0];
       if (publication) {
@@ -3233,6 +3245,28 @@ export class PlayStore {
           // Discard its work without editing or deleting that shared message.
           this.sql.exec('DELETE FROM outbox WHERE key=? AND version=?', work.key, work.version);
           this.sql.exec("UPDATE queue_publications SET state='superseded' WHERE key=?", work.key);
+          continue;
+        }
+        const waitingFor = this.sql
+          .exec<{ status: string | null; due: number | null }>(
+            "SELECT o.status,o.due FROM json_each(?) d LEFT JOIN cards c ON c.key='match:'||d.value LEFT JOIN outbox o ON o.key='match:'||d.value WHERE c.message_id IS NULL",
+            publication.after_matches,
+          )
+          .toArray();
+        if (waitingFor.length) {
+          // Persist the ordering across rate limits, lost receipts and restarts.
+          // Block with the failed match delivery rather than polling indefinitely.
+          const blocked = waitingFor.some((w) => w.status !== 'pending');
+          this.sql.exec(
+            "UPDATE outbox SET status=?,error='waiting_for_match_card',due=? WHERE key=? AND version=?",
+            blocked ? 'blocked' : 'pending',
+            Math.max(
+              Date.now() + 1000,
+              Math.min(...waitingFor.map((w) => w.due ?? Date.now())) + 1,
+            ),
+            work.key,
+            work.version,
+          );
           continue;
         }
       }
@@ -3266,7 +3300,12 @@ export class PlayStore {
           Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}`,
           'Content-Type': 'application/json',
         };
-        if (publication && !card.message_id && !card.reconcile) {
+        if (
+          publication &&
+          publication.after_matches === '[]' &&
+          !card.message_id &&
+          !card.reconcile
+        ) {
           const previous = this.sql
             .exec<Pointer>('SELECT * FROM cards WHERE key=?', `queue:${publication.queue_id}`)
             .toArray()[0];
@@ -3542,6 +3581,12 @@ export class PlayStore {
               } else if (old?.message_id !== message.id)
                 this.retireMessage(work.key, card.channel_id, message.id);
             }
+            if (work.key.startsWith('match:'))
+              this.sql.exec(
+                "UPDATE outbox SET status='pending',error=NULL,due=? WHERE error='waiting_for_match_card' AND key IN (SELECT p.key FROM queue_publications p,json_each(p.after_matches) d WHERE d.value=?)",
+                Date.now(),
+                work.key.slice(6),
+              );
           });
         } else if (response.status === 404 && work.key.startsWith('retire:')) {
           this.sql.exec('DELETE FROM outbox WHERE key=? AND version=?', work.key, work.version);

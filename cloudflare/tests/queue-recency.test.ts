@@ -557,7 +557,7 @@ describe('queue card recency', () => {
     },
   );
 
-  it('applies the same recency policy to explicit refresh and the empty queue after match creation', async () => {
+  it('uses recency for explicit refresh but posts the empty queue below a new match', async () => {
     const d = discord();
     await setup();
     await act('add', 0);
@@ -571,8 +571,9 @@ describe('queue card recency', () => {
     for (let n = 1; n < 4; n++) await act('add', n);
     await flush();
     expect((await current()).roster).toHaveLength(4);
-    expect(replacement.payload.embeds[0].title).toContain('0/4');
-    expect(d.messages.some((m) => m.id === replacement.id)).toBe(true);
+    expect(d.messages[0].payload.embeds[0].title).toContain('0/4');
+    expect(d.messages[1].payload.content).toContain('Check in below');
+    expect(d.messages.some((m) => m.id === replacement.id)).toBe(false);
     expect(
       d.messages.filter((m) =>
         m.payload.components?.some((row: any) =>
@@ -580,5 +581,145 @@ describe('queue card recency', () => {
         ),
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe('queue placement after a match starts', () => {
+  it('upgrades existing publications with no ordering dependencies and preserves the roster', async () => {
+    const d = discord();
+    await waiting();
+    const old = d.messages[0].id;
+    await runInDurableObject(stub(), (_i, state) =>
+      state.storage.sql.exec('ALTER TABLE queue_publications DROP COLUMN after_matches'),
+    );
+    await abortAllDurableObjects();
+    expect((await stub().records(guild)).waiting[0].players.map((p) => p.id)).toEqual([
+      person(0).id,
+    ]);
+    await runInDurableObject(stub(), (_i, state) => {
+      expect(
+        state.storage.sql.exec('SELECT after_matches FROM queue_publications').toArray(),
+      ).toEqual([{ after_matches: '[]' }]);
+    });
+    await act('add', 1);
+    await flush();
+    expect(d.messages[0].id).toBe(old);
+    expect(d.messages[0].payload.embeds[0].title).toContain('2/4');
+  });
+  it.each(['automatic', 'manual'])(
+    'posts check-in first and the joinable queue second for %s starts',
+    async (mode) => {
+      const d = discord();
+      const config = settings();
+      config.queues[0].autoStart = mode === 'automatic';
+      await setup(config);
+      await act('add', 0);
+      await flush();
+      const old = d.messages[0];
+      const count = mode === 'automatic' ? 4 : 3;
+      for (let n = 1; n < count; n++) await act('add', n);
+      if (mode === 'manual') await act('start', 99);
+      await flush();
+      expect(d.messages).toHaveLength(2);
+      expect(d.messages[0].payload.embeds[0].title).toContain('0/4');
+      expect(d.messages[1].payload.content).toContain('Check in below');
+      expect(d.messages.some((m) => m.id === old.id)).toBe(false);
+      const nextQueue = d.messages[0].id;
+      await act('add', 9);
+      await flush();
+      expect(d.messages[0].id).toBe(nextQueue);
+      expect(d.messages[0].payload.embeds[0].title).toContain('1/4');
+      expect((await current()).roster).toHaveLength(count);
+    },
+  );
+
+  it.each(['server_error', 'lost_receipt', 'blocked'])(
+    'waits for the match card through %s, new joins and restart',
+    async (failure) => {
+      const d = discord();
+      await setup();
+      await act('add', 0);
+      await flush();
+      const old = d.messages[0];
+      let failed = false;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        const req = new Request(input, init);
+        if (!failed && req.method === 'POST' && String(init?.body).includes('m:')) {
+          failed = true;
+          if (failure === 'lost_receipt') {
+            await d.handler(input, init);
+            throw new Error('Receipt lost');
+          }
+          return new Response(null, { status: failure === 'blocked' ? 403 : 503 });
+        }
+        return d.handler(input, init);
+      });
+      for (let n = 1; n < 4; n++) await act('add', n);
+      await flush();
+      expect(failed).toBe(true);
+      expect(d.messages).toContain(old);
+      expect(d.messages.filter((m) => m.payload.embeds?.[0]?.title?.includes('/4'))).toHaveLength(
+        1,
+      );
+      await act('add', 9);
+      await abortAllDurableObjects();
+      vi.mocked(fetch).mockImplementation(d.handler);
+      const match = await current();
+      await act('recover', 99, { admin: true, matchId: match.id });
+      await flush();
+      expect(d.messages).toHaveLength(2);
+      expect(d.messages[0].payload.embeds[0].title).toContain('1/4');
+      expect(d.messages[1].payload.embeds[0].title).toBeTruthy();
+      expect(d.messages.some((m) => m.id === old.id)).toBe(false);
+      expect((await stub().records(guild)).waiting[0].players.map((p) => p.id)).toEqual([
+        person(9).id,
+      ]);
+    },
+  );
+
+  it('keeps the queue below all matches formed before publication, including blocked delivery recovery', async () => {
+    const d = discord();
+    await setup();
+    await act('add', 0);
+    await flush();
+    for (let n = 1; n < 8; n++) await act('add', n);
+    const matches = (await stub().records(guild)).matches;
+    await runInDurableObject(stub(), (_i, state) =>
+      state.storage.sql.exec(
+        "UPDATE outbox SET status='blocked',error='discord_403' WHERE key=?",
+        `match:${matches[0].id}`,
+      ),
+    );
+    await flush();
+    expect(d.messages[0].payload.embeds[0].title).not.toContain('0/4');
+    await act('recover', 99, { admin: true, matchId: matches[0].id });
+    await flush();
+    expect(d.messages).toHaveLength(3);
+    expect(d.messages[0].payload.embeds[0].title).toContain('0/4');
+    expect(d.messages.slice(1).every((m) => m.payload.embeds?.length)).toBe(true);
+  });
+
+  it('reconciles a lost replacement receipt without duplicating the queue or deleting the match', async () => {
+    const d = discord();
+    await setup();
+    await act('add', 0);
+    await flush();
+    let failed = false;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const response = await d.handler(input, init);
+      if (!failed && init?.method === 'POST' && String(init.body).includes(`q:${queue}:`)) {
+        failed = true;
+        throw new Error('Queue receipt lost');
+      }
+      return response;
+    });
+    for (let n = 1; n < 4; n++) await act('add', n);
+    await flush();
+    expect(failed).toBe(true);
+    await abortAllDurableObjects();
+    await flush();
+    expect(d.messages).toHaveLength(2);
+    expect(d.messages[0].payload.embeds[0].title).toContain('0/4');
+    expect(d.calls.filter((c) => c.method === 'POST')).toHaveLength(3); // Old queue, match, replacement.
   });
 });
