@@ -22,6 +22,7 @@ import { createEconomyTables, EconomyStore } from './economy-store';
 import { beforeStories, afterStories } from '../domain/stories';
 import { createMapRound, defaultMaps, resolveMap, voteMap } from '../domain/maps';
 import type { VoiceMember } from '../domain/presence';
+import type { TestRequest, TestSession } from '../domain/testing';
 import {
   adminAllowed,
   confirmedAdminOps,
@@ -144,6 +145,7 @@ export function createPlayTables(sql: SqlStorage) {
 }
 export class PlayStore {
   private flushing: Promise<void> | null = null;
+  private resettingTest: Promise<Reply> | null = null;
   constructor(
     private ctx: DurableObjectState,
     private env: Env,
@@ -152,6 +154,103 @@ export class PlayStore {
   ) {}
   private get sql() {
     return this.ctx.storage.sql;
+  }
+  private get testMode() {
+    return this.ctx.storage.kv.get<boolean>('testMode') === true;
+  }
+  testAction(guild: string, request: TestRequest, members: Action['actor'][] = []): Reply {
+    if (!this.testMode) throw new PlayError('Test commands require isolated storage.');
+    return this.ctx.storage.transactionSync(() => {
+      const settings = this.read(guild).settings,
+        q = settings.queues[0];
+      this.expire(Date.now(), settings);
+      const matches = this.sql
+        .exec<MatchRow>('SELECT config FROM matches ORDER BY created_at DESC')
+        .toArray()
+        .map((r) => JSON.parse(r.config) as Match);
+      const m = matches[0];
+      const action = (kind: Action['kind'], extra: Partial<Action> = {}) =>
+        this.dispatch(
+          {
+            id: request.id,
+            actor: request.actor,
+            channelId: request.channelId,
+            queue: q.id,
+            admin: true,
+            kind,
+            ...extra,
+          },
+          settings,
+        );
+      if (request.op === 'populate') {
+        if (matches.length || this.entries(q.id).length)
+          throw new PlayError('A test already exists. Use /test reset before populating again.');
+        if (members.length !== (request.count ?? 8))
+          throw new PlayError('Could not verify the requested number of test players.');
+        for (const target of members) action('add', { target });
+      } else if (request.op === 'start') {
+        if (matches.length)
+          throw new PlayError('This test already started. Use /test reset to run another.');
+        action('start');
+      } else {
+        if (!m) throw new PlayError('Use /test populate and /test start first.');
+        const maps = () => {
+          const round = this.match(m.id).mapRound;
+          if (!round || round.state !== 'open') return;
+          if (round.settings.mode === 'direct')
+            action('map_pick', {
+              matchId: m.id,
+              roundId: round.id,
+              mapChoices: round.choices.slice(0, round.settings.count),
+            });
+          else
+            for (const [index, player] of m.roster.entries())
+              action('map_vote', {
+                matchId: m.id,
+                actor: { id: player.id, name: player.name },
+                roundId: round.id,
+                mapChoices: [round.choices[index % round.choices.length]],
+              });
+        };
+        if (request.op === 'checkin') {
+          if (m.state !== 'check_in')
+            throw new PlayError('This test is not in check-in. Check /test status or reset it.');
+          if (m.mapRound?.state === 'open' && m.mapRound.settings.countsAsCheckIn) maps();
+          else
+            for (const player of m.roster.filter((p) => !m.ready.includes(p.id)))
+              action('ready', { matchId: m.id, actor: { id: player.id, name: player.name } });
+        } else if (request.op === 'maps') {
+          if (!m.mapRound || m.mapRound.state !== 'open')
+            throw new PlayError('There is no open map selection in this test.');
+          maps();
+        } else if (request.op === 'result') {
+          if (!request.result) throw new PlayError('Choose Alpha, Beta, draw or abort.');
+          if (m.state !== 'playing' && request.result !== 'abort')
+            throw new PlayError(
+              'Finish test check-in and map selection before reporting a result.',
+            );
+          action('admin_report', { matchId: m.id, result: request.result });
+        }
+      }
+      return {
+        ok: true,
+        content: 'Test updated. Real ratings, wallets and match history are unchanged.',
+      };
+    });
+  }
+  testStatus(): Reply {
+    const session = this.ctx.storage.kv.get<TestSession>('testSession');
+    if (!session) return { content: 'No test session. Use /test populate, then /test start.' };
+    const m = this.sql.exec<MatchRow>('SELECT config FROM matches LIMIT 1').toArray()[0];
+    const match = m ? (JSON.parse(m.config) as Match) : undefined;
+    const jobs = this.sql
+      .exec<{ status: string; count: number }>(
+        'SELECT status,COUNT(*) AS count FROM outbox GROUP BY status',
+      )
+      .toArray();
+    return {
+      content: `**Setup test** · ${session.cleaning ? 'cleanup pending' : `expires <t:${Math.floor(session.expiresAt / 1000)}:R>`}\n${match ? `Match ${match.id}: ${match.state}; ${match.ready.length}/${match.roster.length} checked in${match.mapRound ? `; maps ${match.mapRound.state}` : ''}${match.result ? `; result ${match.result}` : ''}.` : `${this.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM queue_entries').toArray()[0].n} waiting.`}\nDelivery: ${jobs.map((j) => `${j.count} ${j.status}`).join(', ') || 'up to date'}.\n/test checkin · /test maps · /test result · /test reset\nNo real ratings, statistics, payouts or match history. Test ratings use defaults; external lobbies, civilization picks and banter are not simulated.`,
+    };
   }
   private get ux() {
     return new UxStore(this.sql);
@@ -908,7 +1007,7 @@ export class PlayStore {
       player.id,
       JSON.stringify(player),
     );
-    this.recordStore.changed(gameId, player.id);
+    if (!this.testMode) this.recordStore.changed(gameId, player.id);
   }
   private enqueue(key: string, channelId: string, payload: Card) {
     this.sql.exec(
@@ -1064,7 +1163,7 @@ export class PlayStore {
       m.createdAt,
       JSON.stringify(m),
     );
-    this.recordStore.index(m);
+    if (!this.testMode) this.recordStore.index(m);
     if (m.state !== 'check_in' || m.ready.length === m.roster.length) this.finishReminders(m);
     for (const { key } of this.sql
       .exec<{ key: string }>(
@@ -1212,6 +1311,7 @@ export class PlayStore {
     matchId: string | null = null,
     queueId: string | null = null,
   ) {
+    if (this.testMode) return;
     this.sql.exec(
       'INSERT INTO control_audit VALUES(?,?,?,?,?,?,?)',
       crypto.randomUUID(),
@@ -1527,6 +1627,10 @@ export class PlayStore {
     if (result === 'abort') {
       m.state = 'aborted';
       m.result = null;
+    } else if (this.testMode) {
+      m.state = 'finished';
+      m.result = result;
+      m.changes = [];
     } else {
       const rated = calculate(m, result === 'draw' ? null : result === 'alpha' ? 0 : 1);
       m.ratedPlayers = rated.flat();
@@ -3003,6 +3107,11 @@ export class PlayStore {
     }
   }
   async alarm(guild: string) {
+    const session = this.ctx.storage.kv.get<TestSession>('testSession');
+    if (session && (session.cleaning || session.expiresAt <= Date.now())) {
+      await this.resetTest();
+      return;
+    }
     const settings = this.read(guild).settings;
     const due = this.sql
       .exec<{ match_id: string }>(
@@ -3018,7 +3127,7 @@ export class PlayStore {
     ]);
     await this.ctx.storage.transaction(async () => {
       this.expire(Date.now(), this.read(guild).settings);
-      this.recordStore.decay(guild);
+      if (!this.testMode) this.recordStore.decay(guild);
       this.economy.tax();
       await this.schedule();
     });
@@ -3034,6 +3143,7 @@ export class PlayStore {
       await this.ctx.storage.deleteAlarm();
       return;
     }
+    const session = this.ctx.storage.kv.get<TestSession>('testSession');
     const values = [
       ['deadlines', ''],
       ['queue_clocks', ''],
@@ -3050,6 +3160,8 @@ export class PlayStore {
             .toArray()[0]?.due,
       )
       .filter((due): due is number => due != null);
+    if (session && !session.cleaning) values.push(session.expiresAt);
+    if (session?.cleaning && !session.cleanupPrepared) values.push(Date.now());
     const identity = this.sql
       .exec<{ guild_id: string }>('SELECT guild_id FROM community WHERE id=1')
       .toArray()[0];
@@ -3140,10 +3252,172 @@ export class PlayStore {
         .toArray(),
     };
   }
+  private testFooter(key: string) {
+    return `TEST · ${this.ctx.storage.kv.get<TestSession>('testSession')?.id} · ${key}`;
+  }
+  resetTest(retry = false): Promise<Reply> {
+    if (!this.resettingTest)
+      this.resettingTest = this.resetTestNow(retry).finally(() => {
+        this.resettingTest = null;
+      });
+    return this.resettingTest;
+  }
+  private async resetTestNow(retry: boolean): Promise<Reply> {
+    if (!this.testMode) throw new PlayError('Test cleanup requires isolated storage.');
+    const session = this.ctx.storage.kv.get<TestSession>('testSession');
+    if (!session) return { ok: true, content: 'No test session remains.' };
+    const beginning = !session.cleanupPrepared;
+    session.cleaning = true;
+    this.ctx.storage.kv.put('testSession', session);
+    // Let any in-flight Discord create finish before removing domain state.
+    if (this.flushing) await this.flushing;
+    this.ctx.storage.transactionSync(() => {
+      if (beginning) {
+        for (const { key } of this.sql
+          .exec<Pointer>('SELECT * FROM cards WHERE message_id IS NULL AND reconcile=0')
+          .toArray()) {
+          this.sql.exec('DELETE FROM cards WHERE key=?', key);
+          this.sql.exec('DELETE FROM outbox WHERE key=?', key);
+        }
+        // Keep only delivery receipts until their messages have been removed.
+        const keep = new Set(['schema_version', 'community', 'games', 'queues', 'cards', 'outbox']);
+        for (const { name } of this.sql
+          .exec<{ name: string }>(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'",
+          )
+          .toArray()) {
+          if (!keep.has(name) && /^[a-z][a-z0-9_]*$/.test(name))
+            this.sql.exec(`DELETE FROM "${name}"`);
+        }
+        for (const { key, channel_id } of this.sql.exec<Pointer>('SELECT * FROM cards').toArray())
+          this.enqueue(key, channel_id, {
+            content: '',
+            embeds: [],
+            components: [],
+            allowed_mentions: { parse: [] },
+          });
+        session.cleanupPrepared = true;
+        this.ctx.storage.kv.put('testSession', session);
+      } else if (retry)
+        this.sql.exec(
+          "UPDATE outbox SET status='pending',attempts=0,due=? WHERE status='blocked'",
+          Date.now(),
+        );
+    });
+    await this.flush();
+    const pending = this.sql.exec('SELECT 1 FROM cards LIMIT 1').toArray().length;
+    if (!pending) this.ctx.storage.kv.delete('testSession');
+    await this.schedule();
+    return {
+      ok: true,
+      content: pending
+        ? 'Test data erased. Discord card cleanup is pending; /test status shows delivery failures. Use /test reset to retry blocked cleanup after restoring bot access.'
+        : 'Test data and test cards removed. The live queue and player records are unchanged.',
+    };
+  }
+  private async deliverTestCleanup() {
+    if (!this.ctx.storage.kv.get<TestSession>('testSession')?.cleanupPrepared) return;
+    const gate = this.env.DISCORD_GATE.getByName(this.env.DISCORD_APPLICATION_ID!);
+    for (let batch = 0; batch < 8; batch++) {
+      const work = this.sql
+        .exec<Work>(
+          "SELECT * FROM outbox WHERE status='pending' AND due<=? ORDER BY due,key LIMIT 1",
+          Date.now(),
+        )
+        .toArray()[0];
+      if (!work) break;
+      const card = this.sql.exec<Pointer>('SELECT * FROM cards WHERE key=?', work.key).toArray()[0];
+      if (!card) {
+        this.sql.exec('DELETE FROM outbox WHERE key=?', work.key);
+        continue;
+      }
+      const route = `channel:${card.channel_id}`,
+        at = await gate.reserve(route);
+      if (at > Date.now()) {
+        this.sql.exec('UPDATE outbox SET due=? WHERE key=?', at, work.key);
+        continue;
+      }
+      const headers = { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` };
+      try {
+        if (!card.message_id && card.reconcile) {
+          const response = await fetch(
+            `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=100${card.reconcile_cursor ? `&before=${card.reconcile_cursor}` : ''}`,
+            { headers, signal: AbortSignal.timeout(5000) },
+          );
+          if (!response.ok) {
+            await this.failed(work, route, response, gate);
+            continue;
+          }
+          await this.rateHeaders(response, route, gate);
+          const rows = (await response.json()) as {
+            id: string;
+            nonce?: string;
+            author?: { id: string };
+            embeds?: { footer?: { text: string } }[];
+          }[];
+          const found = rows.find(
+            (r) =>
+              r.author?.id === this.env.DISCORD_APPLICATION_ID &&
+              (String(r.nonce ?? '') === card.nonce ||
+                r.embeds?.some((e) => e.footer?.text === this.testFooter(work.key))),
+          );
+          if (found)
+            this.sql.exec(
+              'UPDATE cards SET message_id=?,reconcile=0 WHERE key=?',
+              found.id,
+              work.key,
+            );
+          else if (rows.length === 100) {
+            if (
+              (card.reconcile_pages ?? 0) >= 20 ||
+              !/^\d{17,20}$/.test(rows.at(-1)?.id ?? '') ||
+              rows.at(-1)?.id === card.reconcile_cursor
+            ) {
+              this.sql.exec(
+                "UPDATE outbox SET status='blocked',error='test_cleanup_receipt_not_found' WHERE key=?",
+                work.key,
+              );
+              continue;
+            }
+            this.sql.exec(
+              'UPDATE cards SET reconcile_cursor=?,reconcile_pages=reconcile_pages+1 WHERE key=?',
+              rows.at(-1)!.id,
+              work.key,
+            );
+          } else this.sql.exec('UPDATE cards SET reconcile=0 WHERE key=?', work.key);
+          // Separate history and deletion requests so both use the shared gate.
+          this.sql.exec('UPDATE outbox SET due=? WHERE key=?', Date.now() + 100, work.key);
+          continue;
+        }
+        if (card.message_id) {
+          const response = await fetch(
+            `https://discord.com/api/v10/channels/${card.channel_id}/messages/${card.message_id}`,
+            { method: 'DELETE', headers, signal: AbortSignal.timeout(5000) },
+          );
+          if (!response.ok && response.status !== 404) {
+            await this.failed(work, route, response, gate);
+            continue;
+          }
+          await this.rateHeaders(response, route, gate);
+        }
+        this.sql.exec('DELETE FROM outbox WHERE key=?', work.key);
+        this.sql.exec('DELETE FROM cards WHERE key=?', work.key);
+      } catch {
+        await this.retry(work, 'test_cleanup_failed');
+      }
+    }
+    if (!this.sql.exec('SELECT 1 FROM cards LIMIT 1').toArray().length)
+      this.ctx.storage.kv.delete('testSession');
+    await this.schedule();
+  }
   flush() {
     if (this.ctx.storage.kv.get('recoveryReadOnly')) return Promise.resolve();
     if (!this.flushing)
-      this.flushing = this.deliver().finally(() => {
+      this.flushing = (
+        this.ctx.storage.kv.get<TestSession>('testSession')?.cleaning
+          ? this.deliverTestCleanup()
+          : this.deliver()
+      ).finally(() => {
         this.flushing = null;
       });
     return this.flushing;
@@ -3152,7 +3426,7 @@ export class PlayStore {
     const identity = this.sql
       .exec<{ guild_id: string }>('SELECT guild_id FROM community WHERE id=1')
       .toArray()[0];
-    if (identity) await this.recordStore.ranks(identity.guild_id);
+    if (identity && !this.testMode) await this.recordStore.ranks(identity.guild_id);
     for (let batch = 0; batch < 8; batch++) {
       const work = this.sql
         .exec<Work>(
@@ -3370,8 +3644,13 @@ export class PlayStore {
             (r) =>
               r.author.id === this.env.DISCORD_APPLICATION_ID &&
               (String(r.nonce ?? '') === card.nonce ||
-                r.embeds?.some((e) => e.footer?.text === `Community Games · ${work.key}`) ||
-                ((work.key.startsWith('queue:') || work.key.startsWith('match:')) &&
+                r.embeds?.some(
+                  (e) =>
+                    e.footer?.text ===
+                    (this.testMode ? this.testFooter(work.key) : `Community Games · ${work.key}`),
+                ) ||
+                (!this.testMode &&
+                  (work.key.startsWith('queue:') || work.key.startsWith('match:')) &&
                   // Match cards have embeds; a reminder must not be mistaken for the match itself.
                   !!r.embeds?.length &&
                   r.components?.some((row) =>
@@ -3478,7 +3757,7 @@ export class PlayStore {
         if (!card.message_id) {
           payload.nonce = card.nonce;
           payload.enforce_nonce = true;
-          if (work.key.startsWith('match:') && !card.announced) {
+          if (work.key.startsWith('match:') && !card.announced && !this.testMode) {
             const m = this.match(work.key.slice(6));
             if (
               ['check_in', 'playing'].includes(m.state) &&
@@ -3512,6 +3791,18 @@ export class PlayStore {
                 .join('\n');
               payload.allowed_mentions = { parse: [], users: invitees.map((p) => p.id) };
             }
+          }
+        }
+        if (this.testMode) {
+          payload.content =
+            '**SETUP TEST — no ratings or match history**\nUse /test checkin · /test maps · /test result · /test reset';
+          payload.allowed_mentions = { parse: [] };
+          // Normal controls would route to live storage. Tests deliberately use
+          // admin-only /test commands, never the live queue/match buttons.
+          payload.components = [];
+          for (const embed of payload.embeds) {
+            embed.title = `TEST · ${embed.title}`;
+            embed.footer = { text: this.testFooter(work.key) };
           }
         }
         const response = await fetch(

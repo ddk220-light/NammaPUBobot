@@ -10,6 +10,7 @@ import { queuePicker, type QueueChoice } from './queue-picker';
 import { predictionPanel } from './prediction-panel';
 import { adminCommandRoute } from './commands.mjs';
 import { adminInteraction } from './admin-interactions';
+import { testInteraction } from './test-interactions';
 import {
   deferInteractionReply,
   deferPublicComponentReply,
@@ -157,6 +158,8 @@ export async function interactions(
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID)
     return new Response('Wrong application.', { status: 401 });
   if (interaction.type === 1) return Response.json({ type: 1 });
+  if (interaction.type === 2 && interaction.data?.name === 'test')
+    return testInteraction(interaction, env, ctx);
   if (
     (interaction.type === 2 &&
       interaction.data?.name === 'admin' &&

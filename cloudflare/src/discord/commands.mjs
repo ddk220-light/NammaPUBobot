@@ -441,6 +441,34 @@ export function adminCommandRoute(group, action) {
 
 export const commands = [
   {
+    name: 'test',
+    description: 'Admins and bot moderators: run a temporary, unrated setup test',
+    type: 1,
+    default_member_permissions: null,
+    dm_permission: false,
+    options: [
+      sub('populate', 'Add random real members to a separate test queue (no pings)', [
+        queue,
+        {
+          name: 'count',
+          description: 'Number of players (default 8)',
+          type: 4,
+          min_value: 2,
+          max_value: 16,
+        },
+      ]),
+      sub('start', 'Start an unrated test match from the test queue', [queue]),
+      sub('checkin', 'Check in every player in the test match', [queue]),
+      sub('maps', 'Simulate everyone’s map votes or the captain’s map selection', [queue]),
+      sub('result', 'Finish the test match without ratings, payouts or match history', [
+        { ...result, required: true },
+        queue,
+      ]),
+      sub('status', 'Show test progress, expiry and delivery status', [queue]),
+      sub('reset', 'Delete only this queue’s temporary test session and its cards', [queue]),
+    ],
+  },
+  {
     name: 'admin',
     description: 'Open queue status, match history and administrator controls',
     type: 1,

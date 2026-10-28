@@ -31,6 +31,10 @@ Local development uses local SQLite, never remote staging storage. Copy `.dev.va
 - The losing captain uses `/report loss`; a trusted game-end adapter can show the same direct Report loss button. Start a cancellation with `/report abort`; old Cancel match buttons cannot initiate one. Cancellation and draws need both captains' agreement on a separate request card; an admin's command cancels immediately. Terminal cards have no rejoin controls; joining again is manual.
 - New matches have a maximum lifetime of 12 hours, measured from creation. A timeout cancels without ratings, refunds predictions, checks returning members' eligibility and holds the queue until someone explicitly resumes it. Settings can shorten the lifetime. Legacy active matches retain their original semantics.
 
+## Setup rehearsal
+
+Administrators and configured bot moderators can use `/test populate`, `/test start`, `/test checkin`, `/test maps`, `/test result`, `/test status` and `/test reset` to run a temporary rehearsal with randomly selected real server members. Test results do not affect real ratings, wallets or match history, and no players are pinged. See [setup testing](docs/setup-testing.md) for isolation, limits and cleanup.
+
 ## Administrator commands
 
 `/admin` opens a public queue-status and match-history panel with action buttons. Anyone can open it and start matches, including uneven teams; `/queue start` does the same. Clearing and result overrides require Administrator, Manage Server, or a bot moderator role selected by name in the website. Captains can report their own team’s loss. See the [admin panel guide](docs/admin-panel.md).
