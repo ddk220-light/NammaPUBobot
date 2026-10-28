@@ -32,6 +32,10 @@ describe('organizer player pagination', () => {
     expect(second.playersPage).toBe(1);
     expect(new Set([...first.players, ...second.players].map((p) => p.id)).size).toBe(55);
     expect((await stub().records(guild, undefined, 2)).players).toHaveLength(0);
+    // Engine eligibility cannot be inferred from the currently loaded player page.
+    expect((await stub().records(guild, undefined, 2)).gameState).toContainEqual({
+      id: game, ratingEngineLocked: true,
+    });
   });
   it('counts and pages only the selected game', async () => {
     const config = settings(),

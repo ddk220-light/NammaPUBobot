@@ -1,12 +1,23 @@
-import { gameCapabilities } from '../src/games/catalog';
+import { SettingsDraft, fields, value } from './draft';
+import {
+  queueEditor,
+  gameEditors,
+  categories,
+  rankRow,
+  type Category,
+  type EditorSetup,
+} from './settings';
+import { ApiError, openDialog, labelTables, installViewport } from './ui';
+import { gameCatalog } from '../src/games/catalog';
 import './style.css';
-import { onboarding, onboardingSubmit, applyImport } from './onboarding';
+import './responsive.css';
+import { onboarding, onboardingSubmit, applyImport, invalidateImport } from './onboarding';
 import { showStats } from './stats';
-import { emptyModules, type Queue, type Settings, type Snapshot } from '../src/domain/config';
-import { defaultRatingSettings, type Player } from '../src/domain/rating';
-import { aoe2Maps, defaultMaps } from '../src/domain/maps';
+import { type Settings, type Snapshot } from '../src/domain/config';
+import { type Player } from '../src/domain/rating';
 import type { Action, Match } from '../src/domain/play';
 interface Records {
+  gameState: { id: string; ratingEngineLocked: boolean }[];
   economy: {
     wallets: { game_id: string; user_id: string; balance: number }[];
     ledger: {
@@ -53,10 +64,6 @@ interface Channel {
   name: string;
   permissions: { name: string; granted: boolean }[];
 }
-interface ModeratorRole {
-  id: string;
-  name: string;
-}
 interface Guild {
   id: string;
   name: string;
@@ -66,13 +73,36 @@ let bootstrap: Bootstrap,
   guilds: Guild[] = [],
   guildId = '',
   snapshot: Snapshot | null = null,
-  channelList: Channel[] = [],
-  moderatorRoles: ModeratorRole[] = [];
+  channelList: Channel[] = [];
 let busy = false;
 let records: Records | null = null;
-const organizerViews = ['queues', 'matches', 'players', 'setup'] as const;
+let draft: SettingsDraft | null = null;
+let setup: EditorSetup = {
+  channels: [],
+  moderatorRoles: [],
+  roles: [],
+  voiceChannels: [],
+  gameState: [],
+  access: {
+    status: 'unavailable',
+    message: 'Checking Discord access…',
+    manageRoles: false,
+    manageNicknames: false,
+  },
+};
+let selectedQueue = new URL(location.href).searchParams.get('queue') ?? '';
+let category: Category = (new URL(location.href).searchParams.get('section') ??
+  'basics') as Category;
+let settingsSearch = '';
+let conflict = false;
+let loadSequence = 0;
+let awaitingDiscordReturn = false;
+const canLeave = () =>
+  !draft?.dirty || confirm('Discard your unsaved settings and leave this community?');
+const organizerViews = ['overview', 'queues', 'matches', 'players', 'setup'] as const;
 type OrganizerView = (typeof organizerViews)[number];
 const viewNames: Record<OrganizerView, string> = {
+  overview: 'Overview',
   queues: 'Queues',
   matches: 'Matches',
   players: 'Players',
@@ -95,7 +125,6 @@ const escape = (s: unknown) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
   );
 const selected = (a: string, b: string) => (a === b ? ' selected' : '');
-const checked = (b: boolean) => (b ? ' checked' : '');
 const isOrganizerView = (value: string | null): value is OrganizerView =>
   organizerViews.includes(value as OrganizerView);
 
@@ -106,18 +135,18 @@ function currentView(): OrganizerView {
     !initialViewUsed && isOrganizerView(requestedView)
       ? requestedView
       : snapshot?.settings.queues.length
-        ? 'queues'
+        ? 'overview'
         : 'setup';
   initialViewUsed = true;
   viewsByCommunity.set(guildId, view);
   return view;
 }
-function selectView(view: OrganizerView, focus = false) {
+function selectView(view: OrganizerView, focus = false, push = true) {
   viewsByCommunity.set(guildId, view);
   const url = new URL(location.href);
   url.searchParams.set('view', view);
-  history.replaceState(null, '', url);
-  app.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((button) => {
+  if (push && url.href !== location.href) history.pushState(null, '', url);
+  app.querySelectorAll<HTMLButtonElement>('[role=tab][data-view]').forEach((button) => {
     const active = button.dataset.view === view;
     button.setAttribute('aria-selected', String(active));
     button.tabIndex = active ? 0 : -1;
@@ -273,7 +302,10 @@ async function loadMorePlayers() {
   records.playersTotal = page.playersTotal;
   records.playersPage = page.playersPage;
   const body = app.querySelector<HTMLElement>('[data-rating-body]');
-  if (body) body.innerHTML = playerRatingRows();
+  if (body) {
+    body.innerHTML = playerRatingRows();
+    labelTables(app);
+  }
   applyFilters();
 }
 
@@ -282,10 +314,19 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (options.body) headers.set('Content-Type', 'application/json');
   if (bootstrap?.csrf) headers.set('X-CSRF-Token', bootstrap.csrf);
   const response = await fetch(path, { ...options, headers, credentials: 'same-origin' });
-  const body = (await response.json()) as { error?: string; requestId?: string };
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    requestId?: string;
+    code?: string;
+    issues?: { path: (string | number)[]; message: string }[];
+  };
   if (!response.ok)
-    throw new Error(
-      `${body.error ?? 'Request failed.'}${body.requestId ? ` (Request ${body.requestId})` : ''}`,
+    throw new ApiError(
+      response.status,
+      body.code ?? 'request_failed',
+      body.error ?? 'Request failed.',
+      body.requestId ?? response.headers.get('X-Request-ID') ?? undefined,
+      body.issues,
     );
   return body as T;
 }
@@ -299,7 +340,7 @@ function notice(message: string, error = false) {
     box.hidden = false;
     if (error) {
       box.tabIndex = -1;
-      box.focus();
+      if (!app.querySelector('[aria-invalid="true"]')) box.focus();
     }
   }
 }
@@ -312,14 +353,20 @@ async function run(action: () => Promise<void>) {
     previousNotice.textContent = '';
   }
   app.setAttribute('aria-busy', 'true');
+  const disabled = new Map<Element, boolean>();
   app
     .querySelectorAll<
       HTMLInputElement | HTMLSelectElement | HTMLButtonElement | HTMLTextAreaElement
     >('input, select, button, textarea')
-    .forEach((b) => (b.disabled = true));
+    .forEach((b) => {
+      disabled.set(b, b.disabled);
+      b.disabled = true;
+    });
   try {
     await action();
   } catch (error) {
+    if (error instanceof ApiError && error.code === 'revision_conflict') conflict = true;
+    if (error instanceof ApiError && error.issues.length) showIssues(error.issues);
     notice(error instanceof Error ? error.message : 'Try again.', true);
   } finally {
     busy = false;
@@ -328,124 +375,193 @@ async function run(action: () => Promise<void>) {
       .querySelectorAll<
         HTMLInputElement | HTMLSelectElement | HTMLButtonElement | HTMLTextAreaElement
       >('input, select, button, textarea')
-      .forEach((b) => (b.disabled = b.dataset.unavailable === 'true'));
+      .forEach((b) => (b.disabled = b.dataset.unavailable === 'true' || disabled.get(b) === true));
+    updateDirty();
+    app.querySelector<HTMLElement>('[aria-invalid="true"]:not(:disabled)')?.focus();
   }
 }
 async function save(settings: Settings) {
   if (!snapshot) return;
-  snapshot = await api<Snapshot>(communityUrl('config'), {
+  const community = guildId;
+  const saved = await api<Snapshot>(communityUrl('config'), {
     method: 'PUT',
     body: JSON.stringify({ expectedRevision: snapshot.revision, settings }),
   });
+  if (community !== guildId) return;
+  snapshot = saved;
+  draft = new SettingsDraft(saved);
+  conflict = false;
+  invalidateImport();
   render();
-  notice('Settings saved.');
+  notice('Settings saved. Discord delivery may still be pending.');
 }
 async function loadCommunity(id: string) {
+  const sequence = ++loadSequence;
   guildId = id;
   snapshot = null;
+  draft = null;
   records = null;
   channelList = [];
-  moderatorRoles = [];
+  invalidateImport();
   const url = new URL(location.href);
   url.searchParams.set('community', id);
   history.replaceState(null, '', url);
   render();
-  const result = await api<{
-    snapshot: Snapshot;
-    channels: Channel[];
-    moderatorRoles: ModeratorRole[];
-    records: Records;
-  }>(communityUrl('setup'));
-  if (guildId !== id) return;
+  const result = await api<EditorSetup & { snapshot: Snapshot; records: Records }>(
+    communityUrl('setup'),
+  );
+  if (guildId !== id || sequence !== loadSequence) return;
   snapshot = result.snapshot;
+  draft = new SettingsDraft(snapshot);
+  setup = result;
   channelList = result.channels;
-  moderatorRoles = result.moderatorRoles;
   records = result.records;
+  refreshedAt = new Date();
+  conflict = false;
+  render();
+}
+async function refreshRecords() {
+  const id = guildId;
+  const result = await api<Records>(communityUrl('records'));
+  if (id !== guildId) return;
+  records = result;
+  setup.gameState = result.gameState ?? setup.gameState;
   refreshedAt = new Date();
   render();
 }
-function moderatorRoleFields(q?: Queue) {
-  const chosen = q?.adminRoles ?? [];
-  const unavailable = chosen.filter((id) => !moderatorRoles.some((r) => r.id === id));
-  return `<fieldset class="moderator-roles"><legend>Bot moderator roles</legend>
-    <p class="muted">Server owners and members with Administrator or Manage Server permission already have access. Anyone can open /admin and start a match. Select additional roles that can clear this queue and report results without being captain.</p>
-    <div class="moderator-role-list">${moderatorRoles.map((r) => `<label class="toggle"><input type="checkbox" name="adminRoles" value="${escape(r.id)}"${checked(chosen.includes(r.id))} /><span>${escape(r.name)} <small>${escape(r.id)}</small></span></label>`).join('')}
-    ${unavailable.map((id) => `<label class="toggle"><input type="checkbox" name="adminRoles" value="${escape(id)}" checked /><span>Unavailable role <small>${escape(id)}</small> — deselect to remove access</span></label>`).join('')}</div>
-    ${!moderatorRoles.length ? '<p class="muted">No selectable roles. Create a role in Discord and refresh this page.</p>' : ''}
-    <p class="muted">These roles also allow match cancellation and betting closure. They do not grant access to website settings or /manage. No Discord Administrator permission is needed for a bot moderator.</p>
-    </fieldset>`;
+async function refreshSetup() {
+  if (!snapshot || !draft) return loadCommunity(guildId);
+  const id = guildId;
+  const result = await api<EditorSetup & { snapshot: Snapshot; records: Records }>(
+    communityUrl('setup'),
+  );
+  if (id !== guildId) return;
+  setup = result;
+  channelList = result.channels;
+  records = result.records;
+  refreshedAt = new Date();
+  if (!draft.dirty) {
+    snapshot = result.snapshot;
+    draft = new SettingsDraft(snapshot);
+    conflict = false;
+  } else if (result.snapshot.revision !== snapshot.revision) conflict = true;
+  render();
+  notice(
+    conflict
+      ? 'Saved settings changed elsewhere. Your edits are preserved. Continue editing, or reload the latest settings to discard your changes.'
+      : setup.access.message,
+    conflict || setup.access.status !== 'ready',
+  );
 }
-function queueFields(q?: Queue) {
-  const s = snapshot!.settings;
-  const rating = q?.ratingSettings ?? defaultRatingSettings;
-  const catalogGame = s.games.find((g) => g.id === (q?.gameId ?? s.games[0]?.id));
-  const maps = q?.maps ?? defaultMaps(catalogGame?.catalogId === 'aoe2' ? aoe2Maps : []);
-  return `<div class="fields">
-    <label>Queue name<input name="name" required maxlength="40" value="${escape(q?.name ?? 'Pickup')}" /></label>
-    <label>Game<select name="gameId" required>${s.games.map((g) => `<option value="${g.id}"${selected(g.id, q?.gameId ?? '')}>${escape(g.name)}</option>`).join('')}</select></label>
-    <label>Discord channel<select name="channelId" required>${channelList.map((c) => `<option value="${c.id}"${selected(c.id, q?.channelId ?? '')}>#${escape(c.name)}</option>`).join('')}</select></label>
-    <label>Players<input name="size" type="number" min="2" step="1" required value="${q?.size ?? 8}" /></label>
-    <label>Team formation<select name="teamMethod"><option value="captain"${selected('captain', q?.teamMethod ?? 'captain')}>Captain-based balance</option><option value="balanced"${selected('balanced', q?.teamMethod ?? '')}>Automatic balance</option><option value="random"${selected('random', q?.teamMethod ?? '')} >Random teams</option></select></label>
-    <label>Rating system<select name="ratingEngine">${['aoe2', 'glicko2', 'trueskill', 'flat'].map((r) => `<option value="${r}"${selected(r, q?.ratingEngine ?? 'aoe2')}>${{ aoe2: 'AoE2-style Elo', glicko2: 'Glicko2', trueskill: 'TrueSkill', flat: 'Flat' }[r]}</option>`).join('')}</select></label>
-    <label>Check-in time limit (seconds)<input name="seconds" type="number" min="1" max="3600" step="1" required value="${q?.checkIn.seconds ?? 60}" /><span class="muted">Time for players to confirm, from 1 second to 1 hour. Applies to new matches.</span></label>
-    <label>Ready validity seconds<input name="reuseSeconds" type="number" min="0" max="900" value="${q?.checkIn.reuseSeconds ?? 900}" /></label>
-    <label class="toggle"><input name="checkIn" type="checkbox"${checked(q?.checkIn.enabled ?? true)} /> Require check-in</label>
-    <label class="toggle"><input name="module-maps" type="checkbox"${checked(q?.modules.maps ?? false)} /> Enable map selection / voting</label>
-    <p class="muted">Turn off to start new matches without map votes or map picks. Your map pool and preferences are kept.</p>
-    <label class="toggle"><input name="enabled" type="checkbox"${checked(q?.enabled ?? false)} /> Enable this queue</label>
-  </div><details class="rating-options"><summary>Queue controls and access</summary><p class="muted">Zero disables waiting expiry. Match lifetime is at most 12 hours. Role IDs can be copied from Discord with Developer Mode.</p><div class="fields">
-    <label class="toggle"><input type="checkbox" name="autoStart"${checked(q?.autoStart ?? true)} /> Start automatically at capacity</label>
-    <label class="toggle"><input type="checkbox" name="isDefault"${checked(q?.isDefault ?? false)} /> Default queue in this channel</label>
-    <label class="toggle"><input type="checkbox" name="keepQueueVisible"${checked(q?.keepQueueVisible ?? true)} /> Keep queue card near the bottom</label>
-    <p class="muted">Every 15 minutes, move the queue card to the bottom if it is outside the channel’s last five messages. Turning this off stops periodic checks; player updates still refresh the card.</p>
-    <label>Queue aliases<input name="aliases" value="${escape(q?.aliases?.join(', ') ?? '')}" placeholder="Comma-separated nicknames" /></label>
-    <label>Waiting expiry seconds<input type="number" min="0" max="1209600" name="waitingSeconds" value="${q?.controls?.waitingSeconds ?? 0}" required /></label>
-    <label>Match timeout seconds<input type="number" min="0" max="43200" name="matchSeconds" value="${q?.controls?.matchSeconds || 43200}" required /></label>
-    <label>Required role ID<input name="requiredRole" value="${escape(q?.controls?.requiredRole ?? '')}" placeholder="Blank allows everyone" /></label>
-    <label>Blocked role ID<input name="blockedRole" value="${escape(q?.controls?.blockedRole ?? '')}" placeholder="Blank blocks no role" /></label>
-  </div>${moderatorRoleFields(q)}</details><details class="rating-options"><summary>Rating settings</summary><p class="muted">Shared by all queues for this game. The rating system cannot change once the game has player records. Starting ratings can be set in Players.</p><div class="fields">${Object.entries(
-    {
-      initial: 'Starting rating',
-      deviation: 'Initial deviation',
-      minDeviation: 'Minimum deviation',
-      scale: 'Overall scale (%)',
-      winScale: 'Win scale (%)',
-      lossScale: 'Loss scale (%)',
-      drawBonus: 'Draw bonus (%)',
-    },
-  )
-    .map(
-      ([key, label]) =>
-        `<label>${label}<input type="number" name="rating-${key}" required value="${rating[key as keyof typeof rating]}" /></label>`,
-    )
-    .join(
-      '',
-    )}<label class="toggle"><input type="checkbox" name="rating-winStreakBoost"${checked(rating.winStreakBoost)} /> Win streak boost</label><label class="toggle"><input type="checkbox" name="rating-lossStreakBoost"${checked(rating.lossStreakBoost)} /> Loss streak boost</label></div></details><fieldset class="module-options"><legend>Optional features</legend><p class="muted">Enable the extras your community uses.</p>${Object.entries(
-    {
-      gold: 'Gold',
-      predictions: 'Predictions',
-      quiz: 'Quizzes',
-      civs: 'Civ picking',
-      stories: 'Match stories',
-    },
-  )
-    .map(
-      ([key, label]) =>
-        `<label class="toggle${['quiz'].includes(key) ? ' unavailable-option' : ''}"><input type="checkbox" name="module-${key}"${checked(q?.modules[key as keyof typeof emptyModules] ?? false)}${['quiz'].includes(key) ? ' disabled data-unavailable="true"' : ''} /> ${label}${['quiz'].includes(key) ? ' (not available yet)' : ''}</label>`,
-    )
-    .join(
-      '',
-    )}</fieldset><details class="rating-options"><summary>Gold tax settings</summary><p class="muted">Thursday tax takes 10% for inactivity and never reduces a balance below 500 gold. Bets kept until betting closes count as participation. A seven-day grace period and a betting opportunity are required.</p><label class="toggle"><input name="taxEnabled" type="checkbox"${checked(q?.economy?.taxEnabled ?? false)} /> Enable weekly tax for this game</label><label>Thursday UTC minute (0–1439)<input name="taxMinuteUtc" type="number" min="0" max="1439" value="${q?.economy?.taxMinuteUtc ?? 0}" /></label><p class="muted">Minutes after midnight UTC: 0 is 00:00, 600 is 10:00.</p></details><details class="rating-options"><summary>Map selection settings</summary><p class="muted">Selected maps belong to one ranked match, not separate rated rounds. AoE2 has a starter pool; custom games use your map names.</p>
-    <label>Map pool (one per line)<textarea name="mapPool" rows="6">${escape(maps.pool.join('\n'))}</textarea></label>
-    <div class="fields"><label>Mode<select name="mapMode">${['vote', 'random', 'direct'].map((v) => `<option value="${v}"${selected(v, maps.mode)}>${{ vote: 'Player voting', random: 'Random selection', direct: 'Captain picks' }[v]}</option>`).join('')}</select></label>
-    <label>Maps to play<input name="mapCount" type="number" min="1" max="5" value="${maps.count}" /></label>
-    <label>Shortlist size<input name="mapShortlist" type="number" min="1" max="25" value="${maps.shortlist || 5}" /></label>
-    <label>Voting<select name="mapVoting">${['plurality', 'approval'].map((v) => `<option value="${v}"${selected(v, maps.voting)}>${v === 'plurality' ? 'One choice per player' : 'Approve multiple maps'}</option>`).join('')}</select></label>
-    <label>Ties<select name="mapTie">${['random', 'alphabetical'].map((v) => `<option value="${v}"${selected(v, maps.tie)}>${v}</option>`).join('')}</select></label>
-    <label>No votes<select name="mapNoVotes">${['random', 'cancel'].map((v) => `<option value="${v}"${selected(v, maps.noVotes)}>${v}</option>`).join('')}</select></label>
-    <label>Selection seconds<input name="mapSeconds" type="number" min="10" max="3600" value="${maps.seconds}" /></label>
-    <label>Recent matches to avoid<input name="mapRecent" type="number" min="0" max="20" value="${maps.recentAvoid}" /></label></div>
-    <label class="toggle"><input name="mapCheckIn" type="checkbox"${checked(maps.countsAsCheckIn)} /> A map vote also checks the player in (uses the map selection time limit)</label></details><details class="rating-options"><summary>Voice presence</summary><label class="toggle"><input type="checkbox" name="voicePreview"${checked(q?.voicePreview ?? false)} /> Show up to five people in public voice channels who are not queued or playing</label><p class="muted">Refreshes every five minutes while this queue is enabled and has a card. Uses a shared voice connection with ongoing hosting cost. Names are displayed without notifications. Ping sends a separate invitation to eligible voice participants, at most once every five minutes per server.</p><p class="muted">Rally can also use the shared voice connection. Without preview refreshes, it stops an hour after the last rally request. No voice audio is processed. This adds connection duration to hosting usage.</p><label class="toggle"><input type="checkbox" name="rallyEnabled"${checked(q?.rally?.enabled ?? false)} /> Enable /rally</label><label>Allowed voice channel IDs (comma-separated, blank uses caller's channel)<input name="rallyChannels" value="${escape(q?.rally?.channels.join(',') ?? '')}" /></label><label>Additional rally role IDs (comma-separated)<input name="rallyRoles" value="${escape(q?.rally?.roles.join(',') ?? '')}" /></label><label>Cooldown seconds<input name="rallyCooldown" type="number" min="60" max="3600" value="${q?.rally?.cooldownSeconds ?? 300}" /></label><label>Maximum mentions<input name="rallyMentions" type="number" min="1" max="8" value="${q?.rally?.mentionLimit ?? 8}" /></label></details>`;
+function showIssues(issues: { path: (string | number)[]; message: string }[]) {
+  for (const issue of issues) {
+    const path = issue.path.filter((p) => p !== 'settings');
+    let input: HTMLElement | null = null;
+    if (path[0] === 'queues' && typeof path[1] === 'number') {
+      const q = draft?.working.queues[path[1]];
+      selectedQueue = q?.id ?? selectedQueue;
+      if (
+        q &&
+        (path[2] === 'ratingSettings' ||
+          path[2] === 'ratingEngine' ||
+          (path[2] === 'economy' && path[3] === 'taxMinuteUtc'))
+      ) {
+        selectView('setup');
+        render();
+        const name = String(path[3] ?? path[2]);
+        input = app.querySelector<HTMLElement>(
+          `[data-config="rating:${q.gameId}"] [name="${name}"]`,
+        );
+      } else {
+        selectView('queues');
+        render();
+      }
+    } else if (path[0] === 'games') {
+      selectView('setup');
+      render();
+      const game = draft?.working.games[Number(path[1])];
+      const form = app.querySelector<HTMLFormElement>(`[data-config="game:${game?.id}"]`);
+      if (path[2] === 'records' && path[3] === 'ranks' && typeof path[4] === 'number') {
+        const row = form?.querySelectorAll('[data-rank-row]')[path[4]];
+        input =
+          row?.querySelector<HTMLElement>(
+            `[name$="-${path[5] === 'roleId' ? 'role' : path[5]}"]`,
+          ) ?? null;
+      } else if (form && typeof path.at(-1) === 'string')
+        input = form.querySelector<HTMLElement>(`[name="${path.at(-1)}"]`);
+    }
+    input ??= app.querySelector<HTMLElement>(
+      `[data-issue-path="${path.join('.').replaceAll('"', '')}"]`,
+    );
+    if (input) {
+      input.setAttribute('aria-invalid', 'true');
+      input.closest('details')?.setAttribute('open', '');
+      const panel = input.closest<HTMLElement>('[data-category-panel]');
+      if (panel) {
+        category = panel.dataset.categoryPanel as Category;
+        settingsSearch = '';
+        applyCategories();
+      }
+      const id = `error-${path.join('-')}`;
+      input.setAttribute('aria-describedby', id);
+      input.insertAdjacentHTML(
+        'afterend',
+        `<p id="${escape(id)}" class="field-error" role="alert">${escape(issue.message)}</p>`,
+      );
+      input.focus();
+      break;
+    }
+  }
+}
+function updateDirty() {
+  const dirty = Boolean(draft?.dirty);
+  document.body.classList.toggle('has-draft', dirty);
+  const bar = app.querySelector<HTMLElement>('#savebar');
+  if (bar) bar.hidden = !dirty;
+  const saveButton = app.querySelector<HTMLButtonElement>('[data-edit="save"]');
+  if (saveButton) saveButton.disabled = busy || !dirty;
+  const reload = app.querySelector<HTMLElement>('[data-edit="reload-conflict"]');
+  if (reload) reload.hidden = !conflict;
+  app.querySelectorAll<HTMLFormElement>('form[data-config]').forEach((form) => {
+    const changed = draft?.raw.has(form.dataset.config!);
+    form.classList.toggle('is-dirty', Boolean(changed));
+    const changedFields = draft!.changedFields(form.dataset.config!);
+    form.querySelectorAll<HTMLElement>('[data-category-panel]').forEach((panel) => {
+      const changed = [...panel.querySelectorAll<HTMLInputElement>('[name]')].some((el) =>
+        changedFields.has(el.name),
+      );
+      const dot = app.querySelector<HTMLElement>(
+        `[data-category="${panel.dataset.categoryPanel}"] .dirty-dot`,
+      );
+      if (dot) dot.hidden = !changed;
+    });
+  });
+}
+function applyCategories() {
+  if (!(category in categories)) category = 'basics';
+  const search = settingsSearch.trim().toLocaleLowerCase();
+  let total = 0;
+  app.querySelectorAll<HTMLElement>('[data-category-panel]').forEach((panel) => {
+    let matches = 0;
+    panel
+      .querySelectorAll<HTMLElement>('[data-setting], .choice-list, .shared-setting')
+      .forEach((row) => {
+        row.hidden = Boolean(
+          search &&
+          !(row.dataset.search ?? row.textContent ?? '').toLocaleLowerCase().includes(search),
+        );
+        if (!row.hidden) matches++;
+      });
+    panel.hidden = search ? matches === 0 : panel.dataset.categoryPanel !== category;
+    if (!panel.hidden) total += matches;
+  });
+  app
+    .querySelectorAll<HTMLElement>('[data-category]')
+    .forEach((tab) =>
+      tab.setAttribute('aria-current', String(!search && tab.dataset.category === category)),
+    );
+  const empty = app.querySelector<HTMLElement>('[data-search-empty]');
+  if (empty) empty.hidden = total > 0;
 }
 function matchRepairs(m: Match) {
   const active = ['playing', 'check_in'].includes(m.state);
@@ -501,6 +617,7 @@ async function repair(
     { method: 'POST', body: JSON.stringify(action) },
   );
   records = result.records;
+  setup.gameState = records.gameState ?? setup.gameState;
   render();
   notice(result.reply.content);
 }
@@ -662,178 +779,124 @@ function setupSection() {
         : 'Required permissions granted'
     }</span></div>`;
   const inaccessible = [...configured].filter((id) => !channelList.some((c) => c.id === id));
-  return `<section class="panel"><div class="section-heading"><h2>Games</h2></div><p class="muted">Add a catalog game or your own. Each game keeps separate ratings and gold.</p>
-    <div class="game-list">${snapshot!.settings.games.map((g) => `<form data-kind="rename" data-id="${g.id}" class="game-row"><label class="sr-only" for="game-${g.id}">Game name</label><input id="game-${g.id}" name="name" maxlength="80" required value="${escape(g.name)}" />${gameCapabilities(g.catalogId)?.lobby ? `<label><input type="checkbox" name="lobbyConnector"${g.connector?.enabled ? ' checked' : ''} /> Track lobby start/end (manual results)</label><label><input type="checkbox" name="autoLobby"${g.connector?.autoAttach ? ' checked' : ''} /> Automatically attach matching public lobby</label><label>Lobby name<input name="lobbyName" maxlength="80" value="${escape(g.connector?.autoAttach?.lobbyName ?? 'NammaNomad')}" /></label>` : '<span class="muted">Manual lobby and result reporting</span>'}<button>Save game</button></form>`).join('') || '<p class="empty-state">Add your first game to create a queue.</p>'}</div>
-    <form data-kind="game" class="add-game"><label>Game<select name="catalogId"><option value="">Custom game</option>${bootstrap.catalog.map((g) => `<option value="${g.id}">${escape(g.name)}</option>`).join('')}</select></label><label>Custom name<input name="name" maxlength="80" placeholder="Game name" /></label><button class="primary">Add game</button></form></section>
-    <section class="panel"><div class="section-heading"><h2>Discord access</h2>${bootstrap.inviteUrl ? `<a class="button" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Invite bot to server</a>` : ''}</div><p class="muted">Check the channels used by your queues.</p><div class="channel-list">${inaccessible.map((id) => `<p class="notice error">The bot cannot access configured channel ${escape(id)}. Check its Discord permissions or choose another channel in Queues.</p>`).join('')}${configuredChannels.map(channelRow).join('')}${!configured.size ? '<p class="empty-state">No queue channels selected yet.</p>' : ''}</div>
+  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Community setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney()}${gameEditors(draft!, setup)}
+    <section class="panel"><div class="section-heading"><h2>Discord access</h2>${bootstrap.inviteUrl ? `<a class="button" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Invite bot to server</a>` : ''}</div><p class="notice${setup.access.status === 'ready' ? '' : ' error'}">${escape(setup.access.message)}</p><button type="button" data-action="check-access">Check access again</button><p class="muted">Check the channels used by your queues. Optional rank roles need Manage Roles; nickname decoration needs Manage Nicknames.</p><div class="channel-list">${inaccessible.map((id) => `<p class="notice error">The bot cannot access configured channel ${escape(id)}. Check its Discord permissions or choose another channel in Queues.</p>`).join('')}${configuredChannels.map(channelRow).join('')}${!configured.size ? '<p class="empty-state">No queue channels selected yet.</p>' : ''}</div>
     ${otherChannels.length ? `<details class="rating-options"><summary>Other available channels (${otherChannels.length})</summary><div class="channel-list">${otherChannels.map(channelRow).join('')}</div></details>` : ''}${!channelList.length ? '<p class="notice error">No accessible text channels found. Check the bot’s channel permissions.</p>' : ''}<details class="technical-details"><summary>Configuration details</summary><p>Saved settings revision ${snapshot!.revision}</p><p>Community ${escape(guildId)}</p></details></section>`;
 }
-function queueSection(openQueues: Set<string>) {
-  return `<section class="panel"><div class="section-heading"><h2>Queues</h2></div><p class="muted">Players join and play in Discord. Choose a queue to edit its rules.</p>
-    ${snapshot!.settings.queues.map((q) => `<details class="queue"${openQueues.has(q.id) ? ' open' : ''}><summary class="queue-summary">${escape(q.name)} <span>${escape(gameName(q.gameId))} · #${escape(channelList.find((c) => c.id === q.channelId)?.name ?? q.channelId)} · ${q.size} players</span><span class="status-pill">${q.enabled ? 'Enabled' : 'Paused'}${q.isDefault ? ' · Default' : ''}</span></summary><form data-kind="queue" data-id="${q.id}">${queueFields(q)}<div class="actions"><button class="primary">Save queue</button><button type="button" data-action="remove" data-id="${q.id}">Remove queue</button></div></form></details>`).join('')}
-    ${snapshot!.settings.games.length && channelList.length ? `<details class="queue"${snapshot!.settings.queues.length ? '' : ' open'}><summary>Add a queue</summary><form data-kind="queue">${queueFields()}<button class="primary">Save new queue</button></form></details>` : '<p class="notice">Add a game and check Discord channel access in Setup before creating a queue.</p>'}</section>`;
+function setupJourney() {
+  const saved = snapshot!.settings;
+  const ready =
+    setup.access.status === 'ready' &&
+    saved.queues.some(
+      (q) =>
+        q.enabled &&
+        setup.channels.some((c) => c.id === q.channelId && c.permissions.every((p) => p.granted)),
+    );
+  const pending =
+    records?.delivery.filter((d) => d.status !== 'sent' && d.status !== 'done').length ?? 0;
+  const steps = [true, setup.access.status === 'ready', saved.games.length > 0, ready];
+  return `<section class="panel setup-journey"><div class="section-heading"><h2>${ready ? 'Ready to play' : 'Set up your first game'}</h2><span class="status-pill">${steps.filter(Boolean).length} / 4 complete</span></div><ol class="setup-steps">${['Choose community', 'Verify Discord access', 'Add a game', 'Save an enabled queue'].map((label, i) => `<li class="${steps[i] ? 'complete' : ''}"><span>${steps[i] ? '✓' : i + 1}</span>${label}</li>`).join('')}</ol><p class="form-help">Progress reflects saved settings and verified access.${pending ? ` ${pending} recent delivery task(s) are not complete; check delivery diagnostics.` : ''}</p><div class="actions">${!steps[1] && bootstrap.inviteUrl ? `<a class="button primary" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Add to Discord</a><button type="button" data-action="check-access">I’m back — check access</button>` : ''}${steps[2] ? '<button type="button" data-view="queues">Configure a queue</button>' : ''}</div></section>`;
+}
+function overviewSection() {
+  const saved = snapshot!.settings;
+  const active =
+    records?.matches.filter((m) => ['playing', 'check_in'].includes(m.state)).length ?? 0;
+  const problems = records?.delivery.filter((d) => d.error) ?? [];
+  return `<div class="page-heading"><div><p class="eyebrow">Your community, ready to play</p><h1>Overview</h1><p class="view-description">Organize games here. Join and play together in Discord.</p></div><button type="button" data-view="queues" class="primary">Manage queues</button></div>${setupJourney()}<div class="overview-grid"><section class="panel metric"><span>Games</span><strong>${saved.games.length}</strong></section><section class="panel metric"><span>Enabled queues</span><strong>${saved.queues.filter((q) => q.enabled).length}</strong></section><section class="panel metric"><span>Active in recent matches</span><strong>${active}</strong><small>From the latest ${records?.matches.length ?? 0} records</small></section></div><section class="panel"><h2>Delivery health</h2>${problems.length ? problems.map((p) => `<p class="notice error">${escape(p.error)}</p>`).join('') : '<p>No errors in the loaded delivery tasks.</p>'}<p class="form-help">Shows recent tasks, not an all-time health total.</p><button type="button" data-view="matches">Open delivery diagnostics</button></section>`;
 }
 function render() {
-  const openQueues = new Set(
-    Array.from(
-      app.querySelectorAll<HTMLFormElement>('details[open] > form[data-kind="queue"][data-id]'),
-    ).map((form) => form.dataset.id!),
+  // A render replaces the import inputs, so any previous review must expire with them.
+  invalidateImport();
+  const openGames = [...app.querySelectorAll<HTMLDetailsElement>('.game-settings[open]')].map(
+    (el) => el.id,
   );
   if (!bootstrap.user) {
-    app.innerHTML = `<section class="intro"><h1>Community organizer</h1><p class="lead">Set up Discord queues, manage game-night rules and review match results. Players join and play in Discord.</p><div class="actions">${bootstrap.oauthReady ? '<a class="button primary" href="/auth/login">Sign in with Discord</a>' : '<p class="notice">Discord sign-in will be available when the operator finishes setup.</p>'}${bootstrap.inviteUrl ? `<a class="button" href="${escape(bootstrap.inviteUrl)}">Invite the bot</a>` : ''}</div></section>`;
+    document.body.classList.remove('organizer');
+    app.innerHTML = `<section class="intro"><p class="eyebrow">A better game night</p><h1>Your community.<br>Your rules.</h1><p class="lead">Set up Discord queues, manage game-night rules and review results in one place.</p><div class="actions">${bootstrap.oauthReady ? `<a class="button primary" href="/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}">Sign in with Discord</a>` : '<p class="notice">Discord sign-in is not configured yet.</p>'}${bootstrap.inviteUrl ? `<a class="button" href="${escape(bootstrap.inviteUrl)}">Add to Discord</a>` : ''}</div><div id="notice" hidden></div></section>`;
     return;
   }
+  document.body.classList.add('organizer');
   const current = guilds.find((g) => g.id === guildId);
-  app.innerHTML = `<div class="page-heading"><div><h1>${escape(current?.name ?? 'Choose your community')}</h1><p class="muted">Community organizer</p></div><button data-action="logout" class="text-button">Sign out ${escape(bootstrap.user.username)}</button></div>
-    <div id="notice" class="notice" role="status" hidden></div>
-    <div class="community-bar"><label>Discord server<select id="community"><option value="">Choose a server</option>${guilds.map((g) => `<option value="${g.id}"${selected(g.id, guildId)}>${escape(g.name)}</option>`).join('')}</select></label><button data-action="reload">Refresh</button>${snapshot && refreshedAt ? `<span class="record-meta">Last refreshed ${escape(refreshedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</span>` : ''}</div>
-    ${!guilds.length ? '<p class="notice">No servers with Manage Server permission were found. An administrator can grant that permission or configure the bot for you.</p>' : ''}
-    ${guildId && !snapshot ? '<section class="panel"><p>Loading settings and checking channel permissions…</p></section>' : ''}
-    ${snapshot ? `<nav class="workspace-nav" role="tablist" aria-label="Organizer sections">${organizerViews.map((view) => `<button type="button" class="workspace-tab" id="tab-${view}" role="tab" data-view="${view}" aria-controls="view-${view}" aria-selected="false" tabindex="-1">${viewNames[view]}</button>`).join('')}</nav>${organizerViews.map((view) => `<section class="workspace-panel" role="tabpanel" id="view-${view}" data-view-panel="${view}" aria-labelledby="tab-${view}" hidden>${{ queues: () => queueSection(openQueues), matches: recordSection, players: playerSection, setup: setupSection }[view]()}</section>`).join('')}` : ''}`;
-  if (snapshot) {
-    selectView(currentView());
+  const iconPaths = {
+    overview: '<path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/>',
+    queues:
+      '<path d="M9 5h12M9 12h12M9 19h12"/><circle cx="3" cy="5" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="19" r="1"/>',
+    matches: '<path d="M4 21V3h15l-3 5 3 5H4"/>',
+    players: '<circle cx="12" cy="7" r="4"/><path d="M4 21v-3a8 8 0 0 1 16 0v3z"/>',
+    setup: '<path d="M4 3v7m0 4v7M12 3v3m0 4v11M20 3v11m0 4v3M1 10h6m2-4h6m2 8h6"/>',
+  };
+  const icons = Object.fromEntries(
+    Object.entries(iconPaths).map(([key, paths]) => [
+      key,
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`,
+    ]),
+  );
+  app.innerHTML = `<div class="organizer-layout"><aside class="organizer-sidebar"><p class="eyebrow">Workspace</p><label class="desktop-community">Community<select id="community"><option value="">Choose a server</option>${guilds.map((g) => `<option value="${g.id}"${selected(g.id, guildId)}>${escape(g.name)}</option>`).join('')}</select></label><nav class="workspace-nav" role="tablist" aria-label="Organizer sections">${organizerViews.map((view) => `<button type="button" class="workspace-tab" id="tab-${view}" role="tab" data-view="${view}" aria-controls="view-${view}" aria-selected="false" tabindex="-1"><span aria-hidden="true" class="nav-icon">${icons[view]}</span><span>${viewNames[view]}</span></button>`).join('')}</nav><div class="sidebar-footer"><p>Community Games</p><span>Play together. Make it yours.</span></div></aside><div class="workspace-content"><div class="context-bar"><button type="button" class="mobile-menu icon-button" data-edit="drawer" aria-label="Choose community or queue">☰</button><span class="context-name">${escape(current?.name ?? 'Choose your community')}</span><button type="button" data-action="refresh-records" aria-label="Refresh records">Refresh</button><button type="button" data-action="logout" aria-label="Sign out ${escape(bootstrap.user.username)}">Sign out</button></div><div id="notice" class="notice" role="status" hidden></div><div class="workspace-scroll">
+    ${!guilds.length ? '<section class="panel"><h1>No communities yet</h1><p>You need Manage Server permission to configure a community.</p></section>' : ''}
+    ${guildId && !snapshot ? '<section class="panel"><h1>Checking your community…</h1><p>Loading saved settings and Discord permissions.</p><button data-action="reload">Retry</button></section>' : ''}
+    ${snapshot && draft ? organizerViews.map((view) => `<section class="workspace-panel" role="tabpanel" id="view-${view}" data-view-panel="${view}" aria-labelledby="tab-${view}" hidden>${{ overview: overviewSection, queues: () => queueEditor(draft!, setup, selectedQueue), matches: recordSection, players: playerSection, setup: setupSection }[view]()}</section>`).join('') : ''}
+    </div><div id="savebar" class="savebar" hidden><span><strong>Unsaved changes</strong><small>Applies across this community</small></span><button type="button" data-edit="reload-conflict" hidden>Reload latest</button><button type="button" data-edit="discard">Discard</button><button type="button" class="primary" data-edit="save">Save changes</button></div></div></div>`;
+  if (snapshot && draft) {
+    selectView(currentView(), false, false);
+    draft.mount(app);
+    applyCategories();
     applyFilters();
+    labelTables(app);
+    updateDirty();
+    const search = app.querySelector<HTMLInputElement>('[data-settings-search]');
+    if (search) search.value = settingsSearch;
+    openGames.forEach((id) => document.getElementById(id)?.setAttribute('open', ''));
+    const selectedGame = new URL(location.href).searchParams.get('game');
+    if (selectedGame)
+      document.getElementById(`game-settings-${selectedGame}`)?.setAttribute('open', '');
+    if (busy)
+      app
+        .querySelectorAll<
+          HTMLInputElement | HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement
+        >('input,button,select,textarea')
+        .forEach((el) => (el.disabled = true));
   }
 }
 app.addEventListener('submit', (event) => {
   event.preventDefault();
   const form = (event.target as Element).closest<HTMLFormElement>('form');
-  if (!form || !snapshot) return;
-  const data = new FormData(form),
-    settings = structuredClone(snapshot.settings);
+  if (!form || !snapshot || !draft) return;
+  if (form.dataset.config) {
+    draft.capture(form);
+    updateDirty();
+    return;
+  }
+  if (form.hasAttribute('data-add-game')) {
+    const data = fields(form);
+    const item = gameCatalog.find((g) => g.id === value(data, 'catalogId'));
+    const name = item?.name ?? value(data, 'name').trim();
+    if (!name) {
+      notice('Enter a custom game name or choose a catalog game.', true);
+      return;
+    }
+    draft.working.games.push({ id: crypto.randomUUID(), name, catalogId: item?.id ?? null });
+    render();
+    return;
+  }
+  const data = new FormData(form);
   void run(async () => {
     if (
       await onboardingSubmit(form, data, snapshot!, {
         api,
         url: communityUrl,
-        save,
-        reload: () => loadCommunity(guildId),
+        reload: refreshRecords,
         notice,
       })
-    )
+    ) {
+      labelTables(app);
       return;
-    if (['repair', 'queue-control', 'manual', 'seed', 'noadd'].includes(form.dataset.kind ?? '')) {
+    }
+    if (['repair', 'queue-control', 'manual', 'seed', 'noadd'].includes(form.dataset.kind ?? ''))
       await submitRepair(form, data);
-      return;
-    }
-    if (form.dataset.kind === 'game') {
-      const catalogId = String(data.get('catalogId') ?? ''),
-        item = bootstrap.catalog.find((g) => g.id === catalogId);
-      const name = item?.name ?? String(data.get('name') ?? '').trim();
-      if (!name) throw new Error('Enter a custom game name or choose a catalog game.');
-      settings.games.push({
-        id: crypto.randomUUID(),
-        name,
-        catalogId: (item?.id ?? null) as Settings['games'][number]['catalogId'],
-      });
-    } else if (form.dataset.kind === 'rename') {
-      const game = settings.games.find((g) => g.id === form.dataset.id)!;
-      game.name = String(data.get('name')).trim();
-      if (gameCapabilities(game.catalogId)?.lobby)
-        game.connector = {
-          enabled: data.has('lobbyConnector'),
-          ...(data.has('autoLobby')
-            ? { autoAttach: { lobbyName: String(data.get('lobbyName')).trim() } }
-            : {}),
-        };
-    } else if (form.dataset.kind === 'queue') {
-      const existing = settings.queues.find((q) => q.id === form.dataset.id);
-      const q: Queue = {
-        id: existing?.id ?? crypto.randomUUID(),
-        name: String(data.get('name')).trim(),
-        gameId: String(data.get('gameId')),
-        channelId: String(data.get('channelId')),
-        size: Number(data.get('size')),
-        enabled: data.has('enabled'),
-        checkIn: {
-          enabled: data.has('checkIn'),
-          seconds: Number(data.get('seconds')),
-          reuseSeconds: Number(data.get('reuseSeconds')),
-        },
-        teamMethod: String(data.get('teamMethod')) as Queue['teamMethod'],
-        ratingEngine: String(data.get('ratingEngine')) as Queue['ratingEngine'],
-        ratingSettings: {
-          ...Object.fromEntries(
-            [
-              'initial',
-              'deviation',
-              'minDeviation',
-              'scale',
-              'winScale',
-              'lossScale',
-              'drawBonus',
-            ].map((key) => [key, Number(data.get(`rating-${key}`))]),
-          ),
-          winStreakBoost: data.has('rating-winStreakBoost'),
-          lossStreakBoost: data.has('rating-lossStreakBoost'),
-        } as typeof defaultRatingSettings,
-        autoStart: data.has('autoStart'),
-        isDefault: data.has('isDefault'),
-        aliases: String(data.get('aliases') ?? '')
-          .split(',')
-          .map((v) => v.trim())
-          .filter(Boolean),
-        controls: {
-          waitingSeconds: Number(data.get('waitingSeconds')),
-          matchSeconds: Number(data.get('matchSeconds')),
-          requiredRole: String(data.get('requiredRole') ?? '').trim() || null,
-          blockedRole: String(data.get('blockedRole') ?? '').trim() || null,
-        },
-        voicePreview: data.has('voicePreview'),
-        keepQueueVisible: data.has('keepQueueVisible'),
-        adminRoles: data.getAll('adminRoles').map(String),
-        rally: {
-          enabled: data.has('rallyEnabled'),
-          channels: String(data.get('rallyChannels') ?? '')
-            .split(',')
-            .map((v) => v.trim())
-            .filter(Boolean),
-          roles: String(data.get('rallyRoles') ?? '')
-            .split(',')
-            .map((v) => v.trim())
-            .filter(Boolean),
-          cooldownSeconds: Number(data.get('rallyCooldown')),
-          mentionLimit: Number(data.get('rallyMentions')),
-        },
-        economy: {
-          taxEnabled: data.has('taxEnabled'),
-          taxMinuteUtc: Number(data.get('taxMinuteUtc')),
-        },
-        ...(String(data.get('mapPool') ?? '').trim()
-          ? {
-              maps: {
-                pool: String(data.get('mapPool'))
-                  .split('\n')
-                  .map((v) => v.trim())
-                  .filter(Boolean),
-                mode: String(data.get('mapMode')) as 'direct' | 'random' | 'vote',
-                count: Number(data.get('mapCount')),
-                shortlist: Number(data.get('mapShortlist')),
-                voting: String(data.get('mapVoting')) as 'plurality' | 'approval',
-                tie: String(data.get('mapTie')) as 'random' | 'alphabetical',
-                noVotes: String(data.get('mapNoVotes')) as 'random' | 'cancel',
-                seconds: Number(data.get('mapSeconds')),
-                recentAvoid: Number(data.get('mapRecent')),
-                countsAsCheckIn: data.has('mapCheckIn'),
-              },
-            }
-          : {}),
-        modules: Object.fromEntries(
-          Object.keys(emptyModules).map((key) => [key, data.has(`module-${key}`)]),
-        ) as Queue['modules'],
-      };
-      if (q.isDefault)
-        settings.queues = settings.queues.map((v) =>
-          v.channelId === q.channelId ? { ...v, isDefault: false } : v,
-        );
-      settings.queues = existing
-        ? settings.queues.map((v) => (v.id === q.id ? q : v))
-        : [...settings.queues, q];
-    }
-    await save(settings);
   });
 });
 app.addEventListener('click', (event) => {
+  if (handleEditorClick(event)) return;
   const tab = (event.target as Element).closest<HTMLButtonElement>('[data-view]');
   if (tab && !busy && isOrganizerView(tab.dataset.view ?? null)) {
     selectView(tab.dataset.view as OrganizerView);
@@ -843,6 +906,10 @@ app.addEventListener('click', (event) => {
   if (!button) return;
   void run(async () => {
     switch (button.dataset.action) {
+      case 'refresh-records':
+        if (snapshot) await refreshRecords();
+        else if (guildId) await loadCommunity(guildId);
+        break;
       case 'load-players':
         await loadMorePlayers();
         break;
@@ -853,46 +920,24 @@ app.addEventListener('click', (event) => {
         await applyImport({
           api,
           url: communityUrl,
-          save,
-          reload: () => loadCommunity(guildId),
+          reload: refreshRecords,
           notice,
         });
         break;
       case 'logout':
+        if (!canLeave()) break;
         await api('/api/logout', { method: 'POST' });
+        draft = snapshot ? new SettingsDraft(snapshot) : null;
         location.reload();
         break;
+      case 'check-access':
+        await refreshSetup();
+        break;
       case 'reload':
+        if (!canLeave()) break;
         if (guildId) await loadCommunity(guildId);
         else location.reload();
         break;
-      case 'remove':
-        if (button.dataset.confirm !== 'yes') {
-          button.dataset.confirm = 'yes';
-          button.textContent = 'Confirm removal';
-          button.insertAdjacentHTML(
-            'afterend',
-            '<button type="button" data-action="cancel-remove">Cancel removal</button>',
-          );
-          notice(
-            'Remove this queue from setup? Its player records and match history will remain. Click Confirm removal to apply.',
-          );
-        } else if (snapshot)
-          await save({
-            ...snapshot.settings,
-            queues: snapshot.settings.queues.filter((q) => q.id !== button.dataset.id),
-          });
-        break;
-      case 'cancel-remove': {
-        const remove = button.closest('form')?.querySelector<HTMLElement>('[data-action="remove"]');
-        if (remove) {
-          delete remove.dataset.confirm;
-          remove.textContent = 'Remove queue';
-        }
-        button.remove();
-        notice('Queue removal cancelled.');
-        break;
-      }
       case 'forgive': {
         const q = snapshot?.settings.queues[0];
         if (q)
@@ -909,7 +954,7 @@ app.addEventListener('click', (event) => {
   });
 });
 app.addEventListener('keydown', (event) => {
-  const tab = (event.target as Element).closest<HTMLButtonElement>('[data-view]');
+  const tab = (event.target as Element).closest<HTMLButtonElement>('[role=tab][data-view]');
   if (!tab || busy || !isOrganizerView(tab.dataset.view ?? null)) return;
   const position = organizerViews.indexOf(tab.dataset.view as OrganizerView);
   const next =
@@ -931,18 +976,231 @@ app.addEventListener('change', (event) => {
   if (input.dataset.filter) updateFilter(input);
   const form = input.closest('form');
   if (form?.dataset.review) cancelRepair(form);
-  if (input.id === 'community' && input.value) void run(() => loadCommunity(input.value));
-  if (input.name === 'gameId' && form?.dataset.kind === 'queue') {
-    const pool = form.querySelector<HTMLTextAreaElement>('[name="mapPool"]');
-    const selected = snapshot?.settings.games.find((g) => g.id === input.value);
-    if (pool && !pool.value.trim() && selected?.catalogId === 'aoe2')
-      pool.value = aoe2Maps.join('\n');
+  if (input.id === 'community' && input.value) {
+    if (canLeave()) void run(() => loadCommunity(input.value));
+    else input.value = guildId;
   }
 });
 app.addEventListener('input', (event) => {
   const input = event.target as HTMLInputElement;
   if (input.dataset.filter === 'player-search') updateFilter(input);
 });
+
+function editRoute() {
+  const url = new URL(location.href);
+  url.searchParams.set('queue', selectedQueue);
+  url.searchParams.set('section', category);
+  if (url.href !== location.href) history.pushState(null, '', url);
+}
+function captureEdit(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const form = input.closest<HTMLFormElement>('form[data-config]');
+  if (form && draft) {
+    draft.capture(form);
+    input.removeAttribute('aria-invalid');
+    input.parentElement?.querySelector('.field-error')?.remove();
+    if (input.type === 'checkbox') {
+      const text = input.closest('.switch-control')?.querySelector('.switch-text');
+      if (text) text.textContent = input.checked ? 'On' : 'Off';
+    }
+    updateDirty();
+    if (input.name === 'gameId' && event.type === 'change') render();
+  }
+  if (input.hasAttribute('data-settings-search')) {
+    settingsSearch = input.value;
+    applyCategories();
+  }
+  if (input.hasAttribute('data-queue-select')) {
+    selectedQueue = input.value;
+    settingsSearch = '';
+    editRoute();
+    render();
+  }
+  if (input.closest('[data-kind="import-preview"]')) invalidateImport();
+}
+app.addEventListener('input', captureEdit);
+app.addEventListener('change', captureEdit);
+function handleEditorClick(event: MouseEvent): boolean {
+  const target = event.target as Element;
+  if (target.closest('[data-discord-invite]')) awaitingDiscordReturn = true;
+  const gameSummary = target.closest<HTMLElement>('.game-settings > summary');
+  if (gameSummary) {
+    const details = gameSummary.parentElement as HTMLDetailsElement;
+    const url = new URL(location.href);
+    if (details.open) url.searchParams.delete('game');
+    else url.searchParams.set('game', details.id.replace('game-settings-', ''));
+    if (url.href !== location.href) history.pushState(null, '', url);
+  }
+  if (target.closest('[data-discard-import]')) {
+    invalidateImport();
+    return true;
+  }
+  const help = target.closest<HTMLElement>('[data-help]');
+  if (help) {
+    openDialog(help.dataset.helpTitle!, `<p>${escape(help.dataset.help)}</p>`);
+    return true;
+  }
+  const reset = target.closest<HTMLElement>('[data-reset]');
+  if (reset && !busy) {
+    const input = reset
+      .closest('form')!
+      .elements.namedItem(reset.dataset.reset!) as HTMLInputElement;
+    input.value = reset.dataset.default!;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+  const cat = target.closest<HTMLElement>('[data-category]');
+  if (cat) {
+    category = cat.dataset.category as Category;
+    settingsSearch = '';
+    const search = app.querySelector<HTMLInputElement>('[data-settings-search]');
+    if (search) search.value = '';
+    editRoute();
+    applyCategories();
+    return true;
+  }
+  const gameLink = target.closest<HTMLElement>('[data-game-link]');
+  if (gameLink) {
+    selectView('setup');
+    const url = new URL(location.href);
+    url.searchParams.set('game', gameLink.dataset.gameLink!);
+    history.replaceState(null, '', url);
+    const details = document.getElementById(
+      `game-settings-${gameLink.dataset.gameLink}`,
+    ) as HTMLDetailsElement;
+    if (details) {
+      details.open = true;
+      details.scrollIntoView({ block: 'start' });
+    }
+    return true;
+  }
+  const rank = target.closest<HTMLElement>('[data-add-rank], [data-remove-rank]');
+  if (rank && !busy && draft) {
+    const form = rank.closest<HTMLFormElement>('form')!;
+    if (rank.hasAttribute('data-remove-rank')) rank.closest('[data-rank-row]')!.remove();
+    else {
+      const indexes = [...form.querySelectorAll<HTMLInputElement>('[name$="-threshold"]')].map(
+        (el) => Number(el.name.split('-')[1]),
+      );
+      form.querySelector('[data-rank-rows]')!.insertAdjacentHTML(
+        'beforeend',
+        rankRow(
+          Math.max(-1, ...indexes) + 1,
+          undefined,
+          setup.roles.map((r) => ({
+            id: r.id,
+            name: r.name + (r.reason ? ` — ${r.reason}` : ''),
+            disabled: !r.rankEligible,
+          })),
+        ),
+      );
+    }
+    draft.capture(form);
+    updateDirty();
+    return true;
+  }
+  const action = target.closest<HTMLElement>('[data-edit]');
+  if (!action) return false;
+  if (busy) return true;
+  if (action.dataset.edit === 'drawer') {
+    const dialog = openDialog(
+      'Your community',
+      `<nav aria-label="Communities">${guilds.map((g) => `<button type="button" class="drawer-link" data-community="${g.id}" ${g.id === guildId ? 'aria-current="true"' : ''}>${escape(g.name)}</button>`).join('')}</nav><h3>Queues</h3>${(draft?.working.queues ?? []).map((q) => `<button type="button" class="drawer-link" data-drawer-queue="${q.id}">${escape(q.name)}</button>`).join('')}<button type="button" class="drawer-link" data-drawer-setup>Community setup</button>`,
+      'drawer',
+    );
+    dialog.addEventListener('click', (e) => {
+      const b = (e.target as Element).closest<HTMLElement>('button');
+      if (!b) return;
+      if (b.dataset.community && (b.dataset.community === guildId || canLeave())) {
+        dialog.close();
+        if (b.dataset.community !== guildId) void run(() => loadCommunity(b.dataset.community!));
+      }
+      if (b.dataset.drawerQueue) {
+        selectedQueue = b.dataset.drawerQueue;
+        dialog.close();
+        selectView('queues');
+        editRoute();
+        render();
+      }
+      if (b.hasAttribute('data-drawer-setup')) {
+        dialog.close();
+        selectView('setup');
+      }
+    });
+    return true;
+  }
+  if (!draft || !snapshot) return true;
+  if (action.dataset.edit === 'add-queue') {
+    selectedQueue = draft.addQueue(draft.working.games[0].id, setup.channels[0].id);
+    category = 'basics';
+    settingsSearch = '';
+    editRoute();
+    render();
+  }
+  if (
+    action.dataset.edit === 'remove-queue' &&
+    confirm('Remove this queue when you save changes? Its player and match records will remain.')
+  ) {
+    draft.removeQueue(action.dataset.id!);
+    selectedQueue = '';
+    render();
+  }
+  if (
+    action.dataset.edit === 'discard' &&
+    confirm('Discard all unsaved settings for this community?')
+  ) {
+    draft = new SettingsDraft(snapshot);
+    conflict = false;
+    render();
+  }
+  if (action.dataset.edit === 'reload-conflict' && canLeave())
+    void run(() => loadCommunity(guildId));
+  if (action.dataset.edit === 'save') {
+    const result = draft.validate();
+    if (!result.success) {
+      showIssues(
+        result.error.issues.map((i) => ({
+          path: i.path as (string | number)[],
+          message: i.message,
+        })),
+      );
+      notice(result.error.issues.map((i) => i.message).join(' '), true);
+    } else void run(() => save(result.data));
+  }
+  return true;
+}
+window.addEventListener('beforeunload', (event) => {
+  if (draft?.dirty) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
+});
+window.addEventListener('popstate', () => {
+  if (location.pathname === '/stats') return;
+  const url = new URL(location.href);
+  const id = url.searchParams.get('community');
+  if (id && id !== guildId) {
+    if (!busy && canLeave()) void run(() => loadCommunity(id));
+    else {
+      url.searchParams.set('community', guildId);
+      history.pushState(null, '', url);
+    }
+    return;
+  }
+  const view = url.searchParams.get('view');
+  if (isOrganizerView(view)) viewsByCommunity.set(guildId, view);
+  selectedQueue = url.searchParams.get('queue') ?? '';
+  category = (url.searchParams.get('section') ?? 'basics') as Category;
+  render();
+});
+installViewport();
+const recheckAfterDiscord = () => {
+  if (!awaitingDiscordReturn || document.visibilityState === 'hidden' || busy || !snapshot) return;
+  awaitingDiscordReturn = false;
+  void run(refreshSetup);
+};
+window.addEventListener('focus', recheckAfterDiscord);
+document.addEventListener('visibilitychange', recheckAfterDiscord);
 
 async function start() {
   bootstrap = await api<Bootstrap>('/api/bootstrap');

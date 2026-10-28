@@ -12,12 +12,17 @@ The distribution includes source, pinned dependencies, SQLite migrations, comman
 
 ## Organizer console
 
-- **Queues:** create and edit queue rules. Saved queues start collapsed; expand one to change its settings.
+- **Overview:** review saved setup readiness, enabled queues, recent active matches and delivery problems. Counts identify when they cover only loaded records.
+- **Queues:** choose a queue, search its settings, or browse Basics, Access, Match Preparation, Maps, Engagement and Voice / Rally.
 - **Matches:** review recent games, filter by queue/status, and open an individual record for administrative actions.
-- **Players:** inspect ratings and gold, filter by game/name, manage record policies, or preview an import. Use Load more players to reach records beyond the first page. Imports require a separate reviewed Apply action.
-- **Setup:** add games and check the bot's access to configured Discord channels.
+- **Players:** inspect ratings and gold, filter the loaded records by game/name, manage individual players, or preview an import. Use Load more players to reach records beyond the first page. Imports require a separate reviewed Apply action; changing the file or mapping invalidates the preview.
+- **Setup:** add games, edit shared ratings, leaderboard policy, ranks, nickname decoration and connectors, and check Discord access. Rating engines become locked once a game has stored player ratings. Tax time applies to every queue for a game; enable switches remain per queue.
 
-Switching views preserves unsaved inputs. Refresh intentionally reloads the saved state; stale saves are rejected. Views and filters do not poll for updates. Start a Discord cancellation with `/report abort`; match cards have no Cancel match button, and older ones direct the user to the command. Captain cancellation/draw requests appear in their own messages for the opposing captain to agree. An administrator can cancel immediately using the command. Completed check-in reminders are removed.
+Configuration edits form one community-wide draft. Save changes submits all edits atomically against the saved revision. Navigation, category changes, record refreshes and failed requests preserve edits, including temporarily invalid fields. Discard and changing community require confirmation when edits exist. A revision conflict offers continued editing or an explicitly confirmed Reload latest; it never overwrites newer settings. Refresh retrieves live records independently. Check access again rechecks saved setup and Discord permissions while preserving a draft. Returning from the invitation window also rechecks access.
+
+The organizer uses a sidebar above 640px and a bottom navigation bar on phones. Queue and section selection are shareable in the URL. Public statistics have their own leaderboard/profile navigation, recent rating chart and equivalent table. See [UI verification](ui-verification.md) for browser coverage and device acceptance checks.
+
+Views and filters do not poll for updates. Start a Discord cancellation with `/report abort`; match cards have no Cancel match button, and older ones direct the user to the command. Captain cancellation/draw requests appear in their own messages for the opposing captain to agree. An administrator can cancel immediately using the command. Completed check-in reminders are removed.
 
 ## Discord administrator menu
 
@@ -54,7 +59,7 @@ Player and captain commands are unchanged. The previous administrator command pa
 6. In Discord, add exactly `APP_ORIGIN/auth/callback` as the OAuth redirect, and set the signed interaction endpoint to `APP_ORIGIN/interactions`. Discord's validation PING must succeed. Use a guild command registration for a disposable server first.
 7. Invite the bot with `bot applications.commands` scopes and permissions 84992. Check channel overrides. Open the web app, sign in, add a catalog/custom game and save a queue. Owner/Administrator/Manage Server access controls web setup; ordinary members cannot manage it.
 8. Test a complete Discord join → formation → check-in → result and compare the saved web history. A health response, bot invitation or command discovery alone is not acceptance.
-9. Enable gold, stories and maps one at a time, and test their complete flow. Leave quizzes and civ modules off; they are deferred in 0.8. The web view is on demand; Refresh fetches new state.
+9. Enable gold, stories and maps one at a time, and test their complete flow. Civilization picking is available for supported games; quizzes remain unavailable. The web view is on demand; Refresh fetches new records without discarding settings drafts.
 10. Only after acceptance should you change APP_ENV to production, register the desired global commands and invite real communities. Production cutover of the existing Railway community needs separate approval and the migration checklist below.
 
 Use the standalone helper with your explicit private file and configuration:

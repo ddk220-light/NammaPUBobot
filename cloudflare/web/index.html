@@ -2,8 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f5f6f7" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1f2125" />
     <meta
       name="description"
       content="Organizer tools for your community's Discord games, queues and player records."
@@ -11,12 +11,15 @@
     <title>Community Games — organizer console</title>
   </head>
   <body>
+    <a class="skip-link" href="#app">Skip to content</a>
     <div class="shell">
       <header>
         <a class="brand" href="/">Community Games</a
         ><span id="environment" class="badge">SETUP</span>
       </header>
-      <main id="app" aria-busy="true"><p class="muted">Loading your communities…</p></main>
+      <main id="app" tabindex="-1" aria-busy="true">
+        <p class="muted">Loading your communities…</p>
+      </main>
       <footer>Community Games · Organizer console <span id="version"></span></footer>
     </div>
     <script type="module" src="/main.ts"></script>

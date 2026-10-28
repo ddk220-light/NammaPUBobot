@@ -1,13 +1,12 @@
 import { seedCsv } from '../src/domain/import-csv';
-import type { Settings, Snapshot } from '../src/domain/config';
-import { defaultRecords, importSchema, type ImportBundle } from '../src/domain/records';
+import type { Snapshot } from '../src/domain/config';
+import { importSchema, type ImportBundle } from '../src/domain/records';
 
 const esc = (s: unknown) =>
   String(s).replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
   );
-const ck = (b: boolean) => (b ? ' checked' : '');
 interface Preview {
   id: string;
   target: string;
@@ -17,7 +16,14 @@ interface Preview {
   warnings: string[];
   counts: Record<string, number>;
 }
-let pending: { bundle: ImportBundle; preview: Preview } | null = null;
+let pending: { bundle: ImportBundle; preview: Preview; url: string } | null = null;
+let generation = 0;
+export function invalidateImport() {
+  pending = null;
+  generation++;
+  const box = document.querySelector('#import-preview');
+  if (box) box.innerHTML = '';
+}
 export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
   const s = snapshot.settings;
   const games = s.games.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
@@ -32,44 +38,6 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
   };
   return `<section class="settings-section" aria-labelledby="player-settings-heading"><h2 id="player-settings-heading">Player settings</h2>
     <p class="view-description">Ratings and gold are separate for each community and game. External profile links are optional and unverified.</p>
-    ${
-      s.games.length
-        ? s.games
-            .map((g) => {
-              const p = g.records ?? defaultRecords;
-              return `<details class="rating-options"><summary>${esc(g.name)}: visibility, ranks and inactivity</summary>
-        <form data-kind="records-policy" data-id="${g.id}">
-          <h3>Statistics and leaderboard</h3><div class="fields">
-            <label>Statistics visibility<select name="visibility">${[
-              ['public', 'Public'],
-              ['members', 'Server members'],
-              ['admins', 'Administrators'],
-            ]
-              .map(
-                ([value, label]) =>
-                  `<option value="${value}"${value === p.visibility ? ' selected' : ''}>${label}</option>`,
-              )
-              .join('')}</select></label>
-            <label>Minimum leaderboard matches<input name="minimumMatches" type="number" min="0" max="10000" value="${p.minimumMatches}" required /></label>
-            <label>Leaderboard recency (days; 0 disables)<input name="recentDays" type="number" min="0" max="3650" value="${p.recentDays}" required /></label>
-          </div>
-          <h3>Inactivity and Discord ranks</h3><div class="fields">
-            <label class="toggle"><input type="checkbox" name="decay"${ck(p.inactivity.enabled)} /> Weekly inactivity decay after 30 days</label>
-            <label>Weekly rating decay<input name="weeklyRating" type="number" min="0" max="100" value="${p.inactivity.weeklyRating}" required /></label>
-            <label>Weekly deviation increase<input name="weeklyDeviation" type="number" min="0" max="500" value="${p.inactivity.weeklyDeviation}" required /></label>
-            <label class="toggle"><input type="checkbox" name="decorateNickname"${ck(p.decorateNickname)} /> Decorate nicknames with rating</label>
-          </div>
-          <label>Rank thresholds<textarea name="ranks" rows="7" aria-describedby="ranks-help-${g.id}">${esc(p.ranks.map((r) => `${r.threshold},${r.label},${r.roleId ?? ''}`).join('\n'))}</textarea></label>
-          <p id="ranks-help-${g.id}" class="form-help">One rank per line: rating, label, optional Discord role ID.</p>
-          <p class="form-help">Decay runs on Mondays in UTC. It respects rank floors and ignores recently active or never-played players. Discord role and nickname updates require the bot’s permissions and role hierarchy.</p>
-          <div class="actions"><button class="primary">Save player policy</button><a href="/stats?community=${snapshot.communityId}&game=${g.id}">Open game statistics</a></div>
-        </form>
-      </details>`;
-            })
-            .join('')
-        : '<p class="empty-state">Add a game in Setup to configure player records.</p>'
-    }
-
     ${
       s.games.length
         ? `<details class="rating-options"><summary>Visibility and profile links</summary>
@@ -89,7 +57,7 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
         : ''
     }
 
-    <details class="rating-options"><summary>Import player records</summary>
+    <details class="rating-options" data-import-section><summary>Import player records</summary>
       <p class="view-description">Seed imports add new players without changing existing records. Full history needs an empty destination game and matching result and rating-history totals.</p>
       ${
         s.games.length && s.queues.length
@@ -141,14 +109,14 @@ function importReview(bundle: ImportBundle, preview: Preview, snapshot: Snapshot
     <div class="table-wrap"><table><caption>Import destinations</caption><thead><tr><th scope="col">Source ladder</th><th scope="col">Game</th><th scope="col">Queue mappings</th></tr></thead><tbody>${destinations}</tbody></table></div>
     ${preview.errors.length ? `<div class="notice error"><h4>Fix before importing</h4><ul class="review-issues">${preview.errors.map((message) => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
     ${preview.warnings.length ? `<div class="review-warnings"><h4>Review these notes</h4><ul class="review-issues">${preview.warnings.map((message) => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
+    <details class="import-rows"><summary>Review ${bundle.players.length} player records</summary><div class="import-player-cards">${bundle.players.map(({ player }) => `<article class="import-player-card"><h4>${esc(player.name)}</h4><dl><div><dt>Discord ID</dt><dd>${esc(player.id)}</dd></div><div><dt>Rating</dt><dd>${esc(player.rating)}</dd></div><div><dt>Deviation</dt><dd>${esc(player.deviation)}</dd></div></dl></article>`).join('')}</div></details>
     <details class="technical-details"><summary>Technical mappings and preview</summary><pre>${esc(JSON.stringify({ source: bundle.source, mode: bundle.mode, mappings: bundle.mappings, ...preview }, null, 2))}</pre></details>
-    ${preview.ok && !preview.alreadyApplied ? '<div class="actions"><button type="button" class="primary" data-action="apply-import" aria-describedby="import-review-summary">Apply reviewed import</button></div>' : ''}
+    ${preview.ok && !preview.alreadyApplied ? '<div class="actions import-apply"><button type="button" data-discard-import>Discard preview</button><button type="button" class="primary" data-action="apply-import" aria-describedby="import-review-summary">Apply reviewed import</button></div>' : ''}
   </section>`;
 }
 interface Helpers {
   api: <T>(path: string, options?: RequestInit) => Promise<T>;
   url: (suffix: string) => string;
-  save: (settings: Settings) => Promise<void>;
   reload: () => Promise<void>;
   notice: (message: string) => void;
 }
@@ -158,32 +126,6 @@ export async function onboardingSubmit(
   snapshot: Snapshot,
   h: Helpers,
 ): Promise<boolean> {
-  if (form.dataset.kind === 'records-policy') {
-    const settings = structuredClone(snapshot.settings),
-      g = settings.games.find((g) => g.id === form.dataset.id)!;
-    const ranks = String(data.get('ranks'))
-      .split('\n')
-      .filter((v) => v.trim())
-      .map((line) => {
-        const [threshold, label, roleId, ...extra] = line.split(',').map((v) => v.trim());
-        if (extra.length) throw new Error('Use rating,label,optional role ID for each rank.');
-        return { threshold: Number(threshold), label, roleId: roleId || null };
-      });
-    g.records = {
-      visibility: String(data.get('visibility')) as 'members',
-      minimumMatches: Number(data.get('minimumMatches')),
-      recentDays: Number(data.get('recentDays')),
-      ranks,
-      decorateNickname: data.has('decorateNickname'),
-      inactivity: {
-        enabled: data.has('decay'),
-        weeklyRating: Number(data.get('weeklyRating')),
-        weeklyDeviation: Number(data.get('weeklyDeviation')),
-      },
-    };
-    await h.save(settings);
-    return true;
-  }
   if (form.dataset.kind === 'player-record') {
     const input = {
       id: (form.dataset.actionId ??= crypto.randomUUID()),
@@ -214,7 +156,8 @@ export async function onboardingSubmit(
     return true;
   }
   if (form.dataset.kind === 'import-preview') {
-    pending = null;
+    invalidateImport();
+    const current = generation;
     const previewBox = document.querySelector<HTMLElement>('#import-preview')!;
     previewBox.innerHTML = '';
     const file = data.get('file') as File | null;
@@ -234,7 +177,8 @@ export async function onboardingSubmit(
       method: 'POST',
       body: JSON.stringify(bundle),
     });
-    pending = { bundle, preview };
+    if (current !== generation || !previewBox.isConnected) return true;
+    pending = { bundle, preview, url: h.url('import/apply') };
     previewBox.innerHTML = importReview(bundle, preview, snapshot);
     previewBox.querySelector<HTMLElement>('#import-review-heading')?.focus();
     return true;
@@ -242,7 +186,13 @@ export async function onboardingSubmit(
   return false;
 }
 export async function applyImport(h: Helpers) {
-  if (!pending || !pending.preview.ok) throw new Error('Preview the import first.');
+  if (
+    !pending ||
+    !pending.preview.ok ||
+    pending.preview.alreadyApplied ||
+    pending.url !== h.url('import/apply')
+  )
+    throw new Error('Preview the import first.');
   const result = await h.api<{ alreadyApplied: boolean; counts: Record<string, number> }>(
     h.url('import/apply'),
     {

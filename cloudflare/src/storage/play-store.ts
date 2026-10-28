@@ -3124,6 +3124,12 @@ export class PlayStore {
       .exec('SELECT user_id,until_ms,reason,actor_id FROM noadds WHERE until_ms>?', Date.now())
       .toArray();
     return {
+      gameState: snapshot.settings.games.map((g) => ({
+        id: g.id,
+        ratingEngineLocked:
+          this.sql.exec('SELECT 1 FROM profiles WHERE game_id=? LIMIT 1', g.id).toArray().length >
+          0,
+      })),
       matches,
       players,
       playersTotal,

@@ -21,7 +21,8 @@
     "doctor": "node scripts/doctor.mjs",
     "cost:check": "node scripts/cost-report.mjs",
     "operator:config": "node scripts/operator-config.mjs",
-    "operator:backup": "node scripts/operational-backup.mjs"
+    "operator:backup": "node scripts/operational-backup.mjs",
+    "test:ui": "npm run build:web && playwright test"
   },
   "dependencies": {
     "hono": "4.13.13",

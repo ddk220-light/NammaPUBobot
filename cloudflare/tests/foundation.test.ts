@@ -593,3 +593,84 @@ describe('Discord permission precedence', () => {
     ).toBe(true);
   });
 });
+
+describe('responsive organizer contracts', () => {
+  it.each([
+    [`/?community=${guild}&view=setup`, `/?community=${guild}&view=setup`],
+    ['https://evil.example/?view=setup', '/'],
+    ['/?community=invalid&view=setup', '/'],
+    ['/api/logout', '/'],
+  ])('resumes an allowed organizer return path: %s', async (requested, expected) => {
+    const login = await http(`/auth/login?returnTo=${encodeURIComponent(requested)}`);
+    const state = new URL(login.headers.get('Location')!).searchParams.get('state')!;
+    const callback = await http(`/auth/callback?code=test-code&state=${state}`, {
+      headers: { Cookie: `cg-oauth=${state}` },
+    });
+    expect(callback.headers.get('Location')).toBe(expected);
+  });
+  it('advertises shipped capabilities separately from configured features', async () => {
+    const response = await http('/api/bootstrap');
+    expect(((await response.json()) as { capabilities: unknown }).capabilities).toEqual({
+      matchmaking: true,
+      gold: true,
+      predictions: true,
+      maps: true,
+      civs: true,
+      stories: true,
+      quiz: false,
+    });
+  });
+  it.each([403, 404, 503])(
+    'keeps saved setup available when bot discovery returns %i',
+    async (status) => {
+      await session();
+      expect((await save()).status).toBe(200);
+      const transport = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        if (String(input).includes(`/guilds/${guild}/roles`)) return Response.json({}, { status });
+        return transport(input, init);
+      });
+      const response = await http(`/api/communities/${guild}/setup`, { headers: headers() });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        snapshot: { revision: number };
+        access: { status: string };
+        channels: unknown[];
+        gameState: unknown[];
+      };
+      expect(body.snapshot.revision).toBe(1);
+      expect(body.access.status).toBe(status === 503 ? 'unavailable' : 'needs_access');
+      expect(body.channels).toEqual([]);
+      expect(body.gameState).toEqual([{ id: settings.games[0].id, ratingEngineLocked: false }]);
+      admin = false;
+      expect((await http(`/api/communities/${guild}/setup`, { headers: headers() })).status).toBe(
+        403,
+      );
+    },
+  );
+  it('returns field paths and distinguishes domain conflicts from stale revisions', async () => {
+    await session();
+    const invalid = structuredClone(settings);
+    invalid.queues[0].size = 1;
+    const validation = await save(guild, invalid);
+    expect(validation.status).toBe(400);
+    expect(await validation.json()).toMatchObject({
+      code: 'invalid_settings',
+      issues: [{ path: ['settings', 'queues', 0, 'size'] }],
+    });
+    expect((await save()).status).toBe(200);
+    const mismatch = structuredClone(settings);
+    mismatch.queues.push({
+      ...mismatch.queues[0],
+      id: crypto.randomUUID(),
+      name: 'Other queue',
+      ratingEngine: 'flat',
+    });
+    expect(await (await save(guild, mismatch, 1)).json()).toMatchObject({
+      code: 'settings_conflict',
+    });
+    expect(await (await save(guild, settings, 0)).json()).toMatchObject({
+      code: 'revision_conflict',
+    });
+  });
+});

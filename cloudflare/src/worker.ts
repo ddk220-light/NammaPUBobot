@@ -1,3 +1,4 @@
+import { capabilities, type DiscordSetup } from './domain/setup';
 import { lobbyEventSchema } from './domain/lobby';
 import { Hono, type Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -169,7 +170,17 @@ app.onError((error, c) => {
         : {}),
     }),
   );
-  return c.json({ error: message, code, requestId: c.get('requestId') }, status as 400);
+  return c.json(
+    {
+      error: message,
+      code,
+      requestId: c.get('requestId'),
+      ...(error instanceof z.ZodError
+        ? { issues: error.issues.map(({ path, message }) => ({ path, message })) }
+        : {}),
+    },
+    status as 400,
+  );
 });
 
 app.get('/health', (c) =>
@@ -357,14 +368,7 @@ app.get('/api/bootstrap', async (c) => {
     catalog,
     user: s?.session.user ?? null,
     csrf: s?.session.csrf ?? null,
-    capabilities: {
-      matchmaking: true,
-      gold: false,
-      quiz: false,
-      civs: false,
-      maps: false,
-      stories: false,
-    },
+    capabilities,
   });
 });
 
@@ -379,9 +383,12 @@ app.get('/auth/login', async (c) => {
     const url = new URL(requested, base);
     if (
       url.origin === base &&
-      url.pathname === '/stats' &&
-      snowflake.safeParse(url.searchParams.get('community')).success &&
-      z.uuid().safeParse(url.searchParams.get('game')).success
+      ((url.pathname === '/stats' &&
+        snowflake.safeParse(url.searchParams.get('community')).success &&
+        z.uuid().safeParse(url.searchParams.get('game')).success) ||
+        (url.pathname === '/' &&
+          (!url.searchParams.has('community') ||
+            snowflake.safeParse(url.searchParams.get('community')).success)))
     )
       returnTo = url.pathname + url.search;
   }
@@ -537,11 +544,31 @@ app.get('/api/communities/:guild/config', async (c) =>
 );
 app.get('/api/communities/:guild/setup', async (c) => {
   const guildId = c.req.param('guild');
-  return c.json({
-    snapshot: await c.env.COMMUNITIES.getByName(guildId).read(guildId),
-    ...(await guildSetup(c.env, guildId)),
-    records: await c.env.COMMUNITIES.getByName(guildId).records(guildId),
-  });
+  const stub = c.env.COMMUNITIES.getByName(guildId);
+  const [snapshot, records] = await Promise.all([stub.read(guildId), stub.records(guildId)]);
+  let setup: DiscordSetup;
+  try {
+    setup = await guildSetup(c.env, guildId);
+  } catch (error) {
+    if (!(error instanceof DiscordFailure)) throw error;
+    const needsAccess = error.status === 403 || error.status === 404;
+    setup = {
+      channels: [],
+      moderatorRoles: [],
+      roles: [],
+      voiceChannels: [],
+      access: {
+        status: needsAccess ? 'needs_access' : 'unavailable',
+        message: needsAccess
+          ? 'Invite the bot or restore its server access, then check again.'
+          : 'Discord could not verify access. Your saved settings are available; retry shortly.',
+        manageRoles: false,
+        manageNicknames: false,
+        ...(error.retryAfter ? { retryAfter: error.retryAfter } : {}),
+      },
+    };
+  }
+  return c.json({ snapshot, ...setup, records, gameState: records.gameState });
 });
 app.get('/api/communities/:guild/audit', async (c) =>
   c.json({
@@ -755,7 +782,7 @@ app.put('/api/communities/:guild/config', async (c) => {
   if (!result.ok)
     throw new Problem(
       409,
-      'revision_conflict',
+      'reason' in result ? 'settings_conflict' : 'revision_conflict',
       ('reason' in result ? result.reason : null) ??
         'Settings changed in another tab. Refresh before saving.',
     );
