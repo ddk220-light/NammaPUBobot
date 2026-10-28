@@ -46,6 +46,7 @@ export interface Match {
   lobby?: LobbyBinding;
   lobbySearch?: LobbySearch;
   lobbyAutoDisabled?: boolean;
+  test?: { markedBy: string; markedAt: number };
 }
 export const personSchema = z
   .object({

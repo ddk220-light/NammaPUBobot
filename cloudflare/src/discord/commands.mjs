@@ -441,6 +441,29 @@ export function adminCommandRoute(group, action) {
 
 export const commands = [
   {
+    name: 'test',
+    description: 'Admins and bot moderators: populate a live queue or mark a match as a test',
+    type: 1,
+    default_member_permissions: null,
+    dm_permission: false,
+    options: [
+      sub('populate', 'Add random real members to a live queue (default 8)', [
+        queue,
+        {
+          name: 'count',
+          description: 'Number of players to add (default 8)',
+          type: 4,
+          min_value: 2,
+          max_value: 16,
+        },
+      ]),
+      sub('checkin', 'Mark the live match as TEST and check everyone in; no recorded result', [
+        { ...match, description: 'Match ID from /admin; required when several matches are active' },
+        queue,
+      ]),
+    ],
+  },
+  {
     name: 'admin',
     description: 'Open queue status, match history and administrator controls',
     type: 1,

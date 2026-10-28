@@ -1,4 +1,5 @@
 import { capabilities, type DiscordSetup } from './domain/setup';
+import { buildInfo } from './build-info';
 import { lobbyEventSchema } from './domain/lobby';
 import { Hono, type Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -192,7 +193,7 @@ app.get('/health', (c) =>
     ok: true,
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.16.0',
+    ...buildInfo,
   }),
 );
 app.post('/interactions', (c) => interactions(c.req.raw, c.env, c.executionCtx));
@@ -365,7 +366,7 @@ app.get('/api/bootstrap', async (c) => {
   return c.json({
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.16.0',
+    ...buildInfo,
     oauthReady,
     discordReady,
     inviteUrl: invite,

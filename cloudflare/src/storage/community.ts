@@ -11,6 +11,8 @@ import type { ImportBundle, RecordAction } from '../domain/records';
 import { EconomyStore } from './economy-store';
 import { adminRequestSchema, type AdminRequest } from '../domain/admin';
 import type { EconomyImport } from '../domain/economy-import';
+import { testRequestSchema, type RetiredTestSession } from '../domain/testing';
+import { testMembers } from '../discord/test-members';
 
 export class Community extends DurableObject<Env> {
   private playStore: PlayStore;
@@ -55,8 +57,13 @@ export class Community extends DurableObject<Env> {
       sql.exec('UPDATE schema_version SET version=7');
     });
     this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
-    this.recordStore.backfill();
+    if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
     this.playStore = new PlayStore(ctx, env, (guild) => this.read(guild), this.recordStore);
+    const retiredTest = ctx.storage.kv.get<RetiredTestSession>('testSession');
+    if (ctx.storage.kv.get('testMode') && retiredTest) {
+      retiredTest.expiresAt = 0;
+      ctx.storage.kv.put('testSession', retiredTest);
+    }
     // Adopt periodic queue visibility for existing communities on their next wake.
     ctx.blockConcurrencyWhile(() => this.playStore.schedule());
   }
@@ -166,7 +173,7 @@ export class Community extends DurableObject<Env> {
         this.playStore.configure(result.snapshot.settings, old),
       );
       this.playStore.reconcileLobbies();
-      this.recordStore.configure(guildId, old);
+      if (!this.ctx.storage.kv.get('testMode')) this.recordStore.configure(guildId, old);
       await this.playStore.schedule();
     }
     return result;
@@ -267,6 +274,43 @@ export class Community extends DurableObject<Env> {
   }
   play(guildId: string, action: Action) {
     return this.playStore.act(guildId, action);
+  }
+  async testCommand(guild: string, input: unknown) {
+    try {
+      const request = testRequestSchema.parse(input);
+      const { queue } = this.playStore.testContext(guild, request);
+      const previous = this.playStore.testReceipt(request);
+      if (previous) return previous;
+      let members: Action['actor'][] = [];
+      if (request.op === 'populate') {
+        const known = this.ctx.storage.sql
+          .exec<{ user_id: string }>(
+            'SELECT user_id FROM profiles WHERE game_id=? UNION SELECT user_id FROM queue_entries LIMIT 1000',
+            queue.gameId,
+          )
+          .toArray()
+          .map((r) => r.user_id);
+        members = await testMembers(
+          this.env,
+          guild,
+          request.channelId,
+          request.count ?? 8,
+          known,
+          (member) => this.playStore.testEligible(queue, member),
+        );
+      }
+      const reply = await this.playStore.testAction(guild, request, members);
+      this.ctx.waitUntil(this.playStore.flush());
+      return reply;
+    } catch (error) {
+      return {
+        ok: false,
+        content:
+          error instanceof PlayError
+            ? error.message
+            : 'The test command could not be confirmed. Check the regular queue or match card before retrying.',
+      };
+    }
   }
   playerMatch(
     guildId: string,

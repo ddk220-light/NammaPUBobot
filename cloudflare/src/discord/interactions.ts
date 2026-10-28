@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { testInteraction } from './test-interactions';
 import { canManage } from './client';
 import { actionSchema, PlayError, type Action, type Match, type Reply } from '../domain/play';
 import { playerSummary, recordActionSchema, recordPolicy } from '../domain/records';
@@ -157,6 +158,8 @@ export async function interactions(
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID)
     return new Response('Wrong application.', { status: 401 });
   if (interaction.type === 1) return Response.json({ type: 1 });
+  if (interaction.type === 2 && interaction.data?.name === 'test')
+    return testInteraction(interaction, env, ctx);
   if (
     (interaction.type === 2 &&
       interaction.data?.name === 'admin' &&

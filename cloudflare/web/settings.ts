@@ -338,15 +338,15 @@ export function queueEditor(draft: SettingsDraft, setup: EditorSetup, queueId: s
     'voice',
     toggle(
       'voicePreview',
-      'Voice presence preview',
+      'Refresh voice availability',
       q.voicePreview ?? false,
-      'Show up to five eligible people in public voice channels. Refreshes every five minutes while enabled; uses an ongoing shared connection. No audio is processed.',
+      'Keep eligible voice participants available for Ping using a shared connection that refreshes every five minutes. Queue cards show the waiting roster. No audio is processed.',
     ) +
       toggle(
         'rallyEnabled',
         'Enable rally',
         q.rally?.enabled ?? false,
-        'Invite eligible voice participants. The shared connection stops an hour after the last request if previews are off.',
+        'Invite eligible voice participants. The shared connection stops an hour after the last request if voice availability refresh is off.',
       ) +
       multi(
         'rallyChannels',
