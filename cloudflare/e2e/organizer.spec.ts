@@ -335,11 +335,24 @@ test('rank rows and shared tax edits survive refresh and new queues inherit rati
   await page.getByRole('button', { name: 'Add rank', exact: true }).click();
   await page.getByRole('textbox', { name: 'Rank label', exact: true }).last().fill('Champion');
   await page.getByRole('spinbutton', { name: 'Rating threshold', exact: true }).last().fill('2800');
+  await page.getByRole('checkbox', { name: 'Show rating in nicknames', exact: true }).check();
+  const rankRole = page
+    .getByRole('combobox', { name: 'Cosmetic Discord role', exact: true })
+    .last();
+  await rankRole.selectOption('100000000000000003');
   await page.getByRole('spinbutton', { name: 'Starting rating', exact: true }).fill('1234');
   await page
     .getByRole('spinbutton', { name: 'Thursday tax time (UTC minutes)', exact: true })
     .fill('780');
   await page.getByRole('button', { name: 'Refresh records' }).click();
+  state.rolesAvailable = false;
+  await page.getByRole('button', { name: 'Check access again', exact: true }).click();
+  await expect(rankRole).toHaveValue('100000000000000003');
+  await expect(rankRole.locator('option:checked')).toContainText('Unavailable');
+  await rankRole.selectOption('');
+  await expect(
+    page.getByRole('checkbox', { name: 'Show rating in nicknames', exact: true }).locator('..'),
+  ).toContainText('On');
   await expect(page.getByRole('textbox', { name: 'Rank label', exact: true }).last()).toHaveValue(
     'Champion',
   );

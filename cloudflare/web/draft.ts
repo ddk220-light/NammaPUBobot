@@ -70,11 +70,20 @@ export class SettingsDraft {
           !(el.name in values)
         )
           continue;
-        if (el instanceof HTMLInputElement && ['checkbox', 'radio'].includes(el.type))
+        if (el instanceof HTMLInputElement && ['checkbox', 'radio'].includes(el.type)) {
           el.checked = values[el.name].includes(el.value);
-        else if (el instanceof HTMLSelectElement && el.multiple)
-          [...el.options].forEach((o) => (o.selected = values[el.name].includes(o.value)));
-        else el.value = values[el.name][0] ?? '';
+          const text = el.closest('.switch-control')?.querySelector('.switch-text');
+          if (text) text.textContent = el.checked ? 'On' : 'Off';
+        } else {
+          if (el instanceof HTMLSelectElement) {
+            for (const value of values[el.name])
+              if (value && ![...el.options].some((option) => option.value === value))
+                el.add(new Option(`Unavailable selection · ${value}`, value));
+          }
+          if (el instanceof HTMLSelectElement && el.multiple)
+            [...el.options].forEach((o) => (o.selected = values[el.name].includes(o.value)));
+          else el.value = values[el.name][0] ?? '';
+        }
       }
     });
   }

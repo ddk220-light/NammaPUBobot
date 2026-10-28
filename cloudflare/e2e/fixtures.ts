@@ -57,6 +57,7 @@ export async function mockApp(page: Page) {
     failSave: '',
     saveWait: undefined as Promise<void> | undefined,
     locked: false,
+    rolesAvailable: true,
     importOk: true,
     importApplied: false,
     importCalls: 0,
@@ -125,7 +126,9 @@ export async function mockApp(page: Page) {
           ]
         : [],
     moderatorRoles: [{ id: '100000000000000003', name: 'Game hosts' }],
-    roles: [{ id: '100000000000000003', name: 'Game hosts', rankEligible: true, reason: null }],
+    roles: state.rolesAvailable
+      ? [{ id: '100000000000000003', name: 'Game hosts', rankEligible: true, reason: null }]
+      : [],
     voiceChannels: [{ id: '100000000000000004', name: 'Game night voice' }],
     gameState: [{ id: game, ratingEngineLocked: state.locked }],
     access: {
