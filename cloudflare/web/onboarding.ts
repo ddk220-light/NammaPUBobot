@@ -1,13 +1,12 @@
 import { seedCsv } from '../src/domain/import-csv';
-import type { Settings, Snapshot } from '../src/domain/config';
-import { defaultRecords, importSchema, type ImportBundle } from '../src/domain/records';
+import type { Snapshot } from '../src/domain/config';
+import { importSchema, type ImportBundle } from '../src/domain/records';
 
 const esc = (s: unknown) =>
   String(s).replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
   );
-const ck = (b: boolean) => (b ? ' checked' : '');
 interface Preview {
   id: string;
   target: string;
@@ -17,9 +16,43 @@ interface Preview {
   warnings: string[];
   counts: Record<string, number>;
 }
-let pending: { bundle: ImportBundle; preview: Preview } | null = null;
+let pending: { bundle: ImportBundle; preview: Preview; url: string; snapshot: Snapshot } | null =
+  null;
+let completed: {
+  url: string;
+  sourceId: string;
+  alreadyApplied: boolean;
+  counts: Record<string, number>;
+  refreshError?: string;
+} | null = null;
+const countLabels: Record<string, string> = {
+  players: 'Players in source',
+  newPlayers: 'New players',
+  existingPlayers: 'Existing players retained',
+  matches: 'Matches',
+  changes: 'Rating history rows',
+};
+const countList = (counts: Record<string, number>) =>
+  `<dl class="import-counts">${Object.entries(counts)
+    .map(([key, count]) => `<div><dt>${esc(countLabels[key] ?? key)}</dt><dd>${count}</dd></div>`)
+    .join('')}</dl>`;
+function resultMarkup(url: string) {
+  if (!completed || completed.url !== url) return '';
+  return `<section class="import-result" role="status"><h3 tabindex="-1" data-import-result-heading>${completed.alreadyApplied ? 'Already imported' : 'Import applied'}</h3><p>Source: ${esc(completed.sourceId)}. ${completed.alreadyApplied ? 'No duplicate changes were made.' : 'The server confirmed this import. Existing seed records were retained.'}</p>${countList(completed.counts)}${completed.refreshError ? `<p class="notice error">The import succeeded, but records could not refresh: ${esc(completed.refreshError)}</p><button type="button" data-action="refresh-records">Retry record refresh</button>` : ''}</section>`;
+}
+export function importRecordsRefreshed(url: string) {
+  if (completed?.url === url) delete completed.refreshError;
+}
+let generation = 0;
+export function invalidateImport() {
+  pending = null;
+  generation++;
+  const box = document.querySelector('#import-preview');
+  if (box) box.innerHTML = '';
+}
 export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
   const s = snapshot.settings;
+  const result = resultMarkup(`/api/communities/${snapshot.communityId}/import/apply`);
   const games = s.games.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
   const queues = s.queues.map((q) => `<option value="${q.id}">${esc(q.name)}</option>`).join('');
   const playerActions = {
@@ -31,49 +64,11 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
     sync: 'Retry rank and nickname sync',
   };
   return `<section class="settings-section" aria-labelledby="player-settings-heading"><h2 id="player-settings-heading">Player settings</h2>
-    <p class="view-description">Ratings and gold are separate for each community and game. External profile links are optional and unverified.</p>
-    ${
-      s.games.length
-        ? s.games
-            .map((g) => {
-              const p = g.records ?? defaultRecords;
-              return `<details class="rating-options"><summary>${esc(g.name)}: visibility, ranks and inactivity</summary>
-        <form data-kind="records-policy" data-id="${g.id}">
-          <h3>Statistics and leaderboard</h3><div class="fields">
-            <label>Statistics visibility<select name="visibility">${[
-              ['public', 'Public'],
-              ['members', 'Server members'],
-              ['admins', 'Administrators'],
-            ]
-              .map(
-                ([value, label]) =>
-                  `<option value="${value}"${value === p.visibility ? ' selected' : ''}>${label}</option>`,
-              )
-              .join('')}</select></label>
-            <label>Minimum leaderboard matches<input name="minimumMatches" type="number" min="0" max="10000" value="${p.minimumMatches}" required /></label>
-            <label>Leaderboard recency (days; 0 disables)<input name="recentDays" type="number" min="0" max="3650" value="${p.recentDays}" required /></label>
-          </div>
-          <h3>Inactivity and Discord ranks</h3><div class="fields">
-            <label class="toggle"><input type="checkbox" name="decay"${ck(p.inactivity.enabled)} /> Weekly inactivity decay after 30 days</label>
-            <label>Weekly rating decay<input name="weeklyRating" type="number" min="0" max="100" value="${p.inactivity.weeklyRating}" required /></label>
-            <label>Weekly deviation increase<input name="weeklyDeviation" type="number" min="0" max="500" value="${p.inactivity.weeklyDeviation}" required /></label>
-            <label class="toggle"><input type="checkbox" name="decorateNickname"${ck(p.decorateNickname)} /> Decorate nicknames with rating</label>
-          </div>
-          <label>Rank thresholds<textarea name="ranks" rows="7" aria-describedby="ranks-help-${g.id}">${esc(p.ranks.map((r) => `${r.threshold},${r.label},${r.roleId ?? ''}`).join('\n'))}</textarea></label>
-          <p id="ranks-help-${g.id}" class="form-help">One rank per line: rating, label, optional Discord role ID.</p>
-          <p class="form-help">Decay runs on Mondays in UTC. It respects rank floors and ignores recently active or never-played players. Discord role and nickname updates require the bot’s permissions and role hierarchy.</p>
-          <div class="actions"><button class="primary">Save player policy</button><a href="/stats?community=${snapshot.communityId}&game=${g.id}">Open game statistics</a></div>
-        </form>
-      </details>`;
-            })
-            .join('')
-        : '<p class="empty-state">Add a game in Setup to configure player records.</p>'
-    }
-
+    <p class="view-description">Ratings and gold are separate for each community and game. Account links show whether they were declared, assigned by an organizer or verified by signing in.</p>
     ${
       s.games.length
         ? `<details class="rating-options"><summary>Visibility and profile links</summary>
-      <p class="form-help">Hide a player from other players’ statistics, manage unverified profile links, or retry their Discord rank updates.</p>
+      <p class="form-help">Hide a player from other players’ statistics, manage declared profile links, or retry their Discord rank updates.</p>
       <form data-kind="player-record"><div class="fields">
         <label>Game<select name="gameId">${games}</select></label>
         <label>Player Discord ID<input name="userId" required pattern="[0-9]{17,20}" inputmode="numeric" spellcheck="false" /></label>
@@ -89,7 +84,8 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
         : ''
     }
 
-    <details class="rating-options"><summary>Import player records</summary>
+    <details class="rating-options" data-import-section ${result ? 'open' : ''}><summary>Import player records</summary>
+      <div id="import-result" aria-live="polite">${result}</div>
       <p class="view-description">Seed imports add new players without changing existing records. Full history needs an empty destination game and matching result and rating-history totals.</p>
       ${
         s.games.length && s.queues.length
@@ -111,13 +107,6 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
 }
 
 function importReview(bundle: ImportBundle, preview: Preview, snapshot: Snapshot) {
-  const countLabels: Record<string, string> = {
-    players: 'Players in source',
-    newPlayers: 'New players',
-    existingPlayers: 'Existing players retained',
-    matches: 'Matches',
-    changes: 'Rating history rows',
-  };
   const destinations = bundle.mappings
     .map((mapping) => {
       const game = snapshot.settings.games.find((g) => g.id === mapping.gameId);
@@ -141,14 +130,124 @@ function importReview(bundle: ImportBundle, preview: Preview, snapshot: Snapshot
     <div class="table-wrap"><table><caption>Import destinations</caption><thead><tr><th scope="col">Source ladder</th><th scope="col">Game</th><th scope="col">Queue mappings</th></tr></thead><tbody>${destinations}</tbody></table></div>
     ${preview.errors.length ? `<div class="notice error"><h4>Fix before importing</h4><ul class="review-issues">${preview.errors.map((message) => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
     ${preview.warnings.length ? `<div class="review-warnings"><h4>Review these notes</h4><ul class="review-issues">${preview.warnings.map((message) => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
-    <details class="technical-details"><summary>Technical mappings and preview</summary><pre>${esc(JSON.stringify({ source: bundle.source, mode: bundle.mode, mappings: bundle.mappings, ...preview }, null, 2))}</pre></details>
-    ${preview.ok && !preview.alreadyApplied ? '<div class="actions"><button type="button" class="primary" data-action="apply-import" aria-describedby="import-review-summary">Apply reviewed import</button></div>' : ''}
+    ${(['players', 'matches', 'changes'] as const)
+      .filter((kind) => bundle[kind].length)
+      .map(
+        (kind) =>
+          `<details class="import-rows" data-import-history="${kind}"><summary>Review ${bundle[kind].length} ${reviewLabels[kind]}</summary><div data-import-page-content>${reviewPage(bundle, snapshot, kind, 0)}</div></details>`,
+      )
+      .join('')}
+    <details class="technical-details"><summary>Technical mappings and preview</summary><pre>${esc(JSON.stringify({ version: bundle.version, source: bundle.source, mode: bundle.mode, mappings: bundle.mappings, unsupported: bundle.unsupported, ...preview }, null, 2))}</pre></details>
+    ${preview.ok && !preview.alreadyApplied ? '<div class="actions import-apply"><button type="button" data-discard-import>Discard preview</button><button type="button" class="primary" data-action="apply-import" aria-describedby="import-review-summary">Apply reviewed import</button></div>' : ''}
   </section>`;
+}
+function reviewCard(
+  title: string,
+  values: Record<string, unknown>,
+  className = 'import-history-card',
+) {
+  return `<article class="${className}"><h4>${esc(title)}</h4><dl>${Object.entries(values)
+    .map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`)
+    .join('')}</dl></article>`;
+}
+function destination(
+  bundle: ImportBundle,
+  snapshot: Snapshot,
+  ladder: string,
+  sourceQueue?: string,
+) {
+  const mapping = bundle.mappings.find((m) => m.ladder === ladder);
+  if (!mapping) return 'Missing mapping';
+  const game = snapshot.settings.games.find((g) => g.id === mapping.gameId);
+  if (sourceQueue === undefined) return `${game?.name ?? 'Unavailable game'} · ${mapping.gameId}`;
+  const id = mapping.queues[sourceQueue];
+  const queue = snapshot.settings.queues.find((q) => q.id === id);
+  return `${queue?.name ?? 'Unavailable queue'} · ${id ?? 'Missing mapping'}`;
+}
+const reviewLabels = {
+  players: 'player records',
+  matches: 'matches',
+  changes: 'rating history rows',
+};
+type ReviewKind = keyof typeof reviewLabels;
+function reviewRows(bundle: ImportBundle, snapshot: Snapshot, kind: ReviewKind, offset: number) {
+  if (kind === 'players')
+    return bundle.players
+      .slice(offset, offset + 50)
+      .map((row) =>
+        reviewCard(
+          row.player.name,
+          {
+            'Discord ID': row.player.id,
+            'Source ladder': row.ladder,
+            'Destination game': destination(bundle, snapshot, row.ladder),
+            Rating: row.player.rating,
+            Deviation: row.player.deviation,
+            Wins: row.player.wins,
+            Losses: row.player.losses,
+            Draws: row.player.draws,
+            Streak: row.player.streak,
+            'Hidden from statistics': row.hidden ? 'Yes' : 'No',
+            'Last ranked match':
+              row.lastRankedAt == null ? 'Not recorded' : new Date(row.lastRankedAt).toISOString(),
+          },
+          'import-player-card',
+        ),
+      )
+      .join('');
+  if (kind === 'matches')
+    return bundle.matches
+      .slice(offset, offset + 50)
+      .map((m) =>
+        reviewCard(m.sourceId, {
+          'Source match ID': m.sourceId,
+          'Source ladder': m.ladder,
+          'Source queue': m.queue,
+          'Destination game': destination(bundle, snapshot, m.ladder),
+          'Destination queue': destination(bundle, snapshot, m.ladder, m.queue),
+          'Started at': new Date(m.at).toISOString(),
+          'Ended at': new Date(m.endedAt).toISOString(),
+          Result: m.result,
+          'Alpha Discord IDs': m.teams[0].join(', '),
+          'Beta Discord IDs': m.teams[1].join(', '),
+        }),
+      )
+      .join('');
+  return bundle.changes
+    .slice(offset, offset + 50)
+    .map((c) =>
+      reviewCard(c.sourceId, {
+        'Source change ID': c.sourceId,
+        'Source ladder': c.ladder,
+        'Destination game': destination(bundle, snapshot, c.ladder),
+        'Player Discord ID': c.userId,
+        'Source match ID': c.matchId ?? 'No match',
+        'Changed at': new Date(c.at).toISOString(),
+        'Rating before': c.before,
+        'Rating after': c.after,
+        'Deviation before': c.deviationBefore,
+        'Deviation after': c.deviationAfter,
+        Reason: c.reason,
+      }),
+    )
+    .join('');
+}
+function reviewPage(bundle: ImportBundle, snapshot: Snapshot, kind: ReviewKind, offset: number) {
+  const total = bundle[kind].length;
+  return `<p tabindex="-1" data-import-range role="status">Showing ${offset + 1}–${Math.min(total, offset + 50)} of ${total} ${reviewLabels[kind]}</p><div class="import-player-cards">${reviewRows(bundle, snapshot, kind, offset)}</div>${total > 50 ? `<div class="actions"><button type="button" data-import-page="${kind}" data-offset="${offset - 50}" ${offset === 0 ? 'disabled data-unavailable="true"' : ''}>Previous ${reviewLabels[kind]}</button><button type="button" data-import-page="${kind}" data-offset="${offset + 50}" ${offset + 50 >= total ? 'disabled data-unavailable="true"' : ''}>Next ${reviewLabels[kind]}</button></div>` : ''}`;
+}
+export function pageImportRows(button: HTMLElement) {
+  if (!pending) return;
+  const kind = button.dataset.importPage as ReviewKind;
+  const offset = Number(button.dataset.offset);
+  if (offset < 0 || offset >= pending.bundle[kind].length) return;
+  const content = button.closest('[data-import-page-content]')!;
+  content.innerHTML = reviewPage(pending.bundle, pending.snapshot, kind, offset);
+  content.querySelector<HTMLElement>('[data-import-range]')?.focus();
 }
 interface Helpers {
   api: <T>(path: string, options?: RequestInit) => Promise<T>;
   url: (suffix: string) => string;
-  save: (settings: Settings) => Promise<void>;
   reload: () => Promise<void>;
   notice: (message: string) => void;
 }
@@ -158,32 +257,6 @@ export async function onboardingSubmit(
   snapshot: Snapshot,
   h: Helpers,
 ): Promise<boolean> {
-  if (form.dataset.kind === 'records-policy') {
-    const settings = structuredClone(snapshot.settings),
-      g = settings.games.find((g) => g.id === form.dataset.id)!;
-    const ranks = String(data.get('ranks'))
-      .split('\n')
-      .filter((v) => v.trim())
-      .map((line) => {
-        const [threshold, label, roleId, ...extra] = line.split(',').map((v) => v.trim());
-        if (extra.length) throw new Error('Use rating,label,optional role ID for each rank.');
-        return { threshold: Number(threshold), label, roleId: roleId || null };
-      });
-    g.records = {
-      visibility: String(data.get('visibility')) as 'members',
-      minimumMatches: Number(data.get('minimumMatches')),
-      recentDays: Number(data.get('recentDays')),
-      ranks,
-      decorateNickname: data.has('decorateNickname'),
-      inactivity: {
-        enabled: data.has('decay'),
-        weeklyRating: Number(data.get('weeklyRating')),
-        weeklyDeviation: Number(data.get('weeklyDeviation')),
-      },
-    };
-    await h.save(settings);
-    return true;
-  }
   if (form.dataset.kind === 'player-record') {
     const input = {
       id: (form.dataset.actionId ??= crypto.randomUUID()),
@@ -214,7 +287,8 @@ export async function onboardingSubmit(
     return true;
   }
   if (form.dataset.kind === 'import-preview') {
-    pending = null;
+    invalidateImport();
+    const current = generation;
     const previewBox = document.querySelector<HTMLElement>('#import-preview')!;
     previewBox.innerHTML = '';
     const file = data.get('file') as File | null;
@@ -234,7 +308,8 @@ export async function onboardingSubmit(
       method: 'POST',
       body: JSON.stringify(bundle),
     });
-    pending = { bundle, preview };
+    if (current !== generation || !previewBox.isConnected) return true;
+    pending = { bundle, preview, url: h.url('import/apply'), snapshot };
     previewBox.innerHTML = importReview(bundle, preview, snapshot);
     previewBox.querySelector<HTMLElement>('#import-review-heading')?.focus();
     return true;
@@ -242,19 +317,39 @@ export async function onboardingSubmit(
   return false;
 }
 export async function applyImport(h: Helpers) {
-  if (!pending || !pending.preview.ok) throw new Error('Preview the import first.');
+  if (
+    !pending ||
+    !pending.preview.ok ||
+    pending.preview.alreadyApplied ||
+    pending.url !== h.url('import/apply')
+  )
+    throw new Error('Preview the import first.');
+  const review = pending;
   const result = await h.api<{ alreadyApplied: boolean; counts: Record<string, number> }>(
     h.url('import/apply'),
     {
       method: 'POST',
-      body: JSON.stringify({ bundle: pending.bundle, target: pending.preview.target }),
+      body: JSON.stringify({ bundle: review.bundle, target: review.preview.target }),
     },
   );
-  pending = null;
-  await h.reload();
+  invalidateImport();
+  completed = { ...result, sourceId: review.bundle.sourceId, url: review.url };
+  const showResult = () => {
+    const box = document.querySelector('#import-result');
+    if (box && h.url('import/apply') === review.url) {
+      box.innerHTML = resultMarkup(review.url);
+      box.closest('details')!.open = true;
+      box.querySelector<HTMLElement>('[data-import-result-heading]')?.focus();
+    }
+  };
+  showResult();
+  try {
+    await h.reload();
+  } catch (error) {
+    completed.refreshError = error instanceof Error ? error.message : 'Try again.';
+  }
+  showResult();
   h.notice(
-    result.alreadyApplied
-      ? 'This import was already applied.'
-      : 'Import applied. Existing seed records were retained.',
+    `${result.alreadyApplied ? 'This import was already applied.' : 'Import applied. Existing seed records were retained.'}${completed.refreshError ? ' Records could not refresh; retry the refresh below.' : ''}`,
   );
 }

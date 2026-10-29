@@ -1,7 +1,51 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env, Session } from '../env';
+import type { GameVerificationState, GameAccountChoiceState } from '../auth/game-accounts';
 
 export class AuthStore extends DurableObject<Env> {
+  async createGameVerification(state: GameVerificationState) {
+    await this.ctx.storage.transaction(async (tx) => {
+      await tx.put('game-verification', state);
+      await tx.setAlarm(state.expiresAt);
+    });
+  }
+  async consumeGameVerification(
+    sessionId: string,
+    userId: string,
+  ): Promise<GameVerificationState | null> {
+    return this.ctx.storage.transaction(async (tx) => {
+      const state = await tx.get<GameVerificationState>('game-verification');
+      if (!state || state.expiresAt <= Date.now()) {
+        await tx.delete('game-verification');
+        return null;
+      }
+      // A different Discord account/session cannot consume another user's attempt.
+      if (state.sessionId !== sessionId || state.discordUserId !== userId) return null;
+      await tx.delete('game-verification');
+      return state;
+    });
+  }
+  async createGameChoices(state: GameAccountChoiceState) {
+    await this.ctx.storage.transaction(async (tx) => {
+      await tx.put('game-choices', state);
+      await tx.setAlarm(state.expiresAt);
+    });
+  }
+  async consumeGameChoices(
+    sessionId: string,
+    userId: string,
+  ): Promise<GameAccountChoiceState | null> {
+    return this.ctx.storage.transaction(async (tx) => {
+      const state = await tx.get<GameAccountChoiceState>('game-choices');
+      if (!state || state.expiresAt <= Date.now()) {
+        await tx.delete('game-choices');
+        return null;
+      }
+      if (state.sessionId !== sessionId || state.discordUserId !== userId) return null;
+      await tx.delete('game-choices');
+      return state;
+    });
+  }
   async createState(expiresAt: number, returnTo = '/') {
     await this.ctx.storage.transaction(async (tx) => {
       await tx.put('state', { expiresAt, returnTo });

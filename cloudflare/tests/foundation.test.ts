@@ -8,6 +8,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { emptyModules, settingsSchema, type Settings } from '../src/domain/config';
 import { channelPermissions, type Role } from '../src/discord/client';
+import { defaultRatingSettings } from '../src/domain/rating';
+import { defaultRecords } from '../src/domain/records';
+import { defaultMaps } from '../src/domain/maps';
 
 const guild = '706320010368516198',
   otherGuild = '706320010368516199';
@@ -591,5 +594,183 @@ describe('Discord permission precedence', () => {
         (p) => p.granted,
       ),
     ).toBe(true);
+  });
+});
+
+describe('responsive organizer contracts', () => {
+  it.each([
+    [`/?community=${guild}&view=setup`, `/?community=${guild}&view=setup`],
+    ['https://evil.example/?view=setup', '/'],
+    ['/?community=invalid&view=setup', '/'],
+    ['/api/logout', '/'],
+  ])('resumes an allowed organizer return path: %s', async (requested, expected) => {
+    const login = await http(`/auth/login?returnTo=${encodeURIComponent(requested)}`);
+    const state = new URL(login.headers.get('Location')!).searchParams.get('state')!;
+    const callback = await http(`/auth/callback?code=test-code&state=${state}`, {
+      headers: { Cookie: `cg-oauth=${state}` },
+    });
+    expect(callback.headers.get('Location')).toBe(expected);
+  });
+  it('advertises shipped capabilities separately from configured features', async () => {
+    const response = await http('/api/bootstrap');
+    expect(((await response.json()) as { capabilities: unknown }).capabilities).toEqual({
+      matchmaking: true,
+      gold: true,
+      predictions: true,
+      maps: true,
+      civs: true,
+      stories: true,
+      quiz: false,
+    });
+  });
+  it('generates minimal and feature-scoped invite permissions without Manage Channels', async () => {
+    const response = await http('/api/bootstrap');
+    const body = (await response.json()) as {
+      inviteUrl: string;
+      inviteUrls: Record<string, string>;
+    };
+    expect(body.inviteUrl).toBe(body.inviteUrls.basic);
+    for (const [feature, extra] of [
+      ['basic', 0n],
+      ['ranks', 1n << 28n],
+      ['nicknames', 1n << 27n],
+    ] as const) {
+      const url = new URL(body.inviteUrls[feature]);
+      expect(url.origin).toBe('https://discord.com');
+      expect(url.searchParams.get('client_id')).toBe(appId);
+      expect(url.searchParams.get('scope')).toBe('bot applications.commands');
+      const bits = BigInt(url.searchParams.get('permissions')!);
+      expect(bits).toBe(84992n | extra);
+      expect(bits & (8n | 16n)).toBe(0n);
+    }
+  });
+  it.each([403, 404, 503])(
+    'keeps saved setup available when bot discovery returns %i',
+    async (status) => {
+      await session();
+      expect((await save()).status).toBe(200);
+      const transport = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (input, init) => {
+        if (String(input).includes(`/guilds/${guild}/roles`)) return Response.json({}, { status });
+        return transport(input, init);
+      });
+      const response = await http(`/api/communities/${guild}/setup`, { headers: headers() });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        snapshot: { revision: number };
+        access: { status: string };
+        channels: unknown[];
+        gameState: unknown[];
+      };
+      expect(body.snapshot.revision).toBe(1);
+      expect(body.access.status).toBe(status === 503 ? 'unavailable' : 'needs_access');
+      expect(body.channels).toEqual([]);
+      expect(body.gameState).toEqual([
+        { id: settings.games[0].id, ratingEngineLocked: false, ratingEngine: 'aoe2' },
+      ]);
+      admin = false;
+      expect((await http(`/api/communities/${guild}/setup`, { headers: headers() })).status).toBe(
+        403,
+      );
+    },
+  );
+  it('returns field paths and distinguishes domain conflicts from stale revisions', async () => {
+    await session();
+    const invalid = structuredClone(settings);
+    invalid.queues[0].size = 1;
+    const validation = await save(guild, invalid);
+    expect(validation.status).toBe(400);
+    expect(await validation.json()).toMatchObject({
+      code: 'invalid_settings',
+      issues: [{ path: ['settings', 'queues', 0, 'size'] }],
+    });
+    expect((await save()).status).toBe(200);
+    const mismatch = structuredClone(settings);
+    mismatch.queues.push({
+      ...mismatch.queues[0],
+      id: crypto.randomUUID(),
+      name: 'Other queue',
+      ratingEngine: 'flat',
+    });
+    expect(await (await save(guild, mismatch, 1)).json()).toMatchObject({
+      code: 'settings_conflict',
+      issues: expect.arrayContaining([
+        expect.objectContaining({ path: ['settings', 'queues', 1, 'ratingEngine'] }),
+      ]),
+    });
+    expect(await (await save(guild, settings, 0)).json()).toMatchObject({
+      code: 'revision_conflict',
+    });
+  });
+  it('returns paths for cross-field rating, map and rank validation', async () => {
+    await session();
+    const invalid = structuredClone(settings);
+    invalid.queues[0].ratingSettings = {
+      ...defaultRatingSettings,
+      deviation: 100,
+      minDeviation: 200,
+    };
+    invalid.queues[0].maps = { ...defaultMaps(['Arena', 'arena']), count: 3 };
+    invalid.games[0].records = {
+      ...structuredClone(defaultRecords),
+      ranks: [
+        { threshold: 0, label: 'First', roleId: null },
+        { threshold: 0, label: 'Duplicate', roleId: null },
+      ],
+    };
+    const response = await save(guild, invalid);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: 'invalid_settings',
+      requestId: expect.any(String),
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          path: ['settings', 'queues', 0, 'ratingSettings', 'minDeviation'],
+        }),
+        expect.objectContaining({ path: ['settings', 'queues', 0, 'maps', 'pool'] }),
+        expect.objectContaining({ path: ['settings', 'queues', 0, 'maps', 'count'] }),
+        expect.objectContaining({
+          path: ['settings', 'games', 0, 'records', 'ranks', 0, 'threshold'],
+        }),
+        expect.objectContaining({
+          path: ['settings', 'games', 0, 'records', 'ranks', 1, 'threshold'],
+        }),
+      ]),
+    });
+  });
+  it('identifies unavailable roles and the channel needing permissions without revision conflicts', async () => {
+    await session();
+    const invalid = structuredClone(settings),
+      missing = '100000000000000099';
+    invalid.queues[0].controls = {
+      requiredRole: missing,
+      blockedRole: null,
+      waitingSeconds: 0,
+      matchSeconds: 0,
+    };
+    invalid.games[0].records = {
+      ...structuredClone(defaultRecords),
+      ranks: [{ threshold: 0, label: 'Rank', roleId: missing }],
+    };
+    const response = await save(guild, invalid);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: 'wrong_role',
+      requestId: expect.any(String),
+      issues: [
+        expect.objectContaining({ path: ['settings', 'queues', 0, 'controls', 'requiredRole'] }),
+        expect.objectContaining({
+          path: ['settings', 'games', 0, 'records', 'ranks', 0, 'roleId'],
+        }),
+      ],
+    });
+    botPermissions = '1024';
+    const permissions = await save();
+    expect(permissions.status).toBe(409);
+    expect(await permissions.json()).toMatchObject({
+      code: 'missing_permissions',
+      issues: [expect.objectContaining({ path: ['settings', 'queues', 0, 'channelId'] })],
+    });
+    expect((await env.COMMUNITIES.getByName(guild).read(guild)).revision).toBe(0);
   });
 });

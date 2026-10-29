@@ -1,8 +1,19 @@
+import { privilegedRankPermissions } from '../domain/rank-roles';
+import type { DiscordSetup } from '../domain/setup';
 import type { Env } from '../env';
 export const DISCORD_API = 'https://discord.com/api/v10';
 export const MANAGE_GUILD = 32n,
   ADMINISTRATOR = 8n;
 export const REQUIRED_CHANNEL_PERMISSIONS = 1024n | 2048n | 16384n | 65536n;
+export const MANAGE_ROLES = 1n << 28n;
+export const MANAGE_NICKNAMES = 1n << 27n;
+export function botInviteUrls(applicationId?: string) {
+  const invite = (extra: bigint) =>
+    applicationId
+      ? `https://discord.com/oauth2/authorize?client_id=${applicationId}&scope=bot%20applications.commands&permissions=${REQUIRED_CHANNEL_PERMISSIONS | extra}`
+      : null;
+  return { basic: invite(0n), ranks: invite(MANAGE_ROLES), nicknames: invite(MANAGE_NICKNAMES) };
+}
 export const PERMISSIONS = [
   { bit: 1024n, name: 'View Channel' },
   { bit: 2048n, name: 'Send Messages' },
@@ -129,7 +140,7 @@ export function channelPermissions(
   if (personal) bits = (bits & ~BigInt(personal.deny)) | BigInt(personal.allow);
   return PERMISSIONS.map((p) => ({ name: p.name, granted: !!(bits & p.bit) && !!(bits & 1024n) }));
 }
-export async function guildSetup(env: Env, guildId: string) {
+export async function guildSetup(env: Env, guildId: string): Promise<DiscordSetup> {
   if (!env.DISCORD_BOT_TOKEN || !env.DISCORD_APPLICATION_ID) throw new DiscordFailure(503);
   const token = env.DISCORD_BOT_TOKEN;
   const [list, roles, member] = await Promise.all([
@@ -148,7 +159,39 @@ export async function guildSetup(env: Env, guildId: string) {
     .filter((r) => r.id !== guildId && !r.managed && typeof r.name === 'string')
     .sort((a, b) => (b.position ?? 0) - (a.position ?? 0) || a.id.localeCompare(b.id))
     .map((r) => ({ id: r.id, name: r.name! }));
-  return { channels: accessibleChannels, moderatorRoles };
+  const bits = roles
+    .filter((r) => r.id === guildId || member.roles.includes(r.id))
+    .reduce((value, r) => value | BigInt(r.permissions), 0n);
+  const has = (bit: bigint) => Boolean(bits & (ADMINISTRATOR | bit));
+  const highest = Math.max(
+    0,
+    ...roles.filter((r) => member.roles.includes(r.id)).map((r) => r.position ?? 0),
+  );
+  return {
+    channels: accessibleChannels,
+    moderatorRoles,
+    voiceChannels: list
+      .filter((c) => c.type === 2 || c.type === 13)
+      .map(({ id, name }) => ({ id, name })),
+    roles: moderatorRoles.map((role) => {
+      const r = roles.find((r) => r.id === role.id)!;
+      const reason =
+        BigInt(r.permissions) & privilegedRankPermissions
+          ? 'Rank roles must be cosmetic, without management permissions.'
+          : (r.position ?? 0) >= highest
+            ? 'Move this role below the bot’s highest role.'
+            : !has(MANAGE_ROLES)
+              ? 'Grant the bot Manage Roles to synchronize ranks.'
+              : null;
+      return { ...role, rankEligible: reason === null, reason };
+    }),
+    access: {
+      status: 'ready',
+      message: 'Discord access verified.',
+      manageRoles: has(MANAGE_ROLES),
+      manageNicknames: has(MANAGE_NICKNAMES),
+    },
+  };
 }
 export async function channels(env: Env, guildId: string) {
   return (await guildSetup(env, guildId)).channels;

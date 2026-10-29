@@ -316,6 +316,7 @@ describe('automatic lobby lifecycle and manual priority', () => {
             .toArray()[0].config,
         );
       const store = new LobbyStore(state, () => config(), {
+        availability: () => 'available',
         match: read,
         save: (match) => (instance as any).playStore.saveMatch(match),
         prompt: () => {},
@@ -359,7 +360,7 @@ describe('automatic lobby lifecycle and manual priority', () => {
     await poll();
     expect((await current()).lobby).toBeUndefined();
   });
-  it('closes bets on provider start/end evidence but waits for the captain to record the result', async () => {
+  it('keeps provisional name/count evidence from closing bets until a captain confirms the binding', async () => {
     network();
     const s = config();
     s.queues[0].modules.predictions = s.queues[0].modules.gold = true;
@@ -384,6 +385,7 @@ describe('automatic lobby lifecycle and manual priority', () => {
               profileId: String(BigInt(p.id) - 100000000000000000n),
               name: p.name,
               civName: 'Franks',
+              won: side === 0,
             })),
           })),
         });
@@ -392,9 +394,21 @@ describe('automatic lobby lifecycle and manual priority', () => {
     await poll();
     expect((await current()).lobby).toMatchObject({
       observation: { phase: 'finished' },
-      prompted: true,
+      prompted: false,
+      rosterVerified: false,
     });
     expect((await current()).result).toBeNull();
+    const provisional = await stub().operationalBackup(guild);
+    expect(provisional.tables.books[0].status).toBe('open');
+    expect(provisional.tables.profile_refs).toHaveLength(0);
+    expect(provisional.tables.bet_start_evidence).toHaveLength(0);
+    expect(
+      await act('lobby_confirm', 99, {
+        actor: { id: m.captains[0], name: 'Captain' },
+        matchId: m.id,
+        reference: m.lobby!.id,
+      }),
+    ).toMatchObject({ ok: true });
     const before = await stub().operationalBackup(guild);
     expect(before.tables.books[0].status).toBe('frozen');
     expect(before.tables.rating_changes).toHaveLength(0);
@@ -403,7 +417,8 @@ describe('automatic lobby lifecycle and manual priority', () => {
     );
     expect((await current()).state).toBe('finished');
     const after = await stub().operationalBackup(guild);
-    expect(after.tables.played_selections).toHaveLength(4);
+    expect(after.tables.played_selections).toHaveLength(0);
+    expect(after.tables.profile_refs).toHaveLength(0);
     expect(after.tables.books[0].status).toBe('settled');
   });
   it('keeps captain reporting authoritative after auto-attaching and stops all lobby jobs on abort', async () => {

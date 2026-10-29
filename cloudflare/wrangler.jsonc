@@ -29,6 +29,7 @@
       { "name": "DISCORD_GATE", "class_name": "DiscordGate" },
       { "name": "VOICE_PRESENCE", "class_name": "VoicePresence" },
       { "name": "AOE2_LOBBIES", "class_name": "AoE2LobbyFeed" },
+      { "name": "PROVIDERS", "class_name": "ProviderCoordinator" },
     ],
   },
   "migrations": [
@@ -36,6 +37,7 @@
     { "tag": "v2", "new_sqlite_classes": ["DiscordGate"] },
     { "tag": "v3", "new_sqlite_classes": ["VoicePresence"] },
     { "tag": "v4", "new_sqlite_classes": ["AoE2LobbyFeed"] },
+    { "tag": "v5", "new_sqlite_classes": ["ProviderCoordinator"] },
   ],
   "vars": { "APP_ENV": "local", "APP_ORIGIN": "http://localhost:8787" },
   "env": {
@@ -52,6 +54,7 @@
           { "name": "DISCORD_GATE", "class_name": "DiscordGate" },
           { "name": "VOICE_PRESENCE", "class_name": "VoicePresence" },
           { "name": "AOE2_LOBBIES", "class_name": "AoE2LobbyFeed" },
+          { "name": "PROVIDERS", "class_name": "ProviderCoordinator" },
         ],
       },
       "migrations": [
@@ -59,6 +62,7 @@
         { "tag": "v2", "new_sqlite_classes": ["DiscordGate"] },
         { "tag": "v3", "new_sqlite_classes": ["VoicePresence"] },
         { "tag": "v4", "new_sqlite_classes": ["AoE2LobbyFeed"] },
+        { "tag": "v5", "new_sqlite_classes": ["ProviderCoordinator"] },
       ],
     },
   },

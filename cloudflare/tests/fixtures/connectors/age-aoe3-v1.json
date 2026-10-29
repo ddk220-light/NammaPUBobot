@@ -1,0 +1,515 @@
+{
+  "fixtureVersion": 1,
+  "capturedAt": "2026-10-28",
+  "sanitization": "Aliases, platform identities and replay URLs replaced; response shapes and numeric native IDs preserved. Compressed options/slotinfo and unrelated counters removed.",
+  "profile": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "statGroups": [
+      {
+        "id": 2183208,
+        "name": "",
+        "type": 1,
+        "members": [
+          {
+            "profile_id": 10126818,
+            "name": "/steam/76561198000000001",
+            "alias": "Player 1"
+          }
+        ]
+      }
+    ]
+  },
+  "lobbies": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matches": [
+      {
+        "id": 66376779,
+        "steamlobbyid": "109775242664684177",
+        "host_profile_id": 6889036,
+        "state": 0,
+        "description": "Community test lobby",
+        "visible": 1,
+        "mapname": "set_landmaps",
+        "maxplayers": 8,
+        "matchtype_id": 0,
+        "matchmembers": [
+          {
+            "match_id": 66376779,
+            "profile_id": 6889036,
+            "civilization_id": 0,
+            "teamid": 0
+          }
+        ]
+      },
+      {
+        "id": 66376776,
+        "steamlobbyid": "109775242664683811",
+        "host_profile_id": 9787909,
+        "state": 0,
+        "description": "Community test lobby",
+        "visible": 1,
+        "mapname": "rm_afLakeChad",
+        "maxplayers": 8,
+        "matchtype_id": 0,
+        "matchmembers": [
+          {
+            "match_id": 66376776,
+            "profile_id": 9787909,
+            "civilization_id": 0,
+            "teamid": 0
+          }
+        ]
+      }
+    ],
+    "avatars": [
+      {
+        "profile_id": 9787909,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 6889036,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      }
+    ]
+  },
+  "match": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matchHistory": [
+      {
+        "id": 66376255,
+        "creator_profile_id": 10126818,
+        "mapname": "set_teamrandom",
+        "maxplayers": 6,
+        "matchtype_id": 3,
+        "description": "AUTOMATCH",
+        "startgametime": 1793212346,
+        "completiontime": 1793213508,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 10126818,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 23,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 26091247,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 6,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 3511930,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 5,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 26157023,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 13,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 25179172,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 6,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 3669490,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 22,
+            "counters": "{}"
+          }
+        ],
+        "matchurls": [],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 10126818,
+            "civilization_id": 23,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 3511930,
+            "civilization_id": 5,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 25179172,
+            "civilization_id": 6,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 26091247,
+            "civilization_id": 6,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 3669490,
+            "civilization_id": 22,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 26157023,
+            "civilization_id": 13,
+            "teamid": 1,
+            "outcome": 0
+          }
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "profile_id": 3511930,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 10126818,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      },
+      {
+        "profile_id": 645899,
+        "name": "/steam/76561198000000003",
+        "alias": "Player 3"
+      },
+      {
+        "profile_id": 3619648,
+        "name": "/steam/76561198000000004",
+        "alias": "Player 4"
+      },
+      {
+        "profile_id": 26091247,
+        "name": "/steam/76561198000000005",
+        "alias": "Player 5"
+      },
+      {
+        "profile_id": 6454915,
+        "name": "/steam/76561198000000006",
+        "alias": "Player 6"
+      },
+      {
+        "profile_id": 26157023,
+        "name": "/steam/76561198000000007",
+        "alias": "Player 7"
+      },
+      {
+        "profile_id": 3669490,
+        "name": "/steam/76561198000000008",
+        "alias": "Player 8"
+      },
+      {
+        "profile_id": 25179172,
+        "name": "/steam/76561198000000009",
+        "alias": "Player 9"
+      }
+    ]
+  },
+  "history": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matchHistoryStats": [
+      {
+        "id": 66376255,
+        "creator_profile_id": 10126818,
+        "mapname": "set_teamrandom",
+        "maxplayers": 6,
+        "matchtype_id": 3,
+        "description": "AUTOMATCH",
+        "startgametime": 1793212346,
+        "completiontime": 1793213508,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 10126818,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 23,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 26091247,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 6,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 3511930,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 5,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 26157023,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 13,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 25179172,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 6,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 3669490,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 22,
+            "counters": "{}"
+          }
+        ],
+        "matchurls": [],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 10126818,
+            "civilization_id": 23,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 3511930,
+            "civilization_id": 5,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 25179172,
+            "civilization_id": 6,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 26091247,
+            "civilization_id": 6,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 3669490,
+            "civilization_id": 22,
+            "teamid": 1,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 66376255,
+            "profile_id": 26157023,
+            "civilization_id": 13,
+            "teamid": 1,
+            "outcome": 0
+          }
+        ]
+      },
+      {
+        "id": 66375612,
+        "creator_profile_id": 3619648,
+        "mapname": "set_teamrandom",
+        "maxplayers": 6,
+        "matchtype_id": 3,
+        "description": "AUTOMATCH",
+        "startgametime": 1793210704,
+        "completiontime": 1793211858,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 3619648,
+            "resulttype": 0,
+            "teamid": 0,
+            "civilization_id": 14,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 3511930,
+            "resulttype": 1,
+            "teamid": 1,
+            "civilization_id": 5,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 6454915,
+            "resulttype": 0,
+            "teamid": 0,
+            "civilization_id": 5,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 10126818,
+            "resulttype": 1,
+            "teamid": 1,
+            "civilization_id": 4,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 645899,
+            "resulttype": 0,
+            "teamid": 0,
+            "civilization_id": 5,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 25179172,
+            "resulttype": 1,
+            "teamid": 1,
+            "civilization_id": 24,
+            "counters": "{}"
+          }
+        ],
+        "matchurls": [],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 3619648,
+            "civilization_id": 14,
+            "teamid": 0,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 6454915,
+            "civilization_id": 5,
+            "teamid": 0,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 645899,
+            "civilization_id": 5,
+            "teamid": 0,
+            "outcome": 0
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 10126818,
+            "civilization_id": 4,
+            "teamid": 1,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 25179172,
+            "civilization_id": 24,
+            "teamid": 1,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 66375612,
+            "profile_id": 3511930,
+            "civilization_id": 5,
+            "teamid": 1,
+            "outcome": 1
+          }
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "profile_id": 3511930,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 10126818,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      },
+      {
+        "profile_id": 645899,
+        "name": "/steam/76561198000000003",
+        "alias": "Player 3"
+      },
+      {
+        "profile_id": 3619648,
+        "name": "/steam/76561198000000004",
+        "alias": "Player 4"
+      },
+      {
+        "profile_id": 26091247,
+        "name": "/steam/76561198000000005",
+        "alias": "Player 5"
+      },
+      {
+        "profile_id": 6454915,
+        "name": "/steam/76561198000000006",
+        "alias": "Player 6"
+      },
+      {
+        "profile_id": 26157023,
+        "name": "/steam/76561198000000007",
+        "alias": "Player 7"
+      },
+      {
+        "profile_id": 3669490,
+        "name": "/steam/76561198000000008",
+        "alias": "Player 8"
+      },
+      {
+        "profile_id": 25179172,
+        "name": "/steam/76561198000000009",
+        "alias": "Player 9"
+      }
+    ]
+  },
+  "replays": {
+    "result": {
+      "code": 2,
+      "message": "NOT_FOUND"
+    },
+    "expiryUnix": 0
+  }
+}

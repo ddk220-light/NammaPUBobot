@@ -4,21 +4,23 @@ import type { ActionRow, Button, Card } from './cards';
 
 const text = (value: string) => value.replace(/[\\`*_~|>\[\]]/g, '\\$&');
 const status = (m: Match) =>
-  m.state === 'finished'
-    ? m.result === 'draw'
-      ? 'Draw'
-      : m.result
-        ? `${m.result === 'alpha' ? 'Alpha' : 'Beta'} won`
-        : 'Result unavailable'
-    : {
-        check_in: 'Checking in',
-        playing: 'Awaiting result',
-        aborted: 'Cancelled',
-        check_in_failed: 'Check-in failed',
-        undone: 'Result undone',
-      }[m.state];
+  m.test && !['check_in', 'playing'].includes(m.state)
+    ? 'TEST · result not recorded'
+    : m.state === 'finished'
+      ? m.result === 'draw'
+        ? 'Draw'
+        : m.result
+          ? `${m.result === 'alpha' ? 'Alpha' : 'Beta'} won`
+          : 'Result unavailable'
+      : {
+          check_in: 'Checking in',
+          playing: 'Awaiting result',
+          aborted: 'Cancelled',
+          check_in_failed: 'Check-in failed',
+          undone: 'Result undone',
+        }[m.state];
 const matchLine = (m: Match) =>
-  `\`${m.id}\` · **${status(m)}** · <t:${Math.floor((m.closedAt ?? m.createdAt) / 1000)}:d>`;
+  `${m.test ? 'TEST · ' : ''}\`${m.id}\` · **${status(m)}** · <t:${Math.floor((m.closedAt ?? m.createdAt) / 1000)}:d>`;
 const teams = (m: Match) =>
   m.teams
     .map(

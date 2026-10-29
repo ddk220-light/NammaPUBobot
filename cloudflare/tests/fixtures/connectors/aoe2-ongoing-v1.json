@@ -1,0 +1,170 @@
+{
+  "fixtureVersion": 1,
+  "capturedAt": "2026-10-28T21:35:37.921492+00:00",
+  "source": "wss://socket.aoe2companion.com/listen?handler=ongoing-matches&verified=true",
+  "sanitization": "Match/profile IDs and display names replaced; unrelated profile details and URLs removed. Event structure, timestamps, teams and civilizations retained. No replay bytes.",
+  "events": [
+    {
+      "type": "matchAdded",
+      "data": {
+        "matchId": 9100,
+        "started": "2026-10-28T21:05:22.000Z",
+        "finished": null,
+        "privacy": "public",
+        "name": "AUTOMATCH",
+        "patch": 1824,
+        "gameMode": "random_map",
+        "map": "rm_african_clearing",
+        "mapName": "African Clearing",
+        "totalSlotCount": 8,
+        "blockedSlotCount": 8,
+        "players": [
+          {
+            "civ": "georgians",
+            "civName": "Georgians",
+            "slot": 0,
+            "status": "player",
+            "team": 1,
+            "profileId": 1000,
+            "name": "Fixture Player 1-1"
+          },
+          {
+            "civ": "mapuche",
+            "civName": "Mapuche",
+            "slot": 1,
+            "status": "player",
+            "team": 2,
+            "profileId": 1001,
+            "name": "Fixture Player 1-2"
+          },
+          {
+            "civ": "spanish",
+            "civName": "Spanish",
+            "slot": 2,
+            "status": "player",
+            "team": 1,
+            "profileId": 1002,
+            "name": "Fixture Player 1-3"
+          },
+          {
+            "civ": "hindustanis",
+            "civName": "Hindustanis",
+            "slot": 3,
+            "status": "player",
+            "team": 2,
+            "profileId": 1003,
+            "name": "Fixture Player 1-4"
+          },
+          {
+            "civ": "mayans",
+            "civName": "Maya",
+            "slot": 4,
+            "status": "player",
+            "team": 1,
+            "profileId": 1004,
+            "name": "Fixture Player 1-5"
+          },
+          {
+            "civ": "vietnamese",
+            "civName": "Vietnamese",
+            "slot": 5,
+            "status": "player",
+            "team": 2,
+            "profileId": 1005,
+            "name": "Fixture Player 1-6"
+          },
+          {
+            "civ": "mongols",
+            "civName": "Mongols",
+            "slot": 6,
+            "status": "player",
+            "team": 1,
+            "profileId": 1006,
+            "name": "Fixture Player 1-7"
+          },
+          {
+            "civ": "mongols",
+            "civName": "Mongols",
+            "slot": 7,
+            "status": "player",
+            "team": 2,
+            "profileId": 1007,
+            "name": "Fixture Player 1-8"
+          }
+        ]
+      }
+    },
+    {
+      "type": "matchAdded",
+      "data": {
+        "matchId": 9101,
+        "started": "2026-10-28T21:06:56.000Z",
+        "finished": null,
+        "privacy": "public",
+        "name": "AUTOMATCH",
+        "patch": 1824,
+        "gameMode": "random_map",
+        "map": "rm_arabia",
+        "mapName": "Arabia",
+        "totalSlotCount": 8,
+        "blockedSlotCount": 2,
+        "players": [
+          {
+            "civ": "burgundians",
+            "civName": "Burgundians",
+            "slot": 0,
+            "status": "player",
+            "team": 1,
+            "profileId": 1010,
+            "name": "Fixture Player 2-1"
+          },
+          {
+            "civ": "mayans",
+            "civName": "Maya",
+            "slot": 1,
+            "status": "player",
+            "team": 2,
+            "profileId": 1011,
+            "name": "Fixture Player 2-2"
+          }
+        ]
+      }
+    },
+    {
+      "type": "matchAdded",
+      "data": {
+        "matchId": 9102,
+        "started": "2026-10-28T21:34:17.000Z",
+        "finished": null,
+        "privacy": "public",
+        "name": "AUTOMATCH",
+        "patch": 1824,
+        "gameMode": "random_map",
+        "map": "rm_arena",
+        "mapName": "Arena",
+        "totalSlotCount": 8,
+        "blockedSlotCount": 2,
+        "players": [
+          {
+            "civ": "mongols",
+            "civName": "Mongols",
+            "slot": 0,
+            "status": "player",
+            "team": 1,
+            "profileId": 1020,
+            "name": "Fixture Player 3-1"
+          },
+          {
+            "civ": "burgundians",
+            "civName": "Burgundians",
+            "slot": 1,
+            "status": "player",
+            "team": 2,
+            "profileId": 1021,
+            "name": "Fixture Player 3-2"
+          }
+        ]
+      }
+    }
+  ]
+}

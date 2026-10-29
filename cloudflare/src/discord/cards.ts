@@ -30,12 +30,7 @@ export interface Card {
   components: ActionRow[];
   allowed_mentions: { parse: string[]; users?: string[] };
 }
-export function queueCard(
-  queue: Queue,
-  players: { id: string }[],
-  held = false,
-  voice: string[] | null = null,
-): Card {
+export function queueCard(queue: Queue, players: { id: string }[], held = false): Card {
   const roster = players
     .slice(0, 16)
     .map((p) => mention(p.id))
@@ -53,9 +48,6 @@ export function queueCard(
           players.length ? `${roster}${more}` : 'No one’s waiting yet.',
           queue.controls?.waitingSeconds
             ? `Waiting places expire after ${queue.controls.waitingSeconds} seconds. Join again to renew yours.`
-            : '',
-          queue.enabled && queue.voicePreview && voice?.length
-            ? `> *${voice.slice(0, 5).map(mention).join(' · ')}*`
             : '',
         ]
           .filter(Boolean)
@@ -160,7 +152,9 @@ export function matchCard(match: Match): Card {
       custom_id: `m:${match.id}:${match.version}:subauto`,
     });
   } else if (match.state === 'finished') {
-    title += ` · ${match.result === 'draw' ? 'draw' : `${match.result === 'alpha' ? 'Alpha' : 'Beta'} wins`}`;
+    title += match.test
+      ? ' · completed'
+      : ` · ${match.result === 'draw' ? 'draw' : `${match.result === 'alpha' ? 'Alpha' : 'Beta'} wins`}`;
   } else if (match.state === 'check_in_failed') {
     title += ' · check-in ended';
     text += '\n\nNot everyone checked in. ✓ Ready players are back in the queue.';
@@ -173,6 +167,10 @@ export function matchCard(match: Match): Card {
       match.note === 'Match timed out without a result.'
         ? '\n\nNo result was reported before the time limit. No ratings changed.'
         : '\n\nNo ratings changed.';
+  }
+  if (match.test) {
+    title = `TEST · ${title}`;
+    text = `**Test match · ${match.id}**\nResults and ratings are not recorded.\n\n${text}`;
   }
   if (match.note && match.state === 'check_in') text += `\n\n${match.note}`;
   if (match.mapRound) {
@@ -218,9 +216,9 @@ export function matchCard(match: Match): Card {
   if (match.lobby)
     extra.push({
       title: `${match.gameName} lobby`,
-      description: lobbySummary(match.lobby),
+      description: lobbySummary(match.lobby).slice(0, 4000),
       color: 0x648c78,
-      footer: { text: 'Public game evidence · results reported by players' },
+      footer: { text: 'Provider observations and declared facts · results reported by captains' },
     });
   else if (match.lobbySearch && match.state === 'playing')
     extra.push({

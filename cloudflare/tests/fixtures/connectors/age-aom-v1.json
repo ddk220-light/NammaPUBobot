@@ -1,0 +1,374 @@
+{
+  "fixtureVersion": 1,
+  "capturedAt": "2026-10-28",
+  "sanitization": "Aliases, platform identities and replay URLs replaced; response shapes and numeric native IDs preserved. Compressed options/slotinfo and unrelated counters removed.",
+  "profile": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "statGroups": [
+      {
+        "id": 22788,
+        "name": "",
+        "type": 1,
+        "members": [
+          {
+            "profile_id": 1073764190,
+            "name": "/steam/76561198000000001",
+            "alias": "Player 1"
+          }
+        ]
+      }
+    ]
+  },
+  "lobbies": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matches": [
+      {
+        "id": 44991607,
+        "steamlobbyid": "0",
+        "host_profile_id": 1075245897,
+        "state": 0,
+        "description": "Community test lobby",
+        "visible": 1,
+        "mapname": "custom_scenario",
+        "maxplayers": 12,
+        "matchtype_id": 26,
+        "matchmembers": [
+          {
+            "match_id": 44991607,
+            "profile_id": 1075245897,
+            "civilization_id": 0,
+            "teamid": 0
+          }
+        ]
+      },
+      {
+        "id": 44991606,
+        "steamlobbyid": "109775242664693057",
+        "host_profile_id": 1073757175,
+        "state": 0,
+        "description": "Community test lobby",
+        "visible": 1,
+        "mapname": "rm_river_nile",
+        "maxplayers": 12,
+        "matchtype_id": 26,
+        "matchmembers": [
+          {
+            "match_id": 44991606,
+            "profile_id": 1073757175,
+            "civilization_id": 0,
+            "teamid": 0
+          }
+        ]
+      }
+    ],
+    "avatars": [
+      {
+        "profile_id": 1073757175,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 1075245897,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      }
+    ]
+  },
+  "match": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matchHistory": [
+      {
+        "id": 43919970,
+        "creator_profile_id": 1073764190,
+        "mapname": "rm_alfheim",
+        "maxplayers": 2,
+        "matchtype_id": 1,
+        "description": "AUTOMATCH",
+        "startgametime": 1790726205,
+        "completiontime": 1790728061,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 43919970,
+            "profile_id": 1073764190,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 17,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 43919970,
+            "profile_id": 1073749777,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 16,
+            "counters": "{}"
+          }
+        ],
+        "matchurls": [
+          {
+            "profile_id": 1073749777,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 5680624,
+            "datatype": 0
+          },
+          {
+            "profile_id": 1073764190,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 5678084,
+            "datatype": 0
+          }
+        ],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 43919970,
+            "profile_id": 1073764190,
+            "civilization_id": 17,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 43919970,
+            "profile_id": 1073749777,
+            "civilization_id": 16,
+            "teamid": 1,
+            "outcome": 0
+          }
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "profile_id": 1073774984,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 1073764190,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      },
+      {
+        "profile_id": 1073749777,
+        "name": "/steam/76561198000000003",
+        "alias": "Player 3"
+      }
+    ]
+  },
+  "history": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matchHistoryStats": [
+      {
+        "id": 43919970,
+        "creator_profile_id": 1073764190,
+        "mapname": "rm_alfheim",
+        "maxplayers": 2,
+        "matchtype_id": 1,
+        "description": "AUTOMATCH",
+        "startgametime": 1790726205,
+        "completiontime": 1790728061,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 43919970,
+            "profile_id": 1073764190,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 17,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 43919970,
+            "profile_id": 1073749777,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 16,
+            "counters": "{}"
+          }
+        ],
+        "matchurls": [
+          {
+            "profile_id": 1073749777,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 5680624,
+            "datatype": 0
+          },
+          {
+            "profile_id": 1073764190,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 5678084,
+            "datatype": 0
+          }
+        ],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 43919970,
+            "profile_id": 1073764190,
+            "civilization_id": 17,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 43919970,
+            "profile_id": 1073749777,
+            "civilization_id": 16,
+            "teamid": 1,
+            "outcome": 0
+          }
+        ]
+      },
+      {
+        "id": 43835659,
+        "creator_profile_id": 1073774984,
+        "mapname": "rm_nile_shallows",
+        "maxplayers": 2,
+        "matchtype_id": 1,
+        "description": "AUTOMATCH",
+        "startgametime": 1790531562,
+        "completiontime": 1790533013,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 43835659,
+            "profile_id": 1073774984,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 23,
+            "counters": "{}"
+          },
+          {
+            "matchhistory_id": 43835659,
+            "profile_id": 1073764190,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 18,
+            "counters": "{}"
+          }
+        ],
+        "matchurls": [
+          {
+            "profile_id": 1073764190,
+            "url": "https://fixture.blob.core.windows.net/replay.gz",
+            "size": 4903062,
+            "datatype": 0
+          }
+        ],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 43835659,
+            "profile_id": 1073774984,
+            "civilization_id": 23,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 43835659,
+            "profile_id": 1073764190,
+            "civilization_id": 18,
+            "teamid": 1,
+            "outcome": 0
+          }
+        ]
+      }
+    ],
+    "profiles": [
+      {
+        "profile_id": 1073774984,
+        "name": "/steam/76561198000000001",
+        "alias": "Player 1"
+      },
+      {
+        "profile_id": 1073764190,
+        "name": "/steam/76561198000000002",
+        "alias": "Player 2"
+      },
+      {
+        "profile_id": 1073749777,
+        "name": "/steam/76561198000000003",
+        "alias": "Player 3"
+      }
+    ]
+  },
+  "replays": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "expiryUnix": 1793214012,
+    "replayFiles": [
+      {
+        "profile_id": 1075067694,
+        "matchhistory_id": 44987874,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture",
+        "size": 4437395,
+        "datatype": 0
+      },
+      {
+        "profile_id": 1073774984,
+        "matchhistory_id": 44987874,
+        "url": "https://fixture.blob.core.windows.net/replay.gz?sig=fixture",
+        "size": 4439094,
+        "datatype": 0
+      }
+    ]
+  },
+  "renumberedTeams": {
+    "result": {
+      "code": 0,
+      "message": "SUCCESS"
+    },
+    "matchHistory": [
+      {
+        "id": 36847467,
+        "mapname": "rm_blue_lagoon",
+        "matchtype_id": 0,
+        "description": "Super Rusty Magic's Game",
+        "startgametime": 1777750601,
+        "completiontime": 1777751497,
+        "matchhistoryreportresults": [
+          {
+            "matchhistory_id": 36847467,
+            "profile_id": 1073764190,
+            "resulttype": 0,
+            "teamid": 1,
+            "civilization_id": 23
+          },
+          {
+            "matchhistory_id": 36847467,
+            "profile_id": 1073774984,
+            "resulttype": 1,
+            "teamid": 0,
+            "civilization_id": 1
+          }
+        ],
+        "matchurls": [],
+        "matchhistorymember": [
+          {
+            "matchhistory_id": 36847467,
+            "profile_id": 1073764190,
+            "civilization_id": 23,
+            "teamid": 0,
+            "outcome": 1
+          },
+          {
+            "matchhistory_id": 36847467,
+            "profile_id": 1073774984,
+            "civilization_id": 1,
+            "teamid": 1,
+            "outcome": 0
+          }
+        ]
+      }
+    ],
+    "profiles": []
+  }
+}

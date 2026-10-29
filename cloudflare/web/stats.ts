@@ -1,3 +1,4 @@
+import { ApiError, labelTables, requestJson } from './ui';
 import type { Statistics as Stats, PlayerStatistics } from '../src/domain/records';
 
 const esc = (s: unknown) =>
@@ -30,48 +31,85 @@ const matchOutcome = (state: string, result: string | null) => {
   );
 };
 
+const profileSections = {
+  overview: 'Overview',
+  matches: 'Matches',
+  history: 'Rating history',
+  details: 'Details',
+};
+function ratingChart(p: PlayerStatistics) {
+  const points = [...p.history].reverse();
+  if (!points.length) return '';
+  const values = [points[0].before, ...points.map((point) => point.after)];
+  const min = Math.min(...values),
+    max = Math.max(...values),
+    span = Math.max(1, max - min);
+  const plot = values
+    .map(
+      (value, index) =>
+        `${32 + (index * 536) / Math.max(1, values.length - 1)},${164 - ((value - min) * 132) / span}`,
+    )
+    .join(' ');
+  return `<figure class="rating-chart"><svg viewBox="0 0 600 200" role="img" aria-label="Recent rating trend for ${esc(p.name)}; exact values in the table below"><line x1="32" x2="568" y1="164" y2="164" class="chart-axis" /><polyline points="${plot}" fill="none" class="chart-line" /><text x="32" y="192">${esc(new Date(points[0].changed_at).toLocaleDateString())}</text><text x="568" y="192" text-anchor="end">${esc(new Date(points.at(-1)!.changed_at).toLocaleDateString())}</text></svg><figcaption>Most recent ${points.length} rating changes · ${min}–${max}. This is not an all-time chart.</figcaption></figure>`;
+}
+function profileLink(value: string, provider: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && !url.username && !url.password)
+      return `<a href="${esc(url.toString())}" rel="noopener noreferrer" target="_blank" aria-label="View ${esc(provider)} profile (opens in a new tab)">View profile</a>`;
+  } catch {
+    /* Manual providers may have no public profile URL. */
+  }
+  return 'No public profile link';
+}
+
 function playerDetails(p: PlayerStatistics) {
   const metric = (label: string, value: string | number) =>
     `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
   return `<section class="panel stats-section" aria-labelledby="player-statistics-heading">
     <div class="section-heading"><h2 id="player-statistics-heading" tabindex="-1">${esc(p.name)}</h2></div>
     ${p.hidden ? '<p class="notice">This player is hidden from other players’ statistics.</p>' : ''}
-    <dl class="stats-summary">
-      ${metric('Rating', `${p.rating} ±${p.deviation}`)}
+    <nav class="profile-tabs category-strip" aria-label="Player sections">${Object.entries(
+      profileSections,
+    )
+      .map(
+        ([key, label]) => `<button type="button" data-profile-section="${key}">${label}</button>`,
+      )
+      .join('')}</nav>
+    <div data-profile-panel="overview"><dl class="stats-summary">
+      ${metric('Rating', p.rated === false ? 'Unrated' : `${p.rating} ±${p.deviation}`)}
       ${metric('Rank', p.rank ?? 'Unranked')}
-      ${metric('Peak rating', p.peak)}
+      ${metric('Peak rating', p.rated === false ? 'Unrated' : p.peak)}
       ${metric('Matches', p.matchCount)}
       ${metric('Wins / losses / draws', `${p.wins} / ${p.losses} / ${p.draws}`)}
       ${metric('Win rate', p.winRate === null ? 'No ranked results' : `${(p.winRate * 100).toFixed(1)}%`)}
       ${metric('Current streak', streak(p.streak))}
       ${metric('Last ranked match', p.lastRankedAt === null ? 'Not recorded' : new Date(p.lastRankedAt).toLocaleString())}
     </dl>
-    <p class="form-help">${p.eligible ? 'Included in this game’s leaderboard.' : 'Does not meet this game’s leaderboard requirements.'}</p>
+    <p class="form-help">${p.eligible ? 'Included in this game’s leaderboard.' : 'Does not meet this game’s leaderboard requirements.'}</p></div>
 
-    <h3>Played civilizations</h3>
-    <p class="form-help">Recorded from linked game profiles. Win rate is wins / completed games, including draws. Inferred links can be corrected with /profile unlink and /lobby link.</p>
-    ${p.civilizations?.length ? `<div class="table-wrap"><table><thead><tr><th>Civilization</th><th>Games</th><th>W / L / D</th><th>Win rate</th><th>Inferred identity</th></tr></thead><tbody>${p.civilizations.map((c) => `<tr><td>${esc(c.selection)}</td><td>${c.games}</td><td>${c.wins} / ${c.losses} / ${c.draws}</td><td>${((100 * c.wins) / c.games).toFixed(1)}%</td><td>${c.inferred}</td></tr>`).join('')}</tbody></table></div>` : '<p>No civilizations recorded yet. Unlinked games remain playable.</p>'}
-    <h3>Recent rating history</h3>
+    <div data-profile-panel="details">    <h3>Played civilizations / factions</h3>
+    <p class="form-help">Recorded from linked game profiles. Win rate is wins / completed games, including draws. Legacy inferred links remain suggestions until confirmed with /lobby link; /profile unlink removes an incorrect link.</p>
+    ${p.civilizations?.length ? `<div class="table-wrap"><table><thead><tr><th>Civilization / faction</th><th>Games</th><th>W / L / D</th><th>Win rate</th><th>Inferred identity</th></tr></thead><tbody>${p.civilizations.map((c) => `<tr><td>${esc(c.selection)}</td><td>${c.games}</td><td>${c.wins} / ${c.losses} / ${c.draws}</td><td>${((100 * c.wins) / c.games).toFixed(1)}%</td><td>${c.inferred}</td></tr>`).join('')}</tbody></table></div>` : '<p>No civilizations or factions recorded yet. Unlinked games remain playable.</p>'}
+    </div><div data-profile-panel="history"><h3>Recent rating history</h3>${ratingChart(p)}
     ${p.history.length ? `<div class="table-wrap"><table><caption class="sr-only">Recent rating changes for ${esc(p.name)}</caption><thead><tr><th scope="col">Date</th><th scope="col" class="numeric">Before</th><th scope="col" class="numeric">After</th><th scope="col">Reason</th></tr></thead><tbody>${p.history.map((c) => `<tr><td>${date(c.changed_at)}</td><td class="numeric">${c.before}</td><td class="numeric">${c.after}</td><td>${esc(c.reason ?? 'Match or administrator adjustment')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No rating changes recorded.</p>'}
 
-    <h3>Teammates and opponents</h3>
+    </div><div data-profile-panel="details"><h3>Teammates and opponents</h3>
     <p class="form-help">Based on the most recent 30 recorded matches. Comparisons require at least three encounters.</p>
     ${p.relationships.length ? `<div class="table-wrap"><table><caption class="sr-only">Teammate and opponent comparisons for ${esc(p.name)}</caption><thead><tr><th scope="col">Player</th><th scope="col" class="numeric">Together</th><th scope="col" class="numeric">Wins together</th><th scope="col" class="numeric">Against</th><th scope="col" class="numeric">Wins against</th></tr></thead><tbody>${p.relationships.map((r) => `<tr><th scope="row">${esc(r.name)}</th><td class="numeric">${r.teammateMatches}</td><td class="numeric">${r.winsTogether}</td><td class="numeric">${r.opponentMatches}</td><td class="numeric">${r.winsAgainst}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No comparisons meet the encounter requirement yet.</p>'}
 
-    <h3>Recent matches</h3>
+    </div><div data-profile-panel="matches"><h3>Recent matches</h3><p class="form-help">The most recent 30 recorded matches are available here.</p>
     ${p.recent.map((m) => `<details class="match-record"><summary>${esc(m.queue)} <span class="record-meta">${esc(matchOutcome(m.state, m.result))} · ${date(m.at)}</span></summary><div class="record-teams">${m.teams.map((team, side) => `<div><strong>${side === 0 ? 'Alpha' : 'Beta'}</strong><p>${team.map((player) => esc(player.name)).join(', ')}</p></div>`).join('')}</div>${m.note ? `<p>${esc(m.note)}</p>` : ''}<p class="record-meta">Match ID: <code>${esc(m.id)}</code></p></details>`).join('') || '<p class="empty-state">No recent matches recorded.</p>'}
 
-    <h3>Profile references</h3><p class="form-help">These links are optional and unverified. They do not prove ownership of a game profile.</p>
-    ${p.profiles.length ? `<div class="table-wrap"><table><caption class="sr-only">Unverified external profile references</caption><thead><tr><th scope="col">Provider</th><th scope="col">Profile ID</th><th scope="col">Source</th><th scope="col">Link</th></tr></thead><tbody>${p.profiles.map((r) => `<tr><th scope="row">${esc(r.provider)}</th><td><code>${esc(r.external_id)}</code></td><td>${esc(r.provenance)}</td><td><a href="${esc(r.url)}" rel="noopener noreferrer" target="_blank" aria-label="View ${esc(r.provider)} profile (opens in a new tab)">View profile</a></td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No linked profiles.</p>'}
+    </div><div data-profile-panel="details">    <h3>Profile references</h3><p class="form-help">Declared and organizer-assigned accounts are claims. Ownership verification records authenticated account control; it does not prove game ownership or participation in a match.</p>
+    ${p.profiles.length ? `<div class="table-wrap"><table><caption class="sr-only">External profile references and account trust</caption><thead><tr><th scope="col">Provider</th><th scope="col">Profile ID</th><th scope="col">Trust</th><th scope="col">Source</th><th scope="col">Link</th></tr></thead><tbody>${p.profiles.map((r) => `<tr><th scope="row">${esc(r.provider)}</th><td><code>${esc(r.external_id)}</code></td><td>${esc(r.trust === 'ownership_verified' ? 'Ownership verified' : r.trust === 'organizer_assigned' ? 'Organizer assigned' : r.trust === 'suggested' || r.provenance.startsWith('inferred:') ? 'Suggested' : 'Declared')}${r.verifiedAt ? ` · ${date(r.verifiedAt)}` : ''}</td><td>${esc(r.provenance)}</td><td>${profileLink(r.url, r.provider)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No linked profiles.</p>'}
     <details class="technical-details"><summary>Record source</summary><p>Player records: ${esc(p.source)}</p>${p.history.length ? `<ul>${[...new Set(p.history.map((c) => c.source ?? 'local'))].map((source) => `<li>Rating history: ${esc(source)}</li>`).join('')}</ul>` : ''}</details>
-  </section>`;
+  </div></section>`;
 }
 
 export async function showStats(app: HTMLElement) {
   document.title = 'Community Games — statistics';
-  const bootstrapResponse = await fetch('/api/bootstrap', { credentials: 'same-origin' });
-  if (!bootstrapResponse.ok) throw new Error('Could not load statistics. Reload to retry.');
-  const bootstrap = (await bootstrapResponse.json()) as { environment: string; version: string };
+  const bootstrap = await requestJson<{ environment: string; version: string }>('/api/bootstrap');
   document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
   const query = new URL(location.href).searchParams,
@@ -79,21 +117,45 @@ export async function showStats(app: HTMLElement) {
     game = query.get('game');
   if (!community || !game)
     throw new Error('Open a statistics link from /rank, /leaderboard or community setup.');
-  let page = 0,
+  let page = Math.max(0, Number(query.get('page')) || 0),
     user = query.get('user') ?? '';
+  let section = query.get('section') ?? 'overview';
+  let sequence = 0;
+  const route = () => {
+    const url = new URL(location.href);
+    url.searchParams.set('page', String(page));
+    if (user) url.searchParams.set('user', user);
+    else url.searchParams.delete('user');
+    url.searchParams.set('section', section);
+    if (url.href !== location.href) history.pushState(null, '', url);
+  };
+  const showSection = () => {
+    if (!(section in profileSections)) section = 'overview';
+    app
+      .querySelectorAll<HTMLElement>('[data-profile-panel]')
+      .forEach((panel) => (panel.hidden = panel.dataset.profilePanel !== section));
+    app
+      .querySelectorAll<HTMLElement>('[data-profile-section]')
+      .forEach((tab) =>
+        tab.setAttribute('aria-current', String(tab.dataset.profileSection === section)),
+      );
+  };
+  window.addEventListener('popstate', () => {
+    const query = new URL(location.href).searchParams;
+    user = query.get('user') ?? '';
+    page = Math.max(0, Number(query.get('page')) || 0);
+    section = query.get('section') ?? 'overview';
+    void load();
+  });
   const load = async (focusPlayer = false) => {
+    const request = ++sequence;
     app.setAttribute('aria-busy', 'true');
     try {
-      const response = await fetch(
+      const data = await requestJson<Stats>(
         `/statistics/${encodeURIComponent(community)}/${encodeURIComponent(game)}?page=${page}${user ? `&user=${encodeURIComponent(user)}` : ''}`,
         { credentials: 'same-origin' },
       );
-      const data = (await response.json()) as Stats & { error?: string };
-      if (!response.ok) {
-        const needsAccess = response.status === 401 || response.status === 403;
-        app.innerHTML = `<section class="panel stats-section"><h1>${needsAccess ? 'Statistics need access' : 'Statistics unavailable'}</h1><p role="alert">${esc(data.error ?? 'Try again shortly.')}</p><div class="actions">${needsAccess ? `<a class="button primary" href="/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}">Sign in with Discord</a>` : ''}<button data-stats="reload">Retry</button><a href="/">Community setup</a></div></section>`;
-        return;
-      }
+      if (request !== sequence) return;
       const p = data.player;
       app.innerHTML = `<div class="page-heading"><div><h1>${esc(data.gameName)}</h1><p class="view-description">Community statistics</p></div><div class="actions"><a href="/?community=${encodeURIComponent(community)}">Organizer setup</a><button data-stats="reload">Reload statistics</button></div></div>
         <section class="panel stats-section" aria-labelledby="leaderboard-heading"><div class="section-heading"><h2 id="leaderboard-heading">Leaderboard</h2></div>
@@ -102,23 +164,36 @@ export async function showStats(app: HTMLElement) {
         <div class="pagination"><p aria-live="polite">Page ${page + 1} of ${Math.max(1, data.pages)} · ${data.total} eligible player${data.total === 1 ? '' : 's'}</p><div class="actions"><button data-stats="previous"${page === 0 ? ' disabled' : ''}>Previous</button><button data-stats="next"${page + 1 >= data.pages ? ' disabled' : ''}>Next</button></div></div>
         <form id="stats-player" class="inline-form"><label>Player Discord ID<input name="user" pattern="[0-9]{17,20}" required value="${esc(user)}" inputmode="numeric" spellcheck="false" /><span class="form-help">Select a player above or enter their Discord ID.</span></label><button>Load player</button></form></section>
         ${p ? playerDetails(p) : user ? '<section class="panel stats-section"><h2>Player record</h2><p class="empty-state">No visible player record for this game. Check the Discord ID or statistics access.</p></section>' : ''}`;
+      labelTables(app);
+      showSection();
       if (focusPlayer && p) app.querySelector<HTMLElement>('#player-statistics-heading')?.focus();
     } catch (error) {
-      app.innerHTML = `<section class="panel stats-section"><h1>Statistics unavailable</h1><p role="alert">${esc(error instanceof Error ? error.message : 'Request failed.')}</p><div class="actions"><button data-stats="reload">Retry</button><a href="/">Community setup</a></div></section>`;
+      if (request !== sequence) return;
+      const needsAccess = error instanceof ApiError && [401, 403].includes(error.status);
+      app.innerHTML = `<section class="panel stats-section"><h1>${needsAccess ? 'Statistics need access' : 'Statistics unavailable'}</h1><p role="alert">${esc(error instanceof Error ? error.message : 'Request failed.')}</p><div class="actions">${needsAccess ? `<a class="button primary" href="/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}">Sign in with Discord</a>` : ''}<button data-stats="reload">Retry</button><a href="/">Community setup</a></div></section>`;
     } finally {
-      app.setAttribute('aria-busy', 'false');
+      if (request === sequence) app.setAttribute('aria-busy', 'false');
     }
   };
   app.addEventListener('click', (event) => {
     if (app.getAttribute('aria-busy') === 'true') return;
     const button = (event.target as Element).closest<HTMLButtonElement>('button');
     if (!button || button.disabled) return;
+    if (button.dataset.profileSection) {
+      section = button.dataset.profileSection;
+      route();
+      showSection();
+      return;
+    }
     if (button.dataset.user) {
       user = button.dataset.user;
+      section = 'overview';
+      route();
       void load(true);
     } else if (button.dataset.stats) {
       if (button.dataset.stats === 'next') page++;
       if (button.dataset.stats === 'previous') page = Math.max(0, page - 1);
+      route();
       void load();
     }
   });
@@ -128,6 +203,8 @@ export async function showStats(app: HTMLElement) {
     const form = (event.target as Element).closest<HTMLFormElement>('#stats-player');
     if (form) {
       user = String(new FormData(form).get('user') ?? '');
+      section = 'overview';
+      route();
       void load(true);
     }
   });

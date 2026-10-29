@@ -46,6 +46,7 @@ export interface Match {
   lobby?: LobbyBinding;
   lobbySearch?: LobbySearch;
   lobbyAutoDisabled?: boolean;
+  test?: { markedBy: string; markedAt: number };
 }
 export const personSchema = z
   .object({
@@ -99,12 +100,27 @@ export const actionSchema = z
       'lobby_attach',
       'lobby_unlink',
       'lobby_status',
+      'lobby_confirm',
+      'lobby_facts',
+      'lobby_replays',
     ]),
     minutes: z.number().int().min(1).max(10).optional(),
     redo: z.boolean().optional(),
     generation: z.number().int().positive().optional(),
     choice: z.number().int().min(0).max(12).optional(),
     reference: z.string().trim().min(1).max(300).optional(),
+    facts: z
+      .object({
+        map: z.string().trim().min(1).max(100).optional(),
+        elapsedSeconds: z.number().int().min(0).max(31536000).optional(),
+        selection: z.string().trim().min(1).max(100).optional(),
+        recordingUrl: z
+          .url({ protocol: /^https$/ })
+          .max(2000)
+          .optional(),
+      })
+      .strict()
+      .optional(),
     queue: z.string().max(100).optional(),
     target: personSchema.optional(),
     replacement: personSchema.optional(),

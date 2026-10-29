@@ -1,9 +1,19 @@
 name: Cloudflare foundation
 on:
   pull_request:
-    paths: ['cloudflare/**', '.github/workflows/cloudflare.yml']
+    paths:
+      [
+        "cloudflare/**",
+        ".github/workflows/cloudflare.yml",
+        ".github/workflows/connector-probes.yml",
+      ]
   push:
-    paths: ['cloudflare/**', '.github/workflows/cloudflare.yml']
+    paths:
+      [
+        "cloudflare/**",
+        ".github/workflows/cloudflare.yml",
+        ".github/workflows/connector-probes.yml",
+      ]
   workflow_dispatch:
     inputs:
       deploy_staging:
@@ -27,6 +37,16 @@ jobs:
           cache-dependency-path: cloudflare/package-lock.json
       - run: npm ci
       - run: npm run check
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cloudflare-browser-evidence
+          path: |
+            cloudflare/playwright-report
+            cloudflare/test-results
+          retention-days: 7
       - run: python3 scripts/test-legacy-converter.py
       - run: python3 scripts/test-economy-converter.py
   staging:

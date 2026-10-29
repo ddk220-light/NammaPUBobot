@@ -6,6 +6,7 @@ export const snowflake = z.string().regex(/^\d{17,20}$/, 'Enter a Discord ID.');
 const id = z.uuid();
 const name = z.string().trim().min(1).max(80);
 export { gameCatalog as catalog } from '../games/catalog';
+import { catalogIds, operations } from '../games/types';
 import { gameCapabilities } from '../games/catalog';
 
 export const gameSchema = z
@@ -15,11 +16,12 @@ export const gameSchema = z
     connector: z
       .object({
         enabled: z.boolean(),
+        capabilities: z.partialRecord(z.enum(operations), z.boolean()).optional(),
         autoAttach: z.object({ lobbyName: name }).strict().optional(),
       })
       .strict()
       .optional(),
-    catalogId: z.enum(['aoe2', 'aoe3', 'aoe4', 'aom', 'generals']).nullable(),
+    catalogId: z.enum(catalogIds).nullable(),
     records: z
       .object({
         visibility: z.enum(['public', 'members', 'admins']),
@@ -60,7 +62,10 @@ export const modulesSchema = z
     stories: z.boolean(),
   })
   .strict()
-  .refine((m) => !m.predictions || m.gold, 'Predictions require gold.');
+  .refine((m) => !m.predictions || m.gold, {
+    message: 'Predictions require gold.',
+    path: ['predictions'],
+  });
 export const emptyModules = {
   gold: false,
   predictions: false,
@@ -94,7 +99,10 @@ export const queueSchema = z
     adminRoles: z
       .array(snowflake)
       .max(20)
-      .refine((roles) => new Set(roles).size === roles.length, 'Choose each bot moderator role once.')
+      .refine(
+        (roles) => new Set(roles).size === roles.length,
+        'Choose each bot moderator role once.',
+      )
       .optional(),
     economy: z
       .object({ taxEnabled: z.boolean(), taxMinuteUtc: z.number().int().min(0).max(1439) })
@@ -138,11 +146,12 @@ export const settingsSchema = z
       labels = new Set<string>(),
       catalogs = new Set<string>(),
       defaults = new Set<string>();
-    for (const g of s.games) {
-      if (g.connector?.enabled && !gameCapabilities(g.catalogId)?.lobby)
+    for (const [index, g] of s.games.entries()) {
+      if (g.connector?.enabled && !gameCapabilities(g.catalogId))
         ctx.addIssue({
           code: 'custom',
-          message: 'No lobby connector is available for this game; use manual play.',
+          message: 'Choose a catalog game for connector settings; custom games use manual play.',
+          path: ['games', index, 'connector', 'enabled'],
         });
       const taxMinutes = new Set(
         s.queues
@@ -150,49 +159,77 @@ export const settingsSchema = z
           .map((q) => q.economy!.taxMinuteUtc),
       );
       if (taxMinutes.size > 1)
+        s.queues.forEach((q, qi) => {
+          if (q.gameId === g.id && q.modules.gold && q.economy?.taxEnabled)
+            ctx.addIssue({
+              code: 'custom',
+              message: 'Queues for one game must use the same Thursday tax time.',
+              path: ['queues', qi, 'economy', 'taxMinuteUtc'],
+            });
+        });
+      if (games.has(g.id))
         ctx.addIssue({
           code: 'custom',
-          message: 'Queues for one game must use the same Thursday tax time.',
+          message: 'Duplicate game identity.',
+          path: ['games', index, 'id'],
         });
-      if (games.has(g.id)) ctx.addIssue({ code: 'custom', message: 'Duplicate game identity.' });
       if (g.catalogId && catalogs.has(g.catalogId))
-        ctx.addIssue({ code: 'custom', message: 'That catalog game is already configured.' });
+        ctx.addIssue({
+          code: 'custom',
+          message: 'That catalog game is already configured.',
+          path: ['games', index, 'catalogId'],
+        });
       games.add(g.id);
-      if (
-        g.records &&
-        new Set(g.records.ranks.map((r) => r.threshold)).size !== g.records.ranks.length
-      )
-        ctx.addIssue({ code: 'custom', message: 'Rank thresholds must be unique.' });
+      g.records?.ranks.forEach((rank, ri, ranks) => {
+        if (ranks.some((r, i) => i !== ri && r.threshold === rank.threshold))
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Rank thresholds must be unique.',
+            path: ['games', index, 'records', 'ranks', ri, 'threshold'],
+          });
+      });
       if (g.catalogId) catalogs.add(g.catalogId);
     }
     if (s.games.filter((g) => g.records?.decorateNickname).length > 1)
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Nickname decoration can belong to only one game in each community.',
+      s.games.forEach((g, index) => {
+        if (g.records?.decorateNickname)
+          ctx.addIssue({
+            code: 'custom',
+            message: 'Nickname decoration can belong to only one game in each community.',
+            path: ['games', index, 'records', 'decorateNickname'],
+          });
       });
-    for (const q of s.queues) {
+    for (const [index, q] of s.queues.entries()) {
       if (q.modules.civs && s.games.find((g) => g.id === q.gameId)?.catalogId !== 'aoe2')
         ctx.addIssue({
           code: 'custom',
           message: 'Civilization picking is available for AoE2 queues only.',
+          path: ['queues', index, 'modules', 'civs'],
         });
       if (q.modules.maps && !q.maps && s.games.find((g) => g.id === q.gameId)?.catalogId !== 'aoe2')
         ctx.addIssue({
           code: 'custom',
           message: 'Add a map pool before enabling map selection for this game.',
+          path: ['queues', index, 'maps', 'pool'],
         });
       if (q.isDefault && defaults.has(q.channelId))
-        ctx.addIssue({ code: 'custom', message: 'Choose one default queue per channel.' });
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Choose one default queue per channel.',
+          path: ['queues', index, 'isDefault'],
+        });
       if (q.isDefault) defaults.add(q.channelId);
       if (q.ratingEngine === 'trueskill' && q.ratingSettings && q.ratingSettings.deviation < 2)
         ctx.addIssue({
           code: 'custom',
           message: 'TrueSkill requires initial deviation of at least 2.',
+          path: ['queues', index, 'ratingSettings', 'deviation'],
         });
       if (q.ratingSettings && q.ratingSettings.minDeviation > q.ratingSettings.deviation)
         ctx.addIssue({
           code: 'custom',
           message: 'Minimum deviation cannot exceed initial deviation.',
+          path: ['queues', index, 'ratingSettings', 'minDeviation'],
         });
       const names = [q.name, ...(q.aliases ?? [])].map((n) => `${q.channelId}:${n.toLowerCase()}`);
       if (
@@ -200,9 +237,17 @@ export const settingsSchema = z
         names.some((n) => labels.has(n)) ||
         new Set(names).size !== names.length
       )
-        ctx.addIssue({ code: 'custom', message: 'Duplicate queue identity or channel name.' });
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Duplicate queue identity or channel name.',
+          path: ['queues', index, queues.has(q.id) ? 'id' : 'name'],
+        });
       if (!games.has(q.gameId))
-        ctx.addIssue({ code: 'custom', message: 'A queue refers to an unknown game.' });
+        ctx.addIssue({
+          code: 'custom',
+          message: 'A queue refers to an unknown game.',
+          path: ['queues', index, 'gameId'],
+        });
       queues.add(q.id);
       names.forEach((n) => labels.add(n));
     }

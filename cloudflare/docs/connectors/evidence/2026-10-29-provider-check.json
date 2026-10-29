@@ -1,0 +1,461 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-10-29T00:26:43.364Z",
+  "scope": "read-only provider metadata; not real-game acceptance",
+  "results": [
+    {
+      "game": "aoe2",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:46.439Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "ongoingDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:47.101Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:48.068Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:48.333Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:48.451Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:48.533Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:48.613Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe2",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-29T00:26:48.613Z",
+      "requests": 0
+    },
+    {
+      "game": "aoe3",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:49.218Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "ongoingDiscovery",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-29T00:26:49.218Z",
+      "requests": 0
+    },
+    {
+      "game": "aoe3",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:49.692Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:49.810Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:50.129Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:50.223Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe3",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:50.224Z",
+      "requests": 0
+    },
+    {
+      "game": "aoe3",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-29T00:26:50.224Z",
+      "requests": 0
+    },
+    {
+      "game": "aoe4",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:50.345Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "ongoingDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:50.847Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:50.953Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:51.055Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:51.655Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:51.776Z",
+      "requests": 1
+    },
+    {
+      "game": "aoe4",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:51.776Z",
+      "requests": 0
+    },
+    {
+      "game": "aoe4",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-29T00:26:51.776Z",
+      "requests": 0
+    },
+    {
+      "game": "aom",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:52.392Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "ongoingDiscovery",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-29T00:26:52.392Z",
+      "requests": 0
+    },
+    {
+      "game": "aom",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:52.510Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:52.617Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:52.902Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 1
+    },
+    {
+      "game": "aom",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "aom",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "lobbyDiscovery",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "ongoingDiscovery",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "accountLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "matchLookup",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "historyLookup",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "replayReferences",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "lobbyObservation",
+      "status": "access-blocked",
+      "detail": "integration_credentials_missing",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "zero_hour",
+      "operation": "ownershipVerification",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-29T00:26:53.009Z",
+      "requests": 0
+    },
+    {
+      "game": "bar",
+      "operation": "lobbyDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:54.383Z",
+      "requests": 1
+    },
+    {
+      "game": "bar",
+      "operation": "ongoingDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:54.384Z",
+      "requests": 0
+    },
+    {
+      "game": "bar",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:54.384Z",
+      "requests": 0
+    },
+    {
+      "game": "bar",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:55.411Z",
+      "requests": 1
+    },
+    {
+      "game": "bar",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:58.869Z",
+      "requests": 6
+    },
+    {
+      "game": "bar",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:58.869Z",
+      "requests": 0
+    },
+    {
+      "game": "bar",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:58.869Z",
+      "requests": 0
+    },
+    {
+      "game": "bar",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-29T00:26:58.869Z",
+      "requests": 0
+    },
+    {
+      "game": "wc3",
+      "operation": "lobbyDiscovery",
+      "status": "unsupported",
+      "detail": "provider_has_no_supported_operation",
+      "checkedAt": "2026-10-29T00:26:58.869Z",
+      "requests": 0
+    },
+    {
+      "game": "wc3",
+      "operation": "ongoingDiscovery",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:59.707Z",
+      "requests": 1
+    },
+    {
+      "game": "wc3",
+      "operation": "accountLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:26:59.915Z",
+      "requests": 1
+    },
+    {
+      "game": "wc3",
+      "operation": "matchLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:27:00.181Z",
+      "requests": 1
+    },
+    {
+      "game": "wc3",
+      "operation": "historyLookup",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:27:00.380Z",
+      "requests": 1
+    },
+    {
+      "game": "wc3",
+      "operation": "replayReferences",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:27:00.380Z",
+      "requests": 0
+    },
+    {
+      "game": "wc3",
+      "operation": "lobbyObservation",
+      "status": "passed",
+      "detail": "valid_metadata_response",
+      "checkedAt": "2026-10-29T00:27:00.771Z",
+      "requests": 2
+    },
+    {
+      "game": "wc3",
+      "operation": "ownershipVerification",
+      "status": "access-blocked",
+      "detail": "interactive_sign_in_required",
+      "checkedAt": "2026-10-29T00:27:00.771Z",
+      "requests": 0
+    }
+  ],
+  "counts": {
+    "passed": 39,
+    "failed": 0,
+    "access-blocked": 10,
+    "unsupported": 7
+  }
+}

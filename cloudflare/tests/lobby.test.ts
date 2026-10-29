@@ -3,6 +3,7 @@ import { runInDurableObject, abortAllDurableObjects, runDurableObjectAlarm } fro
 import { describe, expect, it, vi } from 'vitest';
 import { aoe2Adapter, parseAoE2Match } from '../src/games/aoe2';
 import { gameCapabilities } from '../src/games/catalog';
+import { catalogIds } from '../src/games/types';
 import { gameAdapter } from '../src/games/registry';
 import { settingsSchema } from '../src/domain/config';
 import { validObservation, type LobbyEvent } from '../src/domain/lobby';
@@ -69,6 +70,7 @@ function payload(m: Match, finished = true) {
         profileId: Number(profileId(p.id)),
         name: p.name,
         civName: 'Franks',
+        won: side === 0,
       })),
     })),
   };
@@ -120,16 +122,17 @@ describe('game adapter contract', () => {
   ])('rejects %s', (value) => {
     expect(() => aoe2Adapter.parseLobbyReference(value)).toThrow();
   });
-  it('advertises actual capabilities and keeps other games manual', () => {
+  it('registers every game with explicit capabilities and manual fallback', () => {
     expect(gameCapabilities('aoe2')).toMatchObject({ lobby: true, occupancy: true });
-    for (const id of ['generals', 'aoe4', 'aoe3', 'aom']) {
-      expect(gameAdapter(id)).toBeUndefined();
+    for (const id of catalogIds) {
+      expect(gameAdapter(id)?.manifest.id).toBe(id);
+      expect(gameCapabilities(id)?.manual).toBe(true);
       const s = settings();
-      s.games[0].catalogId = id as 'aoe4';
-      expect(settingsSchema.safeParse(s).success).toBe(true);
+      s.games[0].catalogId = id;
       s.games[0].connector = { enabled: true };
-      expect(settingsSchema.safeParse(s).success).toBe(false);
+      expect(settingsSchema.safeParse(s).success).toBe(true);
     }
+    expect(gameAdapter('generals')?.manifest.capabilities.lobbyObservation).toBe('unsupported');
     expect(gameCapabilities('generals')?.selection).toBe('faction');
   });
   it('rejects duplicate/invalid players and inconsistent times', () => {
@@ -157,7 +160,7 @@ describe('game adapter contract', () => {
   it.each([404, 429, 500])('handles provider HTTP %s without a socket fallback', async (status) => {
     vi.mocked(fetch).mockImplementation(async () => new Response(null, { status }));
     expect(await aoe2Adapter.observe('9001', false)).toMatchObject({
-      status: status === 404 ? 'not_found' : 'unavailable',
+      status: status === 404 ? 'not_found' : status === 429 ? 'throttled' : 'unavailable',
     });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -173,9 +176,9 @@ describe('game adapter contract', () => {
   });
   it('bounds malformed, oversized and failed responses', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('bad json'));
-    expect((await aoe2Adapter.observe('9001', false)).status).toBe('unavailable');
+    expect((await aoe2Adapter.observe('9001', false)).status).toBe('invalid_response');
     vi.mocked(fetch).mockResolvedValue(new Response('x'.repeat(400001)));
-    expect((await aoe2Adapter.observe('9001', false)).status).toBe('unavailable');
+    expect((await aoe2Adapter.observe('9001', false)).status).toBe('invalid_response');
     vi.mocked(fetch).mockRejectedValue(new DOMException('timed out', 'TimeoutError'));
     expect((await aoe2Adapter.observe('9001', false)).status).toBe('unavailable');
   });
@@ -298,6 +301,7 @@ describe('durable lobby journey', () => {
     expect(await prompts()).toHaveLength(0);
     expect((await stub().records(guild)).economy.books[0].status).toBe('refunded');
     vi.mocked(fetch).mockImplementation(async () => Response.json(payload(m)));
+    await abortAllDurableObjects(); // The provider cache also restarts; the next poll observes fresh data.
     await due();
     await stub().pollLobbies(guild);
     expect(await prompts()).toHaveLength(1);
@@ -412,14 +416,16 @@ describe('durable lobby journey', () => {
     ).toMatchObject({ accepted: false });
     expect(await prompts()).toHaveLength(1);
   });
-  it('invalidates delivered evidence immediately when an organizer disables the connector', async () => {
+  it('disables new observations and polling while retaining recorded facts for manual reporting', async () => {
     const m = await linked();
     await stub().connectorEnded(guild, event(m));
     const snapshot = await stub().read(guild);
     snapshot.settings.games[0].connector!.enabled = false;
     await stub().save(guild, snapshot.revision, snapshot.settings, person(99).id, 'save');
-    expect((await current()).lobby!.state).toBe('invalidated');
-    expect(await prompts()).toHaveLength(0);
+    expect((await current()).lobby).toMatchObject({ state: 'observed', availability: 'disabled' });
+    expect(
+      await stub().connectorEnded(guild, { ...event(m), eventId: crypto.randomUUID() }),
+    ).toMatchObject({ accepted: false, reason: 'capability_unavailable' });
     expect(await jobs()).toHaveLength(0);
   });
   it('rejects ambiguous profiles and requires an explicit fresh attachment after mapping edits', async () => {
@@ -513,7 +519,11 @@ describe('durable lobby journey', () => {
   it('retains binding evidence in backup and leaves restored polling disabled', async () => {
     const m = await linked();
     const backup = await stub().operationalBackup(guild);
-    expect(backup.tables.schema_version[0].version).toBe(7);
+    expect(backup.tables.schema_version[0].version).toBe(8);
+    // The live source can poll while the copy is being restored. Stop its alarm
+    // and drain its instance before asserting that the read-only copy is silent.
+    await runInDurableObject(stub(), (_i, state) => state.storage.deleteAlarm());
+    await abortAllDurableObjects();
     const copy = env.COMMUNITIES.getByName('lobby-recovery');
     expect(
       await copy.operationalRestore(guild, {

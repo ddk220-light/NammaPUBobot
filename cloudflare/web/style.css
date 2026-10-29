@@ -1,16 +1,16 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #25282d;
-  background: #f5f6f7;
+  color: #f2f3f5;
+  background: #1f2125;
   font-synthesis: none;
   font-size: 14px;
   line-height: 1.5;
-  color-scheme: light;
-  --surface: #ffffff;
-  --subtle: #f5f6f7;
-  --border: #d9dde2;
-  --muted: #626b76;
-  --link: #275c91;
+  color-scheme: dark;
+  --surface: #292b30;
+  --subtle: #1f2125;
+  --border: #404249;
+  --muted: #adb1bb;
+  --link: #b4baff;
 }
 * {
   box-sizing: border-box;
@@ -36,7 +36,7 @@ header {
   border-bottom: 1px solid var(--border);
 }
 .brand {
-  color: #25282d;
+  color: #f2f3f5;
   font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.35px;
@@ -46,9 +46,9 @@ header {
   color: inherit;
 }
 .badge {
-  border: 1px solid #cfd4da;
+  border: 1px solid #484b53;
   border-radius: 3px;
-  color: #59616c;
+  color: #adb1bb;
   padding: 3px 7px;
   font-size: 10px;
   font-weight: 600;
@@ -73,7 +73,7 @@ main {
 h1,
 h2,
 h3 {
-  color: #25282d;
+  color: #f2f3f5;
   line-height: 1.3;
 }
 h1 {
@@ -106,10 +106,10 @@ a {
   text-underline-offset: 3px;
 }
 a:hover {
-  color: #173e66;
+  color: #d6d9ff;
 }
 .lead {
-  color: #505964;
+  color: #b8bdc8;
   font-size: 16px;
   max-width: 560px;
 }
@@ -131,10 +131,10 @@ button {
   justify-content: center;
   min-height: 38px;
   padding: 8px 13px;
-  border: 1px solid #bbc2cb;
+  border: 1px solid #4c505a;
   border-radius: 4px;
   background: var(--surface);
-  color: #333a43;
+  color: #e1e3e9;
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -145,19 +145,19 @@ button {
 }
 .button:hover,
 button:hover {
-  background: #f0f2f4;
-  border-color: #939da9;
-  color: #25282d;
+  background: #363940;
+  border-color: #777d89;
+  color: #f2f3f5;
 }
 .primary {
-  background: #303740;
-  border-color: #303740;
-  color: #ffffff;
+  background: #5865f2;
+  border-color: #5865f2;
+  color: #292b30;
 }
 .primary:hover {
-  background: #1f252c;
-  border-color: #1f252c;
-  color: #ffffff;
+  background: #4752c4;
+  border-color: #4752c4;
+  color: #292b30;
 }
 button:disabled {
   opacity: 0.5;
@@ -173,23 +173,23 @@ textarea {
   min-width: 0;
   min-height: 38px;
   padding: 8px 10px;
-  border: 1px solid #bbc2cb;
+  border: 1px solid #4c505a;
   border-radius: 4px;
   background: var(--surface);
-  color: #25282d;
+  color: #f2f3f5;
   font: inherit;
   line-height: 1.4;
 }
 input::placeholder,
 textarea::placeholder {
-  color: #69727e;
+  color: #adb1bb;
   opacity: 1;
 }
 input:disabled,
 select:disabled,
 textarea:disabled {
-  background: #f1f3f5;
-  color: #68717d;
+  background: #363940;
+  color: #adb1bb;
 }
 textarea {
   resize: vertical;
@@ -201,8 +201,8 @@ input[type='file'] {
 input[type='file']::file-selector-button {
   border: 0;
   border-right: 1px solid var(--border);
-  background: #f1f3f5;
-  color: #333a43;
+  background: #363940;
+  color: #e1e3e9;
   margin-right: 8px;
   padding: 4px 8px;
   font: inherit;
@@ -214,7 +214,7 @@ textarea:focus,
 button:focus-visible,
 a:focus-visible,
 summary:focus-visible {
-  outline: 2px solid #3673ae;
+  outline: 2px solid #b4baff;
   outline-offset: 2px;
 }
 label {
@@ -222,7 +222,7 @@ label {
   flex-direction: column;
   min-width: 0;
   gap: 6px;
-  color: #464e58;
+  color: #d8dbe3;
   font-size: 12px;
   font-weight: 500;
 }
@@ -230,7 +230,7 @@ input[type='checkbox'] {
   width: 16px;
   height: 16px;
   min-height: 0;
-  accent-color: #3d4753;
+  accent-color: #7782ff;
   flex-shrink: 0;
   margin: 0;
 }
@@ -309,15 +309,15 @@ input[type='checkbox'] {
   white-space: nowrap;
 }
 .workspace-tab:hover {
-  border-bottom-color: #a5aeb8;
+  border-bottom-color: #535966;
   background: transparent;
-  color: #25282d;
+  color: #f2f3f5;
 }
 .workspace-tab[aria-selected='true'],
 .workspace-tab.active {
-  border-bottom-color: #303740;
+  border-bottom-color: #5865f2;
   background: transparent;
-  color: #25282d;
+  color: #f2f3f5;
   font-weight: 650;
 }
 .workspace-panel {
@@ -383,24 +383,24 @@ input[type='checkbox'] {
 .stage-note {
   margin: 20px 0;
   padding: 10px 13px;
-  border-left: 2px solid #9aa4af;
-  background: #eceff2;
-  color: #545e6b;
+  border-left: 2px solid #8e94a0;
+  background: #32353c;
+  color: #b8bdc8;
   font-size: 12px;
 }
 .notice {
   margin: 14px 0;
   padding: 12px 14px;
-  border: 1px solid #cbd6ce;
+  border: 1px solid #41634e;
   border-radius: 4px;
-  background: #f2f6f3;
-  color: #365541;
+  background: #24382d;
+  color: #8cdeb0;
   overflow-wrap: anywhere;
 }
 .notice.error {
-  border-color: #e0c6c3;
-  background: #faf2f1;
-  color: #8c3933;
+  border-color: #82504e;
+  background: #402b2d;
+  color: #ffb1ac;
 }
 .notice button {
   margin-left: 8px;
@@ -419,6 +419,15 @@ input[type='checkbox'] {
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
+.game-row > .connector-settings {
+  flex: 1 1 100%;
+  order: 2;
+}
+.match-evidence {
+  margin: 16px 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
 .game-row input {
   flex: 1;
   max-width: 560px;
@@ -431,7 +440,7 @@ input[type='checkbox'] {
   min-width: 16px;
 }
 .game-icon {
-  color: #737c88;
+  color: #adb1bb;
   font-size: 15px;
   width: 20px;
   text-align: center;
@@ -450,7 +459,7 @@ input[type='checkbox'] {
   justify-content: space-between;
   gap: 16px;
   padding: 11px 0;
-  border-bottom: 1px solid #e6e8eb;
+  border-bottom: 1px solid #404249;
   font-size: 13px;
 }
 .channel-row:last-child {
@@ -473,7 +482,7 @@ summary {
 }
 .queue > summary {
   padding: 16px 0;
-  color: #303740;
+  color: #5865f2;
   font-weight: 600;
 }
 .queue > summary span {
@@ -484,7 +493,7 @@ summary {
   font-weight: 400;
 }
 .queue[open] > summary {
-  border-bottom: 1px solid #e6e8eb;
+  border-bottom: 1px solid #404249;
   margin-bottom: 18px;
 }
 .fields {
@@ -502,7 +511,7 @@ summary {
 }
 .module-options legend {
   padding: 0 6px;
-  color: #464e58;
+  color: #d8dbe3;
   font-size: 12px;
   font-weight: 600;
 }
@@ -539,11 +548,11 @@ summary {
 }
 .rating-options {
   margin: 0;
-  border-top: 1px solid #e6e8eb;
+  border-top: 1px solid #404249;
 }
 .rating-options > summary {
   padding: 12px 0;
-  color: #414a55;
+  color: #d8dbe3;
   font-size: 13px;
   font-weight: 500;
 }
@@ -560,7 +569,7 @@ summary {
   margin: 10px 0;
 }
 .match-record {
-  border-bottom: 1px solid #e6e8eb;
+  border-bottom: 1px solid #404249;
   padding: 14px 0;
 }
 .match-record > summary {
@@ -577,7 +586,7 @@ summary {
 }
 .record-teams > div {
   padding-left: 14px;
-  border-left: 2px solid #cbd1d8;
+  border-left: 2px solid #535966;
   min-width: 0;
 }
 .record-teams p {
@@ -588,7 +597,7 @@ summary {
 .repair-form {
   margin: 14px 0;
   padding-top: 14px;
-  border-top: 1px solid #e6e8eb;
+  border-top: 1px solid #404249;
 }
 .table-wrap {
   overflow-x: auto;
@@ -604,21 +613,21 @@ th,
 td {
   text-align: left;
   padding: 10px 12px;
-  border-bottom: 1px solid #e2e5e9;
+  border-bottom: 1px solid #404249;
   vertical-align: top;
 }
 th {
-  background: #f5f6f7;
-  color: #586270;
+  background: #1f2125;
+  color: #adb1bb;
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
 }
 td {
-  color: #333b45;
+  color: #e1e3e9;
 }
 tbody tr:hover {
-  background: #f8f9fa;
+  background: #32353c;
 }
 table button,
 .player-link,
@@ -635,7 +644,7 @@ table button:hover,
 .player-link:hover,
 .link-button:hover {
   background: transparent;
-  color: #173e66;
+  color: #d6d9ff;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -650,8 +659,8 @@ pre {
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: #f5f6f7;
-  color: #414a55;
+  background: #1f2125;
+  color: #d8dbe3;
   font:
     12px/1.6 ui-monospace,
     SFMono-Regular,
@@ -670,7 +679,7 @@ code {
 .settings-section,
 .stats-section {
   padding: 20px 0;
-  border-top: 1px solid #e6e8eb;
+  border-top: 1px solid #404249;
 }
 .settings-section:first-of-type,
 .stats-section:first-of-type {
@@ -702,9 +711,9 @@ code {
 .status-pill {
   display: inline-block;
   padding: 1px 6px;
-  border: 1px solid #cfd4da;
+  border: 1px solid #484b53;
   border-radius: 3px;
-  color: #59616c;
+  color: #adb1bb;
   font-size: 11px;
   font-weight: 500;
   line-height: 1.7;

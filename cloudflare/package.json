@@ -1,6 +1,6 @@
 {
   "name": "community-gaming-cloudflare",
-  "version": "0.16.0",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-only",
@@ -8,20 +8,24 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "npm run build:web && wrangler dev",
+    "dev": "npm run build:web && node scripts/build-metadata.mjs dev",
     "build:web": "vite build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && npm run build:web && npm run build:worker",
-    "build:worker": "wrangler deploy --env staging --dry-run --outdir dist/worker",
-    "deploy:staging": "npm run build:web && wrangler deploy --env staging",
+    "build:worker": "node scripts/build-metadata.mjs deploy --env staging --dry-run --outdir dist/worker",
+    "deploy:staging": "npm run build:web && node scripts/build-metadata.mjs deploy --env staging",
     "register:staging": "node scripts/register-commands.mjs",
     "secrets:staging": "node scripts/install-secrets.mjs",
     "connect:staging": "node scripts/connect-discord.mjs",
     "doctor": "node scripts/doctor.mjs",
     "cost:check": "node scripts/cost-report.mjs",
     "operator:config": "node scripts/operator-config.mjs",
-    "operator:backup": "node scripts/operational-backup.mjs"
+    "operator:backup": "node scripts/operational-backup.mjs",
+    "test:ui": "npm run build:web && playwright test",
+    "build:metadata": "node scripts/build-metadata.mjs --print",
+    "test:connectors": "vitest run connector game-accounts account-trust provider-check",
+    "provider:check": "node scripts/provider-check.mjs"
   },
   "dependencies": {
     "hono": "4.13.13",
@@ -32,6 +36,7 @@
     "@cloudflare/workers-types": "5.20261012.1",
     "@playwright/test": "1.64.0",
     "@types/node": "26.6.5",
+    "esbuild": "0.28.2",
     "jsonc-parser": "3.3.1",
     "prettier": "3.9.10",
     "typescript": "7.0.2",

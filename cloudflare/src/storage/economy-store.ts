@@ -125,7 +125,7 @@ export class EconomyStore {
     };
   }
   open(m: Match) {
-    if (!m.queue.modules.predictions || !m.queue.modules.gold) return;
+    if (m.test || !m.queue.modules.predictions || !m.queue.modules.gold) return;
     const old = this.book(m.id);
     if (old && ['open', 'frozen', 'settled'].includes(old.status)) return;
     this.sql.exec(
@@ -193,11 +193,18 @@ export class EconomyStore {
   }
   private assertPreGame(m: Match) {
     const b = m.lobby;
-    if (!b) return; // Manual games retain the established manual-close workflow.
+    // A provisional association is informational; manual games keep captain-controlled closing.
+    if (
+      !b ||
+      (b.availability && b.availability !== 'available') ||
+      !['pending', 'observed', 'unavailable'].includes(b.state) ||
+      (!b.rosterVerified && !b.confirmedBy)
+    )
+      return;
     if (
       b.state !== 'observed' ||
       !b.observation ||
-      b.observation.startedAt ||
+      ['started', 'finished'].includes(b.observation.phase) ||
       Date.now() - (b.lastSuccessAt ?? 0) > 60000
     )
       throw new PlayError(
@@ -279,11 +286,27 @@ export class EconomyStore {
       this.open(m);
     } else if (b?.status === 'frozen') this.refund(b, 'roster_changed_after_close');
   }
+  markTest(m: Match) {
+    const books = this.sql.exec<Book>('SELECT * FROM books WHERE match_id=?', m.id).toArray();
+    if (books.some((b) => b.status === 'settled'))
+      throw new PlayError('This match already has settled predictions and cannot become a test.');
+    for (const book of books) {
+      this.refund(book, 'test_match');
+      this.sql.exec('DELETE FROM bet_participation WHERE book_id=?', book.id);
+    }
+  }
   finish(m: Match, result: 'alpha' | 'beta' | 'draw' | 'abort') {
+    if (m.test) {
+      this.markTest(m);
+      return;
+    }
     const b = this.book(m.id);
     if (b && !['settled', 'refunded'].includes(b.status)) {
       const unverifiedStart =
         !!m.lobby &&
+        (!m.lobby.availability || m.lobby.availability === 'available') &&
+        ['pending', 'observed', 'unavailable'].includes(m.lobby.state) &&
+        (m.lobby.rosterVerified || !!m.lobby.confirmedBy) &&
         !this.sql.exec('SELECT 1 FROM bet_start_evidence WHERE book_id=?', b.id).toArray().length;
       if (b.status === 'open' || result === 'draw' || result === 'abort' || unverifiedStart)
         this.refund(

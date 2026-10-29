@@ -1,3 +1,5 @@
+import { capabilities, type DiscordSetup } from './domain/setup';
+import { buildInfo } from './build-info';
 import { lobbyEventSchema } from './domain/lobby';
 import { Hono, type Context } from 'hono';
 import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
@@ -11,7 +13,7 @@ import {
   discord,
   userGuilds,
   DiscordFailure,
-  REQUIRED_CHANNEL_PERMISSIONS,
+  botInviteUrls,
 } from './discord/client';
 import { interactions } from './discord/interactions';
 import { PlayError, actionSchema, type Action } from './domain/play';
@@ -19,6 +21,11 @@ import { memberIds, resolveMember } from './discord/members';
 import { importSchema, recordActionSchema, recordPolicy } from './domain/records';
 import { economyImportSchema } from './domain/economy-import';
 import { privilegedRankPermissions } from './domain/rank-roles';
+import type { FieldIssue } from './domain/errors';
+import { GameAccountError } from './auth/game-accounts';
+import { gameAccountRoutes } from './routes/game-accounts';
+import { runtimeAdapter, connectorAvailability } from './games/runtime';
+export { ProviderCoordinator } from './storage/provider-coordinator';
 export { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 export { Community } from './storage/community';
 export { AuthStore } from './storage/auth';
@@ -32,6 +39,7 @@ class Problem extends Error {
     public status: number,
     public code: string,
     message: string,
+    public issues: FieldIssue[] = [],
   ) {
     super(message);
   }
@@ -110,7 +118,7 @@ app.use('*', async (c, next) => {
   await next();
   c.header('X-Request-ID', requestId);
   c.header('X-Content-Type-Options', 'nosniff');
-  c.header('Referrer-Policy', 'same-origin');
+  c.header('Referrer-Policy', c.req.path.startsWith('/auth/game/') ? 'no-referrer' : 'same-origin');
   c.header('X-Frame-Options', 'DENY');
   if (
     c.req.path.startsWith('/api/') ||
@@ -169,7 +177,19 @@ app.onError((error, c) => {
         : {}),
     }),
   );
-  return c.json({ error: message, code, requestId: c.get('requestId') }, status as 400);
+  return c.json(
+    {
+      error: message,
+      code,
+      requestId: c.get('requestId'),
+      ...(error instanceof z.ZodError
+        ? { issues: error.issues.map(({ path, message }) => ({ path, message })) }
+        : (error instanceof Problem || error instanceof PlayError) && error.issues.length
+          ? { issues: error.issues }
+          : {}),
+    },
+    status as 400,
+  );
 });
 
 app.get('/health', (c) =>
@@ -177,7 +197,7 @@ app.get('/health', (c) =>
     ok: true,
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.16.0',
+    ...buildInfo,
   }),
 );
 app.post('/interactions', (c) => interactions(c.req.raw, c.env, c.executionCtx));
@@ -204,6 +224,26 @@ function operationalCommunity(c: Context<App>) {
 app.get('/ops/aoe2/feed', async (c) =>
   c.json(await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').status()),
 );
+app.get('/ops/providers', async (c) => {
+  const hosts = [
+    'data.aoe2companion.com',
+    'aoe-api.worldsedgelink.com',
+    'athens-live-api.worldsedgelink.com',
+    'api.bar-rts.com',
+    'api.playgenerals.online',
+    'us.api.blizzard.com',
+    'eu.api.blizzard.com',
+    'kr.api.blizzard.com',
+  ];
+  return c.json({
+    providers: await Promise.all(
+      hosts.map(async (provider) => ({
+        provider,
+        ...(await c.env.PROVIDERS?.getByName(provider).status()),
+      })),
+    ),
+  });
+});
 app.get('/ops/voice', async (c) =>
   c.json(await c.env.VOICE_PRESENCE.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').status()),
 );
@@ -344,29 +384,57 @@ app.get('/api/bootstrap', async (c) => {
     c.env.DISCORD_PUBLIC_KEY &&
     c.env.DISCORD_BOT_TOKEN
   );
-  const invite = c.env.DISCORD_APPLICATION_ID
-    ? `https://discord.com/oauth2/authorize?client_id=${c.env.DISCORD_APPLICATION_ID}&scope=bot%20applications.commands&permissions=${REQUIRED_CHANNEL_PERMISSIONS}`
-    : null;
+  const inviteUrls = botInviteUrls(c.env.DISCORD_APPLICATION_ID);
   return c.json({
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
-    version: '0.16.0',
+    ...buildInfo,
     oauthReady,
     discordReady,
-    inviteUrl: invite,
-    catalog,
+    inviteUrl: inviteUrls.basic,
+    inviteUrls,
+    catalog: catalog.filter((game) => game.lifecycle !== 'legacy'),
     user: s?.session.user ?? null,
     csrf: s?.session.csrf ?? null,
-    capabilities: {
-      matchmaking: true,
-      gold: false,
-      quiz: false,
-      civs: false,
-      maps: false,
-      stories: false,
-    },
+    capabilities,
   });
 });
+
+app.route(
+  '/auth/game',
+  gameAccountRoutes({
+    session: sessionFor,
+    authorize: async (env, guild, gameId, session) => {
+      if (!(await userGuilds(session.accessToken)).some((g) => g.id === guild))
+        throw new GameAccountError(
+          'membership_required',
+          'Join this Discord community before linking an account.',
+          403,
+        );
+      const game = (await env.COMMUNITIES.getByName(guild).read(guild)).settings.games.find(
+        (g) => g.id === gameId,
+      );
+      const adapter = runtimeAdapter(env, game?.catalogId);
+      if (!game?.catalogId || !adapter)
+        throw new GameAccountError('game_missing', 'Choose a configured catalog game.', 404);
+      if (
+        connectorAvailability(env, adapter, 'ownershipVerification') === 'disabled' ||
+        game.connector?.capabilities?.ownershipVerification === false
+      )
+        throw new GameAccountError(
+          'disabled',
+          'Account verification is temporarily disabled. Declared links remain available.',
+          503,
+        );
+      return { catalogId: game.catalogId };
+    },
+    link: (env, proof) =>
+      env.COMMUNITIES.getByName(proof.communityId).linkVerifiedGameAccount(
+        proof.communityId,
+        proof,
+      ),
+  }),
+);
 
 app.get('/auth/login', async (c) => {
   const base = origin(c.env);
@@ -379,9 +447,12 @@ app.get('/auth/login', async (c) => {
     const url = new URL(requested, base);
     if (
       url.origin === base &&
-      url.pathname === '/stats' &&
-      snowflake.safeParse(url.searchParams.get('community')).success &&
-      z.uuid().safeParse(url.searchParams.get('game')).success
+      ((['/stats', '/link'].includes(url.pathname) &&
+        snowflake.safeParse(url.searchParams.get('community')).success &&
+        z.uuid().safeParse(url.searchParams.get('game')).success) ||
+        (url.pathname === '/' &&
+          (!url.searchParams.has('community') ||
+            snowflake.safeParse(url.searchParams.get('community')).success)))
     )
       returnTo = url.pathname + url.search;
   }
@@ -529,6 +600,23 @@ app.use('/api/communities/:guild/*', async (c, next) => {
   await next();
 });
 
+app.get('/api/communities/:guild/connectors', async (c) =>
+  c.json(
+    await c.env.COMMUNITIES.getByName(c.req.param('guild')).connectorStatus(c.req.param('guild')),
+  ),
+);
+app.get('/api/communities/:guild/connectors/:game/games', async (c) => {
+  const phase = c.req.query('phase') ?? 'running';
+  if (phase !== 'waiting' && phase !== 'running')
+    throw new Problem(400, 'invalid_phase', 'Choose waiting or running.');
+  return c.json(
+    await c.env.COMMUNITIES.getByName(c.req.param('guild')).listConnectorGames(
+      c.req.param('guild'),
+      c.req.param('game'),
+      phase,
+    ),
+  );
+});
 app.get('/api/communities/:guild/channels', async (c) =>
   c.json({ channels: await channels(c.env, c.req.param('guild')) }),
 );
@@ -537,11 +625,31 @@ app.get('/api/communities/:guild/config', async (c) =>
 );
 app.get('/api/communities/:guild/setup', async (c) => {
   const guildId = c.req.param('guild');
-  return c.json({
-    snapshot: await c.env.COMMUNITIES.getByName(guildId).read(guildId),
-    ...(await guildSetup(c.env, guildId)),
-    records: await c.env.COMMUNITIES.getByName(guildId).records(guildId),
-  });
+  const stub = c.env.COMMUNITIES.getByName(guildId);
+  const [snapshot, records] = await Promise.all([stub.read(guildId), stub.records(guildId)]);
+  let setup: DiscordSetup;
+  try {
+    setup = await guildSetup(c.env, guildId);
+  } catch (error) {
+    if (!(error instanceof DiscordFailure)) throw error;
+    const needsAccess = error.status === 403 || error.status === 404;
+    setup = {
+      channels: [],
+      moderatorRoles: [],
+      roles: [],
+      voiceChannels: [],
+      access: {
+        status: needsAccess ? 'needs_access' : 'unavailable',
+        message: needsAccess
+          ? 'Invite the bot or restore its server access, then check again.'
+          : 'Discord could not verify access. Your saved settings are available; retry shortly.',
+        manageRoles: false,
+        manageNicknames: false,
+        ...(error.retryAfter ? { retryAfter: error.retryAfter } : {}),
+      },
+    };
+  }
+  return c.json({ snapshot, ...setup, records, gameState: records.gameState });
 });
 app.get('/api/communities/:guild/audit', async (c) =>
   c.json({
@@ -664,7 +772,11 @@ app.post('/api/communities/:guild/actions', async (c) => {
       teams.map((t) => Promise.all(memberIds(t).map((id) => resolveMember(c.env, guild, id)))),
     )) as Action['teams'];
   const stub = c.env.COMMUNITIES.getByName(guild);
-  const reply = await stub.play(guild, actionSchema.parse(action));
+  const parsedAction = actionSchema.parse(action);
+  const reply =
+    parsedAction.kind === 'lobby_replays'
+      ? await stub.refreshLobbyReplays(guild, parsedAction)
+      : await stub.play(guild, parsedAction);
   c.executionCtx.waitUntil(stub.flush());
   if (reply.ok === false) throw new Problem(409, 'play_conflict', reply.content);
   return c.json({ reply, records: await stub.records(guild) });
@@ -677,15 +789,31 @@ async function validateChannels(
 ) {
   if (!queues.length) return;
   const valid = await channels(env, guildId);
-  for (const q of queues) {
+  for (const [index, q] of queues.entries()) {
     const channel = valid.find((v) => v.id === q.channelId);
     if (!channel)
-      throw new Problem(400, 'wrong_channel', 'Choose a text channel belonging to this community.');
+      throw new Problem(
+        400,
+        'wrong_channel',
+        'Choose a text channel belonging to this community.',
+        [
+          {
+            path: ['settings', 'queues', index, 'channelId'],
+            message: 'Choose an available text channel in this community.',
+          },
+        ],
+      );
     if (q.enabled && channel.permissions.some((p) => !p.granted))
       throw new Problem(
         409,
         'missing_permissions',
         `Fix permissions in #${channel.name} before enabling its queue.`,
+        [
+          {
+            path: ['settings', 'queues', index, 'channelId'],
+            message: `Fix permissions in #${channel.name}, choose another channel, or pause this queue.`,
+          },
+        ],
       );
   }
 }
@@ -693,57 +821,99 @@ app.put('/api/communities/:guild/config', async (c) => {
   const { expectedRevision, settings } = saveSchema.parse(await readJson(c.req.raw));
   const guildId = c.req.param('guild');
   await validateChannels(c.env, guildId, settings.queues);
-  const roles = settings.queues
-    .flatMap((q) => [q.controls?.requiredRole, q.controls?.blockedRole])
-    .filter((id): id is string => !!id);
-  const rankRoles = settings.games.flatMap(
-    (g) => g.records?.ranks.map((r) => r.roleId).filter((id): id is string => !!id) ?? [],
+  const roleFields: {
+    id: string;
+    path: (string | number)[];
+    kind: 'access' | 'moderator' | 'rank';
+    game?: string;
+  }[] = [];
+  settings.queues.forEach((q, qi) => {
+    for (const field of ['requiredRole', 'blockedRole'] as const) {
+      const id = q.controls?.[field];
+      if (id)
+        roleFields.push({
+          id,
+          path: ['settings', 'queues', qi, 'controls', field],
+          kind: 'access',
+        });
+    }
+    q.adminRoles?.forEach((id, ri) =>
+      roleFields.push({
+        id,
+        path: ['settings', 'queues', qi, 'adminRoles', ri],
+        kind: 'moderator',
+      }),
+    );
+  });
+  settings.games.forEach((g, gi) =>
+    g.records?.ranks.forEach((r, ri) => {
+      if (r.roleId)
+        roleFields.push({
+          id: r.roleId,
+          path: ['settings', 'games', gi, 'records', 'ranks', ri, 'roleId'],
+          kind: 'rank',
+          game: g.id,
+        });
+    }),
   );
-  const moderatorRoles = settings.queues.flatMap((q) => q.adminRoles ?? []);
-  roles.push(...rankRoles, ...moderatorRoles);
-  if (roles.length) {
+  if (roleFields.length) {
     const available = await discord<{ id: string; managed?: boolean; permissions?: string }[]>(
       `/guilds/${guildId}/roles`,
       c.env.DISCORD_BOT_TOKEN!,
     );
-    if (roles.some((id) => !available.some((r) => r.id === id)))
-      throw new Problem(400, 'wrong_role', 'Choose role IDs belonging to this Discord server.');
-    if (moderatorRoles.some((id) => id === guildId || available.find((r) => r.id === id)?.managed))
-      throw new Problem(
-        400,
-        'wrong_role',
-        'Bot moderator roles must be ordinary roles, not @everyone or managed integration roles.',
-      );
-    if (rankRoles.some((id) => id === guildId || available.find((r) => r.id === id)?.managed))
-      throw new Problem(
-        400,
-        'wrong_role',
-        'Rank roles must be ordinary roles, not @everyone or managed integration roles.',
-      );
-    if (
-      rankRoles.some(
-        (id) =>
-          BigInt(available.find((r) => r.id === id)?.permissions ?? '0') &
-          privilegedRankPermissions,
-      )
-    )
-      throw new Problem(
-        400,
-        'privileged_rank_role',
-        'Rank roles cannot grant administrator, moderation or server-management permissions. Create cosmetic rank roles.',
-      );
-    const owners = new Map<string, string>();
-    for (const g of settings.games)
-      for (const r of g.records?.ranks ?? [])
-        if (r.roleId) {
-          if (owners.has(r.roleId) && owners.get(r.roleId) !== g.id)
-            throw new Problem(
-              400,
-              'shared_rank_role',
-              'Use separate rank roles for each game to avoid conflicting assignments.',
-            );
-          owners.set(r.roleId, g.id);
-        }
+    const reject = (code: string, message: string, fields: typeof roleFields) => {
+      if (fields.length)
+        throw new Problem(
+          400,
+          code,
+          message,
+          fields.map(({ path }) => ({ path, message })),
+        );
+    };
+    reject(
+      'wrong_role',
+      'Choose role IDs belonging to this Discord server.',
+      roleFields.filter(({ id }) => !available.some((r) => r.id === id)),
+    );
+    reject(
+      'wrong_role',
+      'Bot moderator roles must be ordinary roles, not @everyone or managed integration roles.',
+      roleFields.filter(
+        ({ id, kind }) =>
+          kind === 'moderator' && (id === guildId || available.find((r) => r.id === id)?.managed),
+      ),
+    );
+    reject(
+      'wrong_role',
+      'Rank roles must be ordinary roles, not @everyone or managed integration roles.',
+      roleFields.filter(
+        ({ id, kind }) =>
+          kind === 'rank' && (id === guildId || available.find((r) => r.id === id)?.managed),
+      ),
+    );
+    reject(
+      'privileged_rank_role',
+      'Rank roles cannot grant administrator, moderation or server-management permissions. Create cosmetic rank roles.',
+      roleFields.filter(
+        ({ id, kind }) =>
+          kind === 'rank' &&
+          Boolean(
+            BigInt(available.find((r) => r.id === id)?.permissions ?? '0') &
+            privilegedRankPermissions,
+          ),
+      ),
+    );
+    reject(
+      'shared_rank_role',
+      'Use separate rank roles for each game to avoid conflicting assignments.',
+      roleFields.filter(
+        (field) =>
+          field.kind === 'rank' &&
+          roleFields.some(
+            (other) => other.kind === 'rank' && other.id === field.id && other.game !== field.game,
+          ),
+      ),
+    );
   }
   const result = await c.env.COMMUNITIES.getByName(guildId).save(
     guildId,
@@ -755,9 +925,10 @@ app.put('/api/communities/:guild/config', async (c) => {
   if (!result.ok)
     throw new Problem(
       409,
-      'revision_conflict',
+      'reason' in result ? 'settings_conflict' : 'revision_conflict',
       ('reason' in result ? result.reason : null) ??
         'Settings changed in another tab. Refresh before saving.',
+      'issues' in result ? result.issues : [],
     );
   return c.json(result.snapshot);
 });
