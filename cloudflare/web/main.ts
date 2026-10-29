@@ -1,6 +1,17 @@
+import {
+  guidedSetup,
+  permissionRecovery,
+  savedReady,
+  guideSteps,
+  type GuideStep,
+  type InviteUrls,
+} from './guide';
+import { changeReview, changesBetween } from './change-review';
 import { SettingsDraft, fields, value } from './draft';
 import {
   queueEditor,
+  settingHelp,
+  settingReadouts,
   gameEditors,
   categories,
   rankRow,
@@ -48,7 +59,7 @@ interface Records {
   onboarding: unknown;
   pendingReturns: { queue_id: string; user_id: string; name: string; status: string }[];
   matches: Match[];
-  players: (Player & { gameId: string })[];
+  players: (Player & { gameId: string; hidden?: boolean })[];
   playersTotal: number;
   playersPage: number;
   delivery: { key: string; status: string; error: string | null }[];
@@ -70,6 +81,7 @@ interface Bootstrap {
   oauthReady: boolean;
   discordReady: boolean;
   inviteUrl: string | null;
+  inviteUrls?: InviteUrls;
   catalog: { id: string; name: string }[];
   user: { id: string; username: string } | null;
   csrf: string | null;
@@ -112,6 +124,7 @@ let settingsSearch = '';
 let conflict = false;
 let loadSequence = 0;
 let awaitingDiscordReturn = false;
+const guideCreatedGames = new Set<string>();
 type Issue = { path: (string | number)[]; message: string };
 type FieldIssue = Issue & { form: string; name: string };
 let validationIssues: FieldIssue[] = [];
@@ -149,6 +162,9 @@ interface OrganizerFilters {
 }
 const filtersByCommunity = new Map<string, OrganizerFilters>();
 let refreshedAt: Date | null = null;
+let accessCheckedAt: Date | null = null;
+const inviteUrls = (): InviteUrls =>
+  bootstrap.inviteUrls ?? { basic: bootstrap.inviteUrl, ranks: null, nicknames: null };
 const escape = (s: unknown) =>
   String(s).replace(
     /[&<>"']/g,
@@ -175,6 +191,24 @@ function selectView(view: OrganizerView, focus = false, push = true) {
   app.querySelectorAll<HTMLElement>('[data-view-panel]').forEach((panel) => {
     panel.hidden = panel.dataset.viewPanel !== view;
   });
+  if (view === 'setup' && draft) {
+    const form = app.querySelector<HTMLFormElement>('[data-guide-queue]');
+    const queue = draft.materialize().queues.find((q) => q.id === form?.dataset.guideQueue);
+    if (form && queue) {
+      const raw = draft.raw.get(`queue:${queue.id}`);
+      for (const name of ['name', 'channelId', 'size', 'teamMethod'] as const) {
+        const input = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement;
+        const current = raw?.[name]?.[0] ?? String(queue[name]);
+        if (
+          input instanceof HTMLSelectElement &&
+          ![...input.options].some((o) => o.value === current)
+        )
+          input.add(new Option(`Unavailable selection · ${current}`, current));
+        input.value = current;
+      }
+      updateGuidePreview();
+    }
+  }
 }
 function playerName(id: string, gameId?: string) {
   return (
@@ -298,12 +332,15 @@ function updateFilter(input: HTMLInputElement | HTMLSelectElement) {
 }
 function playerRatingRows() {
   return records!.players
-    .map(
-      (p) =>
-        `<tr data-rating-row data-game="${p.gameId}" data-player-search="${escape(p.name.toLocaleLowerCase())}"><td><a href="/stats?community=${guildId}&game=${p.gameId}&user=${p.id}">${escape(p.name)}</a></td><td>${escape(gameName(p.gameId))}</td><td>${p.rating}</td><td>${p.wins} / ${p.losses} / ${p.draws}</td></tr>`,
-    )
+    .map((p) => {
+      const queues = snapshot!.settings.queues.filter((q) => q.gameId === p.gameId);
+      const queueField = `<label>Queue<select name="queueId">${queues.map((q) => `<option value="${q.id}">${escape(q.name)}</option>`).join('')}</select></label>`;
+      const restriction = records!.noadds.find((n) => n.user_id === p.id);
+      return `<details class="player-record" data-rating-row data-game="${p.gameId}" data-player-search="${escape(`${p.name.toLocaleLowerCase()} ${p.id}`)}"><summary><span><strong>${escape(p.name)}</strong><small>${escape(gameName(p.gameId))}</small></span><span class="player-score">${p.rating}<small>Rating</small></span><span class="status-pill">${p.hidden === undefined ? 'Visibility not loaded' : p.hidden ? 'Hidden' : 'Visible'}</span></summary><div class="player-detail"><dl class="player-facts"><div><dt>Deviation / uncertainty</dt><dd>${p.deviation}</dd></div><div><dt>Wins / losses / draws</dt><dd>${p.wins} / ${p.losses} / ${p.draws}</dd></div><div><dt>Discord ID</dt><dd>${p.id}</dd></div><div><dt>Queue access</dt><dd>${restriction ? `Restricted until ${escape(new Date(restriction.until_ms).toLocaleString())}${restriction.reason ? ` · ${escape(restriction.reason)}` : ''}` : 'No active restriction'}</dd></div></dl><p class="form-help">Visibility is per game. Hidden players remain available to authorized administrators; public access also follows this game’s statistics policy.</p><div class="actions"><a class="button" href="/stats?community=${guildId}&game=${p.gameId}&user=${p.id}">Open player profile</a><button type="button" data-game-link="${p.gameId}">Game rating and leaderboard policy</button></div>${p.hidden !== undefined ? `<form data-kind="player-record" data-inline-player><input type="hidden" name="gameId" value="${p.gameId}" /><input type="hidden" name="userId" value="${p.id}" /><input type="hidden" name="kind" value="${p.hidden ? 'unhide' : 'hide'}" /><button>${p.hidden ? 'Show in statistics' : 'Hide from statistics'}</button></form>` : ''}${queues.length ? `<details class="rating-options"><summary>Manage ${escape(p.name)}</summary><form data-kind="seed" class="repair-form"><h3>Set local rating</h3>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>Rating for ${escape(p.name)}<input name="rating" type="number" min="0" max="10000" value="${p.rating}" required /></label><button>Review rating change</button></form><form data-kind="noadd" class="repair-form"><h3>Restrict queue access</h3><p class="form-help">Applies to all queues in this community. Maximum 14 days.</p>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>Duration seconds<input name="seconds" type="number" min="1" max="1209600" value="3600" required /></label><label>Reason<input name="reason" maxlength="200" /></label><button>Review restriction</button></form>${restriction ? `<button type="button" data-action="forgive" data-id="${p.id}">Remove restriction</button>` : ''}</details>` : '<p class="form-help">Create a queue for this game to use rating and restriction tools.</p>'}</div></details>`;
+    })
     .join('');
 }
+
 async function loadMorePlayers() {
   if (!records || records.players.length >= (records.playersTotal ?? records.players.length))
     return;
@@ -404,6 +441,11 @@ async function save(settings: Settings) {
   validationIssues = [];
   conflict = false;
   invalidateImport();
+  if (new URL(location.href).searchParams.get('guide') === 'queue') {
+    const url = new URL(location.href);
+    url.searchParams.set('guide', 'try');
+    writeRoute(url);
+  }
   render();
   notice('Settings saved. Discord delivery may still be pending.');
 }
@@ -412,7 +454,8 @@ async function loadCommunity(id: string, navigation: 'push' | 'replace' | 'none'
   const url = new URL(location.href);
   if (navigation === 'push') {
     url.searchParams.set('view', currentView());
-    for (const key of ['queue', 'game', 'section']) url.searchParams.delete(key);
+    for (const key of ['queue', 'game', 'section', 'guide', 'guideGame', 'guideQueue'])
+      url.searchParams.delete(key);
   }
   url.searchParams.set('community', id);
   if (navigation !== 'none') writeRoute(url, navigation);
@@ -420,6 +463,7 @@ async function loadCommunity(id: string, navigation: 'push' | 'replace' | 'none'
   category = (url.searchParams.get('section') ?? 'basics') as Category;
   settingsSearch = '';
   guildId = id;
+  guideCreatedGames.clear();
   snapshot = null;
   draft = null;
   records = null;
@@ -435,6 +479,7 @@ async function loadCommunity(id: string, navigation: 'push' | 'replace' | 'none'
   snapshot = result.snapshot;
   draft = new SettingsDraft(snapshot, result.gameState);
   setup = result;
+  accessCheckedAt = new Date();
   channelList = result.channels;
   records = result.records;
   refreshedAt = new Date();
@@ -462,6 +507,7 @@ async function refreshSetup() {
   );
   if (id !== guildId) return;
   setup = result;
+  accessCheckedAt = new Date();
   channelList = result.channels;
   records = result.records;
   refreshedAt = new Date();
@@ -622,10 +668,21 @@ function showIssues(issues: Issue[]) {
   input?.focus();
 }
 function updateDirty() {
+  const permissions = app.querySelector<HTMLElement>('#discord-access');
+  if (permissions && draft) {
+    const expanded = permissions.querySelector('details')?.open;
+    permissions.outerHTML = permissionRecovery(draft, setup, inviteUrls(), accessCheckedAt);
+    const replacement = app.querySelector<HTMLElement>('#discord-access')!;
+    if (expanded) replacement.querySelector('details')!.open = true;
+    labelTables(replacement);
+  }
   const dirty = Boolean(draft?.dirty);
   document.body.classList.toggle('has-draft', dirty);
   const bar = app.querySelector<HTMLElement>('#savebar');
   if (bar) bar.hidden = !dirty;
+  const count = app.querySelector<HTMLElement>('#savebar small');
+  if (count && draft && dirty)
+    count.textContent = `${changesBetween(draft.saved.settings, draft.materialize()).length} changed values across this community`;
   const saveButton = app.querySelector<HTMLButtonElement>('[data-edit="save"]');
   if (saveButton) saveButton.disabled = busy || !dirty;
   const reload = app.querySelector<HTMLElement>('[data-edit="reload-conflict"]');
@@ -634,6 +691,21 @@ function updateDirty() {
     const changed = draft?.raw.has(form.dataset.config!);
     form.classList.toggle('is-dirty', Boolean(changed));
     const changedFields = draft!.changedFields(form.dataset.config!);
+    form.querySelectorAll<HTMLElement>('[data-setting]').forEach((row) => {
+      const changed = [...row.querySelectorAll<HTMLInputElement>('[name]')].some((el) =>
+        changedFields.has(el.name),
+      );
+      row.classList.toggle('field-changed', changed);
+      let tag = row.querySelector<HTMLElement>('[data-changed-tag]');
+      if (changed && !tag) {
+        tag = document.createElement('span');
+        tag.dataset.changedTag = '';
+        tag.className = 'draft-tag';
+        tag.textContent = 'Changed';
+        row.querySelector('.setting-title')!.append(tag);
+      }
+      if (tag) tag.hidden = !changed;
+    });
     form.querySelectorAll<HTMLElement>('[data-category-panel]').forEach((panel) => {
       const changed = [...panel.querySelectorAll<HTMLInputElement>('[name]')].some((el) =>
         changedFields.has(el.name),
@@ -686,10 +758,41 @@ function matchRepairs(m: Match) {
     ...(m.state === 'finished' ? [['undo', 'Undo result']] : []),
     ...(m.state === 'undone' ? [['admin_report', 'Record corrected result']] : []),
   ];
-  return `<details class="rating-options"><summary>Administrator actions</summary><form data-kind="repair" data-id="${m.id}" class="repair-form">${['finished', 'undone'].includes(m.state) ? '<p class="muted">Undo reverses this result’s recorded rating changes and counts. Other matches remain unchanged. A corrected result uses current ratings; paid prediction settlements remain final.</p>' : '<p class="muted">Repair the saved match or record its result. You will review the action before applying it.</p>'}<div class="fields"><label>Match action<select name="kind">${options.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label><label>Player ID<input name="target" placeholder="Outgoing player, or player to place" /></label><label>Replacement ID<input name="replacement" placeholder="New server member" /></label><label>Team / winner<select name="result"><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="draw">Draw</option><option value="abort">Abort</option></select></label></div><button>Apply match action</button></form></details>`;
+  return `<details class="rating-options"><summary>Administrator actions</summary><form data-kind="repair" data-id="${m.id}" class="repair-form">${['finished', 'undone'].includes(m.state) ? '<p class="muted">Undo reverses recorded rating changes and counts when the history is complete and players are not in active matches. A corrected result uses current ratings; paid prediction settlements remain final.</p>' : '<p class="muted">Repair the saved match or record its result. You will review the action before applying it.</p>'}<div class="fields"><label>Match action<select name="kind">${options.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label><label>Player ID<input name="target" placeholder="Outgoing player, or player to place" /></label><label>Replacement ID<input name="replacement" placeholder="New server member" /></label><label>Team / winner<select name="result"><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="draw">Draw</option><option value="abort">Abort</option></select></label></div><button>Apply match action</button></form></details>`;
 }
 function queueChoice() {
   return `<label>Queue<select name="queueId">${snapshot!.settings.queues.map((q) => `<option value="${q.id}">${escape(q.name)} · #${escape(channelList.find((c) => c.id === q.channelId)?.name ?? q.channelId)}</option>`).join('')}</select></label>`;
+}
+function queueOverview() {
+  if (!records || !draft) return '';
+  return `<section class="queue-overview" aria-label="Queue overview"><h2>Queue overview</h2><p class="form-help">Live rosters use saved rules. Pause and resume are staged until Save changes succeeds.</p><div class="queue-cards">${draft
+    .materialize()
+    .queues.map((q) => {
+      const saved = snapshot!.settings.queues.find((v) => v.id === q.id);
+      const waiting = records!.waiting.find((w) => w.queueId === q.id)?.players ?? [];
+      const matches = records!.matches.filter(
+        (m) => m.queue.id === q.id && ['playing', 'check_in'].includes(m.state),
+      );
+      const changed =
+        !saved || draft!.raw.has(`queue:${q.id}`) || JSON.stringify(saved) !== JSON.stringify(q);
+      return `<article class="panel queue-card"><div class="section-heading"><h3>${escape(q.name || 'Unnamed draft')}</h3><span class="status-pill">${!saved ? 'New draft' : saved.enabled ? 'Open' : 'Paused'}</span></div><p>${escape(draft!.materialize().games.find((g) => g.id === q.gameId)?.name ?? q.gameId)} · #${escape(channelList.find((c) => c.id === q.channelId)?.name ?? q.channelId)}</p>${changed ? `<p class="draft-tag">Unsaved changes${saved && saved.enabled !== q.enabled ? ` · ${q.enabled ? 'resume' : 'pause'} on save` : ''}</p>` : ''}<p><strong>${waiting.length} waiting${saved ? ` / ${saved.size} capacity` : ''}</strong></p>${saved ? `<progress value="${Math.min(waiting.length, saved.size)}" max="${saved.size}" aria-label="Waiting players for ${escape(q.name)}"></progress>` : ''}<ul class="waiting-roster">${waiting.map((p) => `<li>${escape(p.name)}</li>`).join('') || '<li>No players waiting.</li>'}</ul><p class="form-help">${matches.length} active in the latest ${records!.matches.length} match records.</p><div class="actions"><button type="button" data-open-queue="${q.id}">Settings for ${escape(q.name || 'new queue')}</button><button type="button" data-toggle-queue="${q.id}">${q.enabled ? 'Pause on save' : 'Resume on save'}</button></div>${saved ? `<form data-kind="queue-control" data-id="${q.id}" class="queue-quick-action"><label>Action for ${escape(saved.name)}<select name="kind"><option value="start">Start with saved rules</option><option value="clear">Clear waiting players</option></select></label><button>Review queue action</button><p class="form-help">Start uses the waiting roster and saved settings. Advanced splitting is under Matches.</p></form>` : '<p class="form-help">Save this queue before starting matches.</p>'}</article>`;
+    })
+    .join('')}</div></section>`;
+}
+
+function openQueue(id: string, focus = true) {
+  selectedQueue = id;
+  category = 'basics';
+  settingsSearch = '';
+  editRoute('queues');
+  render();
+  if (focus) {
+    const input = app.querySelector<HTMLElement>(
+      `[data-config="queue:${CSS.escape(id)}"] [name="name"]`,
+    );
+    input?.focus();
+    input?.scrollIntoView({ block: 'center' });
+  }
 }
 function queueAdministration() {
   const queues = snapshot!.settings.queues;
@@ -813,6 +916,24 @@ function cancelRepair(form: HTMLFormElement) {
     delete submit.dataset.originalLabel;
   }
 }
+function matchCard(m: Match) {
+  const stateName = (m: Match) =>
+    m.state === 'finished'
+      ? m.result === 'draw'
+        ? 'Draw'
+        : `${m.result === 'alpha' ? 'Alpha' : 'Beta'} wins`
+      : {
+          check_in: 'Checking in',
+          playing: 'Awaiting result',
+          aborted: 'Cancelled',
+          check_in_failed: 'Check-in incomplete',
+          undone: 'Result withdrawn',
+        }[m.state];
+  const ready = new Set(m.ready ?? []);
+  const checked = m.roster.filter((p) => ready.has(p.id)).length;
+  const book = records?.economy?.books.find((b) => b.match_id === m.id);
+  return `<details class="match-record" data-match-record data-match-id="${m.id}" data-queue="${m.queue.id}" data-state="${m.state}"${['playing', 'check_in'].includes(m.state) ? ' open' : ''}><summary><span>${escape(m.queue.name)} · ${escape(m.gameName)}</span><span class="status-pill">${escape(stateName(m))}</span><span class="record-meta">${escape(new Date(m.createdAt).toLocaleString())}</span></summary>${m.state === 'check_in' ? `<div class="check-in-progress"><p><strong>${checked} / ${m.roster.length} checked in</strong>${m.deadline ? ` · deadline ${escape(new Date(m.deadline).toLocaleString())}` : ''}</p><progress max="${Math.max(1, m.roster.length)}" value="${checked}" aria-label="Players checked in"></progress></div>` : ''}<div class="record-teams">${m.teams.map((team, side) => `<div><h3>${side === 0 ? 'Alpha' : 'Beta'}</h3>${team.map((p) => `<p><strong>${escape(p.name)}</strong> · ${p.rating}${m.captains[side] === p.id ? ' · captain' : ''}${m.state === 'check_in' ? (ready.has(p.id) ? ' · Ready' : ' · Waiting for check-in') : ''}</p>`).join('') || '<p>No players assigned.</p>'}</div>`).join('')}</div>${m.changes.length ? `<h3>Recorded rating changes</h3><ul class="rating-changes">${m.changes.map((c) => `<li>${escape(m.roster.find((p) => p.id === c.userId)?.name ?? c.userId)}: ${c.before} → ${c.after} (${c.after - c.before >= 0 ? '+' : ''}${c.after - c.before})</li>`).join('')}</ul>` : '<p class="form-help">No rating changes recorded for this match.</p>'}${book ? `<p class="notice">Predictions: ${escape(book.status)}${book.reason ? ` · ${escape(book.reason)}` : ''}${book.status === 'settled' ? ' · Paid settlements remain final after result corrections.' : ''}</p>` : ''}${m.note ? `<p>${escape(m.note)}</p>` : ''}${matchRepairs(m)}<details class="technical-details"><summary>Record identifiers</summary><p>Match ${escape(m.id)}</p>${m.roster.map((p) => `<p>${escape(p.name)} · ${escape(p.id)}</p>`).join('')}</details></details>`;
+}
 function recordSection() {
   if (!records) return '';
   const blocked = records.delivery.filter((w) => w.status === 'blocked');
@@ -838,73 +959,48 @@ function recordSection() {
     .join(
       '',
     )}</select></label></div><p class="record-meta" data-filter-count="match" role="status" aria-live="polite"></p>`;
-  const stateName = (m: Match) =>
-    m.state === 'finished'
-      ? m.result === 'draw'
-        ? 'Draw'
-        : `${m.result === 'alpha' ? 'Alpha' : 'Beta'} wins`
-      : {
-          check_in: 'Checking in',
-          playing: 'Awaiting result',
-          aborted: 'Cancelled',
-          check_in_failed: 'Check-in incomplete',
-          undone: 'Result withdrawn',
-        }[m.state];
-  return `<section class="panel"><div class="section-heading"><h2>Matches</h2></div><p class="muted">Recent games and their recorded results.</p>${matchFilters}${blocked.length ? `<p class="notice error">${blocked.length} Discord card delivery task(s) need attention. Check channel permissions in Setup, then refresh the affected match under Administrator actions.</p>` : ''}
+  return `<section class="panel"><div class="section-heading"><h2>Matches</h2></div><p class="muted">Showing the latest 20 match records. Filters and active counts apply to these loaded records.</p>${matchFilters}${blocked.length ? `<p class="notice error">${blocked.length} Discord card delivery task(s) need attention. Check channel permissions in Setup, then refresh the affected match under Administrator actions.</p>` : ''}
     ${returns.length ? `<details><summary>Players awaiting return after a timeout</summary><p class="muted">Overflow waits for a free place. Blocked returns need a fresh join after checking membership and roles.</p>${returns.map((r) => `<p>${escape(r.name)} · ${escape(snapshot?.settings.queues.find((q) => q.id === r.queue_id)?.name ?? r.queue_id)} · ${escape(r.status)}</p>`).join('')}</details>` : ''}
-    <div class="record-list">${records.matches.map((m) => `<details class="match-record" data-match-record data-queue="${m.queue.id}" data-state="${m.state}"${['playing', 'check_in'].includes(m.state) ? ' open' : ''}><summary>${escape(m.queue.name)} · ${escape(m.gameName)} <span class="status-pill">${escape(stateName(m))}</span><span class="record-meta">${escape(new Date(m.createdAt).toLocaleString())}</span></summary><div class="record-teams">${m.teams.map((team, side) => `<div><strong>${side === 0 ? 'Alpha' : 'Beta'}</strong>${team.map((p) => `<p>${escape(p.name)} · ${p.rating}${m.captains[side] === p.id ? ' · captain' : ''}</p>`).join('')}</div>`).join('')}</div>${m.changes.length ? `<h3>Rating changes</h3><p>${m.changes.map((c) => `${escape(m.roster.find((p) => p.id === c.userId)?.name ?? c.userId)}: ${c.before} → ${c.after}`).join(' · ')}</p>` : ''}${m.note ? `<p>${escape(m.note)}</p>` : ''}${matchRepairs(m)}<details class="technical-details"><summary>Record identifiers</summary><p>Match ${escape(m.id)}</p>${m.roster.map((p) => `<p>${escape(p.name)} · ${escape(p.id)}</p>`).join('')}</details></details>`).join('')}<p class="empty-state" data-filter-empty="match" hidden></p></div>
+    <div class="record-list">${[true, false]
+      .map(
+        (active) =>
+          `<section data-match-group><h3>${active ? 'Active matches' : 'Recent completed matches'}</h3>${
+            records!.matches
+              .filter((m) => ['playing', 'check_in'].includes(m.state) === active)
+              .map(matchCard)
+              .join('') ||
+            `<p class="empty-state">No ${active ? 'active' : 'completed'} matches in the loaded records.</p>`
+          }</section>`,
+      )
+      .join('')}<p class="empty-state" data-filter-empty="match" hidden></p></div>
     ${queueAdministration()}${diagnostics()}</section>`;
 }
 function playerSection() {
   if (!records) return '';
   const economy = records.economy;
   const filters = currentFilters();
-  const playerFilters = `<div class="table-toolbar"><label>Filter players by game<select data-filter="player-game"><option value="">All games</option>${snapshot!.settings.games.map((g) => `<option value="${g.id}"${selected(g.id, filters.playerGame)}>${escape(g.name)}</option>`).join('')}</select></label><label>Find a player<input type="search" data-filter="player-search" value="${escape(filters.playerSearch)}" placeholder="Player name" /></label></div>`;
+  const playerFilters = `<div class="table-toolbar"><label>Filter players by game<select data-filter="player-game"><option value="">All games</option>${snapshot!.settings.games.map((g) => `<option value="${g.id}"${selected(g.id, filters.playerGame)}>${escape(g.name)}</option>`).join('')}</select></label><label>Find a player<input type="search" data-filter="player-search" value="${escape(filters.playerSearch)}" placeholder="Player name or Discord ID" /></label></div>`;
   const matchName = (id: string) => {
     const match = records!.matches.find((m) => m.id === id);
     return match
       ? `${match.queue.name} · ${new Date(match.createdAt).toLocaleString()}`
       : 'Earlier match';
   };
-  return `<section class="panel"><div class="section-heading"><h2>Player ratings</h2></div><p class="muted">Ratings and gold are shared by queues for the same game. These filters apply to ratings and gold balances.</p>${playerFilters}<p class="record-meta" data-filter-count="rating" role="status" aria-live="polite"></p><div class="table-wrap" data-filter-table="rating"><table><thead><tr><th scope="col">Player</th><th scope="col">Game</th><th scope="col">Rating</th><th scope="col">W / L / D</th></tr></thead><tbody data-rating-body>${playerRatingRows()}</tbody></table></div><p class="empty-state" data-filter-empty="rating" hidden></p><div class="actions"><button type="button" data-action="load-players"${records.players.length < (records.playersTotal ?? records.players.length) ? '' : ' hidden'}>Load more players</button></div>${playerAdministration()}</section>
+  return `<section class="panel"><div class="section-heading"><h2>Player ratings</h2></div><p class="muted">Ratings and gold are shared by queues for the same game. These filters search loaded ratings and gold balances. Load more players to extend the search.</p>${playerFilters}<p class="record-meta" data-filter-count="rating" role="status" aria-live="polite"></p><div data-filter-table="rating"><div class="player-records" data-rating-body>${playerRatingRows()}</div></div><p class="empty-state" data-filter-empty="rating" hidden></p><div class="actions"><button type="button" data-action="load-players"${records.players.length < (records.playersTotal ?? records.players.length) ? '' : ' hidden'}>Load more players</button></div>${playerAdministration()}</section>
     ${economy && (economy.wallets.length || snapshot!.settings.queues.some((q) => q.modules.gold)) ? `<section class="panel"><h2>Gold and predictions</h2><p class="record-meta" data-filter-count="wallet" role="status" aria-live="polite"></p><div class="table-wrap" data-filter-table="wallet"><table><thead><tr><th scope="col">Player</th><th scope="col">Game</th><th scope="col">Gold</th></tr></thead><tbody>${economy.wallets.map((w) => `<tr data-wallet-row data-game="${w.game_id}" data-player-search="${escape(playerName(w.user_id, w.game_id).toLocaleLowerCase())}"><td>${escape(playerName(w.user_id, w.game_id))}</td><td>${escape(gameName(w.game_id))}</td><td>${w.balance}</td></tr>`).join('')}</tbody></table></div><p class="empty-state" data-filter-empty="wallet" hidden></p><details class="rating-options"><summary>Gold ledger and prediction history</summary><h3>Gold activity</h3>${economy.ledger.map((l) => `<p>${escape(playerName(l.user_id))} · ${escape(l.kind.replaceAll('_', ' '))} · ${l.amount >= 0 ? '+' : ''}${l.amount} · balance ${l.balance_after}</p>`).join('') || '<p>No gold activity recorded.</p>'}<h3>Prediction pools</h3>${economy.books.map((b) => `<details><summary>${escape(matchName(b.match_id))} · ${escape(b.status)}</summary><p>${escape(b.reason ?? b.result ?? 'Open')}${b.status === 'settled' ? ' · Paid settlement remains final after corrections.' : ''}</p><p class="record-meta">Match ${escape(b.match_id)}</p></details>`).join('') || '<p>No prediction pools recorded.</p>'}</details></section>` : ''}
     ${onboarding(snapshot!, records.onboarding)}`;
 }
 function setupSection() {
-  const configured = new Set(snapshot!.settings.queues.map((q) => q.channelId));
-  const missing = (channel: Channel) => channel.permissions.filter((p) => !p.granted);
-  const configuredChannels = channelList
-    .filter((c) => configured.has(c.id))
-    .sort((a, b) => Number(Boolean(missing(b).length)) - Number(Boolean(missing(a).length)));
-  const otherChannels = channelList
-    .filter((c) => !configured.has(c.id))
-    .sort((a, b) => Number(Boolean(missing(b).length)) - Number(Boolean(missing(a).length)));
-  const channelRow = (c: Channel) =>
-    `<div class="channel-row${missing(c).length ? ' channel-error' : ''}"><strong>#${escape(c.name)}</strong><span>${
-      missing(c).length
-        ? `Missing: ${missing(c)
-            .map((p) => escape(p.name))
-            .join(', ')}`
-        : 'Required permissions granted'
-    }</span></div>`;
-  const inaccessible = [...configured].filter((id) => !channelList.some((c) => c.id === id));
-  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Community setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney()}${gameEditors(draft!, setup)}
-    <section class="panel"><div class="section-heading"><h2>Discord access</h2>${bootstrap.inviteUrl ? `<a class="button" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Invite bot to server</a>` : ''}</div><p class="notice${setup.access.status === 'ready' ? '' : ' error'}">${escape(setup.access.message)}</p><button type="button" data-action="check-access">Check access again</button><p class="muted">Check the channels used by your queues. Optional rank roles need Manage Roles; nickname decoration needs Manage Nicknames.</p><div class="channel-list">${inaccessible.map((id) => `<p class="notice error">The bot cannot access configured channel ${escape(id)}. Check its Discord permissions or choose another channel in Queues.</p>`).join('')}${configuredChannels.map(channelRow).join('')}${!configured.size ? '<p class="empty-state">No queue channels selected yet.</p>' : ''}</div>
-    ${otherChannels.length ? `<details class="rating-options"><summary>Other available channels (${otherChannels.length})</summary><div class="channel-list">${otherChannels.map(channelRow).join('')}</div></details>` : ''}${!channelList.length ? '<p class="notice error">No accessible text channels found. Check the bot’s channel permissions.</p>' : ''}<details class="technical-details"><summary>Configuration details</summary><p>Saved settings revision ${snapshot!.revision}</p><p>Community ${escape(guildId)}</p></details></section>`;
+  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Community setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney()}${guidedSetup(draft!, setup, inviteUrls(), new URL(location.href), snapshot!)}${gameEditors(draft!, setup)}${permissionRecovery(draft!, setup, inviteUrls(), accessCheckedAt)}`;
 }
+
 function setupJourney() {
   const saved = snapshot!.settings;
-  const ready =
-    setup.access.status === 'ready' &&
-    saved.queues.some(
-      (q) =>
-        q.enabled &&
-        setup.channels.some((c) => c.id === q.channelId && c.permissions.every((p) => p.granted)),
-    );
+  const ready = savedReady(snapshot!, setup);
   const pending =
     records?.delivery.filter((d) => d.status !== 'sent' && d.status !== 'done').length ?? 0;
   const steps = [true, setup.access.status === 'ready', saved.games.length > 0, ready];
-  return `<section class="panel setup-journey"><div class="section-heading"><h2>${ready ? 'Ready to play' : 'Set up your first game'}</h2><span class="status-pill">${steps.filter(Boolean).length} / 4 complete</span></div><ol class="setup-steps">${['Choose community', 'Verify Discord access', 'Add a game', 'Save an enabled queue'].map((label, i) => `<li class="${steps[i] ? 'complete' : ''}"><span>${steps[i] ? '✓' : i + 1}</span>${label}</li>`).join('')}</ol><p class="form-help">Progress reflects saved settings and verified access.${pending ? ` ${pending} recent delivery task(s) are not complete; check delivery diagnostics.` : ''}</p><div class="actions">${!steps[1] && bootstrap.inviteUrl ? `<a class="button primary" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Add to Discord</a><button type="button" data-action="check-access">I’m back — check access</button>` : ''}${steps[2] ? '<button type="button" data-view="queues">Configure a queue</button>' : ''}</div></section>`;
+  return `<section class="panel setup-journey"><div class="section-heading"><h2>${ready ? 'Ready to play' : 'Set up your first game'}</h2><span class="status-pill">${steps.filter(Boolean).length} / 4 complete</span></div><ol class="setup-steps">${['Choose community', 'Verify Discord access', 'Add a game', 'Save an enabled queue'].map((label, i) => `<li class="${steps[i] ? 'complete' : ''}"><span>${steps[i] ? '✓' : i + 1}</span>${label}</li>`).join('')}</ol><p class="form-help">Progress reflects saved settings and verified access.${pending ? ` ${pending} recent delivery task(s) are not complete; check delivery diagnostics.` : ''}</p><div class="actions"><button type="button" data-guide-start>${ready ? 'Open setup guide' : 'Start guided setup'}</button>${!steps[1] && bootstrap.inviteUrl ? `<a class="button primary" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Add to Discord</a><button type="button" data-action="check-access">I’m back — check access</button>` : ''}${steps[2] ? '<button type="button" data-view="queues">Configure a queue</button>' : ''}</div></section>`;
 }
 function overviewSection() {
   const saved = snapshot!.settings;
@@ -939,13 +1035,22 @@ function render() {
     ]),
   );
   app.innerHTML = `<div class="organizer-layout"><aside class="organizer-sidebar"><p class="eyebrow">Workspace</p><label class="desktop-community">Community<select id="community"><option value="">Choose a server</option>${guilds.map((g) => `<option value="${g.id}"${selected(g.id, guildId)}>${escape(g.name)}</option>`).join('')}</select></label><nav class="workspace-nav" role="tablist" aria-label="Organizer sections">${organizerViews.map((view) => `<button type="button" class="workspace-tab" id="tab-${view}" role="tab" data-view="${view}" aria-controls="view-${view}" aria-selected="false" tabindex="-1"><span aria-hidden="true" class="nav-icon">${icons[view]}</span><span>${viewNames[view]}</span></button>`).join('')}</nav><div class="sidebar-footer"><p>Community Games</p><span>Play together. Make it yours.</span></div></aside><div class="workspace-content"><div class="context-bar"><button type="button" class="mobile-menu icon-button" data-edit="drawer" aria-label="Choose community or queue">☰</button><span class="context-name">${escape(current?.name ?? 'Choose your community')}</span><button type="button" data-action="refresh-records" aria-label="Refresh records">Refresh</button><button type="button" data-action="logout" aria-label="Sign out ${escape(bootstrap.user.username)}">Sign out</button></div><div id="notice" class="notice" role="status" hidden></div><div class="workspace-scroll">
-    ${!guilds.length ? '<section class="panel"><h1>No communities yet</h1><p>You need Manage Server permission to configure a community.</p></section>' : ''}
+    ${!guilds.length ? `<section class="panel"><h1>No communities yet</h1><p>You need Manage Server permission to configure a community. Check that you signed into the correct Discord account.</p><ol class="recovery-steps"><li>Ask a server administrator for Manage Server permission, or ask them to configure the bot.</li><li>Invite Community Games to your server.</li><li>Refresh the community list after changing permissions.</li></ol><div class="actions">${bootstrap.inviteUrl ? `<a class="button" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}">Add to Discord</a>` : ''}<button type="button" data-action="refresh-communities">Refresh communities</button></div></section>` : ''}
     ${guildId && !snapshot ? '<section class="panel"><h1>Checking your community…</h1><p>Loading saved settings and Discord permissions.</p><button data-action="reload">Retry</button></section>' : ''}
-    ${snapshot && draft ? organizerViews.map((view) => `<section class="workspace-panel" role="tabpanel" id="view-${view}" data-view-panel="${view}" aria-labelledby="tab-${view}" hidden>${{ overview: overviewSection, queues: () => queueEditor(draft!, setup, selectedQueue), matches: recordSection, players: playerSection, setup: setupSection }[view]()}</section>`).join('') : ''}
-    </div><div id="savebar" class="savebar" hidden><span><strong>Unsaved changes</strong><small>Applies across this community</small></span><button type="button" data-edit="reload-conflict" hidden>Reload latest</button><button type="button" data-edit="discard">Discard</button><button type="button" class="primary" data-edit="save">Save changes</button></div></div></div>`;
+    ${snapshot && draft ? organizerViews.map((view) => `<section class="workspace-panel" role="tabpanel" id="view-${view}" data-view-panel="${view}" aria-labelledby="tab-${view}" hidden>${{ overview: overviewSection, queues: () => queueEditor(draft!, setup, selectedQueue, queueOverview()), matches: recordSection, players: playerSection, setup: setupSection }[view]()}</section>`).join('') : ''}
+    </div><div id="savebar" class="savebar" hidden><span><strong>Unsaved changes</strong><small>Applies across this community</small></span><button type="button" data-edit="reload-conflict" hidden>Reload latest</button><button type="button" data-edit="review">Review changes</button><button type="button" data-edit="discard">Discard</button><button type="button" class="primary" data-edit="save">Save changes</button></div></div></div>`;
   if (snapshot && draft) {
     selectView(currentView(), false, false);
     draft.mount(app);
+    // A shared guide URL may target a different queue than the visible editor.
+    const guideQueue = app.querySelector<HTMLElement>('[data-guide-queue]')?.dataset.guideQueue;
+    if (guideQueue && !app.querySelector(`[data-config="queue:${CSS.escape(guideQueue)}"]`)) {
+      const detached = document.createElement('div');
+      detached.innerHTML = queueEditor(draft, setup, guideQueue);
+      draft.mount(detached);
+    }
+    updateGuidePreview();
+    settingReadouts(app);
     applyCategories();
     applyFilters();
     labelTables(app);
@@ -993,6 +1098,14 @@ app.addEventListener('submit', (event) => {
   }
   const data = new FormData(form);
   void run(async () => {
+    if (form.hasAttribute('data-inline-player') && !form.dataset.review) {
+      form.dataset.review = 'visibility';
+      form.insertAdjacentHTML(
+        'beforeend',
+        '<p class="notice" data-review>Apply this visibility change for this player and game? Submit again to confirm. <button type="button" data-action="cancel-repair">Cancel</button></p>',
+      );
+      return;
+    }
     if (
       await onboardingSubmit(form, data, snapshot!, {
         api,
@@ -1042,6 +1155,11 @@ app.addEventListener('click', (event) => {
         await api('/api/logout', { method: 'POST' });
         draft = snapshot ? new SettingsDraft(snapshot, setup.gameState) : null;
         location.reload();
+        break;
+      case 'refresh-communities':
+        guilds = (await api<{ communities: Guild[] }>('/api/communities')).communities;
+        if (!guildId && guilds[0]) await loadCommunity(guilds[0].id, 'replace');
+        else render();
         break;
       case 'check-access':
         await refreshSetup();
@@ -1106,8 +1224,108 @@ function editRoute(view?: OrganizerView, mode: 'push' | 'replace' = 'push') {
   url.searchParams.set('section', category);
   writeRoute(url, mode);
 }
+function guideRoute(step: GuideStep) {
+  const url = new URL(location.href);
+  url.searchParams.set('view', 'setup');
+  url.searchParams.set('guide', step);
+  writeRoute(url);
+  render();
+  app.querySelector<HTMLElement>('#guide-heading')?.focus();
+}
+function updateGuidePreview() {
+  const form = app.querySelector<HTMLFormElement>('[data-guide-queue]');
+  if (!form) return;
+  const data = fields(form);
+  const queue = draft?.materialize().queues.find((q) => q.id === form.dataset.guideQueue);
+  const rules = app.querySelector('[data-preview-rules]');
+  if (queue && rules)
+    rules.textContent = `${queue.checkIn.enabled ? `Check-in: ${queue.checkIn.seconds} seconds` : 'Check-in off'} · ${
+      Object.entries(queue.modules)
+        .filter(([, enabled]) => enabled)
+        .map(([name]) => name)
+        .join(', ') || 'Optional modules off'
+    } · ${queue.enabled ? 'Enabled on save' : 'Paused on save'}`;
+  app.querySelector('[data-preview-name]')!.textContent = value(data, 'name') || 'Name your queue';
+  const size = Number(value(data, 'size'));
+  app.querySelector('[data-preview-details]')!.textContent =
+    `${Number.isInteger(size) && size >= 2 && size <= 16 && size % 2 === 0 ? `${size / 2} vs ${size / 2}` : 'Choose an even size from 2 to 16'} · ${form.querySelector<HTMLSelectElement>('[name="teamMethod"]')!.selectedOptions[0]?.textContent ?? ''}`;
+}
+function guideValid() {
+  const form =
+    currentView() === 'setup' && app.querySelector<HTMLFormElement>('[data-guide-queue]');
+  return !form || form.reportValidity();
+}
+function reviewChanges() {
+  if (!draft || !guideValid()) return;
+  const dialog = openDialog(
+    'Review community changes',
+    `<p class="form-help">Compared with saved revision ${draft.saved.revision}.${conflict ? ' Newer settings were found. Your draft is preserved; saving cannot overwrite the newer revision.' : ''}</p>${changeReview(draft.saved.settings, draft.materialize())}<div class="actions"><button type="button" data-review-save class="primary">Save reviewed changes</button></div>`,
+  );
+  dialog.querySelector('[data-review-save]')!.addEventListener('click', () => {
+    dialog.close();
+    app.querySelector<HTMLButtonElement>('[data-edit="save"]')?.click();
+  });
+}
 function captureEdit(event: Event) {
   const input = event.target as HTMLInputElement;
+  if (busy) return;
+  if (input.hasAttribute('data-guide-game') && event.type === 'change' && draft) {
+    const url = new URL(location.href);
+    const previous = url.searchParams.get('guideGame');
+    const abandoned = draft.materialize().games.find((g) => g.id === previous);
+    if (
+      previous &&
+      guideCreatedGames.has(previous) &&
+      abandoned &&
+      !abandoned.name.trim() &&
+      !draft.saved.settings.games.some((g) => g.id === previous) &&
+      !draft.materialize().queues.some((q) => q.gameId === previous)
+    ) {
+      draft.working.games = draft.working.games.filter((g) => g.id !== previous);
+      draft.raw.delete(`game:${previous}`);
+      guideCreatedGames.delete(previous);
+    }
+    let id = input.value;
+    if (id === 'custom' || id.startsWith('catalog:')) {
+      const item = gameCatalog.find((g) => g.id === id.slice(8));
+      id = crypto.randomUUID();
+      draft.working.games.push({ id, name: item?.name ?? '', catalogId: item?.id ?? null });
+      guideCreatedGames.add(id);
+    }
+    url.searchParams.set('guideGame', id);
+    url.searchParams.delete('guideQueue');
+    writeRoute(url, 'replace');
+    render();
+    return;
+  }
+  if (input.hasAttribute('data-guide-name') && draft) {
+    const id = new URL(location.href).searchParams.get('guideGame');
+    const form = app.querySelector<HTMLFormElement>(`[data-config="game:${CSS.escape(id ?? '')}"]`);
+    const field = form?.elements.namedItem('name') as HTMLInputElement | null;
+    if (form && field) {
+      field.value = input.value;
+      draft.capture(form);
+    }
+    const next = app.querySelector<HTMLButtonElement>('[data-guide-next="game"]');
+    if (next) {
+      next.disabled = !input.value.trim();
+      next.dataset.unavailable = String(next.disabled);
+    }
+    updateDirty();
+    return;
+  }
+  const guideForm = input.closest<HTMLFormElement>('[data-guide-queue]');
+  if (guideForm && draft) {
+    const key = `queue:${guideForm.dataset.guideQueue!}`;
+    draft.patchFields(key, { [input.name]: [input.value] });
+    const form = app.querySelector<HTMLFormElement>(`[data-config="${CSS.escape(key)}"]`);
+    if (form) (form.elements.namedItem(input.name) as HTMLInputElement).value = input.value;
+    validationIssues = validationIssues.filter((i) => i.form !== key || i.name !== input.name);
+    paintIssues();
+    updateDirty();
+    updateGuidePreview();
+    return;
+  }
   const form = input.closest<HTMLFormElement>('form[data-config]');
   if (form && draft) {
     draft.capture(form);
@@ -1120,6 +1338,7 @@ function captureEdit(event: Event) {
       if (text) text.textContent = input.checked ? 'On' : 'Off';
     }
     updateDirty();
+    settingReadouts(app);
     if (input.name === 'gameId' && event.type === 'change') render();
   }
   if (input.hasAttribute('data-settings-search')) {
@@ -1138,6 +1357,70 @@ app.addEventListener('input', captureEdit);
 app.addEventListener('change', captureEdit);
 function handleEditorClick(event: MouseEvent): boolean {
   const target = event.target as Element;
+  const guide = target.closest<HTMLElement>(
+    '[data-guide-start], [data-guide-next], [data-guide-step], [data-guide-close], [data-guide-advanced], [data-guide-review], [data-open-queue], [data-toggle-queue]',
+  );
+  if (guide) {
+    if (busy || !draft) return true;
+    if (guide.dataset.openQueue) openQueue(guide.dataset.openQueue);
+    if (guide.dataset.toggleQueue) {
+      const view = currentView();
+      selectedQueue = guide.dataset.toggleQueue;
+      render();
+      const form = app.querySelector<HTMLFormElement>(
+        `[data-config="queue:${CSS.escape(selectedQueue)}"]`,
+      )!;
+      const field = form.elements.namedItem('enabled') as HTMLInputElement;
+      field.checked = !field.checked;
+      draft.capture(form);
+      editRoute(view);
+      render();
+      notice('Queue state staged. Save changes to apply it in Discord.');
+    }
+    if (guide.hasAttribute('data-guide-start')) {
+      const url = new URL(location.href);
+      if (!url.searchParams.has('guideGame') && draft.working.games[0])
+        url.searchParams.set('guideGame', draft.working.games[0].id);
+      writeRoute(url, 'replace');
+      guideRoute('access');
+    }
+    if (guide.hasAttribute('data-guide-close')) {
+      const url = new URL(location.href);
+      url.searchParams.delete('guide');
+      writeRoute(url);
+      render();
+    }
+    if (guide.dataset.guideStep && guideSteps.includes(guide.dataset.guideStep as GuideStep))
+      guideRoute(guide.dataset.guideStep as GuideStep);
+    if (guide.dataset.guideAdvanced) openQueue(guide.dataset.guideAdvanced);
+    if (guide.hasAttribute('data-guide-review')) reviewChanges();
+    if (guide.dataset.guideNext === 'access') guideRoute('game');
+    if (guide.dataset.guideNext === 'game') {
+      const url = new URL(location.href);
+      const game = draft
+        .materialize()
+        .games.find((g) => g.id === url.searchParams.get('guideGame'));
+      if (!game?.name.trim()) return true;
+      const existing = draft.working.queues.find(
+        (q) => q.id === url.searchParams.get('guideQueue') && q.gameId === game.id,
+      );
+      const id =
+        existing?.id ??
+        draft.addQueue(
+          game.id,
+          setup.channels.find((c) => c.permissions.every((p) => p.granted))?.id ??
+            setup.channels[0]?.id ??
+            '',
+        );
+      if (!existing) draft.working.queues.find((q) => q.id === id)!.enabled = true;
+      selectedQueue = id;
+      url.searchParams.set('queue', id);
+      url.searchParams.set('guideQueue', id);
+      writeRoute(url, 'replace');
+      guideRoute('queue');
+    }
+    return true;
+  }
   const more = target.closest<HTMLElement>('[data-import-page]');
   if (more && !busy) {
     pageImportRows(more);
@@ -1173,7 +1456,7 @@ function handleEditorClick(event: MouseEvent): boolean {
   }
   const help = target.closest<HTMLElement>('[data-help]');
   if (help) {
-    openDialog(help.dataset.helpTitle!, `<p>${escape(help.dataset.help)}</p>`);
+    openDialog(help.dataset.helpTitle!, settingHelp(help.closest<HTMLElement>('[data-setting]')!));
     return true;
   }
   const reset = target.closest<HTMLElement>('[data-reset]');
@@ -1268,6 +1551,7 @@ function handleEditorClick(event: MouseEvent): boolean {
     return true;
   }
   if (!draft || !snapshot) return true;
+  if (action.dataset.edit === 'review') reviewChanges();
   if (action.dataset.edit === 'add-queue') {
     selectedQueue = draft.addQueue(draft.working.games[0].id, setup.channels[0].id);
     category = 'basics';
@@ -1296,6 +1580,7 @@ function handleEditorClick(event: MouseEvent): boolean {
   if (action.dataset.edit === 'reload-conflict' && canLeave())
     void run(() => loadCommunity(guildId));
   if (action.dataset.edit === 'save') {
+    if (!guideValid()) return true;
     const result = draft.validate();
     if (!result.success) {
       showIssues(
@@ -1344,9 +1629,16 @@ window.addEventListener('popstate', () => {
 });
 installViewport();
 const recheckAfterDiscord = () => {
-  if (!awaitingDiscordReturn || document.visibilityState === 'hidden' || busy || !snapshot) return;
+  if (!awaitingDiscordReturn || document.visibilityState === 'hidden' || busy) return;
   awaitingDiscordReturn = false;
-  void run(refreshSetup);
+  void run(async () => {
+    if (snapshot) await refreshSetup();
+    else {
+      guilds = (await api<{ communities: Guild[] }>('/api/communities')).communities;
+      if (guilds[0]) await loadCommunity(guilds[0].id, 'replace');
+      else render();
+    }
+  });
 };
 window.addEventListener('focus', recheckAfterDiscord);
 document.addEventListener('visibilitychange', recheckAfterDiscord);

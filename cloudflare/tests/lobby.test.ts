@@ -514,6 +514,10 @@ describe('durable lobby journey', () => {
     const m = await linked();
     const backup = await stub().operationalBackup(guild);
     expect(backup.tables.schema_version[0].version).toBe(7);
+    // The live source can poll while the copy is being restored. Stop its alarm
+    // and drain its instance before asserting that the read-only copy is silent.
+    await runInDurableObject(stub(), (_i, state) => state.storage.deleteAlarm());
+    await abortAllDurableObjects();
     const copy = env.COMMUNITIES.getByName('lobby-recovery');
     expect(
       await copy.operationalRestore(guild, {

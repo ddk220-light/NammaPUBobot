@@ -5,6 +5,15 @@ export const DISCORD_API = 'https://discord.com/api/v10';
 export const MANAGE_GUILD = 32n,
   ADMINISTRATOR = 8n;
 export const REQUIRED_CHANNEL_PERMISSIONS = 1024n | 2048n | 16384n | 65536n;
+export const MANAGE_ROLES = 1n << 28n;
+export const MANAGE_NICKNAMES = 1n << 27n;
+export function botInviteUrls(applicationId?: string) {
+  const invite = (extra: bigint) =>
+    applicationId
+      ? `https://discord.com/oauth2/authorize?client_id=${applicationId}&scope=bot%20applications.commands&permissions=${REQUIRED_CHANNEL_PERMISSIONS | extra}`
+      : null;
+  return { basic: invite(0n), ranks: invite(MANAGE_ROLES), nicknames: invite(MANAGE_NICKNAMES) };
+}
 export const PERMISSIONS = [
   { bit: 1024n, name: 'View Channel' },
   { bit: 2048n, name: 'Send Messages' },
@@ -171,7 +180,7 @@ export async function guildSetup(env: Env, guildId: string): Promise<DiscordSetu
           ? 'Rank roles must be cosmetic, without management permissions.'
           : (r.position ?? 0) >= highest
             ? 'Move this role below the bot’s highest role.'
-            : !has(1n << 28n)
+            : !has(MANAGE_ROLES)
               ? 'Grant the bot Manage Roles to synchronize ranks.'
               : null;
       return { ...role, rankEligible: reason === null, reason };
@@ -179,8 +188,8 @@ export async function guildSetup(env: Env, guildId: string): Promise<DiscordSetu
     access: {
       status: 'ready',
       message: 'Discord access verified.',
-      manageRoles: has(1n << 28n),
-      manageNicknames: has(1n << 27n),
+      manageRoles: has(MANAGE_ROLES),
+      manageNicknames: has(MANAGE_NICKNAMES),
     },
   };
 }

@@ -27,6 +27,14 @@ Screenshots cover all five organizer destinations at phone and desktop widths, t
 
 ## Isolated staging
 
+### Console handoff follow-up (0.20.0)
+
+The [adoption plan](console-handoff-plan.md) adds guided setup with shared drafts, feature-scoped Discord permission recovery, live queue overview cards, expandable player management, check-in progress, structured help and a revision-labelled change review. Organizer player records now include authoritative hidden status; public statistics authorization is unchanged. The full local suite passed: 882 Worker tests, 100 Chromium/WebKit browser cases and 11 converter tests, plus typechecks and both builds.
+
+Browser fixtures cover invalid and failed guide saves, custom games, invitation return during a conflict, advanced/guide synchronization, optional permissions, two-step queue and player actions, 51-player pagination, no-community recovery, and guide reachability at phone/tablet/landscape sizes. These tests do not claim physical-device or authenticated Discord acceptance. The 0.20.0 changes have not been deployed; the live 0.19.0 verification described in PR #46 belongs to the earlier release.
+
+### Deployed baseline
+
 On 2026-10-28, remote `main` was `fa3647b` (0.16.0), while the existing staging Worker reported 0.18.1, Cloudflare version `df8289ac-fe02-45b5-92ee-1dd0870d4db4`. The downloaded Worker has SHA-256 `7b57a2aa807dae7a41c14042d8b6c12e6631d91fcc83e13afff1ae90529bbabd` and was retained only for read-only comparison. No matching original source commit was available. The separate [baseline reconciliation](https://github.com/ddk220-light/NammaPUBobot/blob/334c67fe0da8c06ebbcce36ed39525d961993236/cloudflare/docs/connectors/baseline.md) reconstructs those deployed behaviors; this release incorporates only that compatibility subset, without the connector extension or its schema migration.
 
 Release 0.19.0 preserves `/test populate` and `/test checkin`, moderator authorization, atomic/idempotent population, test-result exclusions and refunds, TEST labels, retired isolated-session cleanup, and voice availability for Ping without occupant lists on queue cards. `staging-baseline.test.ts` and the voice tests cover those contracts alongside the UI regression suite. Storage remains at schema 7 with Durable Object migrations v1–v4. The build wrapper adds the source revision, dirty-tree flag and source-tree digest to `/health` and `/api/bootstrap`; deployment should use a clean committed ref. No deployment or authenticated/device acceptance is claimed by this document.

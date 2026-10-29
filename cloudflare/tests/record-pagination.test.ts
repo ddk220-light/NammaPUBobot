@@ -30,6 +30,17 @@ describe('organizer player pagination', () => {
     expect(second.playersTotal).toBe(55);
     expect(first.playersPage).toBe(0);
     expect(second.playersPage).toBe(1);
+    expect(first.players.every((p) => p.hidden === false)).toBe(true);
+    await runInDurableObject(stub(), (_i, state) => {
+      state.storage.sql.exec(
+        'INSERT INTO player_meta(game_id,user_id,hidden) VALUES(?,?,1)',
+        game,
+        person(54).id,
+      );
+    });
+    expect(
+      (await stub().records(guild, game, 1)).players.find((p) => p.id === person(54).id)?.hidden,
+    ).toBe(true);
     expect(new Set([...first.players, ...second.players].map((p) => p.id)).size).toBe(55);
     expect((await stub().records(guild, undefined, 2)).players).toHaveLength(0);
     // Engine eligibility cannot be inferred from the currently loaded player page.

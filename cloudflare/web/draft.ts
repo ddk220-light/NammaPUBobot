@@ -131,6 +131,14 @@ export class SettingsDraft {
     if (JSON.stringify(data) === JSON.stringify(this.initial.get(key))) this.raw.delete(key);
     else this.raw.set(key, data);
   }
+  /** Update a compact editor without dropping fields from the full settings form. */
+  patchFields(key: string, changes: Fields) {
+    const baseline = this.raw.get(key) ?? this.initial.get(key);
+    if (!baseline) throw new Error('Open this settings editor before changing its fields.');
+    const data = { ...baseline, ...changes };
+    if (JSON.stringify(data) === JSON.stringify(this.initial.get(key))) this.raw.delete(key);
+    else this.raw.set(key, data);
+  }
   changedFields(key: string) {
     const raw = this.raw.get(key),
       initial = this.initial.get(key);

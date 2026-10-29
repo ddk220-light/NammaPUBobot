@@ -28,7 +28,124 @@ const choices = (values: string[] | Record<string, string>): Choice[] =>
     : Object.entries(values).map(([id, name]) => ({ id, name }));
 let root = '';
 function row(name: string, label: string, input: string, help: string, fallback?: string) {
+  help ||= `Configure ${label.toLowerCase()} for your community.`;
   return `<div class="setting-row" data-setting data-search="${esc(`${label} ${help}`.toLowerCase())}"><div class="setting-copy"><div class="setting-title"><label for="${root}-${name}" class="setting-label">${esc(label)}</label>${help ? `<button type="button" class="icon-button" data-help="${esc(help)}" data-help-title="${esc(label)}" aria-label="More about ${esc(label)}">ⓘ</button>` : ''}${fallback !== undefined ? `<button type="button" class="icon-button" data-reset="${esc(name)}" data-default="${esc(fallback)}" aria-label="Reset ${esc(label)}">↺</button>` : ''}</div>${help ? `<p class="form-help">${esc(help)}</p>` : ''}</div><div class="setting-control">${input}</div></div>`;
+}
+
+const fieldDefaults: Record<string, string> = {
+  enabled: 'Off for an advanced queue; on in the first-queue guide',
+  size: '8 players',
+  autoStart: 'On',
+  isDefault: 'Off',
+  keepQueueVisible: 'On',
+  checkIn: 'On',
+  teamMethod: 'Captain-based balance',
+  requiredRole: 'No role restriction',
+  blockedRole: 'No role restriction',
+  voicePreview: 'Off',
+  rallyEnabled: 'Off',
+  taxEnabled: 'Off',
+  visibility: defaultRecords.visibility,
+  minimumMatches: String(defaultRecords.minimumMatches),
+  recentDays: String(defaultRecords.recentDays),
+  weeklyRating: String(defaultRecords.inactivity.weeklyRating),
+  weeklyDeviation: String(defaultRecords.inactivity.weeklyDeviation),
+  decay: defaultRecords.inactivity.enabled ? 'On' : 'Off',
+  decorateNickname: 'Off',
+  lobbyConnector: 'Off',
+  autoLobby: 'Off',
+  ratingEngine: 'AoE2-style Elo for a new game; later queues inherit the game’s engine',
+  winStreakBoost: defaultRatingSettings.winStreakBoost ? 'On' : 'Off',
+  lossStreakBoost: defaultRatingSettings.lossStreakBoost ? 'On' : 'Off',
+  mapMode: defaultMaps().mode,
+  mapCount: String(defaultMaps().count),
+  mapShortlist: String(defaultMaps().shortlist),
+  mapVoting: defaultMaps().voting,
+  mapTie: defaultMaps().tie,
+  mapNoVotes: defaultMaps().noVotes,
+  mapSeconds: String(defaultMaps().seconds),
+  mapRecent: String(defaultMaps().recentAvoid),
+  mapCheckIn: defaultMaps().countsAsCheckIn ? 'On' : 'Off',
+};
+export function settingHelp(row: HTMLElement) {
+  const input = row.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+    '[name]',
+  )!;
+  const fallback =
+    row.querySelector<HTMLElement>('[data-default]')?.dataset.default ??
+    fieldDefaults[input.name] ??
+    (input.name.startsWith('module-') ? 'Off' : 'Choose a value; no universal default');
+  const number = input instanceof HTMLInputElement && input.type === 'number';
+  const allowed =
+    input instanceof HTMLSelectElement
+      ? [...input.options]
+          .filter((o) => !o.disabled)
+          .map((o) => o.textContent)
+          .join(', ')
+      : input instanceof HTMLInputElement && input.type === 'checkbox'
+        ? input.disabled
+          ? 'Unavailable for this game or deployment'
+          : 'On or off'
+        : number
+          ? `${input instanceof HTMLInputElement && input.step === 'any' ? 'Numbers, including decimals' : 'Whole numbers'}${input.min ? ` from ${input.min}` : ''}${input.max ? ` to ${input.max}` : ''}. Server constraints also apply.`
+          : `${input.required ? 'Required' : 'Optional'} text${input.maxLength > 0 ? `, up to ${input.maxLength} characters` : ''}.`;
+  const scope = row.closest<HTMLFormElement>('form')?.dataset.config?.startsWith('queue:')
+    ? 'This queue after saving; existing matches keep their captured settings.'
+    : 'This game across all its queues after saving. Stored results are not recalculated.';
+  return `<p>${esc(row.querySelector<HTMLElement>('[data-help]')?.dataset.help ?? '')}</p><dl class="help-facts"><div><dt>Default</dt><dd>${esc(fallback)}</dd></div><div><dt>Allowed</dt><dd>${esc(allowed)}</dd></div><div><dt>Applies to</dt><dd>${esc(scope)}</dd></div></dl>`;
+}
+export function settingReadouts(root: ParentNode) {
+  root
+    .querySelectorAll<HTMLInputElement>('form[data-config] input[type="number"]')
+    .forEach((input) => {
+      const durations = [
+        'seconds',
+        'reuseSeconds',
+        'waitingSeconds',
+        'matchSeconds',
+        'mapSeconds',
+        'rallyCooldown',
+      ];
+      if (!durations.includes(input.name) && !['size', 'taxMinuteUtc'].includes(input.name)) return;
+      const row = input.closest('.setting-control');
+      if (!row) return;
+      let output = row.querySelector<HTMLElement>('[data-readout]');
+      if (!output) {
+        output = document.createElement('p');
+        output.className = 'field-readout';
+        output.dataset.readout = '';
+        row.append(output);
+      }
+      const n = Number(input.value);
+      output.textContent =
+        !input.value || !Number.isSafeInteger(n) || n < 0
+          ? 'Enter a valid whole number.'
+          : input.name === 'size'
+            ? n > 16
+              ? 'Up to 16 players can play in one match.'
+              : n < 2
+                ? 'At least 2 players required.'
+                : `${Math.ceil(n / 2)} vs ${Math.floor(n / 2)} · automatic starts use an even roster`
+            : input.name === 'taxMinuteUtc'
+              ? n <= 1439
+                ? `Thursday ${String(Math.floor(n / 60)).padStart(2, '0')}:${String(n % 60).padStart(2, '0')} UTC`
+                : 'Choose 0–1439 minutes after midnight UTC.'
+              : input.name === 'matchSeconds' && (n === 0 || n >= 43200)
+                ? 'Effective maximum: 12 hours'
+                : n === 0
+                  ? input.name === 'waitingSeconds'
+                    ? 'No waiting expiry'
+                    : input.name === 'reuseSeconds'
+                      ? 'Ready reuse off'
+                      : 'Check the allowed range'
+                  : [
+                      Math.floor(n / 3600) ? `${Math.floor(n / 3600)} h` : '',
+                      Math.floor((n % 3600) / 60) ? `${Math.floor((n % 3600) / 60)} min` : '',
+                      n % 60 ? `${n % 60} s` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ');
+    });
 }
 function field(
   name: string,
@@ -39,6 +156,7 @@ function field(
     type?: string;
     min?: number;
     max?: number;
+    step?: number | 'any';
     fallback?: string | number;
     path?: string;
     required?: boolean;
@@ -49,7 +167,7 @@ function field(
   const input =
     options.type === 'textarea'
       ? `<textarea ${attributes} rows="5">${esc(current)}</textarea>`
-      : `<input ${attributes} type="${options.type ?? (typeof current === 'number' ? 'number' : 'text')}" value="${esc(current)}" ${typeof current === 'number' ? 'step="1"' : ''} />`;
+      : `<input ${attributes} type="${options.type ?? (typeof current === 'number' ? 'number' : 'text')}" value="${esc(current)}" ${typeof current === 'number' ? `step="${options.step ?? 1}"` : ''} />`;
   return row(
     name,
     label,
@@ -97,11 +215,16 @@ function section(id: Category, body: string) {
   return `<section data-category-panel="${id}" class="settings-category"><h3>${categories[id]}</h3>${body}</section>`;
 }
 
-export function queueEditor(draft: SettingsDraft, setup: EditorSetup, queueId: string) {
+export function queueEditor(
+  draft: SettingsDraft,
+  setup: EditorSetup,
+  queueId: string,
+  overview = '',
+) {
   const s = draft.working;
   const queues = draft.materialize().queues;
   const q = queues.find((q) => q.id === queueId) ?? queues[0];
-  let html = `<div class="page-heading"><div><p class="eyebrow">Organize your next game</p><h1>Queues</h1><p class="view-description">Choose where players gather and how their matches work.</p></div><button type="button" class="primary" data-edit="add-queue" ${!s.games.length || !setup.channels.length ? 'disabled data-unavailable="true"' : ''}>Add queue</button></div>`;
+  let html = `<div class="page-heading"><div><p class="eyebrow">Organize your next game</p><h1>Queues</h1><p class="view-description">Choose where players gather and how their matches work.</p></div><button type="button" class="primary" data-edit="add-queue" ${!s.games.length || !setup.channels.length ? 'disabled data-unavailable="true"' : ''}>Add queue</button></div>${overview}`;
   if (!q)
     return (
       html +
@@ -111,7 +234,7 @@ export function queueEditor(draft: SettingsDraft, setup: EditorSetup, queueId: s
   const game = s.games.find((g) => g.id === q.gameId);
   const maps = q.maps ?? defaultMaps(game?.catalogId === 'aoe2' ? aoe2Maps : []);
   const roles = [{ id: '', name: 'No role restriction' }, ...setup.moderatorRoles];
-  html += `<div class="editor-toolbar"><label>Queue<select data-queue-select>${s.queues.map((v) => `<option value="${v.id}" ${v.id === q.id ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label><label>Search settings<input type="search" data-settings-search placeholder="Name, permission, map…" /></label></div><nav class="category-strip" aria-label="Queue settings categories">${Object.entries(
+  html += `<h2>Queue settings</h2><div class="editor-toolbar"><label>Queue<select data-queue-select>${s.queues.map((v) => `<option value="${v.id}" ${v.id === q.id ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label><label>Search settings<input type="search" data-settings-search placeholder="Name, permission, map…" /></label></div><nav class="category-strip" aria-label="Queue settings categories">${Object.entries(
     categories,
   )
     .map(
@@ -477,10 +600,27 @@ export function gameEditors(draft: SettingsDraft, setup: EditorSetup) {
               },
             )
               .map(([key, label]) =>
-                field(key, label, rating[key as keyof typeof rating] as number, '', {
-                  min: key === 'drawBonus' ? -500 : key === 'deviation' ? 1 : 0,
-                  fallback: defaultRatingSettings[key as keyof typeof rating] as number,
-                }),
+                field(
+                  key,
+                  label,
+                  rating[key as keyof typeof rating] as number,
+                  ['scale', 'winScale', 'lossScale'].includes(key)
+                    ? 'Zero uses the default 100% scale. Use the enable controls to pause features.'
+                    : '',
+                  {
+                    min: key === 'drawBonus' ? -500 : key === 'deviation' ? 1 : 0,
+                    max:
+                      key === 'initial'
+                        ? 10000
+                        : ['deviation', 'minDeviation'].includes(key)
+                          ? 3000
+                          : key === 'scale'
+                            ? 1000
+                            : 500,
+                    step: ['scale', 'winScale', 'lossScale', 'drawBonus'].includes(key) ? 'any' : 1,
+                    fallback: defaultRatingSettings[key as keyof typeof rating] as number,
+                  },
+                ),
               )
               .join(
                 '',

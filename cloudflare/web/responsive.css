@@ -465,6 +465,184 @@ input[type='file']::file-selector-button {
   border-radius: 50%;
   background: #e3bd67;
 }
+.queue-overview {
+  margin-bottom: 32px;
+}
+.queue-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 16px;
+}
+.queue-card {
+  min-width: 0;
+  margin: 0;
+}
+.queue-card h3,
+.player-record strong {
+  overflow-wrap: anywhere;
+}
+.queue-card progress,
+.check-in-progress progress {
+  width: 100%;
+  height: 12px;
+  accent-color: #a9b1ff;
+}
+.waiting-roster {
+  padding-left: 20px;
+  max-height: 180px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.queue-quick-action {
+  border-top: 1px solid var(--border);
+  margin-top: 16px;
+  padding-top: 16px;
+}
+.queue-quick-action button {
+  margin-top: 12px;
+}
+.draft-tag,
+.field-readout {
+  color: #e3c786;
+  font-size: 13px;
+}
+.field-changed {
+  background: #363328;
+}
+.setting-title {
+  flex-wrap: wrap;
+}
+.player-record {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 12px 0;
+}
+.player-record > summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+}
+.player-record > summary::before {
+  content: '+';
+  color: var(--accent);
+}
+.player-record[open] > summary::before {
+  content: '−';
+}
+.player-record > summary > span:first-of-type {
+  flex: 1;
+  min-width: 100px;
+}
+.player-record small {
+  display: block;
+  color: #c2c5ce;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.player-score {
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+.player-detail {
+  border-top: 1px solid var(--border);
+  padding: 16px;
+}
+.player-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  gap: 16px;
+}
+.player-facts dt,
+.help-facts dt,
+.change-item dt {
+  color: #bdc2ce;
+  font-size: 13px;
+}
+.player-facts dd,
+.help-facts dd,
+.change-item dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.player-detail form {
+  margin-top: 16px;
+}
+.check-in-progress {
+  padding: 12px 16px;
+  background: #24262c;
+}
+.rating-changes {
+  line-height: 1.8;
+}
+.guide-progress {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0;
+  list-style: none;
+  gap: 10px 24px;
+  font-size: 13px;
+}
+.guide-progress li {
+  color: #b6bac4;
+  padding: 8px 0;
+}
+.guide-progress [aria-current='step'] {
+  color: #e3c786;
+  font-weight: 650;
+  border-bottom: 2px solid #e3c786;
+}
+.guide-actions {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 20px;
+}
+.discord-preview {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #1c1e22;
+  margin: 20px 0;
+  overflow-wrap: anywhere;
+}
+.recovery-steps {
+  padding-left: 24px;
+  line-height: 1.7;
+}
+.recovery-steps li {
+  padding: 6px 0;
+}
+.help-facts > div,
+.change-item {
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+}
+.change-item h3 {
+  font-size: 15px;
+}
+.change-item dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .guide-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .guide-progress {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+  }
+  .change-item dl {
+    grid-template-columns: 1fr;
+  }
+  .player-record > summary {
+    padding: 12px;
+  }
+}
 .is-dirty {
   border-left: 2px solid #c6a151;
 }

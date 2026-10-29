@@ -623,6 +623,27 @@ describe('responsive organizer contracts', () => {
       quiz: false,
     });
   });
+  it('generates minimal and feature-scoped invite permissions without Manage Channels', async () => {
+    const response = await http('/api/bootstrap');
+    const body = (await response.json()) as {
+      inviteUrl: string;
+      inviteUrls: Record<string, string>;
+    };
+    expect(body.inviteUrl).toBe(body.inviteUrls.basic);
+    for (const [feature, extra] of [
+      ['basic', 0n],
+      ['ranks', 1n << 28n],
+      ['nicknames', 1n << 27n],
+    ] as const) {
+      const url = new URL(body.inviteUrls[feature]);
+      expect(url.origin).toBe('https://discord.com');
+      expect(url.searchParams.get('client_id')).toBe(appId);
+      expect(url.searchParams.get('scope')).toBe('bot applications.commands');
+      const bits = BigInt(url.searchParams.get('permissions')!);
+      expect(bits).toBe(84992n | extra);
+      expect(bits & (8n | 16n)).toBe(0n);
+    }
+  });
   it.each([403, 404, 503])(
     'keeps saved setup available when bot discovery returns %i',
     async (status) => {

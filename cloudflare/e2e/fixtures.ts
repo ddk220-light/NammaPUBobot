@@ -65,6 +65,14 @@ export async function mockApp(page: Page) {
     importApplied: false,
     importCalls: 0,
     hiddenStats: false,
+    hiddenPlayer: false,
+    playerCount: 1,
+    noCommunities: false,
+    manageRoles: true,
+    manageNicknames: false,
+    actions: [] as Record<string, unknown>[],
+    playerActions: [] as Record<string, unknown>[],
+    matchState: 'playing',
   };
   const player = {
     id: user,
@@ -78,7 +86,7 @@ export async function mockApp(page: Page) {
     draws: 1,
     streak: 2,
   };
-  const recordData = () => ({
+  const recordData = (playersPage = 0) => ({
     gameState: [{ id: game, ratingEngineLocked: state.locked, ratingEngine: state.storedEngine }],
     matches: [
       {
@@ -86,7 +94,9 @@ export async function mockApp(page: Page) {
         queue: state.snapshot.settings.queues[0] ?? initialSnapshot().settings.queues[0],
         gameId: game,
         gameName: 'Age of Empires II',
-        state: 'playing',
+        state: state.matchState,
+        ready: [user],
+        deadline: Date.UTC(2026, 9, 28, 20),
         createdAt: Date.UTC(2026, 9, 28),
         version: 1,
         roster: [player],
@@ -96,9 +106,15 @@ export async function mockApp(page: Page) {
         note: null,
       },
     ],
-    players: [{ ...player, gameId: game }],
-    playersTotal: 1,
-    playersPage: 0,
+    players: Array.from({ length: state.playerCount }, (_, i) => ({
+      ...player,
+      id: String(BigInt(user) + BigInt(i)),
+      name: i ? `Player ${i + 1}` : player.name,
+      gameId: game,
+      hidden: state.hiddenPlayer,
+    })).slice(playersPage * 50, playersPage * 50 + 50),
+    playersTotal: state.playerCount,
+    playersPage,
     economy: {
       wallets: [{ game_id: game, user_id: user, balance: 510 }],
       ledger: [],
@@ -142,8 +158,8 @@ export async function mockApp(page: Page) {
         state.access === 'ready'
           ? 'Discord access verified.'
           : 'Invite the bot or restore access, then check again.',
-      manageRoles: true,
-      manageNicknames: false,
+      manageRoles: state.manageRoles,
+      manageNicknames: state.manageNicknames,
     },
   });
   await page.route('**/api/**', async (route) => {
@@ -156,6 +172,11 @@ export async function mockApp(page: Page) {
         oauthReady: true,
         discordReady: true,
         inviteUrl: 'https://discord.com/oauth2/authorize?client_id=123',
+        inviteUrls: {
+          basic: 'https://discord.com/oauth2/authorize?client_id=123&permissions=84992',
+          ranks: 'https://discord.com/oauth2/authorize?client_id=123&permissions=268520448',
+          nicknames: 'https://discord.com/oauth2/authorize?client_id=123&permissions=134302720',
+        },
         catalog: [{ id: 'aoe2', name: 'Age of Empires II' }],
         user: state.signedIn ? { id: user, username: 'Organizer' } : null,
         csrf: 'test-csrf',
@@ -163,13 +184,18 @@ export async function mockApp(page: Page) {
       });
     if (path === '/api/communities')
       return json({
-        communities: [
-          { id: guild, name: 'Friends’ game night — a long community name' },
-          { id: otherGuild, name: 'Another community' },
-        ],
+        communities: state.noCommunities
+          ? []
+          : [
+              { id: guild, name: 'Friends’ game night — a long community name' },
+              { id: otherGuild, name: 'Another community' },
+            ],
       });
     if (path.endsWith('/setup')) return json(setupData(path.split('/')[3]));
-    if (path.endsWith('/records')) return json(recordData());
+    if (path.endsWith('/records'))
+      return json(
+        recordData(Number(new URL(route.request().url()).searchParams.get('playersPage') ?? 0)),
+      );
     if (path.endsWith('/config') && route.request().method() === 'PUT') {
       const { settings, expectedRevision } = route.request().postDataJSON();
       state.saved.push(settings);
@@ -239,9 +265,17 @@ export async function mockApp(page: Page) {
         },
       });
     }
-    if (path.endsWith('/player')) return json({ content: 'Player updated.' });
-    if (path.endsWith('/actions'))
+    if (path.endsWith('/player')) {
+      const action = route.request().postDataJSON();
+      state.playerActions.push(action);
+      if (action.kind === 'hide') state.hiddenPlayer = true;
+      if (action.kind === 'unhide') state.hiddenPlayer = false;
+      return json({ content: 'Player updated.' });
+    }
+    if (path.endsWith('/actions')) {
+      state.actions.push(route.request().postDataJSON());
       return json({ reply: { content: 'Action applied.' }, records: recordData() });
+    }
     if (path.endsWith('/logout')) {
       state.signedIn = false;
       return json({ ok: true });

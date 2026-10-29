@@ -13,7 +13,7 @@ import {
   discord,
   userGuilds,
   DiscordFailure,
-  REQUIRED_CHANNEL_PERMISSIONS,
+  botInviteUrls,
 } from './discord/client';
 import { interactions } from './discord/interactions';
 import { PlayError, actionSchema, type Action } from './domain/play';
@@ -360,16 +360,15 @@ app.get('/api/bootstrap', async (c) => {
     c.env.DISCORD_PUBLIC_KEY &&
     c.env.DISCORD_BOT_TOKEN
   );
-  const invite = c.env.DISCORD_APPLICATION_ID
-    ? `https://discord.com/oauth2/authorize?client_id=${c.env.DISCORD_APPLICATION_ID}&scope=bot%20applications.commands&permissions=${REQUIRED_CHANNEL_PERMISSIONS}`
-    : null;
+  const inviteUrls = botInviteUrls(c.env.DISCORD_APPLICATION_ID);
   return c.json({
     environment: c.env.APP_ENV,
     milestone: 'pickup-engagement',
     ...buildInfo,
     oauthReady,
     discordReady,
-    inviteUrl: invite,
+    inviteUrl: inviteUrls.basic,
+    inviteUrls,
     catalog,
     user: s?.session.user ?? null,
     csrf: s?.session.csrf ?? null,

@@ -259,7 +259,8 @@ test('drawer navigation restores focus after rendering and touch links have full
   await expect(page.locator('#view-queues')).toBeVisible();
   await expect(menu).toBeFocused();
   await tab(page, 'Players').click();
-  const name = page.getByRole('link', { name: 'Sam', exact: true });
+  await page.locator('.player-record > summary').click();
+  const name = page.getByRole('link', { name: 'Open player profile', exact: true });
   const r = await name.boundingBox();
   expect(r!.width).toBeGreaterThanOrEqual(44);
   expect(r!.height).toBeGreaterThanOrEqual(44);

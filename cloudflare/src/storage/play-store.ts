@@ -3299,13 +3299,17 @@ export class PlayStore {
       .toArray()
       .map((row) => JSON.parse(row.config) as Match);
     const players = this.sql
-      .exec<{ game_id: string; config: string }>(
-        `SELECT game_id,config FROM profiles ${gameId ? 'WHERE game_id=?' : ''} ORDER BY json_extract(config,'$.rating') DESC,game_id,user_id LIMIT 50 OFFSET ?`,
+      .exec<{ game_id: string; config: string; hidden: number }>(
+        `SELECT p.game_id,p.config,COALESCE(m.hidden,0) AS hidden FROM profiles p LEFT JOIN player_meta m USING(game_id,user_id) ${gameId ? 'WHERE p.game_id=?' : ''} ORDER BY json_extract(p.config,'$.rating') DESC,p.game_id,p.user_id LIMIT 50 OFFSET ?`,
         ...(gameId ? [gameId] : []),
         playersPage * 50,
       )
       .toArray()
-      .map((row) => ({ gameId: row.game_id, ...(JSON.parse(row.config) as Player) }));
+      .map((row) => ({
+        ...(JSON.parse(row.config) as Player),
+        gameId: row.game_id,
+        hidden: Boolean(row.hidden),
+      }));
     const changes = this.sql
       .exec(
         `SELECT * FROM rating_changes ${gameId ? 'WHERE game_id=?' : ''} ORDER BY changed_at DESC LIMIT 50`,
