@@ -1,3 +1,4 @@
+import { playerGames } from './player-games';
 import { publicGameListText, type PublicGameList } from '../src/games/discovery';
 import type { ProviderResult } from '../src/games/types';
 import { matchConnectorDetails, type ConnectorDiagnostics } from './connectors';
@@ -162,6 +163,7 @@ const viewNames: Record<OrganizerView, string> = {
 interface OrganizerFilters {
   playerGame: string;
   playerSearch: string;
+  includeWithoutQueues: boolean;
   matchQueue: string;
   matchState: string;
 }
@@ -230,21 +232,30 @@ function currentFilters(): OrganizerFilters {
   let filters = filtersByCommunity.get(guildId);
   if (!filters) {
     const game =
-      snapshot?.settings.games.find(
-        (g) =>
-          records?.players.some((p) => p.gameId === g.id) ||
-          records?.economy?.wallets.some((w) => w.game_id === g.id),
-      ) ?? snapshot?.settings.games[0];
+      (snapshot &&
+        playerGames(snapshot.settings).find(
+          (g) =>
+            records?.players.some((p) => p.gameId === g.id) ||
+            records?.economy?.wallets.some((w) => w.game_id === g.id),
+        )) ||
+      (snapshot && playerGames(snapshot.settings)[0]);
     filters = {
       playerGame: game?.id ?? '',
       playerSearch: '',
+      includeWithoutQueues: false,
       matchQueue: '',
       matchState: '',
     };
     filtersByCommunity.set(guildId, filters);
   }
-  if (filters.playerGame && !snapshot?.settings.games.some((g) => g.id === filters.playerGame))
-    filters.playerGame = '';
+  if (
+    snapshot &&
+    filters.playerGame &&
+    !playerGames(snapshot.settings, filters.includeWithoutQueues).some(
+      (g) => g.id === filters!.playerGame,
+    )
+  )
+    filters.playerGame = playerGames(snapshot.settings, filters.includeWithoutQueues)[0]?.id ?? '';
   if (
     filters.matchQueue &&
     !snapshot?.settings.queues.some((q) => q.id === filters.matchQueue) &&
@@ -257,6 +268,9 @@ function applyFilters() {
   if (!snapshot) return;
   const filters = currentFilters();
   const search = filters.playerSearch.trim().toLocaleLowerCase();
+  const allowedGames = new Set(
+    playerGames(snapshot.settings, filters.includeWithoutQueues).map((g) => g.id),
+  );
   for (const [attribute, label] of [
     ['rating', 'player records'],
     ['wallet', 'balances'],
@@ -265,6 +279,7 @@ function applyFilters() {
     let visible = 0;
     rows.forEach((row) => {
       row.hidden =
+        !allowedGames.has(row.dataset.game ?? '') ||
         Boolean(filters.playerGame && row.dataset.game !== filters.playerGame) ||
         Boolean(search && !row.dataset.playerSearch?.includes(search));
       if (!row.hidden) visible++;
@@ -274,7 +289,7 @@ function applyFilters() {
     const morePlayers = attribute === 'rating' && rows.length < total;
     const countText =
       attribute === 'rating'
-        ? `${visible} matching · ${rows.length} of ${total} player records loaded`
+        ? `${visible} matching · ${rows.length} of ${total} stored player records loaded${!filters.includeWithoutQueues && playerGames(snapshot.settings).length < snapshot.settings.games.length ? ' (includes games without queues)' : ''}`
         : `${visible} of ${rows.length} ${label}`;
     if (count && count.textContent !== countText) count.textContent = countText;
     const empty = app.querySelector<HTMLElement>(`[data-filter-empty="${attribute}"]`);
@@ -318,6 +333,15 @@ function updateFilter(input: HTMLInputElement | HTMLSelectElement) {
   if (!snapshot || !input.dataset.filter) return;
   const filters = currentFilters();
   switch (input.dataset.filter) {
+    case 'player-inactive': {
+      filters.includeWithoutQueues = (input as HTMLInputElement).checked;
+      const options = playerGames(snapshot.settings, filters.includeWithoutQueues);
+      if (filters.playerGame && !options.some((g) => g.id === filters.playerGame))
+        filters.playerGame = options[0]?.id ?? '';
+      const select = app.querySelector<HTMLSelectElement>('[data-filter="player-game"]')!;
+      select.innerHTML = `<option value="">All games</option>${options.map((g) => `<option value="${g.id}"${selected(g.id, filters.playerGame)}>${escape(g.name)}</option>`).join('')}`;
+      break;
+    }
     case 'player-game':
       filters.playerGame = input.value;
       break;
@@ -989,7 +1013,17 @@ function playerSection() {
   if (!records) return '';
   const economy = records.economy;
   const filters = currentFilters();
-  const playerFilters = `<div class="table-toolbar"><label>Filter players by game<select data-filter="player-game"><option value="">All games</option>${snapshot!.settings.games.map((g) => `<option value="${g.id}"${selected(g.id, filters.playerGame)}>${escape(g.name)}</option>`).join('')}</select></label><label>Find a player<input type="search" data-filter="player-search" value="${escape(filters.playerSearch)}" placeholder="Player name or Discord ID" /></label></div>`;
+  const playerFilters = `<div class="table-toolbar"><label>Filter players by game<select data-filter="player-game"><option value="">All games</option>${playerGames(
+    snapshot!.settings,
+    filters.includeWithoutQueues,
+  )
+    .map(
+      (g) =>
+        `<option value="${g.id}"${selected(g.id, filters.playerGame)}>${escape(g.name)}</option>`,
+    )
+    .join(
+      '',
+    )}</select></label><label>Find a player<input type="search" data-filter="player-search" value="${escape(filters.playerSearch)}" placeholder="Player name or Discord ID" /></label></div><label class="toggle"><input type="checkbox" data-filter="player-inactive" ${filters.includeWithoutQueues ? 'checked' : ''} /> Include games without queues</label><p class="form-help">Games with queues are shown by default. Older game records remain available when included.</p>`;
   const matchName = (id: string) => {
     const match = records!.matches.find((m) => m.id === id);
     return match
