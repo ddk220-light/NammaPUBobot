@@ -6,6 +6,7 @@ export const snowflake = z.string().regex(/^\d{17,20}$/, 'Enter a Discord ID.');
 const id = z.uuid();
 const name = z.string().trim().min(1).max(80);
 export { gameCatalog as catalog } from '../games/catalog';
+import { catalogIds, operations } from '../games/types';
 import { gameCapabilities } from '../games/catalog';
 
 export const gameSchema = z
@@ -15,11 +16,12 @@ export const gameSchema = z
     connector: z
       .object({
         enabled: z.boolean(),
+        capabilities: z.partialRecord(z.enum(operations), z.boolean()).optional(),
         autoAttach: z.object({ lobbyName: name }).strict().optional(),
       })
       .strict()
       .optional(),
-    catalogId: z.enum(['aoe2', 'aoe3', 'aoe4', 'aom', 'generals']).nullable(),
+    catalogId: z.enum(catalogIds).nullable(),
     records: z
       .object({
         visibility: z.enum(['public', 'members', 'admins']),
@@ -145,10 +147,10 @@ export const settingsSchema = z
       catalogs = new Set<string>(),
       defaults = new Set<string>();
     for (const [index, g] of s.games.entries()) {
-      if (g.connector?.enabled && !gameCapabilities(g.catalogId)?.lobby)
+      if (g.connector?.enabled && !gameCapabilities(g.catalogId))
         ctx.addIssue({
           code: 'custom',
-          message: 'No lobby connector is available for this game; use manual play.',
+          message: 'Choose a catalog game for connector settings; custom games use manual play.',
           path: ['games', index, 'connector', 'enabled'],
         });
       const taxMinutes = new Set(

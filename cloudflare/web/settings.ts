@@ -1,9 +1,10 @@
+import { connectorSettings, type ConnectorDiagnostics } from './connectors';
 import type { DiscordSetup, GameState } from '../src/domain/setup';
 import { capabilities } from '../src/domain/setup';
 import { defaultRatingSettings } from '../src/domain/rating';
 import { defaultRecords } from '../src/domain/records';
 import { defaultMaps, aoe2Maps } from '../src/domain/maps';
-import { gameCapabilities, gameCatalog } from '../src/games/catalog';
+import { gameCapabilities, selectableCatalog } from '../src/games/catalog';
 import type { Queue } from '../src/domain/config';
 import { SettingsDraft } from './draft';
 import { esc } from './ui';
@@ -504,7 +505,11 @@ export function queueEditor(
   );
 }
 
-export function gameEditors(draft: SettingsDraft, setup: EditorSetup) {
+export function gameEditors(
+  draft: SettingsDraft,
+  setup: EditorSetup,
+  diagnostics: ConnectorDiagnostics | null = null,
+) {
   const queues = draft.materialize().queues;
   return `<section class="panel"><div class="section-heading"><h2>Games</h2><span class="muted">Shared ratings, ranks and records</span></div>${draft.working.games
     .map((g, index) => {
@@ -527,16 +532,12 @@ export function gameEditors(draft: SettingsDraft, setup: EditorSetup) {
       return (
         `<details class="game-settings" id="game-settings-${g.id}"><summary>${esc(g.name)}<span class="record-meta">Game settings</span></summary><form data-config="game:${g.id}" novalidate>` +
         field('name', 'Game name', g.name, '', { max: 80 }) +
-        (gameCapabilities(g.catalogId)?.lobby
-          ? toggle(
-              'lobbyConnector',
-              'Track lobby start and end',
-              g.connector?.enabled ?? false,
-              'Manual result reporting remains available.',
-            ) +
-            toggle('autoLobby', 'Attach matching public lobby', Boolean(g.connector?.autoAttach)) +
-            field('lobbyName', 'Lobby name', g.connector?.autoAttach?.lobbyName ?? 'NammaNomad')
-          : '<p class="form-help">This game uses manual lobby and result reporting.</p>') +
+        connectorSettings(
+          g,
+          draft.saved.communityId,
+          diagnostics,
+          draft.saved.settings.games.some((saved) => saved.id === g.id),
+        ) +
         select(
           'visibility',
           'Statistics visibility',
@@ -631,7 +632,15 @@ export function gameEditors(draft: SettingsDraft, setup: EditorSetup) {
     })
     .join(
       '',
-    )}<form data-add-game class="add-game"><h3>Add a game</h3><label>Catalog game<select name="catalogId"><option value="">Custom game</option>${gameCatalog.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select></label><label>Custom game name<input name="name" maxlength="80" placeholder="Your game’s name" /></label><button type="submit" class="primary">Add to changes</button></form></section>`;
+    )}<form data-add-game class="add-game"><h3>Add a game</h3><label>Catalog game<select name="catalogId"><option value="">Custom game</option>${selectableCatalog
+    .filter((g) => !draft.working.games.some((existing) => existing.catalogId === g.id))
+    .map(
+      (g) =>
+        `<option value="${g.id}">${esc(g.name)}${g.lifecycle === 'conditional' ? ' · provider access required' : ''}</option>`,
+    )
+    .join(
+      '',
+    )}</select></label><label>Custom game name<input name="name" maxlength="80" placeholder="Your game’s name" /></label><button type="submit" class="primary">Add to changes</button></form></section>`;
 }
 export function rankRow(
   index: number,

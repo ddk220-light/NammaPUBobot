@@ -1,0 +1,79 @@
+{
+  "source": {
+    "version": 1,
+    "date": "2026-10-28",
+    "repository": "https://github.com/GeneralsOnlineDevelopmentTeam/Services",
+    "revision": "85dfbc7ac6f9e336f5d18939f3cd1eb20663b6ea",
+    "kind": "source-derived synthetic contract; not a live authenticated capture"
+  },
+  "lobby": {
+    "LobbyID": "9007199254740993",
+    "MatchID": "9007199254741101",
+    "Name": "Fixture Zero Hour room",
+    "State": 1,
+    "MapName": "Tournament Desert",
+    "MaxPlayers": 2,
+    "IsPassworded": false,
+    "Members": [
+      {
+        "UserID": "101",
+        "DisplayName": "Fixture Alpha",
+        "SlotState": 5,
+        "Side": 2,
+        "Team": 0
+      },
+      {
+        "UserID": "102",
+        "DisplayName": "Fixture Beta",
+        "SlotState": 5,
+        "Side": 3,
+        "Team": 1
+      },
+      {
+        "UserID": "999",
+        "DisplayName": "Observer",
+        "SlotState": 5,
+        "Side": 1,
+        "Team": -1
+      }
+    ]
+  },
+  "match": {
+    "match_id": "9007199254741101",
+    "lobby_name": "Fixture Zero Hour room",
+    "is_finished": true,
+    "time_started": "2026-10-28T18:00:00Z",
+    "time_finished": "2026-10-28T18:25:00Z",
+    "map_name": "Tournament Desert",
+    "match_roster_type": "1v1",
+    "members": [
+      {
+        "user_id": "101",
+        "display_name": "Fixture Alpha",
+        "slot_state": 5,
+        "side": 2,
+        "team": 0,
+        "won": true,
+        "desynced": false,
+        "duration": 1500,
+        "metadata": [
+          {
+            "file_type": 1,
+            "file_name": "fixture-alpha.rep"
+          }
+        ]
+      },
+      {
+        "user_id": "102",
+        "display_name": "Fixture Beta",
+        "slot_state": 5,
+        "side": 3,
+        "team": 1,
+        "won": false,
+        "desynced": false,
+        "duration": 1491,
+        "metadata": []
+      }
+    ]
+  }
+}

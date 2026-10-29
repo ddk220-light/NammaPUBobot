@@ -193,11 +193,18 @@ export class EconomyStore {
   }
   private assertPreGame(m: Match) {
     const b = m.lobby;
-    if (!b) return; // Manual games retain the established manual-close workflow.
+    // A provisional association is informational; manual games keep captain-controlled closing.
+    if (
+      !b ||
+      (b.availability && b.availability !== 'available') ||
+      !['pending', 'observed', 'unavailable'].includes(b.state) ||
+      (!b.rosterVerified && !b.confirmedBy)
+    )
+      return;
     if (
       b.state !== 'observed' ||
       !b.observation ||
-      b.observation.startedAt ||
+      ['started', 'finished'].includes(b.observation.phase) ||
       Date.now() - (b.lastSuccessAt ?? 0) > 60000
     )
       throw new PlayError(
@@ -297,6 +304,9 @@ export class EconomyStore {
     if (b && !['settled', 'refunded'].includes(b.status)) {
       const unverifiedStart =
         !!m.lobby &&
+        (!m.lobby.availability || m.lobby.availability === 'available') &&
+        ['pending', 'observed', 'unavailable'].includes(m.lobby.state) &&
+        (m.lobby.rosterVerified || !!m.lobby.confirmedBy) &&
         !this.sql.exec('SELECT 1 FROM bet_start_evidence WHERE book_id=?', b.id).toArray().length;
       if (b.status === 'open' || result === 'draw' || result === 'abort' || unverifiedStart)
         this.refund(

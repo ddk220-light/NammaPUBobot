@@ -2,6 +2,8 @@ import type { Settings } from '../src/domain/config';
 import { defaultRatingSettings } from '../src/domain/rating';
 import { defaultRecords } from '../src/domain/records';
 import { defaultMaps, aoe2Maps } from '../src/domain/maps';
+import { gameCapabilities } from '../src/games/catalog';
+import { operations } from '../src/games/types';
 import { esc } from './ui';
 
 const labels: Record<string, string> = {
@@ -33,11 +35,27 @@ const human = (key: string) =>
 /** Compare effective defaults so opening a legacy form is not presented as extra edits. */
 function effective(settings: Settings): Settings {
   return {
-    games: settings.games.map((g) => ({
-      ...g,
-      records: g.records ?? defaultRecords,
-      connector: g.connector ?? { enabled: false },
-    })),
+    games: settings.games.map((g) => {
+      const catalog = gameCapabilities(g.catalogId);
+      return {
+        ...g,
+        records: g.records ?? defaultRecords,
+        connector: catalog
+          ? {
+              enabled: false,
+              ...g.connector,
+              capabilities: {
+                ...Object.fromEntries(
+                  operations
+                    .filter((op) => catalog.manifest.capabilities[op] !== 'unsupported')
+                    .map((op) => [op, true]),
+                ),
+                ...g.connector?.capabilities,
+              },
+            }
+          : (g.connector ?? { enabled: false }),
+      };
+    }),
     queues: settings.queues.map((q) => ({
       ...q,
       ratingSettings: q.ratingSettings ?? defaultRatingSettings,

@@ -52,6 +52,17 @@ function ratingChart(p: PlayerStatistics) {
     .join(' ');
   return `<figure class="rating-chart"><svg viewBox="0 0 600 200" role="img" aria-label="Recent rating trend for ${esc(p.name)}; exact values in the table below"><line x1="32" x2="568" y1="164" y2="164" class="chart-axis" /><polyline points="${plot}" fill="none" class="chart-line" /><text x="32" y="192">${esc(new Date(points[0].changed_at).toLocaleDateString())}</text><text x="568" y="192" text-anchor="end">${esc(new Date(points.at(-1)!.changed_at).toLocaleDateString())}</text></svg><figcaption>Most recent ${points.length} rating changes · ${min}–${max}. This is not an all-time chart.</figcaption></figure>`;
 }
+function profileLink(value: string, provider: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && !url.username && !url.password)
+      return `<a href="${esc(url.toString())}" rel="noopener noreferrer" target="_blank" aria-label="View ${esc(provider)} profile (opens in a new tab)">View profile</a>`;
+  } catch {
+    /* Manual providers may have no public profile URL. */
+  }
+  return 'No public profile link';
+}
+
 function playerDetails(p: PlayerStatistics) {
   const metric = (label: string, value: string | number) =>
     `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
@@ -66,9 +77,9 @@ function playerDetails(p: PlayerStatistics) {
       )
       .join('')}</nav>
     <div data-profile-panel="overview"><dl class="stats-summary">
-      ${metric('Rating', `${p.rating} ±${p.deviation}`)}
+      ${metric('Rating', p.rated === false ? 'Unrated' : `${p.rating} ±${p.deviation}`)}
       ${metric('Rank', p.rank ?? 'Unranked')}
-      ${metric('Peak rating', p.peak)}
+      ${metric('Peak rating', p.rated === false ? 'Unrated' : p.peak)}
       ${metric('Matches', p.matchCount)}
       ${metric('Wins / losses / draws', `${p.wins} / ${p.losses} / ${p.draws}`)}
       ${metric('Win rate', p.winRate === null ? 'No ranked results' : `${(p.winRate * 100).toFixed(1)}%`)}
@@ -77,9 +88,9 @@ function playerDetails(p: PlayerStatistics) {
     </dl>
     <p class="form-help">${p.eligible ? 'Included in this game’s leaderboard.' : 'Does not meet this game’s leaderboard requirements.'}</p></div>
 
-    <div data-profile-panel="details"><h3>Played civilizations</h3>
-    <p class="form-help">Recorded from linked game profiles. Win rate is wins / completed games, including draws. Inferred links can be corrected with /profile unlink and /lobby link.</p>
-    ${p.civilizations?.length ? `<div class="table-wrap"><table><thead><tr><th>Civilization</th><th>Games</th><th>W / L / D</th><th>Win rate</th><th>Inferred identity</th></tr></thead><tbody>${p.civilizations.map((c) => `<tr><td>${esc(c.selection)}</td><td>${c.games}</td><td>${c.wins} / ${c.losses} / ${c.draws}</td><td>${((100 * c.wins) / c.games).toFixed(1)}%</td><td>${c.inferred}</td></tr>`).join('')}</tbody></table></div>` : '<p>No civilizations recorded yet. Unlinked games remain playable.</p>'}
+    <div data-profile-panel="details">    <h3>Played civilizations / factions</h3>
+    <p class="form-help">Recorded from linked game profiles. Win rate is wins / completed games, including draws. Legacy inferred links remain suggestions until confirmed with /lobby link; /profile unlink removes an incorrect link.</p>
+    ${p.civilizations?.length ? `<div class="table-wrap"><table><thead><tr><th>Civilization / faction</th><th>Games</th><th>W / L / D</th><th>Win rate</th><th>Inferred identity</th></tr></thead><tbody>${p.civilizations.map((c) => `<tr><td>${esc(c.selection)}</td><td>${c.games}</td><td>${c.wins} / ${c.losses} / ${c.draws}</td><td>${((100 * c.wins) / c.games).toFixed(1)}%</td><td>${c.inferred}</td></tr>`).join('')}</tbody></table></div>` : '<p>No civilizations or factions recorded yet. Unlinked games remain playable.</p>'}
     </div><div data-profile-panel="history"><h3>Recent rating history</h3>${ratingChart(p)}
     ${p.history.length ? `<div class="table-wrap"><table><caption class="sr-only">Recent rating changes for ${esc(p.name)}</caption><thead><tr><th scope="col">Date</th><th scope="col" class="numeric">Before</th><th scope="col" class="numeric">After</th><th scope="col">Reason</th></tr></thead><tbody>${p.history.map((c) => `<tr><td>${date(c.changed_at)}</td><td class="numeric">${c.before}</td><td class="numeric">${c.after}</td><td>${esc(c.reason ?? 'Match or administrator adjustment')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No rating changes recorded.</p>'}
 
@@ -90,8 +101,8 @@ function playerDetails(p: PlayerStatistics) {
     </div><div data-profile-panel="matches"><h3>Recent matches</h3><p class="form-help">The most recent 30 recorded matches are available here.</p>
     ${p.recent.map((m) => `<details class="match-record"><summary>${esc(m.queue)} <span class="record-meta">${esc(matchOutcome(m.state, m.result))} · ${date(m.at)}</span></summary><div class="record-teams">${m.teams.map((team, side) => `<div><strong>${side === 0 ? 'Alpha' : 'Beta'}</strong><p>${team.map((player) => esc(player.name)).join(', ')}</p></div>`).join('')}</div>${m.note ? `<p>${esc(m.note)}</p>` : ''}<p class="record-meta">Match ID: <code>${esc(m.id)}</code></p></details>`).join('') || '<p class="empty-state">No recent matches recorded.</p>'}
 
-    </div><div data-profile-panel="details"><h3>Profile references</h3><p class="form-help">These links are optional and unverified. They do not prove ownership of a game profile.</p>
-    ${p.profiles.length ? `<div class="table-wrap"><table><caption class="sr-only">Unverified external profile references</caption><thead><tr><th scope="col">Provider</th><th scope="col">Profile ID</th><th scope="col">Source</th><th scope="col">Link</th></tr></thead><tbody>${p.profiles.map((r) => `<tr><th scope="row">${esc(r.provider)}</th><td><code>${esc(r.external_id)}</code></td><td>${esc(r.provenance)}</td><td><a href="${esc(r.url)}" rel="noopener noreferrer" target="_blank" aria-label="View ${esc(r.provider)} profile (opens in a new tab)">View profile</a></td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No linked profiles.</p>'}
+    </div><div data-profile-panel="details">    <h3>Profile references</h3><p class="form-help">Declared and organizer-assigned accounts are claims. Ownership verification records authenticated account control; it does not prove game ownership or participation in a match.</p>
+    ${p.profiles.length ? `<div class="table-wrap"><table><caption class="sr-only">External profile references and account trust</caption><thead><tr><th scope="col">Provider</th><th scope="col">Profile ID</th><th scope="col">Trust</th><th scope="col">Source</th><th scope="col">Link</th></tr></thead><tbody>${p.profiles.map((r) => `<tr><th scope="row">${esc(r.provider)}</th><td><code>${esc(r.external_id)}</code></td><td>${esc(r.trust === 'ownership_verified' ? 'Ownership verified' : r.trust === 'organizer_assigned' ? 'Organizer assigned' : r.trust === 'suggested' || r.provenance.startsWith('inferred:') ? 'Suggested' : 'Declared')}${r.verifiedAt ? ` · ${date(r.verifiedAt)}` : ''}</td><td>${esc(r.provenance)}</td><td>${profileLink(r.url, r.provider)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No linked profiles.</p>'}
     <details class="technical-details"><summary>Record source</summary><p>Player records: ${esc(p.source)}</p>${p.history.length ? `<ul>${[...new Set(p.history.map((c) => c.source ?? 'local'))].map((source) => `<li>Rating history: ${esc(source)}</li>`).join('')}</ul>` : ''}</details>
   </div></section>`;
 }

@@ -216,9 +216,9 @@ export function matchCard(match: Match): Card {
   if (match.lobby)
     extra.push({
       title: `${match.gameName} lobby`,
-      description: lobbySummary(match.lobby),
+      description: lobbySummary(match.lobby).slice(0, 4000),
       color: 0x648c78,
-      footer: { text: 'Public game evidence · results reported by players' },
+      footer: { text: 'Provider observations and declared facts · results reported by captains' },
     });
   else if (match.lobbySearch && match.state === 'playing')
     extra.push({

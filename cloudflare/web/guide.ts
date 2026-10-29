@@ -1,5 +1,5 @@
 import type { Snapshot } from '../src/domain/config';
-import { gameCatalog } from '../src/games/catalog';
+import { selectableCatalog } from '../src/games/catalog';
 import type { EditorSetup } from './settings';
 import type { SettingsDraft } from './draft';
 import { esc } from './ui';
@@ -120,9 +120,12 @@ export function guidedSetup(
   if (stage === 'access')
     body = `<h3>Connect your Discord community</h3><p>${esc(setup.access.message)}</p><p>Invite the bot, choose this server, and return here. We recheck saved configuration and permissions when you return.</p><div class="actions">${inviteLink(urls.basic, draft.saved.communityId, 'Add to Discord')}<button type="button" data-action="check-access">I’m back — check access</button></div><p class="form-help">You may prepare a game while access is unavailable. An enabled queue still requires verified channel permissions when you save.</p>`;
   if (stage === 'game')
-    body = `<h3>Choose a game</h3><p>Queues for the same game share ratings, leaderboard policy and tax time.</p><label>Game for guided setup<select data-guide-game><option value="">Choose a game</option>${settings.games.map((g) => `<option value="${g.id}" ${g.id === game?.id ? 'selected' : ''}>${esc(g.name || 'Custom game draft')}</option>`).join('')}${gameCatalog
+    body = `<h3>Choose a game</h3><p>Queues for the same game share ratings, leaderboard policy and tax time.</p><label>Game for guided setup<select data-guide-game><option value="">Choose a game</option>${settings.games.map((g) => `<option value="${g.id}" ${g.id === game?.id ? 'selected' : ''}>${esc(g.name || 'Custom game draft')}</option>`).join('')}${selectableCatalog
       .filter((g) => !settings.games.some((v) => v.catalogId === g.id))
-      .map((g) => `<option value="catalog:${g.id}">${esc(g.name)} · add game</option>`)
+      .map(
+        (g) =>
+          `<option value="catalog:${g.id}">${esc(g.name)}${g.lifecycle === 'conditional' ? ' · provider access required' : ''} · add game</option>`,
+      )
       .join(
         '',
       )}<option value="custom">Custom game · add game</option></select></label>${game && !game.catalogId ? `<label>Custom game name<input data-guide-name value="${esc(game.name)}" maxlength="80" required /></label>` : ''}<p class="form-help">Adding a game stages a draft. Nothing is published until Save changes succeeds.</p>`;

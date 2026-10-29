@@ -1,3 +1,7 @@
+import { publicGameListText, type PublicGameList } from '../src/games/discovery';
+import type { ProviderResult } from '../src/games/types';
+import { matchConnectorDetails, type ConnectorDiagnostics } from './connectors';
+import { showAccountLink } from './account-link';
 import {
   guidedSetup,
   permissionRecovery,
@@ -103,6 +107,7 @@ let bootstrap: Bootstrap,
   channelList: Channel[] = [];
 let busy = false;
 let records: Records | null = null;
+let connectorDiagnostics: ConnectorDiagnostics | null = null;
 let draft: SettingsDraft | null = null;
 let setup: EditorSetup = {
   channels: [],
@@ -467,18 +472,21 @@ async function loadCommunity(id: string, navigation: 'push' | 'replace' | 'none'
   snapshot = null;
   draft = null;
   records = null;
+  connectorDiagnostics = null;
   channelList = [];
   validationIssues = [];
   currentNotice = null;
   invalidateImport();
   render();
-  const result = await api<EditorSetup & { snapshot: Snapshot; records: Records }>(
-    communityUrl('setup'),
-  );
+  const [result, connectors] = await Promise.all([
+    api<EditorSetup & { snapshot: Snapshot; records: Records }>(communityUrl('setup')),
+    api<ConnectorDiagnostics>(communityUrl('connectors')).catch(() => null),
+  ]);
   if (guildId !== id || sequence !== loadSequence) return;
   snapshot = result.snapshot;
   draft = new SettingsDraft(snapshot, result.gameState);
   setup = result;
+  connectorDiagnostics = connectors;
   accessCheckedAt = new Date();
   channelList = result.channels;
   records = result.records;
@@ -502,11 +510,13 @@ async function refreshRecords() {
 async function refreshSetup() {
   if (!snapshot || !draft) return loadCommunity(guildId);
   const id = guildId;
-  const result = await api<EditorSetup & { snapshot: Snapshot; records: Records }>(
-    communityUrl('setup'),
-  );
+  const [result, connectors] = await Promise.all([
+    api<EditorSetup & { snapshot: Snapshot; records: Records }>(communityUrl('setup')),
+    api<ConnectorDiagnostics>(communityUrl('connectors')).catch(() => null),
+  ]);
   if (id !== guildId) return;
   setup = result;
+  connectorDiagnostics = connectors;
   accessCheckedAt = new Date();
   channelList = result.channels;
   records = result.records;
@@ -932,7 +942,7 @@ function matchCard(m: Match) {
   const ready = new Set(m.ready ?? []);
   const checked = m.roster.filter((p) => ready.has(p.id)).length;
   const book = records?.economy?.books.find((b) => b.match_id === m.id);
-  return `<details class="match-record" data-match-record data-match-id="${m.id}" data-queue="${m.queue.id}" data-state="${m.state}"${['playing', 'check_in'].includes(m.state) ? ' open' : ''}><summary><span>${escape(m.queue.name)} · ${escape(m.gameName)}</span><span class="status-pill">${escape(stateName(m))}</span><span class="record-meta">${escape(new Date(m.createdAt).toLocaleString())}</span></summary>${m.state === 'check_in' ? `<div class="check-in-progress"><p><strong>${checked} / ${m.roster.length} checked in</strong>${m.deadline ? ` · deadline ${escape(new Date(m.deadline).toLocaleString())}` : ''}</p><progress max="${Math.max(1, m.roster.length)}" value="${checked}" aria-label="Players checked in"></progress></div>` : ''}<div class="record-teams">${m.teams.map((team, side) => `<div><h3>${side === 0 ? 'Alpha' : 'Beta'}</h3>${team.map((p) => `<p><strong>${escape(p.name)}</strong> · ${p.rating}${m.captains[side] === p.id ? ' · captain' : ''}${m.state === 'check_in' ? (ready.has(p.id) ? ' · Ready' : ' · Waiting for check-in') : ''}</p>`).join('') || '<p>No players assigned.</p>'}</div>`).join('')}</div>${m.changes.length ? `<h3>Recorded rating changes</h3><ul class="rating-changes">${m.changes.map((c) => `<li>${escape(m.roster.find((p) => p.id === c.userId)?.name ?? c.userId)}: ${c.before} → ${c.after} (${c.after - c.before >= 0 ? '+' : ''}${c.after - c.before})</li>`).join('')}</ul>` : '<p class="form-help">No rating changes recorded for this match.</p>'}${book ? `<p class="notice">Predictions: ${escape(book.status)}${book.reason ? ` · ${escape(book.reason)}` : ''}${book.status === 'settled' ? ' · Paid settlements remain final after result corrections.' : ''}</p>` : ''}${m.note ? `<p>${escape(m.note)}</p>` : ''}${matchRepairs(m)}<details class="technical-details"><summary>Record identifiers</summary><p>Match ${escape(m.id)}</p>${m.roster.map((p) => `<p>${escape(p.name)} · ${escape(p.id)}</p>`).join('')}</details></details>`;
+  return `<details class="match-record" data-match-record data-match-id="${m.id}" data-queue="${m.queue.id}" data-state="${m.state}"${['playing', 'check_in'].includes(m.state) ? ' open' : ''}><summary><span>${escape(m.queue.name)} · ${escape(m.gameName)}</span><span class="status-pill">${escape(stateName(m))}</span><span class="record-meta">${escape(new Date(m.createdAt).toLocaleString())}</span></summary>${m.state === 'check_in' ? `<div class="check-in-progress"><p><strong>${checked} / ${m.roster.length} checked in</strong>${m.deadline ? ` · deadline ${escape(new Date(m.deadline).toLocaleString())}` : ''}</p><progress max="${Math.max(1, m.roster.length)}" value="${checked}" aria-label="Players checked in"></progress></div>` : ''}<div class="record-teams">${m.teams.map((team, side) => `<div><h3>${side === 0 ? 'Alpha' : 'Beta'}</h3>${team.map((p) => `<p><strong>${escape(p.name)}</strong> · ${p.rating}${m.captains[side] === p.id ? ' · captain' : ''}${m.state === 'check_in' ? (ready.has(p.id) ? ' · Ready' : ' · Waiting for check-in') : ''}</p>`).join('') || '<p>No players assigned.</p>'}</div>`).join('')}</div>${m.changes.length ? `<h3>Recorded rating changes</h3><ul class="rating-changes">${m.changes.map((c) => `<li>${escape(m.roster.find((p) => p.id === c.userId)?.name ?? c.userId)}: ${c.before} → ${c.after} (${c.after - c.before >= 0 ? '+' : ''}${c.after - c.before})</li>`).join('')}</ul>` : '<p class="form-help">No rating changes recorded for this match.</p>'}${book ? `<p class="notice">Predictions: ${escape(book.status)}${book.reason ? ` · ${escape(book.reason)}` : ''}${book.status === 'settled' ? ' · Paid settlements remain final after result corrections.' : ''}</p>` : ''}${m.note ? `<p>${escape(m.note)}</p>` : ''}${matchConnectorDetails(m)}${matchRepairs(m)}<details class="technical-details"><summary>Record identifiers</summary><p>Match ${escape(m.id)}</p>${m.roster.map((p) => `<p>${escape(p.name)} · ${escape(p.id)}</p>`).join('')}</details></details>`;
 }
 function recordSection() {
   if (!records) return '';
@@ -991,7 +1001,7 @@ function playerSection() {
     ${onboarding(snapshot!, records.onboarding)}`;
 }
 function setupSection() {
-  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Community setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney()}${guidedSetup(draft!, setup, inviteUrls(), new URL(location.href), snapshot!)}${gameEditors(draft!, setup)}${permissionRecovery(draft!, setup, inviteUrls(), accessCheckedAt)}`;
+  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Community setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney()}${guidedSetup(draft!, setup, inviteUrls(), new URL(location.href), snapshot!)}${gameEditors(draft!, setup, connectorDiagnostics)}${permissionRecovery(draft!, setup, inviteUrls(), accessCheckedAt)}`;
 }
 
 function setupJourney() {
@@ -1136,6 +1146,22 @@ app.addEventListener('click', (event) => {
         if (snapshot) await refreshRecords();
         else if (guildId) await loadCommunity(guildId);
         break;
+      case 'browse-games': {
+        const community = guildId;
+        const target = button
+          .closest('.connector-settings')
+          ?.querySelector<HTMLElement>('[data-game-list]');
+        const list = await api<ProviderResult<PublicGameList>>(
+          communityUrl(
+            `connectors/${encodeURIComponent(button.dataset.game!)}/games?phase=${button.dataset.phase}`,
+          ),
+        );
+        if (community === guildId && target?.isConnected)
+          target.textContent = publicGameListText(list, 20000).replace(/<t:(\d+):T>/g, (_, t) =>
+            new Date(Number(t) * 1000).toLocaleTimeString(),
+          );
+        break;
+      }
       case 'load-players':
         await loadMorePlayers();
         break;
@@ -1601,7 +1627,7 @@ window.addEventListener('beforeunload', (event) => {
   }
 });
 window.addEventListener('popstate', () => {
-  if (location.pathname === '/stats') return;
+  if (['/stats', '/link'].includes(location.pathname)) return;
   if (restoringHistory) {
     restoringHistory = false;
     return;
@@ -1648,6 +1674,11 @@ async function start() {
   bootstrap = await api<Bootstrap>('/api/bootstrap');
   document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
+  if (location.pathname === '/link') {
+    await showAccountLink(app, bootstrap);
+    app.setAttribute('aria-busy', 'false');
+    return;
+  }
   if (bootstrap.user) {
     guilds = (await api<{ communities: Guild[] }>('/api/communities')).communities;
     render();

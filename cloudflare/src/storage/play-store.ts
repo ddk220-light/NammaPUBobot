@@ -1,5 +1,6 @@
 import { createGameRecordTables } from './game-records';
 import { CivStore, createCivTables } from './civ-store';
+import { runtimeAdapter, connectorAvailability } from '../games/runtime';
 import { LobbyStore } from './lobby-store';
 import type { LobbyEvent } from '../domain/lobby';
 import type { Env } from '../env';
@@ -337,12 +338,26 @@ export class PlayStore {
         return this.read(guild).settings;
       },
       {
+        adapter: (id) => {
+          const guild = this.sql
+            .exec<{ guild_id: string }>('SELECT guild_id FROM community WHERE id=1')
+            .toArray()[0].guild_id;
+          const game = this.read(guild).settings.games.find((g) => g.catalogId === id);
+          return runtimeAdapter(this.env, id, game?.connector?.capabilities);
+        },
+        availability: (adapter, operation, mode) =>
+          connectorAvailability(this.env, adapter, operation, mode),
         discover: async (adapterId, name) =>
           adapterId === 'aoe2'
             ? this.env.AOE2_LOBBIES.getByName(this.env.DISCORD_APPLICATION_ID ?? 'local').discover(
                 name,
               )
-            : { healthy: false, observations: [] },
+            : (async () => {
+                const result = await runtimeAdapter(this.env, adapterId)?.discover?.();
+                return result?.status === 'ok'
+                  ? { healthy: true, observations: result.value }
+                  : { healthy: false, observations: [] };
+              })(),
         occupancy: async (id, name) => {
           const feed = this.env.AOE2_LOBBIES.getByName(this.env.DISCORD_APPLICATION_ID ?? 'local');
           return name
@@ -355,8 +370,7 @@ export class PlayStore {
         audit: (action, actor, details, m) => this.audit(action, actor, details, m.id, m.queue.id),
         prompt: (m, event) =>
           this.enqueue(`end:${m.id}:${event.bindingId}`, m.queue.channelId, {
-            content:
-              'Game finished; declared profiles and teams match. Losing captain: report your loss below.',
+            content: `Game finished; declared profiles and teams match. Provider suggests ${m.lobby?.suggestedResult ?? 'a result'}. Captains must confirm through reporting below.`,
             embeds: [],
             components: [
               {
@@ -380,6 +394,12 @@ export class PlayStore {
     this.read(guild);
     if (event.observation?.phase !== 'finished') return { accepted: false, reason: 'not_finished' };
     return this.lobbies.accept(guild, event);
+  }
+  async refreshLobbyReplays(guild: string, input: Action) {
+    this.read(guild);
+    const action = actionSchema.parse(input);
+    if (action.kind !== 'lobby_replays') throw new PlayError('Choose recording references.');
+    return this.lobbies.refreshReplays(this.selectedMatch(action), action);
   }
   async pollLobbies(guild: string) {
     this.read(guild);
@@ -2079,7 +2099,11 @@ export class PlayStore {
       a.matchId = m.id;
       return this.civs.action(m, a, settings.games.find((g) => g.id === m.queue.gameId)?.catalogId);
     }
-    if (['lobby_attach', 'lobby_unlink', 'lobby_status'].includes(a.kind))
+    if (
+      ['lobby_attach', 'lobby_unlink', 'lobby_status', 'lobby_confirm', 'lobby_facts'].includes(
+        a.kind,
+      )
+    )
       return this.lobbies.action(this.selectedMatch(a), a);
     if (['map_vote', 'map_pick', 'map_redo'].includes(a.kind)) {
       const m = this.selectedMatch(a),

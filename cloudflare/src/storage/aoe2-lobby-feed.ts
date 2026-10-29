@@ -1,6 +1,12 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env } from '../env';
-import { AoE2LobbySnapshot } from '../games/aoe2-feed';
+import { parseProviderJson, retryDelay } from '../games/transport';
+import {
+  AoE2LobbySnapshot,
+  aoe2OngoingFeedUrl,
+  parseAoE2OngoingSnapshot,
+} from '../games/aoe2-feed';
+import type { LobbyObservation, ProviderResult } from '../games/types';
 import { normalizeLobbyName } from '../domain/lobby';
 /** One outbound feed per application, leased only while tracked matches need occupancy. */
 export class AoE2LobbyFeed extends DurableObject<Env> {
@@ -11,6 +17,12 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
   private reconnectAt = 0;
   private connectedAt = 0;
   private activeMs = 0;
+  private browseStarting: Promise<ProviderResult<LobbyObservation[]>> | null = null;
+  private ongoingStarting: Promise<ProviderResult<LobbyObservation[]>> | null = null;
+  private ongoingCache: {
+    until: number;
+    result: ProviderResult<LobbyObservation[]>;
+  } | null = null;
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
@@ -33,11 +45,138 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
     const healthy = await this.subscribe(`name:${normalizeLobbyName(name)}`, false);
     return { healthy, observations: healthy ? this.snapshot.named(name) : [] };
   }
-  private async subscribe(id: string, alreadyObserved: boolean) {
+  /** Browse briefly leases the existing waiting feed; it never opens a community socket. */
+  async browse(): Promise<ProviderResult<LobbyObservation[]>> {
+    if (!this.browseStarting) {
+      this.browseStarting = this.captureWaiting().finally(() => {
+        this.browseStarting = null;
+      });
+    }
+    return this.browseStarting;
+  }
+  private async captureWaiting(): Promise<ProviderResult<LobbyObservation[]>> {
+    const deadline = Date.now() + 10000;
+    const healthy = await this.subscribe('browse:*', false, 30000);
+    if (!healthy) return { status: 'unavailable' };
+    // Lobby and slot events may arrive separately. Retain the existing two-second baseline guard.
+    while (Date.now() < deadline) {
+      if (!this.socket) return { status: 'unavailable' };
+      const value = this.snapshot.browse();
+      if (value !== null) return { status: 'ok', value };
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return { status: 'delayed', retryAfterMs: 2000 };
+  }
+  /** All communities share one short-lived capture and its original observation timestamps. */
+  async browseOngoing(): Promise<ProviderResult<LobbyObservation[]>> {
+    if (this.ongoingCache && this.ongoingCache.until > Date.now()) return this.ongoingCache.result;
+    if (!this.ongoingStarting) {
+      this.ongoingStarting = this.captureOngoing()
+        .then((result) => {
+          const ttl = result.status === 'ok' ? 30000 : Math.max(5000, result.retryAfterMs ?? 5000);
+          this.ongoingCache = { until: Date.now() + ttl, result };
+          return result;
+        })
+        .finally(() => {
+          this.ongoingStarting = null;
+        });
+    }
+    return this.ongoingStarting;
+  }
+  private captureOngoing(): Promise<ProviderResult<LobbyObservation[]>> {
+    return new Promise((resolve) => {
+      const controller = new AbortController();
+      let ws: WebSocket | null = null,
+        completed = false,
+        receivedBytes = 0;
+      const finish = (result: ProviderResult<LobbyObservation[]>) => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timeout);
+        if (ws) {
+          ws.removeEventListener('message', message);
+          ws.removeEventListener('close', closed);
+          ws.removeEventListener('error', closed);
+          try {
+            ws.close(1000, 'Snapshot complete');
+          } catch {}
+        }
+        controller.abort();
+        resolve(result);
+      };
+      const closed = () => finish({ status: 'unavailable' });
+      const message = (event: MessageEvent) => {
+        if (completed) return;
+        if (typeof event.data !== 'string' || event.data.length > 2 * 1024 * 1024) {
+          finish({ status: 'invalid_response' });
+          return;
+        }
+        receivedBytes += new TextEncoder().encode(event.data).byteLength;
+        if (receivedBytes > 2 * 1024 * 1024) {
+          finish({ status: 'invalid_response' });
+          return;
+        }
+        if (event.data === 'pong') return;
+        try {
+          finish({
+            status: 'ok',
+            value: parseAoE2OngoingSnapshot(parseProviderJson(event.data)),
+          });
+        } catch {
+          finish({ status: 'invalid_response' });
+        }
+      };
+      // This deadline covers the handshake AND first snapshot. The capture never stays live.
+      const timeout = setTimeout(
+        () => finish({ status: ws ? 'delayed' : 'unavailable', retryAfterMs: 5000 }),
+        10000,
+      );
+      void (async () => {
+        try {
+          const response = await fetch(aoe2OngoingFeedUrl, {
+            headers: { Upgrade: 'websocket' },
+            signal: controller.signal,
+            redirect: 'manual',
+          });
+          const socket = response.webSocket;
+          if (!socket) {
+            await response.body?.cancel().catch(() => {});
+            finish({
+              status: [401, 403].includes(response.status)
+                ? 'authentication_required'
+                : response.status === 429
+                  ? 'throttled'
+                  : response.ok
+                    ? 'invalid_response'
+                    : 'unavailable',
+              ...(response.status === 429 || response.headers.has('Retry-After')
+                ? { retryAfterMs: retryDelay(response.headers.get('Retry-After')) ?? 120000 }
+                : {}),
+            });
+            return;
+          }
+          // A fetch implementation may resolve after abort. Do not retain a late socket.
+          if (completed) {
+            socket.accept();
+            socket.close(1000, 'Snapshot expired');
+            return;
+          }
+          ws = socket;
+          ws.addEventListener('message', message);
+          ws.addEventListener('close', closed);
+          ws.addEventListener('error', closed);
+          ws.accept();
+        } catch {
+          finish({ status: 'unavailable' });
+        }
+      })();
+    });
+  }
+  private async subscribe(id: string, alreadyObserved: boolean, leaseMs = 120000) {
     this.prune();
     if (!this.leases.has(id) && this.leases.size >= 200) return false;
     const added = !this.leases.has(id);
-    this.leases.set(id, Date.now() + 120000);
+    this.leases.set(id, Date.now() + leaseMs);
     await this.ctx.storage.put('leases', [...this.leases]);
     // The initial snapshot is the only complete baseline. A new subscription reconnects
     // the shared stream, then all consumers await fresh lobbyAdded + slot events.
@@ -103,7 +242,7 @@ export class AoE2LobbyFeed extends DurableObject<Env> {
       }
       try {
         if (event.data !== 'pong')
-          this.snapshot.consume(JSON.parse(event.data), new Set(this.leases.keys()));
+          this.snapshot.consume(parseProviderJson(event.data), new Set(this.leases.keys()));
       } catch {
         this.disconnect();
         this.reconnectAt = Date.now() + 30000;

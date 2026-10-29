@@ -1,6 +1,8 @@
-import type { GameAdapter, LobbyObservation, LobbyPlayer, ProviderResult } from './types';
+import type { AdapterRuntime, GameAdapter, LobbyObservation, LobbyPlayer } from './types';
+import { isSteamIndividualId } from './steam';
+import { providerJson } from './transport';
+import { gameCapabilities } from './catalog';
 const api = 'https://data.aoe2companion.com/api';
-const headers = { 'User-Agent': 'CommunityGames/0.9 (github.com/ddk220-light/NammaPUBobot)' };
 const identifier = (value: unknown): string | null => {
   const s = String(value ?? '');
   return /^[1-9]\d{0,11}$/.test(s) ? s : null;
@@ -29,6 +31,10 @@ function player(value: unknown, fallbackTeam?: unknown): LobbyPlayer | null {
   if (!id) throw Error('Invalid player identity');
   return {
     ...(text(p.civName) ? { selection: text(p.civName) } : {}),
+    ...(p.civ != null ? { selectionId: String(p.civ) } : {}),
+    ...(typeof p.won === 'boolean'
+      ? { outcome: p.won ? ('win' as const) : ('loss' as const) }
+      : {}),
     profileId: id,
     name: text(p.name, `Player ${id}`),
     team: p.team == null && fallbackTeam == null ? null : String(p.team ?? fallbackTeam),
@@ -50,6 +56,36 @@ export function parseAoE2Match(value: unknown, id: string, now = Date.now()): Lo
     throw Error('Invalid roster');
   return {
     externalId: id,
+    schemaVersion: 2,
+    edition: gameCapabilities('aoe2')!.manifest.edition,
+    provider: 'aoe2companion',
+    accountNamespace: 'aoe2:profile',
+    nativeLobbyId: id,
+    nativeMatchId: id,
+    confidence: 'provisional',
+    ...(startedAt !== null && finishedAt !== null
+      ? { elapsedDuration: { value: (finishedAt - startedAt) / 1000, unit: 'seconds' as const } }
+      : {}),
+    replayReferences: m.teams.flatMap((value) =>
+      (record(value).players as unknown[]).map((entry) => {
+        const p = record(entry),
+          perspectiveId = identifier(p.profileId)!;
+        return {
+          provider: 'aoe2companion',
+          matchId: id,
+          perspectiveId,
+          availability:
+            p.replay === true
+              ? ('available' as const)
+              : p.replay === false
+                ? ('unavailable' as const)
+                : ('unknown' as const),
+          ...(p.replay === true
+            ? { sourceUrl: `https://aoe.ms/replay/?gameId=${id}&profileId=${perspectiveId}` }
+            : {}),
+        };
+      }),
+    ),
     name: text(m.name, 'AoE2 lobby'),
     phase: finishedAt ? 'finished' : startedAt ? 'started' : 'open',
     observedAt: now,
@@ -61,135 +97,126 @@ export function parseAoE2Match(value: unknown, id: string, now = Date.now()): Lo
     source: 'aoe2companion-match',
   };
 }
-async function json(path: string): Promise<ProviderResult<unknown>> {
-  try {
-    const response = await fetch(`${api}${path}`, {
-      headers,
-      signal: AbortSignal.timeout(6000),
-      redirect: 'error',
-    });
-    if (response.status === 404) return { status: 'not_found' };
-    if (!response.ok) {
-      const retry = response.headers.get('Retry-After');
-      const delay = retry
-        ? /^\d+$/.test(retry)
-          ? Number(retry) * 1000
-          : Date.parse(retry) - Date.now()
-        : NaN;
-      return {
-        status: 'unavailable',
-        retryAfterMs:
-          Number.isFinite(delay) && delay > 0
-            ? Math.min(delay, 86400000)
-            : response.status === 429
-              ? 120000
-              : undefined,
-      };
-    }
-    const reader = response.body?.getReader();
-    if (!reader) return { status: 'unavailable' };
-    let bytes = 0;
-    const parts: Uint8Array[] = [];
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        bytes += value.byteLength;
-        if (bytes > 400000) throw Error('Response too large');
-        parts.push(value);
+export function createAoE2Adapter(runtime: AdapterRuntime = {}): GameAdapter {
+  const request = runtime.request ?? providerJson;
+  const json = (path: string) =>
+    request({ url: `${api}${path}`, maxBytes: path.startsWith('/profiles/') ? 2000000 : 400000 });
+  const adapter: GameAdapter = {
+    id: 'aoe2',
+    manifest: gameCapabilities('aoe2')!.manifest,
+    profileProvider: 'aoe2',
+    async discover() {
+      return runtime.aoe2Discovery ? runtime.aoe2Discovery() : { status: 'unavailable' };
+    },
+    async discoverOngoing() {
+      return runtime.aoe2OngoingDiscovery
+        ? runtime.aoe2OngoingDiscovery()
+        : { status: 'unavailable' };
+    },
+    parseLobbyReference(input) {
+      if (identifier(input.trim())) return input.trim();
+      try {
+        const u = new URL(input.trim());
+        if (
+          u.protocol === 'aoe2de:' &&
+          u.hostname === '0' &&
+          !u.username &&
+          !u.password &&
+          !u.port &&
+          identifier(u.pathname.slice(1))
+        )
+          return u.pathname.slice(1);
+        if (
+          u.protocol === 'https:' &&
+          !u.username &&
+          !u.password &&
+          !u.port &&
+          [
+            'aoe2companion.com',
+            'www.aoe2companion.com',
+            'aoe2insights.com',
+            'www.aoe2insights.com',
+            'aoe.ms',
+          ].includes(u.hostname)
+        ) {
+          const match = /^\/(?:match|matches|lobby|join)\/([1-9]\d{0,11})\/?$/.exec(u.pathname);
+          const id = match?.[1] ?? (u.pathname === '/lobby' ? u.searchParams.get('gameId') : null);
+          if (id && identifier(id)) return id;
+        }
+      } catch {}
+      throw Error('Enter the AoE2 lobby ID or a supported lobby link.');
+    },
+    async profile(input) {
+      const id = identifier(input);
+      if (!id) return { status: 'not_found' };
+      const result = await json(`/profiles/${id}`);
+      if (result.status !== 'ok') return result;
+      try {
+        const p = record(result.value);
+        if (identifier(p.profileId) !== id || p.success === false) throw Error('Wrong profile');
+        return {
+          status: 'ok',
+          value: {
+            id,
+            name: text(p.name, `Player ${id}`),
+            url: `https://www.aoe2companion.com/profile/${id}`,
+            namespace: 'aoe2:profile',
+            edition: gameCapabilities('aoe2')!.manifest.edition,
+            ...(isSteamIndividualId(p.steamId) ? { platformId: p.steamId } : {}),
+          },
+        };
+      } catch {
+        return { status: 'invalid_response' };
       }
-    } finally {
-      await reader.cancel().catch(() => {});
+    },
+    async observe(id) {
+      if (!identifier(id)) return { status: 'not_found' };
+      const result = await json(`/matches/${id}`);
+      if (result.status !== 'ok') return result;
+      try {
+        const value = parseAoE2Match(result.value, id);
+        // This HTTP endpoint does not establish live occupancy before a game starts.
+        return value.startedAt ? { status: 'ok', value } : { status: 'not_found' };
+      } catch {
+        return { status: 'invalid_response' };
+      }
+    },
+    profileUrl(id) {
+      if (!identifier(id)) throw Error('Invalid profile');
+      return `https://www.aoe2companion.com/profile/${id}`;
+    },
+    lobbyUrl(id) {
+      if (!identifier(id)) throw Error('Invalid lobby');
+      return `https://aoe.ms/lobby?gameId=${id}`;
+    },
+    joinUri(id) {
+      if (!identifier(id)) throw Error('Invalid lobby');
+      return `aoe2de://0/${id}`;
+    },
+  };
+  adapter.match = (id) => adapter.observe(id, true);
+  adapter.replays = async (id) => {
+    const result = await adapter.match!(id);
+    return result.status === 'ok'
+      ? { status: 'ok', value: result.value.replayReferences ?? [] }
+      : result;
+  };
+  adapter.history = async (profileId) => {
+    if (!identifier(profileId)) return { status: 'not_found' };
+    const result = await json(`/matches?profile_ids=${encodeURIComponent(profileId)}`);
+    if (result.status !== 'ok') return result;
+    try {
+      const body = record(result.value);
+      if (body.success === false || !Array.isArray(body.matches))
+        return { status: 'invalid_response' };
+      const value = body.matches
+        .map((m) => parseAoE2Match(m, identifier(record(m).matchId) ?? ''))
+        .sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0));
+      return { status: 'ok', value };
+    } catch {
+      return { status: 'invalid_response' };
     }
-    const merged = new Uint8Array(bytes);
-    let offset = 0;
-    for (const part of parts) {
-      merged.set(part, offset);
-      offset += part.length;
-    }
-    return { status: 'ok', value: JSON.parse(new TextDecoder().decode(merged)) };
-  } catch {
-    return { status: 'unavailable' };
-  }
+  };
+  return adapter;
 }
-export const aoe2Adapter: GameAdapter = {
-  id: 'aoe2',
-  profileProvider: 'aoe2',
-  parseLobbyReference(input) {
-    if (identifier(input.trim())) return input.trim();
-    try {
-      const u = new URL(input.trim());
-      if (
-        u.protocol === 'aoe2de:' &&
-        u.hostname === '0' &&
-        !u.username &&
-        !u.password &&
-        !u.port &&
-        identifier(u.pathname.slice(1))
-      )
-        return u.pathname.slice(1);
-      if (
-        u.protocol === 'https:' &&
-        !u.username &&
-        !u.password &&
-        !u.port &&
-        [
-          'aoe2companion.com',
-          'www.aoe2companion.com',
-          'aoe2insights.com',
-          'www.aoe2insights.com',
-          'aoe.ms',
-        ].includes(u.hostname)
-      ) {
-        const match = /^\/(?:match|matches|lobby|join)\/([1-9]\d{0,11})\/?$/.exec(u.pathname);
-        const id = match?.[1] ?? (u.pathname === '/lobby' ? u.searchParams.get('gameId') : null);
-        if (id && identifier(id)) return id;
-      }
-    } catch {}
-    throw Error('Enter the AoE2 lobby ID or a supported lobby link.');
-  },
-  async profile(input) {
-    const id = identifier(input);
-    if (!id) return { status: 'not_found' };
-    const result = await json(`/profiles/${id}`);
-    if (result.status !== 'ok') return result;
-    try {
-      const p = record(result.value);
-      if (identifier(p.profileId) !== id || p.success === false) throw Error('Wrong profile');
-      return {
-        status: 'ok',
-        value: {
-          id,
-          name: text(p.name, `Player ${id}`),
-          url: `https://www.aoe2companion.com/profile/${id}`,
-        },
-      };
-    } catch {
-      return { status: 'unavailable' };
-    }
-  },
-  async observe(id) {
-    if (!identifier(id)) return { status: 'not_found' };
-    const result = await json(`/matches/${id}`);
-    if (result.status !== 'ok') return result;
-    try {
-      const value = parseAoE2Match(result.value, id);
-      // This HTTP endpoint does not establish live occupancy before a game starts.
-      return value.startedAt ? { status: 'ok', value } : { status: 'not_found' };
-    } catch {
-      return { status: 'unavailable' };
-    }
-  },
-  profileUrl(id) {
-    if (!identifier(id)) throw Error('Invalid profile');
-    return `https://www.aoe2companion.com/profile/${id}`;
-  },
-  lobbyUrl(id) {
-    if (!identifier(id)) throw Error('Invalid lobby');
-    return `https://aoe.ms/lobby?gameId=${id}`;
-  },
-  joinUri(id) {
-    if (!identifier(id)) throw Error('Invalid lobby');
-    return `aoe2de://0/${id}`;
-  },
-};
+export const aoe2Adapter = createAoE2Adapter();

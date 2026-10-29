@@ -1,3 +1,5 @@
+import { gameCapabilities } from '../src/games/catalog';
+import { operations } from '../src/games/types';
 import {
   type Settings,
   type Snapshot,
@@ -226,9 +228,18 @@ export class SettingsDraft {
       const f = this.raw.get(`game:${g.id}`);
       if (!f) continue;
       g.name = value(f, 'name').trim();
-      if ('lobbyConnector' in f)
+      const catalog = gameCapabilities(g.catalogId);
+      if (catalog)
         g.connector = {
-          enabled: bool(f, 'lobbyConnector'),
+          enabled: catalog.lobby && bool(f, 'lobbyConnector'),
+          capabilities: {
+            ...g.connector?.capabilities,
+            ...Object.fromEntries(
+              operations
+                .filter((op) => catalog.manifest.capabilities[op] !== 'unsupported')
+                .map((op) => [op, bool(f, `capability-${op}`)]),
+            ),
+          },
           ...(bool(f, 'autoLobby')
             ? { autoAttach: { lobbyName: value(f, 'lobbyName').trim() } }
             : {}),

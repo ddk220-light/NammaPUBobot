@@ -1,0 +1,181 @@
+{
+  "provenance": {
+    "feedSource": "https://aoe4world.com/api/v0/games?order=started_at&since=1793231146&leaderboard=rm_1v1",
+    "feedCapturedAt": "2026-10-29T00:15:47.081520Z",
+    "detailSource": "https://aoe4world.com/api/v0/players/4635035/games/last",
+    "detailCapturedAt": "2026-10-28T18:54:36.332379+00:00",
+    "note": "Public JSON schema capture; display names anonymized, unrelated profile statistics omitted. Feed is a three-game excerpt of a 50-row response."
+  },
+  "feed": {
+    "page": 1,
+    "per_page": 50,
+    "count": 50,
+    "next_page": 2,
+    "games": [
+      {
+        "game_id": 257846458,
+        "started_at": "2026-10-29T00:15:31.000Z",
+        "updated_at": "2026-10-29T00:15:42.830Z",
+        "duration": null,
+        "map": "The Pit",
+        "state": "new",
+        "kind": "rm_1v1",
+        "leaderboard": "rm_solo",
+        "mmr_leaderboard": "rm_1v1",
+        "patch": 11308,
+        "ongoing": true,
+        "just_finished": false,
+        "teams": [
+          [
+            {
+              "player": {
+                "profile_id": 25574841,
+                "civilization": "macedonian_dynasty",
+                "result": null,
+                "name": "Player 1"
+              }
+            }
+          ],
+          [
+            {
+              "player": {
+                "profile_id": 11230685,
+                "civilization": "ottomans",
+                "result": null,
+                "name": "Player 2"
+              }
+            }
+          ]
+        ]
+      },
+      {
+        "game_id": 257846450,
+        "started_at": "2026-10-29T00:15:24.000Z",
+        "updated_at": "2026-10-29T00:15:42.817Z",
+        "duration": null,
+        "map": "King of the Hill",
+        "state": "new",
+        "kind": "rm_1v1",
+        "leaderboard": "rm_solo",
+        "mmr_leaderboard": "rm_1v1",
+        "patch": 11308,
+        "ongoing": true,
+        "just_finished": false,
+        "teams": [
+          [
+            {
+              "player": {
+                "profile_id": 6597889,
+                "civilization": "malians",
+                "result": null,
+                "name": "Player 1"
+              }
+            }
+          ],
+          [
+            {
+              "player": {
+                "profile_id": 16411297,
+                "civilization": "french",
+                "result": null,
+                "name": "Player 2"
+              }
+            }
+          ]
+        ]
+      },
+      {
+        "game_id": 257846395,
+        "started_at": "2026-10-29T00:14:44.000Z",
+        "updated_at": "2026-10-29T00:15:40.057Z",
+        "duration": null,
+        "map": "Atacama",
+        "state": "new_finished",
+        "kind": "rm_1v1",
+        "leaderboard": "rm_solo",
+        "mmr_leaderboard": "rm_1v1",
+        "patch": 11308,
+        "ongoing": false,
+        "just_finished": true,
+        "teams": [
+          [
+            {
+              "player": {
+                "profile_id": 20211228,
+                "civilization": "mongols",
+                "result": null,
+                "name": "Player 1"
+              }
+            }
+          ],
+          [
+            {
+              "player": {
+                "profile_id": 26296875,
+                "civilization": "chinese",
+                "result": null,
+                "name": "Player 2"
+              }
+            }
+          ]
+        ]
+      }
+    ]
+  },
+  "completedDetail": {
+    "game_id": 257612387,
+    "started_at": "2026-10-27T08:10:58.000Z",
+    "updated_at": "2026-10-27T10:18:42.101Z",
+    "duration": 1630,
+    "map": "Dry Arabia",
+    "state": "processed",
+    "kind": "rm_3v3",
+    "leaderboard": "rm_team",
+    "mmr_leaderboard": "rm_3v3",
+    "patch": 11308,
+    "ongoing": false,
+    "just_finished": false,
+    "teams": [
+      [
+        {
+          "profile_id": 25938484,
+          "civilization": "french",
+          "result": "win",
+          "name": "Player 1"
+        },
+        {
+          "profile_id": 5742611,
+          "civilization": "ayyubids",
+          "result": "win",
+          "name": "Player 2"
+        },
+        {
+          "profile_id": 25938482,
+          "civilization": "knights_templar",
+          "result": "win",
+          "name": "Player 3"
+        }
+      ],
+      [
+        {
+          "profile_id": 1676172,
+          "civilization": "tughlaq_dynasty",
+          "result": "loss",
+          "name": "Player 4"
+        },
+        {
+          "profile_id": 4635035,
+          "civilization": "knights_templar",
+          "result": "loss",
+          "name": "Player 5"
+        },
+        {
+          "profile_id": 25467839,
+          "civilization": "sengoku_daimyo",
+          "result": "loss",
+          "name": "Player 6"
+        }
+      ]
+    ]
+  }
+}

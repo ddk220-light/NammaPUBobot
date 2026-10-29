@@ -468,6 +468,23 @@ input[type='file']::file-selector-button {
 .queue-overview {
   margin-bottom: 32px;
 }
+.connector-settings {
+  padding: 16px 0;
+}
+.connector-settings .toggle {
+  min-height: 44px;
+}
+.connector-browse pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 360px;
+  overflow: auto;
+}
+.match-evidence {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
 .queue-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));

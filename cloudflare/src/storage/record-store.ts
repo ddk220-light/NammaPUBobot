@@ -1,4 +1,5 @@
 import { selectionStats } from './game-records';
+import { gameCapabilities } from '../games/catalog';
 import type { Env } from '../env';
 import type { Snapshot } from '../domain/config';
 import { PlayError, policy, type Match } from '../domain/play';
@@ -46,6 +47,10 @@ export function createRecordTables(sql: SqlStorage) {
   );
   sql.exec('CREATE INDEX IF NOT EXISTS refs_player ON profile_refs(game_id,user_id)');
   sql.exec(
+    "CREATE TABLE IF NOT EXISTS profile_claims(game_id TEXT NOT NULL,provider TEXT NOT NULL,external_id TEXT NOT NULL,user_id TEXT NOT NULL,edition TEXT NOT NULL,namespace TEXT NOT NULL,trust TEXT NOT NULL CHECK(trust IN ('declared','organizer_assigned','ownership_verified')),verified_by TEXT,verified_at INTEGER,platform_id TEXT,PRIMARY KEY(game_id,provider,external_id))",
+  );
+  backfillProfileClaims(sql);
+  sql.exec(
     'CREATE TABLE IF NOT EXISTS record_audit(id TEXT PRIMARY KEY,game_id TEXT NOT NULL,user_id TEXT,kind TEXT NOT NULL,actor TEXT NOT NULL,at INTEGER NOT NULL,details TEXT NOT NULL)',
   );
   sql.exec(
@@ -66,6 +71,51 @@ export function createRecordTables(sql: SqlStorage) {
   sql.exec(
     'CREATE TABLE IF NOT EXISTS record_clocks(game_id TEXT PRIMARY KEY,due INTEGER NOT NULL)',
   );
+}
+/** Legacy public lookup/inference was never an ownership proof. */
+export function backfillProfileClaims(sql: SqlStorage) {
+  for (const r of sql
+    .exec<{
+      game_id: string;
+      provider: string;
+      external_id: string;
+      user_id: string;
+      provenance: string;
+      config: string | null;
+    }>(
+      "SELECT r.*,g.config FROM profile_refs r LEFT JOIN games g ON g.id=r.game_id WHERE r.provenance NOT LIKE 'inferred:%' AND NOT EXISTS(SELECT 1 FROM profile_claims c WHERE c.game_id=r.game_id AND c.provider=r.provider AND c.external_id=r.external_id)",
+    )
+    .toArray()) {
+    const catalog = r.config ? gameCapabilities(JSON.parse(r.config).catalogId) : undefined;
+    // AoE2 Companion was the only native adapter before schema 8. Generic manual
+    // links for other titles do not establish an edition or a native ID namespace.
+    const knownAoE2 = catalog?.id === 'aoe2' && r.provider === 'aoe2';
+    sql.exec(
+      'INSERT OR IGNORE INTO profile_claims VALUES(?,?,?,?,?,?,?,?,?,?)',
+      r.game_id,
+      r.provider,
+      r.external_id,
+      r.user_id,
+      knownAoE2 ? catalog.manifest.edition : 'unspecified',
+      knownAoE2 ? catalog.manifest.accountNamespace : r.provider,
+      r.provenance === 'admin' ? 'organizer_assigned' : 'declared',
+      null,
+      null,
+      null,
+    );
+  }
+}
+export interface VerifiedAccountClaim {
+  gameId: string;
+  provider: string;
+  externalId: string;
+  userId: string;
+  url: string;
+  edition: string;
+  namespace: string;
+  verifiedBy: string;
+  verifiedAt: number;
+  platformId?: string;
 }
 const week = 7 * 86400000;
 export interface ImportResult {
@@ -110,6 +160,124 @@ export class RecordStore {
       )
       .toArray()[0];
     return row ? JSON.parse(row.config) : null;
+  }
+  references(game: string, user: string): ProfileReference[] {
+    return this.sql
+      .exec<{
+        provider: string;
+        external_id: string;
+        url: string;
+        provenance: string;
+        edition: string | null;
+        namespace: string | null;
+        trust: string | null;
+        verified_by: string | null;
+        verified_at: number | null;
+        platform_id: string | null;
+      }>(
+        'SELECT r.provider,r.external_id,r.url,r.provenance,c.edition,c.namespace,c.trust,c.verified_by,c.verified_at,c.platform_id FROM profile_refs r LEFT JOIN profile_claims c ON c.game_id=r.game_id AND c.provider=r.provider AND c.external_id=r.external_id AND c.user_id=r.user_id WHERE r.game_id=? AND r.user_id=? ORDER BY r.provider,r.external_id',
+        game,
+        user,
+      )
+      .toArray()
+      .map((r) => ({
+        provider: r.provider,
+        external_id: r.external_id,
+        url: r.url,
+        provenance: r.provenance,
+        edition: r.edition ?? 'unspecified',
+        namespace: r.namespace ?? r.provider,
+        trust: r.provenance.startsWith('inferred:')
+          ? 'suggested'
+          : ((r.trust as ProfileReference['trust']) ??
+            (r.provenance === 'admin' ? 'organizer_assigned' : 'declared')),
+        ...(r.trust === 'ownership_verified' && r.verified_by && r.verified_at !== null
+          ? {
+              verifiedBy: r.verified_by,
+              verifiedAt: r.verified_at,
+              ...(r.platform_id ? { platformId: r.platform_id } : {}),
+            }
+          : {}),
+      }));
+  }
+  /** Called only after the server's session-bound ownership callback, never by recordAction. */
+  verifyAccounts(guild: string, claims: VerifiedAccountClaim[], actor: string) {
+    const settings = this.read(guild).settings;
+    this.ctx.storage.transactionSync(() => {
+      for (const claim of claims) {
+        if (claim.userId !== actor || !settings.games.some((g) => g.id === claim.gameId))
+          throw new PlayError('Account verification does not belong to this community player.');
+        const existing = this.sql
+          .exec<{ user_id: string }>(
+            'SELECT user_id FROM profile_refs WHERE game_id=? AND provider=? AND external_id=?',
+            claim.gameId,
+            claim.provider,
+            claim.externalId,
+          )
+          .toArray()[0];
+        if (claim.provider === 'w3champions' && claim.platformId) {
+          const subjectClaims = this.sql
+            .exec<{ user_id: string; external_id: string }>(
+              "SELECT user_id,external_id FROM profile_claims WHERE game_id=? AND provider=? AND platform_id=? AND trust='ownership_verified'",
+              claim.gameId,
+              claim.provider,
+              claim.platformId,
+            )
+            .toArray();
+          if (subjectClaims.some((c) => c.user_id !== actor))
+            throw new PlayError(
+              'That Battle.net account is linked to another player. An organizer must resolve the claim.',
+            );
+          if (subjectClaims.some((c) => c.external_id !== claim.externalId))
+            throw new PlayError(
+              'BattleTag changed. Unlink the previous BattleTag and verify again to confirm the change.',
+            );
+        }
+        if (existing && existing.user_id !== actor)
+          throw new PlayError(
+            'That external account is linked to another player. An organizer must resolve the existing claim; verification cannot reassign it.',
+          );
+      }
+      for (const c of claims) {
+        this.sql.exec(
+          'INSERT INTO profile_refs VALUES(?,?,?,?,?,?,?) ON CONFLICT(game_id,provider,external_id) DO UPDATE SET url=excluded.url,provenance=excluded.provenance,at=excluded.at',
+          c.gameId,
+          c.provider,
+          c.externalId,
+          actor,
+          c.url,
+          `verified:${c.verifiedBy}`,
+          c.verifiedAt,
+        );
+        this.sql.exec(
+          "INSERT INTO profile_claims VALUES(?,?,?,?,?,?,'ownership_verified',?,?,?) ON CONFLICT(game_id,provider,external_id) DO UPDATE SET user_id=excluded.user_id,edition=excluded.edition,namespace=excluded.namespace,trust=excluded.trust,verified_by=excluded.verified_by,verified_at=excluded.verified_at,platform_id=excluded.platform_id",
+          c.gameId,
+          c.provider,
+          c.externalId,
+          actor,
+          c.edition,
+          c.namespace,
+          c.verifiedBy,
+          c.verifiedAt,
+          c.platformId ?? null,
+        );
+        this.sql.exec(
+          'DELETE FROM identity_rejections WHERE game_id=? AND provider=? AND external_id=? AND user_id=?',
+          c.gameId,
+          c.provider,
+          c.externalId,
+          actor,
+        );
+        this.audit(c.gameId, actor, 'ownership_verified', actor, {
+          provider: c.provider,
+          externalId: c.externalId,
+          namespace: c.namespace,
+          verifiedBy: c.verifiedBy,
+          verifiedAt: c.verifiedAt,
+        });
+      }
+      this.bump();
+    });
   }
   private audit(
     game: string,
@@ -370,7 +538,22 @@ export class RecordStore {
     });
     let detail: PlayerStatistics | null = null;
     if (user) {
-      const p = this.player(game, user),
+      const persisted = this.player(game, user),
+        profiles = this.references(game, user),
+        p =
+          persisted ??
+          (profiles.length
+            ? {
+                id: user,
+                name: user,
+                rating: 0,
+                deviation: 0,
+                wins: 0,
+                losses: 0,
+                draws: 0,
+                streak: 0,
+              }
+            : null),
         meta = this.sql
           .exec<{ hidden: number; last_ranked: number | null; source: string }>(
             'SELECT * FROM player_meta WHERE game_id=? AND user_id=?',
@@ -456,10 +639,11 @@ export class RecordStore {
         }
         detail = {
           ...p,
+          rated: !!persisted,
           hidden: !!meta?.hidden,
           lastRankedAt: meta?.last_ranked ?? null,
-          source: meta?.source ?? 'local',
-          rank: rankLabel(s, game, p.rating)?.label ?? null,
+          source: persisted ? (meta?.source ?? 'local') : 'unrated',
+          rank: persisted ? (rankLabel(s, game, p.rating)?.label ?? null) : null,
           peak: Math.max(p.rating, peak ?? p.rating),
           matchCount: matches,
           winRate: matches ? p.wins / matches : null,
@@ -469,14 +653,9 @@ export class RecordStore {
             (r) => r.teammateMatches + r.opponentMatches >= 3,
           ),
           civilizations: selectionStats(this.sql, game, user!),
-          profiles: this.sql
-            .exec<ProfileReference & Record<string, SqlStorageValue>>(
-              'SELECT provider,external_id,url,provenance FROM profile_refs WHERE game_id=? AND user_id=?',
-              game,
-              user,
-            )
-            .toArray(),
+          profiles,
           eligible:
+            !!persisted &&
             !meta?.hidden &&
             matches >= cfg.minimumMatches &&
             (!cutoff || (meta?.last_ranked ?? 0) > cutoff),
@@ -509,7 +688,6 @@ export class RecordStore {
       a,
       actor,
       admin,
-      ...(existenceChecked ? { existenceChecked } : {}),
     });
     const old = this.sql
       .exec<{ fingerprint: string; result: string }>(
@@ -518,7 +696,10 @@ export class RecordStore {
       )
       .toArray()[0];
     if (old) {
-      if (old.fingerprint !== fingerprint)
+      if (
+        old.fingerprint !== fingerprint &&
+        old.fingerprint !== canonical({ a, actor, admin, existenceChecked: true })
+      )
         throw new PlayError('That action ID belongs to another request.');
       return JSON.parse(old.result);
     }
@@ -526,7 +707,7 @@ export class RecordStore {
       throw new PlayError(
         'Only organizers can change visibility, reassign profiles or synchronize ranks.',
       );
-    if (!this.player(a.gameId, a.userId))
+    if (['hide', 'unhide', 'sync'].includes(a.kind) && !this.player(a.gameId, a.userId))
       throw new PlayError('Play a match or seed this player before managing their records.');
     let content = '',
       previousOwner: string | undefined;
@@ -549,8 +730,8 @@ export class RecordStore {
         if (!a.provider || !a.externalId)
           throw new PlayError('Choose a provider and external profile ID.');
         const existing = this.sql
-          .exec<{ user_id: string }>(
-            'SELECT user_id FROM profile_refs WHERE game_id=? AND provider=? AND external_id=?',
+          .exec<{ user_id: string; provenance: string }>(
+            'SELECT user_id,provenance FROM profile_refs WHERE game_id=? AND provider=? AND external_id=?',
             a.gameId,
             a.provider,
             a.externalId,
@@ -567,6 +748,26 @@ export class RecordStore {
             a.externalId,
           );
           this.sql.exec(
+            'DELETE FROM profile_claims WHERE game_id=? AND provider=? AND external_id=?',
+            a.gameId,
+            a.provider,
+            a.externalId,
+          );
+          // Native claims proven through this platform are downgraded when it is disconnected.
+          if (a.provider === 'steam') {
+            this.sql.exec(
+              "UPDATE profile_claims SET trust='declared',verified_by=NULL,verified_at=NULL,platform_id=NULL WHERE game_id=? AND user_id=? AND platform_id=? AND verified_by='steam-openid'",
+              a.gameId,
+              a.userId,
+              a.externalId,
+            );
+            this.sql.exec(
+              "UPDATE profile_refs SET provenance='player' WHERE game_id=? AND user_id=? AND provenance='verified:steam-openid' AND EXISTS(SELECT 1 FROM profile_claims c WHERE c.game_id=profile_refs.game_id AND c.provider=profile_refs.provider AND c.external_id=profile_refs.external_id AND c.trust='declared')",
+              a.gameId,
+              a.userId,
+            );
+          }
+          this.sql.exec(
             'INSERT OR REPLACE INTO identity_rejections VALUES(?,?,?,?,?)',
             a.gameId,
             a.provider,
@@ -577,23 +778,64 @@ export class RecordStore {
           content =
             'Profile reference removed. Automatic matching will not restore this rejected link.';
         } else {
-          if (!a.url) throw new PlayError('Provide an HTTPS profile URL.');
           if (existing && existing.user_id !== a.userId && a.kind !== 'reassign')
             throw new PlayError(
               'That external profile is already linked to another player. An organizer must explicitly reassign it.',
             );
           if (a.kind === 'reassign' && (!admin || !a.reason))
             throw new PlayError('An organizer must provide a reason for reassignment.');
+          const preserveVerified =
+            a.kind === 'link' &&
+            existing?.user_id === a.userId &&
+            this.sql
+              .exec(
+                "SELECT 1 FROM profile_claims WHERE game_id=? AND provider=? AND external_id=? AND user_id=? AND trust='ownership_verified'",
+                a.gameId,
+                a.provider,
+                a.externalId,
+                a.userId,
+              )
+              .toArray().length > 0;
+          if (a.kind === 'reassign' && a.provider === 'steam' && existing) {
+            this.sql.exec(
+              "UPDATE profile_claims SET trust='declared',verified_by=NULL,verified_at=NULL,platform_id=NULL WHERE game_id=? AND user_id=? AND platform_id=? AND verified_by='steam-openid'",
+              a.gameId,
+              existing.user_id,
+              a.externalId,
+            );
+            this.sql.exec(
+              "UPDATE profile_refs SET provenance='player' WHERE game_id=? AND user_id=? AND provenance='verified:steam-openid'",
+              a.gameId,
+              existing.user_id,
+            );
+          }
           this.sql.exec(
             'INSERT INTO profile_refs VALUES(?,?,?,?,?,?,?) ON CONFLICT(game_id,provider,external_id) DO UPDATE SET user_id=excluded.user_id,url=excluded.url,provenance=excluded.provenance,at=excluded.at',
             a.gameId,
             a.provider,
             a.externalId,
             a.userId,
-            a.url,
-            admin ? 'admin' : 'player',
+            a.url ?? '',
+            preserveVerified ? existing!.provenance : admin ? 'admin' : 'player',
             Date.now(),
           );
+          const catalog = gameCapabilities(
+            s.games.find((g) => g.id === a.gameId)?.catalogId ?? null,
+          );
+          if (!preserveVerified)
+            this.sql.exec(
+              'INSERT INTO profile_claims VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(game_id,provider,external_id) DO UPDATE SET user_id=excluded.user_id,edition=excluded.edition,namespace=excluded.namespace,trust=excluded.trust,verified_by=NULL,verified_at=NULL,platform_id=NULL',
+              a.gameId,
+              a.provider,
+              a.externalId,
+              a.userId,
+              catalog?.manifest.edition ?? 'unspecified',
+              a.provider === 'steam' ? 'steam' : (catalog?.manifest.accountNamespace ?? a.provider),
+              admin ? 'organizer_assigned' : 'declared',
+              null,
+              null,
+              null,
+            );
           this.sql.exec(
             'DELETE FROM identity_rejections WHERE game_id=? AND provider=? AND external_id=? AND user_id=?',
             a.gameId,
@@ -609,11 +851,13 @@ export class RecordStore {
             a.externalId,
             a.userId,
           );
-          content = existenceChecked
-            ? 'Public profile found. Mapping saved as ' +
-              (admin ? 'organizer-assigned' : 'self-declared') +
-              '; account ownership is not verified.'
-            : 'Profile reference saved. It has not been verified against a game API.';
+          content = preserveVerified
+            ? 'Profile reference saved; existing ownership verification retained.'
+            : existenceChecked
+              ? 'Public profile found. Mapping saved as ' +
+                (admin ? 'organizer-assigned' : 'self-declared') +
+                '; account ownership is not verified.'
+              : 'Profile reference saved. It has not been verified against a game API.';
         }
       }
       this.bump();

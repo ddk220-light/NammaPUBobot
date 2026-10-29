@@ -22,6 +22,10 @@ import { importSchema, recordActionSchema, recordPolicy } from './domain/records
 import { economyImportSchema } from './domain/economy-import';
 import { privilegedRankPermissions } from './domain/rank-roles';
 import type { FieldIssue } from './domain/errors';
+import { GameAccountError } from './auth/game-accounts';
+import { gameAccountRoutes } from './routes/game-accounts';
+import { runtimeAdapter, connectorAvailability } from './games/runtime';
+export { ProviderCoordinator } from './storage/provider-coordinator';
 export { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 export { Community } from './storage/community';
 export { AuthStore } from './storage/auth';
@@ -114,7 +118,7 @@ app.use('*', async (c, next) => {
   await next();
   c.header('X-Request-ID', requestId);
   c.header('X-Content-Type-Options', 'nosniff');
-  c.header('Referrer-Policy', 'same-origin');
+  c.header('Referrer-Policy', c.req.path.startsWith('/auth/game/') ? 'no-referrer' : 'same-origin');
   c.header('X-Frame-Options', 'DENY');
   if (
     c.req.path.startsWith('/api/') ||
@@ -220,6 +224,26 @@ function operationalCommunity(c: Context<App>) {
 app.get('/ops/aoe2/feed', async (c) =>
   c.json(await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').status()),
 );
+app.get('/ops/providers', async (c) => {
+  const hosts = [
+    'data.aoe2companion.com',
+    'aoe-api.worldsedgelink.com',
+    'athens-live-api.worldsedgelink.com',
+    'api.bar-rts.com',
+    'api.playgenerals.online',
+    'us.api.blizzard.com',
+    'eu.api.blizzard.com',
+    'kr.api.blizzard.com',
+  ];
+  return c.json({
+    providers: await Promise.all(
+      hosts.map(async (provider) => ({
+        provider,
+        ...(await c.env.PROVIDERS?.getByName(provider).status()),
+      })),
+    ),
+  });
+});
 app.get('/ops/voice', async (c) =>
   c.json(await c.env.VOICE_PRESENCE.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').status()),
 );
@@ -369,12 +393,48 @@ app.get('/api/bootstrap', async (c) => {
     discordReady,
     inviteUrl: inviteUrls.basic,
     inviteUrls,
-    catalog,
+    catalog: catalog.filter((game) => game.lifecycle !== 'legacy'),
     user: s?.session.user ?? null,
     csrf: s?.session.csrf ?? null,
     capabilities,
   });
 });
+
+app.route(
+  '/auth/game',
+  gameAccountRoutes({
+    session: sessionFor,
+    authorize: async (env, guild, gameId, session) => {
+      if (!(await userGuilds(session.accessToken)).some((g) => g.id === guild))
+        throw new GameAccountError(
+          'membership_required',
+          'Join this Discord community before linking an account.',
+          403,
+        );
+      const game = (await env.COMMUNITIES.getByName(guild).read(guild)).settings.games.find(
+        (g) => g.id === gameId,
+      );
+      const adapter = runtimeAdapter(env, game?.catalogId);
+      if (!game?.catalogId || !adapter)
+        throw new GameAccountError('game_missing', 'Choose a configured catalog game.', 404);
+      if (
+        connectorAvailability(env, adapter, 'ownershipVerification') === 'disabled' ||
+        game.connector?.capabilities?.ownershipVerification === false
+      )
+        throw new GameAccountError(
+          'disabled',
+          'Account verification is temporarily disabled. Declared links remain available.',
+          503,
+        );
+      return { catalogId: game.catalogId };
+    },
+    link: (env, proof) =>
+      env.COMMUNITIES.getByName(proof.communityId).linkVerifiedGameAccount(
+        proof.communityId,
+        proof,
+      ),
+  }),
+);
 
 app.get('/auth/login', async (c) => {
   const base = origin(c.env);
@@ -387,7 +447,7 @@ app.get('/auth/login', async (c) => {
     const url = new URL(requested, base);
     if (
       url.origin === base &&
-      ((url.pathname === '/stats' &&
+      ((['/stats', '/link'].includes(url.pathname) &&
         snowflake.safeParse(url.searchParams.get('community')).success &&
         z.uuid().safeParse(url.searchParams.get('game')).success) ||
         (url.pathname === '/' &&
@@ -540,6 +600,23 @@ app.use('/api/communities/:guild/*', async (c, next) => {
   await next();
 });
 
+app.get('/api/communities/:guild/connectors', async (c) =>
+  c.json(
+    await c.env.COMMUNITIES.getByName(c.req.param('guild')).connectorStatus(c.req.param('guild')),
+  ),
+);
+app.get('/api/communities/:guild/connectors/:game/games', async (c) => {
+  const phase = c.req.query('phase') ?? 'running';
+  if (phase !== 'waiting' && phase !== 'running')
+    throw new Problem(400, 'invalid_phase', 'Choose waiting or running.');
+  return c.json(
+    await c.env.COMMUNITIES.getByName(c.req.param('guild')).listConnectorGames(
+      c.req.param('guild'),
+      c.req.param('game'),
+      phase,
+    ),
+  );
+});
 app.get('/api/communities/:guild/channels', async (c) =>
   c.json({ channels: await channels(c.env, c.req.param('guild')) }),
 );
@@ -695,7 +772,11 @@ app.post('/api/communities/:guild/actions', async (c) => {
       teams.map((t) => Promise.all(memberIds(t).map((id) => resolveMember(c.env, guild, id)))),
     )) as Action['teams'];
   const stub = c.env.COMMUNITIES.getByName(guild);
-  const reply = await stub.play(guild, actionSchema.parse(action));
+  const parsedAction = actionSchema.parse(action);
+  const reply =
+    parsedAction.kind === 'lobby_replays'
+      ? await stub.refreshLobbyReplays(guild, parsedAction)
+      : await stub.play(guild, parsedAction);
   c.executionCtx.waitUntil(stub.flush());
   if (reply.ok === false) throw new Problem(409, 'play_conflict', reply.content);
   return c.json({ reply, records: await stub.records(guild) });
