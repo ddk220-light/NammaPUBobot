@@ -1,7 +1,17 @@
 import { env } from 'cloudflare:workers';
 import { abortAllDurableObjects, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
-import { harness, setup, settings, fill, current, stub, guild, game, person, act } from './harness';
+import {
+  harness,
+  setup as saveSetup,
+  settings,
+  current,
+  stub,
+  guild,
+  game,
+  person,
+  act,
+} from './harness';
 import type { RecordAction } from '../src/domain/records';
 import { playerSummary } from '../src/domain/records';
 import type { GameAccountProof } from '../src/auth/game-accounts';
@@ -12,6 +22,23 @@ import type { CatalogId } from '../src/games/types';
 import { gameCapabilities } from '../src/games/catalog';
 
 harness();
+// Retired games enter these compatibility tests as existing persisted settings.
+async function setup(c = settings()) {
+  if (gameCapabilities(c.games[0].catalogId)?.lifecycle !== 'legacy') return saveSetup(c);
+  const initial = structuredClone(c);
+  initial.games[0].catalogId = null;
+  const saved = await saveSetup(initial);
+  await runInDurableObject(stub(), (_i, state) => {
+    for (const g of c.games)
+      state.storage.sql.exec('UPDATE games SET config=? WHERE id=?', JSON.stringify(g), g.id);
+  });
+  return saved;
+}
+async function fill(c = settings()) {
+  await setup(c);
+  for (let n = 0; n < 4; n++) await act('add', n);
+  return current();
+}
 const steamId = '76561198000000001';
 const config = (catalogId: CatalogId = 'northgard') => {
   const s = settings();

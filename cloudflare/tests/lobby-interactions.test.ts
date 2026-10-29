@@ -71,6 +71,7 @@ function context() {
 describe('lobby command transport', () => {
   it('registers one game-neutral command with attach/unlink/status/profile linking', () => {
     expect(commands.find((c) => c.name === 'lobby')!.options!.map((o) => o.name)).toEqual([
+      'list',
       'attach',
       'unlink',
       'status',

@@ -8,7 +8,8 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
 const guild = '706320010368516198',
   game = '4daebc0a-55e8-4d56-a17d-d94913644910',
-  zh = '4daebc0a-55e8-4d56-a17d-d94913644911';
+  zh = '4daebc0a-55e8-4d56-a17d-d94913644911',
+  wc3 = '4daebc0a-55e8-4d56-a17d-d94913644912';
 let signedIn = true,
   communityReads = 0,
   verificationRequest,
@@ -20,6 +21,7 @@ let snapshot = {
     games: [
       { id: game, name: 'Northgard', catalogId: 'northgard' },
       { id: zh, name: 'Zero Hour', catalogId: 'zero_hour', connector: { enabled: false } },
+      { id: wc3, name: 'Warcraft III', catalogId: 'wc3', connector: { enabled: false } },
     ],
     queues: [],
   },
@@ -58,7 +60,7 @@ await page.route('**/api/**', async (route) => {
       discordReady: true,
       inviteUrl: null,
       catalog: [
-        { id: 'northgard', name: 'Northgard' },
+        { id: 'wc3', name: 'Warcraft III' },
         { id: 'zero_hour', name: 'Zero Hour' },
       ],
       user: signedIn ? { id: '100000000000000100', username: 'Member' } : null,
@@ -69,10 +71,46 @@ await page.route('**/api/**', async (route) => {
     body = { communities: [{ id: guild, name: 'Connector test community' }] };
   } else if (path.endsWith('/setup'))
     body = { snapshot, channels: [], moderatorRoles: [], records };
+  else if (path.endsWith('/games'))
+    body = {
+      status: 'ok',
+      value: {
+        checkedAt: Date.now(),
+        phase: 'running',
+        coverage: 'bounded-snapshot',
+        games: [
+          {
+            externalId: 'original-game',
+            referenceKind: 'match',
+            provider: 'w3champions',
+            source: 'w3champions',
+            name: 'Ranked game',
+            phase: 'started',
+            observedAt: Date.now(),
+            map: 'Tidehunters',
+            players: [
+              { profileId: 'Fixture1#1001', name: 'Fixture1', team: '1', selection: 'Human' },
+              { profileId: 'Fixture2#1002', name: 'Fixture2', team: '2', selection: 'Orc' },
+            ],
+          },
+        ],
+      },
+    };
   else if (path.endsWith('/connectors'))
     body = {
       games: [
         { gameId: game, catalogId: 'northgard', capabilities, unresolvedBindings: 0 },
+        {
+          gameId: wc3,
+          catalogId: 'wc3',
+          capabilities: {
+            ...capabilities,
+            ongoingDiscovery: 'available',
+            ownershipVerification: 'credentials_required',
+            lobbyObservation: 'acceptance_required',
+          },
+          unresolvedBindings: 0,
+        },
         {
           gameId: zh,
           catalogId: 'zero_hour',
@@ -129,6 +167,12 @@ await page.goto(`${baseUrl}/?community=${guild}&view=setup`);
 await page.getByRole('heading', { name: 'Games', exact: true }).waitFor();
 const northgard = page.locator(`form[data-kind=rename][data-id="${game}"]`);
 const zeroHour = page.locator(`form[data-kind=rename][data-id="${zh}"]`);
+const warcraft = page.locator(`form[data-kind=rename][data-id="${wc3}"]`);
+await warcraft.locator('summary').click();
+await warcraft.getByRole('button', { name: 'Show running games' }).click();
+await warcraft.getByText(/Fixture1 \(Human\)/).waitFor();
+assert.equal(await page.locator('.add-game option[value=northgard]').count(), 0);
+assert.equal(await page.locator('.add-game option[value=wc3]').count(), 1);
 await northgard.locator('summary').click();
 await zeroHour.locator('summary').click();
 assert.equal(await northgard.locator('[name=lobbyConnector]').count(), 0);

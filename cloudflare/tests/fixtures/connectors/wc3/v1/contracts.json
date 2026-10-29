@@ -1,0 +1,2000 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-29",
+  "profile": {
+    "battleTag": "Fixture1#1001",
+    "name": "Fixture1",
+    "participatedInSeasons": [
+      {
+        "id": 25
+      },
+      {
+        "id": 24
+      },
+      {
+        "id": 23
+      },
+      {
+        "id": 17
+      }
+    ],
+    "winLosses": [
+      {
+        "race": 1,
+        "wins": 644,
+        "losses": 639,
+        "games": 1283,
+        "winrate": 0.5019485580670304
+      },
+      {
+        "race": 2,
+        "wins": 0,
+        "losses": 0,
+        "games": 0,
+        "winrate": 0
+      },
+      {
+        "race": 4,
+        "wins": 0,
+        "losses": 0,
+        "games": 0,
+        "winrate": 0
+      },
+      {
+        "race": 8,
+        "wins": 0,
+        "losses": 0,
+        "games": 0,
+        "winrate": 0
+      },
+      {
+        "race": 0,
+        "wins": 0,
+        "losses": 0,
+        "games": 0,
+        "winrate": 0
+      }
+    ],
+    "playerAkaData": {
+      "id": 0,
+      "name": null,
+      "main_race": null,
+      "country": null,
+      "liquipedia": null
+    }
+  },
+  "ongoing": {
+    "matches": [
+      {
+        "map": "w3c2609191153Tidehuntersv1_2",
+        "mapName": "Tidehunters",
+        "mapId": 54,
+        "id": "6ae28cf101d5ffcb2ad7e2b2",
+        "original-ongoing-match-id": "DW1g4cYZw4",
+        "floMatchId": 13977143,
+        "floGameId": 13977143,
+        "durationInSeconds": 0,
+        "startTime": "2026-10-29T00:01:41.562+00:00",
+        "endTime": "0001-01-01T00:00:00+00:00",
+        "gameMode": 1,
+        "teams": [
+          {
+            "players": [
+              {
+                "race": 1,
+                "rndRace": null,
+                "oldMmr": 1972,
+                "oldMmrQuantile": 0.9541588582960934,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture1#1001",
+                "inviteName": null,
+                "name": "Fixture1",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 46.147959839886816,
+                  "rank": 11,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          },
+          {
+            "players": [
+              {
+                "race": 8,
+                "rndRace": null,
+                "oldMmr": 1982,
+                "oldMmrQuantile": 0.9556004036326943,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture2#1002",
+                "inviteName": null,
+                "name": "Fixture2",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 45.838673815826475,
+                  "rank": 16,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          }
+        ],
+        "gateWay": 20,
+        "season": 0,
+        "number": null,
+        "serverInfo": {
+          "provider": "FLO",
+          "nodeId": 158,
+          "countryCode": null,
+          "location": null,
+          "name": "Cali South 6 (CN)",
+          "playerServerInfos": [
+            {
+              "battleTag": "Fixture1#1001",
+              "averagePing": 160,
+              "currentPing": 160
+            },
+            {
+              "battleTag": "Fixture2#1002",
+              "averagePing": 70,
+              "currentPing": 70
+            }
+          ]
+        }
+      },
+      {
+        "map": "5Direct Strike 6_5_13f",
+        "mapName": "Direct Strike",
+        "mapId": 5335,
+        "id": "6ae28ce901d5ffcb2ad7e2ad",
+        "original-ongoing-match-id": "-fT5NhCnw3",
+        "floMatchId": 13977141,
+        "floGameId": 13977141,
+        "durationInSeconds": 0,
+        "startTime": "2026-10-29T00:01:18.075+00:00",
+        "endTime": "0001-01-01T00:00:00+00:00",
+        "gameMode": 1101,
+        "teams": [
+          {
+            "players": [
+              {
+                "race": 4,
+                "rndRace": null,
+                "oldMmr": 1782,
+                "oldMmrQuantile": 0.8829011829370295,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture3#1003",
+                "inviteName": null,
+                "name": "Fixture3",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 39.066348960546016,
+                  "rank": 70,
+                  "division": 4,
+                  "leagueId": 9,
+                  "leagueOrder": 3,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 0,
+                "rndRace": null,
+                "oldMmr": 1643,
+                "oldMmrQuantile": 0.807145417612618,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture4#1004",
+                "inviteName": null,
+                "name": "Fixture4",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 35.58456453514663,
+                  "rank": 50,
+                  "division": 8,
+                  "leagueId": 13,
+                  "leagueOrder": 3,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 0,
+                "rndRace": null,
+                "oldMmr": null,
+                "oldMmrQuantile": null,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture5#1005",
+                "inviteName": null,
+                "name": "Fixture5",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 7.624902340139043,
+                  "rank": -1,
+                  "division": 0,
+                  "leagueId": null,
+                  "leagueOrder": null,
+                  "progress": 0.7549999999999999
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          },
+          {
+            "players": [
+              {
+                "race": 8,
+                "rndRace": null,
+                "oldMmr": 1750,
+                "oldMmrQuantile": 0.8680845979208985,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture6#1006",
+                "inviteName": null,
+                "name": "Fixture6",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 45.41510423763624,
+                  "rank": 84,
+                  "division": 3,
+                  "leagueId": 4,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 4,
+                "rndRace": null,
+                "oldMmr": 1657,
+                "oldMmrQuantile": 0.81634603895328,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture7#1007",
+                "inviteName": null,
+                "name": "Fixture7",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 35.89406330817628,
+                  "rank": 10,
+                  "division": 8,
+                  "leagueId": 13,
+                  "leagueOrder": 3,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 0,
+                "rndRace": null,
+                "oldMmr": 1645,
+                "oldMmrQuantile": 0.8086987692675349,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture8#1008",
+                "inviteName": null,
+                "name": "Fixture8",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 39.249811468347865,
+                  "rank": 50,
+                  "division": 4,
+                  "leagueId": 9,
+                  "leagueOrder": 3,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          }
+        ],
+        "gateWay": 20,
+        "season": 0,
+        "number": null,
+        "serverInfo": {
+          "provider": "FLO",
+          "nodeId": 47,
+          "countryCode": null,
+          "location": null,
+          "name": "US South 2",
+          "playerServerInfos": [
+            {
+              "battleTag": "Fixture3#1003",
+              "averagePing": 45,
+              "currentPing": 43
+            },
+            {
+              "battleTag": "Fixture4#1004",
+              "averagePing": 143,
+              "currentPing": 148
+            },
+            {
+              "battleTag": "Fixture5#1005",
+              "averagePing": 118,
+              "currentPing": 117
+            },
+            {
+              "battleTag": "Fixture6#1006",
+              "averagePing": 72,
+              "currentPing": 97
+            },
+            {
+              "battleTag": "Fixture7#1007",
+              "averagePing": 124,
+              "currentPing": 120
+            },
+            {
+              "battleTag": "Fixture8#1008",
+              "averagePing": 102,
+              "currentPing": 103
+            }
+          ]
+        }
+      }
+    ],
+    "count": 49
+  },
+  "playerOngoing": {
+    "map": "w3c2609191153Tidehuntersv1_2",
+    "mapName": "Tidehunters",
+    "mapId": 54,
+    "id": "6ae28cf101d5ffcb2ad7e2b2",
+    "original-ongoing-match-id": "DW1g4cYZw4",
+    "floMatchId": 13977143,
+    "floGameId": 13977143,
+    "durationInSeconds": 0,
+    "startTime": "2026-10-29T00:01:41.562+00:00",
+    "endTime": "0001-01-01T00:00:00+00:00",
+    "gameMode": 1,
+    "teams": [
+      {
+        "players": [
+          {
+            "race": 1,
+            "rndRace": null,
+            "oldMmr": 1972,
+            "oldMmrQuantile": 0.9541588582960934,
+            "oldRankDeviation": null,
+            "currentMmr": null,
+            "battleTag": "Fixture1#1001",
+            "inviteName": null,
+            "name": "Fixture1",
+            "mmrGain": null,
+            "won": false,
+            "matchRanking": null,
+            "location": null,
+            "countryCode": null,
+            "country": null,
+            "twitch": null,
+            "heroes": null,
+            "ranking": {
+              "rp": 46.147959839886816,
+              "rank": 11,
+              "division": 1,
+              "leagueId": 2,
+              "leagueOrder": 2,
+              "progress": 1
+            },
+            "atTeamId": null
+          }
+        ],
+        "won": false,
+        "matchRanking": null
+      },
+      {
+        "players": [
+          {
+            "race": 8,
+            "rndRace": null,
+            "oldMmr": 1982,
+            "oldMmrQuantile": 0.9556004036326943,
+            "oldRankDeviation": null,
+            "currentMmr": null,
+            "battleTag": "Fixture2#1002",
+            "inviteName": null,
+            "name": "Fixture2",
+            "mmrGain": null,
+            "won": false,
+            "matchRanking": null,
+            "location": null,
+            "countryCode": null,
+            "country": null,
+            "twitch": null,
+            "heroes": null,
+            "ranking": {
+              "rp": 45.838673815826475,
+              "rank": 16,
+              "division": 1,
+              "leagueId": 2,
+              "leagueOrder": 2,
+              "progress": 1
+            },
+            "atTeamId": null
+          }
+        ],
+        "won": false,
+        "matchRanking": null
+      }
+    ],
+    "gateWay": 20,
+    "season": 0,
+    "number": null,
+    "serverInfo": {
+      "provider": "FLO",
+      "nodeId": 158,
+      "countryCode": null,
+      "location": null,
+      "name": "Cali South 6 (CN)",
+      "playerServerInfos": [
+        {
+          "battleTag": "Fixture1#1001",
+          "averagePing": 160,
+          "currentPing": 160
+        },
+        {
+          "battleTag": "Fixture2#1002",
+          "averagePing": 70,
+          "currentPing": 70
+        }
+      ]
+    }
+  },
+  "finished": {
+    "match": {
+      "map": "5w3c2609191153Hammerfall",
+      "mapName": "Hammerfall",
+      "mapId": 5185,
+      "id": "6ae28cf901d5ffcb2ad7e2b5",
+      "original-ongoing-match-id": "Eb1shDu_KZ",
+      "floMatchId": 13977070,
+      "floGameId": 13977070,
+      "durationInSeconds": 1480,
+      "startTime": "2026-10-28T23:37:21.326+00:00",
+      "endTime": "2026-10-29T00:02:01.326+00:00",
+      "gameMode": 1,
+      "teams": [
+        {
+          "players": [
+            {
+              "race": 8,
+              "rndRace": null,
+              "oldMmr": 2189,
+              "oldMmrQuantile": 0.983780276816609,
+              "oldRankDeviation": null,
+              "currentMmr": 2197,
+              "battleTag": "Fixture9#1009",
+              "inviteName": "Fixture9#1009",
+              "name": "Fixture9",
+              "mmrGain": 8,
+              "won": true,
+              "matchRanking": null,
+              "location": null,
+              "countryCode": null,
+              "country": null,
+              "twitch": null,
+              "heroes": [
+                {
+                  "id": 7,
+                  "name": "cryptlord",
+                  "icon": "cryptlord",
+                  "level": 5,
+                  "source": 1
+                },
+                {
+                  "id": 13,
+                  "name": "lich",
+                  "icon": "lich",
+                  "level": 4,
+                  "source": 1
+                },
+                {
+                  "id": 8,
+                  "name": "deathknight",
+                  "icon": "deathknight",
+                  "level": 1,
+                  "source": 1
+                }
+              ],
+              "ranking": {
+                "rp": 48.84325443992376,
+                "rank": 48,
+                "division": 0,
+                "leagueId": 1,
+                "leagueOrder": 1,
+                "progress": 1
+              },
+              "atTeamId": null
+            }
+          ],
+          "won": true,
+          "matchRanking": null
+        },
+        {
+          "players": [
+            {
+              "race": 1,
+              "rndRace": null,
+              "oldMmr": 2095,
+              "oldMmrQuantile": 0.9750576701268743,
+              "oldRankDeviation": null,
+              "currentMmr": 2087,
+              "battleTag": "Fixture10#1010",
+              "inviteName": "Fixture10#1010",
+              "name": "Fixture10",
+              "mmrGain": -8,
+              "won": false,
+              "matchRanking": null,
+              "location": null,
+              "countryCode": null,
+              "country": null,
+              "twitch": null,
+              "heroes": [
+                {
+                  "id": 14,
+                  "name": "mountainking",
+                  "icon": "mountainking",
+                  "level": 8,
+                  "source": 1
+                },
+                {
+                  "id": 1,
+                  "name": "archmage",
+                  "icon": "archmage",
+                  "level": 2,
+                  "source": 1
+                }
+              ],
+              "ranking": {
+                "rp": 48.67749792806226,
+                "rank": 52,
+                "division": 0,
+                "leagueId": 1,
+                "leagueOrder": 1,
+                "progress": 1
+              },
+              "atTeamId": null
+            }
+          ],
+          "won": false,
+          "matchRanking": null
+        }
+      ],
+      "gateWay": 20,
+      "season": 25,
+      "number": null,
+      "serverInfo": {
+        "provider": "FLO",
+        "nodeId": 162,
+        "countryCode": null,
+        "location": null,
+        "name": "Poland",
+        "playerServerInfos": [
+          {
+            "battleTag": "Fixture10#1010",
+            "averagePing": 32,
+            "currentPing": 30
+          },
+          {
+            "battleTag": "Fixture9#1009",
+            "averagePing": 44,
+            "currentPing": 45
+          }
+        ]
+      }
+    },
+    "playerScores": [
+      {
+        "battleTag": "Fixture10#1010",
+        "unitScore": {
+          "unitsProduced": 65,
+          "unitsKilled": 133,
+          "largestArmy": 58
+        },
+        "heroes": [
+          {
+            "id": 14,
+            "name": "mountainking",
+            "icon": "mountainking",
+            "level": 8,
+            "source": 1
+          },
+          {
+            "id": 1,
+            "name": "archmage",
+            "icon": "archmage",
+            "level": 2,
+            "source": 1
+          }
+        ],
+        "heroScore": {
+          "heroesKilled": 6,
+          "itemsObtained": 35,
+          "mercsHired": 4,
+          "expGained": 3895
+        },
+        "resourceScore": {
+          "goldCollected": 16224,
+          "lumberCollected": 5273,
+          "goldUpkeepLost": 1056
+        },
+        "teamIndex": 0
+      },
+      {
+        "battleTag": "Fixture9#1009",
+        "unitScore": {
+          "unitsProduced": 205,
+          "unitsKilled": 69,
+          "largestArmy": 53
+        },
+        "heroes": [
+          {
+            "id": 7,
+            "name": "cryptlord",
+            "icon": "cryptlord",
+            "level": 5,
+            "source": 1
+          },
+          {
+            "id": 13,
+            "name": "lich",
+            "icon": "lich",
+            "level": 4,
+            "source": 1
+          },
+          {
+            "id": 8,
+            "name": "deathknight",
+            "icon": "deathknight",
+            "level": 1,
+            "source": 1
+          }
+        ],
+        "heroScore": {
+          "heroesKilled": 4,
+          "itemsObtained": 11,
+          "mercsHired": 0,
+          "expGained": 3022
+        },
+        "resourceScore": {
+          "goldCollected": 13429,
+          "lumberCollected": 5388,
+          "goldUpkeepLost": 21
+        },
+        "teamIndex": 1
+      }
+    ]
+  },
+  "correlatedFinished": {
+    "match": {
+      "map": "w3c2609191153Tidehuntersv1_2",
+      "mapName": "Tidehunters",
+      "mapId": 54,
+      "id": "6ae2902901d5ffcb2ad7e353",
+      "original-ongoing-match-id": "DW1g4cYZw4",
+      "floMatchId": 13977143,
+      "floGameId": 13977143,
+      "durationInSeconds": 835,
+      "startTime": "2026-10-29T00:01:41.562+00:00",
+      "endTime": "2026-10-29T00:15:37.373+00:00",
+      "gameMode": 1,
+      "teams": [
+        {
+          "players": [
+            {
+              "race": 8,
+              "rndRace": null,
+              "oldMmr": 1982,
+              "oldMmrQuantile": 0.9556004036326943,
+              "oldRankDeviation": null,
+              "currentMmr": 1992,
+              "battleTag": "Fixture2#1002",
+              "inviteName": "Fixture2#1002",
+              "name": "Fixture2",
+              "mmrGain": 10,
+              "won": true,
+              "matchRanking": null,
+              "location": null,
+              "countryCode": null,
+              "country": null,
+              "twitch": null,
+              "heroes": [
+                {
+                  "id": 7,
+                  "name": "cryptlord",
+                  "icon": "cryptlord",
+                  "level": 4,
+                  "source": 1
+                },
+                {
+                  "id": 8,
+                  "name": "deathknight",
+                  "icon": "deathknight",
+                  "level": 3,
+                  "source": 1
+                },
+                {
+                  "id": 13,
+                  "name": "lich",
+                  "icon": "lich",
+                  "level": 2,
+                  "source": 1
+                }
+              ],
+              "ranking": {
+                "rp": 45.84087371000377,
+                "rank": 16,
+                "division": 1,
+                "leagueId": 2,
+                "leagueOrder": 2,
+                "progress": 1
+              },
+              "atTeamId": null
+            }
+          ],
+          "won": true,
+          "matchRanking": null
+        },
+        {
+          "players": [
+            {
+              "race": 1,
+              "rndRace": null,
+              "oldMmr": 1972,
+              "oldMmrQuantile": 0.9541588582960934,
+              "oldRankDeviation": null,
+              "currentMmr": 1962,
+              "battleTag": "Fixture1#1001",
+              "inviteName": "Fixture1#1001",
+              "name": "Fixture1",
+              "mmrGain": -10,
+              "won": false,
+              "matchRanking": null,
+              "location": null,
+              "countryCode": null,
+              "country": null,
+              "twitch": null,
+              "heroes": [
+                {
+                  "id": 1,
+                  "name": "archmage",
+                  "icon": "archmage",
+                  "level": 4,
+                  "source": 1
+                },
+                {
+                  "id": 15,
+                  "name": "paladin",
+                  "icon": "paladin",
+                  "level": 3,
+                  "source": 1
+                }
+              ],
+              "ranking": {
+                "rp": 46.147959839886816,
+                "rank": 11,
+                "division": 1,
+                "leagueId": 2,
+                "leagueOrder": 2,
+                "progress": 1
+              },
+              "atTeamId": null
+            }
+          ],
+          "won": false,
+          "matchRanking": null
+        }
+      ],
+      "gateWay": 20,
+      "season": 25,
+      "number": null,
+      "serverInfo": {
+        "provider": "FLO",
+        "nodeId": 158,
+        "countryCode": null,
+        "location": null,
+        "name": "Cali South 6 (CN)",
+        "playerServerInfos": [
+          {
+            "battleTag": "Fixture1#1001",
+            "averagePing": 160,
+            "currentPing": 160
+          },
+          {
+            "battleTag": "Fixture2#1002",
+            "averagePing": 70,
+            "currentPing": 70
+          }
+        ]
+      }
+    },
+    "playerScores": [
+      {
+        "battleTag": "Fixture1#1001",
+        "unitScore": {
+          "unitsProduced": 52,
+          "unitsKilled": 50,
+          "largestArmy": 55
+        },
+        "heroes": [
+          {
+            "id": 1,
+            "name": "archmage",
+            "icon": "archmage",
+            "level": 4,
+            "source": 1
+          },
+          {
+            "id": 15,
+            "name": "paladin",
+            "icon": "paladin",
+            "level": 3,
+            "source": 1
+          }
+        ],
+        "heroScore": {
+          "heroesKilled": 0,
+          "itemsObtained": 12,
+          "mercsHired": 1,
+          "expGained": 1800
+        },
+        "resourceScore": {
+          "goldCollected": 7636,
+          "lumberCollected": 1931,
+          "goldUpkeepLost": 234
+        },
+        "teamIndex": 0
+      },
+      {
+        "battleTag": "Fixture2#1002",
+        "unitScore": {
+          "unitsProduced": 62,
+          "unitsKilled": 39,
+          "largestArmy": 56
+        },
+        "heroes": [
+          {
+            "id": 7,
+            "name": "cryptlord",
+            "icon": "cryptlord",
+            "level": 4,
+            "source": 1
+          },
+          {
+            "id": 8,
+            "name": "deathknight",
+            "icon": "deathknight",
+            "level": 3,
+            "source": 1
+          },
+          {
+            "id": 13,
+            "name": "lich",
+            "icon": "lich",
+            "level": 2,
+            "source": 1
+          }
+        ],
+        "heroScore": {
+          "heroesKilled": 0,
+          "itemsObtained": 12,
+          "mercsHired": 0,
+          "expGained": 1995
+        },
+        "resourceScore": {
+          "goldCollected": 7490,
+          "lumberCollected": 2710,
+          "goldUpkeepLost": 300
+        },
+        "teamIndex": 1
+      }
+    ]
+  },
+  "history": {
+    "matches": [
+      {
+        "map": "w3c2609191153Tidehuntersv1_2",
+        "mapName": "Tidehunters",
+        "mapId": 54,
+        "id": "6ae2902901d5ffcb2ad7e353",
+        "original-ongoing-match-id": "DW1g4cYZw4",
+        "floMatchId": 13977143,
+        "floGameId": 13977143,
+        "durationInSeconds": 835,
+        "startTime": "2026-10-29T00:01:41.562+00:00",
+        "endTime": "2026-10-29T00:15:37.373+00:00",
+        "gameMode": 1,
+        "teams": [
+          {
+            "players": [
+              {
+                "race": 8,
+                "rndRace": null,
+                "oldMmr": 1982,
+                "oldMmrQuantile": 0.9556004036326943,
+                "oldRankDeviation": null,
+                "currentMmr": 1992,
+                "battleTag": "Fixture2#1002",
+                "inviteName": "Fixture2#1002",
+                "name": "Fixture2",
+                "mmrGain": 10,
+                "won": true,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 7,
+                    "name": "cryptlord",
+                    "icon": "cryptlord",
+                    "level": 4,
+                    "source": 1
+                  },
+                  {
+                    "id": 8,
+                    "name": "deathknight",
+                    "icon": "deathknight",
+                    "level": 3,
+                    "source": 1
+                  },
+                  {
+                    "id": 13,
+                    "name": "lich",
+                    "icon": "lich",
+                    "level": 2,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 45.84087371000377,
+                  "rank": 16,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": true,
+            "matchRanking": null
+          },
+          {
+            "players": [
+              {
+                "race": 1,
+                "rndRace": null,
+                "oldMmr": 1972,
+                "oldMmrQuantile": 0.9541588582960934,
+                "oldRankDeviation": null,
+                "currentMmr": 1962,
+                "battleTag": "Fixture1#1001",
+                "inviteName": "Fixture1#1001",
+                "name": "Fixture1",
+                "mmrGain": -10,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 1,
+                    "name": "archmage",
+                    "icon": "archmage",
+                    "level": 4,
+                    "source": 1
+                  },
+                  {
+                    "id": 15,
+                    "name": "paladin",
+                    "icon": "paladin",
+                    "level": 3,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 46.147959839886816,
+                  "rank": 11,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          }
+        ],
+        "gateWay": 20,
+        "season": 25,
+        "number": null,
+        "serverInfo": {
+          "provider": "FLO",
+          "nodeId": 158,
+          "countryCode": null,
+          "location": null,
+          "name": "Cali South 6 (CN)",
+          "playerServerInfos": [
+            {
+              "battleTag": "Fixture1#1001",
+              "averagePing": 160,
+              "currentPing": 160
+            },
+            {
+              "battleTag": "Fixture2#1002",
+              "averagePing": 70,
+              "currentPing": 70
+            }
+          ]
+        }
+      },
+      {
+        "map": "w3c2609191153Tidehuntersv1_2",
+        "mapName": "Tidehunters",
+        "mapId": 54,
+        "id": "6ae28ccf01d5ffcb2ad7e2a4",
+        "original-ongoing-match-id": "NpplJ5qlae",
+        "floMatchId": 13977104,
+        "floGameId": 13977104,
+        "durationInSeconds": 811,
+        "startTime": "2026-10-28T23:47:47.52+00:00",
+        "endTime": "2026-10-29T00:01:19.326+00:00",
+        "gameMode": 1,
+        "teams": [
+          {
+            "players": [
+              {
+                "race": 1,
+                "rndRace": null,
+                "oldMmr": 1963,
+                "oldMmrQuantile": 0.9524255748576371,
+                "oldRankDeviation": null,
+                "currentMmr": 1972,
+                "battleTag": "Fixture1#1001",
+                "inviteName": "Fixture1#1001",
+                "name": "Fixture1",
+                "mmrGain": 9,
+                "won": true,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 1,
+                    "name": "archmage",
+                    "icon": "archmage",
+                    "level": 4,
+                    "source": 1
+                  },
+                  {
+                    "id": 25,
+                    "name": "forsakenpaladin",
+                    "icon": "forsakenpaladin",
+                    "level": 3,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 46.147959839886816,
+                  "rank": 10,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": true,
+            "matchRanking": null
+          },
+          {
+            "players": [
+              {
+                "race": 4,
+                "rndRace": null,
+                "oldMmr": 1908,
+                "oldMmrQuantile": 0.9414690405824263,
+                "oldRankDeviation": null,
+                "currentMmr": 1899,
+                "battleTag": "Fixture11#1011",
+                "inviteName": "Fixture11#1011",
+                "name": "Fixture11",
+                "mmrGain": -9,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 12,
+                    "name": "keeperofthegrove",
+                    "icon": "keeperofthegrove",
+                    "level": 3,
+                    "source": 1
+                  },
+                  {
+                    "id": 18,
+                    "name": "priestessofthemoon",
+                    "icon": "priestessofthemoon",
+                    "level": 3,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 37.24754521915108,
+                  "rank": 65,
+                  "division": 4,
+                  "leagueId": 5,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          }
+        ],
+        "gateWay": 20,
+        "season": 25,
+        "number": null,
+        "serverInfo": {
+          "provider": "FLO",
+          "nodeId": 157,
+          "countryCode": null,
+          "location": null,
+          "name": "Russia Central 7",
+          "playerServerInfos": [
+            {
+              "battleTag": "Fixture11#1011",
+              "averagePing": 117,
+              "currentPing": 114
+            },
+            {
+              "battleTag": "Fixture1#1001",
+              "averagePing": 109,
+              "currentPing": 111
+            }
+          ]
+        }
+      }
+    ],
+    "count": 908
+  },
+  "teamOngoing": {
+    "matches": [
+      {
+        "map": "w3c2609191153WellspringTemplev1_2",
+        "mapName": "Wellspring Temple",
+        "mapId": 49,
+        "id": "6ae28eb601d5ffcb2ad7e307",
+        "original-ongoing-match-id": "qr4TDaSXIw",
+        "floMatchId": 13977158,
+        "floGameId": 13977158,
+        "durationInSeconds": 0,
+        "startTime": "2026-10-29T00:08:50.91+00:00",
+        "endTime": "0001-01-01T00:00:00+00:00",
+        "gameMode": 4,
+        "teams": [
+          {
+            "players": [
+              {
+                "race": 2,
+                "rndRace": null,
+                "oldMmr": 1813,
+                "oldMmrQuantile": 0.8818643285648362,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture12#1012",
+                "inviteName": null,
+                "name": "Fixture12",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 39.01659416173532,
+                  "rank": 87,
+                  "division": 0,
+                  "leagueId": 1,
+                  "leagueOrder": 1,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 1,
+                "rndRace": null,
+                "oldMmr": 1630,
+                "oldMmrQuantile": 0.7498846331333641,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture13#1013",
+                "inviteName": null,
+                "name": "Fixture13",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 38.26721007377985,
+                  "rank": 9,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 1,
+                "rndRace": null,
+                "oldMmr": 1528,
+                "oldMmrQuantile": 0.628518689432395,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture14#1014",
+                "inviteName": null,
+                "name": "Fixture14",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 35.56144571794946,
+                  "rank": 29,
+                  "division": 1,
+                  "leagueId": 3,
+                  "leagueOrder": 3,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 8,
+                "rndRace": null,
+                "oldMmr": 1244,
+                "oldMmrQuantile": 0.18874019381633594,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture15#1015",
+                "inviteName": null,
+                "name": "Fixture15",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 28.021113519746926,
+                  "rank": 69,
+                  "division": 2,
+                  "leagueId": 6,
+                  "leagueOrder": 4,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          },
+          {
+            "players": [
+              {
+                "race": 8,
+                "rndRace": null,
+                "oldMmr": 1745,
+                "oldMmrQuantile": 0.8518689432395016,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture16#1016",
+                "inviteName": null,
+                "name": "Fixture16",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 37.96766236232754,
+                  "rank": 19,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 0,
+                "rndRace": null,
+                "oldMmr": 1640,
+                "oldMmrQuantile": 0.7697277341947393,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture17#1017",
+                "inviteName": null,
+                "name": "Fixture17",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 36.9282369938776,
+                  "rank": 48,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 0,
+                "rndRace": null,
+                "oldMmr": 1405,
+                "oldMmrQuantile": 0.40147669589293955,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture18#1018",
+                "inviteName": null,
+                "name": "Fixture18",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 31.535629086473076,
+                  "rank": 3,
+                  "division": 1,
+                  "leagueId": 5,
+                  "leagueOrder": 4,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 0,
+                "rndRace": null,
+                "oldMmr": 1405,
+                "oldMmrQuantile": 0.4010152284263959,
+                "oldRankDeviation": null,
+                "currentMmr": null,
+                "battleTag": "Fixture19#1019",
+                "inviteName": null,
+                "name": "Fixture19",
+                "mmrGain": null,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": null,
+                "ranking": {
+                  "rp": 30.622395147680873,
+                  "rank": 47,
+                  "division": 1,
+                  "leagueId": 5,
+                  "leagueOrder": 4,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          }
+        ],
+        "gateWay": 20,
+        "season": 0,
+        "number": null,
+        "serverInfo": {
+          "provider": "FLO",
+          "nodeId": 169,
+          "countryCode": null,
+          "location": null,
+          "name": "US South West",
+          "playerServerInfos": [
+            {
+              "battleTag": "Fixture12#1012",
+              "averagePing": 50,
+              "currentPing": 49
+            },
+            {
+              "battleTag": "Fixture13#1013",
+              "averagePing": 129,
+              "currentPing": 95
+            },
+            {
+              "battleTag": "Fixture14#1014",
+              "averagePing": 185,
+              "currentPing": 185
+            },
+            {
+              "battleTag": "Fixture15#1015",
+              "averagePing": 62,
+              "currentPing": 54
+            },
+            {
+              "battleTag": "Fixture16#1016",
+              "averagePing": 147,
+              "currentPing": 147
+            },
+            {
+              "battleTag": "Fixture17#1017",
+              "averagePing": 61,
+              "currentPing": 143
+            },
+            {
+              "battleTag": "Fixture18#1018",
+              "averagePing": 42,
+              "currentPing": 44
+            },
+            {
+              "battleTag": "Fixture19#1019",
+              "averagePing": 68,
+              "currentPing": 73
+            }
+          ]
+        }
+      }
+    ],
+    "count": 3
+  },
+  "teamFinished": {
+    "matches": [
+      {
+        "map": "4w3c2609191153EkrezemsMazev1_1",
+        "mapName": "Ekrezem's Maze",
+        "mapId": 5024,
+        "id": "6ae28e3a01d5ffcb2ad7e2f7",
+        "original-ongoing-match-id": "enjqu3ciJ1",
+        "floMatchId": 13977102,
+        "floGameId": 13977102,
+        "durationInSeconds": 1212,
+        "startTime": "2026-10-28T23:47:09.443+00:00",
+        "endTime": "2026-10-29T00:07:22.351+00:00",
+        "gameMode": 4,
+        "teams": [
+          {
+            "players": [
+              {
+                "race": 8,
+                "rndRace": null,
+                "oldMmr": 1741,
+                "oldMmrQuantile": 0.8486386709736964,
+                "oldRankDeviation": null,
+                "currentMmr": 1745,
+                "battleTag": "Fixture16#1016",
+                "inviteName": "Fixture16#1016",
+                "name": "Fixture16",
+                "mmrGain": 4,
+                "won": true,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 10,
+                    "name": "dreadlord",
+                    "icon": "dreadlord",
+                    "level": 7,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 37.96766236232754,
+                  "rank": 19,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 1,
+                "rndRace": null,
+                "oldMmr": 1521,
+                "oldMmrQuantile": 0.6202122750346101,
+                "oldRankDeviation": null,
+                "currentMmr": 1526,
+                "battleTag": "Fixture20#1020",
+                "inviteName": "Fixture20#1020",
+                "name": "Fixture20",
+                "mmrGain": 5,
+                "won": true,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 1,
+                    "name": "archmage",
+                    "icon": "archmage",
+                    "level": 5,
+                    "source": 1
+                  },
+                  {
+                    "id": 15,
+                    "name": "paladin",
+                    "icon": "paladin",
+                    "level": 4,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 34.95538364900146,
+                  "rank": 57,
+                  "division": 1,
+                  "leagueId": 3,
+                  "leagueOrder": 3,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 2,
+                "rndRace": null,
+                "oldMmr": 1329,
+                "oldMmrQuantile": 0.28103368712505766,
+                "oldRankDeviation": null,
+                "currentMmr": 1335,
+                "battleTag": "Fixture21#1021",
+                "inviteName": "Fixture21#1021",
+                "name": "Fixture21",
+                "mmrGain": 6,
+                "won": true,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 11,
+                    "name": "farseer",
+                    "icon": "farseer",
+                    "level": 4,
+                    "source": 1
+                  },
+                  {
+                    "id": 22,
+                    "name": "taurenchieftain",
+                    "icon": "taurenchieftain",
+                    "level": 3,
+                    "source": 1
+                  },
+                  {
+                    "id": 20,
+                    "name": "shadowhunter",
+                    "icon": "shadowhunter",
+                    "level": 2,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 32.978397995715866,
+                  "rank": 31,
+                  "division": 2,
+                  "leagueId": 4,
+                  "leagueOrder": 3,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 0,
+                "rndRace": 8,
+                "oldMmr": 1267,
+                "oldMmrQuantile": 0.20535302261190586,
+                "oldRankDeviation": null,
+                "currentMmr": 1273,
+                "battleTag": "Fixture22#1022",
+                "inviteName": "Fixture22#1022",
+                "name": "Fixture22",
+                "mmrGain": 6,
+                "won": true,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 8,
+                    "name": "deathknight",
+                    "icon": "deathknight",
+                    "level": 5,
+                    "source": 1
+                  },
+                  {
+                    "id": 13,
+                    "name": "lich",
+                    "icon": "lich",
+                    "level": 4,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 27.57880883607784,
+                  "rank": 88,
+                  "division": 2,
+                  "leagueId": 6,
+                  "leagueOrder": 4,
+                  "progress": 1
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": true,
+            "matchRanking": null
+          },
+          {
+            "players": [
+              {
+                "race": 0,
+                "rndRace": 4,
+                "oldMmr": 1659,
+                "oldMmrQuantile": 0.7789570835256114,
+                "oldRankDeviation": null,
+                "currentMmr": 1628,
+                "battleTag": "Fixture23#1023",
+                "inviteName": "Fixture23#1023",
+                "name": "Fixture23",
+                "mmrGain": -31,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 12,
+                    "name": "keeperofthegrove",
+                    "icon": "keeperofthegrove",
+                    "level": 5,
+                    "source": 1
+                  },
+                  {
+                    "id": 4,
+                    "name": "bansheeranger",
+                    "icon": "bansheeranger",
+                    "level": 4,
+                    "source": 1
+                  },
+                  {
+                    "id": 18,
+                    "name": "priestessofthemoon",
+                    "icon": "priestessofthemoon",
+                    "level": 2,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 13.335570303133405,
+                  "rank": 71,
+                  "division": 0,
+                  "leagueId": 1,
+                  "leagueOrder": 1,
+                  "progress": 0.7649999999999997
+                },
+                "atTeamId": "blaST9Z#2118_InsoliTe#21346"
+              },
+              {
+                "race": 0,
+                "rndRace": 2,
+                "oldMmr": 1659,
+                "oldMmrQuantile": 0.7789570835256114,
+                "oldRankDeviation": null,
+                "currentMmr": 1628,
+                "battleTag": "Fixture24#1024",
+                "inviteName": "Fixture24#1024",
+                "name": "Fixture24",
+                "mmrGain": -31,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 22,
+                    "name": "taurenchieftain",
+                    "icon": "taurenchieftain",
+                    "level": 4,
+                    "source": 1
+                  },
+                  {
+                    "id": 20,
+                    "name": "shadowhunter",
+                    "icon": "shadowhunter",
+                    "level": 3,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 13.335570303133405,
+                  "rank": 71,
+                  "division": 0,
+                  "leagueId": 1,
+                  "leagueOrder": 1,
+                  "progress": 0.7649999999999997
+                },
+                "atTeamId": "blaST9Z#2118_InsoliTe#21346"
+              },
+              {
+                "race": 0,
+                "rndRace": 8,
+                "oldMmr": 1645,
+                "oldMmrQuantile": 0.7697277341947393,
+                "oldRankDeviation": null,
+                "currentMmr": 1640,
+                "battleTag": "Fixture17#1017",
+                "inviteName": "Fixture17#1017",
+                "name": "Fixture17",
+                "mmrGain": -5,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 8,
+                    "name": "deathknight",
+                    "icon": "deathknight",
+                    "level": 4,
+                    "source": 1
+                  },
+                  {
+                    "id": 13,
+                    "name": "lich",
+                    "icon": "lich",
+                    "level": 3,
+                    "source": 1
+                  },
+                  {
+                    "id": 10,
+                    "name": "dreadlord",
+                    "icon": "dreadlord",
+                    "level": 3,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 36.9282369938776,
+                  "rank": 48,
+                  "division": 1,
+                  "leagueId": 2,
+                  "leagueOrder": 2,
+                  "progress": 1
+                },
+                "atTeamId": null
+              },
+              {
+                "race": 0,
+                "rndRace": 8,
+                "oldMmr": 1000,
+                "oldMmrQuantile": 0.026303645592985696,
+                "oldRankDeviation": null,
+                "currentMmr": 993,
+                "battleTag": "Fixture25#1025",
+                "inviteName": "Fixture25#1025",
+                "name": "Fixture25",
+                "mmrGain": -7,
+                "won": false,
+                "matchRanking": null,
+                "location": null,
+                "countryCode": null,
+                "country": null,
+                "twitch": null,
+                "heroes": [
+                  {
+                    "id": 8,
+                    "name": "deathknight",
+                    "icon": "deathknight",
+                    "level": 4,
+                    "source": 1
+                  },
+                  {
+                    "id": 10,
+                    "name": "dreadlord",
+                    "icon": "dreadlord",
+                    "level": 3,
+                    "source": 1
+                  }
+                ],
+                "ranking": {
+                  "rp": 16.590342005699938,
+                  "rank": 25,
+                  "division": 3,
+                  "leagueId": 13,
+                  "leagueOrder": 6,
+                  "progress": 0.7849999999999993
+                },
+                "atTeamId": null
+              }
+            ],
+            "won": false,
+            "matchRanking": null
+          }
+        ],
+        "gateWay": 20,
+        "season": 25,
+        "number": null,
+        "serverInfo": {
+          "provider": "FLO",
+          "nodeId": 177,
+          "countryCode": null,
+          "location": null,
+          "name": "Bulgaria",
+          "playerServerInfos": [
+            {
+              "battleTag": "Fixture16#1016",
+              "averagePing": 57,
+              "currentPing": 57
+            },
+            {
+              "battleTag": "Fixture20#1020",
+              "averagePing": 170,
+              "currentPing": 171
+            },
+            {
+              "battleTag": "Fixture21#1021",
+              "averagePing": 137,
+              "currentPing": 183
+            },
+            {
+              "battleTag": "Fixture22#1022",
+              "averagePing": 51,
+              "currentPing": 51
+            },
+            {
+              "battleTag": "Fixture23#1023",
+              "averagePing": 54,
+              "currentPing": 56
+            },
+            {
+              "battleTag": "Fixture24#1024",
+              "averagePing": 42,
+              "currentPing": 41
+            },
+            {
+              "battleTag": "Fixture17#1017",
+              "averagePing": 158,
+              "currentPing": 157
+            },
+            {
+              "battleTag": "Fixture25#1025",
+              "averagePing": 126,
+              "currentPing": 121
+            }
+          ]
+        }
+      }
+    ],
+    "count": 27502
+  }
+}

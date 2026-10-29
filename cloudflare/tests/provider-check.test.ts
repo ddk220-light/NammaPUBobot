@@ -50,6 +50,10 @@ function adapter(overrides: Partial<GameAdapter> = {}): GameAdapter {
       status: 'ok',
       value: { id, name: 'Profile', url: 'https://example.com/profile' },
     }),
+    discoverOngoing: async () => ({
+      status: 'ok',
+      value: [{ ...observation, phase: 'started', finishedAt: null }],
+    }),
     discover: async () => ({ status: 'ok', value: [observation] }),
     observe: async () => ({ status: 'ok', value: observation }),
     match: async () => ({ status: 'ok', value: observation }),
@@ -68,7 +72,7 @@ const run = (a: GameAdapter) =>
 describe('read-only provider probe reporting', () => {
   it('checks response semantics and marks interactive ownership as access-blocked', async () => {
     const report = await run(adapter());
-    expect(report.counts).toEqual({ passed: 6, failed: 0, 'access-blocked': 1, unsupported: 0 });
+    expect(report.counts).toEqual({ passed: 7, failed: 0, 'access-blocked': 1, unsupported: 0 });
     expect(report.results.find((r) => r.operation === 'ownershipVerification')).toMatchObject({
       status: 'access-blocked',
       detail: 'interactive_sign_in_required',
@@ -85,7 +89,7 @@ describe('read-only provider probe reporting', () => {
       now: () => now,
     });
     expect(report.counts.passed).toBe(0);
-    expect(report.counts['access-blocked']).toBe(7);
+    expect(report.counts['access-blocked']).toBe(8);
     expect(profile).not.toHaveBeenCalled();
     const withCredentials = await runProviderChecks({
       games: ['sc2'],
@@ -136,7 +140,10 @@ describe('read-only provider probe reporting', () => {
     });
   });
   it('accepts a valid empty public feed while blocking an observation that has no live sample', async () => {
-    const a = adapter({ discover: async () => ({ status: 'ok', value: [] }) });
+    const a = adapter({
+      discover: async () => ({ status: 'ok', value: [] }),
+      discoverOngoing: async () => ({ status: 'ok', value: [] }),
+    });
     const report = await runProviderChecks({
       games: ['bar'],
       createAdapter: () => a,

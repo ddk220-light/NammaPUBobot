@@ -1,3 +1,4 @@
+import { gameListReply } from './game-list';
 import type { Env } from '../env';
 import { gameCapabilities } from '../games/catalog';
 import { testInteraction } from './test-interactions';
@@ -299,7 +300,7 @@ async function playInteraction(
       options = sub?.options ?? [];
     const option = (name: string) => options.find((o) => o.name === name)?.value;
     if (
-      !['attach', 'unlink', 'status', 'link', 'confirm', 'facts', 'replays'].includes(
+      !['list', 'attach', 'unlink', 'status', 'link', 'confirm', 'facts', 'replays'].includes(
         sub?.name ?? '',
       )
     )
@@ -311,6 +312,27 @@ async function playInteraction(
       ['attach', 'unlink', 'confirm', 'facts'].includes(sub!.name),
       async () => {
         const stub = env.COMMUNITIES.getByName(i.guild_id!);
+        if (sub!.name === 'list') {
+          const snapshot = await stub.read(i.guild_id!);
+          const queues = snapshot.settings.queues.filter((q) => q.channelId === i.channel_id);
+          const selected = String(option('queue') ?? '').toLowerCase();
+          const q = selected
+            ? queues.find(
+                (q) =>
+                  q.id === selected ||
+                  q.name.toLowerCase() === selected ||
+                  q.aliases?.some((a) => a.toLowerCase() === selected),
+              )
+            : (queues.find((q) => q.isDefault) ?? (queues.length === 1 ? queues[0] : undefined));
+          if (!q) throw new PlayError('Choose a queue in this channel.');
+          const phase = option('phase');
+          if (phase !== 'waiting' && phase !== 'running')
+            throw new PlayError('Choose waiting or running.');
+          return {
+            ok: true,
+            ...gameListReply(await stub.listConnectorGames(i.guild_id!, q.gameId, phase)),
+          };
+        }
         if (sub!.name === 'link') {
           const s = await stub.read(i.guild_id!),
             qs = s.settings.queues.filter((q) => q.channelId === i.channel_id);
@@ -413,7 +435,7 @@ async function playInteraction(
         const game = s.settings.games.find((g) => g.id === q.gameId);
         const catalogId = game?.catalogId;
         const provider =
-          catalogId === 'sc2'
+          catalogId === 'sc2' || catalogId === 'wc3'
             ? 'battlenet'
             : catalogId === 'bar'
               ? 'bar'

@@ -1,6 +1,6 @@
 # Connector release acceptance
 
-Last reviewed: 2026-10-28 UTC. Automated tests and public connectivity probes establish implementation behavior and feasibility. They do not establish that the bot follows a real game from lobby to captain-confirmed result. No controlled live games or interactive provider sign-ins were completed in this implementation session.
+Last reviewed: 2026-10-29 UTC. Automated tests and public connectivity probes establish implementation behavior and feasibility. They do not establish that the bot follows a real game from lobby to captain-confirmed result. No controlled live games or interactive provider sign-ins were completed in this implementation session.
 
 ## Gate status
 
@@ -12,10 +12,9 @@ Last reviewed: 2026-10-28 UTC. Automated tests and public connectivity probes es
 | AoM Retold                 | Offline decoder contracts and public API probes                            | Pending                               | Pending                               | Disabled until accepted                                                |
 | Beyond All Reason          | Offline decoder contracts and public API probes                            | Pending                               | Pending                               | Disabled until accepted                                                |
 | Zero Hour / GeneralsOnline | Source-derived adapter contract tests                                      | Blocked on authorized integration key | Blocked on authorized integration key | Credentials and acceptance both required                               |
-| SC2                        | Offline OAuth/profile/history tests                                        | Pending manual-flow check             | Pending manual-flow check             | No automated lobby observation capability                              |
-| Original Generals          | Offline manual workflow contract                                           | Pending actual-screen check           | Pending actual-screen check           | Manual only                                                            |
-| Northgard                  | Offline manual workflow contract                                           | Pending actual-screen check           | Pending actual-screen check           | Manual only                                                            |
-| Tempest Rising             | Offline manual workflow contract                                           | Pending actual-screen check           | Pending actual-screen check           | Manual only                                                            |
+| Warcraft III / W3Champions | Offline adapter/OAuth/lifecycle contracts and anonymous JSON reads         | Pending supported matchmaking 1v1     | Pending supported 4v4                 | Observation gated per mode; arbitrary custom games excluded            |
+
+Original Generals, SC2, Northgard and Tempest Rising are excluded from new rollout; their legacy data and manual-report compatibility checks do not constitute new connector release acceptance.
 
 Public probe results are recorded separately with their exact timestamp and status. An inaccessible operation is not signed off. The absence of a replay reference can be a valid metadata result, but a provider error or malformed payload cannot be treated as an empty successful match history.
 
@@ -36,8 +35,10 @@ Additional title gates:
 - **Age games:** establish native lobby-to-result continuity on real public and private/custom games; verify zero-based provider teams, unknown civilization/god IDs, and duration units. An AoE4 World 404 does not refute a World's Edge match.
 - **BAR:** repeat games in the same room, confirm battle/server-match/replay-hash correlation, and inspect abnormal endings and unknown ally teams.
 - **GeneralsOnline:** verify the authorized credential's actual lobby permissions, production payloads, native account mapping, lobby-to-match transition and replay-reference availability. Do not use individual game session tokens as integration credentials.
-- **SC2:** choose owned profiles across all supported regions/realms, include an unavailable region, and show the limited history coverage explicitly. History does not establish the full game roster or a lobby lifecycle.
-- **Original Generals, Northgard and Tempest:** compare every manual field against current game screens, including a cancellation and captain dispute. Verify external recording references are links only.
+- **Legacy SC2 compatibility only:** choose owned profiles across all supported regions/realms, include an unavailable region, and show the limited history coverage explicitly. History does not establish the full game roster or a lobby lifecycle.
+- **Legacy Original Generals, Northgard and Tempest compatibility only:** compare every manual field against current game screens, including a cancellation and captain dispute. Verify external recording references are links only.
+
+- **Warcraft III:** test real supported W3Champions matchmaking, exact original-ID-to-finished lookup, distinct ongoing/finished database aliases, both positive normalized teams, race/Random semantics and stable Battle.net ownership. Verify custom/FFA/unsupported modes cannot be discovered as scheduled matches. Matchmaking may not reproduce a scheduled roster; accept observation-only coverage if exact scheduled teams cannot be established. Confirm native-game reuse after a completed bot match is rejected.
 
 ## Evidence record and enablement
 
@@ -60,4 +61,4 @@ Known unsupported modes or remaining limitations:
 Acceptance decision and reviewer:
 ```
 
-Enable only the accepted catalog IDs in `CONNECTOR_ACCEPTED_GAMES`, then enable observation in the relevant community's game settings. Acceptance does not bypass credentials or per-provider/capability disable switches. A new source revision, upstream schema change or game patch that affects identity, continuity or result semantics requires renewed affected scenarios. If evidence is missing, keep the automatic observer gated and use the manual workflow.
+New ongoing feeds and Warcraft observations also require `CONNECTOR_ACCEPTED_CAPABILITIES` for the accepted operation/mode; public read-only listing does not. Enable only the accepted catalog IDs in `CONNECTOR_ACCEPTED_GAMES`, then enable observation in the relevant community's game settings. Acceptance does not bypass credentials or per-provider/capability disable switches. A new source revision, upstream schema change or game patch that affects identity, continuity or result semantics requires renewed affected scenarios. If evidence is missing, keep the automatic observer gated and use the manual workflow.

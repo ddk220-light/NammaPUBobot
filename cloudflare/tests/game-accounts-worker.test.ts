@@ -77,7 +77,17 @@ beforeEach(async () => {
     csrf,
     expiresAt: Date.now() + 600000,
   });
-  await env.COMMUNITIES.getByName(guild).save(guild, 0, config(), user, 'save');
+  const initial = config();
+  initial.games[0].catalogId = null;
+  await env.COMMUNITIES.getByName(guild).save(guild, 0, initial, user, 'save');
+  // Exercise an existing retired game restored from storage, not new onboarding.
+  await runInDurableObject(env.COMMUNITIES.getByName(guild), (_i, state) => {
+    state.storage.sql.exec(
+      'UPDATE games SET config=? WHERE id=?',
+      JSON.stringify(config().games[0]),
+      game,
+    );
+  });
 });
 afterEach(async () => {
   vi.restoreAllMocks();

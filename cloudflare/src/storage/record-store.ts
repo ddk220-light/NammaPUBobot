@@ -215,6 +215,24 @@ export class RecordStore {
             claim.externalId,
           )
           .toArray()[0];
+        if (claim.provider === 'w3champions' && claim.platformId) {
+          const subjectClaims = this.sql
+            .exec<{ user_id: string; external_id: string }>(
+              "SELECT user_id,external_id FROM profile_claims WHERE game_id=? AND provider=? AND platform_id=? AND trust='ownership_verified'",
+              claim.gameId,
+              claim.provider,
+              claim.platformId,
+            )
+            .toArray();
+          if (subjectClaims.some((c) => c.user_id !== actor))
+            throw new PlayError(
+              'That Battle.net account is linked to another player. An organizer must resolve the claim.',
+            );
+          if (subjectClaims.some((c) => c.external_id !== claim.externalId))
+            throw new PlayError(
+              'BattleTag changed. Unlink the previous BattleTag and verify again to confirm the change.',
+            );
+        }
         if (existing && existing.user_id !== actor)
           throw new PlayError(
             'That external account is linked to another player. An organizer must resolve the existing claim; verification cannot reassign it.',

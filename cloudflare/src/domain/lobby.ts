@@ -5,6 +5,8 @@ const identifier = z.string().min(1).max(100);
 export const observationSchema = z
   .object({
     externalId: identifier,
+    referenceKind: z.enum(['lobby', 'match']).optional(),
+    providerIds: z.record(identifier, identifier).optional(),
     name: z.string().max(100),
     phase: z.enum(['open', 'full', 'started', 'finished']),
     observedAt: z.number().int().nonnegative(),
@@ -93,6 +95,7 @@ export interface LobbyBinding {
   id: string;
   adapterId: string;
   externalId: string;
+  referenceKind?: 'lobby' | 'match';
   url: string;
   attachedAt: number;
   rosterVersion: number;
@@ -246,9 +249,10 @@ export function normalizeObservation(o: LobbyObservation, generation?: string): 
   return {
     ...o,
     schemaVersion: 2,
+    referenceKind: o.referenceKind ?? 'lobby',
     ...(o.nativeLobbyId
       ? { nativeLobbyId: o.nativeLobbyId }
-      : o.schemaVersion !== 2
+      : o.schemaVersion !== 2 && o.referenceKind !== 'match'
         ? { nativeLobbyId: o.externalId }
         : {}),
     confidence: 'provisional',

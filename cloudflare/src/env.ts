@@ -12,6 +12,7 @@ export interface Env {
   AOE2_LOBBIES: DurableObjectNamespace<AoE2LobbyFeed>;
   PROVIDERS?: DurableObjectNamespace<ProviderCoordinator>;
   CONNECTOR_ACCEPTED_GAMES?: string;
+  CONNECTOR_ACCEPTED_CAPABILITIES?: string;
   CONNECTOR_DISABLED?: string;
   GENERALS_ONLINE_API_KEY?: string;
   BATTLENET_CLIENT_ID?: string;

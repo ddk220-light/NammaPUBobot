@@ -379,7 +379,7 @@ app.get('/api/bootstrap', async (c) => {
     oauthReady,
     discordReady,
     inviteUrl: invite,
-    catalog,
+    catalog: catalog.filter((game) => game.lifecycle !== 'legacy'),
     user: s?.session.user ?? null,
     csrf: s?.session.csrf ?? null,
     capabilities: {
@@ -595,6 +595,18 @@ app.get('/api/communities/:guild/connectors', async (c) =>
     await c.env.COMMUNITIES.getByName(c.req.param('guild')).connectorStatus(c.req.param('guild')),
   ),
 );
+app.get('/api/communities/:guild/connectors/:game/games', async (c) => {
+  const phase = c.req.query('phase') ?? 'running';
+  if (phase !== 'waiting' && phase !== 'running')
+    throw new Problem(400, 'invalid_phase', 'Choose waiting or running.');
+  return c.json(
+    await c.env.COMMUNITIES.getByName(c.req.param('guild')).listConnectorGames(
+      c.req.param('guild'),
+      c.req.param('game'),
+      phase,
+    ),
+  );
+});
 app.get('/api/communities/:guild/channels', async (c) =>
   c.json({ channels: await channels(c.env, c.req.param('guild')) }),
 );

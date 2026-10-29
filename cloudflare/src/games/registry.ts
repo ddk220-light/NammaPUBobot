@@ -1,4 +1,5 @@
 import type { AdapterRuntime, CatalogId, GameAdapter } from './types';
+import { createWc3Adapter } from './wc3';
 import { createAoE2Adapter } from './aoe2';
 import { createAoE3Adapter } from './aoe3';
 import { createAoE4Adapter } from './aoe4';
@@ -10,6 +11,7 @@ import { createManualAdapter } from './manual';
 
 /** Runtime credentials/transport are scoped to one caller, never process-global mutable state. */
 const factories: Record<CatalogId, (runtime: AdapterRuntime) => GameAdapter> = {
+  wc3: createWc3Adapter,
   aoe2: createAoE2Adapter,
   aoe3: createAoE3Adapter,
   aoe4: createAoE4Adapter,

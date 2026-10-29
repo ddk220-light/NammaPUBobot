@@ -1,5 +1,6 @@
 import { battleNetClientToken, gameAccountFailure } from '../auth/game-accounts';
 import type { Env } from '../env';
+import { gameCapabilities } from './catalog';
 import { gameAdapter } from './registry';
 import type { AdapterRuntime, ConnectorOperation, GameAdapter, ProviderResult } from './types';
 import { providerJson } from './transport';
@@ -12,6 +13,12 @@ export function requestOperation(url: string): ConnectorOperation | undefined {
     return;
   }
   const path = u.pathname;
+  if (u.hostname === 'website-backend.w3champions.com') {
+    if (path.startsWith('/api/players/')) return 'accountLookup';
+    if (path.startsWith('/api/matches/ongoing')) return 'ongoingDiscovery';
+    if (path === '/api/matches/search') return 'historyLookup';
+    if (path.startsWith('/api/matches/')) return 'matchLookup';
+  }
   if (['aoe-api.worldsedgelink.com', 'athens-live-api.worldsedgelink.com'].includes(u.hostname)) {
     const name = path.split('/').pop();
     return (
@@ -44,38 +51,50 @@ export function requestOperation(url: string): ConnectorOperation | undefined {
     if (/^\/sc2\/(?:profile|player)\//.test(path)) return 'accountLookup';
   }
   if (u.hostname === 'aoe4world.com') {
+    if (path === '/api/v0/games') return 'ongoingDiscovery';
     if (/\/games\/(?:last)?$/.test(path) || path.endsWith('/games')) return 'historyLookup';
     if (/\/games\/\d+$/.test(path)) return 'matchLookup';
     if (/^\/api\/v0\/players\/\d+$/.test(path)) return 'accountLookup';
   }
 }
 const providerHost = (id: string, accountId?: string) =>
-  id === 'aoe2'
-    ? 'data.aoe2companion.com'
-    : id === 'aom'
-      ? 'athens-live-api.worldsedgelink.com'
-      : ['aoe3', 'aoe4'].includes(id)
-        ? 'aoe-api.worldsedgelink.com'
-        : id === 'bar'
-          ? 'api.bar-rts.com'
-          : id === 'zero_hour'
-            ? 'api.playgenerals.online'
-            : accountId?.startsWith('2:')
-              ? 'eu.api.blizzard.com'
-              : accountId?.startsWith('3:')
-                ? 'kr.api.blizzard.com'
-                : 'us.api.blizzard.com';
+  id === 'wc3'
+    ? 'website-backend.w3champions.com'
+    : id === 'aoe2'
+      ? 'data.aoe2companion.com'
+      : id === 'aom'
+        ? 'athens-live-api.worldsedgelink.com'
+        : ['aoe3', 'aoe4'].includes(id)
+          ? 'aoe-api.worldsedgelink.com'
+          : id === 'bar'
+            ? 'api.bar-rts.com'
+            : id === 'zero_hour'
+              ? 'api.playgenerals.online'
+              : accountId?.startsWith('2:')
+                ? 'eu.api.blizzard.com'
+                : accountId?.startsWith('3:')
+                  ? 'kr.api.blizzard.com'
+                  : 'us.api.blizzard.com';
 export function runtimeAdapter(
   env: Env,
   catalogId: string | null | undefined,
   capabilities: Partial<Record<ConnectorOperation, boolean>> = {},
+  options: { publicListing?: boolean } = {},
 ) {
   let adapter: GameAdapter | undefined;
-  const availability = (operation: ConnectorOperation, acceptanceGate = true) => {
+  const availability = (
+    operation: ConnectorOperation,
+    acceptanceGate = true,
+    provider?: string,
+  ) => {
     if (capabilities[operation] === false) return 'disabled';
-    const status = connectorAvailability(env, adapter!, operation);
+    const status = connectorAvailability(env, adapter!, operation, undefined, provider);
     // Acceptance gates automatic entry points, not supporting reads for permitted profile/match operations.
-    return status === 'acceptance_required' && !acceptanceGate ? 'available' : status;
+    return status === 'acceptance_required' &&
+      (!acceptanceGate ||
+        (options.publicListing && ['lobbyDiscovery', 'ongoingDiscovery'].includes(operation)))
+      ? 'available'
+      : status;
   };
   const blocked = (status: string): ProviderResult<never> | undefined =>
     status === 'available'
@@ -83,10 +102,24 @@ export function runtimeAdapter(
       : { status: status === 'credentials_required' ? 'authentication_required' : 'unsupported' };
   const runtime: AdapterRuntime = {
     generalsOnlineApiKey: env.GENERALS_ONLINE_API_KEY,
+    aoe2Discovery: () => env.AOE2_LOBBIES.getByName(env.DISCORD_APPLICATION_ID ?? 'local').browse(),
+    aoe2OngoingDiscovery: () =>
+      env.AOE2_LOBBIES.getByName(env.DISCORD_APPLICATION_ID ?? 'local').browseOngoing(),
     request: async (request) => {
-      const operation = requestOperation(request.url);
+      const inferred = requestOperation(request.url);
+      const u = new URL(request.url);
+      const operation =
+        request.operation &&
+        u.hostname === 'api.bar-rts.com' &&
+        u.pathname === '/battles' &&
+        ['lobbyDiscovery', 'ongoingDiscovery'].includes(request.operation)
+          ? request.operation
+          : inferred;
       if (!adapter || !operation) return { status: 'unsupported' };
-      const failure = blocked(availability(operation, false));
+      const disabled = (env.CONNECTOR_DISABLED ?? '').split(',').map((s) => s.trim());
+      if (disabled.includes(u.hostname)) return { status: 'unsupported' };
+      const provider = u.hostname === 'aoe4world.com' ? 'aoe4world' : undefined;
+      const failure = blocked(availability(operation, false, provider));
       if (failure) return failure;
       return env.PROVIDERS
         ? env.PROVIDERS.getByName(new URL(request.url).hostname).request(request)
@@ -126,7 +159,9 @@ export function runtimeAdapter(
     call: () => Promise<ProviderResult<T>>,
     accountId?: string,
   ): Promise<ProviderResult<T>> => {
-    const failure = blocked(availability(operation));
+    const failure = blocked(
+      availability(operation, true, accountId?.startsWith('aoe4world:') ? 'aoe4world' : undefined),
+    );
     if (failure) return failure;
     let result: ProviderResult<T>;
     try {
@@ -134,9 +169,31 @@ export function runtimeAdapter(
     } catch {
       result = { status: 'unavailable' };
     }
-    await env.PROVIDERS?.getByName(providerHost(adapter!.id, accountId))
+    const outcomeHost =
+      adapter!.id === 'aoe4' &&
+      (operation === 'ongoingDiscovery' || accountId?.startsWith('aoe4world:'))
+        ? 'aoe4world.com'
+        : providerHost(adapter!.id, accountId);
+    await env.PROVIDERS?.getByName(outcomeHost)
       .recordOutcome(result.status, result.status === 'ok' ? undefined : result.retryAfterMs)
       .catch(() => {});
+    if (
+      result.status === 'ok' &&
+      ((operation === 'ongoingDiscovery' && !options.publicListing) ||
+        (adapter!.id === 'wc3' && operation === 'lobbyObservation'))
+    ) {
+      const accepted = (value: unknown) => {
+        const mode = (value as { mode?: string })?.mode;
+        const scopes = (env.CONNECTOR_ACCEPTED_CAPABILITIES ?? '').split(',').map((s) => s.trim());
+        return (
+          scopes.includes(`${adapter!.id}.${operation}`) ||
+          (!!mode && scopes.includes(`${adapter!.id}.${operation}:${mode}`))
+        );
+      };
+      if (Array.isArray(result.value))
+        result = { status: 'ok', value: result.value.filter(accepted) as T };
+      else if (!accepted(result.value)) return { status: 'unsupported' };
+    }
     if (result.status === 'ok' && availability('replayReferences', false) !== 'available') {
       const removeReferences = (value: unknown): unknown => {
         if (Array.isArray(value)) return value.map(removeReferences);
@@ -158,9 +215,10 @@ export function runtimeAdapter(
     observe = adapter.observe;
   wrapped.profile = (id) => run('accountLookup', () => profile(id), id);
   wrapped.observe = (id, started, context) =>
-    run('lobbyObservation', () => observe(id, started, context));
+    run('lobbyObservation', () => observe(id, started, context), id);
   const methods = {
     discover: 'lobbyDiscovery',
+    discoverOngoing: 'ongoingDiscovery',
     match: 'matchLookup',
     history: 'historyLookup',
     replays: 'replayReferences',
@@ -183,6 +241,8 @@ export function connectorAvailability(
   env: Env,
   adapter: GameAdapter,
   operation: ConnectorOperation,
+  mode?: string,
+  provider?: string,
 ): 'available' | 'unsupported' | 'credentials_required' | 'acceptance_required' | 'disabled' {
   const disabled = (env.CONNECTOR_DISABLED ?? '').split(',').map((s) => s.trim());
   const ownershipProvider =
@@ -190,34 +250,61 @@ export function connectorAvailability(
       ? null
       : ['aoe2', 'aoe3', 'aoe4', 'aom', 'northgard', 'tempest_rising'].includes(adapter.id)
         ? 'steam'
-        : adapter.id === 'sc2'
+        : ['sc2', 'wc3'].includes(adapter.id)
           ? 'battlenet'
           : adapter.id === 'bar'
             ? 'bar-oauth'
             : null;
   if (
     disabled.includes(adapter.id) ||
-    disabled.includes(adapter.manifest.provider) ||
+    disabled.includes(
+      provider ??
+        (adapter.id === 'aoe4' && operation === 'ongoingDiscovery'
+          ? 'aoe4world'
+          : adapter.manifest.provider),
+    ) ||
     disabled.includes(`${adapter.id}.${operation}`) ||
     (ownershipProvider && disabled.includes(ownershipProvider))
   )
     return 'disabled';
   const capability = adapter.manifest.capabilities[operation];
   if (capability === 'unsupported') return capability;
+  if (
+    gameCapabilities(adapter.id)?.lifecycle === 'legacy' &&
+    ['lobbyObservation', 'lobbyDiscovery', 'ongoingDiscovery'].includes(operation)
+  )
+    return 'disabled';
   if (capability === 'credentials_required') {
     if (adapter.id === 'zero_hour' && !env.GENERALS_ONLINE_API_KEY) return capability;
-    if (adapter.id === 'sc2' && (!env.BATTLENET_CLIENT_ID || !env.BATTLENET_CLIENT_SECRET))
+    if (
+      ['sc2', 'wc3'].includes(adapter.id) &&
+      (!env.BATTLENET_CLIENT_ID || !env.BATTLENET_CLIENT_SECRET)
+    )
       return capability;
     if (adapter.id === 'bar' && operation === 'ownershipVerification' && !env.BAR_CLIENT_ID)
       return capability;
   }
   if (
-    ['lobbyObservation', 'lobbyDiscovery'].includes(operation) &&
+    ['lobbyObservation', 'lobbyDiscovery', 'ongoingDiscovery'].includes(operation) &&
     adapter.manifest.acceptance !== 'legacy' &&
     !(env.CONNECTOR_ACCEPTED_GAMES ?? '')
       .split(',')
       .map((s) => s.trim())
       .includes(adapter.id)
+  )
+    return 'acceptance_required';
+  if (
+    (operation === 'ongoingDiscovery' ||
+      (adapter.id === 'wc3' && operation === 'lobbyObservation')) &&
+    !(env.CONNECTOR_ACCEPTED_CAPABILITIES ?? '')
+      .split(',')
+      .some(
+        (s) =>
+          s.trim() === `${adapter.id}.${operation}` ||
+          (mode
+            ? s.trim() === `${adapter.id}.${operation}:${mode}`
+            : s.trim().startsWith(`${adapter.id}.${operation}:`)),
+      )
   )
     return 'acceptance_required';
   return 'available';

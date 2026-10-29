@@ -83,3 +83,9 @@ Additional offline verification:
 ```sh
 npm test -- tests/game-accounts-worker.test.ts tests/connector-runtime-auth.test.ts tests/connector-contract.test.ts
 ```
+
+## Warcraft III / W3Champions ownership (2026-10-29)
+
+Use the same registered Battle.net application's `BATTLENET_CLIENT_ID`, `BATTLENET_CLIENT_SECRET` and HTTPS callback `/auth/game/callback/battlenet`. Warcraft requests `openid` only. Its callback consumes authenticated `/userinfo` subject and BattleTag and does not query SC2 characters. The complete BattleTag becomes the W3Champions account ID; the lossless stable Battle.net subject is stored separately as `platform_id`. The authenticated BattleTag must match the parsed account, and duplicate-account controls apply atomically to both the tag and stable subject. A same-owner rename requires explicit unlink and verification again. Public W3Champions profiles/ongoing/history remain usable without OAuth credentials and never upgrade a declared link to verified ownership.
+
+Tests: `npm test -- tests/wc3-accounts.test.ts tests/wc3-workflow.test.ts`. Real provider authorization with the deployed bot remains a separate acceptance step. A verified Battle.net account proves control of the account, not Warcraft game ownership or participation in a particular match.

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Env, Session } from '../env';
 import type { CatalogId } from '../games/types';
 import { fetchOwnedSc2Characters } from '../games/sc2';
+import { wc3AccountNamespace, wc3Edition, wc3ProfileUrl } from '../games/wc3';
 import {
   authorizationUrl,
   completeGameOAuth,
@@ -226,7 +227,7 @@ export function gameAccountRoutes(deps: GameAccountDependencies) {
       if (query.getAll('code').length !== 1)
         throw new GameAccountError('invalid_code', 'Start verification again.');
       const identity = await completeGameOAuth(state, query.get('code') ?? '', c.env);
-      if (state.provider === 'battlenet') {
+      if (state.provider === 'battlenet' && state.catalogId === 'sc2') {
         const characters = await fetchOwnedSc2Characters(identity.subject, {
           battleNetAccessToken: identity.accessToken,
           // The shared coordinator bounds concurrent regional reads. Bearer-authenticated
@@ -275,15 +276,34 @@ export function gameAccountRoutes(deps: GameAccountDependencies) {
           ),
         );
       }
-      proof = {
-        ...proofContext(state),
-        provider: 'bar',
-        externalId: identity.subject,
-        url: 'https://www.beyondallreason.info/',
-        namespace: 'bar:user',
-        edition: 'Beyond All Reason',
-        verifiedBy: 'bar-oauth',
-      };
+      if (state.provider === 'battlenet') {
+        if (state.catalogId !== 'wc3' || !identity.battleTag)
+          throw new GameAccountError(
+            'invalid_response',
+            'Battle.net did not verify this game account.',
+            502,
+          );
+        proof = {
+          ...proofContext(state),
+          provider: 'battle-net',
+          externalId: identity.battleTag,
+          url: wc3ProfileUrl(identity.battleTag),
+          namespace: wc3AccountNamespace,
+          edition: wc3Edition,
+          platformId: identity.subject,
+          verifiedBy: 'battlenet-oauth',
+        };
+      } else {
+        proof = {
+          ...proofContext(state),
+          provider: 'bar',
+          externalId: identity.subject,
+          url: 'https://www.beyondallreason.info/',
+          namespace: 'bar:user',
+          edition: 'Beyond All Reason',
+          verifiedBy: 'bar-oauth',
+        };
+      }
     }
     const result = await deps.link(c.env, proof);
     return c.html(

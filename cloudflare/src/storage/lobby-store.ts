@@ -27,7 +27,7 @@ import type {
 
 interface Hooks {
   adapter?(id: string): GameAdapter | undefined;
-  availability?(adapter: GameAdapter, operation: ConnectorOperation): string;
+  availability?(adapter: GameAdapter, operation: ConnectorOperation, mode?: string): string;
   occupancy?(id: string, discoveryName?: string): Promise<LobbyObservation | null>;
   discover?(
     adapterId: string,
@@ -104,12 +104,12 @@ export class LobbyStore {
   private adapter(id: string) {
     return this.hooks.adapter?.(id) ?? gameAdapter(id);
   }
-  private availability(m: Match, operation: ConnectorOperation): string {
+  private availability(m: Match, operation: ConnectorOperation, mode?: string): string {
     const game = this.settings().games.find((g) => g.id === m.queue.gameId);
     const adapter = this.enabled(m);
     if (!adapter) return 'unsupported';
     const state =
-      this.hooks.availability?.(adapter, operation) ??
+      this.hooks.availability?.(adapter, operation, mode) ??
       (adapter.manifest.capabilities[operation] === 'unsupported'
         ? 'unsupported'
         : adapter.manifest.acceptance === 'legacy'
@@ -117,7 +117,10 @@ export class LobbyStore {
           : 'acceptance_required');
     if (state !== 'available') return state;
     if (game?.connector?.capabilities?.[operation] === false) return 'disabled';
-    if (['lobbyObservation', 'lobbyDiscovery'].includes(operation) && !game?.connector?.enabled)
+    if (
+      ['lobbyObservation', 'lobbyDiscovery', 'ongoingDiscovery'].includes(operation) &&
+      !game?.connector?.enabled
+    )
       return 'disabled';
     return 'available';
   }
@@ -314,6 +317,10 @@ export class LobbyStore {
       const b = m.lobby;
       if (!b || b.id !== a.reference || !this.current(m, b.id))
         throw new PlayError('Check /lobby status and confirm its current binding ID.');
+      if (b.adapterId === 'wc3' && b.observation && !rosterMatches(b, b.observation))
+        throw new PlayError(
+          'W3Champions participants and teams must match this bot match before confirmation.',
+        );
       b.confirmedBy = a.actor.id;
       b.confirmedAt = Date.now();
       if (b.observation) {
@@ -426,6 +433,8 @@ export class LobbyStore {
       id: crypto.randomUUID(),
       adapterId: adapter.id,
       externalId,
+      referenceKind:
+        adapter.id === 'wc3' || externalId.startsWith('aoe4world:') ? 'match' : 'lobby',
       url: adapter.lobbyUrl(externalId),
       attachedAt: Date.now(),
       rosterVersion: m.rosterVersion ?? 0,
@@ -543,8 +552,14 @@ export class LobbyStore {
         return { accepted: false, reason: 'stale_or_closed' };
       const b = m.lobby!,
         inputObservation = event.observation;
-      if (this.availability(m, 'lobbyObservation') !== 'available')
+      if (this.availability(m, 'lobbyObservation', inputObservation.mode) !== 'available')
         return { accepted: false, reason: 'capability_unavailable' };
+      if (
+        b.adapterId === 'wc3' &&
+        (!inputObservation.mode ||
+          !this.adapter(b.adapterId)?.manifest.supportedModes?.includes(inputObservation.mode))
+      )
+        return { accepted: false, reason: 'unsupported_mode' };
       if (!validObservation(inputObservation, Date.now()))
         return { accepted: false, reason: 'invalid_evidence' };
       if (inputObservation.bindingGeneration && inputObservation.bindingGeneration !== b.id)
@@ -553,7 +568,12 @@ export class LobbyStore {
       if (
         event.adapterId !== b.adapterId ||
         event.rosterVersion !== b.rosterVersion ||
-        o.externalId !== b.externalId ||
+        (o.externalId !== b.externalId &&
+          !(
+            b.adapterId === 'wc3' &&
+            b.externalId.startsWith('record:') &&
+            o.providerIds?.recordId === b.externalId.slice(7)
+          )) ||
         !validObservation(o, Date.now())
       )
         return { accepted: false, reason: 'invalid_evidence' };
@@ -581,6 +601,27 @@ export class LobbyStore {
             b.observation.nativeLobbyId !== o.nativeLobbyId))
       )
         return { accepted: false, reason: 'conflicting_evidence' };
+      const duplicate = this.sql
+        .exec<{ config: string }>(
+          "SELECT config FROM matches WHERE id!=? AND state IN ('check_in','playing','finished')",
+          m.id,
+        )
+        .toArray()
+        .some((row) => {
+          const other = JSON.parse(row.config) as Match;
+          const bound = other.lobby;
+          return (
+            bound?.adapterId === b.adapterId &&
+            (other.state === 'finished' ||
+              ['pending', 'observed', 'unavailable'].includes(bound.state)) &&
+            (((b.adapterId === 'wc3' || b.referenceKind === 'match') &&
+              bound.externalId === b.externalId) ||
+              (!!o.nativeMatchId && bound.observation?.nativeMatchId === o.nativeMatchId) ||
+              (!!o.providerIds?.recordId &&
+                bound.externalId === `record:${o.providerIds.recordId}`))
+          );
+        });
+      if (duplicate) return { accepted: false, reason: 'already_bound' };
       const changed = b.observation?.phase !== o.phase || b.state !== 'observed';
       if (providerRetryAt !== undefined) b.providerRetryAt = providerRetryAt;
       b.state = 'observed';
@@ -598,7 +639,7 @@ export class LobbyStore {
         o,
       );
       b.identitySuggestions = inferred;
-      if (o.startedAt && (b.rosterVerified || b.confirmedBy))
+      if (o.startedAt && (b.rosterVerified || (b.confirmedBy && b.adapterId !== 'wc3')))
         this.hooks.started?.(m, o, event.eventId);
       if (
         o.phase === 'finished' &&

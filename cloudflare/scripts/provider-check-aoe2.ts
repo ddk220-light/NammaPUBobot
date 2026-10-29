@@ -1,3 +1,4 @@
+import { aoe2OngoingFeedUrl, parseAoE2OngoingSnapshot } from '../src/games/aoe2-feed';
 import { AoE2LobbySnapshot } from '../src/games/aoe2-feed';
 import { parseProviderJson } from '../src/games/transport';
 import type { LobbyObservation, ProviderResult } from '../src/games/types';
@@ -69,6 +70,47 @@ export function probeAoE2Feed(): Promise<ProviderResult<LobbyObservation[]>> {
               else finish({ status: 'ok', value: observations });
             }, 2200);
           }
+        } catch {
+          finish({ status: 'invalid_response' });
+        }
+      });
+    } catch {
+      finish({ status: 'unavailable' });
+    }
+  });
+}
+
+/** One bounded public snapshot, using the same decoder as the deployed coordinator. */
+export function probeAoE2Ongoing(): Promise<ProviderResult<LobbyObservation[]>> {
+  return new Promise((resolve) => {
+    let socket: WebSocket | undefined;
+    let settled = false;
+    let bytes = 0;
+    const finish = (result: ProviderResult<LobbyObservation[]>) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        socket?.close(1000, 'Read-only snapshot complete');
+      } catch {}
+      resolve(result);
+    };
+    const timer = setTimeout(() => finish({ status: 'unavailable' }), 10000);
+    try {
+      socket = new WebSocket(aoe2OngoingFeedUrl.replace('https:', 'wss:'));
+      socket.addEventListener('error', () => finish({ status: 'unavailable' }));
+      socket.addEventListener('close', () => {
+        if (!settled) finish({ status: 'unavailable' });
+      });
+      socket.addEventListener('message', (event) => {
+        if (settled || event.data === 'pong') return;
+        if (
+          typeof event.data !== 'string' ||
+          (bytes += new TextEncoder().encode(event.data).byteLength) > 2000000
+        )
+          return finish({ status: 'invalid_response' });
+        try {
+          finish({ status: 'ok', value: parseAoE2OngoingSnapshot(parseProviderJson(event.data)) });
         } catch {
           finish({ status: 'invalid_response' });
         }

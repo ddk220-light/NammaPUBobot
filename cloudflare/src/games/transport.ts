@@ -18,6 +18,7 @@ export function parseProviderJson(source: string): unknown {
   return JSON.parse(safe);
 }
 export const providerHosts = new Set([
+  'website-backend.w3champions.com',
   'data.aoe2companion.com',
   'aoe-api.worldsedgelink.com',
   'athens-live-api.worldsedgelink.com',

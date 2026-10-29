@@ -1,11 +1,12 @@
 import type { CatalogId, ConnectorManifest, ConnectorOperation, Capability } from './types';
 
 /** A catalog version describes metadata, not a provider schema or game build. */
-export const connectorCatalogVersion = '2026-10-28.1';
+export const connectorCatalogVersion = '2026-10-29.1';
 const allOperations: Record<ConnectorOperation, Capability> = {
   accountLookup: 'available',
   ownershipVerification: 'available',
   lobbyDiscovery: 'available',
+  ongoingDiscovery: 'unsupported',
   lobbyObservation: 'available',
   matchLookup: 'available',
   historyLookup: 'available',
@@ -15,6 +16,7 @@ const noOperations: Record<ConnectorOperation, Capability> = {
   accountLookup: 'unsupported',
   ownershipVerification: 'unsupported',
   lobbyDiscovery: 'unsupported',
+  ongoingDiscovery: 'unsupported',
   lobbyObservation: 'unsupported',
   matchLookup: 'unsupported',
   historyLookup: 'unsupported',
@@ -37,11 +39,13 @@ function manifest(
     capabilities,
     acceptance: 'pending',
     limitations,
+    ...(id === 'wc3' ? { supportedModes: ['1', '4'] } : {}),
   };
 }
 
 export interface GameCatalogEntry {
   id: CatalogId;
+  lifecycle?: 'active' | 'conditional' | 'legacy';
   name: string;
   selection: 'civilization' | 'god' | 'faction' | 'race' | 'clan';
   /** Provider observation support. Availability and release gates remain separate. */
@@ -72,7 +76,7 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
       'Age of Empires II: Definitive Edition',
       'aoe2companion',
       'aoe2:profile',
-      { ...allOperations },
+      { ...allOperations, ongoingDiscovery: 'available' },
       [
         'A shared Companion feed supplies public lobby occupancy. Lobby disappearance is not start evidence.',
         'Replay links are conditional provider references, not archived recordings.',
@@ -114,7 +118,7 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
       'Age of Empires IV',
       'worlds-edge',
       'worlds-edge:age4',
-      { ...allOperations },
+      { ...allOperations, ongoingDiscovery: 'available' },
       [
         ...ageLimitations,
         'AoE4 World enrichment is optional; its 404 is not proof that a native match does not exist.',
@@ -145,6 +149,7 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
   },
   {
     id: 'generals',
+    lifecycle: 'legacy',
     name: 'Command & Conquer Generals',
     selection: 'faction',
     lobby: false,
@@ -167,6 +172,7 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
   },
   {
     id: 'zero_hour',
+    lifecycle: 'conditional',
     name: 'Command & Conquer Generals: Zero Hour',
     selection: 'faction',
     lobby: true,
@@ -195,6 +201,7 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
   },
   {
     id: 'sc2',
+    lifecycle: 'legacy',
     name: 'StarCraft II',
     selection: 'race',
     lobby: false,
@@ -232,7 +239,11 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
       'Beyond All Reason',
       'bar',
       'bar:user',
-      { ...allOperations, ownershipVerification: 'credentials_required' },
+      {
+        ...allOperations,
+        ownershipVerification: 'credentials_required',
+        ongoingDiscovery: 'available',
+      },
       [
         'Verified account linking requires a registered BAR OAuth client.',
         'Public battle roster lookup may not find offline users; absence does not invalidate a declaration.',
@@ -244,6 +255,7 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
   },
   {
     id: 'northgard',
+    lifecycle: 'legacy',
     name: 'Northgard',
     selection: 'clan',
     lobby: false,
@@ -265,6 +277,7 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
   },
   {
     id: 'tempest_rising',
+    lifecycle: 'legacy',
     name: 'Tempest Rising',
     selection: 'faction',
     lobby: false,
@@ -284,6 +297,39 @@ export const gameCatalog: readonly GameCatalogEntry[] = [
       ],
     ),
   },
+  {
+    id: 'wc3',
+    lifecycle: 'active',
+    name: 'Warcraft III (W3Champions)',
+    selection: 'race',
+    lobby: true,
+    occupancy: false,
+    profileProvider: 'w3champions',
+    manual: true,
+    manifest: manifest(
+      'wc3',
+      'Warcraft III / W3Champions matchmaking',
+      'w3champions',
+      'w3champions:battletag',
+      {
+        ...noOperations,
+        accountLookup: 'available',
+        ownershipVerification: 'credentials_required',
+        ongoingDiscovery: 'available',
+        lobbyObservation: 'available',
+        matchLookup: 'available',
+        historyLookup: 'available',
+        replayReferences: 'available',
+      },
+      [
+        'Tracks W3Champions matchmaking games. Arbitrary hosted custom/private games and waiting lobbies are not available.',
+        'Only accepted standard two-team modes can drive bound match evidence; captains confirm results.',
+        'BattleTags are declared unless ownership is verified through Battle.net OAuth; public lookup is not proof.',
+        'Ongoing placeholders are not results. Finished games resolve through the original matchmaking identifier.',
+      ],
+    ),
+  },
 ];
+export const selectableCatalog = gameCatalog.filter((game) => game.lifecycle !== 'legacy');
 export const gameCapabilities = (id: string | null | undefined) =>
   gameCatalog.find((game) => game.id === id);

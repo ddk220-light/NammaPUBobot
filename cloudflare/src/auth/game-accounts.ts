@@ -1,5 +1,6 @@
 import type { CatalogId, ProviderProfile, ProviderResult } from '../games/types';
 import { parseProviderJson, retryDelay } from '../games/transport';
+import { parseWc3AccountReference } from '../games/wc3';
 
 export type OwnershipProvider = 'steam' | 'battlenet' | 'bar';
 export interface GameAccountCredentials {
@@ -29,6 +30,7 @@ export interface GameAccountProof {
   url: string;
   namespace: string;
   edition: string;
+  /** Stable authenticated platform subject; distinct from a mutable lookup name such as a BattleTag. */
   platformId?: string;
   verifiedBy: 'steam-openid' | 'battlenet-oauth' | 'bar-oauth';
   verifiedAt: number;
@@ -78,7 +80,7 @@ const oauthEndpoints = {
     authorization: 'https://oauth.battle.net/authorize',
     token: 'https://oauth.battle.net/token',
     userinfo: 'https://oauth.battle.net/userinfo',
-    scope: 'openid sc2.profile',
+    scope: 'openid',
   },
   bar: {
     authorization: 'https://server4.beyondallreason.info/oauth/authorize',
@@ -108,7 +110,7 @@ export function supportsOwnership(catalog: CatalogId, provider: OwnershipProvide
   return provider === 'steam'
     ? ['aoe2', 'aoe3', 'aoe4', 'aom', 'northgard', 'tempest_rising'].includes(catalog)
     : provider === 'battlenet'
-      ? catalog === 'sc2'
+      ? catalog === 'sc2' || catalog === 'wc3'
       : catalog === 'bar';
 }
 export async function pkceChallenge(verifier: string): Promise<string> {
@@ -149,7 +151,10 @@ export async function authorizationUrl(
     client_id: (state.provider === 'battlenet' ? env.BATTLENET_CLIENT_ID : env.BAR_CLIENT_ID)!,
     response_type: 'code',
     redirect_uri: state.redirectUri,
-    scope: config.scope,
+    scope:
+      state.provider === 'battlenet' && state.catalogId === 'sc2'
+        ? 'openid sc2.profile'
+        : config.scope,
     state: nonce,
   });
   // BAR advertises S256 support. Battle.net's published authorization-code contract
@@ -375,6 +380,8 @@ const stableId = (value: unknown) =>
 export interface OAuthIdentity {
   subject: string;
   name: string;
+  /** Present only when Warcraft's lookup identity was supplied by authenticated Battle.net userinfo. */
+  battleTag?: string;
   accessToken: string;
 }
 /** Public SC2 API access only; this grant cannot prove a Discord user's ownership. */
@@ -476,6 +483,23 @@ export async function completeGameOAuth(
       'The identity provider did not supply a stable account ID.',
       502,
     );
+  if (state.provider === 'battlenet' && state.catalogId === 'wc3') {
+    // Never derive Warcraft ownership from a public profile, display-name fallback,
+    // URL or the account subject. Battle.net must attest the exact lookup BattleTag.
+    let battleTag: string;
+    try {
+      if (typeof user.battletag !== 'string') throw new Error('Missing BattleTag');
+      battleTag = parseWc3AccountReference(user.battletag);
+      if (battleTag !== user.battletag) throw new Error('Invalid BattleTag claim');
+    } catch {
+      throw new GameAccountError(
+        'invalid_response',
+        'Battle.net did not supply a valid BattleTag. Your declared links remain unchanged.',
+        502,
+      );
+    }
+    return { subject, name: battleTag, battleTag, accessToken: token.access_token };
+  }
   return {
     subject,
     name: String(user.preferred_username ?? user.battletag ?? subject).slice(0, 100),

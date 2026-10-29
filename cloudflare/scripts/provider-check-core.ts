@@ -33,16 +33,19 @@ export interface ProbeOptions {
   env?: Record<string, string | undefined>;
   now?: () => number;
   discoverAoE2?: () => Promise<ProviderResult<LobbyObservation[]>>;
+  discoverAoE2Ongoing?: () => Promise<ProviderResult<LobbyObservation[]>>;
 }
 const samples: Partial<Record<CatalogId, { profile?: string; match?: string }>> = {
   aoe2: { profile: '199325', match: '517004874' },
   aoe3: { profile: '10126818', match: '66376255' },
   aoe4: { profile: '4635035', match: '257612387' },
   aom: { profile: '1073774984', match: '44987874' },
+  wc3: { match: 'Eb1shDu_KZ' },
   bar: { match: '4842e26a56a1bef5da914e8b4ae29c9a' },
 };
 const order: ConnectorOperation[] = [
   'lobbyDiscovery',
+  'ongoingDiscovery',
   'accountLookup',
   'matchLookup',
   'historyLookup',
@@ -142,6 +145,10 @@ const semanticResult = (operation: ConnectorOperation, value: unknown, now: numb
     case 'lobbyObservation':
     case 'matchLookup':
       return observation(value, now);
+    case 'ongoingDiscovery':
+      return (
+        Array.isArray(value) && value.every((v) => observation(v, now) && v.phase === 'started')
+      );
     case 'lobbyDiscovery':
       return Array.isArray(value) && value.every((v) => observation(v, now));
     case 'historyLookup':
@@ -199,13 +206,25 @@ export async function runProviderChecks(options: ProbeOptions): Promise<ProbeRep
   };
   for (const game of options.games) {
     let requests = 0;
+    const publicReads = new Map<string, ProviderResult<unknown>>();
     const request: JsonTransport = async (input) => {
+      const cacheKey =
+        input.cacheTtlMs &&
+        input.cacheTtlMs > 0 &&
+        Object.keys(input.headers ?? {}).every((key) =>
+          ['accept', 'user-agent'].includes(key.toLowerCase()),
+        )
+          ? input.url
+          : undefined;
+      if (cacheKey && publicReads.has(cacheKey)) return publicReads.get(cacheKey)!;
       if (++requests > 12) return { status: 'unavailable' };
-      return options.request({
+      const result = await options.request({
         ...input,
         maxBytes: Math.min(input.maxBytes ?? 2000000, 2000000),
         cacheTtlMs: 0,
       });
+      if (cacheKey && result.status === 'ok') publicReads.set(cacheKey, result);
+      return result;
     };
     const runtime: AdapterRuntime = {
       request,
@@ -252,6 +271,19 @@ export async function runProviderChecks(options: ProbeOptions): Promise<ProbeRep
                 result = adapter?.discover ? await adapter.discover() : { status: 'unsupported' };
               if (result.status === 'ok' && Array.isArray(result.value)) {
                 publicLobby = result.value.find((v) => observation(v, now()));
+                profile ??= publicLobby?.players[0]?.profileId;
+              }
+              break;
+            case 'ongoingDiscovery':
+              if (game === 'aoe2' && options.discoverAoE2Ongoing) {
+                requests++;
+                result = await options.discoverAoE2Ongoing();
+              } else
+                result = adapter?.discoverOngoing
+                  ? await adapter.discoverOngoing()
+                  : { status: 'unsupported' };
+              if (result.status === 'ok' && Array.isArray(result.value)) {
+                publicLobby ??= result.value.find((v) => observation(v, now()));
                 profile ??= publicLobby?.players[0]?.profileId;
               }
               break;

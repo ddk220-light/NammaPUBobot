@@ -74,6 +74,19 @@ const operations = [
     description: 'Link a game profile and track your match lobby',
     type: 1,
     options: [
+      sub('list', 'Show up to ten public waiting lobbies or running games', [
+        {
+          name: 'phase',
+          description: 'Waiting rooms or running matches',
+          type: 3,
+          required: true,
+          choices: [
+            { name: 'Waiting lobbies', value: 'waiting' },
+            { name: 'Running games', value: 'running' },
+          ],
+        },
+        queue,
+      ]),
       sub('attach', 'Match players: attach a lobby ID or link', [
         {
           name: 'reference',

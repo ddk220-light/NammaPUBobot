@@ -24,7 +24,7 @@ export function ownershipProvider(
 ): 'steam' | 'battlenet' | 'bar' | undefined {
   if (['aoe2', 'aoe3', 'aoe4', 'aom', 'northgard', 'tempest_rising'].includes(catalogId ?? ''))
     return 'steam';
-  if (catalogId === 'sc2') return 'battlenet';
+  if (catalogId === 'sc2' || catalogId === 'wc3') return 'battlenet';
   if (catalogId === 'bar') return 'bar';
 }
 export const verificationHref = (communityId: string, gameId: string, provider: string) =>
@@ -32,7 +32,8 @@ export const verificationHref = (communityId: string, gameId: string, provider: 
 const labels: Record<ConnectorOperation, string> = {
   accountLookup: 'Account lookup',
   ownershipVerification: 'Account ownership verification',
-  lobbyDiscovery: 'Public lobby discovery',
+  lobbyDiscovery: 'Public waiting lobbies',
+  ongoingDiscovery: 'Ongoing matchmaking games',
   lobbyObservation: 'Lobby observations',
   matchLookup: 'Match lookup',
   historyLookup: 'Recent history',
@@ -80,6 +81,7 @@ export function connectorSettings(
     ${catalog.manifest.capabilities.lobbyDiscovery !== 'unsupported' ? `<label class="toggle"><input type="checkbox" name="autoLobby"${game.connector?.autoAttach ? ' checked' : ''} /> Find a public lobby by name</label><label>Lobby name<input name="lobbyName" maxlength="80" value="${esc(game.connector?.autoAttach?.lobbyName ?? 'NammaNomad')}" /></label><p class="muted">Name and player-count matches are provisional until the roster matches or a captain confirms the association.</p>` : ''}
     <p class="record-meta">${health ? `${health.lastSuccessAt ? `Last successful observation: ${esc(new Date(health.lastSuccessAt).toLocaleString())}` : 'No successful observation yet'} · ${health.unresolvedBindings} unresolved association${health.unresolvedBindings === 1 ? '' : 's'}${health.failures ? ` · ${health.failures} recent failures` : ''}` : 'Live connector diagnostics unavailable. Manual reporting remains available.'}</p>
     ${canVerify ? `<p><a class="button" href="${esc(verificationHref(communityId, game.id, verification))}">Verify my ${verification === 'battlenet' ? 'Battle.net' : verification === 'bar' ? 'BAR' : 'Steam'} account</a></p>` : ''}
+    ${catalog.lifecycle !== 'legacy' ? `<div><button type="button" data-action="browse-games" data-game="${esc(game.id)}" data-phase="waiting">Show waiting lobbies</button> <button type="button" data-action="browse-games" data-game="${esc(game.id)}" data-phase="running">Show running games</button><pre data-game-list="${esc(game.id)}" role="status" style="white-space:pre-wrap"></pre></div>` : ''}
     <p class="muted">${catalog.manifest.limitations.map(esc).join(' ')}</p></details>`;
 }
 

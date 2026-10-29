@@ -1,6 +1,13 @@
 import { createAgeAdapter, type AgeConfiguration } from './worlds-edge';
-import type { AdapterRuntime, LobbyObservation, ProviderResult } from './types';
+import type { AdapterRuntime, GameAdapter, LobbyObservation, ProviderResult } from './types';
 import { providerJson } from './transport';
+import {
+  createAoE4WorldReader,
+  decodeAoE4WorldGame,
+  sameAoE4Match,
+  worldReference,
+  worldReferenceId,
+} from './aoe4-world';
 export const aoe4Configuration: AgeConfiguration = {
   id: 'aoe4',
   title: 'age4',
@@ -9,8 +16,37 @@ export const aoe4Configuration: AgeConfiguration = {
   selectionLabel: 'Civilization',
   simulationCounter: true,
 };
-export const createAoE4Adapter = (runtime: AdapterRuntime = {}) =>
-  createAgeAdapter(aoe4Configuration, runtime);
+export function createAoE4Adapter(runtime: AdapterRuntime = {}): GameAdapter {
+  const native = createAgeAdapter(aoe4Configuration, runtime),
+    world = createAoE4WorldReader(runtime);
+  return {
+    ...native,
+    discoverOngoing: world.discoverOngoing,
+    parseLobbyReference(input) {
+      const value = input.trim();
+      if (worldReferenceId(value)) return value;
+      try {
+        const url = new URL(value),
+          match = /^\/players\/([1-9]\d{0,39})\/games\/([1-9]\d{0,39})\/?$/.exec(url.pathname);
+        if (
+          url.origin === 'https://aoe4world.com' &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash &&
+          match
+        )
+          return worldReference(match[2]);
+      } catch {}
+      return native.parseLobbyReference(input);
+    },
+    observe(id, started, context) {
+      return id.startsWith('aoe4world:')
+        ? world.observe(id, context)
+        : native.observe(id, started, context);
+    },
+  };
+}
 
 /** Optional display enrichment. Failure or a World 404 never replaces publisher evidence. */
 export async function enrichAoE4Match(
@@ -26,18 +62,22 @@ export async function enrichAoE4Match(
     maxBytes: 1000000,
   });
   if (response.status !== 'ok') return { status: 'ok', value: observation };
-  const data = response.value;
-  if (!data || typeof data !== 'object' || Array.isArray(data))
+  const decoded = decodeAoE4WorldGame(response.value);
+  // Equal numeric IDs alone do not prove cross-provider continuity.
+  if (
+    decoded.status !== 'ok' ||
+    decoded.value.providerIds?.aoe4world !== observation.nativeMatchId ||
+    !decoded.value.players.some((player) => player.profileId === profileId) ||
+    !sameAoE4Match(observation, decoded.value)
+  )
     return { status: 'ok', value: observation };
-  const game = data as Record<string, unknown>;
-  if (String(game.game_id) !== observation.nativeMatchId)
-    return { status: 'ok', value: observation };
-  const map =
-    game.map && typeof game.map === 'object'
-      ? (game.map as Record<string, unknown>).name
-      : undefined;
+  const map = decoded.value.map;
   return {
     status: 'ok',
-    value: { ...observation, ...(typeof map === 'string' && map.length <= 100 ? { map } : {}) },
+    value: {
+      ...observation,
+      ...(map ? { map } : {}),
+      providerIds: { ...observation.providerIds, aoe4world: observation.nativeMatchId! },
+    },
   };
 }

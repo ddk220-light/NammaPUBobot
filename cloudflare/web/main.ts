@@ -1,3 +1,5 @@
+import { publicGameListText, type PublicGameList } from '../src/games/discovery';
+import type { ProviderResult } from '../src/games/types';
 import { gameCapabilities } from '../src/games/catalog';
 import { operations } from '../src/games/types';
 import { connectorSettings, matchConnectorDetails, type ConnectorDiagnostics } from './connectors';
@@ -862,6 +864,19 @@ app.addEventListener('click', (event) => {
   if (!button) return;
   void run(async () => {
     switch (button.dataset.action) {
+      case 'browse-games': {
+        const target = button.closest('form')?.querySelector<HTMLElement>('[data-game-list]');
+        const list = await api<ProviderResult<PublicGameList>>(
+          communityUrl(
+            `/connectors/${encodeURIComponent(button.dataset.game!)}/games?phase=${button.dataset.phase}`,
+          ),
+        );
+        if (target)
+          target.textContent = publicGameListText(list, 20000).replace(/<t:(\d+):T>/g, (_, t) =>
+            new Date(Number(t) * 1000).toLocaleTimeString(),
+          );
+        break;
+      }
       case 'load-players':
         await loadMorePlayers();
         break;

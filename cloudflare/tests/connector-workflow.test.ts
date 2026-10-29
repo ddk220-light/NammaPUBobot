@@ -1,7 +1,8 @@
 import { env } from 'cloudflare:workers';
 import { abortAllDurableObjects, runInDurableObject } from 'cloudflare:test';
 import { describe, expect, it, vi } from 'vitest';
-import { catalogIds, type CatalogId, type LobbyObservation } from '../src/games/types';
+import { selectableCatalog } from '../src/games/catalog';
+import { type CatalogId, type LobbyObservation } from '../src/games/types';
 import { type LobbyEvent } from '../src/domain/lobby';
 import type { Match } from '../src/domain/play';
 import {
@@ -56,6 +57,7 @@ async function bound(id: CatalogId = 'aoe2', linked = true, automatic = true) {
   return current();
 }
 function observation(m: Match, phase: LobbyObservation['phase'] = 'finished'): LobbyObservation {
+  const now = Date.now();
   return {
     schemaVersion: 2,
     externalId: m.lobby!.externalId,
@@ -64,9 +66,9 @@ function observation(m: Match, phase: LobbyObservation['phase'] = 'finished'): L
     platformLobbyId: '109775242664684177',
     name: 'Fixture lobby',
     phase,
-    observedAt: Date.now(),
+    observedAt: now,
     startedAt: ['started', 'finished'].includes(phase) ? m.createdAt : null,
-    finishedAt: phase === 'finished' ? Date.now() : null,
+    finishedAt: phase === 'finished' ? now : null,
     players: m.teams.flatMap((team, side) =>
       team.map((p) => ({
         profileId: account(p.id),
@@ -113,7 +115,7 @@ const jobs = () =>
 const snapshot = () => stub().operationalBackup(guild);
 const captain = (m: Match, side = 0) => ({ id: m.captains[side], name: 'Captain' });
 
-describe.each(catalogIds)('%s manual connector journey', (id) => {
+describe.each(selectableCatalog.map((g) => g.id))('%s manual connector journey', (id) => {
   it('retains matchmaking, declarations, manual betting and captain-confirmed statistics without provider access', async () => {
     const m = await bound(id, false, false);
     expect((await jobs()).length).toBe(0);
@@ -292,13 +294,14 @@ describe('provider evidence in the real community Durable Object', () => {
     expect(await stub().connectorEnded(guild, event(m, unknown))).toMatchObject({ accepted: true });
     expect((await snapshot()).tables.bet_start_evidence).toHaveLength(0);
     expect((await current()).lobby!.observation!.startedAt).toBeNull();
+    const legacyNow = Date.now();
     const legacy: LobbyObservation = {
       externalId: m.lobby!.externalId,
       name: 'Legacy',
       phase: 'finished',
-      observedAt: Date.now(),
+      observedAt: legacyNow,
       startedAt: m.createdAt,
-      finishedAt: Date.now(),
+      finishedAt: legacyNow,
       players: observation(m).players.map(({ profileId, name, team }) => ({
         profileId,
         name,

@@ -10,12 +10,14 @@ export const catalogIds = [
   'bar',
   'northgard',
   'tempest_rising',
+  'wc3',
 ] as const;
 export type CatalogId = (typeof catalogIds)[number];
 export const operations = [
   'accountLookup',
   'ownershipVerification',
   'lobbyDiscovery',
+  'ongoingDiscovery',
   'lobbyObservation',
   'matchLookup',
   'historyLookup',
@@ -33,6 +35,7 @@ export interface ConnectorManifest {
   /** Newly shipped automation stays disabled until controlled game acceptance is recorded. */
   acceptance: 'pending' | 'legacy';
   limitations: string[];
+  supportedModes?: string[];
 }
 export type ProviderFailure =
   | 'not_found'
@@ -65,6 +68,8 @@ export interface LobbyPlayer {
 export interface LobbyObservation {
   /** Compatibility alias for the bound native lobby ID, not a bot match ID. */
   externalId: string;
+  referenceKind?: 'lobby' | 'match';
+  providerIds?: Record<string, string>;
   name: string;
   phase: 'open' | 'full' | 'started' | 'finished';
   observedAt: number;
@@ -100,6 +105,7 @@ export interface ProviderProfile {
   platformId?: string;
 }
 export interface JsonRequest {
+  operation?: ConnectorOperation;
   url: string;
   headers?: Record<string, string>;
   maxBytes?: number;
@@ -107,6 +113,8 @@ export interface JsonRequest {
 }
 export type JsonTransport = (request: JsonRequest) => Promise<ProviderResult<unknown>>;
 export interface AdapterRuntime {
+  aoe2Discovery?: () => Promise<ProviderResult<LobbyObservation[]>>;
+  aoe2OngoingDiscovery?: () => Promise<ProviderResult<LobbyObservation[]>>;
   request?: JsonTransport;
   generalsOnlineApiKey?: string;
   battleNetAccessToken?: string;
@@ -141,6 +149,7 @@ export interface GameAdapter {
     context?: ObserveContext,
   ): Promise<ProviderResult<LobbyObservation>>;
   discover?(): Promise<ProviderResult<LobbyObservation[]>>;
+  discoverOngoing?(): Promise<ProviderResult<LobbyObservation[]>>;
   match?(id: string): Promise<ProviderResult<LobbyObservation>>;
   history?(profileId: string): Promise<ProviderResult<LobbyObservation[]>>;
   replays?(matchId: string): Promise<ProviderResult<ReplayReference[]>>;

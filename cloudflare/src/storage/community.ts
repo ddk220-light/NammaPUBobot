@@ -1,3 +1,5 @@
+import { publicGameList } from '../games/discovery';
+import { gameCapabilities } from '../games/catalog';
 import { runtimeAdapter, connectorAvailability } from '../games/runtime';
 import { operations, type ProviderProfile } from '../games/types';
 import { supportsOwnership, type GameAccountProof } from '../auth/game-accounts';
@@ -137,6 +139,20 @@ export class Community extends DurableObject<Env> {
         reason: 'The @everyone role cannot administer queues.',
       };
     const old = this.read(guildId).settings;
+    if (
+      parsed.games.some(
+        (game) =>
+          gameCapabilities(game.catalogId)?.lifecycle === 'legacy' &&
+          !old.games.some(
+            (previous) => previous.id === game.id && previous.catalogId === game.catalogId,
+          ),
+      )
+    )
+      return {
+        ok: false as const,
+        revision: this.identity(guildId).revision,
+        reason: 'This game is retired from new setup. Existing records remain available.',
+      };
     const result = this.ctx.storage.transactionSync(() => {
       const row = this.identity(guildId);
       if (row.revision !== expectedRevision) return { ok: false as const, revision: row.revision };
@@ -667,6 +683,17 @@ export class Community extends DurableObject<Env> {
       };
     }
   }
+  async listConnectorGames(guild: string, gameId: string, phase: 'waiting' | 'running') {
+    if (!['waiting', 'running'].includes(phase)) return { status: 'invalid_response' as const };
+    const game = this.read(guild).settings.games.find((g) => g.id === gameId);
+    if (!game || gameCapabilities(game.catalogId)?.lifecycle === 'legacy')
+      return { status: 'unsupported' as const };
+    const adapter = runtimeAdapter(this.env, game.catalogId, game.connector?.capabilities, {
+      publicListing: true,
+    });
+    if (!adapter) return { status: 'unsupported' as const };
+    return publicGameList(adapter, phase);
+  }
   connectorStatus(guild: string) {
     const settings = this.read(guild).settings;
     const lastObserved = new Map(
@@ -695,10 +722,15 @@ export class Community extends DurableObject<Env> {
             !adapter || adapter.manifest.capabilities[operation] === 'unsupported'
               ? 'unsupported'
               : game.connector?.capabilities?.[operation] === false ||
-                  (!game.connector?.enabled &&
-                    ['lobbyDiscovery', 'lobbyObservation'].includes(operation))
+                  (!game.connector?.enabled && operation === 'lobbyObservation')
                 ? 'disabled'
-                : connectorAvailability(this.env, adapter, operation),
+                : (() => {
+                    const state = connectorAvailability(this.env, adapter, operation);
+                    return ['lobbyDiscovery', 'ongoingDiscovery'].includes(operation) &&
+                      state === 'acceptance_required'
+                      ? 'available'
+                      : state;
+                  })(),
           ]),
         );
         return {

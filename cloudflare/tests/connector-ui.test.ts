@@ -40,6 +40,7 @@ describe('connector interface', () => {
             accountLookup: 'unsupported',
             ownershipVerification: 'unsupported',
             lobbyDiscovery: 'credentials_required',
+            ongoingDiscovery: 'unsupported',
             lobbyObservation: 'acceptance_required',
             matchLookup: 'credentials_required',
             historyLookup: 'unsupported',

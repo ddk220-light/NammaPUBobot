@@ -105,6 +105,14 @@ export function createAoE2Adapter(runtime: AdapterRuntime = {}): GameAdapter {
     id: 'aoe2',
     manifest: gameCapabilities('aoe2')!.manifest,
     profileProvider: 'aoe2',
+    async discover() {
+      return runtime.aoe2Discovery ? runtime.aoe2Discovery() : { status: 'unavailable' };
+    },
+    async discoverOngoing() {
+      return runtime.aoe2OngoingDiscovery
+        ? runtime.aoe2OngoingDiscovery()
+        : { status: 'unavailable' };
+    },
     parseLobbyReference(input) {
       if (identifier(input.trim())) return input.trim();
       try {

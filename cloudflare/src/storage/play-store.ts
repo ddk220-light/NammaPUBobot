@@ -345,7 +345,8 @@ export class PlayStore {
           const game = this.read(guild).settings.games.find((g) => g.catalogId === id);
           return runtimeAdapter(this.env, id, game?.connector?.capabilities);
         },
-        availability: (adapter, operation) => connectorAvailability(this.env, adapter, operation),
+        availability: (adapter, operation, mode) =>
+          connectorAvailability(this.env, adapter, operation, mode),
         discover: async (adapterId, name) =>
           adapterId === 'aoe2'
             ? this.env.AOE2_LOBBIES.getByName(this.env.DISCORD_APPLICATION_ID ?? 'local').discover(

@@ -221,8 +221,15 @@ function parseReference(input: string) {
 
 export function createBarAdapter(runtime: AdapterRuntime = {}): GameAdapter {
   const request = runtime.request ?? providerJson;
-  const rawBattles = async (): Promise<ProviderResult<Record<string, unknown>[]>> => {
-    const r = await request({ url: `${api}/battles`, cacheTtlMs: 30000, maxBytes: 2000000 });
+  const rawBattles = async (
+    operation: import('./types').ConnectorOperation = 'lobbyDiscovery',
+  ): Promise<ProviderResult<Record<string, unknown>[]>> => {
+    const r = await request({
+      url: `${api}/battles`,
+      operation,
+      cacheTtlMs: 30000,
+      maxBytes: 2000000,
+    });
     if (r.status !== 'ok') return r;
     try {
       const values = array(r.value);
@@ -321,6 +328,21 @@ export function createBarAdapter(runtime: AdapterRuntime = {}): GameAdapter {
           (b) => typeof b.maxPlayers === 'number' && b.maxPlayers <= 16,
         );
         return { status: 'ok', value: supported.map((b) => parseBarBattle(b)) };
+      } catch {
+        return { status: 'invalid_response' };
+      }
+    },
+    async discoverOngoing() {
+      const r = await rawBattles('ongoingDiscovery');
+      if (r.status !== 'ok') return r;
+      try {
+        return {
+          status: 'ok',
+          value: r.value
+            .filter((b) => typeof b.maxPlayers === 'number' && b.maxPlayers <= 16)
+            .map((b) => parseBarBattle(b))
+            .filter((o) => o.phase === 'started'),
+        };
       } catch {
         return { status: 'invalid_response' };
       }
