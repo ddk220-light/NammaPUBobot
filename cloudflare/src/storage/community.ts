@@ -286,7 +286,10 @@ export class Community extends DurableObject<Env> {
           ),
         ),
       });
-      if (this.identity(guild).revision === revision) this.setMeta('publicationPending', false);
+      if (this.identity(guild).revision === revision) {
+        this.setMeta('publicationPending', false);
+        await this.playStore.schedule();
+      }
     } catch {
       if (this.identity(guild).revision !== revision) return;
       this.setMeta('publicationRetryAt', Date.now() + 60000);

@@ -58,7 +58,7 @@ test('both game pickers offer the seven-game scope and label conditional access'
       .map((v) => v.slice(8)),
   );
   expect(guideChoices.sort()).toEqual(choices.sort());
-  await page.getByLabel('Game for guided setup').selectOption('catalog:wc3');
+  await page.locator('[data-game-choice="catalog:wc3"]').click();
   await page.getByRole('button', { name: 'Create queue draft' }).click();
   await page.getByRole('button', { name: 'Review and save' }).click();
   await page.getByRole('button', { name: 'Save reviewed changes' }).click();

@@ -205,3 +205,9 @@ button.icon-button {
 .dirty-dot {
   background: var(--warning-ink);
 }
+
+.game-picker [aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--link);
+  color: var(--link);
+}

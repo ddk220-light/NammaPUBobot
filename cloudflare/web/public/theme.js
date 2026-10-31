@@ -27,6 +27,9 @@
       const select = document.querySelector('[data-guide-game]');
       select.value = card.dataset.gameChoice;
       select.dispatchEvent(new Event('change', { bubbles: true }));
+      requestAnimationFrame(() =>
+        document.querySelector('[data-game-choice][aria-pressed="true"]')?.focus(),
+      );
     }
   });
   new MutationObserver(() =>

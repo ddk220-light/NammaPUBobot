@@ -8,8 +8,8 @@ async function freshGuide(page: Page) {
   await page.goto(`/?community=${guild}&view=setup`);
   await page.getByRole('button', { name: 'Start guided setup', exact: true }).click();
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
-  await page.getByLabel('Game for guided setup').selectOption('custom');
-  await page.getByLabel('Game for guided setup').selectOption('catalog:aoe2');
+  await page.locator('[data-game-choice="custom"]').click();
+  await page.locator('[data-game-choice="catalog:aoe2"]').click();
   await page.getByRole('button', { name: 'Create queue draft' }).click();
   return state;
 }
@@ -190,7 +190,7 @@ test('custom game and advanced queue edits stay synchronized with the guide', as
   await page.goto(`/?community=${guild}&view=setup`);
   await page.getByRole('button', { name: 'Start guided setup', exact: true }).click();
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
-  await page.getByLabel('Game for guided setup').selectOption('custom');
+  await page.locator('[data-game-choice="custom"]').click();
   await page.locator('[data-guide-name]').fill('Friday board games');
   await tab(page, 'Queues').click();
   await tab(page, 'Setup').click();
