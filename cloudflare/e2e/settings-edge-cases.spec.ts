@@ -164,3 +164,29 @@ test('reverting a list Pause action in settings clears the effective draft witho
   await expect(page.locator('.queue-card')).not.toContainText('Unsaved changes');
   expect(state.saved).toHaveLength(0);
 });
+
+test('current channel names take precedence in review and cached names retain their observation date', async ({
+  page,
+}) => {
+  const state = await mockApp(page);
+  const channel = state.snapshot.settings.queues[0].channelId;
+  state.channelName = 'renamed-pickups';
+  state.knownChannels = [
+    { id: channel, name: 'old-pickups', observedAt: Date.UTC(2026, 9, 20, 12) },
+  ];
+  await page.goto(`/app/?community=${guild}&view=queues`);
+  await page.getByRole('button', { name: 'Add queue', exact: true }).click();
+  await page.getByRole('button', { name: 'Review changes', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('renamed-pickups');
+  await expect(page.getByRole('dialog')).not.toContainText('old-pickups');
+  await page.keyboard.press('Escape');
+  state.access = 'unavailable';
+  await page.getByRole('tab', { name: 'Setup', exact: true }).click();
+  await page.getByRole('button', { name: 'Check access again', exact: true }).click();
+  await expect(page.locator('#discord-access')).toContainText('Last seen');
+  await page.getByRole('tab', { name: 'Queues', exact: true }).click();
+  await expect(page.locator('.queue-editor-heading')).toContainText('old-pickups · Not verified');
+  await expect(page.locator('[data-config^="queue:"]')).toContainText('Last seen');
+  await expect(page.locator('.guided-setup')).toHaveCount(0);
+  await expect(page.locator('#savebar')).toBeVisible();
+});

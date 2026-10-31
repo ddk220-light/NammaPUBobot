@@ -1428,7 +1428,7 @@ function reviewChanges() {
   if (!draft || !guideValid()) return;
   const dialog = openDialog(
     'Review community changes',
-    `<p class="form-help">Compared with saved revision ${draft.saved.revision}.${conflict ? ' Newer settings were found. Your draft is preserved; saving cannot overwrite the newer revision.' : ''}</p>${changeReview(draft.saved.settings, draft.materialize(), Object.fromEntries([...setup.channels, ...(setup.knownChannels ?? []), ...setup.roles].map((v) => [v.id, v.name])))}<div class="actions review-actions"><button type="button" data-review-edit>Back to editing</button><button type="button" data-review-save class="primary">Save reviewed changes</button></div>`,
+    `<p class="form-help">Compared with saved revision ${draft.saved.revision}.${conflict ? ' Newer settings were found. Your draft is preserved; saving cannot overwrite the newer revision.' : ''}</p>${changeReview(draft.saved.settings, draft.materialize(), Object.fromEntries([...(setup.knownChannels ?? []), ...setup.channels, ...setup.roles].map((v) => [v.id, v.name])))}<div class="actions review-actions"><button type="button" data-review-edit>Back to editing</button><button type="button" data-review-save class="primary">Save reviewed changes</button></div>`,
   );
   dialog.classList.add('change-review');
   dialog.querySelector('[data-review-edit]')!.addEventListener('click', () => dialog.close());

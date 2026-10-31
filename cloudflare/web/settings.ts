@@ -233,9 +233,16 @@ export function queueEditor(
     );
   root = `queues.${queues.indexOf(q)}`;
   const game = s.games.find((g) => g.id === q.gameId);
+  const channel = setup.channels.find((c) => c.id === q.channelId);
+  const cachedChannel = setup.knownChannels?.find((c) => c.id === q.channelId);
+  const channelContext = channel
+    ? `#${channel.name}`
+    : cachedChannel
+      ? `#${cachedChannel.name} · Not verified`
+      : 'Channel not verified';
   html = html.replace(
     'Choose where players gather and how their matches work.',
-    `${esc(game?.name ?? 'Unavailable game')} · ${esc(setup.channels.find((c) => c.id === q.channelId)?.name ? '#' + setup.channels.find((c) => c.id === q.channelId)!.name : 'Channel not verified')}`,
+    `${esc(game?.name ?? 'Unavailable game')} · ${esc(channelContext)}`,
   );
   const maps = q.maps ?? defaultMaps(game?.catalogId === 'aoe2' ? aoe2Maps : []);
   if (!q.maps && !maps.pool.length) maps.shortlist = 1;
@@ -274,7 +281,7 @@ export function queueEditor(
             .filter((c) => !setup.channels.some((v) => v.id === c.id))
             .map((c) => ({ id: c.id, name: `#${c.name} · Not verified`, disabled: true })),
         ],
-        'Enabled queues need View Channel, Send Messages, Embed Links and Read Message History.',
+        `Enabled queues need View Channel, Send Messages, Embed Links and Read Message History.${!channel && cachedChannel?.observedAt ? ` Last seen ${new Date(cachedChannel.observedAt).toLocaleString()}; cached names do not verify access.` : ''}`,
       ) +
       field(
         'size',

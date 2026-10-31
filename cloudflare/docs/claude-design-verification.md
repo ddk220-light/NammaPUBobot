@@ -37,7 +37,7 @@ These differences make raw whole-page pixel percentages misleading: real content
 
 The existing suite covers 360, 390, 430, 640/641, 768, 844×390, 900/901 and desktop widths; dialog focus and rotation; drafts, network/revision failures; permission recovery; shared ratings; 500-player imports; hidden-player and public publishing policy. Chromium and WebKit run in CI. Screenshot and trace artifacts are uploaded by the Cloudflare workflow.
 
-Settings regression coverage also checks empty map pools, map-option preservation, Gold/predictions dependencies, exact shortlist constraints, malformed section links, help in every category, and reverting staged queue state across the list/editor boundary.
+Settings regression coverage also checks empty map pools, map-option preservation, Gold/predictions dependencies, exact shortlist constraints, malformed section links, help in every category, reverting staged queue state across the list/editor boundary, and preferring current Discord names while labelling cached names with their observation date.
 
 Backend verification includes 1,358 Worker tests, type checking, static HTML/metadata/link validation, Worker bundling and 11 converter tests.
 

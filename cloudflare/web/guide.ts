@@ -52,6 +52,11 @@ export function permissionRecovery(
     .map((id) => {
       const channel = setup.channels.find((c) => c.id === id);
       const missing = channel?.permissions.filter((p) => !p.granted) ?? [];
+      const cached = setup.knownChannels?.find((c) => c.id === id);
+      const lastSeen =
+        !channel && cached?.observedAt
+          ? ` Last seen ${new Date(cached.observedAt).toLocaleString()}. This does not verify access.`
+          : '';
       return row(
         channel
           ? `#${channel.name}`
@@ -69,9 +74,9 @@ export function permissionRecovery(
               ? 'Needs access'
               : 'Ready',
         !known
-          ? 'Recheck Discord access to verify this channel.'
+          ? `Recheck Discord access to verify this channel.${lastSeen}`
           : !channel
-            ? 'Select an available channel or restore the bot’s access.'
+            ? `Select an available channel or restore the bot’s access.${lastSeen}`
             : missing.length
               ? `Grant ${missing.map((p) => p.name).join(', ')}.`
               : 'View Channel, Send Messages, Embed Links and Read Message History granted.',
