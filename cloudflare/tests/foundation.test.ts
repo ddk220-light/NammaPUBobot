@@ -600,9 +600,9 @@ describe('Discord permission precedence', () => {
 describe('responsive organizer contracts', () => {
   it.each([
     [`/?community=${guild}&view=setup`, `/?community=${guild}&view=setup`],
-    ['https://evil.example/?view=setup', '/'],
-    ['/?community=invalid&view=setup', '/'],
-    ['/api/logout', '/'],
+    ['https://evil.example/?view=setup', '/app/'],
+    ['/?community=invalid&view=setup', '/app/'],
+    ['/api/logout', '/app/'],
   ])('resumes an allowed organizer return path: %s', async (requested, expected) => {
     const login = await http(`/auth/login?returnTo=${encodeURIComponent(requested)}`);
     const state = new URL(login.headers.get('Location')!).searchParams.get('state')!;

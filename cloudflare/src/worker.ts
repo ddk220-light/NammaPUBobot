@@ -1,3 +1,4 @@
+import { publicPages } from './routes/public-pages';
 import { capabilities, type DiscordSetup } from './domain/setup';
 import { buildInfo } from './build-info';
 import { lobbyEventSchema } from './domain/lobby';
@@ -25,6 +26,7 @@ import type { FieldIssue } from './domain/errors';
 import { GameAccountError } from './auth/game-accounts';
 import { gameAccountRoutes } from './routes/game-accounts';
 import { runtimeAdapter, connectorAvailability } from './games/runtime';
+export { PublicDirectory } from './storage/public-directory';
 export { ProviderCoordinator } from './storage/provider-coordinator';
 export { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 export { Community } from './storage/community';
@@ -117,6 +119,11 @@ app.use('*', async (c, next) => {
   const started = Date.now();
   await next();
   c.header('X-Request-ID', requestId);
+  if (
+    c.env.APP_ENV !== 'production' ||
+    /^\/(app|api|auth|statistics|ops|connectors)(\/|$)/.test(c.req.path)
+  )
+    c.header('X-Robots-Tag', 'noindex');
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', c.req.path.startsWith('/auth/game/') ? 'no-referrer' : 'same-origin');
   c.header('X-Frame-Options', 'DENY');
@@ -441,7 +448,7 @@ app.get('/auth/login', async (c) => {
   if (!c.env.DISCORD_APPLICATION_ID || !c.env.DISCORD_CLIENT_SECRET)
     throw new Problem(503, 'setup_incomplete', 'Discord sign-in is not configured yet.');
   const state = tokenId();
-  let returnTo = '/';
+  let returnTo = '/app/';
   const requested = c.req.query('returnTo');
   if (requested) {
     const url = new URL(requested, base);
@@ -450,7 +457,7 @@ app.get('/auth/login', async (c) => {
       ((['/stats', '/link'].includes(url.pathname) &&
         snowflake.safeParse(url.searchParams.get('community')).success &&
         z.uuid().safeParse(url.searchParams.get('game')).success) ||
-        (url.pathname === '/' &&
+        (['/', '/app', '/app/'].includes(url.pathname) &&
           (!url.searchParams.has('community') ||
             snowflake.safeParse(url.searchParams.get('community')).success)))
     )
@@ -630,6 +637,7 @@ app.get('/api/communities/:guild/setup', async (c) => {
   let setup: DiscordSetup;
   try {
     setup = await guildSetup(c.env, guildId);
+    await stub.rememberChannels(setup.channels);
   } catch (error) {
     if (!(error instanceof DiscordFailure)) throw error;
     const needsAccess = error.status === 403 || error.status === 404;
@@ -649,7 +657,22 @@ app.get('/api/communities/:guild/setup', async (c) => {
       },
     };
   }
-  return c.json({ snapshot, ...setup, records, gameState: records.gameState });
+  const catalogAvailability = Object.fromEntries(
+    catalog
+      .filter((g) => g.lifecycle !== 'legacy')
+      .map((g) => {
+        const adapter = runtimeAdapter(c.env, g.id)!;
+        return [g.id, connectorAvailability(c.env, adapter, 'lobbyObservation')];
+      }),
+  );
+  return c.json({
+    snapshot,
+    ...setup,
+    ...(await stub.siteMetadata()),
+    catalogAvailability,
+    records,
+    gameState: records.gameState,
+  });
 });
 app.get('/api/communities/:guild/audit', async (c) =>
   c.json({
@@ -936,5 +959,5 @@ app.all('/api/*', (c) =>
   c.json({ error: 'Unknown API route.', requestId: c.get('requestId') }, 404),
 );
 app.all('/auth/*', (c) => c.json({ error: 'Unknown authentication route.' }, 404));
-app.get('*', (c) => c.env.ASSETS.fetch(c.req.raw));
+app.get('*', (c) => publicPages(c.req.raw, c.env));
 export default app;

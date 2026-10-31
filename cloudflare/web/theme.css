@@ -1,0 +1,207 @@
+/* Shared restrained themes. Artwork can be smaller; actual controls retain touch area. */
+:root {
+  --surface: #fff;
+  --subtle: #f3f3f0;
+  --border: #dedcd5;
+  --muted: #5c5f66;
+  --link: #28567f;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 15px;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --surface: #202124;
+  --subtle: #18191b;
+  --border: #43464b;
+  --muted: #b7bac0;
+  --link: #8fb8d8;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/plex-mono.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+body {
+  background: var(--subtle);
+}
+.eyebrow,
+.sidebar-footer span {
+  display: none;
+}
+.panel,
+.card {
+  border-radius: 8px;
+  box-shadow: none;
+}
+button,
+input,
+select,
+textarea {
+  border-radius: 6px;
+}
+button,
+.button,
+.icon-button,
+summary {
+  min-height: 44px;
+}
+.primary,
+button.primary {
+  background: var(--link);
+  color: var(--surface);
+  border-color: var(--link);
+}
+.workspace-tab[aria-selected='true'] {
+  border-radius: 0;
+  border-color: transparent;
+  border-bottom: 3px solid var(--link);
+  background: var(--surface);
+  color: var(--link);
+  box-shadow: none;
+}
+.desktop-community select {
+  box-shadow: none;
+}
+:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 3px;
+}
+.game-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.game-picker button {
+  text-align: left;
+  padding: 16px;
+}
+.game-picker small {
+  display: block;
+  margin-top: 8px;
+}
+.account-menu {
+  position: relative;
+}
+.account-menu > div {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  background: var(--surface);
+  padding: 16px;
+  border: 1px solid var(--border);
+  min-width: 200px;
+  display: grid;
+  gap: 8px;
+}
+@media (max-width: 900px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+.brand::before {
+  display: none;
+}
+.workspace-tab[aria-selected='true'] {
+  box-shadow: none;
+}
+.workspace-nav button {
+  min-height: 44px;
+}
+.switch-control {
+  min-height: 44px;
+}
+.context-bar {
+  overflow: visible;
+}
+
+@media (max-height: 500px) {
+  :root {
+    --header: 48px;
+  }
+  .context-bar {
+    min-height: 44px;
+  }
+  .workspace-content > #notice {
+    max-height: 40px;
+    margin: 0 8px;
+  }
+  .workspace-scroll {
+    padding: 8px;
+    scroll-padding: 8px 0 16px;
+  }
+  .savebar {
+    padding: 6px;
+    gap: 4px;
+  }
+  .savebar small {
+    display: none;
+  }
+  .page-heading {
+    margin-bottom: 8px;
+  }
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans-600.woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/plex-sans-700.woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+code,
+pre {
+  font-family: 'IBM Plex Mono', monospace;
+}
+.context-bar button {
+  font-size: 14px;
+}
+button.icon-button {
+  min-width: 44px;
+}
+:root {
+  --accent: var(--link);
+  --accent-soft: #eef3f7;
+  --warning-ink: #7a4a00;
+  --warning-soft: #f6ecd9;
+}
+:root[data-theme='dark'] {
+  --accent-soft: #22303b;
+  --warning-ink: #efcf9c;
+  --warning-soft: #33291a;
+}
+.category-strip button {
+  border-radius: 6px;
+}
+.category-strip [aria-current='true'] {
+  background: var(--accent-soft);
+  color: var(--link);
+  border-color: var(--link);
+}
+.settings-category {
+  border-radius: 8px;
+}
+.is-dirty {
+  border-left-color: var(--border);
+}
+.field-changed {
+  background: var(--warning-soft);
+}
+.dirty-dot {
+  background: var(--warning-ink);
+}

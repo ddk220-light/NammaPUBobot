@@ -223,13 +223,13 @@ export async function interactions(
   const command = interaction.data.options?.[0]?.name;
   if (command === 'web')
     return ephemeral(
-      `Configure this community: ${env.APP_ORIGIN}/?community=${interaction.guild_id}`,
+      `Configure this community: ${env.APP_ORIGIN}/app/?community=${interaction.guild_id}`,
     );
   if (command !== 'status') return ephemeral('Use /manage setup status or /manage setup web.');
   const snapshot = await env.COMMUNITIES.getByName(interaction.guild_id).read(interaction.guild_id);
   const here = snapshot.settings.queues.filter((q) => q.channelId === interaction.channel_id);
   return ephemeral(
-    `**Community setup**\n${snapshot.settings.games.length} game(s), ${snapshot.settings.queues.length} queue(s), settings revision ${snapshot.revision}.\n${here.length ? `${here.length} queue(s) configured in this channel.` : 'This channel has no configured queue yet.'}\nOpen setup: ${env.APP_ORIGIN}/?community=${interaction.guild_id}`,
+    `**Community setup**\n${snapshot.settings.games.length} game(s), ${snapshot.settings.queues.length} queue(s), settings revision ${snapshot.revision}.\n${here.length ? `${here.length} queue(s) configured in this channel.` : 'This channel has no configured queue yet.'}\nOpen setup: ${env.APP_ORIGIN}/app/?community=${interaction.guild_id}`,
   );
 }
 

@@ -88,7 +88,7 @@ export function adminInteraction(
       const card = adminPanelCard(
         result.view as AdminView,
         parsed.data,
-        `${env.APP_ORIGIN}/?community=${i.guild_id}`,
+        `${env.APP_ORIGIN}/app/?community=${i.guild_id}`,
         result.confirmation,
         legacyPrivate,
       );

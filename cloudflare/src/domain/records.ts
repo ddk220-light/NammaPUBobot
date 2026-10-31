@@ -4,6 +4,7 @@ import type { Player } from './rating';
 
 export const defaultRecords = {
   visibility: 'members' as const,
+  searchPublishing: false,
   minimumMatches: 1,
   recentDays: 30,
   ranks: [0, 500, 1000, 1200, 1400, 1600, 1800, 2000, 2500].map((threshold, i) => ({

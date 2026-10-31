@@ -64,12 +64,13 @@ test('guide survives failed save and return from Discord without falsely complet
   state.access = 'unavailable';
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await page.getByRole('button', { name: 'Recheck access', exact: true }).click();
   await page.locator('.guided-setup [data-discord-invite]').evaluate((el) => {
     el.addEventListener('click', (e) => e.preventDefault(), { once: true });
     (el as HTMLElement).click();
   });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.locator('#discord-access')).toContainText('Not verified');
+  await expect(page.locator('.guided-setup')).toContainText('unavailable');
   await expect(page.locator('#view-setup')).not.toContainText('Ready to play');
   await expect(page.locator('#savebar')).toBeVisible();
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
@@ -114,7 +115,7 @@ test('queue cards stage pause and use reviewed actions with saved rules', async 
   await expect(card).toContainText('pause on save');
   expect(state.saved).toHaveLength(0);
   await card.locator('[name="kind"]').selectOption('clear');
-  await card.getByRole('button', { name: 'Review queue action' }).click();
+  await card.getByRole('button', { name: 'Clear queue', exact: true }).click();
   expect(state.actions).toHaveLength(0);
   await expect(card).toContainText('Clear all waiting players');
   await card.getByRole('button', { name: 'Confirm action' }).click();
@@ -136,7 +137,9 @@ test('player cards preserve scoped actions, confirmation and authoritative visib
   await card.getByRole('button', { name: 'Hide from statistics', exact: true }).click();
   expect(state.playerActions).toHaveLength(0);
   await card.getByRole('button', { name: 'Hide from statistics', exact: true }).click();
-  expect(state.playerActions[0]).toMatchObject({ gameId: game, userId: user, kind: 'hide' });
+  await expect
+    .poll(() => state.playerActions[0])
+    .toMatchObject({ gameId: game, userId: user, kind: 'hide' });
   await expect(card.locator('.status-pill')).toHaveText('Hidden');
   await card.locator('summary').first().click();
   await card.locator('.rating-options > summary').click();
@@ -177,7 +180,7 @@ test('matches show actual readiness and settings help includes defaults and dura
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Review changes', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('90');
-  await expect(page.getByRole('dialog')).toContainText('1 changed values');
+  await expect(page.getByRole('dialog')).toContainText('1 changes');
   await page.screenshot({ path: info.outputPath('settings-change-review.png') });
 });
 
@@ -189,7 +192,7 @@ test('custom game and advanced queue edits stay synchronized with the guide', as
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
   await page.getByLabel('Game for guided setup').selectOption('custom');
   await page.locator('[data-guide-name]').fill('Friday board games');
-  await tab(page, 'Overview').click();
+  await tab(page, 'Queues').click();
   await tab(page, 'Setup').click();
   await expect(page.locator('[data-guide-name]')).toHaveValue('Friday board games');
   await page.getByRole('button', { name: 'Create queue draft' }).click();
@@ -205,7 +208,8 @@ test('custom game and advanced queue edits stay synchronized with the guide', as
   await page.getByRole('button', { name: 'Add queue', exact: true }).click();
   await tab(page, 'Setup').click();
   await form.getByLabel('Queue name', { exact: true }).fill('First custom queue');
-  await page.getByRole('button', { name: 'Refresh records' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.locator('.discord-preview')).toContainText('Check-in off');
   await expect(form.getByLabel('Queue name', { exact: true })).toHaveValue('First custom queue');
   await page.getByRole('button', { name: 'Review and save' }).click();
@@ -245,12 +249,12 @@ test('community discovery recovery remains reachable without a configured commun
 }) => {
   const state = await mockApp(page);
   state.noCommunities = true;
-  await page.goto('/');
+  await page.goto('/app/');
   await expect(page.getByRole('heading', { name: 'No communities yet' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Add to Discord' })).toBeVisible();
   state.noCommunities = false;
   await page.getByRole('button', { name: 'Refresh communities' }).click();
-  await expect(page.getByRole('heading', { name: 'Overview', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Queues', exact: true })).toBeVisible();
 });
 
 for (const [width, height] of [

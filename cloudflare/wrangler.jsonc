@@ -7,16 +7,8 @@
   "assets": {
     "directory": "dist/web",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": [
-      "/api/*",
-      "/auth/*",
-      "/interactions",
-      "/health",
-      "/statistics/*",
-      "/ops/*",
-      "/connectors/*",
-    ],
+    "not_found_handling": "404-page",
+    "run_worker_first": true,
   },
   "observability": {
     "enabled": true,
@@ -24,6 +16,7 @@
   },
   "durable_objects": {
     "bindings": [
+      { "name": "PUBLIC_DIRECTORY", "class_name": "PublicDirectory" },
       { "name": "COMMUNITIES", "class_name": "Community" },
       { "name": "AUTH", "class_name": "AuthStore" },
       { "name": "DISCORD_GATE", "class_name": "DiscordGate" },
@@ -38,6 +31,7 @@
     { "tag": "v3", "new_sqlite_classes": ["VoicePresence"] },
     { "tag": "v4", "new_sqlite_classes": ["AoE2LobbyFeed"] },
     { "tag": "v5", "new_sqlite_classes": ["ProviderCoordinator"] },
+    { "tag": "v6", "new_sqlite_classes": ["PublicDirectory"] },
   ],
   "vars": { "APP_ENV": "local", "APP_ORIGIN": "http://localhost:8787" },
   "env": {
@@ -49,6 +43,7 @@
       },
       "durable_objects": {
         "bindings": [
+          { "name": "PUBLIC_DIRECTORY", "class_name": "PublicDirectory" },
           { "name": "COMMUNITIES", "class_name": "Community" },
           { "name": "AUTH", "class_name": "AuthStore" },
           { "name": "DISCORD_GATE", "class_name": "DiscordGate" },
@@ -63,6 +58,7 @@
         { "tag": "v3", "new_sqlite_classes": ["VoicePresence"] },
         { "tag": "v4", "new_sqlite_classes": ["AoE2LobbyFeed"] },
         { "tag": "v5", "new_sqlite_classes": ["ProviderCoordinator"] },
+        { "tag": "v6", "new_sqlite_classes": ["PublicDirectory"] },
       ],
     },
   },

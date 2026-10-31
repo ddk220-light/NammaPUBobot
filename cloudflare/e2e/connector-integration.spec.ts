@@ -72,13 +72,14 @@ test('connector capabilities and queue edits survive refresh and failed atomic s
   const state = await connectorApp(page);
   await openGame(page);
   const panel = gamePanel(page);
-  await expect(panel).toContainText('Awaiting game acceptance');
+  await expect(panel).toContainText('Awaiting activation');
   await panel.locator('[name="lobbyConnector"]').check();
   await panel.locator('[name="capability-matchLookup"]').uncheck();
   await panel.getByRole('checkbox', { name: 'Ongoing matchmaking games', exact: false }).uncheck();
   await page.getByRole('tab', { name: 'Queues', exact: true }).click();
   await page.getByRole('textbox', { name: 'Queue name', exact: true }).fill('Combined draft');
-  await page.getByRole('button', { name: 'Refresh records' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
   await panel.locator('.connector-settings > summary').click();
   await expect(panel.locator('[name="capability-matchLookup"]')).not.toBeChecked();

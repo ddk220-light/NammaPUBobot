@@ -6,6 +6,7 @@ import type { DiscordGate } from './storage/discord-gate';
 import type { VoicePresence } from './storage/voice-presence';
 export interface Env {
   ASSETS: Fetcher;
+  PUBLIC_DIRECTORY?: DurableObjectNamespace<import('./storage/public-directory').PublicDirectory>;
   COMMUNITIES: DurableObjectNamespace<Community>;
   AUTH: DurableObjectNamespace<AuthStore>;
   DISCORD_GATE: DurableObjectNamespace<DiscordGate>;
@@ -20,6 +21,7 @@ export interface Env {
   BAR_CLIENT_ID?: string;
   BAR_CLIENT_SECRET?: string;
   VOICE_PRESENCE: DurableObjectNamespace<VoicePresence>;
+  PUBLIC_SITE_INDEXING?: string;
   APP_ENV: 'local' | 'staging' | 'production';
   APP_ORIGIN: string;
   DISCORD_APPLICATION_ID?: string;

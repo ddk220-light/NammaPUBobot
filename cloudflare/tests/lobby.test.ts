@@ -519,7 +519,7 @@ describe('durable lobby journey', () => {
   it('retains binding evidence in backup and leaves restored polling disabled', async () => {
     const m = await linked();
     const backup = await stub().operationalBackup(guild);
-    expect(backup.tables.schema_version[0].version).toBe(8);
+    expect(backup.tables.schema_version[0].version).toBe(9);
     // The live source can poll while the copy is being restored. Stop its alarm
     // and drain its instance before asserting that the read-only copy is silent.
     await runInDurableObject(stub(), (_i, state) => state.storage.deleteAlarm());

@@ -1,6 +1,6 @@
 {
-  "name": "community-gaming-cloudflare",
-  "version": "0.21.0",
+  "name": "namma-match-bot-cloudflare",
+  "version": "0.22.0",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-only",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "npm run build:web && node scripts/build-metadata.mjs dev",
-    "build:web": "vite build",
+    "build:web": "vite build && node scripts/build-site.mjs && node scripts/check-site.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p web/tsconfig.json",
     "test": "vitest run",
     "check": "npm run typecheck && npm test && npm run build:web && npm run build:worker",

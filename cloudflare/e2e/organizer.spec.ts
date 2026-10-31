@@ -9,7 +9,12 @@ test('signing out keeps edits on cancellation or failure and clears them only af
   await page.goto(organizer);
   const name = page.getByRole('textbox', { name: 'Queue name', exact: true });
   await name.fill('Before sign out');
-  const logout = page.getByRole('button', { name: 'Sign out Organizer', exact: true });
+  const logout = {
+    click: async () => {
+      await page.getByRole('button', { name: 'Account', exact: true }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Sign out', exact: true }).click();
+    },
+  };
   page.once('dialog', (dialog) => dialog.dismiss());
   await logout.click();
   await expect(name).toHaveValue('Before sign out');
@@ -38,7 +43,8 @@ test('draft survives navigation, refresh, validation and a conflict; save is ato
   await page.getByRole('textbox', { name: 'Queue name', exact: true }).fill('Changed queue');
   await page.getByRole('spinbutton', { name: 'Players', exact: true }).fill('');
   await page.getByRole('tab', { name: 'Players', exact: true }).click();
-  await page.getByRole('button', { name: 'Refresh records' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   await page.getByRole('tab', { name: 'Queues', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(
     'Changed queue',
@@ -344,7 +350,8 @@ test('rank rows and shared tax edits survive refresh and new queues inherit rati
   await page
     .getByRole('spinbutton', { name: 'Thursday tax time (UTC minutes)', exact: true })
     .fill('780');
-  await page.getByRole('button', { name: 'Refresh records' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   state.rolesAvailable = false;
   await page.getByRole('button', { name: 'Check access again', exact: true }).click();
   await expect(rankRole).toHaveValue('100000000000000003');
@@ -430,7 +437,7 @@ for (const [width, height] of [
     await page
       .getByRole('textbox', { name: 'Queue name', exact: true })
       .fill('A queue with a longer name');
-    for (const view of ['Overview', 'Queues', 'Matches', 'Players', 'Setup']) {
+    for (const view of ['Queues', 'Matches', 'Players', 'Setup']) {
       await page.getByRole('tab', { name: view, exact: true }).click();
       await page.locator('.workspace-scroll').evaluate((el) => (el.scrollTop = 0));
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

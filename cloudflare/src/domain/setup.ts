@@ -24,6 +24,9 @@ export interface SetupRole {
   reason: string | null;
 }
 export interface DiscordSetup {
+  catalogAvailability?: Record<string, string>;
+  knownChannels?: { id: string; name: string; observedAt: number }[];
+  publication?: { pending: boolean; community: string; games: { id: string; slug: string }[] };
   channels: { id: string; name: string; permissions: { name: string; granted: boolean }[] }[];
   moderatorRoles: { id: string; name: string }[];
   roles: SetupRole[];
