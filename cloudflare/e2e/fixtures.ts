@@ -55,6 +55,8 @@ export async function mockApp(page: Page) {
     saveRevisions: [] as number[],
     signedIn: true,
     access: 'ready',
+    channelName: 'pickups',
+    knownChannels: [] as { id: string; name: string; observedAt: number }[],
     failSave: '',
     saveWait: undefined as Promise<void> | undefined,
     locked: false,
@@ -131,12 +133,13 @@ export async function mockApp(page: Page) {
   const setupData = (id: string) => ({
     snapshot: { ...state.snapshot, communityId: id },
     records: recordData(),
+    knownChannels: state.knownChannels,
     channels:
       state.access === 'ready'
         ? [
             {
               id: channel,
-              name: 'pickups',
+              name: state.channelName,
               permissions: [
                 'View Channel',
                 'Send Messages',

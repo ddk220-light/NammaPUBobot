@@ -1,104 +1,5 @@
-:root {
-  --responsive-0: #28567f;
-  --responsive-1: #fff;
-  --responsive-2: #fff;
-  --responsive-3: #1d1e20;
-  --responsive-4: #0f5132;
-  --responsive-5: #fff;
-  --responsive-6: #0f5132;
-  --responsive-7: #fff;
-  --responsive-8: #fff;
-  --responsive-9: #1d1e20;
-  --responsive-10: #f3f3f0;
-  --responsive-11: #28567f;
-  --responsive-12: #f3f3f0;
-  --responsive-13: #c8c6be;
-  --responsive-14: #1d1e20;
-  --responsive-15: #5c5f66;
-  --responsive-16: #28567f;
-  --responsive-17: #28567f;
-  --responsive-18: #f3f3f0;
-  --responsive-19: #5c5f66;
-  --responsive-20: #1d1e20;
-  --responsive-21: #c8c6be;
-  --responsive-22: #28567f;
-  --responsive-23: #5c5f66;
-  --responsive-24: #5c5f66;
-  --responsive-25: #28567f;
-  --responsive-26: #0f5132;
-  --responsive-27: #fff;
-  --responsive-28: #5c5f66;
-  --responsive-29: #5c5f66;
-  --responsive-30: #fff;
-  --responsive-31: #5c5f66;
-  --responsive-32: #fff;
-  --responsive-33: #0f5132;
-  --responsive-34: #c8c6be;
-  --responsive-35: #fff;
-  --responsive-36: #5c5f66;
-  --responsive-37: #8f1d14;
-  --responsive-38: #8f1d14;
-  --responsive-39: #1d1e20;
-  --responsive-40: #c8c6be;
-  --responsive-41: #28567f;
-  --responsive-42: #c8c6be;
-  --responsive-43: #5c5f66;
-  --responsive-44: #c8c6be;
-  --responsive-45: #f3f3f0;
-  --responsive-46: #5c5f66;
-}
-:root[data-theme='dark'] {
-  --responsive-0: #a9b1ff;
-  --responsive-1: #202226;
-  --responsive-2: #1f2125;
-  --responsive-3: #f2f3f5;
-  --responsive-4: #e3bd67;
-  --responsive-5: #24201a;
-  --responsive-6: #d9b86c;
-  --responsive-7: #292b30;
-  --responsive-8: #24262b;
-  --responsive-9: #e0e3ff;
-  --responsive-10: #373c58;
-  --responsive-11: #535d8d;
-  --responsive-12: #30333a;
-  --responsive-13: #535966;
-  --responsive-14: #dddfe6;
-  --responsive-15: #626775;
-  --responsive-16: #b7e9cb;
-  --responsive-17: #558b69;
-  --responsive-18: #2d4436;
-  --responsive-19: #c5c9d4;
-  --responsive-20: #e5e7ff;
-  --responsive-21: #3a405e;
-  --responsive-22: #6874b0;
-  --responsive-23: #b4bac7;
-  --responsive-24: #606674;
-  --responsive-25: #5865f2;
-  --responsive-26: #e3c786;
-  --responsive-27: #363328;
-  --responsive-28: #c2c5ce;
-  --responsive-29: #bdc2ce;
-  --responsive-30: #24262c;
-  --responsive-31: #b6bac4;
-  --responsive-32: #1c1e22;
-  --responsive-33: #c6a151;
-  --responsive-34: #686041;
-  --responsive-35: #2e2d28;
-  --responsive-36: #c1bcae;
-  --responsive-37: #ffb1ac;
-  --responsive-38: #f08a84;
-  --responsive-39: #e1e3e9;
-  --responsive-40: #5b606b;
-  --responsive-41: #8b95e5;
-  --responsive-42: #5c6370;
-  --responsive-43: #c2c7d2;
-  --responsive-44: #4a4e57;
-  --responsive-45: #303449;
-  --responsive-46: #adb1bb;
-}
 /* Shared frame; the phone keeps one content scroller above its navigation. */
 :root {
-  --accent: var(--responsive-0);
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --tabbar: 0px;
@@ -109,7 +10,7 @@ body {
   min-width: 0;
 }
 body {
-  background: var(--responsive-1);
+  background: var(--surface);
 }
 .shell {
   max-width: none;
@@ -118,13 +19,13 @@ body {
 .shell > header {
   height: var(--header);
   padding: 0 28px;
-  background: var(--responsive-2);
+  background: var(--surface);
 }
 .brand {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: var(--responsive-3);
+  color: var(--ink);
 }
 .brand::before {
   content: '◈';
@@ -134,8 +35,8 @@ body {
   height: 34px;
   margin-right: 10px;
   border-radius: 10px;
-  background: var(--responsive-4);
-  color: var(--responsive-5);
+  background: var(--ok-ink);
+  color: var(--surface);
   font-size: 24px;
 }
 .shell > footer {
@@ -163,7 +64,7 @@ h2 {
   font-size: 20px;
 }
 .eyebrow {
-  color: var(--responsive-6);
+  color: var(--ok-ink);
   text-transform: uppercase;
   font-size: 11px;
   letter-spacing: 1.5px;
@@ -199,7 +100,7 @@ select,
 textarea {
   min-height: 44px;
   border-radius: 8px;
-  background: var(--responsive-1);
+  background: var(--surface);
 }
 input[type='file'] {
   padding: 8px;
@@ -218,7 +119,7 @@ input[type='file']::file-selector-button {
   left: 12px;
   z-index: 100;
   padding: 12px;
-  background: var(--responsive-7);
+  background: var(--surface);
 }
 .skip-link:focus {
   top: 8px;
@@ -237,7 +138,7 @@ input[type='file']::file-selector-button {
   flex-direction: column;
   padding: 24px 16px;
   border-right: 1px solid var(--border);
-  background: var(--responsive-8);
+  background: var(--surface);
   overflow: auto;
 }
 .desktop-community {
@@ -262,13 +163,13 @@ input[type='file']::file-selector-button {
   font-weight: 550;
 }
 .workspace-tab[aria-selected='true'] {
-  color: var(--responsive-9);
-  background: var(--responsive-10);
-  border-color: var(--responsive-11);
+  color: var(--ink);
+  background: var(--surface-2);
+  border-color: var(--accent);
 }
 .workspace-tab:hover {
-  background: var(--responsive-12);
-  border-color: var(--responsive-13);
+  background: var(--surface-2);
+  border-color: var(--control);
 }
 .nav-icon svg {
   display: block;
@@ -288,7 +189,7 @@ input[type='file']::file-selector-button {
   font-size: 12px;
 }
 .sidebar-footer p {
-  color: var(--responsive-14);
+  color: var(--ink);
   margin-bottom: 2px;
 }
 .workspace-content {
@@ -306,7 +207,7 @@ input[type='file']::file-selector-button {
   min-height: 60px;
   padding: 6px 28px;
   border-bottom: 1px solid var(--border);
-  background: var(--responsive-8);
+  background: var(--surface);
 }
 .context-name {
   min-width: 0;
@@ -368,7 +269,7 @@ input[type='file']::file-selector-button {
 }
 .metric strong {
   font-size: 36px;
-  color: var(--responsive-3);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 .setup-steps {
@@ -390,15 +291,15 @@ input[type='file']::file-selector-button {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  border: 1px solid var(--responsive-15);
+  border: 1px solid var(--muted);
 }
 .setup-steps li.complete {
-  color: var(--responsive-16);
+  color: var(--accent);
 }
 .setup-steps li.complete > span {
-  color: var(--responsive-16);
-  border-color: var(--responsive-17);
-  background: var(--responsive-18);
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--surface-2);
 }
 .editor-toolbar {
   display: grid;
@@ -419,12 +320,12 @@ input[type='file']::file-selector-button {
   white-space: nowrap;
   border-radius: 24px;
   padding: 8px 16px;
-  color: var(--responsive-19);
+  color: var(--muted);
 }
 .category-strip [aria-current='true'] {
-  color: var(--responsive-20);
-  background: var(--responsive-21);
-  border-color: var(--responsive-22);
+  color: var(--ink);
+  background: var(--control);
+  border-color: var(--accent);
 }
 .settings-category {
   border: 1px solid var(--border);
@@ -477,7 +378,7 @@ input[type='file']::file-selector-button {
   font-size: 18px;
   border-color: transparent;
   background: transparent;
-  color: var(--responsive-23);
+  color: var(--muted);
 }
 .setting-control > input,
 .setting-control > select {
@@ -508,7 +409,7 @@ input[type='file']::file-selector-button {
   width: 44px;
   height: 26px;
   border-radius: 20px;
-  background: var(--responsive-24);
+  background: var(--muted);
   pointer-events: none;
   padding: 3px;
 }
@@ -518,11 +419,11 @@ input[type='file']::file-selector-button {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--responsive-3);
+  background: var(--ink);
   transition: transform 0.15s ease;
 }
 .switch-control input:checked + .switch-track {
-  background: var(--responsive-25);
+  background: var(--accent);
 }
 .switch-control input:checked + .switch-track::after {
   transform: translateX(18px);
@@ -561,7 +462,7 @@ input[type='file']::file-selector-button {
   width: 6px;
   margin-left: 6px;
   border-radius: 50%;
-  background: var(--responsive-4);
+  background: var(--ok-ink);
 }
 .queue-overview {
   margin-bottom: 32px;
@@ -600,7 +501,7 @@ input[type='file']::file-selector-button {
 .check-in-progress progress {
   width: 100%;
   height: 12px;
-  accent-color: var(--responsive-0);
+  accent-color: var(--accent);
 }
 .waiting-roster {
   padding-left: 20px;
@@ -618,11 +519,11 @@ input[type='file']::file-selector-button {
 }
 .draft-tag,
 .field-readout {
-  color: var(--responsive-26);
+  color: var(--ok-ink);
   font-size: 13px;
 }
 .field-changed {
-  background: var(--responsive-27);
+  background: var(--surface);
 }
 .setting-title {
   flex-wrap: wrap;
@@ -652,7 +553,7 @@ input[type='file']::file-selector-button {
 }
 .player-record small {
   display: block;
-  color: var(--responsive-28);
+  color: var(--muted);
   font-size: 12px;
   margin-top: 4px;
 }
@@ -672,7 +573,7 @@ input[type='file']::file-selector-button {
 .player-facts dt,
 .help-facts dt,
 .change-item dt {
-  color: var(--responsive-29);
+  color: var(--muted);
   font-size: 13px;
 }
 .player-facts dd,
@@ -686,7 +587,7 @@ input[type='file']::file-selector-button {
 }
 .check-in-progress {
   padding: 12px 16px;
-  background: var(--responsive-30);
+  background: var(--surface);
 }
 .rating-changes {
   line-height: 1.8;
@@ -700,13 +601,13 @@ input[type='file']::file-selector-button {
   font-size: 13px;
 }
 .guide-progress li {
-  color: var(--responsive-31);
+  color: var(--muted);
   padding: 8px 0;
 }
 .guide-progress [aria-current='step'] {
-  color: var(--responsive-26);
+  color: var(--ok-ink);
   font-weight: 650;
-  border-bottom: 2px solid var(--responsive-26);
+  border-bottom: 2px solid var(--ok-ink);
 }
 .guide-actions {
   border-top: 1px solid var(--border);
@@ -717,7 +618,7 @@ input[type='file']::file-selector-button {
   padding: 20px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--responsive-32);
+  background: var(--surface);
   margin: 20px 0;
   overflow-wrap: anywhere;
 }
@@ -759,7 +660,7 @@ input[type='file']::file-selector-button {
   }
 }
 .is-dirty {
-  border-left: 2px solid var(--responsive-33);
+  border-left: 2px solid var(--ok-ink);
 }
 .savebar {
   grid-row: 4;
@@ -768,8 +669,8 @@ input[type='file']::file-selector-button {
   align-items: center;
   gap: 10px;
   padding: 12px 24px;
-  border-top: 1px solid var(--responsive-34);
-  background: var(--responsive-35);
+  border-top: 1px solid var(--control);
+  background: var(--surface);
   box-shadow: 0 -8px 30px #0003;
   z-index: 10;
 }
@@ -779,7 +680,7 @@ input[type='file']::file-selector-button {
 }
 .savebar small {
   display: block;
-  color: var(--responsive-36);
+  color: var(--muted);
   font-size: 12px;
 }
 .game-settings {
@@ -828,19 +729,19 @@ input[type='file']::file-selector-button {
   margin: 0;
 }
 .field-error {
-  color: var(--responsive-37);
+  color: var(--danger-ink);
   font-size: 13px;
 }
 [aria-invalid='true'] {
-  border-color: var(--responsive-38);
+  border-color: var(--danger-ink);
 }
 .danger {
-  color: var(--responsive-37);
+  color: var(--danger-ink);
 }
 dialog {
-  color: var(--responsive-39);
-  background: var(--responsive-7);
-  border: 1px solid var(--responsive-40);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--control);
   padding: 0;
   border-radius: 16px;
   width: min(520px, calc(100vw - 32px));
@@ -887,8 +788,8 @@ dialog::backdrop {
   overflow-wrap: anywhere;
 }
 .drawer-link[aria-current='true'] {
-  border-color: var(--responsive-41);
-  background: var(--responsive-21);
+  border-color: var(--accent);
+  background: var(--control);
 }
 .cell-label {
   display: none;
@@ -939,7 +840,7 @@ dialog::backdrop {
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--responsive-7);
+  background: var(--surface);
 }
 .profile-tabs {
   position: sticky;
@@ -956,15 +857,15 @@ dialog::backdrop {
   max-height: 260px;
 }
 .chart-axis {
-  stroke: var(--responsive-42);
+  stroke: var(--control);
 }
 .chart-line {
-  stroke: var(--responsive-0);
+  stroke: var(--accent);
   stroke-width: 3;
   stroke-linejoin: round;
 }
 .rating-chart text {
-  fill: var(--responsive-43);
+  fill: var(--muted);
   font-size: 12px;
 }
 .rating-chart figcaption {
@@ -1095,8 +996,8 @@ table a,
     height: var(--tabbar);
     gap: 0;
     padding: 0 4px var(--safe-bottom);
-    background: var(--responsive-2);
-    border-top: 1px solid var(--responsive-44);
+    background: var(--surface);
+    border-top: 1px solid var(--control);
   }
   .workspace-tab {
     display: flex;
@@ -1111,7 +1012,7 @@ table a,
     border-radius: 0;
   }
   .workspace-tab[aria-selected='true'] {
-    background: var(--responsive-45);
+    background: var(--surface-2);
   }
   .nav-icon svg {
     display: block;
@@ -1168,7 +1069,7 @@ table a,
     position: sticky;
     top: -24px;
     z-index: 5;
-    background: var(--responsive-1);
+    background: var(--surface);
     margin: 0 -16px 16px;
     padding: 10px 16px;
   }
@@ -1262,7 +1163,7 @@ table a,
     border-radius: 10px;
     margin-bottom: 12px;
     padding: 14px;
-    background: var(--responsive-7);
+    background: var(--surface);
   }
   tbody th,
   tbody td {
@@ -1284,7 +1185,7 @@ table a,
   }
   .cell-label {
     display: block;
-    color: var(--responsive-46);
+    color: var(--muted);
     font-size: 12px;
     font-weight: 500;
     margin-bottom: 4px;
@@ -1319,7 +1220,7 @@ table a,
   }
   .profile-tabs {
     top: 0;
-    background: var(--responsive-7);
+    background: var(--surface);
   }
   .keyboard-open body.organizer {
     --tabbar: 0px;

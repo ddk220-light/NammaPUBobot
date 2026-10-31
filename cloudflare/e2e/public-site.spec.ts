@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { mockApp, guild } from './fixtures';
+import { mockApp, guild, queue } from './fixtures';
 test('public content and setup guides work without JavaScript', async ({ browser }, info) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
@@ -17,7 +17,7 @@ test('four organizer destinations and theme choice preserve a community draft', 
   page,
 }, info) => {
   await mockApp(page);
-  await page.goto(`/app/?community=${guild}&view=queues`);
+  await page.goto(`/app/?community=${guild}&view=queues&queue=${queue}`);
   await expect(page.locator('.workspace-tab')).toHaveCount(4);
   await page.getByRole('textbox', { name: 'Queue name', exact: true }).fill('Theme draft');
   await page.getByRole('button', { name: 'Account', exact: true }).click();

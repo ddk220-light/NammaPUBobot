@@ -109,6 +109,7 @@ function playerDetails(p: PlayerStatistics) {
 }
 
 export async function showStats(app: HTMLElement) {
+  document.body.classList.add('public-statistics');
   document.title = `${identity.publicName} — statistics`;
   const bootstrap = await requestJson<{ environment: string; version: string }>('/api/bootstrap');
   document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
@@ -118,7 +119,11 @@ export async function showStats(app: HTMLElement) {
     game = query.get('game');
   if (!community || !game)
     throw new Error('Open a statistics link from /rank, /leaderboard or community setup.');
-  let page = Math.max(0, Number(query.get('page')) || 0),
+  const safePage = (value: string | null) => {
+    const n = Number(value);
+    return Number.isSafeInteger(n) && n >= 0 ? n : 0;
+  };
+  let page = safePage(query.get('page')),
     user = query.get('user') ?? '';
   let section = query.get('section') ?? 'overview';
   let sequence = 0;
@@ -131,7 +136,7 @@ export async function showStats(app: HTMLElement) {
     if (url.href !== location.href) history.pushState(null, '', url);
   };
   const showSection = () => {
-    if (!(section in profileSections)) section = 'overview';
+    if (!Object.hasOwn(profileSections, section)) section = 'overview';
     app
       .querySelectorAll<HTMLElement>('[data-profile-panel]')
       .forEach((panel) => (panel.hidden = panel.dataset.profilePanel !== section));
@@ -144,7 +149,7 @@ export async function showStats(app: HTMLElement) {
   window.addEventListener('popstate', () => {
     const query = new URL(location.href).searchParams;
     user = query.get('user') ?? '';
-    page = Math.max(0, Number(query.get('page')) || 0);
+    page = safePage(query.get('page'));
     section = query.get('section') ?? 'overview';
     void load();
   });
@@ -158,13 +163,13 @@ export async function showStats(app: HTMLElement) {
       );
       if (request !== sequence) return;
       const p = data.player;
-      app.innerHTML = `<div class="page-heading"><div><h1>${esc(data.gameName)}</h1><p class="view-description">Community statistics</p></div><div class="actions"><a href="/?community=${encodeURIComponent(community)}">Organizer setup</a><button data-stats="reload">Reload statistics</button></div></div>
-        <section class="panel stats-section" aria-labelledby="leaderboard-heading"><div class="section-heading"><h2 id="leaderboard-heading">Leaderboard</h2></div>
+      app.innerHTML = `<div class="page-heading stats-heading"><div><p class="stats-kicker">${esc(identity.publicName)} · Community records</p><h1>${esc(data.gameName)}</h1><p class="view-description">Community statistics</p></div><div class="actions"><a href="/?community=${encodeURIComponent(community)}">Organizer setup</a><button data-stats="reload">Reload statistics</button></div></div>
+        <div class="stats-layout${p ? ' has-player' : ''}"><section class="panel stats-section leaderboard-section" aria-labelledby="leaderboard-heading"><div class="section-heading"><h2 id="leaderboard-heading">Leaderboard</h2></div>
         <p class="form-help">${esc({ public: 'Public', members: 'Server members', admins: 'Administrators' }[data.visibility])} can view these statistics. Players need ${data.policy.minimumMatches} match${data.policy.minimumMatches === 1 ? '' : 'es'}${data.policy.recentDays ? ` and a match within the last ${data.policy.recentDays} days` : ''} to appear. Updated when you reload.</p>
         <div class="table-wrap"><table><caption class="sr-only">${esc(data.gameName)} leaderboard</caption><thead><tr><th scope="col">Player</th><th scope="col">Rank</th><th scope="col" class="numeric">Rating</th><th scope="col" class="numeric">Wins</th><th scope="col" class="numeric">Losses</th><th scope="col" class="numeric">Draws</th></tr></thead><tbody>${data.leaderboard.map((r) => `<tr><th scope="row"><button class="link-button" data-user="${r.id}">${esc(r.name)}</button></th><td>${esc(r.rank ?? 'Unranked')}</td><td class="numeric">${r.rating} <span class="muted">±${r.deviation}</span></td><td class="numeric">${r.wins}</td><td class="numeric">${r.losses}</td><td class="numeric">${r.draws}</td></tr>`).join('') || '<tr><td colspan="6" class="empty-state">No players meet the leaderboard requirements yet.</td></tr>'}</tbody></table></div>
         <div class="pagination"><p aria-live="polite">Page ${page + 1} of ${Math.max(1, data.pages)} · ${data.total} eligible player${data.total === 1 ? '' : 's'}</p><div class="actions"><button data-stats="previous"${page === 0 ? ' disabled' : ''}>Previous</button><button data-stats="next"${page + 1 >= data.pages ? ' disabled' : ''}>Next</button></div></div>
         <form id="stats-player" class="inline-form"><label>Player Discord ID<input name="user" pattern="[0-9]{17,20}" required value="${esc(user)}" inputmode="numeric" spellcheck="false" /><span class="form-help">Select a player above or enter their Discord ID.</span></label><button>Load player</button></form></section>
-        ${p ? playerDetails(p) : user ? '<section class="panel stats-section"><h2>Player record</h2><p class="empty-state">No visible player record for this game. Check the Discord ID or statistics access.</p></section>' : ''}`;
+        ${p ? playerDetails(p) : user ? '<section class="panel stats-section"><h2>Player record</h2><p class="empty-state">No visible player record for this game. Check the Discord ID or statistics access.</p></section>' : ''}</div>`;
       labelTables(app);
       showSection();
       if (focusPlayer && p) app.querySelector<HTMLElement>('#player-statistics-heading')?.focus();

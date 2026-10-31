@@ -1,72 +1,11 @@
 :root {
-  --palette-0: #1d1e20;
-  --palette-1: #ffffff;
-  --palette-2: #ffffff;
-  --palette-3: #f3f3f0;
-  --palette-4: #5c5f66;
-  --palette-5: #28567f;
-  --palette-6: #c8c6be;
-  --palette-7: #1d1e20;
-  --palette-8: #5c5f66;
-  --palette-9: #c8c6be;
-  --palette-10: #1d1e20;
-  --palette-11: #f3f3f0;
-  --palette-12: #5c5f66;
-  --palette-13: #28567f;
-  --palette-14: #28567f;
-  --palette-15: #1d1e20;
-  --palette-16: #28567f;
-  --palette-17: #c8c6be;
-  --palette-18: #5c5f66;
-  --palette-19: #f3f3f0;
-  --palette-20: #c8c6be;
-  --palette-21: #ffffff;
-  --palette-22: #28567f;
-  --palette-23: #8f1d14;
-  --palette-24: #f3f3f0;
-  --palette-25: #8f1d14;
-}
-:root[data-theme='dark'] {
-  --palette-0: #f2f3f5;
-  --palette-1: #1f2125;
-  --palette-2: #292b30;
-  --palette-3: #404249;
-  --palette-4: #adb1bb;
-  --palette-5: #b4baff;
-  --palette-6: #484b53;
-  --palette-7: #d6d9ff;
-  --palette-8: #b8bdc8;
-  --palette-9: #4c505a;
-  --palette-10: #e1e3e9;
-  --palette-11: #363940;
-  --palette-12: #777d89;
-  --palette-13: #5865f2;
-  --palette-14: #4752c4;
-  --palette-15: #d8dbe3;
-  --palette-16: #7782ff;
-  --palette-17: #535966;
-  --palette-18: #8e94a0;
-  --palette-19: #32353c;
-  --palette-20: #41634e;
-  --palette-21: #24382d;
-  --palette-22: #8cdeb0;
-  --palette-23: #82504e;
-  --palette-24: #402b2d;
-  --palette-25: #ffb1ac;
-}
-:root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: var(--palette-0);
-  background: var(--palette-1);
+  color: var(--ink);
+  background: var(--surface);
   font-synthesis: none;
   font-size: 14px;
   line-height: 1.5;
   color-scheme: light;
-  --surface: var(--palette-2);
-  --subtle: var(--palette-1);
-  --border: var(--palette-3);
-  --muted: var(--palette-4);
-  --link: var(--palette-5);
 }
 * {
   box-sizing: border-box;
@@ -92,7 +31,7 @@ header {
   border-bottom: 1px solid var(--border);
 }
 .brand {
-  color: var(--palette-0);
+  color: var(--ink);
   font-size: 18px;
   font-weight: 650;
   letter-spacing: -0.35px;
@@ -102,9 +41,9 @@ header {
   color: inherit;
 }
 .badge {
-  border: 1px solid var(--palette-6);
+  border: 1px solid var(--control);
   border-radius: 3px;
-  color: var(--palette-4);
+  color: var(--muted);
   padding: 3px 7px;
   font-size: 10px;
   font-weight: 600;
@@ -129,7 +68,7 @@ main {
 h1,
 h2,
 h3 {
-  color: var(--palette-0);
+  color: var(--ink);
   line-height: 1.3;
 }
 h1 {
@@ -162,10 +101,10 @@ a {
   text-underline-offset: 3px;
 }
 a:hover {
-  color: var(--palette-7);
+  color: var(--ink);
 }
 .lead {
-  color: var(--palette-8);
+  color: var(--muted);
   font-size: 16px;
   max-width: 560px;
 }
@@ -187,10 +126,10 @@ button {
   justify-content: center;
   min-height: 38px;
   padding: 8px 13px;
-  border: 1px solid var(--palette-9);
+  border: 1px solid var(--control);
   border-radius: 4px;
   background: var(--surface);
-  color: var(--palette-10);
+  color: var(--ink);
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -201,19 +140,19 @@ button {
 }
 .button:hover,
 button:hover {
-  background: var(--palette-11);
-  border-color: var(--palette-12);
-  color: var(--palette-0);
+  background: var(--surface-2);
+  border-color: var(--muted);
+  color: var(--ink);
 }
 .primary {
-  background: var(--palette-13);
-  border-color: var(--palette-13);
-  color: var(--palette-2);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
 }
 .primary:hover {
-  background: var(--palette-14);
-  border-color: var(--palette-14);
-  color: var(--palette-2);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
 }
 button:disabled {
   opacity: 0.5;
@@ -229,23 +168,23 @@ textarea {
   min-width: 0;
   min-height: 38px;
   padding: 8px 10px;
-  border: 1px solid var(--palette-9);
+  border: 1px solid var(--control);
   border-radius: 4px;
   background: var(--surface);
-  color: var(--palette-0);
+  color: var(--ink);
   font: inherit;
   line-height: 1.4;
 }
 input::placeholder,
 textarea::placeholder {
-  color: var(--palette-4);
+  color: var(--muted);
   opacity: 1;
 }
 input:disabled,
 select:disabled,
 textarea:disabled {
-  background: var(--palette-11);
-  color: var(--palette-4);
+  background: var(--surface-2);
+  color: var(--muted);
 }
 textarea {
   resize: vertical;
@@ -257,8 +196,8 @@ input[type='file'] {
 input[type='file']::file-selector-button {
   border: 0;
   border-right: 1px solid var(--border);
-  background: var(--palette-11);
-  color: var(--palette-10);
+  background: var(--surface-2);
+  color: var(--ink);
   margin-right: 8px;
   padding: 4px 8px;
   font: inherit;
@@ -270,7 +209,7 @@ textarea:focus,
 button:focus-visible,
 a:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--palette-5);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 label {
@@ -278,7 +217,7 @@ label {
   flex-direction: column;
   min-width: 0;
   gap: 6px;
-  color: var(--palette-15);
+  color: var(--ink);
   font-size: 12px;
   font-weight: 500;
 }
@@ -286,7 +225,7 @@ input[type='checkbox'] {
   width: 16px;
   height: 16px;
   min-height: 0;
-  accent-color: var(--palette-16);
+  accent-color: var(--accent);
   flex-shrink: 0;
   margin: 0;
 }
@@ -365,15 +304,15 @@ input[type='checkbox'] {
   white-space: nowrap;
 }
 .workspace-tab:hover {
-  border-bottom-color: var(--palette-17);
+  border-bottom-color: var(--control);
   background: transparent;
-  color: var(--palette-0);
+  color: var(--ink);
 }
 .workspace-tab[aria-selected='true'],
 .workspace-tab.active {
-  border-bottom-color: var(--palette-13);
+  border-bottom-color: var(--accent);
   background: transparent;
-  color: var(--palette-0);
+  color: var(--ink);
   font-weight: 650;
 }
 .workspace-panel {
@@ -439,24 +378,24 @@ input[type='checkbox'] {
 .stage-note {
   margin: 20px 0;
   padding: 10px 13px;
-  border-left: 2px solid var(--palette-18);
-  background: var(--palette-19);
-  color: var(--palette-8);
+  border-left: 2px solid var(--muted);
+  background: var(--surface-2);
+  color: var(--muted);
   font-size: 12px;
 }
 .notice {
   margin: 14px 0;
   padding: 12px 14px;
-  border: 1px solid var(--palette-20);
+  border: 1px solid var(--control);
   border-radius: 4px;
-  background: var(--palette-21);
-  color: var(--palette-22);
+  background: var(--surface);
+  color: var(--accent);
   overflow-wrap: anywhere;
 }
 .notice.error {
-  border-color: var(--palette-23);
-  background: var(--palette-24);
-  color: var(--palette-25);
+  border-color: var(--danger-ink);
+  background: var(--surface-2);
+  color: var(--danger-ink);
 }
 .notice button {
   margin-left: 8px;
@@ -496,7 +435,7 @@ input[type='checkbox'] {
   min-width: 16px;
 }
 .game-icon {
-  color: var(--palette-4);
+  color: var(--muted);
   font-size: 15px;
   width: 20px;
   text-align: center;
@@ -515,7 +454,7 @@ input[type='checkbox'] {
   justify-content: space-between;
   gap: 16px;
   padding: 11px 0;
-  border-bottom: 1px solid var(--palette-3);
+  border-bottom: 1px solid var(--surface-2);
   font-size: 13px;
 }
 .channel-row:last-child {
@@ -538,7 +477,7 @@ summary {
 }
 .queue > summary {
   padding: 16px 0;
-  color: var(--palette-13);
+  color: var(--accent);
   font-weight: 600;
 }
 .queue > summary span {
@@ -549,7 +488,7 @@ summary {
   font-weight: 400;
 }
 .queue[open] > summary {
-  border-bottom: 1px solid var(--palette-3);
+  border-bottom: 1px solid var(--surface-2);
   margin-bottom: 18px;
 }
 .fields {
@@ -567,7 +506,7 @@ summary {
 }
 .module-options legend {
   padding: 0 6px;
-  color: var(--palette-15);
+  color: var(--ink);
   font-size: 12px;
   font-weight: 600;
 }
@@ -604,11 +543,11 @@ summary {
 }
 .rating-options {
   margin: 0;
-  border-top: 1px solid var(--palette-3);
+  border-top: 1px solid var(--surface-2);
 }
 .rating-options > summary {
   padding: 12px 0;
-  color: var(--palette-15);
+  color: var(--ink);
   font-size: 13px;
   font-weight: 500;
 }
@@ -625,7 +564,7 @@ summary {
   margin: 10px 0;
 }
 .match-record {
-  border-bottom: 1px solid var(--palette-3);
+  border-bottom: 1px solid var(--surface-2);
   padding: 14px 0;
 }
 .match-record > summary {
@@ -642,7 +581,7 @@ summary {
 }
 .record-teams > div {
   padding-left: 14px;
-  border-left: 2px solid var(--palette-17);
+  border-left: 2px solid var(--control);
   min-width: 0;
 }
 .record-teams p {
@@ -653,7 +592,7 @@ summary {
 .repair-form {
   margin: 14px 0;
   padding-top: 14px;
-  border-top: 1px solid var(--palette-3);
+  border-top: 1px solid var(--surface-2);
 }
 .table-wrap {
   overflow-x: auto;
@@ -669,21 +608,21 @@ th,
 td {
   text-align: left;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--palette-3);
+  border-bottom: 1px solid var(--surface-2);
   vertical-align: top;
 }
 th {
-  background: var(--palette-1);
-  color: var(--palette-4);
+  background: var(--surface);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
 }
 td {
-  color: var(--palette-10);
+  color: var(--ink);
 }
 tbody tr:hover {
-  background: var(--palette-19);
+  background: var(--surface-2);
 }
 table button,
 .player-link,
@@ -700,7 +639,7 @@ table button:hover,
 .player-link:hover,
 .link-button:hover {
   background: transparent;
-  color: var(--palette-7);
+  color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -715,8 +654,8 @@ pre {
   padding: 14px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--palette-1);
-  color: var(--palette-15);
+  background: var(--surface);
+  color: var(--ink);
   font:
     12px/1.6 ui-monospace,
     SFMono-Regular,
@@ -735,7 +674,7 @@ code {
 .settings-section,
 .stats-section {
   padding: 20px 0;
-  border-top: 1px solid var(--palette-3);
+  border-top: 1px solid var(--surface-2);
 }
 .settings-section:first-of-type,
 .stats-section:first-of-type {
@@ -767,9 +706,9 @@ code {
 .status-pill {
   display: inline-block;
   padding: 1px 6px;
-  border: 1px solid var(--palette-6);
+  border: 1px solid var(--control);
   border-radius: 3px;
-  color: var(--palette-4);
+  color: var(--muted);
   font-size: 11px;
   font-weight: 500;
   line-height: 1.7;

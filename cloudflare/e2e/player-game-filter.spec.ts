@@ -16,6 +16,10 @@ test('the default player game picker excludes queue-less test ladders and preser
   );
   await page.goto(`/?community=${guild}&view=players`);
   const initial = await (await loaded).json();
+  await expect(page.locator('.context-statistics')).toHaveAttribute(
+    'href',
+    new RegExp(`game=${game}$`),
+  );
   await page.route('**/api/communities/*/records', (route) =>
     route.fulfill({
       json: {
@@ -34,6 +38,9 @@ test('the default player game picker excludes queue-less test ladders and preser
     }),
   );
   await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await expect(
+    page.getByRole('dialog').getByRole('link', { name: 'Community statistics', exact: true }),
+  ).toHaveAttribute('href', new RegExp(`game=${game}$`));
   await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   const select = page.getByRole('combobox', { name: 'Filter players by game' });
   await expect(select).toHaveValue(game);
