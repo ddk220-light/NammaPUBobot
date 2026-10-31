@@ -30,6 +30,17 @@ export async function publicPages(request: Request, env: Env): Promise<Response>
       },
     });
   };
+  if (
+    launched &&
+    u.origin !== origin &&
+    !/^\/(api|auth|statistics|ops|connectors|interactions|health)(\/|$)/.test(u.pathname)
+  )
+    return Response.redirect(new URL(u.pathname + u.search, origin).href, 308);
+  if (u.pathname === '/sitemap-pages.xml' && !launched)
+    return response(
+      '<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>',
+      'application/xml',
+    );
   const asset = (path: string) =>
     env.ASSETS.fetch(new Request(new URL(path, request.url), request));
   if (
@@ -127,9 +138,11 @@ export async function publicPages(request: Request, env: Env): Promise<Response>
   if (['/site-manifest.json', '/app-shell.txt'].includes(u.pathname))
     return response('Not found', 'text/plain', 404);
   const a = await env.ASSETS.fetch(request);
+  if (a.status >= 300 && a.status < 400) return a;
   const type = a.headers.get('Content-Type') ?? '';
   if (type.includes('text/html') || type.includes('xml')) {
-    const body = (await a.text()).replaceAll('https://example.invalid', origin);
+    let body = (await a.text()).replaceAll('https://example.invalid', origin);
+    if (!launched) body = body.replaceAll('content="index,follow"', 'content="noindex"');
     const indexable = launched && body.includes('content="index,follow"');
     return response(body, type, a.status, indexable);
   }

@@ -49,6 +49,19 @@ describe('public routing boundaries', () => {
     expect(html).toContain('https://setup.example/missing');
     expect(html).not.toContain('https://example.invalid');
   });
+  it('redirects approved production pages to the canonical origin and leaves preview sitemaps empty', async () => {
+    const production = {
+      ...env,
+      APP_ENV: 'production' as const,
+      PUBLIC_SITE_INDEXING: 'true',
+      APP_ORIGIN: 'https://public.example',
+    };
+    const redirect = await publicPages(request('/games/?source=guide'), production);
+    expect(redirect.status).toBe(308);
+    expect(redirect.headers.get('Location')).toBe('https://public.example/games/?source=guide');
+    const sitemap = await publicPages(request('/sitemap-pages.xml'), env);
+    expect(await sitemap.text()).not.toContain('<url>');
+  });
   it('escapes public metadata and keeps source identity factual', () => {
     const html = page(
       '<script>alert(1)</script>',
