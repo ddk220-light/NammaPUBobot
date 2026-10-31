@@ -4,7 +4,7 @@ import { defaultRecords } from '../src/domain/records';
 import { defaultMaps, aoe2Maps } from '../src/domain/maps';
 import { gameCapabilities } from '../src/games/catalog';
 import { operations } from '../src/games/types';
-import { esc } from './ui';
+import { htmlEscape as esc } from '../src/public-site';
 
 const labels: Record<string, string> = {
   checkIn: 'Check-in',
@@ -35,11 +35,12 @@ const human = (key: string) =>
 /** Compare effective defaults so opening a legacy form is not presented as extra edits. */
 function effective(settings: Settings): Settings {
   return {
+    ...(settings.publicPage ? { publicPage: settings.publicPage } : {}),
     games: settings.games.map((g) => {
       const catalog = gameCapabilities(g.catalogId);
       return {
         ...g,
-        records: g.records ?? defaultRecords,
+        records: { ...defaultRecords, ...g.records },
         connector: catalog
           ? {
               enabled: false,
@@ -100,37 +101,112 @@ const display = (value: unknown): string =>
         : typeof value === 'number' && !Number.isFinite(value)
           ? 'Invalid or empty number'
           : String(value);
-export function changesBetween(saved: Settings, current: Settings) {
+export function changesBetween(
+  saved: Settings,
+  current: Settings,
+  names: Record<string, string> = {},
+) {
+  for (const g of [...saved.games, ...current.games]) names[g.id] = g.name;
+  const shown = (v: unknown) => (typeof v === 'string' && names[v] ? names[v] : display(v));
   saved = effective(saved);
   current = effective(current);
   const changes: { path: string; before: string; after: string }[] = [];
+  const shared = new Set<string>();
   function walk(before: unknown, after: unknown, path: string) {
     if (Object.is(before, after)) return;
     if ((before && typeof before === 'object') || (after && typeof after === 'object')) {
       const a = (before ?? {}) as Record<string, unknown>,
         b = (after ?? {}) as Record<string, unknown>;
       for (const key of new Set([...Object.keys(a), ...Object.keys(b)]))
-        if (key !== 'id') walk(a[key], b[key], `${path} → ${human(key)}`);
-    } else changes.push({ path, before: display(before), after: display(after) });
+        if (key !== 'id')
+          walk(
+            a[key],
+            b[key],
+            `${path} → ${/^\d+$/.test(key) ? `Item ${Number(key) + 1}` : human(key)}`,
+          );
+    } else changes.push({ path, before: shown(before), after: shown(after) });
   }
   for (const kind of ['games', 'queues'] as const) {
     for (const id of new Set([...saved[kind], ...current[kind]].map((v) => v.id))) {
       const before = saved[kind].find((v) => v.id === id),
         after = current[kind].find((v) => v.id === id);
       const name = `${kind === 'games' ? 'Game' : 'Queue'} · ${after?.name || before?.name || 'Unnamed draft'}`;
-      if (!before) changes.push({ path: name, before: 'Not configured', after: 'Added to draft' });
+      if (!before)
+        changes.push({
+          path: name,
+          before: 'Not configured',
+          after:
+            kind === 'games'
+              ? 'Add game; shared rating and leaderboard policy'
+              : `Create queue · ${'channelId' in after! ? (names[after.channelId] ?? 'selected Discord channel') : ''} · ${'size' in after! ? after.size : ''} players · ${'teamMethod' in after! ? after.teamMethod : ''} teams`,
+        });
       if (!after)
         changes.push({
           path: name,
           before: 'Configured',
           after: 'Remove on save (records retained)',
         });
-      else walk(before, after, name);
+      else if (before) {
+        if (kind === 'queues' && 'gameId' in before && 'gameId' in after) {
+          if (!shared.has(after.gameId)) {
+            shared.add(after.gameId);
+            const peers = current.queues.filter((q) => q.gameId === after.gameId);
+            const base = `Game · ${names[after.gameId] ?? after.gameId} · Shared policy (${peers.length} queues)`;
+            walk(before.ratingEngine, after.ratingEngine, `${base} → Rating system`);
+            walk(before.ratingSettings, after.ratingSettings, `${base} → Shared ratings`);
+            walk(
+              before.economy?.taxMinuteUtc,
+              after.economy?.taxMinuteUtc,
+              `${base} → Thursday tax time (UTC minutes)`,
+            );
+          }
+          const a = structuredClone(before),
+            b = structuredClone(after);
+          delete a.ratingSettings;
+          delete b.ratingSettings;
+          // Already summarized once per game above.
+          a.ratingEngine = b.ratingEngine;
+          if (a.economy && b.economy) a.economy.taxMinuteUtc = b.economy.taxMinuteUtc;
+          walk(a, b, name);
+        } else walk(before, after, name);
+      }
     }
   }
+  walk(saved.publicPage, current.publicPage, 'Public community page');
   return changes;
 }
-export function changeReview(saved: Settings, current: Settings) {
-  const changes = changesBetween(saved, current);
-  return `<p>${changes.length} changed values across this community. Save sends all settings together, including defaults for optional fields. Discord actions and record updates are separate.</p><div class="change-list">${changes.map((c) => `<article class="change-item"><h3>${esc(c.path)}</h3><dl><div><dt>Saved</dt><dd>${esc(c.before)}</dd></div><div><dt>Draft</dt><dd>${esc(c.after)}</dd></div></dl></article>`).join('') || '<p>No effective values changed; saving will store the displayed defaults.</p>'}</div>`;
+function fullFields(settings: Settings) {
+  const rows: string[] = [];
+  function walk(v: unknown, path: string, raw?: unknown) {
+    if (v && typeof v === 'object')
+      for (const [key, child] of Object.entries(v)) {
+        if (key !== 'id')
+          walk(
+            child,
+            `${path} → ${/^\d+$/.test(key) ? `Item ${Number(key) + 1}` : human(key)}`,
+            raw && typeof raw === 'object' ? (raw as Record<string, unknown>)[key] : undefined,
+          );
+      }
+    else
+      rows.push(
+        `<li>${esc(path)}: ${esc(display(v))}${raw === undefined ? ' (default)' : ''}</li>`,
+      );
+  }
+  const normalized = effective(settings);
+  for (const kind of ['games', 'queues'] as const)
+    for (const item of normalized[kind])
+      walk(
+        item,
+        item.name,
+        settings[kind].find((v) => v.id === item.id),
+      );
+  return rows.join('');
+}
+export function changeReview(
+  saved: Settings,
+  current: Settings,
+  names: Record<string, string> = {},
+) {
+  const changes = changesBetween(saved, current, names);
+  return `<p>${changes.length} changes across this community. Save applies all settings together. Live Discord actions are separate.</p><div class="change-list">${changes.map((c) => `<article class="change-item"><h3>${esc(c.path)}</h3><p>${esc(c.before)} → ${esc(c.after)}</p></article>`).join('') || '<p>No effective settings changed.</p>'}</div><details><summary>Show every saved field</summary><p>Complete effective settings, including domain defaults for optional fields.</p><ul>${fullFields(current)}</ul></details>`;
 }

@@ -154,6 +154,9 @@ export class SettingsDraft {
   }
   materialize(): Settings {
     const settings = structuredClone(this.working);
+    const presentation = this.raw.get('publicPage');
+    if (presentation)
+      settings.publicPage = { displayName: value(presentation, 'displayName').trim() };
     for (const q of settings.queues) {
       const f = this.raw.get(`queue:${q.id}`);
       if (!f) continue;
@@ -257,6 +260,7 @@ export class SettingsDraft {
       g.records = {
         ...defaultRecords,
         visibility: value(f, 'visibility') as 'public',
+        searchPublishing: value(f, 'visibility') === 'public' && bool(f, 'searchPublishing'),
         minimumMatches: number(f, 'minimumMatches'),
         recentDays: number(f, 'recentDays'),
         decorateNickname: bool(f, 'decorateNickname'),
@@ -305,6 +309,7 @@ export class SettingsDraft {
         };
       }
     }
+    if (!settings.publicPage?.displayName) delete settings.publicPage;
     return settings;
   }
   validate() {

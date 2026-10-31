@@ -41,7 +41,7 @@ export class Community extends DurableObject<Env> {
       const version = sql
         .exec<{ version: number }>('SELECT version FROM schema_version')
         .toArray()[0]?.version;
-      if (version && ![1, 2, 3, 4, 5, 6, 7, 8].includes(version))
+      if (version && ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(version))
         throw new Error('Unsupported storage schema.');
       if (!version) sql.exec('INSERT INTO schema_version (version) VALUES (1)');
       sql.exec(
@@ -70,11 +70,23 @@ export class Community extends DurableObject<Env> {
             sql.exec('UPDATE queues SET config=? WHERE id=?', JSON.stringify(q), q.id);
           }
       }
-      sql.exec('UPDATE schema_version SET version=8');
+      sql.exec(
+        'CREATE TABLE IF NOT EXISTS site_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+      );
+      sql.exec('UPDATE schema_version SET version=9');
     });
     this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
     if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
-    this.playStore = new PlayStore(ctx, env, (guild) => this.read(guild), this.recordStore);
+    this.playStore = new PlayStore(
+      ctx,
+      env,
+      (guild) => this.read(guild),
+      this.recordStore,
+      () =>
+        this.meta<boolean>('publicationPending')
+          ? (this.meta<number>('publicationRetryAt') ?? Date.now() + 60000)
+          : null,
+    );
     const retiredTest = ctx.storage.kv.get<RetiredTestSession>('testSession');
     if (ctx.storage.kv.get('testMode') && retiredTest) {
       retiredTest.expiresAt = 0;
@@ -106,6 +118,9 @@ export class Community extends DurableObject<Env> {
       communityId: guildId,
       revision,
       settings: {
+        ...(this.meta<{ displayName: string }>('publicPage')
+          ? { publicPage: this.meta<{ displayName: string }>('publicPage')! }
+          : {}),
         games: sql
           .exec<{ config: string }>('SELECT config FROM games ORDER BY id')
           .toArray()
@@ -168,6 +183,16 @@ export class Community extends DurableObject<Env> {
         };
       }
       const sql = this.ctx.storage.sql;
+      this.setMeta('publicPage', parsed.publicPage ?? null);
+      this.setMeta('publicationPending', true);
+      if (!this.meta('publicSlug'))
+        this.setMeta(
+          'publicSlug',
+          `${slug(parsed.publicPage?.displayName || 'community')}-${crypto.randomUUID()}`,
+        );
+      const gameSlugs = this.meta<Record<string, string>>('gameSlugs') ?? {};
+      for (const g of parsed.games) gameSlugs[g.id] ??= `${slug(g.name)}-${g.id}`;
+      this.setMeta('gameSlugs', gameSlugs);
       const queueIds = new Set(parsed.queues.map((q) => q.id)),
         gameIds = new Set(parsed.games.map((g) => g.id));
       for (const q of sql.exec<{ id: string }>('SELECT id FROM queues').toArray())
@@ -205,10 +230,74 @@ export class Community extends DurableObject<Env> {
       this.playStore.reconcileLobbies();
       if (!this.ctx.storage.kv.get('testMode')) this.recordStore.configure(guildId, old);
       await this.playStore.schedule();
+      await this.syncPublication(guildId);
     }
     return result;
   }
 
+  private meta<T>(key: string): T | undefined {
+    const row = this.ctx.storage.sql
+      .exec<{ value: string }>('SELECT value FROM site_metadata WHERE key=?', key)
+      .toArray()[0];
+    return row ? JSON.parse(row.value) : undefined;
+  }
+  private setMeta(key: string, value: unknown) {
+    this.ctx.storage.sql.exec(
+      'INSERT INTO site_metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+      key,
+      JSON.stringify(value),
+    );
+  }
+  rememberChannels(channels: { id: string; name: string }[]) {
+    const names =
+      this.meta<Record<string, { id: string; name: string; observedAt: number }>>('channels') ?? {};
+    for (const { id, name } of channels) names[id] = { id, name, observedAt: Date.now() };
+    this.setMeta('channels', names);
+  }
+  siteMetadata() {
+    return {
+      knownChannels: Object.values(
+        this.meta<Record<string, { id: string; name: string; observedAt: number }>>('channels') ??
+          {},
+      ),
+      publication: {
+        pending: this.meta<boolean>('publicationPending') ?? false,
+        community: this.meta<string>('publicSlug') ?? '',
+        games: Object.entries(this.meta<Record<string, string>>('gameSlugs') ?? {}).map(
+          ([id, slug]) => ({ id, slug }),
+        ),
+      },
+    };
+  }
+  private async syncPublication(guild: string) {
+    const revision = this.identity(guild).revision;
+    try {
+      if (!this.env.PUBLIC_DIRECTORY || this.ctx.storage.kv.get('recoveryReadOnly'))
+        throw new Error('Publication unavailable');
+      const snapshot = this.read(guild),
+        metadata = this.siteMetadata();
+      await this.env.PUBLIC_DIRECTORY.getByName('directory').register({
+        guild,
+        revision,
+        community: metadata.publication.community,
+        games: metadata.publication.games.filter(({ id }) =>
+          snapshot.settings.games.some(
+            (g) => g.id === id && g.records?.visibility === 'public' && g.records.searchPublishing,
+          ),
+        ),
+      });
+      if (this.identity(guild).revision === revision) {
+        this.setMeta('publicationPending', false);
+        await this.playStore.schedule();
+      }
+    } catch {
+      if (this.identity(guild).revision !== revision) return;
+      this.setMeta('publicationRetryAt', Date.now() + 60000);
+      this.setMeta('publicationPending', true);
+      const alarm = await this.ctx.storage.getAlarm();
+      if (!alarm || alarm > Date.now() + 60000) await this.ctx.storage.setAlarm(Date.now() + 60000);
+    }
+  }
   audit(guildId: string) {
     this.identity(guildId);
     return this.ctx.storage.sql
@@ -784,7 +873,10 @@ export class Community extends DurableObject<Env> {
     const row = this.ctx.storage.sql
       .exec<{ guild_id: string }>('SELECT guild_id FROM community WHERE id=1')
       .toArray()[0];
-    if (row) await this.playStore.alarm(row.guild_id);
+    if (row) {
+      await this.playStore.alarm(row.guild_id);
+      if (this.meta('publicationPending')) await this.syncPublication(row.guild_id);
+    }
   }
   async adminPanel(guild: string, input: AdminRequest) {
     try {
@@ -867,10 +959,11 @@ export class Community extends DurableObject<Env> {
           throw Error('Incomplete backup manifest.');
         const sourceVersion = backup.tables.schema_version[0]?.version;
         if (
-          [5, 6, 7, 8].includes(Number(sourceVersion)) &&
+          [5, 6, 7, 8, 9].includes(Number(sourceVersion)) &&
           [...known]
             .filter(
               (name) =>
+                (name !== 'site_metadata' || Number(sourceVersion) >= 9) &&
                 (name !== 'profile_claims' || Number(sourceVersion) >= 8) &&
                 (Number(sourceVersion) >= 7 ||
                   ![
@@ -917,9 +1010,13 @@ export class Community extends DurableObject<Env> {
         const version = sql
           .exec<{ version: number }>('SELECT version FROM schema_version')
           .toArray()[0]?.version;
-        if (![4, 5, 6, 7, 8].includes(version!)) throw Error('Unsupported backup schema version.');
+        if (![4, 5, 6, 7, 8, 9].includes(version!))
+          throw Error('Unsupported backup schema version.');
         backfillProfileClaims(sql);
-        sql.exec('UPDATE schema_version SET version=8');
+        sql.exec(
+          'CREATE TABLE IF NOT EXISTS site_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+        );
+        sql.exec('UPDATE schema_version SET version=9');
         const imbalance = sql
           .exec(
             'SELECT w.user_id FROM wallets w LEFT JOIN gold_ledger l ON l.game_id=w.game_id AND l.user_id=w.user_id GROUP BY w.game_id,w.user_id HAVING w.balance != COALESCE(SUM(l.amount),0) LIMIT 1',
@@ -985,4 +1082,14 @@ export class Community extends DurableObject<Env> {
     await this.playStore.schedule();
     return result;
   }
+}
+
+function slug(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 48) || 'community'
+  );
 }

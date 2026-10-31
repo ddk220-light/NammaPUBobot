@@ -33,7 +33,8 @@ test('the default player game picker excludes queue-less test ladders and preser
       },
     }),
   );
-  await page.getByRole('button', { name: 'Refresh records' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   const select = page.getByRole('combobox', { name: 'Filter players by game' });
   await expect(select).toHaveValue(game);
   await expect(select.locator('option')).toHaveText(['All games', 'Age of Empires II']);
@@ -69,7 +70,8 @@ test('custom games with a paused queue remain normal choices', async ({ page }) 
   const select = page.getByRole('combobox', { name: 'Filter players by game' });
   await expect(select.locator('option')).toHaveText(['All games', 'Community board game']);
   await select.selectOption('');
-  await page.getByRole('button', { name: 'Refresh records' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(select).toHaveValue('');
   await expect(page.locator('[data-rating-row]:visible')).toHaveCount(1);
 });

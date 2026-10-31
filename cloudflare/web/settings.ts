@@ -259,7 +259,16 @@ export function queueEditor(
         'channelId',
         'Discord channel',
         q.channelId,
-        setup.channels.map((c) => ({ ...c, name: `#${c.name}` })),
+        [
+          ...setup.channels.map((c) => ({
+            id: c.id,
+            name: `#${c.name}${c.permissions.some((p) => !p.granted) ? ' — missing permissions' : ''}`,
+            disabled: c.permissions.some((p) => !p.granted),
+          })),
+          ...(setup.knownChannels ?? [])
+            .filter((c) => !setup.channels.some((v) => v.id === c.id))
+            .map((c) => ({ id: c.id, name: `#${c.name} · Not verified`, disabled: true })),
+        ],
         'Enabled queues need View Channel, Send Messages, Embed Links and Read Message History.',
       ) +
       field(
@@ -543,6 +552,12 @@ export function gameEditors(
           'Statistics visibility',
           p.visibility,
           choices({ public: 'Public', members: 'Server members', admins: 'Administrators' }),
+        ) +
+        toggle(
+          'searchPublishing',
+          'Publish this leaderboard to search engines',
+          Boolean(p.searchPublishing),
+          'Requires public statistics and a public community display name. Existing link-public pages stay unlisted until you enable this.',
         ) +
         field('minimumMatches', 'Minimum leaderboard matches', p.minimumMatches, '', {
           min: 0,

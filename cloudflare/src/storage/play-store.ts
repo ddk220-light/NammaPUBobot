@@ -152,6 +152,7 @@ export class PlayStore {
     private env: Env,
     private read: (guild: string) => Snapshot,
     private recordStore: RecordStore,
+    private extraDeadline: () => number | null = () => null,
   ) {}
   private get sql() {
     return this.ctx.storage.sql;
@@ -3277,6 +3278,8 @@ export class PlayStore {
             .toArray()[0]?.due,
       )
       .filter((due): due is number => due != null);
+    const extra = this.extraDeadline();
+    if (extra !== null) values.push(extra);
     if (session && !session.cleaning) values.push(session.expiresAt);
     if (session?.cleaning && !session.cleanupPrepared) values.push(Date.now());
     const identity = this.sql

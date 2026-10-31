@@ -74,7 +74,8 @@ test('a newly locked rating system can be restored without losing other draft fi
   await page.getByRole('combobox', { name: 'Rating system', exact: true }).selectOption('flat');
   await field(page, 'Starting rating').fill('1234');
   state.locked = true;
-  await page.getByRole('button', { name: 'Refresh records' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   await expect(page.getByRole('combobox', { name: 'Rating system', exact: true })).toBeDisabled();
   await save(page);
   expect(state.saved).toHaveLength(0);
@@ -119,8 +120,8 @@ test('conflicting saved settings update readiness while keeping the draft base r
   await page.getByRole('button', { name: 'Check access again', exact: true }).click();
   await expect(page.locator('#view-setup')).not.toContainText('Ready to play');
   await expect(page.getByRole('button', { name: 'Reload latest' })).toBeVisible();
-  await tab(page, 'Overview').click();
-  await expect(page.locator('.metric').filter({ hasText: 'Enabled queues' })).toContainText('0');
+  await tab(page, 'Queues').click();
+  await expect(page.locator('.queue-card').first().locator('.status-pill')).toHaveText('Paused');
   await tab(page, 'Queues').click();
   await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(
     'Local draft',
@@ -196,7 +197,8 @@ test('cross-field errors point to the game field and persist through other scree
     'Minimum deviation cannot exceed initial deviation.',
   );
   await tab(page, 'Queues').click();
-  await page.getByRole('button', { name: 'Refresh records' }).click();
+  await page.getByRole('button', { name: 'Account', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   await openGame(page);
   await expect(field(page, 'Minimum deviation')).toHaveAttribute('aria-invalid', 'true');
   await field(page, 'Minimum deviation').fill('50');

@@ -49,8 +49,8 @@ describe('connector interface', () => {
         },
       ],
     });
-    expect(html).toContain('Credentials required');
-    expect(html).toContain('Awaiting game acceptance');
+    expect(html).toContain('Configuration required');
+    expect(html).toContain('Awaiting activation');
     expect(html).toContain('2 unresolved associations');
     expect(html).toContain('name="capability-matchLookup"');
     expect(html).not.toContain('name="capability-historyLookup"');

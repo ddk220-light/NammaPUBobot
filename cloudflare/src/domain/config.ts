@@ -25,6 +25,7 @@ export const gameSchema = z
     records: z
       .object({
         visibility: z.enum(['public', 'members', 'admins']),
+        searchPublishing: z.boolean().optional(),
         minimumMatches: z.number().int().min(0).max(10000),
         recentDays: z.number().int().min(0).max(3650),
         ranks: z
@@ -136,6 +137,7 @@ export const queueSchema = z
 
 export const settingsSchema = z
   .object({
+    publicPage: z.object({ displayName: name }).strict().optional(),
     games: z.array(gameSchema).max(100),
     queues: z.array(queueSchema).max(200),
   })
@@ -147,6 +149,15 @@ export const settingsSchema = z
       catalogs = new Set<string>(),
       defaults = new Set<string>();
     for (const [index, g] of s.games.entries()) {
+      if (
+        g.records?.searchPublishing &&
+        (!s.publicPage?.displayName.trim() || g.records.visibility !== 'public')
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Search publishing requires a public display name and public statistics.',
+          path: ['games', index, 'records', 'searchPublishing'],
+        });
       if (g.connector?.enabled && !gameCapabilities(g.catalogId))
         ctx.addIssue({
           code: 'custom',

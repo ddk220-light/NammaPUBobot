@@ -42,9 +42,9 @@ const labels: Record<ConnectorOperation, string> = {
 const stateLabels: Record<string, string> = {
   available: 'Available',
   unsupported: 'Not available from this provider',
-  credentials_required: 'Credentials required',
+  credentials_required: 'Configuration required',
   authentication_required: 'Sign-in required',
-  acceptance_required: 'Awaiting game acceptance',
+  acceptance_required: 'Awaiting activation',
   disabled: 'Disabled',
 };
 const stateLabel = (state: string) => stateLabels[state] ?? state.replaceAll('_', ' ');
@@ -65,7 +65,7 @@ export function connectorSettings(
     !['disabled', 'credentials_required', 'unsupported'].includes(
       health?.capabilities.ownershipVerification ?? '',
     );
-  return `<details class="rating-options connector-settings"><summary>Game connections · ${esc(catalog.manifest.edition)}</summary>
+  return `<details class="rating-options connector-settings"><summary>Beta game connections · ${esc(catalog.manifest.edition)}</summary>
     <p class="muted">Manual lobby association and captain reporting remain available.</p>
     ${catalog.lobby ? `<label class="toggle"><input type="checkbox" name="lobbyConnector"${game.connector?.enabled ? ' checked' : ''} /> Enable provider observations</label>` : ''}
     <div class="fields">${operations

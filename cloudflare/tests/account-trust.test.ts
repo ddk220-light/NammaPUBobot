@@ -413,7 +413,7 @@ describe('account declarations and verified ownership in SQLite', () => {
     await setup(config());
     await stub().linkVerifiedGameAccount(guild, proof());
     const backup = await stub().operationalBackup(guild);
-    expect(backup.tables.schema_version[0].version).toBe(8);
+    expect(backup.tables.schema_version[0].version).toBe(9);
     expect(backup.tables.profile_claims[0].trust).toBe('ownership_verified');
     const restored = env.COMMUNITIES.getByName('recovery:claims:' + guild);
     expect((await restored.operationalRestore(guild, backup as never)).restored).toBe(true);

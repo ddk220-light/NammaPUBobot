@@ -1,3 +1,4 @@
+import { identity } from '../src/identity';
 import { ApiError, labelTables, requestJson } from './ui';
 import type { Statistics as Stats, PlayerStatistics } from '../src/domain/records';
 
@@ -108,7 +109,7 @@ function playerDetails(p: PlayerStatistics) {
 }
 
 export async function showStats(app: HTMLElement) {
-  document.title = 'Community Games — statistics';
+  document.title = `${identity.publicName} — statistics`;
   const bootstrap = await requestJson<{ environment: string; version: string }>('/api/bootstrap');
   document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
