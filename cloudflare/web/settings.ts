@@ -225,7 +225,7 @@ export function queueEditor(
   const s = draft.working;
   const queues = draft.materialize().queues;
   const q = queues.find((q) => q.id === queueId) ?? queues[0];
-  let html = `<div class="page-heading"><div><p class="eyebrow">Organize your next game</p><h1>Queues</h1><p class="view-description">Choose where players gather and how their matches work.</p></div><button type="button" class="primary" data-edit="add-queue" ${!s.games.length || !setup.channels.length ? 'disabled data-unavailable="true"' : ''}>Add queue</button></div>${overview}`;
+  let html = `<div class="page-heading queue-editor-heading"><div><p class="eyebrow">Organize your next game</p><h1>Queues</h1><p class="view-description">Choose where players gather and how their matches work.</p></div><button type="button" class="primary" data-edit="add-queue" ${!s.games.length || !setup.channels.length ? 'disabled data-unavailable="true"' : ''}>Add queue</button></div>${overview}`;
   if (!q)
     return (
       html +
@@ -233,9 +233,14 @@ export function queueEditor(
     );
   root = `queues.${queues.indexOf(q)}`;
   const game = s.games.find((g) => g.id === q.gameId);
+  html = html.replace(
+    'Choose where players gather and how their matches work.',
+    `${esc(game?.name ?? 'Unavailable game')} · ${esc(setup.channels.find((c) => c.id === q.channelId)?.name ? '#' + setup.channels.find((c) => c.id === q.channelId)!.name : 'Channel not verified')}`,
+  );
   const maps = q.maps ?? defaultMaps(game?.catalogId === 'aoe2' ? aoe2Maps : []);
+  if (!q.maps && !maps.pool.length) maps.shortlist = 1;
   const roles = [{ id: '', name: 'No role restriction' }, ...setup.moderatorRoles];
-  html += `<h2>Queue settings</h2><div class="editor-toolbar"><label>Queue<select data-queue-select>${s.queues.map((v) => `<option value="${v.id}" ${v.id === q.id ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label><label>Search settings<input type="search" data-settings-search placeholder="Name, permission, map…" /></label></div><nav class="category-strip" aria-label="Queue settings categories">${Object.entries(
+  html += `<h2 class="sr-only">Queue settings</h2><div class="editor-toolbar"><label>Queue<select data-queue-select>${s.queues.map((v) => `<option value="${v.id}" ${v.id === q.id ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label><label>Search settings<input type="search" data-settings-search placeholder="Name, permission, map…" /></label></div><div class="queue-editor-layout"><nav class="category-strip" aria-label="Queue settings categories">${Object.entries(
     categories,
   )
     .map(
@@ -394,7 +399,7 @@ export function queueEditor(
         'mapPool',
         'Map pool',
         maps.pool.join('\n'),
-        'One map per line. Custom games need a pool before map selection can be enabled.',
+        'One map per line. Saving map options requires a pool, even when map selection is off. Custom games can leave maps unconfigured.',
         { type: 'textarea', required: false, path: 'maps.pool' },
       ) +
       select(
@@ -411,7 +416,7 @@ export function queueEditor(
         { min: 1, max: 5, path: 'maps.count' },
       ) +
       field('mapShortlist', 'Shortlist size', maps.shortlist, '', {
-        min: 0,
+        min: 1,
         max: 25,
         path: 'maps.shortlist',
       }) +
@@ -437,7 +442,7 @@ export function queueEditor(
         'mapCheckIn',
         'Map vote also checks in',
         maps.countsAsCheckIn,
-        'Uses the map selection time limit.',
+        'Requires player voting. Uses the map selection time limit.',
       ),
   );
   html += section(
@@ -456,6 +461,7 @@ export function queueEditor(
           q.modules[key as keyof typeof q.modules],
           help,
           !capabilities[key as keyof typeof capabilities] ||
+            (key === 'predictions' && !q.modules.gold) ||
             (key === 'civs' && game?.catalogId !== 'aoe2'),
         ),
       )
@@ -510,7 +516,7 @@ export function queueEditor(
   );
   return (
     html +
-    `</form><div class="actions"><button type="button" class="danger" data-edit="remove-queue" data-id="${q.id}">Remove queue</button></div>`
+    `</form></div><div class="actions queue-delete"><button type="button" class="danger" data-edit="remove-queue" data-id="${q.id}">Remove queue</button></div>`
   );
 }
 
@@ -539,7 +545,7 @@ export function gameEditors(
         })),
       ];
       return (
-        `<details class="game-settings" id="game-settings-${g.id}"><summary>${esc(g.name)}<span class="record-meta">Game settings</span></summary><form data-config="game:${g.id}" novalidate>` +
+        `<details class="game-settings" id="game-settings-${g.id}"><summary><span class="game-tile-icon" aria-hidden="true">${esc(g.catalogId ? (g.catalogId === 'aoe2' ? 'II' : g.catalogId === 'aoe3' ? 'III' : g.catalogId === 'aoe4' ? 'IV' : g.name.slice(0, 2).toUpperCase()) : '◇')}</span><span class="game-tile-copy"><strong>${esc(g.name)}</strong><span class="record-meta">${queues.filter((q) => q.gameId === g.id).length} queues · Shared ratings, ranks and leaderboard</span></span><span class="game-tile-action">Game settings</span></summary><form data-config="game:${g.id}" novalidate>` +
         field('name', 'Game name', g.name, '', { max: 80 }) +
         connectorSettings(
           g,

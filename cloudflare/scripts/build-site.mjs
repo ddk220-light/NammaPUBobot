@@ -58,11 +58,44 @@ async function emit(path, title, description, body) {
 }
 const cards = (items) =>
   `<div class="cards">${items.map(([url, name, desc]) => `<article><h2><a href="${url}">${e(name)}</a></h2><p>${e(desc)}</p></article>`).join('')}</div>`;
+const gameGrid = cards(
+  games.map((g) => [`/games/${g[1]}/`, g[2], `${g[3]} · queues, teams and community ratings`]),
+);
+const discordPreview = `<figure class="discord-example"><figcaption># pickups · an illustrative Discord queue</figcaption><div class="discord-app-name">Community Games <span>App</span></div><div class="discord-message"><div class="discord-message-heading"><strong>4v4 team games</strong><span>6 / 8</span></div><div class="discord-roster">${[
+  ['Alex', '1450'],
+  ['Rin', '1380'],
+  ['Sam', '1325'],
+  ['Jo', '1290'],
+  ['Kai', '1210'],
+  ['Dev', '1185'],
+]
+  .map(([name, rating]) => `<div><span>${name}</span><span>${rating}</span></div>`)
+  .join(
+    '',
+  )}</div><div class="discord-buttons" aria-hidden="true"><span>Join</span><span>Leave</span></div></div><div class="discord-ready"><strong>Teams are ready</strong><p>Check in, play together, and confirm the result.</p></div><p class="preview-caption">Example records · your community sets the rules.</p></figure>`;
 await emit(
   '/',
   'Free, open-source Discord tools for your gaming community',
   'Organize pickup queues, form teams, manage community ratings and review matches in a web dashboard.',
-  `<p>Make community game nights easier to organize with transparent tools for queues, teams, ratings and match history.</p><p><a class="button" href="/app/">Get started</a> <a href="/open-source/">Read the source and license</a></p><h2>Games your community plays</h2>${cards(games.map((g) => [`/games/${g[1]}/`, g[2], `${g[3]} · community queues and captain-confirmed results`]))}<figure><picture><source media="(max-width:640px)" srcset="/screenshots/organizer-demo-phone.png"><img src="/screenshots/organizer-demo.png" width="1440" height="1000" alt="Organizer queue dashboard using illustrative demo records" loading="lazy"></picture><figcaption>Illustrative dashboard using demo records.</figcaption></figure><h2>A game night in four steps</h2><ol><li>Join a queue in Discord with /add.</li><li>Check in and form teams.</li><li>Play and confirm the result.</li><li>Review community records.</li></ol><h2>Control your community</h2><p>Settings stay in a draft until saved. Review changes together, resolve errors without losing edits and choose who can see statistics.</p><p><a href="/features/">Explore the features</a> · <a href="/about/">Why this project exists</a></p>`,
+  `<section class="site-hero" data-site-hero><div class="hero-copy"><h1>Free, open-source Discord tools for your gaming community</h1><p class="lead">Players join with <code>/add</code>. Check everyone in, form teams, and keep your community’s ratings and match history in one place.</p><div class="hero-actions"><a class="button" href="/app/">Get started</a><a class="button secondary" href="/guides/getting-started/">How setup works</a></div><p class="hero-note">Community-built. GPL-3.0-only. <a href="/open-source/">Inspect the code or run your own copy.</a></p></div>${discordPreview}</section><section class="site-section games-section"><div class="site-section-heading"><div><h2>Games your community plays</h2><p>Pick a game. Make it your community’s game night.</p></div><a href="/games/">All games →</a></div>${gameGrid}<p class="section-note">Custom games work with manual reporting. Optional connections are Beta and show their actual availability in Setup.</p></section><section class="site-section" id="how"><div class="site-section-heading"><div><h2>From waiting around to playing together</h2><p>A clear routine for your next pickup game.</p></div></div><ol class="workflow-grid"><li><span>1</span><h3>Gather your players</h3><p>Join a named queue in Discord. Everyone knows where to go.</p></li><li><span>2</span><h3>Check in and form teams</h3><p>Confirm who is ready, then use captains, balanced or random teams.</p></li><li><span>3</span><h3>Play and confirm</h3><p>Captains confirm the result. Community records stay understandable.</p></li><li><span>4</span><h3>Keep the story</h3><p>Review ratings, results and recent history in the dashboard.</p></li></ol></section><section class="site-section feature-section"><div class="site-section-heading"><div><h2>Your community, your rules</h2><p>Useful controls, without a complicated game night.</p></div></div>${cards(
+    [
+      [
+        '/features/queues-and-teams/',
+        'Queues that fit your group',
+        'Set player counts, check-in and team choices for each queue.',
+      ],
+      [
+        '/features/ratings-and-leaderboards/',
+        'Ratings with context',
+        'Shared game policy, clear visibility and optional public leaderboards.',
+      ],
+      [
+        '/features/web-dashboard/',
+        'One organizer dashboard',
+        'Draft settings safely and manage matches, players and imports.',
+      ],
+    ],
+  )}</section><section class="site-section source-section"><div><h2>Open source is part of the point</h2><p>Understand how the bot works. Suggest a change. Run your own installation. The code is public under GPL-3.0-only, with credit to PUBobot2 and the community projects it builds on.</p></div><div class="hero-actions"><a class="button" href="/open-source/">About the source</a><a class="button secondary" href="https://github.com/ddk220-light/NammaPUBobot">View on GitHub ↗</a></div></section><section class="site-section dashboard-section"><div class="site-section-heading"><div><h2>A dashboard that stays out of the way</h2><p>Queues, Matches, Players and Setup. The same tools on desktop and phone.</p></div><a href="/features/web-dashboard/">Explore the dashboard →</a></div><figure><picture><source media="(max-width:640px)" srcset="/screenshots/organizer-demo-phone.png" width="390" height="844"><img src="/screenshots/organizer-demo.png" width="1440" height="1000" alt="Organizer queue dashboard using illustrative demo records" loading="lazy"></picture><figcaption>Illustrative dashboard using demo records.</figcaption></figure></section>`,
 );
 await emit(
   '/games/',

@@ -200,6 +200,7 @@ function fullFields(settings: Settings) {
         item.name,
         settings[kind].find((v) => v.id === item.id),
       );
+  if (settings.publicPage) walk(settings.publicPage, 'Public community page', settings.publicPage);
   return rows.join('');
 }
 export function changeReview(
@@ -208,5 +209,20 @@ export function changeReview(
   names: Record<string, string> = {},
 ) {
   const changes = changesBetween(saved, current, names);
-  return `<p>${changes.length} changes across this community. Save applies all settings together. Live Discord actions are separate.</p><div class="change-list">${changes.map((c) => `<article class="change-item"><h3>${esc(c.path)}</h3><p>${esc(c.before)} → ${esc(c.after)}</p></article>`).join('') || '<p>No effective settings changed.</p>'}</div><details><summary>Show every saved field</summary><p>Complete effective settings, including domain defaults for optional fields.</p><ul>${fullFields(current)}</ul></details>`;
+  return `<p class="review-intro">${changes.length} changes across this community. Save applies all settings together. Live Discord actions are separate.</p><div class="change-list">${
+    changes
+      .map((c) => {
+        const action =
+          c.before === 'Not configured'
+            ? c.path.startsWith('Game')
+              ? 'Adds'
+              : 'Creates'
+            : c.after.startsWith('Remove on save')
+              ? 'Removes'
+              : 'Changes';
+        const [entity, ...field] = c.path.split(' → ');
+        return `<article class="change-item" data-change="${action.toLowerCase()}"><span class="change-kind">${action}</span><div><h3>${esc(entity)}</h3>${field.length ? `<p class="change-field">${esc(field.join(' → '))}</p>` : ''}<p class="change-values">${action === 'Changes' ? `<del>${esc(c.before)}</del><span aria-label="changes to"> → </span><strong>${esc(c.after)}</strong>` : esc(c.after)}</p></div></article>`;
+      })
+      .join('') || '<p>No effective settings changed.</p>'
+  }</div><p class="form-help">Matches already running keep their saved rules.</p><details class="review-fields"><summary>Show every saved field</summary><p>Complete effective settings, including domain defaults for optional fields.</p><ul>${fullFields(current)}</ul></details>`;
 }

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { gameCapabilities, selectableCatalog } from '../src/games/catalog';
-import { mockApp, guild, game, user } from './fixtures';
+import { mockApp, guild, game, user, queue } from './fixtures';
 
 async function connectorApp(
   page: Page,
@@ -77,6 +77,7 @@ test('connector capabilities and queue edits survive refresh and failed atomic s
   await panel.locator('[name="capability-matchLookup"]').uncheck();
   await panel.getByRole('checkbox', { name: 'Ongoing matchmaking games', exact: false }).uncheck();
   await page.getByRole('tab', { name: 'Queues', exact: true }).click();
+  await page.getByRole('button', { name: 'Settings for Evening games', exact: true }).click();
   await page.getByRole('textbox', { name: 'Queue name', exact: true }).fill('Combined draft');
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();

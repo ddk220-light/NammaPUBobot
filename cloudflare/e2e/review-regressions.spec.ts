@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { game, guild, mockApp, otherGuild, queue, user } from './fixtures';
 
-const organizer = `/?community=${guild}&view=queues`;
+const organizer = `/?community=${guild}&view=queues&queue=${queue}`;
 const field = (page: Page, name: string) => page.getByRole('spinbutton', { name, exact: true });
 const tab = (page: Page, name: string) => page.getByRole('tab', { name, exact: true });
 const save = (page: Page) =>
@@ -121,8 +121,9 @@ test('conflicting saved settings update readiness while keeping the draft base r
   await expect(page.locator('#view-setup')).not.toContainText('Ready to play');
   await expect(page.getByRole('button', { name: 'Reload latest' })).toBeVisible();
   await tab(page, 'Queues').click();
+  await page.locator('[data-queue-list]').click();
   await expect(page.locator('.queue-card').first().locator('.status-pill')).toHaveText('Paused');
-  await tab(page, 'Queues').click();
+  await page.getByRole('button', { name: 'Settings for Local draft', exact: true }).click();
   await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(
     'Local draft',
   );
@@ -142,15 +143,18 @@ test('community history preserves the destination and cancelling Back preserves 
   await page.locator('#community').selectOption(otherGuild);
   await expect(page.locator('#view-queues')).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`community=${otherGuild}.*view=queues`));
+  await page.getByRole('button', { name: 'Settings for Evening games', exact: true }).click();
   await page
     .getByRole('textbox', { name: 'Queue name', exact: true })
     .fill('Other community draft');
+  // First Back returns to the queue list in the same community and keeps the draft.
+  await page.goBack();
+  await expect(page.locator('.queue-card')).toContainText('Other community draft');
+  await expect(page.locator('#savebar')).toBeVisible();
   page.once('dialog', (dialog) => dialog.dismiss());
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(otherGuild));
-  await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(
-    'Other community draft',
-  );
+  await expect(page.locator('.queue-card')).toContainText('Other community draft');
   page.once('dialog', (dialog) => dialog.accept());
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`community=${guild}.*view=queues`));

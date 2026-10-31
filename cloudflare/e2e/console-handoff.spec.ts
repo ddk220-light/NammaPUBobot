@@ -165,6 +165,7 @@ test('matches show actual readiness and settings help includes defaults and dura
   await expect(page.locator('.match-record')).toContainText('No rating changes recorded');
   await page.screenshot({ path: info.outputPath('match-check-in.png') });
   await tab(page, 'Queues').click();
+  await page.getByRole('button', { name: 'Settings for Evening games', exact: true }).click();
   await page.getByRole('button', { name: 'Match Preparation', exact: true }).click();
   const input = page.getByRole('spinbutton', {
     name: 'Check-in time limit (seconds)',

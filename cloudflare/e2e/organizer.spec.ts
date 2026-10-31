@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { mockApp, guild, otherGuild, game, queue, user } from './fixtures';
 
-const organizer = `/?community=${guild}&view=queues`;
+const organizer = `/?community=${guild}&view=queues&queue=${queue}`;
 test('signing out keeps edits on cancellation or failure and clears them only after success', async ({
   page,
 }) => {

@@ -212,7 +212,12 @@ export class SettingsDraft {
         .split('\n')
         .map((v) => v.trim())
         .filter(Boolean);
-      if (pool.length)
+      // Keep intentional map edits visible to validation, even with an empty pool.
+      // An untouched custom game's absent map configuration is still optional.
+      const mapEdited = [...this.changedFields(`queue:${q.id}`)].some(
+        (name) => name === 'mapPool' || name.startsWith('map'),
+      );
+      if (pool.length || q.maps || mapEdited)
         q.maps = {
           pool,
           mode: value(f, 'mapMode') as 'vote',
