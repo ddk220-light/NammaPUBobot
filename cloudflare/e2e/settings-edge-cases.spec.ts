@@ -190,3 +190,26 @@ test('current channel names take precedence in review and cached names retain th
   await expect(page.locator('.guided-setup')).toHaveCount(0);
   await expect(page.locator('#savebar')).toBeVisible();
 });
+
+test('staged game changes do not relabel the live queue roster or its saved-rule actions', async ({
+  page,
+}) => {
+  const state = await mockApp(page);
+  const next = '5daebc0a-55e8-4d56-a17d-d94913644911';
+  state.snapshot.settings.games.push({ id: next, name: 'Friday board games', catalogId: null });
+  await page.goto(editor);
+  await page.getByRole('combobox', { name: 'Game', exact: true }).selectOption(next);
+  await page.locator('[data-queue-list]').click();
+  const card = page.locator('.queue-card');
+  await expect(card.locator('.queue-meta')).toContainText('Age of Empires II');
+  await expect(card.locator('.queue-meta')).not.toContainText('Friday board games');
+  await expect(card.locator('.draft-tag')).toContainText(
+    'Live roster and actions use saved settings',
+  );
+  await card.getByRole('button', { name: 'Clear queue', exact: true }).click();
+  expect(state.actions).toHaveLength(0);
+  expect(state.saved).toHaveLength(0);
+  await card.getByRole('button', { name: 'Confirm action', exact: true }).click();
+  expect(state.actions[0]).toMatchObject({ kind: 'clear', queue });
+  await expect(page.locator('#savebar')).toBeVisible();
+});

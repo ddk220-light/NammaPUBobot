@@ -861,12 +861,16 @@ function queueOverview() {
       );
       const changed =
         !saved || draft!.raw.has(`queue:${q.id}`) || JSON.stringify(saved) !== JSON.stringify(q);
-      const meta = `${escape(settings.games.find((g) => g.id === q.gameId)?.name ?? 'Unavailable game')} · #${escape(channelName(q.channelId))}${saved ? ` · ${saved.size} players, ${saved.size / 2}v${saved.size / 2}` : ''}`;
+      const live = saved ?? q;
+      const liveGame = (saved ? snapshot!.settings : settings).games.find(
+        (g) => g.id === live.gameId,
+      );
+      const meta = `${escape(liveGame?.name ?? 'Unavailable game')} · #${escape(channelName(live.channelId))}${saved ? ` · ${saved.size} players, ${saved.size / 2}v${saved.size / 2}` : ''}`;
       const roster = `<p class="queue-capacity"><strong>Waiting now</strong><span>${waiting.length}${saved ? ` of ${saved.size}` : ''}</span></p>${saved ? `<progress value="${Math.min(waiting.length, saved.size)}" max="${saved.size}" aria-label="Waiting players for ${escape(q.name)}"></progress>` : ''}<ul class="waiting-roster" aria-label="Waiting players">${
         waiting
           .map((p) => {
             const rating = records!.players.find(
-              (v) => v.id === p.id && v.gameId === q.gameId,
+              (v) => v.id === p.id && v.gameId === live.gameId,
             )?.rating;
             return `<li><span class="player-initial" aria-hidden="true">${escape(Array.from(p.name)[0] ?? '?')}</span>${escape(p.name)}<span class="roster-rating">${rating ?? 'rating not loaded'}</span></li>`;
           })
@@ -876,7 +880,7 @@ function queueOverview() {
         ? `<form data-kind="queue-control" data-id="${q.id}" class="queue-quick-action"><input type="hidden" name="kind" value="start" /><p class="queue-policy"><span>${escape({ captain: 'Captain teams', balanced: 'Balanced teams', random: 'Random teams' }[saved.teamMethod])}</span><span>${saved.checkIn.enabled ? `Check-in ${saved.checkIn.seconds} s` : 'Check-in off'}</span><span>${matches.length} active in ${records!.matches.length} loaded records</span></p><button name="directAction" value="start">Start with ${waiting.length} now</button><button name="directAction" value="clear">Clear queue</button><span class="sr-only">Uses the waiting roster and saved rules. Advanced splitting is under Matches.</span></form>`
         : '<p class="form-help">Save this queue before starting matches.</p>';
       const pausedEmpty = saved && !saved.enabled && !waiting.length && !matches.length;
-      return `<article class="panel queue-card"><div class="queue-card-heading"><div class="queue-card-title"><div class="section-heading"><h3>${escape(q.name || 'Unnamed draft')}</h3><span class="status-pill" data-status="${!saved ? 'draft' : saved.enabled ? 'open' : 'paused'}">${!saved ? 'New draft' : saved.enabled ? 'Open' : 'Paused'}</span>${q.isDefault ? '<span class="default-tag">Default in channel</span>' : ''}</div><p class="queue-meta">${meta}</p></div><div class="actions"><button type="button" data-open-queue="${q.id}" aria-label="Settings for ${escape(q.name || 'new queue')}">Settings</button><button type="button" data-toggle-queue="${q.id}" class="${q.enabled ? '' : 'resume-queue'}">${q.enabled ? 'Pause' : 'Resume'}<span class="sr-only"> on save</span></button></div></div>${changed ? `<p class="draft-tag">Unsaved changes${saved && saved.enabled !== q.enabled ? ` · ${q.enabled ? 'resume' : 'pause'} on save` : ''}</p>` : ''}${pausedEmpty ? `<p class="paused-note">Players cannot <code>/add</code> while paused. Ratings and history are kept.</p><details class="queue-manual-actions"><summary>Waiting roster and manual actions</summary>${roster}${actions}</details>` : roster + actions}</article>`;
+      return `<article class="panel queue-card"><div class="queue-card-heading"><div class="queue-card-title"><div class="section-heading"><h3>${escape(q.name || 'Unnamed draft')}</h3><span class="status-pill" data-status="${!saved ? 'draft' : saved.enabled ? 'open' : 'paused'}">${!saved ? 'New draft' : saved.enabled ? 'Open' : 'Paused'}</span>${q.isDefault ? '<span class="default-tag">Default in channel</span>' : ''}</div><p class="queue-meta">${meta}</p></div><div class="actions"><button type="button" data-open-queue="${q.id}" aria-label="Settings for ${escape(q.name || 'new queue')}">Settings</button><button type="button" data-toggle-queue="${q.id}" class="${q.enabled ? '' : 'resume-queue'}">${q.enabled ? 'Pause' : 'Resume'}<span class="sr-only"> on save</span></button></div></div>${changed ? `<p class="draft-tag">Unsaved changes${saved && saved.enabled !== q.enabled ? ` · ${q.enabled ? 'resume' : 'pause'} on save` : ''}${saved ? ' · Live roster and actions use saved settings' : ''}</p>` : ''}${pausedEmpty ? `<p class="paused-note">Players cannot <code>/add</code> while paused. Ratings and history are kept.</p><details class="queue-manual-actions"><summary>Waiting roster and manual actions</summary>${roster}${actions}</details>` : roster + actions}</article>`;
     })
     .join('');
   return `${!savedReady(snapshot!, setup) ? '<p class="notice">Setup needs attention. <button type="button" data-view="setup">Open Setup</button></p>' : ''}<section class="queue-overview" aria-label="Queue overview"><p class="sr-only queue-list-note">Live rosters use saved rules. Pause and resume take effect when you save.</p><div class="queue-cards">${cards}</div></section>`;
