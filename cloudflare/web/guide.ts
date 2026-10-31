@@ -1,6 +1,6 @@
 import { identity } from '../src/identity';
 import type { Snapshot } from '../src/domain/config';
-import { selectableCatalog } from '../src/games/catalog';
+import { gameCatalog, selectableCatalog } from '../src/games/catalog';
 import type { EditorSetup } from './settings';
 import type { SettingsDraft } from './draft';
 import { esc } from './ui';
@@ -158,7 +158,10 @@ export function guidedSetup(
     const id = v.startsWith('catalog:')
       ? v.slice(8)
       : settings.games.find((g) => g.id === v)?.catalogId;
-    const state = setup.catalogAvailability?.[id ?? ''];
+    const state =
+      gameCatalog.find((g) => g.id === id)?.lifecycle === 'legacy'
+        ? 'unsupported'
+        : setup.catalogAvailability?.[id ?? ''];
     return state === 'available'
       ? 'Available'
       : state === 'credentials_required'

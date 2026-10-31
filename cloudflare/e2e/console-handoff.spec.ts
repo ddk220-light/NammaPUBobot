@@ -114,7 +114,6 @@ test('queue cards stage pause and use reviewed actions with saved rules', async 
   await expect(card.locator('.status-pill')).toHaveText('Open');
   await expect(card).toContainText('pause on save');
   expect(state.saved).toHaveLength(0);
-  await card.locator('[name="kind"]').selectOption('clear');
   await card.getByRole('button', { name: 'Clear queue', exact: true }).click();
   expect(state.actions).toHaveLength(0);
   await expect(card).toContainText('Clear all waiting players');
