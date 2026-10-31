@@ -1,4 +1,4 @@
-# Community Games — design handoff (v2, 31 Oct 2026)
+# Community Games — design handoff (v3, 31 Oct 2026)
 
 Design for the **Cloudflare** app only (`cloudflare/`). Design only: no
 product file was changed. The implementing agent builds it; the owner tests it.
@@ -6,6 +6,10 @@ product file was changed. The implementing agent builds it; the owner tests it.
 **Live canvas (pan, zoom, press Play on any frame):**
 https://claude.ai/artifact/GY8vuTZcFZYyFCShx43EuJ
 (private until the owner shares it from the Share menu)
+
+## v3 (review of `main`)
+
+`REVIEW-v3.md` lists what still needs work in the merged app. New canvas boards: `Copy-Guide` (how to write the public pages, with before → after text from main) and `Match-Actions` (recording results and fixing rosters without raw IDs, plus queue-card button states). Also added: `discord-journeys.html`, the Discord bot flow analysis.
 
 ## What changed in v2
 
@@ -29,7 +33,9 @@ https://claude.ai/artifact/GY8vuTZcFZYyFCShx43EuJ
 | Path | What |
 | --- | --- |
 | `README.md` | This file |
-| `IMPLEMENTATION-REVIEW.md` | **Start here.** What to fix in the current build, in order |
+| `REVIEW-v3.md` | **Start here.** What still needs work on `main` |
+| `discord-journeys.html` | Discord bot journeys and suggested changes |
+| `IMPLEMENTATION-REVIEW.md` | v2 review (mostly done on main); What to fix in the current build, in order |
 | `IMPLEMENTATION.md` | Tokens (light + dark), components, CSP rules, field mapping, phone rules |
 | `SEO-FRONTEND.md` | Static public pages, URLs, head tags, JSON-LD, content rules, tests |
 | `SEO-BACKEND.md` | Domain, real 404s, robots and sitemaps, noindex on staging, leaderboard pages, headers |
