@@ -844,7 +844,7 @@ function queueSection() {
       `<nav class="editor-breadcrumb" aria-label="Queue navigation"><button type="button" data-queue-list>Queues</button><span aria-hidden="true">/</span><span>${escape(queue.name || 'New queue')}</span></nav>` +
       queueEditor(draft!, setup, selectedQueue).replace(
         '<h1>Queues</h1>',
-        `<h1>${escape(queue.name || 'New queue')}</h1>`,
+        () => `<h1>${escape(queue.name || 'New queue')}</h1>`,
       )
     );
   return `<div class="page-heading"><div><h1>Queues</h1><p class="view-description">A queue lives in one Discord channel. Players join with <code>/add</code>; automatic start prepares a match when it fills.</p></div><button type="button" class="primary" data-edit="add-queue" ${!draft!.working.games.length || !setup.channels.length ? 'disabled data-unavailable="true"' : ''}>Add queue</button></div><div class="queue-list-layout"><div>${queueOverview() || '<section class="panel empty-state"><h2>Your first queue starts here</h2><p>Add a game and verify Discord access in Setup.</p><button type="button" data-view="setup">Open setup</button></section>'}</div>${activitySidebar()}</div>`;

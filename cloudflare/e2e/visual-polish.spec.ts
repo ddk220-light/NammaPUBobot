@@ -269,6 +269,8 @@ for (const width of [390, 1440]) {
     ).toBeVisible();
     await page.screenshot({ path: info.outputPath('guide-complete.png') });
     expect(state.saved).toHaveLength(1);
+    await expect(page.locator('.guide-progress li').last()).not.toHaveClass(/verified/);
+    await expect(page.locator('.guide-progress li').last()).toHaveAttribute('aria-current', 'step');
   });
 }
 

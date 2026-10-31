@@ -199,7 +199,7 @@ export function guidedSetup(
     setup.access.status === 'ready',
     saved.settings.games.some((g) => g.id === game?.id),
     saved.settings.queues.some((q) => q.id === queue?.id),
-    savedReady(saved, setup),
+    false, // Trying the queue is a manual instruction, never a tracked completion.
   ];
   return `<section class="guided-setup" aria-labelledby="guide-heading"><aside class="guide-rail"><div class="section-heading"><h2 id="guide-heading" tabindex="-1">Setup guide</h2></div><p class="form-help">Your draft stays with this community.</p><ol class="guide-progress">${['Discord access', 'Choose a game', 'First queue', 'Try it in Discord'].map((label, i) => `<li class="${verified[i] ? 'verified' : ''}" ${i === index ? 'aria-current="step"' : ''}><span class="guide-step-number" aria-hidden="true">${verified[i] ? '✓' : i + 1}</span><span>${label}<small>${i === index ? 'Current step' : verified[i] ? 'Saved and verified' : 'Not complete'}</small></span></li>`).join('')}</ol><button type="button" data-guide-close>Close guide</button></aside><div class="panel guide-body"><p class="record-meta">Step ${index + 1} of 4</p>${body}<div class="actions guide-actions">${index ? `<button type="button" data-guide-step="${guideSteps[index - 1]}">Back</button>` : ''}${index < 2 ? `<button type="button" class="primary" data-guide-next="${stage}" ${stage === 'game' && !game?.name.trim() ? 'disabled data-unavailable="true"' : ''}>${stage === 'access' ? 'Choose game' : 'Create queue draft'}</button>` : stage === 'queue' ? '<button type="button" class="primary" data-guide-review>Review and save</button>' : ''}</div></div></section>`;
 }

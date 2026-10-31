@@ -213,3 +213,19 @@ test('staged game changes do not relabel the live queue roster or its saved-rule
   expect(state.actions[0]).toMatchObject({ kind: 'clear', queue });
   await expect(page.locator('#savebar')).toBeVisible();
 });
+
+test('names with replacement characters and markup remain literal in editor headings', async ({
+  page,
+}) => {
+  const state = await mockApp(page);
+  const name = "Friday $& $` $' <&> ♟";
+  state.snapshot.settings.queues[0].name = name;
+  state.snapshot.settings.games[0].name = 'Game $& <&>';
+  await page.goto(editor);
+  await expect(page.locator('#view-queues h1')).toHaveCount(1);
+  await expect(page.locator('#view-queues h1')).toHaveText(name);
+  await expect(page.locator('.queue-editor-heading .view-description')).toContainText(
+    'Game $& <&>',
+  );
+  await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(name);
+});

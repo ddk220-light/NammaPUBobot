@@ -242,7 +242,7 @@ export function queueEditor(
       : 'Channel not verified';
   html = html.replace(
     'Choose where players gather and how their matches work.',
-    `${esc(game?.name ?? 'Unavailable game')} · ${esc(channelContext)}`,
+    () => `${esc(game?.name ?? 'Unavailable game')} · ${esc(channelContext)}`,
   );
   const maps = q.maps ?? defaultMaps(game?.catalogId === 'aoe2' ? aoe2Maps : []);
   if (!q.maps && !maps.pool.length) maps.shortlist = 1;
