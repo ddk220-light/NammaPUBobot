@@ -1,4 +1,22 @@
-# NammaAoe2Bot
+# Community Games — NammaMatchBot
+
+Free, open-source Discord tools for community game nights: pickup queues, teams,
+community ratings and match records. The current Cloudflare application supports
+seven selectable games plus custom configurations, with a responsive organizer
+and public documentation. NammaMatchBot is the internal project name; Community
+Games remains the public brand while naming and domain work is pending.
+
+Start with the [Cloudflare application guide](cloudflare/README.md),
+[contributing instructions](CONTRIBUTING.md), [license](LICENSE), and
+[UI/public-site delivery notes](cloudflare/docs/public-site-delivery.md).
+Optional game connections are Beta and have deployment-specific availability;
+source integration does not establish that a provider is enabled on the hosted service.
+
+## NammaAoe2Bot: legacy Python application
+
+The following documentation describes the original Python application. Its daily
+quiz and other legacy behavior must not be assumed to be available in Cloudflare.
+
 
 A Discord bot for organising Age of Empires II pickup games: queues, rated
 matches, civilization results, a play-money gold economy with betting on live
