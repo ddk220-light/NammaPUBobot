@@ -74,7 +74,7 @@ test('guide survives failed save and return from Discord without falsely complet
   await expect(page.locator('#view-setup')).not.toContainText('Ready to play');
   await expect(page.locator('#savebar')).toBeVisible();
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
-  await page.getByRole('button', { name: 'Create queue draft' }).click();
+  await page.getByRole('button', { name: 'Review queue' }).click();
   await expect(page.locator('[data-guide-queue] [name="name"]')).toHaveValue('Keep this queue');
   expect(state.saved).toHaveLength(1);
   await page.screenshot({ path: info.outputPath('guided-setup-draft.png') });
@@ -191,6 +191,7 @@ test('custom game and advanced queue edits stay synchronized with the guide', as
   await page.getByRole('button', { name: 'Start guided setup', exact: true }).click();
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
   await page.locator('[data-game-choice="custom"]').click();
+  await expect(page.locator('[data-guide-name]')).toBeFocused();
   await page.locator('[data-guide-name]').fill('Friday board games');
   await tab(page, 'Queues').click();
   await tab(page, 'Setup').click();

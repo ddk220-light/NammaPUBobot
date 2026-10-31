@@ -1160,7 +1160,7 @@ function setupJourney() {
   const steps = [true, setup.access.status === 'ready', saved.games.length > 0, ready];
   if (ready)
     return `<section class="panel setup-journey setup-ready"><span class="ready-check" aria-hidden="true">✓</span><div><h2>Ready to play</h2><p>Saved queues and required Discord access are verified.${pending ? ` ${pending} recent delivery task(s) are pending; check Matches.` : ''}</p><small>${accessCheckedAt ? `Access checked at ${escape(accessCheckedAt.toLocaleTimeString())}.` : ''}</small></div><button type="button" data-guide-start>Open setup guide</button></section>`;
-  return `<section class="panel setup-journey"><div class="section-heading"><h2>${ready ? 'Ready to play' : 'Set up your first game'}</h2><span class="status-pill">${steps.filter(Boolean).length} / 4 complete</span></div><ol class="setup-steps">${['Choose community', 'Verify Discord access', 'Add a game', 'Save an enabled queue'].map((label, i) => `<li class="${steps[i] ? 'complete' : ''}"><span>${steps[i] ? '✓' : i + 1}</span>${label}</li>`).join('')}</ol><p class="form-help">Progress reflects saved settings and verified access.${pending ? ` ${pending} recent delivery task(s) are not complete; check delivery diagnostics.` : ''}</p><div class="actions"><button type="button" data-guide-start>${ready ? 'Open setup guide' : 'Start guided setup'}</button>${!steps[1] && bootstrap.inviteUrl ? `<a class="button primary" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Add to Discord</a><button type="button" data-action="check-access">I’m back — check access</button>` : ''}${steps[2] ? '<button type="button" data-view="queues">Configure a queue</button>' : ''}</div></section>`;
+  return `<section class="panel setup-journey"><div class="section-heading"><h2>${ready ? 'Ready to play' : saved.games.length ? 'Setup needs attention' : 'Set up your first game'}</h2><span class="status-pill">${steps.filter(Boolean).length} / 4 complete</span></div><ol class="setup-steps">${['Choose community', 'Verify Discord access', 'Add a game', 'Save an enabled queue'].map((label, i) => `<li class="${steps[i] ? 'complete' : ''}"><span>${steps[i] ? '✓' : i + 1}</span>${label}</li>`).join('')}</ol><p class="form-help">Progress reflects saved settings and verified access.${pending ? ` ${pending} recent delivery task(s) are not complete; check delivery diagnostics.` : ''}</p><div class="actions"><button type="button" data-guide-start>${ready ? 'Open setup guide' : 'Start guided setup'}</button>${!steps[1] && bootstrap.inviteUrl ? `<a class="button primary" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Add to Discord</a><button type="button" data-action="check-access">I’m back — check access</button>` : ''}${steps[2] ? '<button type="button" data-view="queues">Configure a queue</button>' : ''}</div></section>`;
 }
 
 function render() {
@@ -1606,8 +1606,15 @@ function handleEditorClick(event: MouseEvent): boolean {
     }
     if (guide.hasAttribute('data-guide-start')) {
       const url = new URL(location.href);
-      if (!url.searchParams.has('guideGame') && draft.working.games[0])
-        url.searchParams.set('guideGame', draft.working.games[0].id);
+      const existingQueue =
+        draft.working.queues.find((q) => q.isDefault) ?? draft.working.queues[0];
+      if (!url.searchParams.has('guideGame') && (existingQueue || draft.working.games[0]))
+        url.searchParams.set('guideGame', existingQueue?.gameId ?? draft.working.games[0].id);
+      if (
+        !url.searchParams.has('guideQueue') &&
+        existingQueue?.gameId === url.searchParams.get('guideGame')
+      )
+        url.searchParams.set('guideQueue', existingQueue.id);
       writeRoute(url, 'replace');
       guideRoute('access');
     }
@@ -1628,9 +1635,13 @@ function handleEditorClick(event: MouseEvent): boolean {
         .materialize()
         .games.find((g) => g.id === url.searchParams.get('guideGame'));
       if (!game?.name.trim()) return true;
-      const existing = draft.working.queues.find(
-        (q) => q.id === url.searchParams.get('guideQueue') && q.gameId === game.id,
-      );
+      const existing =
+        draft.working.queues.find(
+          (q) => q.id === url.searchParams.get('guideQueue') && q.gameId === game.id,
+        ) ??
+        (draft.saved.settings.games.some((g) => g.id === game.id)
+          ? draft.working.queues.find((q) => q.gameId === game.id)
+          : undefined);
       const id =
         existing?.id ??
         draft.addQueue(

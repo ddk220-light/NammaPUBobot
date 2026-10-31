@@ -229,3 +229,33 @@ test('names with replacement characters and markup remain literal in editor head
   );
   await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(name);
 });
+
+test('an established community recovers access without choosing a test ladder or duplicating its queue', async ({
+  page,
+}) => {
+  const state = await mockApp(page);
+  state.access = 'unavailable';
+  state.snapshot.settings.queues[0].enabled = false;
+  state.snapshot.settings.games.unshift({
+    id: 'aaaaaaaa-1111-4111-8111-111111111111',
+    name: 'Old review ladder',
+    catalogId: null,
+  });
+  await page.goto(`/app/?community=${guild}&view=setup`);
+  await expect(
+    page.getByRole('heading', { name: 'Setup needs attention', exact: true }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Start guided setup', exact: true }).click();
+  state.access = 'ready';
+  await page.getByRole('button', { name: 'I’m back — check access', exact: true }).click();
+  await page.getByRole('button', { name: 'Choose game', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`guideGame=${game}`));
+  await page.getByRole('button', { name: 'Review queue', exact: true }).click();
+  await expect(page.locator('[data-guide-queue]')).toHaveAttribute('data-guide-queue', queue);
+  await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(
+    'Evening games',
+  );
+  await expect(page.locator('#savebar')).toBeHidden();
+  await expect(page.locator('.discord-preview')).toContainText('Paused on save');
+  expect(state.saved).toHaveLength(0);
+});

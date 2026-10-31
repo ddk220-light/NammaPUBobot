@@ -27,9 +27,12 @@
       const select = document.querySelector('[data-guide-game]');
       select.value = card.dataset.gameChoice;
       select.dispatchEvent(new Event('change', { bubbles: true }));
-      requestAnimationFrame(() =>
-        document.querySelector('[data-game-choice][aria-pressed="true"]')?.focus(),
-      );
+      // Rendering is synchronous. Deferring this focus can steal focus from a
+      // newly typed custom-game name, especially while the mobile keyboard opens.
+      const next =
+        document.querySelector('[data-guide-name]') ||
+        document.querySelector('[data-game-choice][aria-pressed="true"]');
+      next?.focus();
     }
   });
   new MutationObserver(() =>
