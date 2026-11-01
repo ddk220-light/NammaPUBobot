@@ -179,6 +179,28 @@ describe('team modes and bounded commands', () => {
 });
 
 describe('substitutions and roster concurrency', () => {
+  it('describes the check-in rebalance accurately when reused readiness starts play immediately', async () => {
+    const m = await fill();
+    for (const n of [1, 2, 3]) await act('ready', n, { matchId: m.id });
+    await act('add', 4);
+    await runInDurableObject(stub(), (_instance, state) => {
+      const now = Date.now();
+      state.storage.sql.exec(
+        'INSERT INTO readiness VALUES(?,?,?,?,?)',
+        queue,
+        game,
+        person(4).id,
+        now,
+        now + 900000,
+      );
+    });
+    const reply = await act('subauto', 0, { matchId: m.id });
+    expect(reply.ok).not.toBe(false);
+    expect((await saved(m.id)).state).toBe('playing');
+    expect(reply.content).toContain('Teams rebalanced for check-in');
+    expect(reply.content).not.toContain('must check in');
+    expect(reply.content).not.toContain('Everyone else keeps their team');
+  });
   it.each(['balanced', 'captain', 'random'] as const)(
     'keeps every other player on their team for an automatic substitute during %s play',
     async (method) => {
