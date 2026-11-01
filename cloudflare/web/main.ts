@@ -849,7 +849,14 @@ async function searchMembers(button: HTMLButtonElement) {
     const choices = new Map<string, MemberChoice>();
     for (const option of Array.from(select.options).filter((o) => o.value))
       choices.set(option.value, { id: option.value, name: option.textContent ?? '' });
-    for (const p of matches) choices.set(p.id, p);
+    for (const p of matches) {
+      const waiting = records?.waiting.some((w) => w.players.some((v) => v.id === p.id));
+      const side = match?.teams.findIndex((team) => team.some((v) => v.id === p.id)) ?? -1;
+      choices.set(p.id, {
+        ...p,
+        context: waiting ? 'Waiting in a queue' : side >= 0 ? (side ? 'Beta' : 'Alpha') : undefined,
+      });
+    }
     const chosen = select.value;
     select.innerHTML = memberOptions([...choices.values()], chosen);
     status.textContent = `${matches.length} matching members added to the choices (up to 20). Loaded choices are kept. The server checks eligibility when you confirm.`;
@@ -1072,13 +1079,14 @@ async function submitRepair(form: HTMLFormElement, data: FormData) {
     form.querySelector('[data-review]')?.remove();
     form.insertAdjacentHTML(
       'beforeend',
-      `<div class="notice" data-review>${escape(prompt)} <button type="button" data-action="cancel-repair">Cancel</button></div>`,
+      `<div class="notice" data-review role="status">${escape(prompt)} <button type="button" data-action="cancel-repair">Cancel</button></div>`,
     );
     const submit = (
       form.dataset.kind === 'queue-control'
         ? form.querySelector<HTMLButtonElement>(`button[name="directAction"][value="${kind}"]`)
         : form.querySelector<HTMLButtonElement>('button:not([type="button"])')
     )!;
+    submit.before(form.querySelector('div[data-review]')!);
     submit.dataset.originalLabel ??= submit.textContent!;
     submit.textContent = 'Confirm action';
     return;

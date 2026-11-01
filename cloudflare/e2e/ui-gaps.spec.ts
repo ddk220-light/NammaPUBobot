@@ -59,6 +59,13 @@ test('roster repair selects names, escapes search results and requires reviewed 
   await replacement.getByRole('button', { name: 'Review replacement' }).click();
   await expect(replacement.locator('div[data-review]')).toContainText(state.playerName);
   await expect(replacement.locator('div[data-review]')).not.toContainText(user);
+  expect(
+    await replacement.evaluate((form) => {
+      const review = form.querySelector('div[data-review]')!;
+      const confirm = form.querySelector('button[data-original-label]')!;
+      return Boolean(review.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }),
+  ).toBe(true);
   expect(state.actions).toHaveLength(0);
   await replacement
     .getByLabel('Who replaces them?', { exact: true })
