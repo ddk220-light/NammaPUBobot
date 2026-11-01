@@ -75,6 +75,7 @@ export async function mockApp(page: Page) {
     actions: [] as Record<string, unknown>[],
     playerActions: [] as Record<string, unknown>[],
     matchState: 'playing',
+    waitingCount: 0,
   };
   const player = {
     id: user,
@@ -126,7 +127,16 @@ export async function mockApp(page: Page) {
     onboarding: {},
     pendingReturns: [],
     delivery: [],
-    waiting: [],
+    waiting: [
+      {
+        queueId: queue,
+        channelId: channel,
+        players: Array.from({ length: state.waitingCount }, (_, i) => ({
+          id: String(100000000000010000n + BigInt(i)),
+          name: `Waiting player ${i + 1}`,
+        })),
+      },
+    ],
     noadds: [],
     audit: [],
   });

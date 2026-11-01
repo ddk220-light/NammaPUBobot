@@ -2629,10 +2629,10 @@ export class PlayStore {
           { id: candidate.user_id, name: candidate.display_name },
           settings,
           a.actor.id,
-          true,
+          m.state === 'check_in',
         );
         return {
-          content: `<@${candidate.user_id}> replaced <@${outgoing.id}>. Teams rebalanced${m.state === 'check_in' ? '; the substitute must check in' : ''}. Check the updated teams on the match card.`,
+          content: `<@${candidate.user_id}> replaced <@${outgoing.id}>. ${m.state === 'check_in' ? 'Teams rebalanced; the substitute must check in.' : 'Everyone else keeps their team.'} Check the updated teams on the match card.`,
         };
       }
       if (a.kind === 'subfor' || a.kind === 'force_sub') {

@@ -62,7 +62,7 @@ export function permissionRecovery(
           ? `#${channel.name}`
           : setup.knownChannels?.find((c) => c.id === id)
             ? `#${setup.knownChannels.find((c) => c.id === id)!.name} · Not verified`
-            : `Unavailable channel for ${settings.queues
+            : `${!known ? 'Channel not verified' : 'Channel unavailable'} · ${settings.queues
                 .filter((q) => q.channelId === id)
                 .map((q) => q.name)
                 .join(', ')}`,
@@ -145,7 +145,7 @@ export function guidedSetup(
   if (stage === 'queue')
     body = !queue
       ? '<p>Choose a game first, then continue to create a queue draft.</p>'
-      : `<h3>Your first queue</h3><p>${esc(game?.name ?? 'Game')} · changes apply after saving.</p><div class="guide-queue-content"><form data-guide-queue="${queue.id}" novalidate><div class="fields"><label>Queue name<input name="name" value="${read('name', queue.name)}" maxlength="40" required /></label><label>Discord channel<select name="channelId">${setup.channels.map((c) => `<option value="${c.id}" ${c.id === queue.channelId ? 'selected' : ''} ${c.permissions.some((p) => !p.granted) && c.id !== queue.channelId ? 'disabled' : ''}>#${esc(c.name)}${c.permissions.some((p) => !p.granted) ? ' — missing channel permissions' : ''}</option>`).join('')}${!setup.channels.some((c) => c.id === queue.channelId) ? `<option value="${esc(queue.channelId)}" selected>Unavailable channel · ${esc(setup.knownChannels?.find((c) => c.id === queue.channelId)?.name ? `${setup.knownChannels.find((c) => c.id === queue.channelId)!.name} · Not verified` : queue.channelId || 'choose after checking access')}</option>` : ''}</select></label><label>Players<input name="size" type="number" min="2" max="16" step="2" value="${read('size', queue.size)}" required /></label><label>Team formation<select name="teamMethod">${Object.entries(
+      : `<h3>Your first queue</h3><p>${esc(game?.name ?? 'Game')} · changes apply after saving.</p><div class="guide-queue-content"><form data-guide-queue="${queue.id}" novalidate><div class="fields"><label>Queue name<input name="name" value="${read('name', queue.name)}" maxlength="40" required /></label><label>Discord channel<select name="channelId">${setup.channels.map((c) => `<option value="${c.id}" ${c.id === queue.channelId ? 'selected' : ''} ${c.permissions.some((p) => !p.granted) && c.id !== queue.channelId ? 'disabled' : ''}>#${esc(c.name)}${c.permissions.some((p) => !p.granted) ? ' — missing channel permissions' : ''}</option>`).join('')}${!setup.channels.some((c) => c.id === queue.channelId) ? `<option value="${esc(queue.channelId)}" selected>Unavailable channel · ${esc(setup.knownChannels?.find((c) => c.id === queue.channelId)?.name ? `${setup.knownChannels.find((c) => c.id === queue.channelId)!.name} · Not verified` : setup.access.status === 'ready' ? 'choose an available channel' : 'check Discord access')}</option>` : ''}</select></label><label>Players per match<input name="size" type="number" min="2" max="16" step="2" value="${read('size', queue.size)}" required /></label><label>How teams are made<select name="teamMethod">${Object.entries(
           { captain: 'Captain pick', balanced: 'Balanced by rating', random: 'Random teams' },
         )
           .map(
@@ -194,7 +194,7 @@ export function guidedSetup(
     );
   };
   if (stage === 'game')
-    body += `<div class="game-picker" role="group" aria-label="Game choices">${[...settings.games.map((g) => ({ value: g.id, name: g.name })), ...selectableCatalog.filter((g) => !settings.games.some((v) => v.catalogId === g.id)).map((g) => ({ value: `catalog:${g.id}`, name: g.name })), { value: 'custom', name: 'Custom game' }].map((g) => `<button type="button" data-game-choice="${esc(g.value)}" aria-pressed="${g.value === game?.id}"><span class="game-choice-mark" aria-hidden="true">${gameMark(g.value)}</span><strong>${esc(g.name || 'Custom game draft')}</strong>${g.value.startsWith('catalog:') || Boolean(settings.games.find((v) => v.id === g.value)?.catalogId) ? `<small>Manual reporting · Beta connections: ${availability(g.value)}</small>` : ''}</button>`).join('')}</div>`;
+    body += `<p class="form-help">Captains report results for every game. Optional connections are Beta; each card shows their current availability.</p><div class="game-picker" role="group" aria-label="Game choices">${[...settings.games.map((g) => ({ value: g.id, name: g.name })), ...selectableCatalog.filter((g) => !settings.games.some((v) => v.catalogId === g.id)).map((g) => ({ value: `catalog:${g.id}`, name: g.name })), { value: 'custom', name: 'Custom game' }].map((g) => `<button type="button" data-game-choice="${esc(g.value)}" aria-pressed="${g.value === game?.id}"><span class="game-choice-mark" aria-hidden="true">${gameMark(g.value)}</span><strong>${esc(g.name || 'Custom game draft')}</strong>${g.value.startsWith('catalog:') || Boolean(settings.games.find((v) => v.id === g.value)?.catalogId) ? `<small class="game-choice-status">Beta · ${availability(g.value)}</small>` : '<small>Captains report results</small>'}</button>`).join('')}</div>`;
   const verified = [
     setup.access.status === 'ready',
     saved.settings.games.some((g) => g.id === game?.id),

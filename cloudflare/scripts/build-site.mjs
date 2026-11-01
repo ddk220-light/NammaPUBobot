@@ -1,3 +1,4 @@
+import { gameCopy } from '../site/game-copy.mjs';
 import { mkdir, readFile, writeFile, copyFile, rm } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { pathToFileURL } from 'node:url';
@@ -58,9 +59,7 @@ async function emit(path, title, description, body) {
 }
 const cards = (items) =>
   `<div class="cards">${items.map(([url, name, desc]) => `<article><h2><a href="${url}">${e(name)}</a></h2><p>${e(desc)}</p></article>`).join('')}</div>`;
-const gameGrid = cards(
-  games.map((g) => [`/games/${g[1]}/`, g[2], `${g[3]} · queues, teams and community ratings`]),
-);
+const gameGrid = cards(games.map((g) => [`/games/${g[1]}/`, g[2], gameCopy[g[0]].short]));
 const discordPreview = `<figure class="discord-example"><figcaption># pickups · an illustrative Discord queue</figcaption><div class="discord-app-name">Community Games <span>App</span></div><div class="discord-message"><div class="discord-message-heading"><strong>4v4 team games</strong><span>6 / 8</span></div><div class="discord-roster">${[
   ['Alex', '1450'],
   ['Rin', '1380'],
@@ -75,9 +74,9 @@ const discordPreview = `<figure class="discord-example"><figcaption># pickups ·
   )}</div><div class="discord-buttons" aria-hidden="true"><span>Join</span><span>Leave</span></div></div><div class="discord-ready"><strong>Teams are ready</strong><p>Check in, play together, and confirm the result.</p></div><p class="preview-caption">Example records · your community sets the rules.</p></figure>`;
 await emit(
   '/',
-  'Free, open-source Discord tools for your gaming community',
-  'Organize pickup queues, form teams, manage community ratings and review matches in a web dashboard.',
-  `<section class="site-hero" data-site-hero><div class="hero-copy"><h1>Free, open-source Discord tools for your gaming community</h1><p class="lead">Players join with <code>/add</code>. Check everyone in, form teams, and keep your community’s ratings and match history in one place.</p><div class="hero-actions"><a class="button" href="/app/">Get started</a><a class="button secondary" href="/guides/getting-started/">How setup works</a></div><p class="hero-note">Community-built. GPL-3.0-only. <a href="/open-source/">Inspect the code or run your own copy.</a></p></div>${discordPreview}</section><section class="site-section games-section"><div class="site-section-heading"><div><h2>Games your community plays</h2><p>Pick a game. Make it your community’s game night.</p></div><a href="/games/">All games →</a></div>${gameGrid}<p class="section-note">Custom games work with manual reporting. Optional connections are Beta and show their actual availability in Setup.</p></section><section class="site-section" id="how"><div class="site-section-heading"><div><h2>From waiting around to playing together</h2><p>A clear routine for your next pickup game.</p></div></div><ol class="workflow-grid"><li><span>1</span><h3>Gather your players</h3><p>Join a named queue in Discord. Everyone knows where to go.</p></li><li><span>2</span><h3>Check in and form teams</h3><p>Confirm who is ready, then use captains, balanced or random teams.</p></li><li><span>3</span><h3>Play and confirm</h3><p>Captains confirm the result. Community records stay understandable.</p></li><li><span>4</span><h3>Keep the story</h3><p>Review ratings, results and recent history in the dashboard.</p></li></ol></section><section class="site-section feature-section"><div class="site-section-heading"><div><h2>Your community, your rules</h2><p>Useful controls, without a complicated game night.</p></div></div>${cards(
+  'A free Discord bot for pickup games in your community',
+  'Free, open-source Discord bot for Age of Empires, Warcraft III, Beyond All Reason and more. Organize pickup queues, teams, ratings and match history.',
+  `<section class="site-hero" data-site-hero><div class="hero-copy"><h1>A free Discord bot for pickup games in your community</h1><p class="lead">Players join with <code>/add</code>. Check everyone in, form teams, and keep ratings and match history for Age of Empires, Warcraft III, Beyond All Reason and more.</p><div class="hero-actions"><a class="button" href="/invite">Add to Discord</a><a class="button secondary" href="/guides/getting-started/">How setup works</a></div><p class="hero-note">Community-built. GPL-3.0-only. <a href="/open-source/">Inspect the code or run your own copy.</a></p></div>${discordPreview}</section><section class="site-section games-section"><div class="site-section-heading"><div><h2>Games your community plays</h2><p>Pick a game. Make it your community’s game night.</p></div><a href="/games/">All games →</a></div>${gameGrid}<p class="section-note">Custom games work with manual reporting. Optional connections are Beta and show their actual availability in Setup.</p></section><section class="site-section" id="how"><div class="site-section-heading"><div><h2>From waiting around to playing together</h2><p>A clear routine for your next pickup game.</p></div></div><ol class="workflow-grid"><li><span>1</span><h3>Gather your players</h3><p>Join a named queue in Discord. Everyone knows where to go.</p></li><li><span>2</span><h3>Check in and form teams</h3><p>Confirm who is ready, then use captains, balanced or random teams.</p></li><li><span>3</span><h3>Play and confirm</h3><p>Captains confirm the result. Community records stay understandable.</p></li><li><span>4</span><h3>Keep the story</h3><p>Review ratings, results and recent history in the dashboard.</p></li></ol></section><section class="site-section feature-section"><div class="site-section-heading"><div><h2>Your community, your rules</h2><p>Useful controls, without a complicated game night.</p></div></div>${cards(
     [
       [
         '/features/queues-and-teams/',

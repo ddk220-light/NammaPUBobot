@@ -1,6 +1,6 @@
 {
   "name": "namma-match-bot-cloudflare",
-  "version": "0.22.1",
+  "version": "0.22.2",
   "private": true,
   "type": "module",
   "license": "GPL-3.0-only",

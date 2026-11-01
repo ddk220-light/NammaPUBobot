@@ -35,3 +35,13 @@ Local verification passed: 1,357 Worker tests, 124 Chromium/WebKit cases, 11 con
 Representative desktop/phone screenshots were captured for all organizer destinations and the public home, game, guide, features, About and Open Source pages. The website includes a labelled organizer screenshot using test fixtures. Physical iOS/Android checks and an authenticated deployed Discord setup smoke test have not been performed in this release.
 
 Directory registrations carry the saved configuration revision. Older registrations cannot replace newer ones. Pending registration has a durable retry deadline that participates in the existing gameplay alarm schedule, so subsequent scheduling does not erase the retry.
+
+## UI gap fixes (0.22.2)
+
+Public marketing pages offer a runtime `/invite` action using the configured Discord application and base channel permissions. It accepts no destination override and adds no analytics. The home page names Discord pickup games, and each of the seven game pages has authored game-specific examples, a practical five-step workflow, accurate limitations and separate setup links. Search publishing and public-by-link statistics remain distinct. Indexing stays off on the existing staging deployment.
+
+Queues disable Start below two waiting players and when paused; empty queues omit Clear. Manual starts retain the existing uneven-team policy and explain it. Advanced match repairs use separate reviewed forms and named roster/server-member choices. Member search is authenticated, requires fresh Manage Server authority, excludes bots, and keeps loaded choices on failure. Final actions still resolve members and validate the saved match version on the server. Stale search responses cannot update a different community, query or replaced form.
+
+Automatic substitutions rebalance during check-in and preserve team membership once playing, matching explicit replacements. Captain ordering may refresh within each team. Initial render no longer focuses the community picker without a prior focused control; keyboard focus restoration remains in place.
+
+This release adds no storage migration or connector activation. Real iOS/Android hardware checks and an authenticated organizer journey on the live deployment remain outside browser-fixture coverage.

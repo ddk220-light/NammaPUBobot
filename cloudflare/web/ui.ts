@@ -52,6 +52,9 @@ export function rememberFocus(target = document.activeElement as HTMLElement | n
         ? `[${attribute}="${CSS.escape(target!.getAttribute(attribute)!)}"]`
         : '';
   return () => {
+    // Initial loading has no control to restore. Do not manufacture a focused
+    // community picker (and a prominent keyboard outline) on every first render.
+    if (!target || target === document.body) return;
     const candidates = [
       target,
       ...(selector ? document.querySelectorAll<HTMLElement>(selector) : []),

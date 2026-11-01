@@ -47,7 +47,7 @@ describe('private substitution panels', () => {
     ]);
     expect(panel.content).toContain('**Alpha**');
     expect(panel.content).toContain('keep your place');
-    expect(panel.content).toContain('rebalances both teams');
+    expect(panel.content).toContain('Everyone else keeps their team');
   });
 
   it('uses cancel intent for an open request, instead of another toggle', () => {
@@ -90,7 +90,7 @@ describe('private substitution panels', () => {
     expect(captainMenu.custom_id).toBe(`m:${m.id}:${m.version}:auto`);
     expect(captainMenu.options.map((o) => o.value)).toEqual(m.roster.slice(1).map((p) => p.id));
     expect(adminMenu.options.map((o) => o.value)).toEqual(m.roster.map((p) => p.id));
-    expect(admin.content).toContain('rebalances both teams');
+    expect(admin.content).toContain('Everyone else keeps their team');
   });
 
   it('removes every action for every closed match state, including for administrators', () => {

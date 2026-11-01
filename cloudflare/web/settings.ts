@@ -195,7 +195,13 @@ function select(
 ) {
   const available = [...items];
   if (current && !available.some((v) => v.id === current))
-    available.push({ id: current, name: `Unavailable selection · ${current}` });
+    available.push({
+      id: current,
+      name:
+        name === 'channelId'
+          ? 'Saved channel · unavailable or not verified'
+          : `Unavailable selection · ${current}`,
+    });
   return row(
     name,
     label,
@@ -281,11 +287,11 @@ export function queueEditor(
             .filter((c) => !setup.channels.some((v) => v.id === c.id))
             .map((c) => ({ id: c.id, name: `#${c.name} · Not verified`, disabled: true })),
         ],
-        `Enabled queues need View Channel, Send Messages, Embed Links and Read Message History.${!channel && cachedChannel?.observedAt ? ` Last seen ${new Date(cachedChannel.observedAt).toLocaleString()}; cached names do not verify access.` : ''}`,
+        `Enabled queues need View Channel, Send Messages, Embed Links and Read Message History. Saved channel ID: ${esc(q.channelId)}.${!channel && cachedChannel?.observedAt ? ` Last seen ${new Date(cachedChannel.observedAt).toLocaleString()}; cached names do not verify access.` : ''}`,
       ) +
       field(
         'size',
-        'Players',
+        'Players per match',
         q.size,
         'The match starts at capacity when automatic start is enabled.',
         { min: 2 },
@@ -310,7 +316,7 @@ export function queueEditor(
       ) +
       field(
         'aliases',
-        'Queue aliases',
+        'Queue nicknames',
         q.aliases?.join(', ') ?? '',
         'Comma-separated alternative names.',
         { required: false },
@@ -350,7 +356,7 @@ export function queueEditor(
     'preparation',
     select(
       'teamMethod',
-      'Team formation',
+      'How teams are made',
       q.teamMethod,
       choices({
         captain: 'Captain-based balance',

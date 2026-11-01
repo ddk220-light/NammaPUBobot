@@ -148,12 +148,66 @@ beforeEach(() => {
         ...availableRoles,
       ]);
     if (url.pathname.endsWith(`/members/${appId}`)) return Response.json({ roles: [] });
+    if (url.pathname.endsWith('/members/search')) {
+      expect(url.searchParams.get('limit')).toBe('20');
+      return Response.json([
+        {
+          nick: 'Rin <Captain>',
+          roles: ['private-role'],
+          user: { id: userId, username: 'rin', global_name: 'Rin' },
+        },
+        { user: { id: appId, username: 'bot', bot: true } },
+      ]);
+    }
     throw new Error(`Unexpected Discord path ${url.pathname}`);
   });
 });
 afterEach(async () => {
   vi.restoreAllMocks();
   await reset();
+});
+
+describe('public invitations and organizer member search', () => {
+  it('invites anonymously with only the configured application and base permissions', async () => {
+    const response = await http('/invite?ref=https://evil.example&returnTo=https://evil.example');
+    expect(response.status).toBe(302);
+    const target = new URL(response.headers.get('Location')!);
+    expect(target.origin + target.pathname).toBe('https://discord.com/oauth2/authorize');
+    expect(target.searchParams.get('client_id')).toBe(appId);
+    expect(target.searchParams.get('permissions')).toBe('84992');
+    expect(target.searchParams.get('scope')).toBe('bot applications.commands');
+    expect(target.href).not.toContain('evil.example');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(response.headers.get('X-Robots-Tag')).toBe('noindex');
+  });
+  it('requires a session and current community management authority for member search', async () => {
+    const path = `/api/communities/${guild}/members?query=Rin`;
+    expect((await http(path)).status).toBe(401);
+    await session();
+    admin = false;
+    expect((await http(path, { headers: headers() })).status).toBe(403);
+  });
+  it('bounds search input, excludes bots, and exposes only display information', async () => {
+    await session();
+    const basePath = `/api/communities/${guild}/members?query=`;
+    for (const query of ['', 'a', 'x'.repeat(81)])
+      expect((await http(basePath + query, { headers: headers() })).status).toBe(400);
+    const result = await http(basePath + encodeURIComponent('Rin & <Captain>'), {
+      headers: headers(),
+    });
+    expect(result.status).toBe(200);
+    expect(result.headers.get('Cache-Control')).toBe('no-store');
+    expect(await result.json()).toEqual({
+      members: [{ id: userId, name: 'Rin <Captain>', username: 'rin' }],
+    });
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.some(
+          ([url]) => new URL(String(url)).searchParams.get('query') === 'Rin & <Captain>',
+        ),
+    ).toBe(true);
+  });
 });
 
 describe('signed Discord HTTP interactions', () => {
