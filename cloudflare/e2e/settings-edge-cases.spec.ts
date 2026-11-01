@@ -195,6 +195,7 @@ test('staged game changes do not relabel the live queue roster or its saved-rule
   page,
 }) => {
   const state = await mockApp(page);
+  state.waitingCount = 1;
   const next = '5daebc0a-55e8-4d56-a17d-d94913644911';
   state.snapshot.settings.games.push({ id: next, name: 'Friday board games', catalogId: null });
   await page.goto(editor);

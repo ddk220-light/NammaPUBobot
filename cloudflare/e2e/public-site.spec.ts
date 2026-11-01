@@ -4,11 +4,15 @@ test('public content and setup guides work without JavaScript', async ({ browser
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
   await page.goto('http://127.0.0.1:4173/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('Free, open-source');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(
+    'free Discord bot for pickup games',
+  );
   await page.getByRole('link', { name: 'Age of Empires II', exact: true }).click();
-  await expect(page.locator('main')).toContainText('captains confirm results');
+  await expect(page.locator('main')).toContainText('/report loss');
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex');
-  await page.getByRole('link', { name: 'Age of Empires II setup guide', exact: true }).click();
+  await page
+    .getByRole('link', { name: 'complete Age of Empires II setup guide', exact: true })
+    .click();
   await expect(page.locator('main')).toContainText('/add');
   await page.screenshot({ path: info.outputPath('public-game-setup.png'), fullPage: true });
   await context.close();

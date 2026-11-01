@@ -260,7 +260,7 @@ const operations = [
   },
   {
     name: 'subauto',
-    description: 'Replace a player with the next eligible queued player and rebalance',
+    description: 'Replace a player from the queue; keep teams once play has started',
     type: 1,
     options: [user, match],
   },

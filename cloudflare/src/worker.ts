@@ -407,6 +407,18 @@ app.get('/api/bootstrap', async (c) => {
   });
 });
 
+// Public pages use this runtime URL rather than embedding deployment-specific IDs.
+// No caller-controlled destination or tracking is accepted here.
+app.get('/invite', (c) => {
+  const invite = botInviteUrls(c.env.DISCORD_APPLICATION_ID).basic;
+  c.header('Cache-Control', 'no-store');
+  c.header('X-Robots-Tag', 'noindex');
+  c.header('Referrer-Policy', 'no-referrer');
+  if (!invite)
+    return c.text('Discord invitations are not configured. Open /app/ for setup information.', 503);
+  return c.redirect(invite, 302);
+});
+
 app.route(
   '/auth/game',
   gameAccountRoutes({
@@ -627,6 +639,28 @@ app.get('/api/communities/:guild/connectors/:game/games', async (c) => {
 app.get('/api/communities/:guild/channels', async (c) =>
   c.json({ channels: await channels(c.env, c.req.param('guild')) }),
 );
+app.get('/api/communities/:guild/members', async (c) => {
+  const query = z.string().trim().min(2).max(80).parse(c.req.query('query'));
+  const members = await discord<
+    {
+      nick?: string | null;
+      user: { id: string; username: string; global_name?: string | null; bot?: boolean };
+    }[]
+  >(
+    `/guilds/${c.req.param('guild')}/members/search?${new URLSearchParams({ query, limit: '20' })}`,
+    c.env.DISCORD_BOT_TOKEN!,
+  );
+  c.header('Cache-Control', 'no-store');
+  return c.json({
+    members: members
+      .filter((m) => !m.user.bot)
+      .map((m) => ({
+        id: m.user.id,
+        name: m.nick ?? m.user.global_name ?? m.user.username,
+        username: m.user.username,
+      })),
+  });
+});
 app.get('/api/communities/:guild/config', async (c) =>
   c.json(await c.env.COMMUNITIES.getByName(c.req.param('guild')).read(c.req.param('guild'))),
 );

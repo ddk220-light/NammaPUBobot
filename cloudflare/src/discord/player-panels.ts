@@ -70,6 +70,10 @@ export function substitutionPanel(match: Match, actorId: string, admin = false):
       components.push(select('auto', 'Replace a player from queue', targets));
     }
   }
-  if (player || captain || admin) content += '\nReplacing from the queue rebalances both teams.';
+  if (player || captain || admin)
+    content +=
+      match.state === 'check_in'
+        ? '\nReplacing from the queue rebalances both teams during check-in.'
+        : '\nThe substitute takes the same place. Everyone else keeps their team.';
   return { content, components };
 }

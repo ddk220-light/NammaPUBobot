@@ -1,5 +1,10 @@
 import { identity } from '../src/identity';
 import { playerGames } from './player-games';
+import {
+  matchRepairs as renderMatchRepairs,
+  memberOptions,
+  type MemberChoice,
+} from './match-actions';
 import { publicGameListText, type PublicGameList } from '../src/games/discovery';
 import type { ProviderResult } from '../src/games/types';
 import { matchConnectorDetails, type ConnectorDiagnostics } from './connectors';
@@ -810,32 +815,72 @@ function matchResult(m: Match) {
     )}</fieldset><p class="form-help" data-result-consequence aria-live="polite">Record Alpha as the winning team. The server applies this game’s saved rating rules and updates match history. Paid prediction settlements remain final.</p><button class="primary">Review result</button></form>`;
 }
 function matchRepairs(m: Match) {
-  const active = ['playing', 'check_in'].includes(m.state);
-  const options = [
-    ['recover', 'Refresh / recover card'],
-    ...(active
-      ? [
-          ['force_sub', 'Force replacement'],
-          ['put', 'Place / move player'],
-          ['recover_abort', 'Abort without ratings'],
-          ['admin_report', 'Record result'],
-        ]
-      : []),
-    ...(m.state === 'finished' ? [['undo', 'Undo result']] : []),
-    ...(m.state === 'undone' ? [['admin_report', 'Record corrected result']] : []),
-  ];
-  return `<details class="rating-options match-admin"><summary>Administrator actions</summary><form data-kind="repair" data-id="${m.id}" class="repair-form">${['finished', 'undone'].includes(m.state) ? '<p class="muted">Undo reverses recorded rating changes and counts when the history is complete and players are not in active matches. A corrected result uses current ratings; paid prediction settlements remain final.</p>' : '<p class="muted">Repair the saved match or record its result. You will review the action before applying it.</p>'}<div class="fields"><label>Match action<select name="kind">${options.map(([value, label]) => `<option value="${value}" ${active && value === 'admin_report' ? 'selected' : ''}>${label}</option>`).join('')}</select></label><label>Player ID<input name="target" placeholder="Outgoing player, or player to place" /></label><label>Replacement ID<input name="replacement" placeholder="New server member" /></label><label>Who won?<select name="result"><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="draw">Draw</option><option value="abort">Abort</option></select></label></div><button>Apply match action</button></form></details>`;
+  const candidates = new Map<string, MemberChoice>();
+  for (const p of records?.players ?? []) candidates.set(p.id, { id: p.id, name: p.name });
+  for (const w of records?.waiting ?? [])
+    for (const p of w.players) candidates.set(p.id, { ...p, context: 'Waiting in a queue' });
+  return renderMatchRepairs(m, [...candidates.values()]);
+}
+async function searchMembers(button: HTMLButtonElement) {
+  const picker = button.closest<HTMLElement>('[data-member-picker]')!;
+  const query = picker.querySelector<HTMLInputElement>('[data-member-query]')!;
+  const select = picker.querySelector<HTMLSelectElement>('select')!;
+  const status = picker.querySelector<HTMLElement>('[data-member-status]')!;
+  const text = query.value.trim();
+  if (text.length < 2) {
+    status.textContent = 'Enter at least 2 characters to search server members.';
+    query.focus();
+    return;
+  }
+  const community = guildId;
+  button.disabled = true;
+  status.textContent = 'Searching server members…';
+  try {
+    const result = await api<{ members: MemberChoice[] }>(
+      communityUrl(`members?${new URLSearchParams({ query: text })}`),
+    );
+    // Navigation, refreshed records or a new query must not apply a stale result.
+    if (community !== guildId || !picker.isConnected || query.value.trim() !== text) return;
+    const form = picker.closest<HTMLFormElement>('form')!;
+    const match = records?.matches.find((m) => m.id === form.dataset.id);
+    const matches = result.members.filter(
+      (p) => select.name !== 'replacement' || !match?.roster.some((v) => v.id === p.id),
+    );
+    const choices = new Map<string, MemberChoice>();
+    for (const option of Array.from(select.options).filter((o) => o.value))
+      choices.set(option.value, { id: option.value, name: option.textContent ?? '' });
+    for (const p of matches) {
+      const waiting = records?.waiting.some((w) => w.players.some((v) => v.id === p.id));
+      const side = match?.teams.findIndex((team) => team.some((v) => v.id === p.id)) ?? -1;
+      choices.set(p.id, {
+        ...p,
+        context: waiting ? 'Waiting in a queue' : side >= 0 ? (side ? 'Beta' : 'Alpha') : undefined,
+      });
+    }
+    const chosen = select.value;
+    select.innerHTML = memberOptions([...choices.values()], chosen);
+    status.textContent = `${matches.length} matching members added to the choices (up to 20). Loaded choices are kept. The server checks eligibility when you confirm.`;
+  } catch (error) {
+    if (community === guildId && picker.isConnected && query.value.trim() === text)
+      status.textContent = `Member search failed. Loaded choices are still available. Retry or check the bot’s Discord member-search access. ${error instanceof Error ? error.message : ''}`;
+  } finally {
+    if (picker.isConnected) button.disabled = false;
+  }
 }
 function channelName(id: string) {
   return (
-    setup.channels.find((c) => c.id === id)?.name ??
+    (setup.channels.find((c) => c.id === id)
+      ? `#${setup.channels.find((c) => c.id === id)!.name}`
+      : undefined) ??
     (setup.knownChannels?.find((c) => c.id === id)
-      ? `${setup.knownChannels.find((c) => c.id === id)!.name} · Not verified`
-      : 'Unavailable channel')
+      ? `#${setup.knownChannels.find((c) => c.id === id)!.name} · Not verified`
+      : setup.access.status === 'ready'
+        ? 'Channel unavailable'
+        : 'Channel not verified')
   );
 }
 function queueChoice() {
-  return `<label>Queue<select name="queueId">${snapshot!.settings.queues.map((q) => `<option value="${q.id}">${escape(q.name)} · #${escape(channelName(q.channelId))}</option>`).join('')}</select></label>`;
+  return `<label>Queue<select name="queueId">${snapshot!.settings.queues.map((q) => `<option value="${q.id}">${escape(q.name)} · ${escape(channelName(q.channelId))}</option>`).join('')}</select></label>`;
 }
 function queueSection() {
   const queue = draft!.materialize().queues.find((q) => q.id === selectedQueue);
@@ -869,7 +914,7 @@ function queueOverview() {
       const liveGame = (saved ? snapshot!.settings : settings).games.find(
         (g) => g.id === live.gameId,
       );
-      const meta = `${escape(liveGame?.name ?? 'Unavailable game')} · #${escape(channelName(live.channelId))}${saved ? ` · ${saved.size} players, ${saved.size / 2}v${saved.size / 2}` : ''}`;
+      const meta = `${escape(liveGame?.name ?? 'Unavailable game')} · ${escape(channelName(live.channelId))}${saved ? ` · ${saved.size} players, ${saved.size / 2}v${saved.size / 2}` : ''}`;
       const roster = `<p class="queue-capacity"><strong>Waiting now</strong><span>${waiting.length}${saved ? ` of ${saved.size}` : ''}</span></p>${saved ? `<progress value="${Math.min(waiting.length, saved.size)}" max="${saved.size}" aria-label="Waiting players for ${escape(q.name)}"></progress>` : ''}<ul class="waiting-roster" aria-label="Waiting players">${
         waiting
           .map((p) => {
@@ -881,7 +926,7 @@ function queueOverview() {
           .join('') || '<li>No players waiting.</li>'
       }</ul>`;
       const actions = saved
-        ? `<form data-kind="queue-control" data-id="${q.id}" class="queue-quick-action"><input type="hidden" name="kind" value="start" /><p class="queue-policy"><span>${escape({ captain: 'Captain teams', balanced: 'Balanced teams', random: 'Random teams' }[saved.teamMethod])}</span><span>${saved.checkIn.enabled ? `Check-in ${saved.checkIn.seconds} s` : 'Check-in off'}</span><span>${matches.length} active in ${records!.matches.length} loaded records</span></p><button name="directAction" value="start">Start with ${waiting.length} now</button><button name="directAction" value="clear">Clear queue</button><span class="sr-only">Uses the waiting roster and saved rules. Advanced splitting is under Matches.</span></form>`
+        ? `<form data-kind="queue-control" data-id="${q.id}" class="queue-quick-action"><input type="hidden" name="kind" value="start" /><p class="queue-policy"><span>${escape({ captain: 'Captain teams', balanced: 'Balanced teams', random: 'Random teams' }[saved.teamMethod])}</span><span>${saved.checkIn.enabled ? `Check-in ${saved.checkIn.seconds} s` : 'Check-in off'}</span><span>${matches.length} active in ${records!.matches.length} loaded records</span></p><button name="directAction" value="start" ${waiting.length < 2 || !saved.enabled ? 'disabled data-unavailable="true"' : ''}>${!saved.enabled ? 'Queue paused' : waiting.length < 2 ? 'Need 2 players to start' : `Start with ${Math.min(waiting.length, saved.size)} now`}</button>${waiting.length ? '<button name="directAction" value="clear">Clear queue</button>' : ''}${Math.min(waiting.length, saved.size) % 2 ? '<p class="form-help">Manual start uses uneven teams. Review the waiting roster before confirming.</p>' : ''}<span class="sr-only">Uses the waiting roster and saved rules. Advanced splitting is under Matches.</span></form>`
         : '<p class="form-help">Save this queue before starting matches.</p>';
       const pausedEmpty = saved && !saved.enabled && !waiting.length && !matches.length;
       return `<article class="panel queue-card"><div class="queue-card-heading"><div class="queue-card-title"><div class="section-heading"><h3>${escape(q.name || 'Unnamed draft')}</h3><span class="status-pill" data-status="${!saved ? 'draft' : saved.enabled ? 'open' : 'paused'}">${!saved ? 'New draft' : saved.enabled ? 'Open' : 'Paused'}</span>${q.isDefault ? '<span class="default-tag">Default in channel</span>' : ''}</div><p class="queue-meta">${meta}</p></div><div class="actions"><button type="button" data-open-queue="${q.id}" aria-label="Settings for ${escape(q.name || 'new queue')}">Settings</button><button type="button" data-toggle-queue="${q.id}" class="${q.enabled ? '' : 'resume-queue'}">${q.enabled ? 'Pause' : 'Resume'}<span class="sr-only"> on save</span></button></div></div>${changed ? `<p class="draft-tag">Unsaved changes${saved && saved.enabled !== q.enabled ? ` · ${q.enabled ? 'resume' : 'pause'} on save` : ''}${saved ? ' · Live roster and actions use saved settings' : ''}</p>` : ''}${pausedEmpty ? `<p class="paused-note">Players cannot <code>/add</code> while paused. Ratings and history are kept.</p><details class="queue-manual-actions"><summary>Waiting roster and manual actions</summary>${roster}${actions}</details>` : roster + actions}</article>`;
@@ -999,39 +1044,49 @@ async function submitRepair(form: HTMLFormElement, data: FormData) {
     action.seconds = Number(data.get('seconds'));
     action.reason = String(data.get('reason') ?? '');
   }
+  const playerLabel = (name: string) =>
+    form.querySelector<HTMLSelectElement>(`select[name="${name}"]`)?.selectedOptions[0]
+      ?.textContent ?? 'Selected player';
+  const matchLabel = match ? `${match.queue.name} · ${match.gameName}` : 'these teams';
   const prompt =
     kind === 'undo'
-      ? `Undo match ${match!.id}? Reverse its recorded rating changes and counts, keeping other results and the audit.`
+      ? `Undo ${matchLabel}? Reverse its recorded rating changes and counts, keeping other results and the audit.`
       : ['admin_report', 'manual_create', 'seed'].includes(kind)
-        ? `Apply ${kind === 'seed' ? `rating ${action.rating} to player ${action.target}` : `ranked result ${action.result} for ${match?.id ?? 'these teams'}`}? This changes local ratings and history.`
+        ? `Apply ${kind === 'seed' ? `rating ${action.rating} to player ${action.target}` : `ranked result ${action.result} for ${matchLabel}`}? This changes local ratings and history.`
         : kind === 'clear'
           ? `Clear all waiting players from ${queue!.name}?`
           : kind === 'force_sub'
-            ? `Replace player ${action.target} with ${action.replacement} in match ${match!.id}?`
+            ? `Replace ${playerLabel('target')} with ${playerLabel('replacement')} in ${matchLabel}? Everyone else keeps their team.`
             : kind === 'put'
-              ? `Place player ${action.target} on ${action.side === 'alpha' ? 'Alpha' : 'Beta'} in match ${match!.id}?`
+              ? `Place ${playerLabel('target')} on ${action.side === 'alpha' ? 'Alpha' : 'Beta'} in ${matchLabel}?`
               : kind === 'recover_abort'
-                ? `Abort match ${match!.id} without rating changes?`
+                ? `Cancel ${matchLabel} without rating changes? Unsettled predictions are refunded; paid settlements remain final.`
                 : kind === 'noadd'
                   ? `Prevent player ${action.target} from joining this community's queues for ${action.seconds} seconds?`
                   : kind === 'split'
                     ? `Split ${queue!.name} into ${action.groupSize}-player matches${action.sortByRating ? ', grouping by rating' : ''}? Leftovers stay queued.`
                     : kind === 'start'
                       ? `Start ${queue!.name}${action.skipCheckIn ? ' with check-in skipped for this match' : ' with its saved rules'}?`
-                      : `Refresh the saved card for match ${match!.id}?`;
+                      : `Refresh the saved card for ${matchLabel}?`;
+  if (
+    ['put', 'force_sub'].includes(kind) &&
+    (!action.target || (kind === 'force_sub' && !action.replacement))
+  )
+    throw new Error('Choose the players before reviewing this action.');
   const fingerprint = JSON.stringify(action);
   if (form.dataset.review !== fingerprint) {
     form.dataset.review = fingerprint;
     form.querySelector('[data-review]')?.remove();
     form.insertAdjacentHTML(
       'beforeend',
-      `<div class="notice" data-review>${escape(prompt)} <button type="button" data-action="cancel-repair">Cancel</button></div>`,
+      `<div class="notice" data-review role="status">${escape(prompt)} <button type="button" data-action="cancel-repair">Cancel</button></div>`,
     );
     const submit = (
       form.dataset.kind === 'queue-control'
         ? form.querySelector<HTMLButtonElement>(`button[name="directAction"][value="${kind}"]`)
         : form.querySelector<HTMLButtonElement>('button:not([type="button"])')
     )!;
+    submit.before(form.querySelector('div[data-review]')!);
     submit.dataset.originalLabel ??= submit.textContent!;
     submit.textContent = 'Confirm action';
     return;
@@ -1282,6 +1337,13 @@ app.addEventListener('submit', (event) => {
   });
 });
 app.addEventListener('click', (event) => {
+  const memberSearch = (event.target as Element).closest<HTMLButtonElement>(
+    '[data-search-members]',
+  );
+  if (memberSearch && !busy) {
+    void searchMembers(memberSearch);
+    return;
+  }
   if (handleEditorClick(event)) return;
   const tab = (event.target as Element).closest<HTMLButtonElement>('[data-view]');
   if (tab && !busy && isOrganizerView(tab.dataset.view ?? null)) {
@@ -1361,6 +1423,14 @@ app.addEventListener('click', (event) => {
   });
 });
 app.addEventListener('keydown', (event) => {
+  if ((event.target as Element).matches('[data-member-query]') && event.key === 'Enter') {
+    event.preventDefault();
+    (event.target as Element)
+      .closest('[data-member-picker]')
+      ?.querySelector<HTMLButtonElement>('[data-search-members]')
+      ?.click();
+    return;
+  }
   const tab = (event.target as Element).closest<HTMLButtonElement>('[role=tab][data-view]');
   if (!tab || busy || !isOrganizerView(tab.dataset.view ?? null)) return;
   const position = organizerViews.indexOf(tab.dataset.view as OrganizerView);
@@ -1391,6 +1461,13 @@ app.addEventListener('change', (event) => {
 app.addEventListener('input', (event) => {
   const input = event.target as HTMLInputElement;
   if (input.dataset.filter === 'player-search') updateFilter(input);
+  if (input.hasAttribute('data-member-query')) {
+    const status = input.closest('[data-member-picker]')?.querySelector('[data-member-status]');
+    if (status)
+      status.textContent = 'Search to update the member choices. Your current selection is kept.';
+  }
+  const form = input.closest<HTMLFormElement>('[data-kind="repair"]');
+  if (form?.dataset.review) cancelRepair(form);
 });
 
 function editRoute(view?: OrganizerView, mode: 'push' | 'replace' = 'push') {

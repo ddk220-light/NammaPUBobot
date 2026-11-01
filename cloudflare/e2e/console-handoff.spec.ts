@@ -21,13 +21,13 @@ test('guided first queue keeps invalid input and saves one atomic community draf
   const state = await freshGuide(page);
   const form = page.locator('[data-guide-queue]');
   await form.getByLabel('Queue name', { exact: true }).fill('Friday night');
-  await form.getByLabel('Players', { exact: true }).fill('');
+  await form.getByLabel('Players per match', { exact: true }).fill('');
   await tab(page, 'Players').click();
   await page.setViewportSize({ width: 844, height: 390 });
   await tab(page, 'Setup').click();
-  await expect(form.getByLabel('Players', { exact: true })).toHaveValue('');
-  await form.getByLabel('Players', { exact: true }).fill('6');
-  await form.getByLabel('Team formation').selectOption('balanced');
+  await expect(form.getByLabel('Players per match', { exact: true })).toHaveValue('');
+  await form.getByLabel('Players per match', { exact: true }).fill('6');
+  await form.getByLabel('How teams are made').selectOption('balanced');
   await expect(page.locator('.discord-preview')).toContainText('3 vs 3');
   await expect(page.locator('#view-setup')).not.toContainText('Ready to play');
   expect(state.saved).toHaveLength(0);
@@ -108,6 +108,7 @@ test('queue cards stage pause and use reviewed actions with saved rules', async 
   page,
 }, info) => {
   const state = await mockApp(page);
+  state.waitingCount = 1;
   await page.goto(`/?community=${guild}&view=queues`);
   const card = page.locator('.queue-card').first();
   await card.getByRole('button', { name: 'Pause on save' }).click();
@@ -198,11 +199,11 @@ test('custom game and advanced queue edits stay synchronized with the guide', as
   await expect(page.locator('[data-guide-name]')).toHaveValue('Friday board games');
   await page.getByRole('button', { name: 'Create queue draft' }).click();
   const form = page.locator('[data-guide-queue]');
-  await form.getByLabel('Players', { exact: true }).fill('17');
+  await form.getByLabel('Players per match', { exact: true }).fill('17');
   await page.getByRole('button', { name: 'Review and save' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(state.saved).toHaveLength(0);
-  await form.getByLabel('Players', { exact: true }).fill('4');
+  await form.getByLabel('Players per match', { exact: true }).fill('4');
   await page.getByRole('button', { name: 'Advanced queue settings' }).click();
   await page.getByRole('button', { name: 'Match Preparation', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Require check-in', exact: true }).uncheck();

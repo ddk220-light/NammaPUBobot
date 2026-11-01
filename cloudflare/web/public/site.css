@@ -259,6 +259,25 @@ img {
   border-radius: 6px;
   padding: 16px;
 }
+.game-discord-example {
+  margin: 28px 0;
+  padding: 20px;
+  background: #1e1f22;
+  color: #dbdee1;
+  border-radius: 8px;
+}
+.game-discord-example figcaption {
+  font-size: 13px;
+  color: #b0b3b8;
+  margin-bottom: 16px;
+}
+.game-discord-example .discord-message-heading {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.game-discord-example p {
+  color: #dbdee1;
+}
 .discord-message-heading {
   display: flex;
   justify-content: space-between;
@@ -790,6 +809,9 @@ th {
   }
   .site-header-actions {
     margin: 0;
+  }
+  .site-header-actions .dashboard-link {
+    display: none;
   }
   .site-header-actions .button {
     font-size: 12px;

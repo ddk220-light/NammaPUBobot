@@ -167,14 +167,14 @@ test('community history preserves the destination and cancelling Back preserves 
 test('Back closes the game panel and restores persistent validation errors', async ({ page }) => {
   await mockApp(page);
   await page.goto(organizer);
-  await field(page, 'Players').fill('');
+  await field(page, 'Players per match').fill('');
   await save(page);
-  await expect(field(page, 'Players')).toHaveAttribute('aria-invalid', 'true');
+  await expect(field(page, 'Players per match')).toHaveAttribute('aria-invalid', 'true');
   await page.getByRole('button', { name: 'Maps', exact: true }).click();
   await page.goBack();
-  await expect(field(page, 'Players')).toBeVisible();
-  await expect(field(page, 'Players')).toHaveValue('');
-  await expect(field(page, 'Players')).toHaveAttribute('aria-invalid', 'true');
+  await expect(field(page, 'Players per match')).toBeVisible();
+  await expect(field(page, 'Players per match')).toHaveValue('');
+  await expect(field(page, 'Players per match')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.locator('#notice')).toBeVisible();
   await openGame(page);
   await page.goBack();
@@ -182,9 +182,9 @@ test('Back closes the game panel and restores persistent validation errors', asy
   await page.goForward();
   await expect(page.locator('.game-settings')).toHaveAttribute('open', '');
   await tab(page, 'Queues').click();
-  await expect(field(page, 'Players')).toHaveAttribute('aria-invalid', 'true');
-  await field(page, 'Players').fill('8');
-  await expect(field(page, 'Players')).not.toHaveAttribute('aria-invalid');
+  await expect(field(page, 'Players per match')).toHaveAttribute('aria-invalid', 'true');
+  await field(page, 'Players per match').fill('8');
+  await expect(field(page, 'Players per match')).not.toHaveAttribute('aria-invalid');
 });
 
 test('cross-field errors point to the game field and persist through other screens', async ({

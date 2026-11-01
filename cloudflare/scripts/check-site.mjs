@@ -18,7 +18,9 @@ for (const path of manifest.pages) {
   for (const [, href] of html.matchAll(/href="(\/[^"?#]*)/g))
     if (
       !manifest.pages.includes(href) &&
-      !['/app/', '/favicon.svg', '/icon-32.png', '/icon-180.png', '/site.css'].includes(href)
+      !['/app/', '/invite', '/favicon.svg', '/icon-32.png', '/icon-180.png', '/site.css'].includes(
+        href,
+      )
     )
       throw Error(`Broken public link ${path} -> ${href}`);
   if (/\[org\]|\[repo\]|\[Support Discord/.test(html))

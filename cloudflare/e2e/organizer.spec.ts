@@ -41,7 +41,7 @@ test('draft survives navigation, refresh, validation and a conflict; save is ato
   });
   await page.goto(organizer);
   await page.getByRole('textbox', { name: 'Queue name', exact: true }).fill('Changed queue');
-  await page.getByRole('spinbutton', { name: 'Players', exact: true }).fill('');
+  await page.getByRole('spinbutton', { name: 'Players per match', exact: true }).fill('');
   await page.getByRole('tab', { name: 'Players', exact: true }).click();
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -49,10 +49,12 @@ test('draft survives navigation, refresh, validation and a conflict; save is ato
   await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(
     'Changed queue',
   );
-  await expect(page.getByRole('spinbutton', { name: 'Players', exact: true })).toHaveValue('');
+  await expect(
+    page.getByRole('spinbutton', { name: 'Players per match', exact: true }),
+  ).toHaveValue('');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   expect(state.saved).toHaveLength(0);
-  await page.getByRole('spinbutton', { name: 'Players', exact: true }).fill('10');
+  await page.getByRole('spinbutton', { name: 'Players per match', exact: true }).fill('10');
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
   await page.locator('.game-settings > summary').click();
   await page.getByRole('spinbutton', { name: 'Starting rating', exact: true }).fill('1200');

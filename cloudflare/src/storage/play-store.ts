@@ -2623,16 +2623,17 @@ export class PlayStore {
             content: 'You left check-in. Ready players returned to the queue; no ratings changed.',
           };
         }
+        const rebalanced = m.state === 'check_in';
         this.replace(
           m,
           outgoing.id,
           { id: candidate.user_id, name: candidate.display_name },
           settings,
           a.actor.id,
-          true,
+          rebalanced,
         );
         return {
-          content: `<@${candidate.user_id}> replaced <@${outgoing.id}>. Teams rebalanced${m.state === 'check_in' ? '; the substitute must check in' : ''}. Check the updated teams on the match card.`,
+          content: `<@${candidate.user_id}> replaced <@${outgoing.id}>. ${rebalanced ? 'Teams rebalanced for check-in.' : 'Everyone else keeps their team.'} Check the updated teams on the match card.`,
         };
       }
       if (a.kind === 'subfor' || a.kind === 'force_sub') {
