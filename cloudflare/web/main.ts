@@ -808,6 +808,8 @@ function paintIssues() {
         [input.getAttribute('aria-describedby'), id].filter(Boolean).join(' '),
       );
     }
+    const group = inputs[0].closest<HTMLDetailsElement>('details[data-advanced]');
+    if (group) group.open = true;
     const container = inputs[0].closest('.choice-list') ?? inputs[0];
     container.insertAdjacentHTML(
       'afterend',
@@ -956,7 +958,7 @@ function matchResult(m: Match) {
     )
     .join(
       '',
-    )}</fieldset><p class="form-help" data-result-consequence aria-live="polite">Record Alpha as the winning team. The server applies this game’s saved rating rules and updates match history. Paid prediction settlements remain final.</p><button class="primary">Review result</button></form>`;
+    )}</fieldset><p class="form-help" data-result-consequence aria-live="polite">Record Alpha as the winning team. Ratings and match history update using this game’s rules. Predictions already paid out stay paid.</p><button class="primary">Review result</button></form>`;
 }
 function matchRepairs(m: Match) {
   const candidates = new Map<string, MemberChoice>();
@@ -1719,7 +1721,7 @@ function captureEdit(event: Event) {
   if (input.matches('.result-form [name="result"]')) {
     const consequence = input.closest('form')?.querySelector('[data-result-consequence]');
     if (consequence)
-      consequence.textContent = `${input.value === 'draw' ? 'Record a draw for both teams.' : `Record ${input.value === 'beta' ? 'Beta' : 'Alpha'} as the winning team.`} The server applies this game’s saved rating rules and updates match history. Paid prediction settlements remain final.`;
+      consequence.textContent = `${input.value === 'draw' ? 'Record a draw for both teams.' : `Record ${input.value === 'beta' ? 'Beta' : 'Alpha'} as the winning team.`} Ratings and match history update using this game’s rules. Predictions already paid out stay paid.`;
   }
   if (input.hasAttribute('data-guide-game') && event.type === 'change' && draft) {
     const url = new URL(location.href);

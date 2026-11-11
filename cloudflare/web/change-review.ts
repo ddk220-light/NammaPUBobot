@@ -48,7 +48,7 @@ const labels: Record<string, string> = {
   noVotes: 'When nobody votes',
   recentAvoid: 'Skip maps from recent matches',
   countsAsCheckIn: 'Voting also checks players in',
-  visibility: 'Who can see statistics',
+  visibility: 'Statistics visibility',
   searchPublishing: 'Publish to search engines',
   minimumMatches: 'Matches before a player is listed',
   recentDays: 'Hide players inactive for (days)',

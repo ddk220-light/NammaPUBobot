@@ -402,7 +402,7 @@ export function queueEditor(
       ) +
       toggle(
         'enabled',
-        'Open for players',
+        'Enable queue',
         q.enabled,
         'When off, the queue is paused and players cannot join. Takes effect when you save.',
       ) +
@@ -731,7 +731,7 @@ export function gameEditors(
         ) +
         select(
           'visibility',
-          'Who can see statistics',
+          'Statistics visibility',
           p.visibility,
           choices(valueLabels.visibility),
           'Who can open this game’s leaderboard and player pages. Default: server members.',
@@ -852,7 +852,10 @@ export function gameEditors(
       '',
     )}<form data-add-game class="add-game"><h3>Add a game</h3><label>Game<select name="catalogId"><option value="">Custom game</option>${selectableCatalog
     .filter((g) => !draft.working.games.some((existing) => existing.catalogId === g.id))
-    .map((g) => `<option value="${g.id}">${esc(g.name)}</option>`)
+    .map(
+      (g) =>
+        `<option value="${g.id}">${esc(g.name)}${g.lifecycle === 'conditional' ? ' · lobby tracking awaiting activation' : ''}</option>`,
+    )
     .join(
       '',
     )}</select></label><label>Custom game name<input name="name" maxlength="80" placeholder="Your game’s name" /></label><button type="submit" class="primary">Add to changes</button></form></section>`;
@@ -895,5 +898,5 @@ export function rankRow(
   rank = { threshold: 0, label: '', roleId: null as string | null },
   roles: Choice[] = [],
 ) {
-  return `<div class="rank-row" data-rank-row><label>From rating<input type="number" name="rank-${index}-threshold" value="${rank.threshold}" min="0" max="10000" required /></label><label>Rank name<input name="rank-${index}-label" value="${esc(rank.label)}" maxlength="30" required /></label><label>Discord role (optional)<select name="rank-${index}-role">${[{ id: '', name: 'No Discord role' }, ...roles.filter((r) => r.id), ...(rank.roleId && !roles.some((r) => r.id === rank.roleId) ? [{ id: rank.roleId, name: 'Role no longer available' }] : [])].map((r) => `<option value="${r.id}" ${r.id === rank.roleId ? 'selected' : ''} ${r.disabled && r.id !== rank.roleId ? 'disabled' : ''}>${esc(r.name)}</option>`).join('')}</select></label><button type="button" data-remove-rank>Remove rank</button></div>`;
+  return `<div class="rank-row" data-rank-row><label>Rating threshold<input type="number" name="rank-${index}-threshold" value="${rank.threshold}" min="0" max="10000" required /></label><label>Rank label<input name="rank-${index}-label" value="${esc(rank.label)}" maxlength="30" required /></label><label>Discord role (optional)<select name="rank-${index}-role">${[{ id: '', name: 'No Discord role' }, ...roles.filter((r) => r.id), ...(rank.roleId && !roles.some((r) => r.id === rank.roleId) ? [{ id: rank.roleId, name: 'Unavailable role' }] : [])].map((r) => `<option value="${r.id}" ${r.id === rank.roleId ? 'selected' : ''} ${r.disabled && r.id !== rank.roleId ? 'disabled' : ''}>${esc(r.name)}</option>`).join('')}</select></label><button type="button" data-remove-rank>Remove rank</button></div>`;
 }

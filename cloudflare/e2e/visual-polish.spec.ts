@@ -123,11 +123,11 @@ test('direct match result keeps confirmation and rejects a changed choice until 
   await expect(form.locator('[data-result-consequence]')).toContainText('Record Beta');
   await form.getByRole('button', { name: 'Review result', exact: true }).click();
   expect(state.actions).toHaveLength(0);
-  await expect(form.locator('[data-review]')).toContainText('beta');
+  await expect(form.locator('[data-review]')).toContainText('Beta won');
   await form.getByRole('radio', { name: 'Draw', exact: true }).check();
   await form.getByRole('button', { name: 'Review result', exact: true }).click();
   expect(state.actions).toHaveLength(0);
-  await expect(form.locator('[data-review]')).toContainText('draw');
+  await expect(form.locator('[data-review]')).toContainText('Draw');
   await form.getByRole('button', { name: 'Confirm action', exact: true }).click();
   await expect.poll(() => state.actions.length).toBe(1);
   expect(state.actions[0]).toMatchObject({
@@ -294,7 +294,7 @@ test('player shortcuts work without loaded players and keep the selected game ex
     page.getByRole('combobox', { name: 'Statistics visibility', exact: true }),
   ).toBeVisible();
   await page.getByRole('tab', { name: 'Players', exact: true }).click();
-  await page.getByRole('button', { name: 'Import', exact: true }).click();
+  await page.getByRole('button', { name: 'Import players', exact: true }).click();
   await expect(page.locator('[data-import-section]')).toHaveAttribute('open', '');
   await expect(page.getByRole('button', { name: 'Preview import', exact: true })).toBeVisible();
 });

@@ -79,6 +79,7 @@ export async function mockApp(page: Page) {
     retryAfter: '',
     sessionExpired: false,
     deletions: [] as { path: string; body: Record<string, unknown> }[],
+    environment: 'staging',
   };
   const player = {
     id: user,
@@ -191,7 +192,7 @@ export async function mockApp(page: Page) {
       );
     if (path === '/api/bootstrap')
       return json({
-        environment: 'staging',
+        environment: state.environment,
         version: '0.16.0',
         oauthReady: true,
         discordReady: true,

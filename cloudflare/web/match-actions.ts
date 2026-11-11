@@ -29,19 +29,19 @@ export function matchRepairs(m: Match, candidates: MemberChoice[]) {
       ? `
     <details><summary>Replace a player</summary>${form(
       'force_sub',
-      `<p>Replace one roster member. Everyone else stays on their team. This organizer action can override queue restrictions; the replacement must be a human server member outside other active matches.</p>${outgoing}${memberPicker(
+      `<p>Replace one roster member. Everyone else stays on their team. You can choose someone who is paused from queues; they must be a server member who is not in another active match.</p>${outgoing}${memberPicker(
         'replacement',
         'Who replaces them?',
         candidates.filter((p) => !m.roster.some((v) => v.id === p.id)),
       )}`,
       'Review replacement',
     )}</details>
-    <details><summary>Place or move a player</summary>${form('put', `<p>Move a roster member or add a server member to the chosen team. This organizer action can override queue restrictions. The server refreshes captains and checks active matches.</p>${memberPicker('target', 'Player to place', [...roster, ...candidates.filter((p) => !m.roster.some((v) => v.id === p.id))])}<label>Move to<select name="result" aria-label="Move to"><option value="alpha">Alpha</option><option value="beta">Beta</option></select></label>`, 'Review placement')}</details>
-    <details><summary>Cancel match</summary>${form('recover_abort', '<p>End this match without rating changes. Unsettled predictions are refunded; paid settlements remain final. Players can rejoin the queue.</p>', 'Review cancellation')}</details>`
+    <details><summary>Place or move a player</summary>${form('put', `<p>Move a roster member or add a server member to the chosen team. You can choose someone who is paused from queues. Captains are updated if needed.</p>${memberPicker('target', 'Player to place', [...roster, ...candidates.filter((p) => !m.roster.some((v) => v.id === p.id))])}<label>Move to<select name="result" aria-label="Move to"><option value="alpha">Alpha</option><option value="beta">Beta</option></select></label>`, 'Review placement')}</details>
+    <details><summary>Cancel match</summary>${form('recover_abort', '<p>End this match without rating changes. Open predictions are refunded; ones already paid out stay paid. Players can rejoin the queue.</p>', 'Review cancellation')}</details>`
       : ''
   }
-    ${m.state === 'finished' ? form('undo', '<p>Reverse recorded rating changes and counts when history is complete and affected players are not in active matches. Paid prediction settlements remain final.</p>', 'Review undo') : ''}
-    ${m.state === 'undone' ? form('admin_report', '<p>Record a corrected result using current ratings. Paid prediction settlements remain final.</p><label>Corrected result<select name="result"><option value="alpha">Alpha won</option><option value="beta">Beta won</option><option value="draw">Draw</option><option value="abort">Cancel without ratings</option></select></label>', 'Review corrected result') : ''}
-    ${form('recover', '<p>Refresh the saved Discord card. This does not change the result or ratings.</p>', 'Review card refresh')}
+    ${m.state === 'finished' ? form('undo', '<p>Reverse this result’s rating changes and win/loss counts. Not possible while any of its players is in an active match. Predictions already paid out stay paid.</p>', 'Review undo') : ''}
+    ${m.state === 'undone' ? form('admin_report', '<p>Record the correct result, using players’ current ratings. Predictions already paid out stay paid.</p><label>Corrected result<select name="result"><option value="alpha">Alpha won</option><option value="beta">Beta won</option><option value="draw">Draw</option><option value="abort">Cancel without ratings</option></select></label>', 'Review corrected result') : ''}
+    ${form('recover', '<p>Refresh the Discord card for this match. The result and ratings do not change.</p>', 'Refresh the Discord card')}
     </div></details>`;
 }
