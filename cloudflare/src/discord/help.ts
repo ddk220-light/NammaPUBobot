@@ -17,7 +17,7 @@ export function helpText(queues: Pick<Queue, 'name' | 'checkIn'>[], organizer: b
     lines.push(
       '**Join:** press **Join** on the queue card, or use `/add`. **Leave** or `/remove` takes you out.',
       queues.some((q) => q.checkIn.enabled)
-        ? '**Check-in:** when the queue fills, press **Check in** on the match card before time runs out, or your spot goes to someone else.'
+        ? '**Check-in:** when the queue fills, press **Check in** on the match card before time runs out, or you drop out of the match.'
         : '**Check-in:** matches here start as soon as the queue fills.',
       '**Results:** after the game, a captain presses **Report result** on the match card. No button? Use `/report`.',
       '**Rating:** `/rank` shows yours; `/leaderboard` shows the top players.',
