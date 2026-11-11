@@ -11,12 +11,25 @@ import {
   playable,
   PlayError,
   policy,
+  proposalSeconds,
   type Action,
   type Match,
+  type Proposal,
+  type ProposalOutcome,
   type Reply,
 } from '../domain/play';
 import { rateTeams, type Player } from '../domain/rating';
-import { matchCard, queueCard, queuePingCard, agreementCard, type Card } from '../discord/cards';
+import {
+  matchCard,
+  queueCard,
+  queuePingCard,
+  agreementCard,
+  disputeNotice,
+  quietMatch,
+  resultNotice,
+  substituteNotice,
+  type Card,
+} from '../discord/cards';
 import { RecordStore } from './record-store';
 import { createUxTables, UxStore } from './ux-store';
 import { createEconomyTables, EconomyStore } from './economy-store';
@@ -76,6 +89,8 @@ export function createPlayTables(sql: SqlStorage) {
     'CREATE TABLE IF NOT EXISTS queue_entries (seq INTEGER PRIMARY KEY AUTOINCREMENT, queue_id TEXT NOT NULL, user_id TEXT NOT NULL, display_name TEXT NOT NULL, UNIQUE(queue_id,user_id))',
   );
   sql.exec('CREATE INDEX IF NOT EXISTS entry_user ON queue_entries(user_id)');
+  // Waiting places added by /test populate; matches formed from them never mention anyone.
+  sql.exec('CREATE TABLE IF NOT EXISTS test_entries (seq INTEGER PRIMARY KEY)');
   sql.exec(
     'CREATE TABLE IF NOT EXISTS profiles (game_id TEXT NOT NULL, user_id TEXT NOT NULL, config TEXT NOT NULL, PRIMARY KEY(game_id,user_id))',
   );
@@ -147,6 +162,7 @@ export function createPlayTables(sql: SqlStorage) {
 export class PlayStore {
   private flushing: Promise<void> | null = null;
   private resettingTest: Promise<Reply> | null = null;
+  private populating = false;
   constructor(
     private ctx: DurableObjectState,
     private env: Env,
@@ -264,19 +280,24 @@ export class PlayStore {
           throw new PlayError(
             'The available players changed or too few are eligible. Nothing was added; retry /test populate.',
           );
-        for (const target of members)
-          this.dispatch(
-            {
-              id: request.id,
-              actor: request.actor,
-              channelId: request.channelId,
-              queue: q.id,
-              admin: true,
-              kind: 'add',
-              target,
-            },
-            settings,
-          );
+        this.populating = true;
+        try {
+          for (const target of members)
+            this.dispatch(
+              {
+                id: request.id,
+                actor: request.actor,
+                channelId: request.channelId,
+                queue: q.id,
+                admin: true,
+                kind: 'add',
+                target,
+              },
+              settings,
+            );
+        } finally {
+          this.populating = false;
+        }
         reply = {
           ok: true,
           content: `Added ${members.length} players to ${q.name}. Use the regular controls, then /test checkin to mark the match as a test before reporting it.`,
@@ -1219,7 +1240,29 @@ export class PlayStore {
           m.deadline > Date.now() &&
           m.ready.length < m.roster.length &&
           (!round || round === String(m.deadline))
-      : ['playing', 'check_in'].includes(m.state) && m.proposal?.id === round;
+      : (['playing', 'check_in'].includes(m.state) && m.proposal?.id === round) ||
+          !!m.endedProposals?.includes(round);
+  }
+  /** Close the open captain request, leaving its card in place to show the outcome. */
+  private endProposal(m: Match, outcome: ProposalOutcome) {
+    const p = m.proposal;
+    if (!p) return;
+    m.proposal = undefined;
+    m.agreements = {};
+    this.sql.exec("DELETE FROM deadlines WHERE match_id=? AND kind='proposal'", m.id);
+    m.endedProposals = [...(m.endedProposals ?? []), p.id].slice(-10);
+    this.enqueue(`agreement:${m.id}:${p.id}`, m.queue.channelId, agreementCard(m, p, outcome));
+  }
+  private propose(m: Match, p: Omit<Proposal, 'id' | 'expiresAt'>) {
+    this.endProposal(m, 'replaced');
+    m.proposal = { id: crypto.randomUUID(), ...p, expiresAt: Date.now() + proposalSeconds * 1000 };
+    this.sql.exec(
+      'INSERT OR REPLACE INTO deadlines VALUES(?,?,?,?)',
+      `proposal:${m.id}`,
+      'proposal',
+      m.id,
+      m.proposal.expiresAt,
+    );
   }
   private finishReminders(m: Match) {
     for (const { key } of this.sql
@@ -1317,7 +1360,7 @@ export class PlayStore {
     matchId?: string,
     version?: number,
   ) {
-    this.read(guild);
+    const settings = this.read(guild).settings;
     const m = this.selectedMatch({
       id: crypto.randomUUID(),
       actor: { id: actorId, name: 'Player' },
@@ -1331,11 +1374,18 @@ export class PlayStore {
     const pointer = this.sql
       .exec<Pointer>('SELECT * FROM cards WHERE key=?', `match:${m.id}`)
       .toArray()[0];
+    const q = settings.queues.find((q) => q.id === m.queue.id);
+    // Previews only; the transactional handler selects the actual substitute.
+    const substitute = q?.enabled
+      ? this.available(q).find((e) => this.allowed(m.queue, e.user_id))
+      : undefined;
     return {
       match: m,
       url: pointer?.message_id
         ? `https://discord.com/channels/${guild}/${channelId}/${pointer.message_id}`
         : undefined,
+      adminRoles: q?.adminRoles ?? [],
+      substitute: substitute && { id: substitute.user_id, name: substitute.display_name },
     };
   }
   playerReceipt(
@@ -1638,6 +1688,19 @@ export class PlayStore {
         );
       }
     }
+    if (
+      selected.some(
+        (e) =>
+          this.sql
+            .exec(
+              'SELECT 1 FROM test_entries t JOIN queue_entries e ON e.seq=t.seq WHERE e.queue_id=? AND e.user_id=?',
+              q.id,
+              e.user_id,
+            )
+            .toArray().length,
+      )
+    )
+      m.silent = true;
     const affected = new Set<string>([q.id]);
     for (const p of roster) {
       this.sql.exec('DELETE FROM pending_returns WHERE user_id=?', p.id);
@@ -1658,6 +1721,7 @@ export class PlayStore {
       this.sql.exec('DELETE FROM queue_clocks WHERE user_id=?', p.id);
       this.saveProfile(q.gameId, p, q.ratingEngine);
     }
+    this.sql.exec('DELETE FROM test_entries WHERE seq NOT IN (SELECT seq FROM queue_entries)');
     this.sql.exec(
       'INSERT OR REPLACE INTO deadlines VALUES(?,?,?,?)',
       `lifetime:${m.id}`,
@@ -1703,7 +1767,7 @@ export class PlayStore {
   }
   private close(m: Match, result: 'alpha' | 'beta' | 'draw' | 'abort', actor: string) {
     for (const p of m.roster) this.ux.clear(p.id);
-    m.proposal = undefined;
+    this.endProposal(m, 'ended');
     this.economy.finish(m, result);
     if (result === 'abort') {
       m.state = 'aborted';
@@ -1755,6 +1819,9 @@ export class PlayStore {
     this.clearDeadlines(m);
     this.sql.exec('DELETE FROM active_players WHERE match_id=?', m.id);
     this.saveMatch(m);
+    // One short channel message per recorded result, so it is noticed without scrolling up.
+    if (!m.test && !this.testMode)
+      this.enqueue(`result:${m.id}:${m.generation ?? 0}`, m.queue.channelId, resultNotice(m));
     if (!m.test)
       this.audit(
         'report',
@@ -1814,6 +1881,12 @@ export class PlayStore {
     m.closedAt = Date.now();
     // Retain the original record and deltas for audit, while excluding it from current stats.
     this.saveMatch(m);
+    if (!this.testMode)
+      this.enqueue(
+        `withdrawn:${m.id}:${m.generation ?? 0}`,
+        m.queue.channelId,
+        resultNotice(m, true),
+      );
     const rated =
       m.ratedPlayers ??
       rateTeams(
@@ -1874,8 +1947,7 @@ export class PlayStore {
     if (m.teams.some((t) => !t.length) || m.roster.length > 16)
       throw new PlayError('Keep two nonempty teams with at most 16 total players.');
     m.captains = [m.teams[0][0].id, m.teams[1][0].id];
-    m.agreements = {};
-    m.proposal = undefined;
+    this.endProposal(m, 'ended');
     this.economy.rosterChanged(m);
     if (m.queue.modules.stories) {
       m.storiesBefore = beforeStories(m, this.storyHistory(m));
@@ -1915,6 +1987,7 @@ export class PlayStore {
     actor: string,
     rebalance: boolean,
     force = false,
+    notify = false,
   ) {
     const old = m.roster.find((p) => p.id === outgoing);
     if (!old) throw new PlayError('That outgoing player is no longer in this roster.');
@@ -1936,6 +2009,14 @@ export class PlayStore {
     if (m.state === 'check_in' && this.ux.ready(m.queue, incoming.id, Date.now()))
       m.ready.push(incoming.id);
     this.rosterChanged(m, actor, { outgoing, incoming: incoming.id, rebalance, forced: force });
+    if (notify) this.announceSubstitute(m, incoming.id, outgoing);
+  }
+  private announceSubstitute(m: Match, incoming: string, outgoing: string) {
+    this.enqueue(
+      `sub:${m.id}:${outgoing}:${incoming}`,
+      m.queue.channelId,
+      substituteNotice(m, incoming, outgoing),
+    );
   }
   private expire(now: number, settings: Settings) {
     // Also retire reminders already delivered by earlier versions. Active transient
@@ -1987,6 +2068,21 @@ export class PlayStore {
         this.timeoutMatch(m, now);
         continue;
       }
+      if (job.kind === 'proposal') {
+        const p = m.proposal;
+        if (!p || !['check_in', 'playing'].includes(m.state) || (p.expiresAt ?? Infinity) > now)
+          continue;
+        if (p.kind === 'win' && m.state === 'playing') {
+          // An undisputed win claim stands, like a reported loss.
+          this.endProposal(m, 'auto');
+          this.close(m, p.side!, p.requester);
+          this.audit('claim_unanswered', 'system', { requester: p.requester }, m.id, m.queue.id);
+        } else {
+          this.endProposal(m, 'expired');
+          this.saveMatch(m);
+        }
+        continue;
+      }
       if (job.kind === 'map') {
         if (!['check_in', 'playing'].includes(m.state) || m.mapRound?.state !== 'open') continue;
         try {
@@ -2004,8 +2100,9 @@ export class PlayStore {
       if (m.state !== 'check_in') continue;
       if (job.kind === 'reminder' && m.deadline! > now) {
         const missing = m.roster.filter((p) => !m.ready.includes(p.id)).map((p) => p.id);
-        const card = matchCard(m);
-        card.content = `${missing.map((id) => `<@${id}>`).join(' ')} Check-in ends <t:${Math.floor(m.deadline! / 1000)}:R>. Confirm your place.`;
+        const card = matchCard(m),
+          quiet = quietMatch(m);
+        card.content = `${quiet ? '' : `${missing.map((id) => `<@${id}>`).join(' ')} `}Check-in ends <t:${Math.floor(m.deadline! / 1000)}:R>. Confirm your place.`;
         card.embeds = [];
         if (!m.mapRound?.settings.countsAsCheckIn)
           card.components = [
@@ -2016,7 +2113,7 @@ export class PlayStore {
               ],
             },
           ];
-        card.allowed_mentions = { parse: [], users: missing };
+        card.allowed_mentions = { parse: [], users: quiet ? [] : missing };
         if (missing.length) this.enqueue(`reminder:${m.id}:${m.deadline}`, m.queue.channelId, card);
       } else if (m.deadline! <= now) {
         const q = settings.queues.find((q) => q.id === m.queue.id && q.gameId === m.queue.gameId);
@@ -2046,6 +2143,8 @@ export class PlayStore {
             reason: 'no_show_replacement',
             round: m.replacementRounds,
           });
+          for (let i = 0; i < missing.length; i++)
+            this.announceSubstitute(m, candidates[i].user_id, missing[i].id);
           continue;
         }
         this.economy.finish(m, 'abort');
@@ -2070,6 +2169,7 @@ export class PlayStore {
               p.id,
               p.name,
             );
+            if (m.silent) this.markTestEntry(q.id, p.id);
             this.waitingClock(q, p.id);
           }
           this.touchQueue(q);
@@ -2084,6 +2184,13 @@ export class PlayStore {
         );
       }
     }
+  }
+  private markTestEntry(queueId: string, userId: string) {
+    this.sql.exec(
+      'INSERT OR IGNORE INTO test_entries SELECT seq FROM queue_entries WHERE queue_id=? AND user_id=?',
+      queueId,
+      userId,
+    );
   }
   private timeoutMatch(m: Match, now: number) {
     if (!['playing', 'check_in'].includes(m.state)) return;
@@ -2222,7 +2329,11 @@ export class PlayStore {
       throw new PlayError('Manage Server permission is required for this action.');
     if (a.target && a.target.id !== a.actor.id && !a.admin && ['add', 'remove'].includes(a.kind))
       throw new PlayError('Only an administrator can add or remove another player.');
-    if (['ready', 'loss', 'draw', 'abort', 'recover_abort', 'teams'].includes(a.kind)) {
+    if (
+      ['ready', 'loss', 'draw', 'abort', 'claim', 'decline', 'recover_abort', 'teams'].includes(
+        a.kind,
+      )
+    ) {
       const m = this.selectedMatch(a);
       if (a.kind === 'teams') {
         this.saveMatch(m);
@@ -2270,6 +2381,52 @@ export class PlayStore {
         this.close(m, 'abort', a.actor.id);
         return { content: 'Match cancelled. No ratings changed.' };
       }
+      const captainsLine = `Captains: <@${m.captains[0]}> (Alpha) and <@${m.captains[1]}> (Beta).`;
+      if (a.proposalId) {
+        const p = m.proposal;
+        if (
+          p?.id !== a.proposalId ||
+          (a.kind !== 'decline' && a.kind !== (p.kind === 'win' ? 'claim' : p.kind))
+        )
+          throw new PlayError(
+            'This request already ended. Check the match card for the current state.',
+          );
+        if (p.opposing !== a.actor.id)
+          throw new PlayError(
+            p.requester === a.actor.id
+              ? `Waiting for <@${p.opposing}> to answer. ${p.kind === 'win' ? 'Your result confirms automatically' : 'Your request expires'} <t:${Math.floor((p.expiresAt ?? Date.now()) / 1000)}:R>.`
+              : `Only <@${p.opposing}> can answer this request.`,
+          );
+        if (a.kind === 'decline') {
+          this.endProposal(m, 'declined');
+          if (p.kind === 'win') {
+            const roles =
+              settings.queues.find((q) => q.id === m.queue.id)?.adminRoles ??
+              m.queue.adminRoles ??
+              [];
+            if (roles.length)
+              this.enqueue(`dispute:${m.id}:${p.id}`, m.queue.channelId, disputeNotice(m, roles));
+            this.audit('claim_disputed', a.actor.id, { requester: p.requester }, m.id, m.queue.id);
+          }
+          this.saveMatch(m);
+          return {
+            content:
+              p.kind === 'win'
+                ? 'Result disputed. An organizer can record it from /admin or the website.'
+                : 'Request declined. The match continues.',
+          };
+        }
+        if (p.kind === 'win') {
+          this.endProposal(m, 'accepted');
+          this.close(m, p.side!, a.actor.id);
+          return {
+            content: m.test
+              ? 'Test match completed. Results and ratings were not recorded.'
+              : `${p.side === 'alpha' ? 'Alpha' : 'Beta'} wins. Result and ratings saved.`,
+          };
+        }
+      }
+      if (a.kind === 'decline') throw new PlayError('Use the request card to decline.');
       if (m.state !== 'playing' && a.kind !== 'abort')
         throw new PlayError(
           'Finish check-in before reporting a result. An organizer can cancel the match.',
@@ -2277,8 +2434,9 @@ export class PlayStore {
       const side = m.captains.indexOf(a.actor.id);
       if (side < 0)
         throw new PlayError(
-          'Only a team captain can report. Ask your captain to use the match card.',
+          `Only a team captain can report the result. ${captainsLine} An organizer can also record it.`,
         );
+      const opposing = m.captains[side === 0 ? 1 : 0];
       if (a.kind === 'loss') {
         this.close(m, side === 0 ? 'beta' : 'alpha', a.actor.id);
         return {
@@ -2287,20 +2445,26 @@ export class PlayStore {
             : `${side === 0 ? 'Beta' : 'Alpha'} wins. Result and ratings saved.`,
         };
       }
-      const vote = a.kind as 'draw' | 'abort';
-      if (a.proposalId && (m.proposal?.id !== a.proposalId || m.proposal.opposing !== a.actor.id))
-        throw new PlayError('That request changed. Use the latest match card.');
-      if (!m.proposal || m.proposal.kind !== vote) {
-        m.agreements = {};
-        m.proposal = {
-          id: crypto.randomUUID(),
-          requester: a.actor.id,
-          kind: vote,
-          opposing: m.captains[side === 0 ? 1 : 0],
+      if (a.kind === 'claim') {
+        if (m.proposal?.kind !== 'win' || m.proposal.requester !== a.actor.id) {
+          this.propose(m, {
+            kind: 'win',
+            requester: a.actor.id,
+            opposing,
+            side: side === 0 ? 'alpha' : 'beta',
+          });
+          this.saveMatch(m);
+        }
+        return {
+          content: `Waiting for <@${opposing}> to confirm. It confirms automatically <t:${Math.floor(m.proposal!.expiresAt! / 1000)}:R> unless they dispute it.`,
         };
       }
+      const vote = a.kind as 'draw' | 'abort';
+      if (!m.proposal || m.proposal.kind !== vote)
+        this.propose(m, { requester: a.actor.id, kind: vote, opposing });
       m.agreements[a.actor.id] = vote;
       if (m.captains.every((id) => m.agreements[id] === vote)) {
+        this.endProposal(m, 'accepted');
         this.close(m, vote, a.actor.id);
         return {
           content: m.test
@@ -2312,7 +2476,7 @@ export class PlayStore {
       }
       this.saveMatch(m);
       return {
-        content: `Waiting for the other captain to ${vote === 'draw' ? 'confirm the draw' : 'cancel the match'} on the match card.`,
+        content: `Waiting for the other captain to ${vote === 'draw' ? 'confirm the draw' : 'cancel the match'} on the request card.`,
       };
     }
     const q = this.queue(a, settings),
@@ -2385,6 +2549,17 @@ export class PlayStore {
         throw new PlayError(
           'Only an administrator can skip check-in. Use /queue start with the saved rules.',
         );
+      const waiting = this.available(q).length;
+      if (waiting < 2) throw new PlayError('At least two players are needed to start.');
+      if (
+        waiting < q.size &&
+        (q.earlyStart ?? 'moderators') === 'moderators' &&
+        !a.admin &&
+        !(q.adminRoles ?? []).some((id) => a.actor.roles?.includes(id))
+      )
+        throw new PlayError(
+          `${q.name} has ${waiting}/${q.size} players. Only server administrators, managers and this queue’s bot moderators can start it before it’s full. ${(q.autoStart ?? true) ? 'It starts by itself when full.' : 'Anyone can start it once it’s full.'}`,
+        );
       this.ux.hold(q.id, false);
       const m = this.createMatch(q, settings, a.skipCheckIn ?? false, undefined, a.actor.id);
       return {
@@ -2418,14 +2593,17 @@ export class PlayStore {
     }
     if (!alreadyWaiting && waiting.length >= ((q.autoStart ?? true) ? q.size : 128))
       throw new PlayError(`${q.name} is full. Wait for a place to open.`);
-    const added = this.sql
-      .exec(
-        'INSERT OR IGNORE INTO queue_entries(queue_id,user_id,display_name) VALUES(?,?,?) RETURNING user_id',
+    const inserted = this.sql
+      .exec<{ seq: number }>(
+        'INSERT OR IGNORE INTO queue_entries(queue_id,user_id,display_name) VALUES(?,?,?) RETURNING seq',
         q.id,
         target.id,
         target.name,
       )
-      .toArray().length;
+      .toArray();
+    const added = inserted.length;
+    if (added && this.populating)
+      this.sql.exec('INSERT OR IGNORE INTO test_entries VALUES(?)', inserted[0].seq);
     this.waitingClock(q, target.id);
     if (added) {
       this.ux.leave(target.id, q.id);
@@ -2642,6 +2820,8 @@ export class PlayStore {
           settings,
           a.actor.id,
           rebalanced,
+          false,
+          true,
         );
         return {
           content: `<@${candidate.user_id}> replaced <@${outgoing.id}>. ${rebalanced ? 'Teams rebalanced for check-in.' : 'Everyone else keeps their team.'} Check the updated teams on the match card.`,
@@ -2784,6 +2964,7 @@ export class PlayStore {
     const rows = this.sql
       .exec<{
         seq: number;
+        match_id: string;
         queue_id: string;
         user_id: string;
         name: string;
@@ -2866,6 +3047,7 @@ export class PlayStore {
             row.user_id,
             row.name,
           );
+          if (this.match(row.match_id).silent) this.markTestEntry(current.id, row.user_id);
           this.waitingClock(current, row.user_id);
           this.sql.exec('DELETE FROM pending_returns WHERE seq=?', row.seq);
           this.touchQueue(current);
@@ -3909,7 +4091,8 @@ export class PlayStore {
             const m = this.match(work.key.slice(6));
             if (
               ['check_in', 'playing'].includes(m.state) &&
-              (!m.deadline || m.deadline > Date.now())
+              (!m.deadline || m.deadline > Date.now()) &&
+              !quietMatch(m)
             ) {
               const maps = m.mapRound?.state === 'open' ? m.mapRound : undefined;
               const invitees =

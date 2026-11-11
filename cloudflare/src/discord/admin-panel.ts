@@ -1,6 +1,6 @@
 import type { AdminRequest, AdminView } from '../domain/admin';
 import type { Match } from '../domain/play';
-import type { ActionRow, Button, Card } from './cards';
+import { duration, type ActionRow, type Button, type Card } from './cards';
 
 const text = (value: string) => value.replace(/[\\`*_~|>\[\]]/g, '\\$&');
 const status = (m: Match) =>
@@ -47,6 +47,18 @@ const button = (
   disabled,
 });
 
+/** Organizer result controls. A private copy is owned by its clicker, like a legacy panel. */
+export function adminResultRow(owner: string, m: Match): ActionRow {
+  return {
+    type: 1,
+    components: [
+      button(owner, 'alpha_loss', m.id, m.version, 'Alpha lost', m.state !== 'playing', 4),
+      button(owner, 'beta_loss', m.id, m.version, 'Beta lost', m.state !== 'playing', 4),
+      button(owner, 'draw', m.id, m.version, 'Draw', m.state !== 'playing'),
+      button(owner, 'cancel', m.id, m.version, 'Cancel match', false, 4),
+    ],
+  };
+}
 export function adminPanelCard(
   view: AdminView,
   request: AdminRequest,
@@ -140,15 +152,7 @@ export function adminPanelCard(
     ],
   });
   if (m && ['check_in', 'playing'].includes(m.state)) {
-    components.push({
-      type: 1,
-      components: [
-        button(owner, 'alpha_loss', m.id, m.version, 'Alpha lost', m.state !== 'playing', 4),
-        button(owner, 'beta_loss', m.id, m.version, 'Beta lost', m.state !== 'playing', 4),
-        button(owner, 'draw', m.id, m.version, 'Draw', m.state !== 'playing'),
-        button(owner, 'cancel', m.id, m.version, 'Cancel match', false, 4),
-      ],
-    });
+    components.push(adminResultRow(owner, m));
     components.push({
       type: 1,
       components: [
@@ -169,9 +173,9 @@ export function adminPanelCard(
         color: 0xb9e77c,
         description: [
           `**Queue:** ${view.waiting}/${q.size} waiting · ${!q.enabled ? 'Paused' : view.held ? 'Waiting for a fresh join' : 'Open'}`,
-          `Automatic start: ${(q.autoStart ?? true) ? 'on' : 'off'} · Check-in: ${q.checkIn.enabled ? `${q.checkIn.seconds}s` : 'off'}`,
-          'Anyone can start with at least two waiting players, up to queue capacity. Odd counts use uneven teams.',
-          'Captains can report their own team’s loss. Clearing, other results, cancellation and betting closure require an administrator or bot moderator.',
+          `Automatic start: ${(q.autoStart ?? true) ? 'on' : 'off'} · Check-in: ${q.checkIn.enabled ? duration(q.checkIn.seconds) : 'off'}`,
+          `${(q.earlyStart ?? 'moderators') === 'anyone' ? 'Anyone' : 'Organizers and bot moderators'} can start before the queue is full, with at least two waiting players. Odd counts use uneven teams.`,
+          'Captains report results with Report result on the match card, or their own team’s loss here. Clearing, other results, cancellation and betting closure require an administrator or bot moderator.',
           `**Latest match**\n${view.latest ? matchLine(view.latest) : 'No matches yet.'}`,
           ...(view.queues.length > 25
             ? ['Use `/admin queue:name` to select queues beyond this menu.']

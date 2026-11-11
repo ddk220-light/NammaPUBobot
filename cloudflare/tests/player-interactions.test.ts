@@ -109,6 +109,13 @@ async function interaction(data: object, n = 0, rest: object = {}) {
     data: { content: string; flags: number; components?: any[]; embeds?: any[] };
   }>;
 }
+const posted = () =>
+  vi
+    .mocked(fetch)
+    .mock.calls.filter(
+      ([url, init]) => init?.method === 'POST' && /\/channels\/\d+\/messages$/.test(String(url)),
+    )
+    .map(([, init]) => JSON.parse(init!.body as string));
 const click = (m: Match, kind: string, n = 0, values?: string[]) =>
   interaction({ custom_id: `m:${m.id}:${m.version}:${kind}`, ...(values ? { values } : {}) }, n);
 
@@ -306,6 +313,7 @@ describe('public administrator panel', () => {
     async (count) => {
       const s = settings();
       s.queues[0].size = 8;
+      s.queues[0].earlyStart = 'anyone';
       await configure(s);
       for (let n = 0; n < count; n++) await act('add', n);
       const { card } = await panel();
@@ -359,6 +367,7 @@ describe('public administrator panel', () => {
     async (side) => {
       const s = settings();
       s.queues[0].size = 8;
+      s.queues[0].earlyStart = 'anyone';
       s.queues[0].modules.gold = true;
       s.queues[0].modules.predictions = true;
       await configure(s);
@@ -1011,27 +1020,54 @@ describe('player component routes', () => {
     expect((await current()).roster.map((p) => p.id)).toEqual(m.roster.map((p) => p.id));
   });
 
-  it('makes Sub me direct and denies spectators', async () => {
+  it('confirms Sub me privately, names the substitute and denies spectators', async () => {
     const m = await fill(true);
+    expect((await click(m, 'subauto', 0)).data.content).toContain('No eligible substitute');
     await act('add', 8);
-    expect((await click(m, 'subauto', 9)).data.content).toContain('outgoing player');
-    expect(await click(m, 'subauto', 0)).toEqual({ type: 6 });
-    expect((await current()).roster.some((p) => p.id === person(8).id)).toBe(true);
+    expect((await click(m, 'subauto', 9)).data.content).toContain('Only players in this match');
+    const prompt = await click(m, 'subauto', 0);
+    const team = m.teams[0].some((p) => p.id === person(0).id) ? 'Alpha' : 'Beta';
+    expect(prompt.data).toMatchObject({
+      flags: 64,
+      content: `Leave this match? Player 8 will take your place on ${team}.`,
+    });
+    expect(prompt.data.components![0].components[0].custom_id).toBe(
+      `m:${m.id}:${m.version}:confirm_sub`,
+    );
+    expect((await current()).roster.some((p) => p.id === person(8).id)).toBe(false);
+    expect(await click(m, 'confirm_sub', 9)).toMatchObject({ type: 4 });
+    expect(await click(m, 'confirm_sub', 0)).toEqual({ type: 6 });
+    const after = await current();
+    expect(after.roster.some((p) => p.id === person(8).id)).toBe(true);
+    expect(after.teams[team === 'Alpha' ? 0 : 1].some((p) => p.id === person(8).id)).toBe(true);
+    await runInDurableObject(stub(), (_i, s) => {
+      s.storage.sql.exec("UPDATE outbox SET due=0 WHERE status='pending'");
+    });
+    await stub().flush();
+    const notice = posted().find((p) => p.content?.includes('you’re in for'));
+    expect(notice).toMatchObject({
+      content: `<@${person(8).id}>, you’re in for <@${person(0).id}> on ${team}.`,
+      allowed_mentions: { parse: [], users: [person(8).id] },
+    });
   });
 
-  it.each([false, true])('retires the old Cancel match button even for admin=%s', async (admin) => {
-    const m = await fill(true);
-    const n = Number(BigInt(m.captains[0]) - 100000000000000100n);
-    const reply = await interaction({ custom_id: `m:${m.id}:${m.version}:abort` }, n, {
-      member: {
-        permissions: admin ? '32' : '0',
-        user: { id: person(n).id, username: person(n).name },
-      },
-    });
-    expect(reply.data.flags).toBe(64);
-    expect(reply.data.content).toContain('`/report abort`');
-    expect(await current()).toEqual(m);
-  });
+  it.each([false, true])(
+    'lets a captain request cancellation from the report panel (admin=%s)',
+    async (admin) => {
+      const m = await fill(true);
+      const n = Number(BigInt(m.captains[0]) - 100000000000000100n);
+      const reply = await interaction({ custom_id: `m:${m.id}:${m.version}:abort` }, n, {
+        member: {
+          permissions: admin ? '32' : '0',
+          user: { id: person(n).id, username: person(n).name },
+        },
+      });
+      expect(reply).toEqual({ type: 6 });
+      const after = await current();
+      if (admin) expect(after.state).toBe('aborted');
+      else expect(after.proposal).toMatchObject({ kind: 'abort', requester: m.captains[0] });
+    },
+  );
 
   it('starts cancellation through the command and keeps opposing-captain agreement', async () => {
     const m = await fill(true);
@@ -1073,7 +1109,7 @@ describe('player component routes', () => {
     const m = await fill(true);
     await act('add', 8);
     const id = String(seq++),
-      data = { custom_id: `m:${m.id}:${m.version}:subauto` };
+      data = { custom_id: `m:${m.id}:${m.version}:confirm_sub` };
     const saved = await interaction(data, 0, { id });
     expect(saved).toEqual({ type: 6 });
     expect(await interaction(data, 0, { id })).toEqual(saved);
@@ -1094,7 +1130,7 @@ describe('player component routes', () => {
     const joined = await interaction({ name: 'add' }, 0, { type: 2 });
     expect(joined).toEqual({ type: 5, data: { flags: 64 } });
     expect(queueCard(s.queues[0], [person(0)]).embeds[0].description).toContain(
-      'expire after 60 seconds',
+      'expire after 1 minute',
     );
     await runInDurableObject(stub(), (_i, state) => {
       for (let n = 1; n < 4; n++)

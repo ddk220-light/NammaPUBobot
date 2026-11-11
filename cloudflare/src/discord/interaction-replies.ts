@@ -15,6 +15,8 @@ const publicUpdates: Record<Action['kind'] | 'rally', boolean> = {
   loss: true,
   draw: true,
   abort: true,
+  claim: true,
+  decline: true,
   recover_abort: true,
   subme: true,
   subfor: true,

@@ -8,7 +8,7 @@ import { playerSummary, recordActionSchema, recordPolicy } from '../domain/recor
 import { snowflake } from '../domain/config';
 import { memberIds, resolveMember } from './members';
 import { matchCard, type Card, type ActionRow } from './cards';
-import { substitutionPanel } from './player-panels';
+import { reportPanel, substitutePrompt, substitutionPanel } from './player-panels';
 import { queuePicker, type QueueChoice } from './queue-picker';
 import { predictionPanel } from './prediction-panel';
 import { adminCommandRoute } from './commands.mjs';
@@ -691,15 +691,18 @@ async function playInteraction(
       }
       const picker = /^(qs|qp):(add|remove|queue):(\d{1,2})$/.exec(custom);
       const parsed =
-        /^m:([a-f0-9-]{36}):(\d+):(ready|loss|draw|abort|subme|subauto|back|subs|request|cancel|take|auto|rejoin|confirm_loss|confirm_back)$/.exec(
+        /^m:([a-f0-9-]{36}):(\d+):(ready|loss|draw|abort|claim|report|subme|subauto|back|subs|request|cancel|take|auto|rejoin|confirm_loss|confirm_back|confirm_sub)$/.exec(
           custom,
         );
-      const agreement = /^a:([a-f0-9-]{36}):(\d+):([a-f0-9-]{36}):(abort|draw)$/.exec(custom);
+      const agreement = /^a:([a-f0-9-]{36}):(\d+):([a-f0-9-]{36}):(abort|draw|win|decline)$/.exec(
+        custom,
+      );
       if (agreement) {
         action.matchId = agreement[1];
         action.version = Number(agreement[2]);
         action.proposalId = agreement[3];
-        action.kind = agreement[4] as 'abort' | 'draw';
+        action.kind =
+          agreement[4] === 'win' ? 'claim' : (agreement[4] as 'abort' | 'draw' | 'decline');
       } else if (queue) {
         action.queue = queue[1];
         action.kind = queue[2] === 'join' ? 'add' : 'remove';
@@ -720,7 +723,27 @@ async function playInteraction(
         action.matchId = parsed[1];
         action.version = Number(parsed[2]);
         const kind = parsed[3];
-        if (kind === 'abort') return ephemeral('Use `/report abort` to request a cancellation.');
+        if (kind === 'report' || kind === 'subauto') {
+          // Private, read-only views; every choice in them is rechecked by its own handler.
+          const current = await env.COMMUNITIES.getByName(i.guild_id!).playerMatch(
+            i.guild_id!,
+            i.channel_id!,
+            actor.id,
+            action.matchId,
+            action.version,
+          );
+          if (!current.ok) return ephemeral(current.content);
+          const m = current.match as Match;
+          const panel =
+            kind === 'report'
+              ? reportPanel(
+                  m,
+                  actor.id,
+                  !!action.admin || current.adminRoles.some((r) => member.roles?.includes(r)),
+                )
+              : substitutePrompt(m, actor.id, current.substitute);
+          return ephemeral(panel.content, panel);
+        }
         if (['take', 'auto', 'rejoin'].includes(kind)) {
           if (
             kind !== 'rejoin' &&
@@ -817,7 +840,9 @@ async function playInteraction(
                 ? 'loss'
                 : kind === 'confirm_back'
                   ? 'back'
-                  : (kind as Action['kind']);
+                  : kind === 'confirm_sub'
+                    ? 'subauto'
+                    : (kind as Action['kind']);
           if (kind === 'request' || kind === 'cancel') action.subRequest = kind === 'request';
         }
       } else return ephemeral('This button is no longer available. Use the latest card.');

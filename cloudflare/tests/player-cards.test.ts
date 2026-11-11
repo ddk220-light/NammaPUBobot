@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { emptyModules, type Queue } from '../src/domain/config';
 import type { Match } from '../src/domain/play';
 import type { Player } from '../src/domain/rating';
-import { matchCard, queueCard, agreementCard, type Card } from '../src/discord/cards';
+import {
+  agreementCard,
+  disputeNotice,
+  duration,
+  matchCard,
+  queueCard,
+  resultNotice,
+  substituteNotice,
+  type Card,
+} from '../src/discord/cards';
 
 const queue: Queue = {
   id: '81da571b-6a4a-4e5d-8e32-f4050df35a2d',
@@ -88,8 +97,13 @@ describe('player-facing cards', () => {
     expect(card.embeds[0].description).toContain(`<t:${m.deadline! / 1000}:R>`);
     expect(card.embeds[0].description).toContain(`✓ <@${m.roster[0].id}>`);
     for (const p of m.roster)
-      expect(card.embeds[0].description.split(`<@${p.id}>`)).toHaveLength(2);
-    expect(card.embeds[0].description.match(/captain/g)).toHaveLength(2);
+      expect(card.embeds[0].description.split(`<@${p.id}>`)).toHaveLength(
+        m.captains.includes(p.id) ? 3 : 2,
+      );
+    expect(card.embeds[0].description.match(/· captain/g)).toHaveLength(2);
+    expect(card.embeds[0].description).toContain(
+      `Captains: <@${m.captains[0]}> (Alpha) and <@${m.captains[1]}> (Beta). After the game, either captain presses Report result.`,
+    );
     expect(buttons(card).map((button) => button.custom_id)).toEqual([
       `m:${m.id}:3:ready`,
       `m:${m.id}:3:back`,
@@ -103,17 +117,131 @@ describe('player-facing cards', () => {
       requester: m.captains[0],
       opposing: m.captains[1],
       kind: 'draw',
+      expiresAt: 1_800_000_600_000,
     };
     const main = matchCard(m);
     expect(main.embeds[0].description).not.toContain('requested');
-    expect(buttons(main).map((b) => (b.type === 2 ? b.label : ''))).toEqual(['Sub me']);
+    expect(buttons(main).map((b) => (b.type === 2 ? b.label : ''))).toEqual([
+      'Report result',
+      'Sub me',
+    ]);
+    expect(buttons(main)[0].custom_id).toBe(`m:${m.id}:3:report`);
     const card = agreementCard(m);
     expect(card.embeds[0].description).toContain(`<@${m.captains[0]}> requested a draw`);
     expect(card.embeds[0].description).toContain('do you agree?');
-    expect(buttons(card).map((b) => (b.type === 2 ? b.label : ''))).toEqual(['Agree to draw']);
-    expect(buttons(card).map((b) => b.custom_id)).toEqual([`a:${m.id}:3:${m.proposal.id}:draw`]);
+    expect(card.embeds[0].description).toContain('expires <t:1800000600:R>');
+    expect(buttons(card).map((b) => (b.type === 2 ? b.label : ''))).toEqual([
+      'Agree to draw',
+      'Decline',
+    ]);
+    expect(buttons(card).map((b) => b.custom_id)).toEqual([
+      `a:${m.id}:3:${m.proposal.id}:draw`,
+      `a:${m.id}:3:${m.proposal.id}:decline`,
+    ]);
     expect(card.allowed_mentions).toEqual({ parse: [], users: [m.captains[1]] });
     expect(card.components).toHaveLength(1);
+    const declined = agreementCard(m, m.proposal, 'declined');
+    expect(declined.components).toEqual([]);
+    expect(declined.content).toBe('');
+    expect(declined.allowed_mentions).toEqual({ parse: [] });
+    expect(declined.embeds[0].description).toContain(`<@${m.captains[1]}> declined`);
+    expect(declined.embeds[0].description).not.toContain('<t:');
+    expect(agreementCard(m, m.proposal, 'expired').embeds[0].description).toContain(
+      'No answer within 10 minutes',
+    );
+  });
+
+  it('asks the opposing captain to confirm or dispute a win claim before it auto-confirms', () => {
+    const m = match('playing');
+    const p = {
+      id: crypto.randomUUID(),
+      requester: m.captains[0],
+      opposing: m.captains[1],
+      kind: 'win' as const,
+      side: 'alpha' as const,
+      expiresAt: 1_800_000_600_000,
+    };
+    m.proposal = p;
+    const card = agreementCard(m);
+    expect(card.content).toBe(`<@${m.captains[1]}>`);
+    expect(card.embeds[0].description).toBe(
+      `<@${m.captains[0]}> says Alpha won. <@${m.captains[1]}>, confirm or dispute. This confirms automatically <t:1800000600:R>.`,
+    );
+    expect(buttons(card).map((b) => [b.type === 2 ? b.label : '', b.custom_id])).toEqual([
+      ['Confirm', `a:${m.id}:3:${p.id}:win`],
+      ['Dispute', `a:${m.id}:3:${p.id}:decline`],
+    ]);
+    for (const b of buttons(card)) expect(b.custom_id!.length).toBeLessThanOrEqual(100);
+    expect(agreementCard(m, p, 'declined').embeds[0].description).toContain(
+      'An organizer can record the result from /admin or the website.',
+    );
+    expect(agreementCard(m, p, 'auto').embeds[0].description).toContain(
+      'Nobody disputed within 10 minutes',
+    );
+    expect(agreementCard(m, p, 'accepted').embeds[0].description).toContain(
+      'confirmed that Alpha won',
+    );
+    m.test = { markedBy: m.captains[0], markedAt: 0 };
+    expect(agreementCard(m)).toMatchObject({ content: '', allowed_mentions: { parse: [] } });
+  });
+
+  it('writes short, ping-free result notes and quiet substitute and dispute notices', () => {
+    const m = match('finished');
+    m.result = 'beta';
+    expect(resultNotice(m)).toEqual({
+      content: '**Pickup**: Beta won. Ratings are updated on the match card.',
+      embeds: [],
+      components: [],
+      allowed_mentions: { parse: [] },
+    });
+    m.result = 'draw';
+    expect(resultNotice(m).content).toBe(
+      '**Pickup**: Draw. Ratings are updated on the match card.',
+    );
+    m.generation = 1;
+    m.result = 'alpha';
+    expect(resultNotice(m).content).toContain('corrected result, Alpha won');
+    expect(resultNotice(m, true).content).toContain('the result was withdrawn');
+    expect(resultNotice({ ...match('aborted') }).content).toBe(
+      '**Pickup**: match cancelled. No ratings changed.',
+    );
+    const playing = match('playing');
+    const sub = substituteNotice(playing, playing.roster[2].id, playing.roster[3].id);
+    expect(sub.content).toBe(
+      `<@${playing.roster[2].id}>, you’re in for <@${playing.roster[3].id}> on Beta.`,
+    );
+    expect(sub.allowed_mentions).toEqual({ parse: [], users: [playing.roster[2].id] });
+    playing.silent = true;
+    expect(substituteNotice(playing, playing.roster[2].id, 'x').allowed_mentions).toEqual({
+      parse: [],
+    });
+    const role = '100000000000000777';
+    expect(disputeNotice(match('playing'), [role])).toMatchObject({
+      content: expect.stringContaining(`<@&${role}>`),
+      allowed_mentions: { parse: [], roles: [role] },
+    });
+  });
+
+  it('prints durations in words', () => {
+    expect(duration(7200)).toBe('2 hours');
+    expect(duration(90)).toBe('1 minute 30 seconds');
+    expect(duration(60)).toBe('1 minute');
+    expect(duration(1)).toBe('1 second');
+    expect(duration(93784)).toBe('1 day 2 hours');
+    expect(
+      queueCard(
+        {
+          ...queue,
+          controls: {
+            waitingSeconds: 7200,
+            matchSeconds: 0,
+            requiredRole: null,
+            blockedRole: null,
+          },
+        },
+        [],
+      ).embeds[0].description,
+    ).toContain('Waiting places expire after 2 hours.');
   });
 
   it('uses one result roster with final ratings and deltas, without rejoin actions', () => {

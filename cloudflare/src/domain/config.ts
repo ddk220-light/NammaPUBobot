@@ -93,6 +93,7 @@ export const queueSchema = z
       .strict(),
     teamMethod: z.enum(['captain', 'balanced', 'random']),
     autoStart: z.boolean().optional(),
+    earlyStart: z.enum(['moderators', 'anyone']).optional(),
     aliases: z.array(z.string().trim().min(1).max(40)).max(10).optional(),
     isDefault: z.boolean().optional(),
     voicePreview: z.boolean().optional(),

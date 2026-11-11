@@ -182,6 +182,7 @@ export class SettingsDraft {
           reuseSeconds: number(f, 'reuseSeconds'),
         },
         autoStart: bool(f, 'autoStart'),
+        earlyStart: value(f, 'earlyStart') === 'anyone' ? 'anyone' : 'moderators',
         isDefault: bool(f, 'isDefault'),
         aliases: list(f, 'aliases'),
         keepQueueVisible: bool(f, 'keepQueueVisible'),

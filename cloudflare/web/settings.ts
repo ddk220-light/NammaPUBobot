@@ -37,6 +37,7 @@ const fieldDefaults: Record<string, string> = {
   enabled: 'Off for an advanced queue; on in the first-queue guide',
   size: '8 players',
   autoStart: 'On',
+  earlyStart: 'Organizers and moderators',
   isDefault: 'Off',
   keepQueueVisible: 'On',
   checkIn: 'On',
@@ -350,6 +351,13 @@ export function queueEditor(
         q.adminRoles ?? [],
         setup.moderatorRoles,
         'Additional roles can clear queues, cancel matches, close betting and report results in Discord. These roles do not grant website access. Server managers already have access.',
+      ) +
+      select(
+        'earlyStart',
+        'Who can start a match before the queue is full',
+        q.earlyStart ?? 'moderators',
+        choices({ moderators: 'Organizers and moderators', anyone: 'Anyone in the channel' }),
+        'A full queue always starts by itself. This decides who may start one early with fewer players and possibly uneven teams.',
       ),
   );
   html += section(
