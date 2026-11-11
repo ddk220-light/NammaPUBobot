@@ -103,9 +103,13 @@ test('an expired session offers sign-in that returns to the same place with the 
   )!;
   expect(returnTo).toContain(`community=${guild}`);
   expect(returnTo).toContain('view=setup');
-  // Stand in for Discord: the sign-in round trip lands back on returnTo.
+  // Stand in for Discord: the sign-in round trip lands back on returnTo. WebKit cannot fulfill a
+  // route with a redirect status, so the stand-in page navigates there itself.
   await page.route('**/auth/login**', (route) =>
-    route.fulfill({ status: 302, headers: { location: returnTo } }),
+    route.fulfill({
+      contentType: 'text/html',
+      body: `<meta http-equiv="refresh" content="0;url=${returnTo.replaceAll('&', '&amp;')}">`,
+    }),
   );
   state.sessionExpired = false;
   await link.click();
