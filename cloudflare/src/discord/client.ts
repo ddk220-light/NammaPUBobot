@@ -1,3 +1,4 @@
+import { buildInfo } from '../build-info';
 import { privilegedRankPermissions } from '../domain/rank-roles';
 import type { DiscordSetup } from '../domain/setup';
 import type { Env } from '../env';
@@ -74,7 +75,10 @@ export async function discord<T>(
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `${bearer ? 'Bearer' : 'Bot'} ${token}`);
-  headers.set('User-Agent', 'DiscordBot (https://github.com/ddk220-light/NammaPUBobot, 0.1.0)');
+  headers.set(
+    'User-Agent',
+    `DiscordBot (https://github.com/ddk220-light/NammaPUBobot, ${buildInfo.version})`,
+  );
   for (let attempt = 0; attempt < 3; attempt++) {
     const response = await fetch(`${DISCORD_API}${path}`, {
       ...init,
