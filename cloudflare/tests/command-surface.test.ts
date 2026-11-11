@@ -337,8 +337,7 @@ describe('reply text names only registered commands', () => {
     ...[...registered.values()].flatMap(tree),
     ...['link', 'redo', 'close', 'leaderboard', 'reset', 'result', 'maps', 'status'],
   ]);
-  // Test-mode setup text owned by the play store; /test has only populate and checkin.
-  const knownStale = new Set(['/test maps', '/test result', '/test reset', '/test status']);
+  const knownStale = new Set<string>();
 
   it('finds the sources', () => {
     expect(Object.keys(sources).length).toBeGreaterThan(20);
