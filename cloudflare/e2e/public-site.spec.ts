@@ -2,21 +2,74 @@ import { test, expect } from '@playwright/test';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mockApp, guild, queue } from './fixtures';
-test('public content and setup guides work without JavaScript', async ({ browser }, info) => {
+test('public content and the setup guide work without JavaScript', async ({ browser }, info) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(
-    'free Discord bot for pickup games',
+    'free Discord bot for RTS pickup games',
   );
-  await page.getByRole('link', { name: 'Age of Empires II', exact: true }).click();
-  await expect(page.locator('main')).toContainText('/report loss');
+  await expect(page.locator('main a[href="/invite"]').first()).toHaveClass(/\bbutton\b/);
+  await page.getByRole('link', { name: 'Age of Empires II', exact: true }).first().click();
+  await expect(page.locator('main .lead')).toContainText(
+    'free, open-source Discord bot that runs Age of Empires II pickup games',
+  );
+  await expect(page.locator('main')).toContainText('Civ picks');
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', 'noindex');
-  await page
-    .getByRole('link', { name: 'complete Age of Empires II setup guide', exact: true })
-    .click();
-  await expect(page.locator('main')).toContainText('/add');
-  await page.screenshot({ path: info.outputPath('public-game-setup.png'), fullPage: true });
+  await page.getByRole('link', { name: 'five-step setup guide', exact: true }).click();
+  await expect(page).toHaveURL(/\/guides\/getting-started\/$/);
+  for (const step of [
+    'Add the bot to your server',
+    'Sign in to the console with Discord',
+    'Pick your game',
+    'Create a queue and choose its channel',
+    'Players type /add',
+  ])
+    await expect(page.getByRole('heading', { level: 2, name: step, exact: true })).toBeVisible();
+  await expect(page.locator('main')).toContainText('Report result');
+  await expect(page.locator('.bot-example figcaption').first()).toContainText('Example');
+  await page.screenshot({ path: info.outputPath('public-guide.png'), fullPage: true });
+  await context.close();
+});
+test('old setup URLs land on the guide', async ({ page }) => {
+  await page.goto('/games/warcraft-3/setup/');
+  await expect(page).toHaveURL(/\/guides\/getting-started\/$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Get started in five steps');
+});
+test('phones get a console link, no sideways scroll and readable dark text', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  await context.addInitScript(() => localStorage.setItem('cg-theme', 'dark'));
+  const page = await context.newPage();
+  for (const path of [
+    '/',
+    '/guides/getting-started/',
+    '/guides/commands/',
+    '/features/map-voting/',
+  ]) {
+    await page.goto(path);
+    await expect(page.locator('header a[href="/app/"]')).toBeVisible();
+    const box = await page.locator('header a[href="/app/"]').boundingBox();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      path,
+    ).toBe(true);
+  }
+  await page.goto('/features/map-voting/');
+  // WCAG AA for the subtitle in the dark theme, computed from the rendered colours.
+  const ratio = await page.locator('.lead').evaluate((el) => {
+    const rgb = (c: string) => c.match(/\d+/g)!.slice(0, 3).map(Number);
+    const lum = (c: number[]) =>
+      c
+        .map((v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+        .reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const a = lum(rgb(getComputedStyle(el).color)),
+      b = lum(rgb(getComputedStyle(document.body).backgroundColor));
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  });
+  expect(ratio).toBeGreaterThanOrEqual(4.5);
   await context.close();
 });
 test('privacy, terms and about are real pages with a reachable contact section', async ({

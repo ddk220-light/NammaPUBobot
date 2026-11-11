@@ -141,7 +141,7 @@ test('public invitations and substantive game pages work without JavaScript at n
       true,
     );
   }
-  await expect(page.getByRole('heading', { name: 'How an AoE2 night works' })).toBeVisible();
-  await expect(page.locator('.article-body')).toContainText('public-by-link');
+  await expect(page.getByRole('heading', { name: 'How a game night goes' })).toBeVisible();
+  await expect(page.locator('.article-body')).toContainText('What it can’t do yet');
   await context.close();
 });

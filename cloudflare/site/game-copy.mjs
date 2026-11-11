@@ -1,199 +1,209 @@
-// Authored game-night examples. Connection claims remain conditional on Setup.
+// What is specific to each game. Every claim is checked against src/games/catalog.ts: map votes
+// need a pool the organizer types in except for AoE2, and every optional game connection is beta.
+const mapPool =
+  'Turn on map voting for a queue and type in your map list. Players vote on the match card, or captains choose.';
 export const gameCopy = {
   aoe2: {
-    short: '4v4 team nights, Arabia and Nomad queues',
-    heading: 'How an AoE2 night works',
-    specific: [
+    short: 'Civ picks, map votes and beta lobby tracking for 4v4 team games',
+    title: 'AoE2 Discord bot for pickup games',
+    game: 'Age of Empires II',
+    tail: 'queues, check-in, balanced 4v4 teams, civ picks and map votes.',
+    night:
+      'A typical AoE2 night is eight people and a 4v4 team game on Arabia or Nomad. Make one queue per format, like “Friday 4v4 Arabia”, so nobody waits in the wrong line. The ladder belongs to your server and learns from your own team games, not from ranked 1v1.',
+    features: [
       [
-        'Choose the evening before choosing teams',
-        'A queue called “Friday 4v4 Arabia” tells players much more than “Main queue”. For a Nomad group, agree on your usual lobby rules and how civilizations are chosen before asking everyone to join. Keep separate queues when the same friends enjoy different formats, so a player does not wait for Arabia while the host prepares a water map.',
+        'Civ picks',
+        'Turn on civ picks and anyone in the match can start a round with <code>/civpick</code>. Everyone picks from the same shortlist in secret and the picks show together; Random is always there. Civ picks are only for AoE2.',
       ],
       [
-        'Give team-game experience room to develop',
-        'An experienced one-versus-one player and a regular team-game player may bring different strengths. Start with captains if the group wants to discuss positions, communication and familiarity with the map. Local ratings become more useful as your community records its own games; an official ranked rating is useful context, not a guarantee that two teams will feel equal.',
+        'Map votes with a built-in pool',
+        'The AoE2 map list comes ready: Arabia, Arena, Nomad, Black Forest, MegaRandom and ten more. Players vote on the match card, or captains choose.',
       ],
       [
-        'Keep the lobby easy to recognize',
-        'The host still creates the game in Definitive Edition and shares the lobby details in Discord. A distinctive agreed lobby name helps everyone find the same game. Optional AoE2 connections use public Companion data when activated; they cannot make every private game visible. Keep the captain-reporting routine familiar even when a connection helps associate a lobby with the match.',
+        'Profile links',
+        'Players add their AoE2 profile with <code>/profile link</code>, so others can look them up. A link points to a profile; it doesn’t prove who owns it.',
+      ],
+      [
+        'Lobby tracking (beta)',
+        'A player attaches the game’s lobby with <code>/lobby attach</code>, and the bot follows it through public AoE2 Companion data. When the game ends it suggests a result, and a captain confirms it.',
       ],
     ],
     limits: [
-      'This workflow targets Definitive Edition; other editions are not a verified connection path.',
-      'Private games and ambiguous rematches may not appear in public data.',
-      'A disappearing lobby does not establish a start or a winner.',
-      'Profile and replay links depend on what the public data service supplies.',
+      'It doesn’t create the lobby: the host still makes the game and shares it.',
+      'Lobby tracking is in beta and only sees public lobbies; private games and quick rematches may not show up.',
+      'A lobby closing doesn’t prove the game started or who won, so a captain always reports the result.',
     ],
     question: [
       'Can we run Arabia and Nomad nights?',
-      'Yes. Give each format a named queue and explain its rules in the Discord channel. Queues for the same configured game share community rating settings.',
+      'Yes. Make one queue for each and name it after the format. Queues for the same game share one ladder, so ratings carry across.',
     ],
   },
   aoe3: {
-    short: 'Separate Supremacy and treaty pickup sessions',
-    heading: 'How an AoE3 night works',
-    specific: [
+    short: 'Supremacy or treaty queues; players link their DE profiles',
+    title: 'AoE3 Discord bot for pickup games',
+    game: 'Age of Empires III',
+    tail: 'supremacy and treaty queues, check-in and balanced teams.',
+    night:
+      'AoE3 groups often split their evenings between supremacy and treaty. Make a queue for each and put the mode, and the treaty length, in its name. Ratings belong to your server and grow from the games you play together.',
+    features: [
+      ['Map votes', mapPool],
       [
-        'Make the mode visible',
-        'Supremacy and treaty games ask players to make different commitments. Put the mode in the queue name, and state the treaty duration and any community rules in the channel. For a learning night, say that new players are welcome before the queue opens. That is more useful than asking people to join first and discovering that half the group expected another format.',
+        'Profile links',
+        'Players add their Definitive Edition profile with <code>/profile link</code>. A link points to a profile; it doesn’t prove who owns it.',
       ],
       [
-        'Discuss civilizations and experience',
-        'Captains can consider civilization preferences, team experience and the format when choosing sides. Balanced teams instead use the local ratings built from your community’s recorded results. Neither method knows every detail of a player’s official ladder history. Agree on expectations for unfamiliar civilizations or returning players so that the first evening produces games people want to repeat.',
-      ],
-      [
-        'Use Definitive Edition as the starting point',
-        'The host creates the lobby and shares its details with the checked-in group. Optional account and game connections target Definitive Edition and need their own availability checks in Setup. A Steam account reference alone does not prove ownership of a specific game profile. Players can still join a queue, play and report a result while a connection is unavailable.',
+        'Lobby tracking (beta)',
+        'Optional, using public Age of Empires match data. It may not be switched on yet; the console shows its status for your server.',
       ],
     ],
     limits: [
-      'Connection scope is Definitive Edition, not every older AoE3 release.',
-      'A Steam reference alone does not verify ownership of a game profile.',
-      'Public match history can omit private games.',
-      'Captains confirm results; missing history is not a loss.',
+      'Treaty rules are up to your group; the bot can’t enforce them in the game.',
+      'Profile links and lobby tracking cover Definitive Edition only.',
+      'Public match history leaves out private games, so captains report results.',
     ],
     question: [
       'Can we organize treaty games?',
-      'Yes. Queues organize the people and teams; agree on the treaty duration and lobby rules in Discord. The bot does not enforce in-game treaty rules.',
+      'Yes. The bot gathers players and makes teams; agree the treaty length in your channel before the host makes the lobby.',
     ],
   },
   aoe4: {
-    short: 'Community team games with local ratings',
-    heading: 'How an AoE4 night works',
-    specific: [
+    short: 'Team-game queues; players link their AoE4 profiles',
+    title: 'AoE4 Discord bot for pickup games',
+    game: 'Age of Empires IV',
+    tail: 'team-game queues, check-in, balanced teams and Elo.',
+    night:
+      'AoE4 team nights work best with a queue named for its size and mood, like “4v4 casual” or “2v2 competitive”. Your server’s ratings are separate from ranked matchmaking and start fresh with your group. They get sharper with every game you record.',
+    features: [
+      ['Map votes', mapPool],
       [
-        'Bring familiar teammates together',
-        'A regular team-night queue gives friends a clear place to gather before opening the game. Name the queue for the intended team size and tell players whether the evening is competitive or casual. If your group mixes returning players with frequent ladder players, allow time to discuss civilization choices and communication before the host creates the lobby.',
+        'Profile links',
+        'Players add their AoE4 profile with <code>/profile link</code>. A link points to a profile; it doesn’t prove who owns it.',
       ],
       [
-        'Build a rating for this group',
-        'Official matchmaking results and a community’s private evenings are different records. Community ratings follow results confirmed here, so they describe this group’s history. Captains are a useful starting point while local records are sparse. As more games are recorded, organizers can try balanced teams and compare whether the resulting matches suit the group’s expectations.',
-      ],
-      [
-        'Know which kind of game you are finding',
-        'A waiting custom lobby and an ongoing matchmaking game are different things. Optional AoE4 connections can only help with the supported information available to them; a similar start time does not establish that a game belongs to your group. Share lobby details in Discord and let captains report the actual result when the game finishes, whether or not an optional connection is active.',
+        'Lobby tracking (beta)',
+        'Optional, using public AoE4 match data. It may not be switched on yet; the console shows its status for your server.',
       ],
     ],
     limits: [
-      'Community ratings do not replace official AoE4 matchmaking ratings.',
-      'Custom-lobby and ongoing-game discovery have different coverage.',
-      'Approximate times alone cannot identify your group’s game.',
-      'Private or missing history cannot establish a result.',
+      'Your server’s ratings don’t replace ranked matchmaking ratings.',
+      'Lobby tracking is in beta and can’t tell your game from a stranger’s by start time alone.',
+      'Missing match history never counts as a loss; captains report results.',
     ],
     question: [
-      'Do players need an official rating first?',
-      'No. The manual queue workflow uses local community records. Captains can form teams while new players establish a history with your group.',
+      'Do players need a ranked rating first?',
+      'No. Everyone starts level on your server’s ladder and moves with the games you record.',
     ],
   },
   aom: {
-    short: 'Retold team nights and god-choice discussions',
-    heading: 'How a Retold night works',
-    specific: [
+    short: 'Retold team games; players link their Retold profiles',
+    title: 'Age of Mythology Discord bot for pickup games',
+    game: 'Age of Mythology: Retold',
+    tail: 'queues, check-in, balanced teams and map votes.',
+    night:
+      'Run a named queue for a scheduled mythology night or a quick team game. Say in the channel how gods are chosen, random or free pick, before people join. Ratings come from your group’s own games and don’t try to copy the official ladder.',
+    features: [
+      ['Map votes', mapPool],
       [
-        'Set expectations for your Retold group',
-        'A named queue works for both a scheduled mythology night and a spontaneous team game. Put the team size and map expectations where players can see them before joining. If the evening has conventions about god choices or random selections, explain them in the channel rather than relying on everyone remembering what happened last week.',
+        'Profile links',
+        'Players add their Retold profile with <code>/profile link</code>. A link points to a profile; it doesn’t prove who owns it.',
       ],
       [
-        'Let captains account for familiarity',
-        'Players can be comfortable with very different gods and play styles. Captains can discuss those preferences when making teams, especially when the group includes newcomers. Balanced teams use this community’s confirmed results instead. Local ratings help describe repeated evenings together; they do not claim to measure every player’s ability across all gods, maps and official ranked modes.',
-      ],
-      [
-        'Keep editions distinct',
-        'These setup instructions target Age of Mythology: Retold. The original game and Extended Edition should not be treated as sharing the same accounts or optional connections. The host creates the Retold game and shares its lobby details in Discord. If optional game information is unavailable, check-in and manual reporting still give the group a complete way to organize the night.',
+        'Lobby tracking (beta)',
+        'Optional, using public match data for Retold. It may not be switched on yet; the console shows its status for your server.',
       ],
     ],
     limits: [
-      'Connection scope is Retold; original and Extended Edition coverage is not implied.',
-      'God preferences and lobby rules still need player agreement.',
-      'A closed lobby does not prove a winner.',
-      'Optional public information may omit private games.',
+      'Profile links and lobby tracking cover Retold only, not the original game or Extended Edition.',
+      'Gods are chosen in the game lobby; the bot doesn’t enforce your god rules.',
+      'A closed lobby doesn’t prove who won, so captains report results.',
     ],
     question: [
-      'Does the bot choose gods for everyone?',
-      'These instructions use player-agreed god choices in the game lobby. Queueing and team formation do not enforce your in-game selection rules.',
+      'Does the bot pick gods for everyone?',
+      'No. Players choose gods in the game lobby. The bot gathers the players, makes the teams and keeps the ladder.',
     ],
   },
   bar: {
-    short: 'Ready-player queues for games up to 8v8',
-    heading: 'How a BAR night works',
-    specific: [
+    short: 'Queues up to 8v8; players link their BAR accounts',
+    title: 'Beyond All Reason Discord bot for pickups',
+    game: 'Beyond All Reason',
+    tail: 'queues up to 8v8, check-in and balanced teams.',
+    night:
+      'BAR evenings often mix new and experienced players across big team games. One queue holds up to 16 players, enough for an 8v8. Check-in gives the host a firm list of who is actually ready before making the battle.',
+    features: [
+      ['Map votes', mapPool],
       [
-        'Gather people before assigning roles',
-        'BAR evenings can bring together players who enjoy different positions and levels of competition. Explain the map, learning expectations and team size before opening the queue. Check-in gives the host a concrete list of people ready to join, rather than a list of everyone who expressed interest earlier in the day.',
+        'Profile links',
+        'Players add their BAR account with <code>/profile link</code>. Proving ownership with <code>/profile verify</code> needs extra setup and may not be available yet.',
       ],
       [
-        'Match the queue to the lobby size',
-        'Configure an even match size between two and sixteen players. An 8v8 queue reaches the current maximum; larger community events need separate matches or another organizing approach. Captains can discuss role preferences before choosing sides. Balanced teams use local records and do not automatically understand every player’s preferred position or experience on a particular map.',
-      ],
-      [
-        'Keep account and replay references understandable',
-        'The host creates the BAR battle and shares where to join. Optional BAR connections use native account information and can require operator setup before they are available. A battle reference, a completed match and a replay are related but different records. Treat the actual players and agreed teams as the source of truth, with captains confirming the result after the game.',
+        'Battle tracking (beta)',
+        'Optional, using public BAR battle data. It may not be switched on yet; the console shows its status for your server.',
       ],
     ],
     limits: [
-      'A single queue supports at most sixteen players, including 8v8.',
-      'Connections may require BAR service access and operator configuration.',
-      'An occupant list alone does not verify the declared teams.',
-      'Replay availability depends on the game information service.',
+      'One match holds at most 16 players; anything bigger needs separate matches.',
+      'The bot doesn’t know preferred roles or positions; players sort those out in the lobby.',
+      'Battle tracking is in beta and may need extra setup before it’s available.',
     ],
     question: [
-      'Can we run an 8v8 evening?',
-      'Yes. Set sixteen players per match and agree on the map and role expectations. Larger single matches exceed the current queue limit.',
+      'Can we run an 8v8?',
+      'Yes. Set 16 players per match. Anything bigger than 8v8 needs to be split into separate matches.',
     ],
   },
   wc3: {
-    short: 'Team nights with optional W3Champions connections',
-    heading: 'How a Warcraft III night works',
-    specific: [
+    short: 'Team nights and inhouses; players link their BattleTags',
+    title: 'Warcraft III Discord bot for pickup games',
+    game: 'Warcraft III',
+    tail: 'inhouse queues, check-in, balanced teams and Elo.',
+    night:
+      'Warcraft III groups use queues for regular team-game nights and inhouse leagues. Say which mode you play and how races are chosen before the host makes the game. Your server’s ladder is separate from W3Champions standings.',
+    features: [
+      ['Map votes', mapPool],
       [
-        'Say which Warcraft III evening you mean',
-        'A queue name should tell players the intended team format and where the group will play. Friends arranging a team-game night have different needs from a public ladder search. Agree on the map and race-selection expectations before the host creates the game, and explain whether newcomers or returning players are joining a learning session.',
+        'Profile links',
+        'Players add their BattleTag with <code>/profile link</code>. A link points to an account; it doesn’t prove who owns it.',
       ],
       [
-        'Choose teams with race preferences in mind',
-        'Captains can discuss race combinations, communication and familiarity with the map before selecting sides. Balanced teams use your community’s recorded results, which remain separate from W3Champions ladder standings. Keep those two ratings distinct when explaining teams to players. A newly joined friend may need several community games before a local rating describes their experience well.',
-      ],
-      [
-        'Treat W3Champions as a specific connection',
-        'Optional Warcraft III connections focus on W3Champions and its supported modes. That does not promise tracking for arbitrary Battle.net custom games or every private lobby. A BattleTag reference also does not prove that a person owns the account. The manual queue and captain-reporting path is useful even when no supported connection can identify the group’s game.',
+        'Game tracking (beta)',
+        'Optional, for W3Champions matchmaking games. It may not be switched on yet; the console shows its status for your server.',
       ],
     ],
     limits: [
-      'Optional connections cover supported W3Champions modes, not all Battle.net games.',
-      'Community standings are separate from the W3Champions ladder.',
-      'A BattleTag reference alone does not verify account ownership.',
-      'Ambiguous or private games need manual coordination and reporting.',
+      'Game tracking covers W3Champions matchmaking only, not Battle.net custom or private games.',
+      'Your server’s ladder is separate from the W3Champions ladder.',
+      'The bot doesn’t pick races; players choose them in the game.',
     ],
     question: [
-      'Must our community use W3Champions?',
-      'Manual queues and confirmed results do not require an active connection. W3Champions coverage applies specifically to the optional Warcraft III connection.',
+      'Do we have to use W3Champions?',
+      'No. Queues, teams and captain-reported results work for any Warcraft III game. W3Champions only matters for the optional game tracking.',
     ],
   },
   zero_hour: {
-    short: 'Zero Hour pickup groups with manual reporting',
-    heading: 'How a Zero Hour night works',
-    specific: [
+    short: 'Zero Hour pickup groups; captains report results',
+    title: 'Zero Hour Discord bot for pickup games',
+    game: 'C&C Generals: Zero Hour',
+    tail: 'queues, check-in, balanced teams and captain-reported results.',
+    night:
+      'Zero Hour groups usually have house rules about maps, factions and conduct. Put them in the channel before people join, and name the queue for the kind of game you mean. Captains report the result after each game.',
+    features: [
+      ['Map votes', mapPool],
       [
-        'Make the rules part of the invitation',
-        'Zero Hour groups often have established map, faction and conduct conventions. Put those expectations in the Discord channel before people join the queue. A descriptive queue name can distinguish a casual evening from a more competitive session, and helps a returning player understand what the host is preparing without reading a long conversation.',
+        'Captain-reported results',
+        'Every game is reported by a captain on the match card, so the ladder works without any outside game data.',
       ],
       [
-        'Use the team method your group understands',
-        'Captains can discuss faction preferences and experience on the chosen map before selecting teams. Balanced teams use local results recorded by this community. The bot does not inspect every detail of a player’s past games or enforce your in-game rules. Keep the confirmed roster visible while the host creates the game and tells everyone how to join.',
-      ],
-      [
-        'Keep Zero Hour separate from original Generals',
-        'This selectable game is Generals: Zero Hour. Original C&C Generals is a distinct legacy entry, not the same optional connection. GeneralsOnline support is conditional on service access, operator configuration and release approval. Start with the manual game-night routine; optional information should help an established workflow rather than become a prerequisite for gathering friends and confirming their results.',
+        'GeneralsOnline tracking (beta)',
+        'Optional lobby tracking through GeneralsOnline needs a key from GeneralsOnline and may not be available yet.',
       ],
     ],
     limits: [
-      'Zero Hour and original C&C Generals are distinct game entries.',
-      'Optional GeneralsOnline access is conditional and may be unavailable.',
-      'The bot does not enforce map, faction or other in-game rules.',
-      'Captains report the outcome when game information is missing or ambiguous.',
+      'Zero Hour and the original C&C Generals are separate games here.',
+      'GeneralsOnline tracking needs extra access and may not be switched on.',
+      'The bot doesn’t enforce map or faction rules.',
     ],
     question: [
-      'Does a Zero Hour queue need GeneralsOnline access?',
-      'No. The manual workflow organizes players and records captain-confirmed results. Optional connections have separate availability requirements.',
+      'Does a Zero Hour queue need GeneralsOnline?',
+      'No. Queues, teams and ratings work without it; captains report each result.',
     ],
   },
 };
