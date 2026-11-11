@@ -2,7 +2,7 @@ const repository = 'https://github.com/ddk220-light/NammaPUBobot';
 
 export const identity = {
   internalName: 'NammaMatchBot',
-  publicName: 'Community Games',
+  publicName: 'RTS Pickup',
   repository,
   license: `${repository}/blob/main/LICENSE`,
   mission:
