@@ -134,8 +134,9 @@ function losingCaptain(m: Match) {
 function expectedResult(m: Match) {
   return m.teams[0].some((player) => player.id === losingCaptain(m).id) ? 'beta' : 'alpha';
 }
+// A prompt is live while its card pointer exists; its outbox row goes as soon as it is delivered.
 const prompts = async (matchId: string) =>
-  (await snapshot()).tables.outbox.filter((row) => String(row.key).startsWith(`end:${matchId}:`));
+  (await snapshot()).tables.cards.filter((row) => String(row.key).startsWith(`end:${matchId}:`));
 
 describe('W3Champions evidence in the real community Durable Object', () => {
   it('records an accepted 1v1 lifecycle but changes ratings only after the losing captain reports', async () => {
