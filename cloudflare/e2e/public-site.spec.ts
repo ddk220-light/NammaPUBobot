@@ -3,7 +3,7 @@ import { mockApp, guild, queue } from './fixtures';
 test('public content and setup guides work without JavaScript', async ({ browser }, info) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
-  await page.goto('http://127.0.0.1:4173/');
+  await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(
     'free Discord bot for pickup games',
   );

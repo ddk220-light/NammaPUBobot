@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// PW_PORT lets several checkouts run the browser suite at once without sharing a preview server.
+const port = Number(process.env.PW_PORT ?? 4173);
+const origin = `http://127.0.0.1:${port}`;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -7,7 +11,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: origin,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
@@ -24,8 +28,8 @@ export default defineConfig({
     { name: 'webkit', use: { ...devices['iPhone 13'], defaultBrowserType: 'webkit' } },
   ],
   webServer: {
-    command: 'npm exec vite -- preview --host 127.0.0.1 --port 4173',
-    url: 'http://127.0.0.1:4173',
+    command: `npm exec vite -- preview --host 127.0.0.1 --port ${port} --strictPort`,
+    url: origin,
     reuseExistingServer: !process.env.CI,
   },
 });
