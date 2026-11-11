@@ -5,15 +5,60 @@ import type { EditorSetup } from './settings';
 import type { SettingsDraft } from './draft';
 import { esc } from './ui';
 
-export type InviteUrls = { basic: string | null; ranks: string | null; nicknames: string | null };
+export type InviteUrls = {
+  basic: string | null;
+  ranks: string | null;
+  nicknames: string | null;
+  /** Combined "add the bot and sign in" path; null when Discord sign-in is not configured. */
+  install?: string | null;
+};
 export const guideSteps = ['access', 'game', 'queue', 'try'] as const;
 export type GuideStep = (typeof guideSteps)[number];
-export function inviteLink(url: string | null | undefined, guild: string, label: string) {
+export function inviteLink(
+  url: string | null | undefined,
+  guild: string,
+  label: string,
+  primary = false,
+) {
   if (!url) return '';
   const target = new URL(url);
   target.searchParams.set('guild_id', guild);
   target.searchParams.set('disable_guild_select', 'true');
-  return `<a class="button" data-discord-invite target="_blank" rel="noopener" href="${esc(target.href)}">${esc(label)}</a>`;
+  return `<a class="button${primary ? ' primary' : ''}" data-discord-invite target="_blank" rel="noopener" href="${esc(target.href)}">${esc(label)}</a>`;
+}
+/** One Discord trip that adds the bot to this server, signs in and returns to its setup guide. */
+export function addToDiscord(
+  urls: InviteUrls,
+  guild: string,
+  label = 'Add to Discord',
+  primary = false,
+) {
+  if (!urls.install) return inviteLink(urls.basic, guild, label, primary);
+  const target = new URL(urls.install, location.origin);
+  if (guild) target.searchParams.set('guild', guild);
+  target.searchParams.set('returnTo', location.pathname + location.search);
+  return `<a class="button${primary ? ' primary' : ''}" data-discord-invite data-discord-install href="${esc(target.pathname + target.search)}">${esc(label)}</a>`;
+}
+export function retryHint(setup: Pick<EditorSetup, 'access'>) {
+  const seconds = Math.ceil(Number(setup.access.retryAfter));
+  return Number.isFinite(seconds) && seconds > 0
+    ? `Try again in ${seconds} second${seconds === 1 ? '' : 's'}.`
+    : 'Try again in a moment.';
+}
+/** A Discord outage is not a missing bot: never send people to re-invite during one. */
+export function accessText(setup: Pick<EditorSetup, 'access'>) {
+  if (setup.access.status === 'ready') return setup.access.message;
+  return setup.access.status === 'unavailable'
+    ? `Discord is not responding right now, so we could not check this server. Your saved settings are safe. ${retryHint(setup)}`
+    : 'The bot is not in this server yet, or it cannot see it. Add it to your server to continue.';
+}
+export function channelBlocker(setup: Pick<EditorSetup, 'access' | 'channels'>) {
+  if (setup.channels.length) return '';
+  return setup.access.status === 'needs_access'
+    ? 'Add the bot to your server first, then choose the channel.'
+    : setup.access.status === 'unavailable'
+      ? `Discord is not responding, so channels cannot be listed yet. ${retryHint(setup)}`
+      : 'The bot cannot see any text channels. Allow it to view the channel you want, then check access again.';
 }
 export function savedReady(snapshot: Snapshot, setup: EditorSetup) {
   return (
@@ -34,6 +79,14 @@ export function savedReady(snapshot: Snapshot, setup: EditorSetup) {
       );
     })
   );
+}
+function readyQueue(snapshot: Snapshot, setup: EditorSetup, preferred: string | null) {
+  const usable = snapshot.settings.queues.filter(
+    (q) =>
+      q.enabled &&
+      setup.channels.some((c) => c.id === q.channelId && c.permissions.every((p) => p.granted)),
+  );
+  return usable.find((q) => q.id === preferred) ?? usable[0];
 }
 export function permissionRecovery(
   draft: SettingsDraft,
@@ -102,8 +155,8 @@ export function permissionRecovery(
         }),
     )
     .join('');
-  return `<section class="panel" id="discord-access"><div class="section-heading"><h2>Discord access</h2>${known ? '' : inviteLink(urls.basic, draft.saved.communityId, 'Invite bot to server')}</div>
-    <p class="notice">${esc(setup.access.message)}</p>
+  return `<section class="panel" id="discord-access"><div class="section-heading"><h2>Discord access</h2>${setup.access.status === 'needs_access' ? addToDiscord(urls, draft.saved.communityId, 'Invite bot to server') : ''}</div>
+    <p class="notice">${esc(accessText(setup))}</p>
     <p class="record-meta">${checked ? `Last checked ${esc(checked.toLocaleTimeString())}.` : 'Not checked yet.'} Changes in Discord take effect here after a new check.</p>
     <div class="actions"><button type="button" data-action="check-access">Check access again</button></div>
     <div class="table-wrap"><table><caption>Permissions for the current settings draft</caption><thead><tr><th>Channel or feature</th><th>Status</th><th>Requirement</th></tr></thead><tbody>${channelRows || row('Queue channels', 'Not selected', 'Choose a channel when creating your first queue.')}
@@ -130,8 +183,14 @@ export function guidedSetup(
   const raw = queue && draft.raw.get(`queue:${queue.id}`);
   const read = (name: string, fallback: unknown) => esc(raw?.[name]?.[0] ?? fallback);
   let body = '';
+  const blocked = channelBlocker(setup);
   if (stage === 'access')
-    body = `<h3>Connect your Discord community</h3><p>${esc(setup.access.message)}</p><p>Invite the bot, choose this server, and return here. We recheck saved configuration and permissions when you return.</p><div class="actions">${setup.access.status === 'ready' ? '<p role="status">Discord access verified. Continue to choose a game.</p><button type="button" data-action="check-access">Recheck access</button>' : inviteLink(urls.basic, draft.saved.communityId, 'Add to Discord') + '<button type="button" data-action="check-access">I’m back — check access</button>'}</div><p class="form-help">You may prepare a game while access is unavailable. An enabled queue still requires verified channel permissions when you save.</p>`;
+    body =
+      setup.access.status === 'ready'
+        ? `<h3>Connect your Discord community</h3><p>${esc(setup.access.message)}</p><div class="actions"><p role="status">Discord access verified. Continue to choose a game.</p><button type="button" data-action="check-access">Recheck access</button></div>`
+        : setup.access.status === 'unavailable'
+          ? `<h3>Discord is not responding</h3><p data-access-outage>${esc(accessText(setup))}</p><p>This is a problem on Discord’s side, not with your server. Nothing needs to be reinstalled.</p><div class="actions"><button type="button" class="primary" data-action="check-access">Check again</button></div><p class="form-help">You can choose a game while you wait. Saving a queue needs Discord to answer so we can check its channel.</p>`
+          : `<h3>Connect your Discord community</h3><p>${esc(accessText(setup))}</p><p>${urls.install ? 'Discord asks you to confirm this server and the bot’s permissions, then brings you back here.' : 'Add the bot, choose this server, and return here. We check its permissions again when you come back.'}</p><div class="actions">${addToDiscord(urls, draft.saved.communityId, 'Add to Discord', true)}<button type="button" data-action="check-access">I’m back — check access</button></div><p class="form-help">You can choose a game first. Saving a queue needs the bot in your server so it can post in a channel.</p>`;
   if (stage === 'game')
     body = `<h3>Choose a game</h3><p>Queues for the same game share ratings, leaderboard policy and tax time.</p><label hidden>Game for guided setup<select data-guide-game tabindex="-1"><option value="">Choose a game</option>${settings.games.map((g) => `<option value="${g.id}" ${g.id === game?.id ? 'selected' : ''}>${esc(g.name || 'Custom game draft')}</option>`).join('')}${selectableCatalog
       .filter((g) => !settings.games.some((v) => v.catalogId === g.id))
@@ -145,7 +204,7 @@ export function guidedSetup(
   if (stage === 'queue')
     body = !queue
       ? '<p>Choose a game first, then continue to create a queue draft.</p>'
-      : `<h3>Your first queue</h3><p>${esc(game?.name ?? 'Game')} · changes apply after saving.</p><div class="guide-queue-content"><form data-guide-queue="${queue.id}" novalidate><div class="fields"><label>Queue name<input name="name" value="${read('name', queue.name)}" maxlength="40" required /></label><label>Discord channel<select name="channelId">${setup.channels.map((c) => `<option value="${c.id}" ${c.id === queue.channelId ? 'selected' : ''} ${c.permissions.some((p) => !p.granted) && c.id !== queue.channelId ? 'disabled' : ''}>#${esc(c.name)}${c.permissions.some((p) => !p.granted) ? ' — missing channel permissions' : ''}</option>`).join('')}${!setup.channels.some((c) => c.id === queue.channelId) ? `<option value="${esc(queue.channelId)}" selected>Unavailable channel · ${esc(setup.knownChannels?.find((c) => c.id === queue.channelId)?.name ? `${setup.knownChannels.find((c) => c.id === queue.channelId)!.name} · Not verified` : setup.access.status === 'ready' ? 'choose an available channel' : 'check Discord access')}</option>` : ''}</select></label><label>Players per match<input name="size" type="number" min="2" max="16" step="2" value="${read('size', queue.size)}" required /></label><label>How teams are made<select name="teamMethod">${Object.entries(
+      : `<h3>Your first queue</h3><p>${esc(game?.name ?? 'Game')} · changes apply after saving.</p><div class="guide-queue-content"><form data-guide-queue="${queue.id}" novalidate><div class="fields"><label>Queue name<input name="name" value="${read('name', queue.name)}" maxlength="40" required /></label>${blocked ? `<div class="channel-blocked"><p class="form-label">Discord channel</p><p class="notice" id="guide-channel-blocked" data-channel-blocked>${esc(blocked)}</p>${setup.access.status === 'needs_access' ? addToDiscord(urls, draft.saved.communityId, 'Add to Discord', true) : '<button type="button" data-action="check-access">Check access again</button>'}</div>` : ''}<label ${blocked ? 'hidden' : ''}>Discord channel<select name="channelId">${setup.channels.map((c) => `<option value="${c.id}" ${c.id === queue.channelId ? 'selected' : ''} ${c.permissions.some((p) => !p.granted) && c.id !== queue.channelId ? 'disabled' : ''}>#${esc(c.name)}${c.permissions.some((p) => !p.granted) ? ' — missing channel permissions' : ''}</option>`).join('')}${!setup.channels.some((c) => c.id === queue.channelId) ? `<option value="${esc(queue.channelId)}" selected>Unavailable channel · ${esc(setup.knownChannels?.find((c) => c.id === queue.channelId)?.name ? `${setup.knownChannels.find((c) => c.id === queue.channelId)!.name} · Not verified` : setup.access.status === 'ready' ? 'choose an available channel' : 'check Discord access')}</option>` : ''}</select></label><label>Players per match<input name="size" type="number" min="2" max="16" step="2" value="${read('size', queue.size)}" required /></label><label>How teams are made<select name="teamMethod">${Object.entries(
           { captain: 'Captain pick', balanced: 'Balanced by rating', random: 'Random teams' },
         )
           .map(
@@ -155,10 +214,13 @@ export function guidedSetup(
           .join(
             '',
           )}</select></label></div></form><aside class="discord-preview" aria-label="Illustrative Discord queue preview"><p class="preview-caption">What players will see in Discord</p><h4 data-preview-name></h4><p data-preview-details></p><p data-preview-rules></p><div class="discord-preview-buttons" aria-hidden="true"><span>Join</span><span>Leave</span></div><p class="preview-caption">Illustrative preview · no message is posted yet</p></aside></div><p class="form-help">New queues start with 60-second check-in and automatic start. Shared rating settings are inherited for this game. Review advanced settings before saving if you need different rules.</p><button type="button" data-guide-advanced="${queue.id}">Advanced queue settings</button>`;
+  const ready = readyQueue(saved, setup, route.searchParams.get('guideQueue'));
+  const readyChannel = ready && setup.channels.find((c) => c.id === ready.channelId);
   if (stage === 'try')
-    body = savedReady(saved, setup)
-      ? `<h3>Try your queue in Discord</h3><p>Your saved configuration and channel permissions are ready.</p><ol class="recovery-steps"><li>Open the configured Discord channel.</li><li>Use the queue card or <code>/add</code> to join. Invite your players to do the same.</li><li>Complete check-in, play, and report the result in Discord.</li></ol><p class="form-help">This is a manual check. Delivery can still be pending; review Matches → Delivery diagnostics if the card has not appeared.</p><button type="button" data-view="queues">Open queues</button>`
-      : '<h3>Finish saving your setup</h3><p>Save an enabled queue and verify its channel permissions. Drafts and a successful HTTP response alone do not mean the community is ready.</p><button type="button" data-action="check-access">Check access again</button>';
+    body =
+      savedReady(saved, setup) && ready && readyChannel
+        ? `<h3>Try your queue in Discord</h3><p>${esc(ready.name)} is saved and the bot can post in #${esc(readyChannel.name)}. Its queue card is posted there, ready for players.</p><p><a class="button primary" data-discord-channel target="_blank" rel="noopener" href="https://discord.com/channels/${esc(saved.communityId)}/${esc(readyChannel.id)}">Open #${esc(readyChannel.name)} in Discord</a></p><ol class="recovery-steps"><li>Open #${esc(readyChannel.name)} in your server.</li><li>Press Join on the queue card, or type <code>/add</code>. Ask your players to do the same.</li><li>Complete check-in, play, and report the result in Discord.</li></ol><p class="form-help">The card usually appears within a few seconds. If it has not, check Matches → Delivery diagnostics.</p><button type="button" data-view="queues">Open queues</button>`
+        : '<h3>Finish saving your setup</h3><p>Save an enabled queue and verify its channel permissions. Drafts and a successful HTTP response alone do not mean the community is ready.</p><button type="button" data-action="check-access">Check access again</button>';
   const availability = (v: string) => {
     const id = v.startsWith('catalog:')
       ? v.slice(8)
@@ -201,5 +263,5 @@ export function guidedSetup(
     saved.settings.queues.some((q) => q.id === queue?.id),
     false, // Trying the queue is a manual instruction, never a tracked completion.
   ];
-  return `<section class="guided-setup" aria-labelledby="guide-heading"><aside class="guide-rail"><div class="section-heading"><h2 id="guide-heading" tabindex="-1">Setup guide</h2></div><p class="form-help">Your draft stays with this community.</p><ol class="guide-progress">${['Discord access', 'Choose a game', 'First queue', 'Try it in Discord'].map((label, i) => `<li class="${verified[i] ? 'verified' : ''}" ${i === index ? 'aria-current="step"' : ''}><span class="guide-step-number" aria-hidden="true">${verified[i] ? '✓' : i + 1}</span><span>${label}<small>${i === index ? 'Current step' : verified[i] ? 'Saved and verified' : 'Not complete'}</small></span></li>`).join('')}</ol><button type="button" data-guide-close>Close guide</button></aside><div class="panel guide-body"><p class="record-meta">Step ${index + 1} of 4</p>${body}<div class="actions guide-actions">${index ? `<button type="button" data-guide-step="${guideSteps[index - 1]}">Back</button>` : ''}${index < 2 ? `<button type="button" class="primary" data-guide-next="${stage}" ${stage === 'game' && !game?.name.trim() ? 'disabled data-unavailable="true"' : ''}>${stage === 'access' ? 'Choose game' : settings.queues.some((q) => q.gameId === game?.id) ? 'Review queue' : 'Create queue draft'}</button>` : stage === 'queue' ? '<button type="button" class="primary" data-guide-review>Review and save</button>' : ''}</div></div></section>`;
+  return `<section class="guided-setup" aria-labelledby="guide-heading"><aside class="guide-rail"><div class="section-heading"><h2 id="guide-heading" tabindex="-1">Setup guide</h2></div><p class="form-help">Your draft stays with this community.</p><ol class="guide-progress">${['Discord access', 'Choose a game', 'First queue', 'Try it in Discord'].map((label, i) => `<li class="${verified[i] ? 'verified' : ''}" ${i === index ? 'aria-current="step"' : ''}><span class="guide-step-number" aria-hidden="true">${verified[i] ? '✓' : i + 1}</span><span>${label}<small>${i === index ? 'Current step' : verified[i] ? 'Saved and verified' : 'Not complete'}</small></span></li>`).join('')}</ol><button type="button" data-guide-close>Close guide</button></aside><div class="panel guide-body"><p class="record-meta">Step ${index + 1} of 4</p>${body}<div class="actions guide-actions">${index ? `<button type="button" data-guide-step="${guideSteps[index - 1]}">Back</button>` : ''}${index < 2 ? `<button type="button" class="${stage === 'access' && setup.access.status !== 'ready' ? '' : 'primary'}" data-guide-next="${stage}" ${stage === 'game' && !game?.name.trim() ? 'disabled data-unavailable="true"' : ''}>${stage === 'access' ? 'Choose game' : settings.queues.some((q) => q.gameId === game?.id) ? 'Review queue' : 'Create queue draft'}</button>` : stage === 'queue' ? `<button type="button" class="primary" data-guide-review ${blocked ? 'disabled data-unavailable="true" aria-describedby="guide-channel-blocked"' : ''}>Review and save</button>` : ''}</div></div></section>`;
 }

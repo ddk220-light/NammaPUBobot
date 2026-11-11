@@ -235,7 +235,7 @@ test('an established community recovers access without choosing a test ladder or
   page,
 }) => {
   const state = await mockApp(page);
-  state.access = 'unavailable';
+  state.access = 'needs_access';
   state.snapshot.settings.queues[0].enabled = false;
   state.snapshot.settings.games.unshift({
     id: 'aaaaaaaa-1111-4111-8111-111111111111',

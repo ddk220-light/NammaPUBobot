@@ -14,6 +14,10 @@ import {
   permissionRecovery,
   savedReady,
   guideSteps,
+  addToDiscord,
+  accessText,
+  channelBlocker,
+  retryHint,
   type GuideStep,
   type InviteUrls,
 } from './guide';
@@ -141,7 +145,11 @@ const guideCreatedGames = new Set<string>();
 type Issue = { path: (string | number)[]; message: string };
 type FieldIssue = Issue & { form: string; name: string };
 let validationIssues: FieldIssue[] = [];
-let currentNotice: { message: string; error: boolean } | null = null;
+let currentNotice: {
+  message: string;
+  error: boolean;
+  link?: { href: string; label: string };
+} | null = null;
 let historyIndex = Number(history.state?.organizerIndex ?? 0);
 let acceptedUrl = location.href;
 let restoringHistory = false;
@@ -176,8 +184,27 @@ interface OrganizerFilters {
 const filtersByCommunity = new Map<string, OrganizerFilters>();
 let refreshedAt: Date | null = null;
 let accessCheckedAt: Date | null = null;
-const inviteUrls = (): InviteUrls =>
-  bootstrap.inviteUrls ?? { basic: bootstrap.inviteUrl, ranks: null, nicknames: null };
+const inviteUrls = (): InviteUrls => ({
+  ...(bootstrap.inviteUrls ?? { basic: bootstrap.inviteUrl, ranks: null, nicknames: null }),
+  install: bootstrap.oauthReady ? '/auth/login?install=1' : null,
+});
+const draftStore = () => {
+  try {
+    return sessionStorage;
+  } catch {
+    return null;
+  }
+};
+let leavingForDiscord = false;
+function keepDraftForSignIn() {
+  try {
+    if (draft?.dirty) draft.stash(draftStore()!);
+  } catch {
+    /* Storage can be unavailable; the sign-in still works without the draft. */
+  }
+}
+const signInAgain = () =>
+  `/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`;
 const escape = (s: unknown) =>
   String(s).replace(
     /[&<>"']/g,
@@ -419,11 +446,24 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   return requestJson<T>(path, { ...options, headers });
 }
 const communityUrl = (suffix: string) => `/api/communities/${guildId}/${suffix}`;
-function notice(message: string, error = false, focus = true) {
-  currentNotice = { message, error };
+function notice(
+  message: string,
+  error = false,
+  focus = true,
+  link?: { href: string; label: string },
+) {
+  currentNotice = { message, error, link };
   const box = document.querySelector<HTMLElement>('#notice');
   if (box) {
     box.textContent = message;
+    if (link) {
+      const a = document.createElement('a');
+      a.className = 'button';
+      a.href = link.href;
+      a.textContent = link.label;
+      a.dataset.signInAgain = '';
+      box.append(' ', a);
+    }
     box.className = `notice${error ? ' error' : ''}`;
     box.setAttribute('role', error ? 'alert' : 'status');
     box.hidden = false;
@@ -456,6 +496,18 @@ async function run(action: () => Promise<void>) {
   try {
     await action();
   } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      keepDraftForSignIn();
+      notice(
+        draft?.dirty
+          ? 'Your sign-in expired. Your unsaved changes are kept in this tab; sign in again to continue.'
+          : 'Your sign-in expired. Sign in again to continue.',
+        true,
+        true,
+        { href: signInAgain(), label: 'Sign in again' },
+      );
+      return;
+    }
     if (error instanceof ApiError && error.code === 'revision_conflict') conflict = true;
     if (error instanceof ApiError && error.issues.length) showIssues(error.issues);
     notice(error instanceof Error ? error.message : 'Try again.', true);
@@ -499,6 +551,7 @@ async function save(settings: Settings) {
 async function loadCommunity(id: string, navigation: 'push' | 'replace' | 'none' = 'none') {
   const sequence = ++loadSequence;
   const url = new URL(location.href);
+  const requestedView = isOrganizerView(url.searchParams.get('view'));
   if (navigation === 'push') {
     url.searchParams.set('view', currentView());
     for (const key of ['queue', 'game', 'section', 'guide', 'guideGame', 'guideQueue'])
@@ -526,17 +579,35 @@ async function loadCommunity(id: string, navigation: 'push' | 'replace' | 'none'
   ]);
   if (guildId !== id || sequence !== loadSequence) return;
   snapshot = result.snapshot;
-  draft = new SettingsDraft(snapshot, result.gameState);
+  const store = draftStore();
+  const restored = store && SettingsDraft.unstash(store, id, result.gameState);
+  draft = restored || new SettingsDraft(snapshot, result.gameState);
   setup = result;
   connectorDiagnostics = connectors;
   accessCheckedAt = new Date();
   channelList = result.channels;
   records = result.records;
   refreshedAt = new Date();
-  conflict = false;
-  url.searchParams.set('view', currentView());
+  conflict = Boolean(restored && restored.saved.revision !== snapshot.revision);
+  // A server with nothing configured yet starts in the setup guide, not an empty list.
+  if (
+    !snapshot.settings.games.length &&
+    !snapshot.settings.queues.length &&
+    !restored &&
+    (!requestedView || navigation === 'push')
+  ) {
+    url.searchParams.set('view', 'setup');
+    if (!url.searchParams.has('guide')) url.searchParams.set('guide', 'access');
+  } else url.searchParams.set('view', currentView());
   writeRoute(url, 'replace');
   render();
+  if (restored)
+    notice(
+      conflict
+        ? 'Your unsaved changes are back. Settings also changed elsewhere; review before saving, or reload the latest settings.'
+        : 'Your unsaved changes are back. Review and save them when you are ready.',
+      conflict,
+    );
 }
 async function refreshRecords() {
   const id = guildId;
@@ -574,7 +645,7 @@ async function refreshSetup() {
   notice(
     conflict
       ? 'Saved settings changed elsewhere. Your edits are preserved. Continue editing, or reload the latest settings to discard your changes.'
-      : setup.access.message,
+      : accessText(setup),
     conflict || setup.access.status !== 'ready',
   );
 }
@@ -689,10 +760,14 @@ function paintIssues() {
     );
   });
 }
+const friendlyIssue = (issue: Issue): Issue =>
+  issue.path.at(-1) === 'channelId' && issue.message === 'Enter a Discord ID.'
+    ? { ...issue, message: channelBlocker(setup) || 'Choose a Discord channel for this queue.' }
+    : issue;
 function showIssues(issues: Issue[]) {
   validationIssues = [
     ...new Map(
-      issues.map((issue) => {
+      issues.map(friendlyIssue).map((issue) => {
         const field = fieldIssue(issue);
         return [`${field.form}:${field.name}:${field.message}`, field] as const;
       }),
@@ -892,7 +967,19 @@ function queueSection() {
         () => `<h1>${escape(queue.name || 'New queue')}</h1>`,
       )
     );
-  return `<div class="page-heading"><div><h1>Queues</h1><p class="view-description">A queue lives in one Discord channel. Players join with <code>/add</code>; automatic start prepares a match when it fills.</p></div><button type="button" class="primary" data-edit="add-queue" ${!draft!.working.games.length || !setup.channels.length ? 'disabled data-unavailable="true"' : ''}>Add queue</button></div><div class="queue-list-layout"><div>${queueOverview() || '<section class="panel empty-state"><h2>Your first queue starts here</h2><p>Add a game and verify Discord access in Setup.</p><button type="button" data-view="setup">Open setup</button></section>'}</div>${activitySidebar()}</div>`;
+  return `<div class="page-heading"><div><h1>Queues</h1><p class="view-description">A queue lives in one Discord channel. Players join with <code>/add</code>; automatic start prepares a match when it fills.</p></div><button type="button" class="primary" data-edit="add-queue" ${!draft!.working.games.length || !setup.channels.length ? 'disabled data-unavailable="true"' : ''}>Add queue</button></div><div class="queue-list-layout"><div>${queueOverview() || queueEmptyState()}</div>${activitySidebar()}</div>`;
+}
+function queueEmptyState() {
+  const canAdd = Boolean(draft!.working.games.length && setup.channels.length);
+  return `<section class="panel empty-state" data-queue-empty><h2>Your first queue starts here</h2><p>${canAdd ? 'A queue is where players gather in one Discord channel. Add one and save, and its card appears in that channel.' : 'Pick a game and a Discord channel. The setup guide walks you through it in a few steps.'}</p>${canAdd ? '<button type="button" class="primary" data-edit="add-queue">Add your first queue</button>' : '<button type="button" class="primary" data-guide-start>Start setup guide</button>'}</section>`;
+}
+function setupNotice() {
+  if (savedReady(snapshot!, setup)) return '';
+  if (setup.access.status === 'unavailable')
+    return `<p class="notice" data-access-outage>Discord is not responding right now, so queue status could not be checked. ${escape(retryHint(setup))} <button type="button" data-action="check-access">Check again</button></p>`;
+  if (setup.access.status === 'needs_access')
+    return `<p class="notice">The bot is not in this server yet, so players cannot join. ${addToDiscord(inviteUrls(), guildId, 'Add to Discord')}</p>`;
+  return '<p class="notice">Setup needs attention. <button type="button" data-view="setup">Open Setup</button></p>';
 }
 function activitySidebar() {
   const active = records?.matches.filter((m) => ['playing', 'check_in'].includes(m.state)) ?? [];
@@ -901,6 +988,7 @@ function activitySidebar() {
 function queueOverview() {
   if (!records || !draft) return '';
   const settings = draft.materialize();
+  if (!settings.queues.length) return '';
   const cards = settings.queues
     .map((q) => {
       const saved = snapshot!.settings.queues.find((v) => v.id === q.id);
@@ -932,7 +1020,7 @@ function queueOverview() {
       return `<article class="panel queue-card"><div class="queue-card-heading"><div class="queue-card-title"><div class="section-heading"><h3>${escape(q.name || 'Unnamed draft')}</h3><span class="status-pill" data-status="${!saved ? 'draft' : saved.enabled ? 'open' : 'paused'}">${!saved ? 'New draft' : saved.enabled ? 'Open' : 'Paused'}</span>${q.isDefault ? '<span class="default-tag">Default in channel</span>' : ''}</div><p class="queue-meta">${meta}</p></div><div class="actions"><button type="button" data-open-queue="${q.id}" aria-label="Settings for ${escape(q.name || 'new queue')}">Settings</button><button type="button" data-toggle-queue="${q.id}" class="${q.enabled ? '' : 'resume-queue'}">${q.enabled ? 'Pause' : 'Resume'}<span class="sr-only"> on save</span></button></div></div>${changed ? `<p class="draft-tag">Unsaved changes${saved && saved.enabled !== q.enabled ? ` · ${q.enabled ? 'resume' : 'pause'} on save` : ''}${saved ? ' · Live roster and actions use saved settings' : ''}</p>` : ''}${pausedEmpty ? `<p class="paused-note">Players cannot <code>/add</code> while paused. Ratings and history are kept.</p><details class="queue-manual-actions"><summary>Waiting roster and manual actions</summary>${roster}${actions}</details>` : roster + actions}</article>`;
     })
     .join('');
-  return `${!savedReady(snapshot!, setup) ? '<p class="notice">Setup needs attention. <button type="button" data-view="setup">Open Setup</button></p>' : ''}<section class="queue-overview" aria-label="Queue overview"><p class="sr-only queue-list-note">Live rosters use saved rules. Pause and resume take effect when you save.</p><div class="queue-cards">${cards}</div></section>`;
+  return `${setupNotice()}<section class="queue-overview" aria-label="Queue overview"><p class="sr-only queue-list-note">Live rosters use saved rules. Pause and resume take effect when you save.</p><div class="queue-cards">${cards}</div></section>`;
 }
 
 function openGameSettings(id: string) {
@@ -1215,7 +1303,8 @@ function setupJourney() {
   const steps = [true, setup.access.status === 'ready', saved.games.length > 0, ready];
   if (ready)
     return `<section class="panel setup-journey setup-ready"><span class="ready-check" aria-hidden="true">✓</span><div><h2>Ready to play</h2><p>Saved queues and required Discord access are verified.${pending ? ` ${pending} recent delivery task(s) are pending; check Matches.` : ''}</p><small>${accessCheckedAt ? `Access checked at ${escape(accessCheckedAt.toLocaleTimeString())}.` : ''}</small></div><button type="button" data-guide-start>Open setup guide</button></section>`;
-  return `<section class="panel setup-journey"><div class="section-heading"><h2>${ready ? 'Ready to play' : saved.games.length ? 'Setup needs attention' : 'Set up your first game'}</h2><span class="status-pill">${steps.filter(Boolean).length} / 4 complete</span></div><ol class="setup-steps">${['Choose community', 'Verify Discord access', 'Add a game', 'Save an enabled queue'].map((label, i) => `<li class="${steps[i] ? 'complete' : ''}"><span>${steps[i] ? '✓' : i + 1}</span>${label}</li>`).join('')}</ol><p class="form-help">Progress reflects saved settings and verified access.${pending ? ` ${pending} recent delivery task(s) are not complete; check delivery diagnostics.` : ''}</p><div class="actions"><button type="button" data-guide-start>${ready ? 'Open setup guide' : 'Start guided setup'}</button>${!steps[1] && bootstrap.inviteUrl ? `<a class="button primary" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}&guild_id=${guildId}&disable_guild_select=true">Add to Discord</a><button type="button" data-action="check-access">I’m back — check access</button>` : ''}${steps[2] ? '<button type="button" data-view="queues">Configure a queue</button>' : ''}</div></section>`;
+  const outage = setup.access.status === 'unavailable';
+  return `<section class="panel setup-journey"><div class="section-heading"><h2>${outage ? 'Discord is not responding' : saved.games.length ? 'Setup needs attention' : 'Set up your first game'}</h2><span class="status-pill">${steps.filter(Boolean).length} / 4 complete</span></div><ol class="setup-steps">${['Choose community', 'Verify Discord access', 'Add a game', 'Save an enabled queue'].map((label, i) => `<li class="${steps[i] ? 'complete' : ''}"><span>${steps[i] ? '✓' : i + 1}</span>${label}</li>`).join('')}</ol>${steps[1] ? '' : `<p data-access-outage="${outage}">${escape(accessText(setup))}</p>`}<p class="form-help">Progress reflects saved settings and verified access.${pending ? ` ${pending} recent delivery task(s) are not complete; check delivery diagnostics.` : ''}</p><div class="actions"><button type="button" data-guide-start>Start guided setup</button>${outage ? '<button type="button" data-action="check-access">Check again</button>' : !steps[1] ? `${addToDiscord(inviteUrls(), guildId, 'Add to Discord', true)}<button type="button" data-action="check-access">I’m back — check access</button>` : ''}${steps[2] ? '<button type="button" data-view="queues">Configure a queue</button>' : ''}</div></section>`;
 }
 
 function render() {
@@ -1224,7 +1313,7 @@ function render() {
   invalidateImport();
   if (!bootstrap.user) {
     document.body.classList.remove('organizer');
-    app.innerHTML = `<section class="intro"><p class="eyebrow">A better game night</p><h1>Your community.<br>Your rules.</h1><p class="lead">Set up Discord queues, manage game-night rules and review results in one place.</p><div class="actions">${bootstrap.oauthReady ? `<a class="button primary" href="/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}">Sign in with Discord</a>` : '<p class="notice">Discord sign-in is not configured yet.</p>'}${bootstrap.inviteUrl ? `<a class="button" href="${escape(bootstrap.inviteUrl)}">Add to Discord</a>` : ''}</div><div id="notice" hidden></div></section>`;
+    app.innerHTML = `<section class="intro"><p class="eyebrow">A better game night</p><h1>Your community.<br>Your rules.</h1><p class="lead">Set up Discord queues, manage game-night rules and review results in one place.</p><div class="actions">${bootstrap.oauthReady ? `<a class="button primary" href="/auth/login?returnTo=${encodeURIComponent(location.pathname + location.search)}">Sign in with Discord</a>` : '<p class="notice">Discord sign-in is not configured yet.</p>'}${bootstrap.oauthReady ? '<a class="button" href="/auth/login?install=1">Add to Discord</a>' : bootstrap.inviteUrl ? `<a class="button" href="${escape(bootstrap.inviteUrl)}">Add to Discord</a>` : ''}</div><div id="notice" hidden></div></section>`;
     return;
   }
   document.body.classList.add('organizer');
@@ -1243,7 +1332,7 @@ function render() {
     ]),
   );
   app.innerHTML = `<div class="organizer-layout"><aside class="organizer-sidebar"><p class="eyebrow">Workspace</p><label class="desktop-community"><span class="sr-only">Community</span><select id="community"><option value="">Choose a server</option>${guilds.map((g) => `<option value="${g.id}"${selected(g.id, guildId)}>${escape(g.name)}</option>`).join('')}</select></label><nav class="workspace-nav" role="tablist" aria-label="Organizer sections">${organizerViews.map((view) => `<button type="button" class="workspace-tab" id="tab-${view}" role="tab" data-view="${view}" aria-controls="view-${view}" aria-selected="false" aria-label="${viewNames[view]}" tabindex="-1"><span aria-hidden="true" class="nav-icon">${icons[view]}</span><span>${viewNames[view]}</span>${view === 'matches' && records?.matches.some((m) => ['playing', 'check_in'].includes(m.state)) ? `<span aria-hidden="true" class="nav-count" title="Active in loaded records">${records.matches.filter((m) => ['playing', 'check_in'].includes(m.state)).length}</span>` : ''}${(view === 'matches' && records?.delivery.some((d) => d.status === 'blocked')) || (view === 'setup' && snapshot && !savedReady(snapshot, setup)) ? '<span aria-hidden="true" class="nav-attention" title="Needs attention"></span>' : ''}</button>`).join('')}</nav><div class="sidebar-footer"><p>${escape(identity.publicName)}</p></div></aside><div class="workspace-content"><div class="context-bar"><button type="button" class="mobile-menu icon-button" data-edit="drawer" aria-label="Choose community or queue">☰</button><span class="context-name">${escape(current?.name ?? 'Choose your community')}</span>${statisticsUrl() ? `<a class="context-statistics" href="${statisticsUrl()}">Statistics</a>` : ''}<button type="button" data-account-menu class="account-avatar" aria-label="Account"><span aria-hidden="true">${escape(Array.from(bootstrap.user.username)[0].toUpperCase())}</span></button><div hidden><button data-action="refresh-records">Refresh</button><button data-action="logout">Sign out</button></div></div><div id="notice" class="notice" role="status" hidden></div><div class="workspace-scroll">
-    ${!guilds.length ? `<section class="panel"><h1>No communities yet</h1><p>You need Manage Server permission to configure a community. Check that you signed into the correct Discord account.</p><ol class="recovery-steps"><li>Ask a server administrator for Manage Server permission, or ask them to configure the bot.</li><li>Invite ${escape(identity.publicName)} to your server.</li><li>Refresh the community list after changing permissions.</li></ol><div class="actions">${bootstrap.inviteUrl ? `<a class="button" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}">Add to Discord</a>` : ''}<button type="button" data-action="refresh-communities">Refresh communities</button></div></section>` : ''}
+    ${!guilds.length ? `<section class="panel"><h1>No communities yet</h1><p>You need Manage Server permission to configure a community. Check that you signed into the correct Discord account.</p><ol class="recovery-steps"><li>Ask a server administrator for Manage Server permission, or ask them to configure the bot.</li><li>Invite ${escape(identity.publicName)} to your server.</li><li>Refresh the community list after changing permissions.</li></ol><div class="actions">${bootstrap.oauthReady ? '<a class="button primary" data-discord-invite data-discord-install href="/auth/login?install=1">Add to Discord</a>' : bootstrap.inviteUrl ? `<a class="button" data-discord-invite target="_blank" rel="noopener" href="${escape(bootstrap.inviteUrl)}">Add to Discord</a>` : ''}<button type="button" data-action="refresh-communities">Refresh communities</button></div></section>` : ''}
     ${guildId && !snapshot ? '<section class="panel"><h1>Checking your community…</h1><p>Loading saved settings and Discord permissions.</p><button data-action="reload">Retry</button></section>' : ''}
     ${snapshot && draft ? organizerViews.map((view) => `<section class="workspace-panel" role="tabpanel" id="view-${view}" data-view-panel="${view}" aria-labelledby="tab-${view}" hidden>${{ queues: queueSection, matches: recordSection, players: playerSection, setup: setupSection }[view]()}</section>`).join('') : ''}
     </div><div id="savebar" class="savebar" hidden><span><strong>Unsaved changes</strong><small>Applies across this community</small></span><button type="button" data-edit="reload-conflict" hidden>Reload latest</button><button type="button" data-edit="review">Review changes</button><button type="button" data-edit="discard">Discard</button><button type="button" class="primary" data-edit="save">Save changes</button></div></div></div>`;
@@ -1280,7 +1369,7 @@ function render() {
         .forEach((el) => (el.disabled = true));
     else restoreFocus();
   }
-  if (currentNotice) notice(currentNotice.message, currentNotice.error, false);
+  if (currentNotice) notice(currentNotice.message, currentNotice.error, false, currentNotice.link);
 }
 function applyGameRoute() {
   const game = new URL(location.href).searchParams.get('game');
@@ -1741,6 +1830,10 @@ function handleEditorClick(event: MouseEvent): boolean {
     pageImportRows(more);
     return true;
   }
+  if (target.closest('[data-discord-install], [data-sign-in-again]')) {
+    keepDraftForSignIn();
+    leavingForDiscord = true;
+  }
   if (target.closest('[data-discord-invite]')) awaitingDiscordReturn = true;
   const gameSummary = target.closest<HTMLElement>('.game-settings > summary');
   if (gameSummary) {
@@ -1884,6 +1977,11 @@ function handleEditorClick(event: MouseEvent): boolean {
     void run(() => loadCommunity(guildId));
   if (action.dataset.edit === 'save') {
     if (!guideValid()) return true;
+    const blocked = channelBlocker(setup);
+    if (blocked && draft.materialize().queues.some((q) => !/^\d{17,20}$/.test(q.channelId))) {
+      notice(blocked, true);
+      return true;
+    }
     const result = draft.validate();
     if (!result.success) {
       showIssues(
@@ -1892,13 +1990,19 @@ function handleEditorClick(event: MouseEvent): boolean {
           message: i.message,
         })),
       );
-      notice(result.error.issues.map((i) => i.message).join(' '), true);
+      notice(
+        result.error.issues
+          .map((i) => friendlyIssue({ path: i.path as (string | number)[], message: i.message }))
+          .map((i) => i.message)
+          .join(' '),
+        true,
+      );
     } else void run(() => save(result.data));
   }
   return true;
 }
 window.addEventListener('beforeunload', (event) => {
-  if (draft?.dirty) {
+  if (draft?.dirty && !leavingForDiscord) {
     event.preventDefault();
     event.returnValue = '';
   }
@@ -1947,7 +2051,10 @@ window.addEventListener('focus', recheckAfterDiscord);
 document.addEventListener('visibilitychange', recheckAfterDiscord);
 
 async function start() {
-  writeRoute(new URL(location.href), 'replace');
+  const landing = new URL(location.href);
+  const cancelled = landing.searchParams.get('login') === 'cancelled';
+  landing.searchParams.delete('login');
+  writeRoute(landing, 'replace');
   bootstrap = await api<Bootstrap>('/api/bootstrap');
   document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
@@ -1963,6 +2070,10 @@ async function start() {
     const first = guilds.find((g) => g.id === requested) ?? guilds[0];
     if (first) await loadCommunity(first.id, 'replace');
   } else render();
+  if (cancelled)
+    notice(
+      'You left Discord before finishing, so nothing changed. You can try again whenever you are ready.',
+    );
   app.setAttribute('aria-busy', 'false');
 }
 (location.pathname === '/stats' ? showStats(app) : start()).catch((error) => {

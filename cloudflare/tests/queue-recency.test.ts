@@ -237,8 +237,14 @@ describe('periodic queue visibility', () => {
 
   it.each(['unpublished', 'paused', 'recovery'])('does not poll %s queues', async (kind) => {
     const d = discord();
-    if (kind === 'unpublished') await setup();
-    else {
+    if (kind === 'unpublished') {
+      // A website save now queues the first card; model a queue whose card was never created.
+      await setup();
+      await runInDurableObject(stub(), (_i, state) => {
+        for (const table of ['outbox', 'cards', 'queue_views', 'queue_publications'])
+          state.storage.sql.exec(`DELETE FROM ${table}`);
+      });
+    } else {
       await waiting();
       if (kind === 'paused') {
         const s = await stub().read(guild);
@@ -721,5 +727,67 @@ describe('queue placement after a match starts', () => {
     expect(d.messages).toHaveLength(2);
     expect(d.messages[0].payload.embeds[0].title).toContain('0/4');
     expect(d.calls.filter((c) => c.method === 'POST')).toHaveLength(3); // Old queue, match, replacement.
+  });
+});
+
+describe('first queue card after a website save', () => {
+  const save = (revision: number, config: ReturnType<typeof settings>) =>
+    stub().save(guild, revision, config, person(99).id, 'save');
+  const posts = (d: ReturnType<typeof discord>) => d.calls.filter((c) => c.method === 'POST');
+
+  it('posts a card for a new enabled queue and nothing for an unchanged re-save', async () => {
+    const d = discord();
+    const config = settings();
+    expect((await save(0, config)).ok).toBe(true);
+    await flush();
+    expect(posts(d)).toHaveLength(1);
+    expect(d.messages[0].payload.components.length).toBeGreaterThan(0);
+    expect((await save(1, settings())).ok).toBe(true);
+    await flush();
+    expect(posts(d)).toHaveLength(1);
+    expect(d.messages).toHaveLength(1);
+  });
+
+  it('waits for a paused queue to be enabled, then posts exactly once', async () => {
+    const d = discord();
+    const paused = settings();
+    paused.queues[0].enabled = false;
+    await save(0, paused);
+    await flush();
+    expect(d.calls).toEqual([]);
+    await save(1, settings());
+    await flush();
+    expect(posts(d)).toHaveLength(1);
+    const renamed = settings();
+    renamed.queues[0].name = 'Evening pickup';
+    await save(2, renamed);
+    await flush();
+    expect(posts(d)).toHaveLength(1);
+    expect(d.messages).toHaveLength(1);
+    expect(JSON.stringify(d.messages[0].payload)).toContain('Evening pickup');
+  });
+
+  it('does not queue a card for a channel Discord has refused', async () => {
+    discord();
+    const paused = settings();
+    paused.queues[0].enabled = false;
+    await save(0, paused);
+    await runInDurableObject(stub(), (_i, state) => {
+      state.storage.sql.exec(
+        "INSERT INTO cards(key,channel_id,nonce) VALUES('reminder:x:1',?,'n')",
+        channel,
+      );
+      state.storage.sql.exec(
+        "INSERT INTO outbox(key,payload,version,due,status,error) VALUES('reminder:x:1','{}',1,0,'blocked','discord_403')",
+      );
+    });
+    await save(1, settings());
+    await runInDurableObject(stub(), (_i, state) =>
+      expect(
+        state.storage.sql
+          .exec('SELECT key FROM outbox WHERE key GLOB ?', `queue:${queue}:*`)
+          .toArray(),
+      ).toEqual([]),
+    );
   });
 });

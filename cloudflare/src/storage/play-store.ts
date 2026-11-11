@@ -528,9 +528,22 @@ export class PlayStore {
       const current = this.sql
         .exec<{ digest: string }>('SELECT digest FROM queue_views WHERE queue_id=?', q.id)
         .toArray()[0];
-      const payload = this.queuePayload(q);
-      if (current && current.digest !== JSON.stringify(payload)) this.touchQueue(q);
+      if (current) {
+        if (current.digest !== JSON.stringify(this.queuePayload(q))) this.touchQueue(q);
+      } else if (q.enabled && !this.channelBlocked(q.channelId)) this.touchQueue(q);
     }
+  }
+  // A queue created or enabled on the website gets its first card without a slash command,
+  // unless Discord has already refused deliveries to that channel.
+  private channelBlocked(channel: string) {
+    return (
+      this.sql
+        .exec(
+          "SELECT 1 FROM outbox o JOIN cards c ON c.key=o.key WHERE c.channel_id=? AND o.status='blocked' AND o.error IN ('discord_403','discord_404') LIMIT 1",
+          channel,
+        )
+        .toArray().length > 0
+    );
   }
   private voiceQueues(settings: Settings) {
     return settings.queues.filter(

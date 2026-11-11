@@ -15,7 +15,10 @@ import {
   userGuilds,
   DiscordFailure,
   botInviteUrls,
+  BOT_PERMISSIONS,
+  BOT_SCOPES,
 } from './discord/client';
+import { page, htmlEscape } from './public-site';
 import { interactions } from './discord/interactions';
 import { PlayError, actionSchema, type Action } from './domain/play';
 import { memberIds, resolveMember } from './discord/members';
@@ -516,6 +519,8 @@ app.get('/invite', (c) => {
   c.header('Cache-Control', 'no-store');
   c.header('X-Robots-Tag', 'noindex');
   c.header('Referrer-Policy', 'no-referrer');
+  // One Discord consent both adds the bot and signs in, then returns to the setup guide.
+  if (signInReady(c.env)) return c.redirect('/auth/login?install=1', 302);
   if (!invite)
     return c.text('Discord invitations are not configured. Open /app/ for setup information.', 503);
   return c.redirect(invite, 302);
@@ -557,26 +562,65 @@ app.route(
   }),
 );
 
+function signInReady(env: Env) {
+  try {
+    return !!(env.DISCORD_APPLICATION_ID && env.DISCORD_CLIENT_SECRET && origin(env));
+  } catch {
+    return false;
+  }
+}
+/** Same-origin console, statistics and link pages only; never an open redirect. */
+function allowedReturn(requested: string | undefined, base: string) {
+  if (!requested) return null;
+  let url: URL;
+  try {
+    url = new URL(requested, base);
+  } catch {
+    return null;
+  }
+  return url.origin === base &&
+    ((['/stats', '/link'].includes(url.pathname) &&
+      snowflake.safeParse(url.searchParams.get('community')).success &&
+      z.uuid().safeParse(url.searchParams.get('game')).success) ||
+      (['/', '/app', '/app/'].includes(url.pathname) &&
+        (!url.searchParams.has('community') ||
+          snowflake.safeParse(url.searchParams.get('community')).success)))
+    ? url.pathname + url.search
+    : null;
+}
+async function authPage(
+  c: Context<App>,
+  status: 400 | 401 | 503,
+  title: string,
+  message: string,
+  retry = '/auth/login',
+) {
+  const html = page(
+    title,
+    message,
+    `<p class="hero-actions"><a class="button" href="${htmlEscape(retry)}">Sign in again</a> <a class="button secondary" href="/app/">Open dashboard</a> <a class="text-link" href="/">Back to home</a></p>`,
+    new URL(c.req.path, c.req.url).href,
+  );
+  const hashes = await Promise.all(
+    [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
+      async (m) =>
+        `'sha256-${btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(m[1])))))}'`,
+    ),
+  );
+  c.header(
+    'Content-Security-Policy',
+    `default-src 'self'; script-src 'self' ${hashes.join(' ')}; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+  );
+  return c.html(html, status);
+}
 app.get('/auth/login', async (c) => {
   const base = origin(c.env);
   if (!c.env.DISCORD_APPLICATION_ID || !c.env.DISCORD_CLIENT_SECRET)
     throw new Problem(503, 'setup_incomplete', 'Discord sign-in is not configured yet.');
   const state = tokenId();
-  let returnTo = '/app/';
-  const requested = c.req.query('returnTo');
-  if (requested) {
-    const url = new URL(requested, base);
-    if (
-      url.origin === base &&
-      ((['/stats', '/link'].includes(url.pathname) &&
-        snowflake.safeParse(url.searchParams.get('community')).success &&
-        z.uuid().safeParse(url.searchParams.get('game')).success) ||
-        (['/', '/app', '/app/'].includes(url.pathname) &&
-          (!url.searchParams.has('community') ||
-            snowflake.safeParse(url.searchParams.get('community')).success)))
-    )
-      returnTo = url.pathname + url.search;
-  }
+  const install = c.req.query('install') === '1';
+  const pinned = snowflake.safeParse(c.req.query('guild'));
+  const returnTo = allowedReturn(c.req.query('returnTo'), base) ?? '/app/';
   await c.env.AUTH.getByName(`oauth:${state}`).createState(Date.now() + 600000, returnTo);
   setCookie(c, 'cg-oauth', state, {
     path: '/auth',
@@ -590,8 +634,10 @@ app.get('/auth/login', async (c) => {
     client_id: c.env.DISCORD_APPLICATION_ID,
     response_type: 'code',
     redirect_uri: `${base}/auth/callback`,
-    scope: 'identify guilds',
+    scope: install ? `identify guilds ${BOT_SCOPES}` : 'identify guilds',
     state,
+    ...(install ? { permissions: String(BOT_PERMISSIONS.basic) } : {}),
+    ...(install && pinned.success ? { guild_id: pinned.data, disable_guild_select: 'true' } : {}),
   }).toString();
   return c.redirect(url.href);
 });
@@ -604,56 +650,85 @@ app.get('/auth/callback', async (c) => {
     isTokenId(state) && state === cookie
       ? await c.env.AUTH.getByName(`oauth:${state}`).returnPath()
       : '/';
+  const retry = `/auth/login?returnTo=${encodeURIComponent(returnTo === '/' ? '/app/' : returnTo)}`;
   if (
     !isTokenId(state) ||
     state !== cookie ||
     !(await c.env.AUTH.getByName(`oauth:${state}`).consumeState())
   )
-    throw new Problem(
+    return authPage(
+      c,
       400,
-      'invalid_state',
-      'Sign-in expired or was already used. Start sign-in again.',
+      'Sign-in expired',
+      'This sign-in link expired or was already used. Start sign-in again.',
+      retry,
     );
-  if (c.req.query('error')) return c.redirect('/?login=cancelled');
+  if (c.req.query('error')) {
+    // Leaving the Discord consent screen is a normal choice, not a failure.
+    const back = new URL(returnTo, origin(c.env));
+    back.searchParams.set('login', 'cancelled');
+    return c.redirect(back.pathname + back.search);
+  }
   const code = c.req.query('code');
   if (!code || !c.env.DISCORD_APPLICATION_ID || !c.env.DISCORD_CLIENT_SECRET)
-    throw new Problem(400, 'invalid_code', 'Start Discord sign-in again.');
-  const response = await fetch('https://discord.com/api/v10/oauth2/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    signal: AbortSignal.timeout(5000),
-    body: new URLSearchParams({
-      client_id: c.env.DISCORD_APPLICATION_ID,
-      client_secret: c.env.DISCORD_CLIENT_SECRET,
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: `${origin(c.env)}/auth/callback`,
-    }),
-  });
-  if (!response.ok) throw new Problem(401, 'login_failed', 'Discord sign-in failed. Start again.');
-  const token = z
-    .object({ access_token: z.string().min(1), expires_in: z.number().positive() })
-    .parse(await response.json());
-  const user = z
-    .object({ id: snowflake, username: z.string(), avatar: z.string().nullable() })
-    .parse(await discord('/users/@me', token.access_token, true));
-  const id = tokenId(),
-    csrf = tokenId(),
-    expiresAt = Date.now() + Math.min(token.expires_in, 28800) * 1000;
-  await c.env.AUTH.getByName(`session:${id}`).saveSession({
-    user,
-    csrf,
-    accessToken: token.access_token,
-    expiresAt,
-  });
-  setCookie(c, sessionCookie(c.env), id, {
-    path: '/',
-    httpOnly: true,
-    secure: secure(c.env),
-    sameSite: 'Lax',
-    maxAge: Math.floor((expiresAt - Date.now()) / 1000),
-  });
-  return c.redirect(returnTo);
+    return authPage(c, 400, 'Sign-in incomplete', 'Discord did not finish signing you in.', retry);
+  try {
+    const response = await fetch('https://discord.com/api/v10/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      signal: AbortSignal.timeout(5000),
+      body: new URLSearchParams({
+        client_id: c.env.DISCORD_APPLICATION_ID,
+        client_secret: c.env.DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: `${origin(c.env)}/auth/callback`,
+      }),
+    });
+    if (!response.ok)
+      return authPage(c, 401, 'Sign-in failed', 'Discord sign-in failed. Start again.', retry);
+    const token = z
+      .object({ access_token: z.string().min(1), expires_in: z.number().positive() })
+      .parse(await response.json());
+    const user = z
+      .object({ id: snowflake, username: z.string(), avatar: z.string().nullable() })
+      .parse(await discord('/users/@me', token.access_token, true));
+    const id = tokenId(),
+      csrf = tokenId(),
+      expiresAt = Date.now() + Math.min(token.expires_in, 28800) * 1000;
+    await c.env.AUTH.getByName(`session:${id}`).saveSession({
+      user,
+      csrf,
+      accessToken: token.access_token,
+      expiresAt,
+    });
+    setCookie(c, sessionCookie(c.env), id, {
+      path: '/',
+      httpOnly: true,
+      secure: secure(c.env),
+      sameSite: 'Lax',
+      maxAge: Math.floor((expiresAt - Date.now()) / 1000),
+    });
+    // Discord reports the server only when this consent also added the bot.
+    const installed = snowflake.safeParse(c.req.query('guild_id'));
+    return c.redirect(
+      (installed.success &&
+        allowedReturn(
+          `/app/?community=${installed.data}&view=setup&guide=access`,
+          origin(c.env),
+        )) ||
+        returnTo,
+    );
+  } catch (error) {
+    if (error instanceof Problem) throw error;
+    return authPage(
+      c,
+      503,
+      'Discord is unavailable',
+      'Discord did not respond while signing you in. Try again in a moment.',
+      retry,
+    );
+  }
 });
 
 app.get('/statistics/:guild/:game', async (c) => {
