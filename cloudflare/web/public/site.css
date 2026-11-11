@@ -528,6 +528,27 @@ img {
   margin-bottom: 12px;
   padding-left: 3px;
 }
+.legal-updated {
+  color: var(--muted);
+  font-size: 14px;
+}
+.contact-block {
+  scroll-margin-top: 24px;
+}
+.article-body > .contact-block > h2 {
+  font-size: 25px;
+  margin: 38px 0 14px;
+  padding-top: 26px;
+  border-top: 1px solid var(--divider);
+}
+.contact-block > p,
+.contact-routes {
+  max-width: 76ch;
+}
+.contact-email {
+  overflow-wrap: anywhere;
+  user-select: all;
+}
 .article-body .cards {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   line-height: 1.5;
