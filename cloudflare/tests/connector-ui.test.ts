@@ -23,7 +23,7 @@ describe('connector interface', () => {
     for (const game of ['generals', 'northgard', 'tempest_rising', 'sc2'] as const) {
       const html = connectorSettings(configuredGame(game), '100000000000000001', null);
       expect(html).toContain('Manual lobby association and captain reporting remain available');
-      expect(html).toContain('Not available from this provider');
+      expect(html).toContain('Not available for this game');
       expect(html).not.toContain('name="lobbyConnector"');
       expect(html).not.toContain('name="autoLobby"');
     }
@@ -49,7 +49,7 @@ describe('connector interface', () => {
         },
       ],
     });
-    expect(html).toContain('Configuration required');
+    expect(html).toContain('Not set up yet');
     expect(html).toContain('Awaiting activation');
     expect(html).toContain('2 unresolved associations');
     expect(html).toContain('name="capability-matchLookup"');

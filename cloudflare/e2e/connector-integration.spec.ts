@@ -32,7 +32,12 @@ async function connectorApp(
 const gamePanel = (page: Page) => page.locator(`#game-settings-${game}`);
 async function openGame(page: Page) {
   await page.goto(`/?community=${guild}&view=setup&game=${game}`);
-  await gamePanel(page).locator('.connector-settings > summary').click();
+  await openConnections(page);
+}
+/** Lobby tracking is one summary line; the per-connection switches sit under its Advanced group. */
+async function openConnections(page: Page) {
+  await gamePanel(page).locator('.connector-details > summary').click();
+  await gamePanel(page).locator('.connector-details .advanced-settings > summary').click();
 }
 
 test('both game pickers offer the seven-game scope and label conditional access', async ({
@@ -47,7 +52,7 @@ test('both game pickers offer the seven-game scope and label conditional access'
     .evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value).filter(Boolean));
   expect(choices.sort()).toEqual(selectableCatalog.map((g) => g.id).sort());
   await expect(page.locator('[data-add-game] option[value="zero_hour"]')).toContainText(
-    'provider access required',
+    'lobby tracking awaiting activation',
   );
   await page.getByRole('button', { name: 'Start guided setup', exact: true }).click();
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
@@ -75,14 +80,14 @@ test('connector capabilities and queue edits survive refresh and failed atomic s
   await expect(panel).toContainText('Awaiting activation');
   await panel.locator('[name="lobbyConnector"]').check();
   await panel.locator('[name="capability-matchLookup"]').uncheck();
-  await panel.getByRole('checkbox', { name: 'Ongoing matchmaking games', exact: false }).uncheck();
+  await panel.getByRole('checkbox', { name: 'Games in progress', exact: false }).uncheck();
   await page.getByRole('tab', { name: 'Queues', exact: true }).click();
   await page.getByRole('button', { name: 'Settings for Evening games', exact: true }).click();
   await page.getByRole('textbox', { name: 'Queue name', exact: true }).fill('Combined draft');
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   await page.getByRole('tab', { name: 'Setup', exact: true }).click();
-  await panel.locator('.connector-settings > summary').click();
+  await openConnections(page);
   await expect(panel.locator('[name="capability-matchLookup"]')).not.toBeChecked();
   state.failSave = 'revision_conflict';
   await page.locator('[data-edit="save"]').click();

@@ -1,6 +1,6 @@
 import { identity } from '../src/identity';
 import type { Snapshot } from '../src/domain/config';
-import { gameCatalog, selectableCatalog } from '../src/games/catalog';
+import { gameCapabilities, gameCatalog, selectableCatalog } from '../src/games/catalog';
 import type { EditorSetup } from './settings';
 import type { SettingsDraft } from './draft';
 import { esc } from './ui';
@@ -192,7 +192,7 @@ export function guidedSetup(
           ? `<h3>Discord is not responding</h3><p data-access-outage>${esc(accessText(setup))}</p><p>This is a problem on Discord’s side, not with your server. Nothing needs to be reinstalled.</p><div class="actions"><button type="button" class="primary" data-action="check-access">Check again</button></div><p class="form-help">You can choose a game while you wait. Saving a queue needs Discord to answer so we can check its channel.</p>`
           : `<h3>Connect your Discord community</h3><p>${esc(accessText(setup))}</p><p>${urls.install ? 'Discord asks you to confirm this server and the bot’s permissions, then brings you back here.' : 'Add the bot, choose this server, and return here. We check its permissions again when you come back.'}</p><div class="actions">${addToDiscord(urls, draft.saved.communityId, 'Add to Discord', true)}<button type="button" data-action="check-access">I’m back — check access</button></div><p class="form-help">You can choose a game first. Saving a queue needs the bot in your server so it can post in a channel.</p>`;
   if (stage === 'game')
-    body = `<h3>Choose a game</h3><p>Queues for the same game share ratings, leaderboard policy and tax time.</p><label hidden>Game for guided setup<select data-guide-game tabindex="-1"><option value="">Choose a game</option>${settings.games.map((g) => `<option value="${g.id}" ${g.id === game?.id ? 'selected' : ''}>${esc(g.name || 'Custom game draft')}</option>`).join('')}${selectableCatalog
+    body = `<h3>Choose a game</h3><p>Queues for the same game share ratings and the leaderboard.</p><label hidden>Game for guided setup<select data-guide-game tabindex="-1"><option value="">Choose a game</option>${settings.games.map((g) => `<option value="${g.id}" ${g.id === game?.id ? 'selected' : ''}>${esc(g.name || 'Custom game draft')}</option>`).join('')}${selectableCatalog
       .filter((g) => !settings.games.some((v) => v.catalogId === g.id))
       .map(
         (g) =>
@@ -221,21 +221,18 @@ export function guidedSetup(
       savedReady(saved, setup) && ready && readyChannel
         ? `<h3>Try your queue in Discord</h3><p>${esc(ready.name)} is saved and the bot can post in #${esc(readyChannel.name)}. Its queue card is posted there, ready for players.</p><p><a class="button primary" data-discord-channel target="_blank" rel="noopener" href="https://discord.com/channels/${esc(saved.communityId)}/${esc(readyChannel.id)}">Open #${esc(readyChannel.name)} in Discord</a></p><ol class="recovery-steps"><li>Open #${esc(readyChannel.name)} in your server.</li><li>Press Join on the queue card, or type <code>/add</code>. Ask your players to do the same.</li><li>Complete check-in, play, and report the result in Discord.</li></ol><p class="form-help">The card usually appears within a few seconds. If it has not, check Matches → Delivery diagnostics.</p><button type="button" data-view="queues">Open queues</button>`
         : '<h3>Finish saving your setup</h3><p>Save an enabled queue and verify its channel permissions. Drafts and a successful HTTP response alone do not mean the community is ready.</p><button type="button" data-action="check-access">Check access again</button>';
-  const availability = (v: string) => {
+  // A card promises lobby tracking only where the game supports it and it is not switched off.
+  const tracking = (v: string) => {
     const id = v.startsWith('catalog:')
       ? v.slice(8)
       : settings.games.find((g) => g.id === v)?.catalogId;
-    const state =
-      gameCatalog.find((g) => g.id === id)?.lifecycle === 'legacy'
-        ? 'unsupported'
-        : setup.catalogAvailability?.[id ?? ''];
-    return state === 'available'
-      ? 'Available'
-      : state === 'credentials_required'
-        ? 'Configuration required'
-        : state === 'disabled' || state === 'unsupported'
-          ? 'Unavailable'
-          : 'Awaiting activation';
+    const state = setup.catalogAvailability?.[id ?? ''];
+    return (
+      Boolean(gameCapabilities(id)?.lobby) &&
+      gameCatalog.find((g) => g.id === id)?.lifecycle !== 'legacy' &&
+      state !== 'disabled' &&
+      state !== 'unsupported'
+    );
   };
   const gameMark = (value: string) => {
     const id = value.startsWith('catalog:')
@@ -256,7 +253,7 @@ export function guidedSetup(
     );
   };
   if (stage === 'game')
-    body += `<p class="form-help">Captains report results for every game. Optional connections are Beta; each card shows their current availability.</p><div class="game-picker" role="group" aria-label="Game choices">${[...settings.games.map((g) => ({ value: g.id, name: g.name })), ...selectableCatalog.filter((g) => !settings.games.some((v) => v.catalogId === g.id)).map((g) => ({ value: `catalog:${g.id}`, name: g.name })), { value: 'custom', name: 'Custom game' }].map((g) => `<button type="button" data-game-choice="${esc(g.value)}" aria-pressed="${g.value === game?.id}"><span class="game-choice-mark" aria-hidden="true">${gameMark(g.value)}</span><strong>${esc(g.name || 'Custom game draft')}</strong>${g.value.startsWith('catalog:') || Boolean(settings.games.find((v) => v.id === g.value)?.catalogId) ? `<small class="game-choice-status">Beta · ${availability(g.value)}</small>` : '<small>Captains report results</small>'}</button>`).join('')}</div>`;
+    body += `<p class="form-help">Captains report results in Discord for every game. Some games can also track public lobbies (beta).</p><div class="game-picker" role="group" aria-label="Game choices">${[...settings.games.map((g) => ({ value: g.id, name: g.name })), ...selectableCatalog.filter((g) => !settings.games.some((v) => v.catalogId === g.id)).map((g) => ({ value: `catalog:${g.id}`, name: g.name })), { value: 'custom', name: 'Custom game' }].map((g) => `<button type="button" data-game-choice="${esc(g.value)}" aria-pressed="${g.value === game?.id}"><span class="game-choice-mark" aria-hidden="true">${gameMark(g.value)}</span><strong>${esc(g.name || 'Custom game draft')}</strong><small class="game-choice-status">${tracking(g.value) ? 'Lobby tracking · beta' : 'Captains report results'}</small></button>`).join('')}</div>`;
   const verified = [
     setup.access.status === 'ready',
     saved.settings.games.some((g) => g.id === game?.id),

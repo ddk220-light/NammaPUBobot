@@ -29,23 +29,23 @@ export function ownershipProvider(
 }
 export const verificationHref = (communityId: string, gameId: string, provider: string) =>
   `/link?${new URLSearchParams({ community: communityId, game: gameId, provider })}`;
-const labels: Record<ConnectorOperation, string> = {
-  accountLookup: 'Account lookup',
-  ownershipVerification: 'Account ownership verification',
+export const connectionLabels: Record<ConnectorOperation, string> = {
+  accountLookup: 'Find player accounts',
+  ownershipVerification: 'Account ownership check',
   lobbyDiscovery: 'Public waiting lobbies',
-  ongoingDiscovery: 'Ongoing matchmaking games',
-  lobbyObservation: 'Lobby observations',
-  matchLookup: 'Match lookup',
-  historyLookup: 'Recent history',
-  replayReferences: 'Provider recording links',
+  ongoingDiscovery: 'Games in progress',
+  lobbyObservation: 'Follow lobbies',
+  matchLookup: 'Match result lookup',
+  historyLookup: 'Recent match history',
+  replayReferences: 'Replay links',
 };
 const stateLabels: Record<string, string> = {
   available: 'Available',
-  unsupported: 'Not available from this provider',
-  credentials_required: 'Configuration required',
+  unsupported: 'Not available for this game',
+  credentials_required: 'Not set up yet',
   authentication_required: 'Sign-in required',
   acceptance_required: 'Awaiting activation',
-  disabled: 'Disabled',
+  disabled: 'Turned off',
 };
 const stateLabel = (state: string) => stateLabels[state] ?? state.replaceAll('_', ' ');
 
@@ -56,7 +56,8 @@ export function connectorSettings(
   saved = true,
 ) {
   const catalog = gameCapabilities(game.catalogId);
-  if (!catalog) return '<p class="muted">Manual lobby and result reporting.</p>';
+  if (!catalog)
+    return '<p class="muted connector-summary">Captains report results for this game.</p>';
   const health = diagnostics?.games.find((item) => item.gameId === game.id);
   const verification = ownershipProvider(game.catalogId);
   const canVerify =
@@ -65,25 +66,28 @@ export function connectorSettings(
     !['disabled', 'credentials_required', 'unsupported'].includes(
       health?.capabilities.ownershipVerification ?? '',
     );
-  return `<details class="rating-options connector-settings"><summary>Beta game connections · ${esc(catalog.manifest.edition)}</summary>
-    <p class="muted">Manual lobby association and captain reporting remain available.</p>
-    ${catalog.lobby ? `<label class="toggle"><input type="checkbox" name="lobbyConnector"${game.connector?.enabled ? ' checked' : ''} /> Enable provider observations</label>` : ''}
-    <div class="fields">${operations
+  const summary = catalog.lobby
+    ? `Lobby tracking: ${game.connector?.enabled ? 'on' : 'off'} <span class="beta-tag">Beta</span>`
+    : 'Lobby tracking: not available for this game · captains report results';
+  return `<div class="connector-settings"><p class="connector-summary">${summary}</p><details class="rating-options connector-details"><summary>${catalog.lobby ? 'Lobby tracking details' : 'Game connection details'}</summary>
+    <p class="muted">${catalog.lobby ? 'Beta: the bot can follow public lobbies for this game to link them to matches. It is new and may miss lobbies. ' : ''}Manual lobby association and captain reporting remain available: captains can always report results in Discord.</p>
+    ${catalog.lobby ? `<label class="toggle"><input type="checkbox" name="lobbyConnector"${game.connector?.enabled ? ' checked' : ''} /> Track lobbies for this game</label>` : ''}
+    ${catalog.manifest.capabilities.lobbyDiscovery !== 'unsupported' ? `<label class="toggle"><input type="checkbox" name="autoLobby"${game.connector?.autoAttach ? ' checked' : ''} /> Find a public lobby by name</label><label>Lobby name<input name="lobbyName" maxlength="80" value="${esc(game.connector?.autoAttach?.lobbyName ?? '')}" placeholder="For example: Friday pickup" /></label><p class="muted">A lobby with this name and the right number of players is linked to the match, but only counts once the players match or a captain confirms it.</p>` : ''}
+    <p class="record-meta">${health ? `${health.lastSuccessAt ? `Last seen a lobby: ${esc(new Date(health.lastSuccessAt).toLocaleString())}` : 'No lobby seen yet'} · ${health.unresolvedBindings} unresolved association${health.unresolvedBindings === 1 ? '' : 's'}${health.failures ? ` · ${health.failures} recent failures` : ''}` : 'Lobby tracking status is not available right now. Captains can still report results.'}</p>
+    ${canVerify ? `<p><a class="button" href="${esc(verificationHref(communityId, game.id, verification))}">Verify my ${verification === 'battlenet' ? 'Battle.net' : verification === 'bar' ? 'BAR' : 'Steam'} account</a></p>` : ''}
+    ${catalog.lifecycle !== 'legacy' ? `<div class="connector-browse"><button type="button" data-action="browse-games" data-game="${esc(game.id)}" data-phase="waiting" ${saved ? '' : 'disabled data-unavailable="true"'}>Show waiting lobbies</button> <button type="button" data-action="browse-games" data-game="${esc(game.id)}" data-phase="running" ${saved ? '' : 'disabled data-unavailable="true"'}>Show running games</button><pre data-game-list="${esc(game.id)}" role="status"></pre>${saved ? '' : '<p class="form-help">Save this game before browsing public games.</p>'}</div>` : ''}
+    <details class="advanced-settings"><summary>Advanced: individual connections</summary><p class="form-help">Turn off a single connection without turning off lobby tracking. The status beside each one comes from the game service.</p><div class="fields">${operations
       .map((operation) => {
         const supported = catalog.manifest.capabilities[operation] !== 'unsupported';
         const state = supported
           ? (health?.capabilities[operation] ?? catalog.manifest.capabilities[operation])
           : 'unsupported';
         return supported
-          ? `<label class="toggle"><input type="checkbox" name="capability-${operation}"${game.connector?.capabilities?.[operation] !== false ? ' checked' : ''} /> ${labels[operation]} <span class="muted">${esc(stateLabel(state))}</span></label>`
-          : `<p class="muted">${labels[operation]}: ${esc(stateLabel(state))}</p>`;
+          ? `<label class="toggle"><input type="checkbox" name="capability-${operation}"${game.connector?.capabilities?.[operation] !== false ? ' checked' : ''} /> ${connectionLabels[operation]} <span class="muted">${esc(stateLabel(state))}</span></label>`
+          : `<p class="muted">${connectionLabels[operation]}: ${esc(stateLabel(state))}</p>`;
       })
       .join('')}</div>
-    ${catalog.manifest.capabilities.lobbyDiscovery !== 'unsupported' ? `<label class="toggle"><input type="checkbox" name="autoLobby"${game.connector?.autoAttach ? ' checked' : ''} /> Find a public lobby by name</label><label>Lobby name<input name="lobbyName" maxlength="80" value="${esc(game.connector?.autoAttach?.lobbyName ?? 'NammaNomad')}" /></label><p class="muted">Name and player-count matches are provisional until the roster matches or a captain confirms the association.</p>` : ''}
-    <p class="record-meta">${health ? `${health.lastSuccessAt ? `Last successful observation: ${esc(new Date(health.lastSuccessAt).toLocaleString())}` : 'No successful observation yet'} · ${health.unresolvedBindings} unresolved association${health.unresolvedBindings === 1 ? '' : 's'}${health.failures ? ` · ${health.failures} recent failures` : ''}` : 'Live connector diagnostics unavailable. Manual reporting remains available.'}</p>
-    ${canVerify ? `<p><a class="button" href="${esc(verificationHref(communityId, game.id, verification))}">Verify my ${verification === 'battlenet' ? 'Battle.net' : verification === 'bar' ? 'BAR' : 'Steam'} account</a></p>` : ''}
-    ${catalog.lifecycle !== 'legacy' ? `<div class="connector-browse"><button type="button" data-action="browse-games" data-game="${esc(game.id)}" data-phase="waiting" ${saved ? '' : 'disabled data-unavailable="true"'}>Show waiting lobbies</button> <button type="button" data-action="browse-games" data-game="${esc(game.id)}" data-phase="running" ${saved ? '' : 'disabled data-unavailable="true"'}>Show running games</button><pre data-game-list="${esc(game.id)}" role="status"></pre>${saved ? '' : '<p class="form-help">Save this game before browsing public games.</p>'}</div>` : ''}
-    <p class="muted">${catalog.manifest.limitations.map(esc).join(' ')}</p></details>`;
+    <p class="muted">${catalog.manifest.limitations.map(esc).join(' ')}</p></details></details></div>`;
 }
 
 function safeLink(value: string | undefined): string | undefined {
@@ -92,7 +96,7 @@ function safeLink(value: string | undefined): string | undefined {
     const u = new URL(value);
     if (u.protocol === 'https:' && !u.username && !u.password) return u.toString();
   } catch {
-    /* Legacy unvalidated links render as text only. */
+    /* Older unvalidated links render as text only. */
   }
 }
 function referenceLink(url: string | undefined, label: string) {
