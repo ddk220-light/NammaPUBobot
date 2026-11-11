@@ -300,6 +300,7 @@ export class Community extends DurableObject<Env> {
       this.ctx.storage.transactionSync(() =>
         this.playStore.configure(result.snapshot.settings, old),
       );
+      this.playStore.channelsSaved(result.snapshot.settings);
       this.playStore.reconcileLobbies();
       if (!this.ctx.storage.kv.get('testMode')) this.recordStore.configure(guildId, old);
       await this.playStore.schedule();

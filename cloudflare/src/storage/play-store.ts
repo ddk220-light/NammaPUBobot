@@ -33,6 +33,9 @@ import {
 
 const voiceInterval = 5 * 60 * 1000;
 const queueVisibilityInterval = 15 * 60 * 1000;
+// Periodic card and voice checks run only this long after a queue was last used.
+const activityWindow = 6 * 60 * 60 * 1000;
+type Refusal = { count: number; since: number; last: number; status: number };
 type QueueVoiceCache = { due: number; observedAt: number; members: VoiceMember[] | null };
 // AbortSignal.timeout leaves its timer pending after the response, which holds the
 // invocation open for the full timeout. Read the body inside the bound, then clear it.
@@ -564,14 +567,17 @@ export class PlayStore {
       (q) =>
         q.enabled &&
         q.voicePreview &&
+        this.recent(q.id) &&
         this.sql.exec('SELECT 1 FROM cards WHERE key=?', `queue:${q.id}`).toArray().length,
     );
   }
-  private visibilityQueues(settings: Settings) {
+  private visibilityQueues(settings: Settings, at = Date.now()) {
     return settings.queues.filter(
       (q) =>
         q.enabled &&
         q.keepQueueVisible !== false &&
+        this.recent(q.id, at) &&
+        !this.unreachable(q.channelId) &&
         this.sql
           .exec(
             'SELECT 1 FROM cards WHERE key=? AND channel_id=? AND message_id IS NOT NULL',
@@ -580,6 +586,73 @@ export class PlayStore {
           )
           .toArray().length,
     );
+  }
+  // Joins, leaves, match changes and card publications, never the periodic checks themselves.
+  private noteActivity(queueId: string) {
+    const now = Date.now(),
+      seen = this.ctx.storage.kv.get<Record<string, number>>('queueActivity') ?? {};
+    this.ctx.storage.kv.put('queueActivity', {
+      ...Object.fromEntries(Object.entries(seen).filter(([, at]) => at + activityWindow > now)),
+      [queueId]: now,
+    });
+  }
+  private recent(queueId: string, at = Date.now()) {
+    const seen = this.ctx.storage.kv.get<Record<string, number>>('queueActivity')?.[queueId];
+    return seen !== undefined && seen + activityWindow > at;
+  }
+  private refusals() {
+    return this.ctx.storage.kv.get<Record<string, Refusal>>('channelRefusals') ?? {};
+  }
+  private refused(channel: string, status: number) {
+    const all = this.refusals(),
+      old = all[channel];
+    all[channel] = {
+      count: (old?.count ?? 0) + 1,
+      since: old?.since ?? Date.now(),
+      last: Date.now(),
+      status,
+    };
+    this.ctx.storage.kv.put('channelRefusals', all);
+  }
+  // Repeated refusals over at least an hour, so one permission blip does not stop a channel.
+  private unreachable(channel: string) {
+    const r = this.refusals()[channel];
+    return !!r && r.count >= 3 && r.last - r.since >= 3600000;
+  }
+  private reachable(channel: string) {
+    const all = this.refusals();
+    if (!all[channel]) return;
+    const retry = this.unreachable(channel);
+    delete all[channel];
+    if (Object.keys(all).length) this.ctx.storage.kv.put('channelRefusals', all);
+    else this.ctx.storage.kv.delete('channelRefusals');
+    if (retry)
+      this.sql.exec(
+        "UPDATE outbox SET status='pending',attempts=0,error=NULL,due=? WHERE status='blocked' AND error IN ('channel_unreachable','discord_403','discord_404') AND key IN (SELECT key FROM cards WHERE channel_id=?)",
+        Date.now(),
+        channel,
+      );
+  }
+  /** A settings save is the organizer's retry after fixing access. */
+  channelsSaved(settings: Settings) {
+    const channels = new Set(settings.queues.map((q) => q.channelId));
+    for (const channel of Object.keys(this.refusals()))
+      if (!channels.has(channel) || this.unreachable(channel)) this.reachable(channel);
+  }
+  private unreachableChannels(settings: Settings) {
+    return Object.entries(this.refusals())
+      .filter(([channel]) => this.unreachable(channel))
+      .map(([channelId, r]) => {
+        const queues = settings.queues.filter((q) => q.channelId === channelId);
+        return {
+          channelId,
+          queueIds: queues.map((q) => q.id),
+          refusals: r.count,
+          since: r.since,
+          status: r.status,
+          message: `The bot can't reach #${channelId}${queues.length ? ` (${queues.map((q) => q.name).join(', ')})` : ''}. Re-add the bot or fix its permissions, then save the queue.`,
+        };
+      });
   }
   private queueDeliveryPending(id: string) {
     // Do not reset failed/ambiguous deliveries or create overlapping publications.
@@ -622,7 +695,9 @@ export class PlayStore {
             body?.global === true,
           );
         }
+        if ([403, 404].includes(response.status)) this.refused(channel, response.status);
         if (!response.ok) continue; // Preserve the card; retry at the next 15-minute check.
+        this.reachable(channel);
         await this.rateHeaders(response, route, gate);
         const rows: unknown = await response.json();
         if (!Array.isArray(rows) || rows.some((r) => !r || !/^\d{17,20}$/.test(r.id))) continue;
@@ -1128,6 +1203,8 @@ export class PlayStore {
         q.id,
       )
       .toArray()[0];
+    if (!visibilityOnly && (refresh || afterMatch || view?.digest !== digest))
+      this.noteActivity(q.id);
     const pending = view
       ? this.sql
           .exec<{ key: string; state: string; after_matches: string }>(
@@ -1248,6 +1325,7 @@ export class PlayStore {
       this.retireTransient(key);
   }
   private saveMatch(m: Match) {
+    this.noteActivity(m.queue.id);
     this.lobbies.sync(m);
     this.civs.sync(m);
     this.sql.exec(
@@ -3164,6 +3242,7 @@ export class PlayStore {
       await this.schedule();
       return reply;
     });
+    if (result.ok !== false) this.reachable(a.channelId);
     await this.schedule();
     return result;
   }
@@ -3289,19 +3368,17 @@ export class PlayStore {
     }
   }
   /**
-   * One alarm drives every timer. alarm() re-arms exactly once, after its work: arming
-   * earlier, for work it is still about to do, starts a second overlapping invocation.
-   * A wake for an alarm can run before alarm() (the constructor), so outside the handler
-   * an already-due alarm is left alone; the handler re-arms when it finishes.
+   * One alarm drives every timer, and alarm() always re-arms it when its work is done.
+   * Arming it for an already-due time while that handler still runs starts a second,
+   * overlapping invocation, so meanwhile other calls may only arm a future time. A wake
+   * for an alarm runs the constructor first, so an already-due alarm is left alone.
    */
   async schedule(from: 'request' | 'wake' | 'alarm' = 'request') {
     if (this.ctx.storage.kv.get('recoveryReadOnly')) {
       await this.ctx.storage.deleteAlarm();
       return;
     }
-    if (this.alarmRunning && from !== 'alarm') return;
-    const armed = from === 'alarm' ? null : await this.ctx.storage.getAlarm();
-    if (armed !== null && armed <= Date.now()) return;
+    const nested = this.alarmRunning && from !== 'alarm';
     const session = this.ctx.storage.kv.get<RetiredTestSession>('testSession');
     const values = [
       ['deadlines', ''],
@@ -3334,16 +3411,19 @@ export class PlayStore {
       }
       values.push(cache.due);
     } else this.ctx.storage.kv.delete('queueVoice');
-    if (identity && this.visibilityQueues(this.read(identity.guild_id).settings).length) {
-      let due = this.ctx.storage.kv.get<number>('queueVisibilityDue');
-      if (due === undefined) {
-        due = Date.now() + queueVisibilityInterval;
-        this.ctx.storage.kv.put('queueVisibilityDue', due);
-      }
+    const due =
+      this.ctx.storage.kv.get<number>('queueVisibilityDue') ?? Date.now() + queueVisibilityInterval;
+    // Stop at the last check that falls inside a queue's activity window; activity restarts it.
+    if (identity && this.visibilityQueues(this.read(identity.guild_id).settings, due).length) {
+      this.ctx.storage.kv.put('queueVisibilityDue', due);
       values.push(due);
     } else this.ctx.storage.kv.delete('queueVisibilityDue');
     const next = values.length ? Math.min(...values) : null;
-    if (next !== null && next !== undefined)
+    const armed = from === 'alarm' || nested ? null : await this.ctx.storage.getAlarm();
+    if (armed !== null && armed <= Date.now()) return;
+    if (nested) {
+      if (next !== null && next > Date.now() + 1000) await this.ctx.storage.setAlarm(next);
+    } else if (next !== null && next !== undefined)
       await this.ctx.storage.setAlarm(
         // Due work at a wake with no alarm is usually the delivery now in flight; its handler re-arms.
         Math.max(
@@ -3390,9 +3470,18 @@ export class PlayStore {
         ...(gameId ? [gameId] : []),
       )
       .toArray();
-    const delivery = this.sql
-      .exec('SELECT key,status,attempts,error FROM outbox ORDER BY due LIMIT 20')
-      .toArray();
+    const unreachableChannels = this.unreachableChannels(snapshot.settings);
+    const delivery = [
+      ...unreachableChannels.map((c) => ({
+        key: `channel:${c.channelId}`,
+        status: 'blocked',
+        attempts: c.refusals,
+        error: c.message,
+      })),
+      ...this.sql
+        .exec('SELECT key,status,attempts,error FROM outbox ORDER BY due LIMIT 20')
+        .toArray(),
+    ];
     const audit = this.sql
       .exec(
         'SELECT id,match_id,queue_id,action,actor_id,at,details FROM control_audit ORDER BY at DESC LIMIT 50',
@@ -3428,6 +3517,7 @@ export class PlayStore {
       playersPage,
       changes,
       delivery,
+      unreachableChannels,
       audit,
       waiting,
       noadds,
@@ -3727,6 +3817,15 @@ export class PlayStore {
           continue;
         }
       }
+      if (this.unreachable(card.channel_id)) {
+        // No retries to a channel Discord keeps refusing; a save or interaction there retries.
+        this.sql.exec(
+          "UPDATE outbox SET status='blocked',error='channel_unreachable' WHERE key=? AND version=?",
+          work.key,
+          work.version,
+        );
+        continue;
+      }
       const gate = this.env.DISCORD_GATE.getByName(this.env.DISCORD_APPLICATION_ID!);
       const route = `channel:${card.channel_id}`;
       const at = await gate.reserve(route);
@@ -4002,6 +4101,7 @@ export class PlayStore {
           },
         );
         if (response.ok) {
+          this.reachable(card.channel_id);
           await this.rateHeaders(response, route, gate);
           if (work.key.startsWith('retire:')) {
             this.sql.exec('DELETE FROM outbox WHERE key=? AND version=?', work.key, work.version);
@@ -4110,14 +4210,16 @@ export class PlayStore {
       const wait = Number.isFinite(seconds) ? Math.max(1000, seconds * 1000) : 1000;
       await gate.pause(route, Date.now() + wait, body?.global === true);
       await this.retry(work, 'rate_limited', wait);
-    } else if ([400, 401, 403, 404].includes(response.status))
+    } else if ([400, 401, 403, 404].includes(response.status)) {
+      if ([403, 404].includes(response.status) && route.startsWith('channel:'))
+        this.refused(route.slice(8), response.status);
       this.sql.exec(
         "UPDATE outbox SET status='blocked',error=? WHERE key=? AND version=?",
         `discord_${response.status}`,
         work.key,
         work.version,
       );
-    else {
+    } else {
       if (
         !this.sql.exec<Pointer>('SELECT * FROM cards WHERE key=?', work.key).toArray()[0].message_id
       )
