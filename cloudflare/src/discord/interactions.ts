@@ -1,3 +1,4 @@
+import { touchCommunity } from '../storage/community-index';
 import { gameListReply } from './game-list';
 import type { Env } from '../env';
 import { gameCapabilities } from '../games/catalog';
@@ -160,6 +161,7 @@ export async function interactions(
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID)
     return new Response('Wrong application.', { status: 401 });
   if (interaction.type === 1) return Response.json({ type: 1 });
+  touchCommunity(env, interaction.guild_id, { kind: 'activity' }, ctx);
   if (interaction.type === 2 && interaction.data?.name === 'test')
     return testInteraction(interaction, env, ctx);
   if (

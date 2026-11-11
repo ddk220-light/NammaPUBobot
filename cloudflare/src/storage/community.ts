@@ -893,31 +893,114 @@ export class Community extends DurableObject<Env> {
       };
     }
   }
+  /** Whole artifact in one call: fine for tests and small communities; HTTP callers page instead. */
   async operationalBackup(guild: string) {
-    this.identity(guild);
-    const tables = this.ctx.storage.transactionSync(() => {
-      const result: Record<string, Record<string, SqlStorageValue>[]> = {};
-      for (const { name } of this.ctx.storage.sql.exec<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__cf_%' ORDER BY name",
-      )) {
-        if (name.startsWith('_')) continue;
-        if (!/^[a-z_]+$/.test(name)) throw Error('Unexpected table identity.');
-        const rows = this.ctx.storage.sql.exec(`SELECT * FROM ${name} LIMIT 50001`).toArray();
-        if (rows.length > 50000) throw Error('Use paged operational export for this community.');
-        result[name] = rows;
+    const manifest = this.exportManifest(guild);
+    const tables: Record<string, Record<string, SqlStorageValue>[]> = {};
+    for (const { name } of manifest.tables) {
+      tables[name] = [];
+      for (let after: number | null = 0; after !== null;) {
+        const page = this.exportPage(guild, name, after);
+        tables[name].push(...page.rows);
+        after = page.next;
       }
-      return result;
-    });
+    }
+    const { format, communityId, sourceApplicationId, createdAt } = manifest;
+    return { format, communityId, sourceApplicationId, createdAt, tables };
+  }
+  private exportTables(scope: ExportScope) {
+    return this.ctx.storage.sql
+      .exec<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__cf_%' ORDER BY name",
+      )
+      .toArray()
+      .filter(({ name }) => !name.startsWith('_'))
+      .map(({ name }) => {
+        if (!/^[a-z_]+$/.test(name)) throw Error('Unexpected table identity.');
+        return name;
+      })
+      .filter((name) => scope === 'operator' || !ORGANIZER_EXCLUDED.includes(name));
+  }
+  /** Table list with row counts; pages are read separately and are not one transaction. */
+  exportManifest(guild: string, scope: ExportScope = 'operator') {
+    this.identity(guild);
+    const sql = this.ctx.storage.sql;
     return {
-      format: 1,
+      format: 1 as const,
+      scope,
       communityId: guild,
       sourceApplicationId:
         this.ctx.storage.kv.get<string>('recoverySourceApplication') ??
         this.env.DISCORD_APPLICATION_ID,
+      schemaVersion: sql.exec<{ version: number }>('SELECT version FROM schema_version').one()
+        .version,
       createdAt: new Date().toISOString(),
-      tables,
+      tables: this.exportTables(scope).map((name) => ({
+        name,
+        rows: sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM ${name}`).one().n,
+      })),
+      ...(scope === 'organizer' ? { excluded: ORGANIZER_EXCLUDED } : {}),
     };
   }
+  /** One page of one table by rowid cursor, bounded by row count and serialized size. */
+  exportPage(
+    guild: string,
+    table: string,
+    after = 0,
+    limit = EXPORT_PAGE_ROWS,
+    scope: ExportScope = 'operator',
+  ) {
+    this.identity(guild);
+    if (!this.exportTables(scope).includes(table)) throw Error('Unknown export table.');
+    const size = Math.min(Math.max(Math.trunc(limit) || EXPORT_PAGE_ROWS, 1), EXPORT_PAGE_ROWS);
+    const found = this.ctx.storage.sql
+      .exec(
+        `SELECT rowid AS export_rowid__, * FROM ${table} WHERE rowid > ? ORDER BY rowid LIMIT ?`,
+        Math.max(0, Math.trunc(after) || 0),
+        size,
+      )
+      .toArray();
+    const rows: Record<string, SqlStorageValue>[] = [];
+    let bytes = 0,
+      last = 0;
+    for (const { export_rowid__: rowid, ...row } of found) {
+      bytes += JSON.stringify(row).length;
+      if (rows.length && bytes > EXPORT_PAGE_BYTES) break;
+      rows.push(row);
+      last = Number(rowid);
+    }
+    return {
+      table,
+      rows,
+      next: rows.length < found.length || found.length === size ? last : null,
+    };
+  }
+  /** Arms a restore of this object's SQLite database; it takes effect when the object restarts. */
+  async armPointInTimeRestore(guild: string, target: { time?: number; bookmark?: string }) {
+    if (
+      !this.ctx.storage.sql.exec('SELECT 1 FROM community WHERE guild_id=?', guild).toArray().length
+    )
+      return { ok: false as const, error: 'No community data exists for this server.' };
+    const problem = restoreTargetProblem(target, Date.now());
+    if (problem) return { ok: false as const, error: problem };
+    try {
+      const from = await this.pointInTime.current();
+      const bookmark = target.bookmark ?? (await this.pointInTime.forTime(target.time!));
+      const undoBookmark = await this.pointInTime.arm(bookmark);
+      return { ok: true as const, bookmark, undoBookmark, from };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: `Storage refused the restore point: ${error instanceof Error ? error.message : 'unknown error'}`,
+      };
+    }
+  }
+  /** Restarts the object so an armed restore applies. The calling RPC sees the abort as an error. */
+  restart() {
+    this.pointInTime.restart('Point-in-time restore requested by the operator.');
+  }
+  // Seam: workerd's local runtime does not implement point-in-time recovery, so tests replace this.
+  private pointInTime: PointInTime = storagePointInTime(this.ctx);
   async operationalRestore(
     guild: string,
     backup: {
@@ -1082,6 +1165,46 @@ export class Community extends DurableObject<Env> {
     await this.playStore.schedule();
     return result;
   }
+}
+
+type ExportScope = 'operator' | 'organizer';
+export const EXPORT_PAGE_ROWS = 2000;
+export const EXPORT_PAGE_BYTES = 2 * 1024 * 1024;
+/** Runtime delivery and idempotency state: not the community's records, never useful to an organizer. */
+export const ORGANIZER_EXCLUDED = [
+  'budget',
+  'cards',
+  'deadlines',
+  'limits',
+  'outbox',
+  'play_actions',
+  'record_actions',
+];
+export const RESTORE_WINDOW_MS = 30 * 86400000;
+export type PointInTime = {
+  current(): Promise<string>;
+  forTime(at: number): Promise<string>;
+  arm(bookmark: string): Promise<string>;
+  restart(reason: string): void;
+};
+export const storagePointInTime = (ctx: DurableObjectState): PointInTime => ({
+  current: () => ctx.storage.getCurrentBookmark(),
+  forTime: (at) => ctx.storage.getBookmarkForTime(at),
+  arm: (bookmark) => ctx.storage.onNextSessionRestoreBookmark(bookmark),
+  restart: (reason) => ctx.abort(reason),
+});
+export function restoreTargetProblem(target: { time?: number; bookmark?: string }, now: number) {
+  if ((target.time === undefined) === (target.bookmark === undefined))
+    return 'Give exactly one of time or bookmark.';
+  if (target.bookmark !== undefined)
+    return /^[0-9a-f]{8}(-[0-9a-f]{8}){2}-[0-9a-f]{32}$/i.test(target.bookmark)
+      ? null
+      : 'The bookmark is not in the storage bookmark format.';
+  if (!Number.isFinite(target.time)) return 'The time is not a valid timestamp.';
+  if (target.time! > now) return 'The restore time is in the future.';
+  if (target.time! < now - RESTORE_WINDOW_MS)
+    return 'The restore time is older than the 30-day recovery window.';
+  return null;
 }
 
 function slug(value: string) {
