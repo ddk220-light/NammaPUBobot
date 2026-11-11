@@ -96,9 +96,10 @@ const jobs = () =>
   runInDurableObject(stub(), (_i, state) =>
     state.storage.sql.exec("SELECT * FROM deadlines WHERE kind='lobby'").toArray(),
   );
+// A prompt is live while its card pointer exists; its outbox row goes as soon as it is delivered.
 const prompts = () =>
   runInDurableObject(stub(), (_i, state) =>
-    state.storage.sql.exec("SELECT * FROM outbox WHERE key LIKE 'end:%'").toArray(),
+    state.storage.sql.exec("SELECT * FROM cards WHERE key LIKE 'end:%'").toArray(),
   );
 
 describe('game adapter contract', () => {
