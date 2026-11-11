@@ -217,6 +217,8 @@ for (const width of [901, 1024, 1280, 1440]) {
     await mockApp(page);
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/app/?community=${guild}&view=queues`);
+    // The loading shell already has these controls; measure the rendered console.
+    await expect(page.locator('.queue-card').first()).toBeVisible();
     for (const selector of [
       '#community',
       '#tab-queues',
