@@ -912,3 +912,19 @@ footer {
     font-size: 17px;
   }
 }
+.danger-zone {
+  margin-top: 24px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 16px;
+}
+.danger-zone > summary,
+.danger-zone > h2 {
+  color: var(--danger-ink);
+  margin-top: 0;
+}
+button.destructive {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  border-color: var(--danger);
+}

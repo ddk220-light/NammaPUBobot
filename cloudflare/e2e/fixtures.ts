@@ -78,6 +78,7 @@ export async function mockApp(page: Page) {
     waitingCount: 0,
     retryAfter: '',
     sessionExpired: false,
+    deletions: [] as { path: string; body: Record<string, unknown> }[],
   };
   const player = {
     id: user,
@@ -287,6 +288,18 @@ export async function mockApp(page: Page) {
           changes: bundle.changes.length,
         },
       });
+    }
+    if (path.endsWith('/player/delete') || path.endsWith('/delete')) {
+      const body = route.request().postDataJSON();
+      state.deletions.push({ path, body });
+      state.playerCount = 0;
+      if (!path.endsWith('/player/delete'))
+        state.snapshot = { ...state.snapshot, revision: 0, settings: { games: [], queues: [] } };
+      return json(
+        path.endsWith('/player/delete')
+          ? { ok: true, content: 'Player data deleted.' }
+          : { ok: true },
+      );
     }
     if (path.endsWith('/player')) {
       const action = route.request().postDataJSON();

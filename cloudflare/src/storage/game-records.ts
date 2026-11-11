@@ -147,3 +147,15 @@ export function selectionStats(sql: SqlStorage, game: string, user: string) {
     (a, b) => b.games - a.games || a.selection.localeCompare(b.selection),
   );
 }
+/** Deletes a player's observed selections and rejected links; returns their external IDs. */
+export function forgetSelections(sql: SqlStorage, user: string) {
+  const ids = sql
+    .exec<{
+      external_id: string;
+    }>('SELECT external_id FROM played_selections WHERE user_id=?', user)
+    .toArray()
+    .map((r) => r.external_id);
+  sql.exec('DELETE FROM played_selections WHERE user_id=?', user);
+  sql.exec('DELETE FROM identity_rejections WHERE user_id=?', user);
+  return ids;
+}

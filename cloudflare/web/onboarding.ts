@@ -106,6 +106,20 @@ export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
   </section>`;
 }
 
+/** Community-wide and irreversible, so it sits apart from the per-game record tools. */
+export function deletePlayerForm(player: { id: string; name: string }) {
+  return `<details class="danger-zone"><summary>Delete this player’s data</summary><form data-kind="delete-player"><input type="hidden" name="userId" value="${esc(player.id)}" /><input type="hidden" name="expected" value="${esc(player.name)}" /><p>This deletes ${esc(player.name)}’s ratings and rating history, gold and gold history, linked game accounts, queue restrictions and civilization picks for every game in this community.</p><p>Past matches stay so other players’ results do not change; this player is shown in them as “Deleted player”. Remove them from any queue and finish their active match first.</p><p><strong>This cannot be undone.</strong></p><label>Type ${esc(player.name)} to confirm<input name="confirm" autocomplete="off" spellcheck="false" required /></label><div class="actions"><button class="destructive">Delete player data</button></div></form></details>`;
+}
+export function deleteCommunityForm(serverName: string) {
+  return `<section class="panel danger-zone" aria-labelledby="delete-community-heading"><h2 id="delete-community-heading">Delete community data</h2><p>This permanently deletes everything stored for this server: games, queues, settings, ratings, match history, gold, linked game accounts and the public statistics pages.</p><p>The bot stays in your server, and messages it already posted stay in Discord. Only the server owner or an Administrator can do this, and no match can be active.</p><p><strong>This cannot be undone.</strong></p><form data-kind="delete-community"><input type="hidden" name="expected" value="${esc(serverName)}" /><label>Type ${esc(serverName)} to confirm<input name="confirm" autocomplete="off" spellcheck="false" required /></label><div class="actions"><button class="destructive">Delete community data</button></div></form></section>`;
+}
+export function confirmedName(data: FormData) {
+  const typed = String(data.get('confirm') ?? '').trim();
+  if (!typed || typed !== String(data.get('expected') ?? '').trim())
+    throw new Error('The name you typed does not match. Nothing was deleted.');
+  return typed;
+}
+
 function importReview(bundle: ImportBundle, preview: Preview, snapshot: Snapshot) {
   const destinations = bundle.mappings
     .map((mapping) => {
@@ -281,6 +295,16 @@ export async function onboardingSubmit(
     const result = await h.api<{ content: string }>(h.url('player'), {
       method: 'POST',
       body: JSON.stringify(input),
+    });
+    await h.reload();
+    h.notice(result.content);
+    return true;
+  }
+  if (form.dataset.kind === 'delete-player') {
+    confirmedName(data);
+    const result = await h.api<{ content: string }>(h.url('player/delete'), {
+      method: 'POST',
+      body: JSON.stringify({ userId: data.get('userId') }),
     });
     await h.reload();
     h.notice(result.content);

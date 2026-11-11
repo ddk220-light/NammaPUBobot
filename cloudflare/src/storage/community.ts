@@ -31,8 +31,8 @@ import { testRequestSchema, type RetiredTestSession } from '../domain/testing';
 import { testMembers } from '../discord/test-members';
 
 export class Community extends DurableObject<Env> {
-  private playStore: PlayStore;
-  private recordStore: RecordStore;
+  private playStore!: PlayStore;
+  private recordStore!: RecordStore;
   private discarded = false;
   private active = 0;
   static {
@@ -41,7 +41,7 @@ export class Community extends DurableObject<Env> {
     for (const name of Object.getOwnPropertyNames(this.prototype)) {
       const method = Object.getOwnPropertyDescriptor(this.prototype, name)?.value;
       if (
-        ['constructor', 'find', 'migrate', 'unclaimed'].includes(name) ||
+        ['constructor', 'find', 'migrate', 'attach', 'unclaimed'].includes(name) ||
         typeof method !== 'function'
       )
         continue;
@@ -73,6 +73,12 @@ export class Community extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.migrate();
+    this.attach();
+  }
+
+  /** Builds the stores over the current schema; also run after the storage is wiped. */
+  private attach() {
+    const { ctx, env } = this;
     this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
     if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
     this.playStore = new PlayStore(
@@ -931,6 +937,40 @@ export class Community extends DurableObject<Env> {
         status: error instanceof PlayError ? 409 : 500,
       };
     }
+  }
+  deletePlayer(guild: string, user: string, actor: string) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false as const, content: 'Recovery copy is read-only.', status: 409 };
+    try {
+      return this.recordStore.erase(guild, snowflake.parse(user), actor);
+    } catch (error) {
+      if (!(error instanceof PlayError)) throw error;
+      return { ok: false as const, content: error.message, status: 409 };
+    }
+  }
+  /** Leaves the object as if the community had never been set up. */
+  async deleteCommunity(guild: string) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false as const, content: 'Recovery copy is read-only.' };
+    if (
+      this.ctx.storage.sql
+        .exec("SELECT 1 FROM matches WHERE state IN ('check_in','playing') LIMIT 1")
+        .toArray().length
+    )
+      return {
+        ok: false as const,
+        content: 'A match is still active. Finish or cancel every active match, then try again.',
+      };
+    await this.env.PUBLIC_DIRECTORY?.getByName('directory').forget(guild);
+    // tenant-index: forget(guildId)
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    // Rebuild empty tables and fresh stores in place so nothing cached outlives the wipe.
+    this.migrate();
+    this.attach();
+    return { ok: true as const };
   }
   async alarm() {
     if (this.ctx.storage.kv.get('recoveryReadOnly')) {

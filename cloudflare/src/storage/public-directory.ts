@@ -21,6 +21,9 @@ export class PublicDirectory extends DurableObject<Env> {
       JSON.stringify(entry),
     );
   }
+  forget(guild: string) {
+    this.ctx.storage.sql.exec('DELETE FROM pages WHERE guild=?', guild);
+  }
   entries() {
     return this.ctx.storage.sql
       .exec<{ data: string }>('SELECT data FROM pages ORDER BY guild')

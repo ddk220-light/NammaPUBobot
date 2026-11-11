@@ -53,6 +53,9 @@ import {
   invalidateImport,
   importRecordsRefreshed,
   pageImportRows,
+  deletePlayerForm,
+  deleteCommunityForm,
+  confirmedName,
 } from './onboarding';
 import { showStats } from './stats';
 import { type Settings, type Snapshot } from '../src/domain/config';
@@ -410,7 +413,7 @@ function playerRatingRows() {
       const queues = snapshot!.settings.queues.filter((q) => q.gameId === p.gameId);
       const queueField = `<label>Queue<select name="queueId">${queues.map((q) => `<option value="${q.id}">${escape(q.name)}</option>`).join('')}</select></label>`;
       const restriction = records!.noadds.find((n) => n.user_id === p.id);
-      return `<details class="player-record" data-rating-row data-game="${p.gameId}" data-player-search="${escape(`${p.name.toLocaleLowerCase()} ${p.id}`)}"><summary><span class="player-identity"><span class="player-avatar" aria-hidden="true">${escape(Array.from(p.name)[0] ?? '?')}</span><span><strong>${escape(p.name)}</strong><small>${escape(gameName(p.gameId))}</small></span></span><span class="player-score">${p.rating}<small>Rating</small></span><span class="player-results"><small>W–L–D</small>${p.wins}–${p.losses}–${p.draws}</span><span class="status-pill">${p.hidden === undefined ? 'Visibility not loaded' : p.hidden ? 'Hidden' : 'Visible'}</span></summary><div class="player-detail"><dl class="player-facts"><div><dt>Deviation / uncertainty</dt><dd>${p.deviation}</dd></div><div><dt>Wins / losses / draws</dt><dd>${p.wins} / ${p.losses} / ${p.draws}</dd></div><div><dt>Discord ID</dt><dd>${p.id}</dd></div><div><dt>Queue access</dt><dd>${restriction ? `Restricted until ${escape(new Date(restriction.until_ms).toLocaleString())}${restriction.reason ? ` · ${escape(restriction.reason)}` : ''}` : 'No active restriction'}</dd></div></dl><p class="form-help">Visibility is per game. Hidden players remain available to authorized administrators; public access also follows this game’s statistics policy.</p><div class="actions"><a class="button" href="/stats?community=${guildId}&game=${p.gameId}&user=${p.id}">Open player profile</a><button type="button" data-game-link="${p.gameId}">Game rating and leaderboard policy</button></div>${p.hidden !== undefined ? `<form data-kind="player-record" data-inline-player><input type="hidden" name="gameId" value="${p.gameId}" /><input type="hidden" name="userId" value="${p.id}" /><input type="hidden" name="kind" value="${p.hidden ? 'unhide' : 'hide'}" /><button>${p.hidden ? 'Show in statistics' : 'Hide from statistics'}</button></form>` : ''}${queues.length ? `<details class="rating-options"><summary>Manage ${escape(p.name)}</summary><form data-kind="seed" class="repair-form"><h3>Set local rating</h3>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>Rating for ${escape(p.name)}<input name="rating" type="number" min="0" max="10000" value="${p.rating}" required /></label><button>Review rating change</button></form><form data-kind="noadd" class="repair-form"><h3>Restrict queue access</h3><p class="form-help">Applies to all queues in this community. Maximum 14 days.</p>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>Duration seconds<input name="seconds" type="number" min="1" max="1209600" value="3600" required /></label><label>Reason<input name="reason" maxlength="200" /></label><button>Review restriction</button></form>${restriction ? `<button type="button" data-action="forgive" data-id="${p.id}">Remove restriction</button>` : ''}</details>` : '<p class="form-help">Create a queue for this game to use rating and restriction tools.</p>'}</div></details>`;
+      return `<details class="player-record" data-rating-row data-game="${p.gameId}" data-player-search="${escape(`${p.name.toLocaleLowerCase()} ${p.id}`)}"><summary><span class="player-identity"><span class="player-avatar" aria-hidden="true">${escape(Array.from(p.name)[0] ?? '?')}</span><span><strong>${escape(p.name)}</strong><small>${escape(gameName(p.gameId))}</small></span></span><span class="player-score">${p.rating}<small>Rating</small></span><span class="player-results"><small>W–L–D</small>${p.wins}–${p.losses}–${p.draws}</span><span class="status-pill">${p.hidden === undefined ? 'Visibility not loaded' : p.hidden ? 'Hidden' : 'Visible'}</span></summary><div class="player-detail"><dl class="player-facts"><div><dt>Deviation / uncertainty</dt><dd>${p.deviation}</dd></div><div><dt>Wins / losses / draws</dt><dd>${p.wins} / ${p.losses} / ${p.draws}</dd></div><div><dt>Discord ID</dt><dd>${p.id}</dd></div><div><dt>Queue access</dt><dd>${restriction ? `Restricted until ${escape(new Date(restriction.until_ms).toLocaleString())}${restriction.reason ? ` · ${escape(restriction.reason)}` : ''}` : 'No active restriction'}</dd></div></dl><p class="form-help">Visibility is per game. Hidden players remain available to authorized administrators; public access also follows this game’s statistics policy.</p><div class="actions"><a class="button" href="/stats?community=${guildId}&game=${p.gameId}&user=${p.id}">Open player profile</a><button type="button" data-game-link="${p.gameId}">Game rating and leaderboard policy</button></div>${p.hidden !== undefined ? `<form data-kind="player-record" data-inline-player><input type="hidden" name="gameId" value="${p.gameId}" /><input type="hidden" name="userId" value="${p.id}" /><input type="hidden" name="kind" value="${p.hidden ? 'unhide' : 'hide'}" /><button>${p.hidden ? 'Show in statistics' : 'Hide from statistics'}</button></form>` : ''}${queues.length ? `<details class="rating-options"><summary>Manage ${escape(p.name)}</summary><form data-kind="seed" class="repair-form"><h3>Set local rating</h3>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>Rating for ${escape(p.name)}<input name="rating" type="number" min="0" max="10000" value="${p.rating}" required /></label><button>Review rating change</button></form><form data-kind="noadd" class="repair-form"><h3>Restrict queue access</h3><p class="form-help">Applies to all queues in this community. Maximum 14 days.</p>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>Duration seconds<input name="seconds" type="number" min="1" max="1209600" value="3600" required /></label><label>Reason<input name="reason" maxlength="200" /></label><button>Review restriction</button></form>${restriction ? `<button type="button" data-action="forgive" data-id="${p.id}">Remove restriction</button>` : ''}</details>` : '<p class="form-help">Create a queue for this game to use rating and restriction tools.</p>'}${deletePlayerForm(p)}</div></details>`;
     })
     .join('');
 }
@@ -1292,7 +1295,7 @@ function publicationEditor() {
 function setupSection() {
   if (new URL(location.href).searchParams.has('guide'))
     return guidedSetup(draft!, setup, inviteUrls(), new URL(location.href), snapshot!);
-  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney() + gameEditors(draft!, setup, connectorDiagnostics) + permissionRecovery(draft!, setup, inviteUrls(), accessCheckedAt) + publicationEditor()}`;
+  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney() + gameEditors(draft!, setup, connectorDiagnostics) + permissionRecovery(draft!, setup, inviteUrls(), accessCheckedAt) + publicationEditor() + deleteCommunityForm(guilds.find((g) => g.id === guildId)?.name ?? 'this server')}`;
 }
 
 function setupJourney() {
@@ -1408,6 +1411,19 @@ app.addEventListener('submit', (event) => {
         'beforeend',
         '<p class="notice" data-review>Apply this visibility change for this player and game? Submit again to confirm. <button type="button" data-action="cancel-repair">Cancel</button></p>',
       );
+      return;
+    }
+    if (form.dataset.kind === 'delete-community') {
+      confirmedName(data);
+      const community = guildId;
+      await api(communityUrl('delete'), {
+        method: 'POST',
+        body: JSON.stringify({ confirmName: data.get('confirm') }),
+      });
+      if (community !== guildId) return;
+      // The saved draft belongs to data that no longer exists; reload into first-run setup.
+      await loadCommunity(community, 'replace');
+      notice('Community data deleted. You can set this server up again from the start.');
       return;
     }
     if (

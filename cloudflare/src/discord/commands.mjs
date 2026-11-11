@@ -244,6 +244,8 @@ const operations = [
       ]),
       sub('show', 'Show your linked profiles and detailed stats', [queue]),
       sub('verify', 'Verify control of your supported Steam, Battle.net or BAR account', [queue]),
+      sub('hide', 'Hide yourself from this game’s leaderboards and others’ statistics', [queue]),
+      sub('unhide', 'Show yourself again on this game’s leaderboards and statistics', [queue]),
     ],
   },
   {
