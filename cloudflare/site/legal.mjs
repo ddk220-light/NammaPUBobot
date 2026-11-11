@@ -62,7 +62,7 @@ function about(identity) {
 <h2>Free and open source</h2><p>${name} is free. There are no paid plans, no charges of any kind and no ads, and we do not sell data. The code is public under GPL-3.0-only: anyone can read it, suggest changes or <a href="/guides/self-hosting/">run their own copy</a>. See <a href="/open-source/">open source</a> for details.</p>
 <h2>Where it came from</h2><p>It began as an Age of Empires II community's Discord bot, a fork of <a href="https://github.com/Leshaka/PUBobot2">PUBobot2 by Leshaka</a>. It keeps that project's ideas about queues, ratings and configuration, and was rebuilt on Cloudflare as one application that serves many games and many communities.</p>
 <h2>How it is run</h2><p>${runBy(identity)} It runs on Cloudflare and talks to Discord through Discord's bot API. Each server's organizers decide how their community uses it: which games and queues exist, how teams are made and whether statistics are public.</p><p>We care about community control, permissions you can understand, results that players confirm and code that anyone can inspect. Read our <a href="/privacy/">privacy policy</a> and <a href="/terms/">terms of use</a>.</p>
-<section class="contact-block" id="contact"><h2>Contact</h2><p>Reach us in whichever way suits you:</p>${contactList(identity)}</section>`,
+<section class="contact-block" id="contact"><h2>Contact</h2><p>The ways to reach us:</p>${contactList(identity)}</section>`,
   ];
 }
 
