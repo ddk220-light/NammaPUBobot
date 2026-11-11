@@ -32,6 +32,10 @@
   --accent-hover: #1f4566;
   --border: #dedcd5;
   --divider: #e9e8e3;
+  --lead: #3d4046;
+  --button-border: #c8c6be;
+  --success: #2f6b40;
+  --mention-bg: #e3ebf3;
   font-synthesis: none;
   color-scheme: light;
   scroll-padding-top: 24px;
@@ -138,7 +142,7 @@ a:hover {
 }
 .button.secondary {
   background: var(--surface);
-  border-color: #c8c6be;
+  border-color: var(--button-border);
   color: var(--ink);
 }
 .button.secondary:hover {
@@ -173,7 +177,7 @@ h3 {
 }
 .lead {
   font-size: 19px;
-  color: #3d4046;
+  color: var(--lead);
   line-height: 1.6;
   max-width: 62ch;
   margin: 0;
@@ -224,116 +228,229 @@ img {
   margin: 0;
   max-width: 52ch;
 }
-.discord-example {
-  margin: 0;
-  background: #1d1e20;
-  border-radius: 10px;
-  padding: 22px;
-  color: #dbdee1;
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.bot-example {
+  margin: 28px 0;
+  max-width: 560px;
+}
+.bot-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  padding: 16px 18px;
   font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
 }
-.discord-example figcaption {
-  font-size: 12px;
-  color: #b0b3b8;
-  border-bottom: 1px solid #34363a;
-  padding-bottom: 12px;
-  margin-bottom: 18px;
+.bot-card + .bot-card {
+  margin-top: 12px;
 }
-.discord-app-name {
-  font-weight: 600;
-  color: #fff;
-  margin-bottom: 12px;
+.bot-card.accent {
+  border-left-color: var(--success);
+}
+.bot-card p {
+  margin: 0 0 10px;
+}
+.bot-from {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.discord-app-name > span {
-  font-size: 10px;
-  background: #5865f2;
-  border-radius: 3px;
-  padding: 1px 5px;
-  font-weight: 700;
-}
-.discord-message {
-  background: #2b2d31;
-  border-radius: 6px;
-  padding: 16px;
-}
-.game-discord-example {
-  margin: 28px 0;
-  padding: 20px;
-  background: #1e1f22;
-  color: #dbdee1;
-  border-radius: 8px;
-}
-.game-discord-example figcaption {
   font-size: 13px;
-  color: #b0b3b8;
-  margin-bottom: 16px;
+  font-weight: 600;
+  color: var(--muted);
 }
-.game-discord-example .discord-message-heading {
+.bot-from img {
+  border-radius: 4px;
+}
+.bot-title {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 15px;
+}
+.bot-body > :last-child {
+  margin-bottom: 0;
+}
+.bot-team {
+  display: flex;
+  flex-direction: column;
+}
+.bot-team strong {
+  color: var(--ink);
+}
+.bot-team span {
+  font-variant-numeric: tabular-nums;
+}
+.mention {
+  color: var(--accent);
+  background: var(--mention-bg);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-weight: 600;
+}
+.bot-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.bot-buttons {
+  display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
-.game-discord-example p {
-  color: #dbdee1;
-}
-.discord-message-heading {
-  display: flex;
-  justify-content: space-between;
-  color: #fff;
-  font-size: 15px;
-  margin-bottom: 14px;
-}
-.discord-roster {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 24px;
-}
-.discord-roster > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  font-size: 13px;
-}
-.discord-roster > div span:last-child {
-  color: #b2b5ba;
-  font-variant-numeric: tabular-nums;
-}
-.discord-buttons {
-  display: flex;
-  gap: 8px;
-  margin-top: 18px;
-}
-.discord-buttons span {
-  padding: 6px 18px;
-  border-radius: 4px;
-  background: #248046;
-  color: white;
-  font-size: 13px;
-}
-.discord-buttons span + span {
-  background: #4e5058;
-}
-.discord-ready {
-  padding: 16px;
-  background: #2b2d31;
-  margin-top: 12px;
+.bot-button,
+.bot-select {
+  display: inline-block;
+  padding: 5px 14px;
+  border: 1px solid var(--button-border);
   border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
 }
-.discord-ready strong {
+.bot-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
+}
+.bot-select {
+  font-weight: 400;
+  color: var(--muted);
+}
+.bot-example figcaption,
+.console-shot figcaption {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+.example-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border: 1px solid var(--button-border);
+  border-radius: 4px;
+  padding: 0 6px;
+  margin-right: 4px;
+}
+.check-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.check-list li {
+  margin: 0 0 4px;
+  padding: 0;
+}
+.check-list li::before {
+  content: '✓';
+  color: var(--success);
+  font-weight: 700;
+  margin-right: 8px;
+}
+.hero-example .bot-example {
+  margin: 0;
+  max-width: none;
+}
+.example-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 32px;
+  align-items: start;
+}
+.example-pair .bot-example {
+  margin: 0;
+  max-width: none;
+}
+.console-shot {
+  margin: 28px 0;
+}
+.console-shot img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.feature-list {
+  margin: 0 0 16px;
+  max-width: 76ch;
+}
+.feature-list > div {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.feature-list > div:last-child {
+  border-bottom: 0;
+}
+.feature-list dt {
+  font-weight: 700;
+  color: var(--ink);
+}
+.feature-list dd {
+  margin: 2px 0 0;
+}
+.guide-steps {
+  list-style: none;
+  counter-reset: step;
+  padding: 0;
+  margin: 32px 0 0;
+}
+.article-body .guide-steps > li {
+  counter-increment: step;
+  position: relative;
+  padding: 0 0 8px 56px;
+  margin: 0 0 32px;
+  max-width: 76ch;
+}
+.guide-steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+}
+.guide-steps h2 {
+  font-size: 23px;
+  margin: 4px 0 12px;
+}
+.you-see {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.command-list {
+  margin: 0 0 16px;
+}
+.command-list > div {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.command-list dt code {
   font-size: 14px;
 }
-.discord-ready p {
-  font-size: 12px;
-  color: #bfc2c7;
-  margin: 6px 0 0;
-}
-.preview-caption {
-  color: #b0b3b8;
-  font-size: 11px;
-  margin: 14px 0 0;
+.command-list dd {
+  margin: 4px 0 0;
 }
 .site-section {
   padding: 44px 0;
@@ -372,16 +489,19 @@ img {
   border-radius: 8px;
   min-width: 0;
 }
-.cards h2 {
+.cards h2,
+.cards h3 {
   font-size: 18px;
   line-height: 1.35;
   margin: 0 0 10px;
 }
-.cards h2 a {
+.cards h2 a,
+.cards h3 a {
   text-decoration: none;
   color: var(--ink);
 }
-.cards h2 a:hover {
+.cards h2 a:hover,
+.cards h3 a:hover {
   color: var(--accent);
 }
 .cards p {
@@ -406,7 +526,7 @@ img {
 .games-section article:not(:nth-child(3n)) {
   border-right: 1px solid var(--divider);
 }
-.games-section h2 {
+.games-section .cards h3 {
   font-size: 17px;
 }
 .section-note {
@@ -458,22 +578,8 @@ img {
   margin: 0;
   justify-content: flex-end;
 }
-.dashboard-section figure {
+.dashboard-section .console-shot {
   margin: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.dashboard-section img {
-  display: block;
-  width: 100%;
-}
-.dashboard-section figcaption {
-  font-size: 12px;
-  color: var(--muted);
-  padding: 10px 16px;
-  border-top: 1px solid var(--divider);
 }
 .document-heading {
   padding: 40px 0 32px;
@@ -553,7 +659,8 @@ img {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   line-height: 1.5;
 }
-.article-body .cards h2 {
+.article-body .cards h2,
+.cards h3 {
   font-size: 18px;
 }
 .article-sidebar {
@@ -662,7 +769,7 @@ img {
   left: 16px;
   top: 12px;
   z-index: 20;
-  background: white;
+  background: var(--surface);
   padding: 12px;
   border: 1px solid var(--accent);
 }
@@ -691,7 +798,7 @@ th {
 .rating-chart {
   width: 100%;
   max-width: 700px;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -764,11 +871,8 @@ th {
   .hero-copy .lead {
     font-size: 16px;
   }
-  .discord-example {
-    padding: 18px;
-  }
-  .discord-roster {
-    gap: 8px 14px;
+  .example-pair {
+    grid-template-columns: 1fr;
   }
   .cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -831,12 +935,12 @@ th {
   .site-header-actions {
     margin: 0;
   }
-  .site-header-actions .dashboard-link {
-    display: none;
+  .site-header-actions {
+    gap: 8px;
   }
   .site-header-actions .button {
-    font-size: 12px;
-    padding: 8px 10px;
+    font-size: 13px;
+    padding: 8px 12px;
   }
   .site-nav {
     grid-column: 1/-1;
@@ -882,14 +986,18 @@ th {
   .hero-note {
     font-size: 12px;
   }
-  .discord-example {
-    padding: 18px;
-  }
-  .discord-message {
+  .bot-card {
     padding: 14px;
   }
-  .discord-roster {
-    font-size: 13px;
+  .article-body .guide-steps > li {
+    padding-left: 0;
+  }
+  .guide-steps > li::before {
+    position: static;
+    margin-bottom: 10px;
+  }
+  .guide-steps h2 {
+    font-size: 21px;
   }
   .site-section {
     padding: 32px 0;
@@ -1013,9 +1121,6 @@ th {
   .footer-inner nav h2 {
     font-size: 14px;
   }
-  .dashboard-section img {
-    aspect-ratio: auto;
-  }
   .table-wrap {
     font-size: 13px;
   }
@@ -1033,6 +1138,8 @@ th {
 @media (prefers-reduced-motion: reduce) {
   * {
     scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
   }
 }
 :root[data-theme='dark'] {
@@ -1046,9 +1153,14 @@ th {
   --accent-hover: #a9c9e2;
   --border: #303236;
   --divider: #2a2c30;
+  --lead: #c4c6ca;
+  --button-border: #4a4d53;
+  --success: #86c79a;
+  --mention-bg: #26323e;
   color-scheme: dark;
 }
-:root[data-theme='dark'] .button {
+:root[data-theme='dark'] .button,
+:root[data-theme='dark'] .bot-button.primary {
   color: #18191b;
 }
 :root[data-theme='dark'] .button.secondary {
