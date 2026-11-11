@@ -775,6 +775,39 @@ app.post('/api/communities/:guild/player', async (c) => {
   c.executionCtx.waitUntil(stub.flush());
   return c.json(reply);
 });
+app.post('/api/communities/:guild/player/delete', async (c) => {
+  const { userId } = z
+    .object({ userId: snowflake })
+    .strict()
+    .parse(await readJson(c.req.raw));
+  const reply = await c.env.COMMUNITIES.getByName(c.req.param('guild')).deletePlayer(
+    c.req.param('guild'),
+    userId,
+    c.get('session').user.id,
+  );
+  if (!reply.ok) throw new Problem(reply.status, 'player_delete_conflict', reply.content);
+  return c.json(reply);
+});
+// Wiping a community is reserved for the owner or an Administrator, not Manage Server.
+app.post('/api/communities/:guild/delete', async (c) => {
+  const guildId = c.req.param('guild');
+  const { confirmName } = z
+    .object({ confirmName: z.string().max(100) })
+    .strict()
+    .parse(await readJson(c.req.raw));
+  const guild = (await userGuilds(c.get('session').accessToken)).find((g) => g.id === guildId);
+  if (!guild || !(guild.owner || BigInt(guild.permissions) & 8n))
+    throw new Problem(
+      403,
+      'forbidden',
+      'Only the server owner or an Administrator can delete this community’s data.',
+    );
+  if (confirmName.trim() !== guild.name.trim())
+    throw new Problem(400, 'confirmation', 'Type the server name exactly to confirm.');
+  const reply = await c.env.COMMUNITIES.getByName(guildId).deleteCommunity(guildId);
+  if (!reply.ok) throw new Problem(409, 'community_delete_conflict', reply.content);
+  return c.json(reply);
+});
 
 const repairSchema = actionSchema
   .omit({ actor: true, admin: true, target: true, replacement: true, teams: true })

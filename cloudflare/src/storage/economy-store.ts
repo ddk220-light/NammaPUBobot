@@ -458,6 +458,37 @@ export class EconomyStore {
       }
     }
   }
+  openStake(user: string) {
+    return (
+      this.sql
+        .exec(
+          "SELECT 1 FROM bets b JOIN books p ON p.id=b.book_id WHERE b.user_id=? AND p.status IN ('open','frozen') LIMIT 1",
+          user,
+        )
+        .toArray().length > 0
+    );
+  }
+  /** Removes a player's wallets, ledger and stakes; imported markets drop only their bets. */
+  forget(user: string) {
+    for (const table of ['wallets', 'gold_ledger', 'bets', 'bet_participation'])
+      this.sql.exec(`DELETE FROM ${table} WHERE user_id=?`, user);
+    for (const row of this.sql
+      .exec<{
+        source_id: string;
+        market_id: string;
+        config: string;
+      }>('SELECT * FROM imported_predictions WHERE instr(config,?)>0', user)
+      .toArray()) {
+      const market = JSON.parse(row.config) as { bets?: { userId: string }[] };
+      market.bets = market.bets?.filter((b) => b.userId !== user);
+      this.sql.exec(
+        'UPDATE imported_predictions SET config=? WHERE source_id=? AND market_id=?',
+        JSON.stringify(market),
+        row.source_id,
+        row.market_id,
+      );
+    }
+  }
   records(game?: string, user?: string) {
     const filter = game ? ' WHERE game_id=?' : '',
       args = game ? [game] : [];

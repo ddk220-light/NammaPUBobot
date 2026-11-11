@@ -478,13 +478,12 @@ export class PlayStore {
           ([user, value]) =>
             value.games >= Math.max(1, game.records?.minimumMatches ?? 1) &&
             !this.sql
-              .exec<{ config: string }>(
-                'SELECT config FROM profiles WHERE game_id=? AND user_id=?',
+              .exec(
+                'SELECT 1 FROM player_meta WHERE game_id=? AND user_id=? AND hidden=1',
                 q.gameId,
                 user,
               )
-              .toArray()
-              .some((r) => JSON.parse(r.config).hidden),
+              .toArray().length,
         )
         .sort(
           (a, b) =>
@@ -504,12 +503,11 @@ export class PlayStore {
       );
     }
     const rows = this.sql
-      .exec<{ user_id: string; balance: number; config: string | null }>(
-        'SELECT w.user_id,w.balance,p.config FROM wallets w LEFT JOIN profiles p ON p.game_id=w.game_id AND p.user_id=w.user_id WHERE w.game_id=? ORDER BY w.balance DESC LIMIT 100',
+      .exec<{ user_id: string; balance: number }>(
+        'SELECT w.user_id,w.balance FROM wallets w LEFT JOIN player_meta m ON m.game_id=w.game_id AND m.user_id=w.user_id WHERE w.game_id=? AND COALESCE(m.hidden,0)=0 ORDER BY w.balance DESC,w.user_id LIMIT 20',
         q.gameId,
       )
-      .toArray()
-      .filter((r) => !r.config || !JSON.parse(r.config).hidden);
+      .toArray();
     return (
       `**${game.name} · gold**\n` +
       rows

@@ -865,6 +865,41 @@ export class Community extends DurableObject<Env> {
       };
     }
   }
+  deletePlayer(guild: string, user: string, actor: string) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false as const, content: 'Recovery copy is read-only.', status: 409 };
+    try {
+      return this.recordStore.erase(guild, snowflake.parse(user), actor);
+    } catch (error) {
+      if (!(error instanceof PlayError)) throw error;
+      return { ok: false as const, content: error.message, status: 409 };
+    }
+  }
+  /** Leaves the object as if the community had never been set up. */
+  async deleteCommunity(guild: string) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false as const, content: 'Recovery copy is read-only.' };
+    if (
+      this.ctx.storage.sql
+        .exec("SELECT 1 FROM matches WHERE state IN ('check_in','playing') LIMIT 1")
+        .toArray().length
+    )
+      return {
+        ok: false as const,
+        content: 'A match is still active. Finish or cancel every active match, then try again.',
+      };
+    await this.env.PUBLIC_DIRECTORY?.getByName('directory').forget(guild);
+    // tenant-index: forget(guildId)
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    // Rebuild empty tables and stores in place; a fresh instance runs the same migrations.
+    const fresh = new Community(this.ctx, this.env);
+    this.recordStore = fresh.recordStore;
+    this.playStore = fresh.playStore;
+    return { ok: true as const };
+  }
   async alarm() {
     if (this.ctx.storage.kv.get('recoveryReadOnly')) {
       await this.ctx.storage.deleteAlarm();

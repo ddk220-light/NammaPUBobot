@@ -181,3 +181,6 @@ export class CivStore {
     return { content: `${r.options[choice] ?? 'Random'} locked in.` };
   }
 }
+export function forgetCivPicks(sql: SqlStorage, user: string) {
+  sql.exec('DELETE FROM civ_pick_history WHERE user_id=?', user);
+}

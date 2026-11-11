@@ -1,4 +1,6 @@
-import { selectionStats } from './game-records';
+import { selectionStats, forgetSelections } from './game-records';
+import { forgetCivPicks } from './civ-store';
+import { EconomyStore } from './economy-store';
 import { gameCapabilities } from '../games/catalog';
 import type { Env } from '../env';
 import type { Snapshot } from '../domain/config';
@@ -118,6 +120,27 @@ export interface VerifiedAccountClaim {
   platformId?: string;
 }
 const week = 7 * 86400000;
+export const deletedPlayerName = 'Deleted player';
+export const isDeletedPlayer = (id: string | null | undefined) => !!id?.startsWith('deleted:');
+// Rows owned by one player. Matches and shared logs keep a placeholder instead.
+const playerTables = [
+  'profiles',
+  'rating_changes',
+  'player_meta',
+  'participants',
+  'player_baselines',
+  'retired_ranks',
+  'profile_refs',
+  'profile_claims',
+  'rank_jobs',
+  'record_audit',
+  'queue_entries',
+  'queue_clocks',
+  'members',
+  'noadds',
+  'readiness',
+  'pending_returns',
+];
 export interface ImportResult {
   id: string;
   alreadyApplied: boolean;
@@ -603,9 +626,11 @@ export class RecordStore {
               note: m.note ?? null,
               teams: m.teams.map((t) =>
                 t.map((p) =>
-                  !admin && hiddenIds.has(p.id) && p.id !== viewer
-                    ? { id: null, name: 'Hidden player' }
-                    : { id: p.id, name: p.name },
+                  isDeletedPlayer(p.id)
+                    ? { id: null, name: deletedPlayerName }
+                    : !admin && hiddenIds.has(p.id) && p.id !== viewer
+                      ? { id: null, name: 'Hidden player' }
+                      : { id: p.id, name: p.name },
                 ),
               ),
             };
@@ -703,11 +728,13 @@ export class RecordStore {
         throw new PlayError('That action ID belongs to another request.');
       return JSON.parse(old.result);
     }
-    if (!admin && (a.userId !== actor || !['link', 'unlink'].includes(a.kind)))
+    const self = a.userId === actor && ['hide', 'unhide'].includes(a.kind);
+    if (!admin && !self && (a.userId !== actor || !['link', 'unlink'].includes(a.kind)))
       throw new PlayError(
-        'Only organizers can change visibility, reassign profiles or synchronize ranks.',
+        'Only organizers can change another player’s visibility, reassign profiles or synchronize ranks.',
       );
-    if (['hide', 'unhide', 'sync'].includes(a.kind) && !this.player(a.gameId, a.userId))
+    // A player may hide before their first match; the flag applies once a record exists.
+    if (['hide', 'unhide', 'sync'].includes(a.kind) && !self && !this.player(a.gameId, a.userId))
       throw new PlayError('Play a match or seed this player before managing their records.');
     let content = '',
       previousOwner: string | undefined;
@@ -1249,6 +1276,150 @@ export class RecordStore {
         this.audit(m.gameId, null, 'import', actor, { id, source, counts: summary.counts });
       this.bump();
       return { id, alreadyApplied: false, ...summary };
+    });
+  }
+  /** Deletes one player's community data and anonymizes them in shared match history. */
+  erase(guild: string, user: string, actor: string) {
+    this.read(guild);
+    const sql = this.sql,
+      placeholder = `deleted:${crypto.randomUUID()}`;
+    return this.ctx.storage.transactionSync(() => {
+      if (
+        sql.exec('SELECT 1 FROM active_players WHERE user_id=?', user).toArray().length ||
+        sql.exec('SELECT 1 FROM queue_entries WHERE user_id=?', user).toArray().length
+      )
+        throw new PlayError(
+          'This player is in an active match or waiting in a queue. Remove them or finish the match first, then delete their data.',
+        );
+      const economy = new EconomyStore(sql);
+      if (economy.openStake(user))
+        throw new PlayError(
+          'This player has a stake in an open prediction pool. Wait until that match ends, then delete their data.',
+        );
+      const tables = sql
+        .exec<{ name: string }>(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '\\_%' ESCAPE '\\' AND name NOT IN ('games','queues')",
+        )
+        .toArray()
+        .map((r) => r.name)
+        .filter((name) => /^[a-z_]+$/.test(name));
+      const textColumns = (table: string) =>
+        sql
+          .exec<{ name: string }>(`PRAGMA table_info(${table})`)
+          .toArray()
+          .map((c) => c.name);
+      const holders = (table: string) =>
+        textColumns(table).filter(
+          (c) =>
+            sql
+              .exec(`SELECT 1 FROM ${table} WHERE instr(CAST(${c} AS TEXT),?)>0 LIMIT 1`, user)
+              .toArray().length,
+        );
+      if (!tables.some((t) => holders(t).length))
+        throw new PlayError('No stored data was found for this player in this community.');
+      const external = new Set<string>([
+        ...forgetSelections(sql, user),
+        ...sql
+          .exec<{ external_id: string; platform_id: string | null }>(
+            'SELECT r.external_id,c.platform_id FROM profile_refs r LEFT JOIN profile_claims c USING(game_id,provider,external_id) WHERE r.user_id=?',
+            user,
+          )
+          .toArray()
+          .flatMap((r) => [r.external_id, r.platform_id ?? '']),
+      ]);
+      external.delete('');
+      sql.exec(
+        'DELETE FROM rating_details WHERE change_id IN (SELECT id FROM rating_changes WHERE user_id=?)',
+        user,
+      );
+      for (const table of playerTables) sql.exec(`DELETE FROM ${table} WHERE user_id=?`, user);
+      economy.forget(user);
+      forgetCivPicks(sql, user);
+      const mention = new RegExp(`<@!?${user}>`, 'g'),
+        bare = new RegExp(`(?<!\\d)${user}(?!\\d)`, 'g');
+      const text = (value: string) =>
+        value.replace(mention, deletedPlayerName).replace(bare, placeholder);
+      const account = (key: string, value: unknown) =>
+        typeof value === 'string' && external.has(value) && /profile|external|platform/i.test(key);
+      // Objects naming the player (roster entries, lobby slots) lose their display name too.
+      const scrub = (value: unknown, names: Set<string>): unknown => {
+        if (typeof value === 'string') return text(value);
+        if (Array.isArray(value)) return value.map((v) => scrub(v, names));
+        if (!value || typeof value !== 'object') return value;
+        const input = value as Record<string, unknown>,
+          own = Object.entries(input).some(
+            ([k, v]) => (['id', 'userId', 'user_id'].includes(k) && v === user) || account(k, v),
+          );
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(input))
+          if (own && ['name', 'displayName', 'display_name'].includes(k) && typeof v === 'string') {
+            names.add(v);
+            out[k] = deletedPlayerName;
+          } else if (account(k, v)) out[k] = placeholder;
+          else if (Array.isArray(v) && /profiles/i.test(k))
+            out[k] = scrub(
+              v.filter((x) => !account(k, x)),
+              names,
+            );
+          else out[text(k)] = scrub(v, names);
+        return out;
+      };
+      for (const row of sql
+        .exec<{ id: string; config: string }>(
+          'SELECT id,config FROM matches WHERE instr(config,?)>0',
+          user,
+        )
+        .toArray()) {
+        const m = JSON.parse(row.config) as Match & {
+          lobby?: { manualFacts?: { players?: { userId: string }[] } };
+        };
+        const facts = m.lobby?.manualFacts;
+        if (facts?.players) facts.players = facts.players.filter((p) => p.userId !== user);
+        const names = new Set<string>(),
+          clean = scrub(m, names) as Match;
+        const named = [...names].filter((n) => n.length > 1);
+        // Generated stories quote display names, so only those sentences are rewritten.
+        for (const key of ['storiesBefore', 'storiesAfter'] as const)
+          clean[key] = clean[key]?.map((line) =>
+            named.reduce((s, n) => s.replaceAll(n, deletedPlayerName), line),
+          );
+        sql.exec('UPDATE matches SET config=? WHERE id=?', JSON.stringify(clean), row.id);
+      }
+      for (const table of tables)
+        for (const column of holders(table)) {
+          if (['play_actions', 'record_actions'].includes(table)) {
+            // Cached replies for old interactions; dropping them only disables replay.
+            sql.exec(`DELETE FROM ${table} WHERE instr(CAST(${column} AS TEXT),?)>0`, user);
+            continue;
+          }
+          for (const r of sql
+            .exec<{
+              rowid: number;
+              value: SqlStorageValue;
+            }>(
+              `SELECT rowid,${column} AS value FROM ${table} WHERE instr(CAST(${column} AS TEXT),?)>0`,
+              user,
+            )
+            .toArray()) {
+            if (typeof r.value !== 'string') continue;
+            let next: string;
+            try {
+              next = /^[[{]/.test(r.value)
+                ? JSON.stringify(scrub(JSON.parse(r.value), new Set()))
+                : text(r.value);
+            } catch {
+              next = text(r.value);
+            }
+            sql.exec(`UPDATE ${table} SET ${column}=? WHERE rowid=?`, next, r.rowid);
+          }
+        }
+      this.audit('', null, 'player_data_deleted', actor === user ? placeholder : actor, {});
+      this.bump();
+      return {
+        ok: true as const,
+        content:
+          'Player data deleted. Their ratings, history, gold, linked accounts and restrictions are gone; past matches now show “Deleted player”.',
+      };
     });
   }
   diagnostics(guild: string) {
