@@ -624,7 +624,7 @@ describe('queue placement after a match starts', () => {
       const old = d.messages[0];
       const count = mode === 'automatic' ? 4 : 3;
       for (let n = 1; n < count; n++) await act('add', n);
-      if (mode === 'manual') await act('start', 99);
+      if (mode === 'manual') await act('start', 99, { admin: true });
       await flush();
       expect(d.messages).toHaveLength(2);
       expect(d.messages[0].payload.embeds[0].title).toContain('0/4');
