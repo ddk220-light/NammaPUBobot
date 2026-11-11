@@ -444,13 +444,19 @@ describe('profile identity and visibility', () => {
     await act('unhide', 1);
     expect((await stub().statistics(guild, game)).total).toBe(2);
   });
-  it('requires admin authority for hiding and prevents cross-player profile changes', async () => {
+  it('requires admin authority to hide others and prevents cross-player profile changes', async () => {
     await setup();
     await apply();
-    await expect(act('hide', 0, {}, false)).resolves.toMatchObject({
-      ok: false,
-      content: expect.stringContaining('organizers'),
-    });
+    await expect(
+      stub().recordAction(
+        guild,
+        { id: crypto.randomUUID(), kind: 'hide', gameId: game, userId: uid(1) },
+        uid(0),
+        false,
+      ),
+    ).resolves.toMatchObject({ ok: false, content: expect.stringContaining('organizers') });
+    // Players may hide themselves (/profile hide).
+    await expect(act('hide', 0, {}, false)).resolves.toMatchObject({ ok: true });
     await expect(
       stub().recordAction(
         guild,
