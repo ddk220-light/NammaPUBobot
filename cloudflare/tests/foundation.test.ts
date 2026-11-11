@@ -581,14 +581,14 @@ describe('community authority and durable settings', () => {
 });
 
 describe('configuration feature boundaries', () => {
-  it('does not expose settings export or accept restore requests from an old browser tab', async () => {
+  it('does not offer the retired settings export or accept restore requests from an old browser tab', async () => {
     await session();
     await save();
     const before = await env.COMMUNITIES.getByName(guild).read(guild);
+    // The path now serves the full community data download, not the old settings-only format.
     const response = await http(`/api/communities/${guild}/export`, { headers: headers() });
-    expect(response.status).toBe(404);
-    expect(response.headers.has('Content-Disposition')).toBe(false);
-    expect(await response.json()).toMatchObject({ error: 'Unknown API route.' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ kind: 'community-data-export' });
     const restore = await http(`/api/communities/${guild}/restore`, {
       method: 'POST',
       headers: headers(),
