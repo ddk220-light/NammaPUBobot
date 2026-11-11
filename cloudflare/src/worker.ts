@@ -34,7 +34,16 @@ export { AuthStore } from './storage/auth';
 export { DiscordGate } from './storage/discord-gate';
 export { VoicePresence } from './storage/voice-presence';
 
-type App = { Bindings: Env; Variables: { requestId: string; session: Session; sessionId: string } };
+type SignedIn = { id: string; session: Session };
+type App = {
+  Bindings: Env;
+  Variables: {
+    requestId: string;
+    session: Session;
+    sessionId: string;
+    signedIn?: Promise<SignedIn | null>;
+  };
+};
 const app = new Hono<App>();
 class Problem extends Error {
   constructor(
@@ -76,16 +85,79 @@ const tokenId = () =>
   ).join('');
 const isTokenId = (s: string | undefined): s is string => !!s && /^[a-f0-9]{64}$/.test(s);
 
-async function sessionFor(c: Context<App>): Promise<{ id: string; session: Session } | null> {
-  const id = getCookie(c, sessionCookie(c.env));
-  if (!isTokenId(id)) return null;
-  const session = await c.env.AUTH.getByName(`session:${id}`).session();
-  return session ? { id, session } : null;
+function sessionFor(c: Context<App>): Promise<SignedIn | null> {
+  let signedIn = c.get('signedIn');
+  if (!signedIn) {
+    const id = getCookie(c, sessionCookie(c.env));
+    signedIn = isTokenId(id)
+      ? c.env.AUTH.getByName(`session:${id}`)
+          .session()
+          .then((session) => (session ? { id, session } : null))
+      : Promise.resolve(null);
+    c.set('signedIn', signedIn);
+  }
+  return signedIn;
 }
+
+// Long enough to serve one page load's reads, short enough that a lost permission stops reads soon.
+// Changes always re-ask Discord.
+const guildCacheMs = 30000;
+async function sessionGuilds(c: Context<App>, { id, session }: SignedIn, live = false) {
+  const store = c.env.AUTH.getByName(`session:${id}`);
+  const cached = live ? null : await store.cachedGuilds(guildCacheMs);
+  if (cached) return cached;
+  try {
+    const guilds = (await userGuilds(session.accessToken)).map(
+      ({ id, name, icon, owner, permissions }) => ({ id, name, icon, owner, permissions }),
+    );
+    await store.cacheGuilds(guilds);
+    return guilds;
+  } catch (error) {
+    if (!(error instanceof DiscordFailure) || error.status !== 401) throw error;
+    // Discord no longer accepts this grant: end the session instead of failing every request.
+    await store.remove();
+    deleteCookie(c, sessionCookie(c.env), { path: '/', secure: secure(c.env) });
+    throw new Problem(401, 'sign_in_required', 'Your Discord sign-in expired. Sign in again.');
+  }
+}
+
+// Each tier's request budget lives in wrangler.jsonc `ratelimits`, identical in every environment.
+const rateLimitPeriod = 60;
+const rateLimiters = {
+  auth: 'AUTH_RATE_LIMITER',
+  public: 'PUBLIC_RATE_LIMITER',
+  api: 'API_RATE_LIMITER',
+  write: 'API_WRITE_RATE_LIMITER',
+  import: 'IMPORT_RATE_LIMITER',
+} as const;
+async function overLimit(c: Context<App>, tier: keyof typeof rateLimiters, key?: string) {
+  const limiter = c.env[rateLimiters[tier]];
+  // Cloudflare's edge always supplies the client address; only local test requests lack it.
+  if (!limiter || !key) return false;
+  try {
+    return !(await limiter.limit({ key })).success;
+  } catch {
+    // An abuse control, not an authorization: a limiter outage must not take sign-in down.
+    console.error(
+      JSON.stringify({ requestId: c.get('requestId'), code: 'rate_limiter_unavailable', tier }),
+    );
+    return false;
+  }
+}
+function tooMany(c: Context<App>, page: boolean) {
+  c.header('Retry-After', String(rateLimitPeriod));
+  if (page) return c.text('Too many requests. Wait a minute, then try again.', 429);
+  throw new Problem(429, 'rate_limited', 'Too many requests. Wait a minute, then retry.');
+}
+const clientAddress = (c: Context<App>) => c.req.header('CF-Connecting-IP');
 
 async function readJson(request: Request, limit = 262144) {
   if (!request.headers.get('Content-Type')?.startsWith('application/json'))
     throw new Problem(415, 'content_type', 'Send JSON.');
+  if (Number(request.headers.get('Content-Length')) > limit) {
+    await request.body?.cancel();
+    throw new Problem(413, 'too_large', 'The request is too large.');
+  }
   const reader = request.body?.getReader();
   if (!reader) throw new Problem(400, 'invalid_json', 'The request is empty.');
   const chunks: Uint8Array[] = [];
@@ -127,6 +199,9 @@ app.use('*', async (c, next) => {
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', c.req.path.startsWith('/auth/game/') ? 'no-referrer' : 'same-origin');
   c.header('X-Frame-Options', 'DENY');
+  // Browsers ignore HSTS over plain HTTP; local development never pins localhost.
+  if (secure(c.env) && new URL(c.req.url).protocol === 'https:')
+    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   if (
     c.req.path.startsWith('/api/') ||
     c.req.path.startsWith('/auth/') ||
@@ -144,6 +219,33 @@ app.use('*', async (c, next) => {
       elapsedMs: Date.now() - started,
     }),
   );
+});
+
+app.use('*', async (c, next) => {
+  const path = c.req.path;
+  const tier =
+    path === '/invite' || path.startsWith('/auth/')
+      ? 'auth'
+      : path.startsWith('/statistics/') ||
+          path.startsWith('/c/') ||
+          /^\/sitemap[\w-]*\.xml$/.test(path)
+        ? 'public'
+        : null;
+  if (tier && (await overLimit(c, tier, clientAddress(c))))
+    return tooMany(c, !path.startsWith('/statistics/'));
+  await next();
+});
+app.use('/api/*', async (c, next) => {
+  const signedIn = await sessionFor(c),
+    key = signedIn ? `user:${signedIn.session.user.id}` : clientAddress(c),
+    write = !['GET', 'HEAD'].includes(c.req.method);
+  if (
+    (await overLimit(c, 'api', key)) ||
+    (write && (await overLimit(c, 'write', key))) ||
+    (write && c.req.path.includes('/import/') && (await overLimit(c, 'import', key)))
+  )
+    return tooMany(c, false);
+  await next();
 });
 
 app.onError((error, c) => {
@@ -430,7 +532,7 @@ app.route(
           'Join this Discord community before linking an account.',
           403,
         );
-      const game = (await env.COMMUNITIES.getByName(guild).read(guild)).settings.games.find(
+      const game = (await env.COMMUNITIES.getByName(guild).find(guild))?.settings.games.find(
         (g) => g.id === gameId,
       );
       const adapter = runtimeAdapter(env, game?.catalogId);
@@ -558,13 +660,13 @@ app.get('/statistics/:guild/:game', async (c) => {
   const guild = snowflake.parse(c.req.param('guild')),
     game = z.uuid().parse(c.req.param('game'));
   const stub = c.env.COMMUNITIES.getByName(guild),
-    snapshot = await stub.read(guild),
-    cfg = recordPolicy(snapshot.settings, game);
-  if (!snapshot.settings.games.some((g) => g.id === game))
+    snapshot = await stub.find(guild);
+  if (!snapshot?.settings.games.some((g) => g.id === game))
     throw new Problem(404, 'unknown_game', 'Game not found in this community.');
+  const cfg = recordPolicy(snapshot.settings, game);
   const session = await sessionFor(c);
   const member = session
-    ? (await userGuilds(session.session.accessToken)).find((g) => g.id === guild)
+    ? (await sessionGuilds(c, session)).find((g) => g.id === guild)
     : undefined;
   const admin = !!member && canManage(member);
   if (cfg.visibility !== 'public' && (!member || (cfg.visibility === 'admins' && !admin)))
@@ -601,7 +703,7 @@ app.post('/api/logout', async (c) => {
 });
 app.get('/api/communities', async (c) =>
   c.json({
-    communities: (await userGuilds(c.get('session').accessToken))
+    communities: (await sessionGuilds(c, { id: c.get('sessionId'), session: c.get('session') }))
       .filter(canManage)
       .map(({ id, name, icon }) => ({ id, name, icon })),
   }),
@@ -609,7 +711,13 @@ app.get('/api/communities', async (c) =>
 
 app.use('/api/communities/:guild/*', async (c, next) => {
   const guildId = snowflake.parse(c.req.param('guild'));
-  const guild = (await userGuilds(c.get('session').accessToken)).find((g) => g.id === guildId);
+  const guild = (
+    await sessionGuilds(
+      c,
+      { id: c.get('sessionId'), session: c.get('session') },
+      !['GET', 'HEAD'].includes(c.req.method),
+    )
+  ).find((g) => g.id === guildId);
   if (!guild || !canManage(guild))
     throw new Problem(
       403,

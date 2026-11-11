@@ -21,6 +21,12 @@ export interface Env {
   BAR_CLIENT_ID?: string;
   BAR_CLIENT_SECRET?: string;
   VOICE_PRESENCE: DurableObjectNamespace<VoicePresence>;
+  /** Workers Rate Limiting bindings (wrangler.jsonc `ratelimits`); absent bindings skip the limit. */
+  AUTH_RATE_LIMITER?: RateLimit;
+  PUBLIC_RATE_LIMITER?: RateLimit;
+  API_RATE_LIMITER?: RateLimit;
+  API_WRITE_RATE_LIMITER?: RateLimit;
+  IMPORT_RATE_LIMITER?: RateLimit;
   PUBLIC_SITE_INDEXING?: string;
   APP_ENV: 'local' | 'staging' | 'production';
   APP_ORIGIN: string;

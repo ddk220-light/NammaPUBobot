@@ -574,6 +574,10 @@ describe('delivery and signed surfaces', () => {
         ? Response.json([{ id: guild, permissions: '0' }])
         : Response.json({ id: '100000000000008888' }),
     );
+    // Reads reuse the session's 30-second guild cache; expire it to observe the lost permission.
+    await runInDurableObject(env.AUTH.getByName(`session:${sessionId}`), (_i, state) =>
+      state.storage.delete('guilds'),
+    );
     expect((await request()).status).toBe(403);
   });
   it('keeps command definitions within Discord constraints with admin visibility on privileged groups', () => {
