@@ -20,6 +20,7 @@ test('empty and paused queues explain why start is unavailable; odd manual start
   expect(state.actions).toHaveLength(0);
   await expect(card.locator('div[data-review]')).toContainText('saved rules');
   await card.getByRole('button', { name: 'Confirm action' }).click();
+  await expect.poll(() => state.actions.length).toBe(1);
   expect(state.actions[0]).toMatchObject({ kind: 'start', queue });
   state.snapshot.settings.queues[0].enabled = false;
   await page.reload();
@@ -74,6 +75,7 @@ test('roster repair selects names, escapes search results and requires reviewed 
   await replacement.getByRole('button', { name: 'Review replacement' }).click();
   expect(state.actions).toHaveLength(0);
   await replacement.getByRole('button', { name: 'Confirm action' }).click();
+  await expect.poll(() => state.actions.length).toBe(1);
   expect(state.actions[0]).toMatchObject({
     kind: 'force_sub',
     target: user,

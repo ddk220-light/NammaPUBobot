@@ -211,6 +211,7 @@ test('staged game changes do not relabel the live queue roster or its saved-rule
   expect(state.actions).toHaveLength(0);
   expect(state.saved).toHaveLength(0);
   await card.getByRole('button', { name: 'Confirm action', exact: true }).click();
+  await expect.poll(() => state.actions.length).toBe(1);
   expect(state.actions[0]).toMatchObject({ kind: 'clear', queue });
   await expect(page.locator('#savebar')).toBeVisible();
 });
