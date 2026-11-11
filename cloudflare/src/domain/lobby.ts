@@ -215,7 +215,7 @@ export function lobbySummary(binding?: LobbyBinding, now = Date.now()): string {
       ? `Provider suggests ${binding.suggestedResult}; captains must confirm through the existing reporting controls.`
       : '',
     binding.identitySuggestions?.length
-      ? `Suggested account links (unconfirmed): ${binding.identitySuggestions.map((p) => `<@${p.userId}> → ${p.profileId}`).join(', ')}. Use /lobby link to confirm.`
+      ? `Suggested account links (unconfirmed): ${binding.identitySuggestions.map((p) => `<@${p.userId}> → ${p.profileId}`).join(', ')}. Use /profile link to confirm.`
       : '',
     binding.manualFacts
       ? `Declared facts: ${binding.manualFacts.map ?? 'map unknown'}; ${binding.manualFacts.elapsedSeconds ?? '?'} seconds; ${binding.manualFacts.players.map((p) => `<@${p.userId}>: ${p.selection}`).join(', ')}.`
@@ -239,7 +239,7 @@ export function lobbySummary(binding?: LobbyBinding, now = Date.now()): string {
       : 'Live occupancy unavailable. Lobby disappearance is not start evidence.',
     binding.rosterVerified
       ? 'Declared profiles and teams match the game.'
-      : `${binding.profiles.filter((p) => p.profileId).length}/${binding.profiles.length} players linked. Unlinked players can keep playing; /lobby link adds a profile.`,
+      : `${binding.profiles.filter((p) => p.profileId).length}/${binding.profiles.length} players linked. Unlinked players can keep playing; /profile link adds a profile.`,
     'Results remain manual: losing captain uses /report loss.',
   ].join('\n');
 }

@@ -52,6 +52,7 @@ function context() {
       content: 'Provider recording metadata refreshed',
     })),
     linkGameProfile: vi.fn(async () => ({ ok: true, content: 'Self-declared profile saved' })),
+    recordAction: vi.fn(async () => ({ ok: true, content: 'Profile reference saved' })),
     flush: vi.fn(async () => {}),
   };
   const getByName = vi.fn(() => rpc);
@@ -69,7 +70,7 @@ function context() {
   };
 }
 describe('lobby command transport', () => {
-  it('registers one game-neutral command with attach/unlink/status/profile linking', () => {
+  it('registers one game-neutral lobby command; account linking lives under /profile link', () => {
     expect(commands.find((c) => c.name === 'lobby')!.options!.map((o) => o.name)).toEqual([
       'list',
       'attach',
@@ -78,7 +79,6 @@ describe('lobby command transport', () => {
       'confirm',
       'facts',
       'replays',
-      'link',
     ]);
   });
   it.each(['attach', 'unlink', 'status'])(
@@ -192,7 +192,7 @@ describe('lobby command transport', () => {
     const response = await interactions(await request('verify', [], 'profile'), c.env, c.ctx);
     const reply = (await response.json()) as { data: { content: string } };
     expect(reply.data.content).toContain('verification is unavailable');
-    expect(reply.data.content).toContain('/lobby link');
+    expect(reply.data.content).toContain('/profile link');
   });
   it('acknowledges profile linking while provider resolution is still pending', async () => {
     const c = context();
@@ -218,5 +218,47 @@ describe('lobby command transport', () => {
     );
     finish({ ok: true, content: 'Self-declared mapping saved' });
     await Promise.all(c.tasks);
+  });
+  it('routes /profile link without a provider to the game-aware account link', async () => {
+    const c = context();
+    const response = await interactions(
+      await request('link', [{ name: 'profile_id', value: '123' }], 'profile'),
+      c.env,
+      c.ctx,
+    );
+    expect(await response.json()).toMatchObject({ type: 5 });
+    await Promise.all(c.tasks);
+    expect(c.rpc.linkGameProfile).toHaveBeenCalledWith(
+      guild,
+      expect.objectContaining({ kind: 'link', gameId: game, externalId: '123' }),
+      person(0).id,
+      false,
+    );
+    expect(c.rpc.recordAction).not.toHaveBeenCalled();
+  });
+  it('keeps /profile link with a provider on the declared-reference handler', async () => {
+    const c = context();
+    const response = await interactions(
+      await request(
+        'link',
+        [
+          { name: 'profile_id', value: '123' },
+          { name: 'provider', value: 'steam' },
+        ],
+        'profile',
+      ),
+      c.env,
+      c.ctx,
+    );
+    expect(((await response.json()) as { data: { content: string } }).data.content).toBe(
+      'Profile reference saved',
+    );
+    expect(c.rpc.recordAction).toHaveBeenCalledWith(
+      guild,
+      expect.objectContaining({ kind: 'link', provider: 'steam', externalId: '123' }),
+      person(0).id,
+      false,
+    );
+    expect(c.rpc.linkGameProfile).not.toHaveBeenCalled();
   });
 });
