@@ -63,6 +63,9 @@ const plain = {
   '/manage match recover': 'Post a deleted match card again, or retry one that failed.',
   '/manage player sync': 'Retry a player’s rank role and nickname.',
 };
+// The order players meet commands in; anything not listed follows in registration order.
+const order = Object.keys(plain);
+const rank = (path) => (order.includes(path) ? order.indexOf(path) : order.length);
 const leaves = (c, prefix) =>
   c.options?.some((o) => o.type === 1 || o.type === 2)
     ? c.options
@@ -90,15 +93,20 @@ export function commandReference(commands, e) {
         .map((o) => (o.required ? o.name : `[${o.name}]`));
       byGroup
         .get(groupOf(path, root, command))
-        .push(
+        .push([
+          path,
           `<div><dt><code>${e([path, ...args].join(' '))}</code></dt><dd>${e(plain[path] ?? command.description)}</dd></div>`,
-        );
+        ]);
     }
   return `<p>Type <code>/</code> in a channel the bot can see and Discord lists these commands. On a normal night players only need <code>/add</code> and the buttons on the bot’s cards. Names in [brackets] are optional.</p>${groups
     .filter(([g]) => byGroup.get(g).length)
     .map(
       ([g, intro]) =>
-        `<h2>${g}</h2><p>${e(intro)}</p><dl class="command-list">${byGroup.get(g).join('')}</dl>`,
+        `<h2>${g}</h2><p>${e(intro)}</p><dl class="command-list">${byGroup
+          .get(g)
+          .sort(([a], [b]) => rank(a) - rank(b))
+          .map(([, html]) => html)
+          .join('')}</dl>`,
     )
     .join('')}`;
 }

@@ -139,4 +139,4 @@ export const examples = {
 
 /** A real console screenshot taken from the local preview with demo records. */
 export const shot = (name, width, height, alt, caption, eager = false) =>
-  `<figure class="console-shot"><img src="/screenshots/${name}.png" width="${width}" height="${height}" alt="${alt}"${eager ? '' : ' loading="lazy"'} decoding="async"><figcaption><span class="example-tag">Example</span> ${caption}</figcaption></figure>`;
+  `<figure class="console-shot"><a href="/screenshots/${name}.png"><img src="/screenshots/${name}.png" width="${width}" height="${height}" alt="${alt}"${eager ? '' : ' loading="lazy"'} decoding="async"></a><figcaption><span class="example-tag">Example</span> ${caption}</figcaption></figure>`;

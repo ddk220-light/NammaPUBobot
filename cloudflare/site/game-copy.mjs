@@ -6,8 +6,8 @@ export const gameCopy = {
   aoe2: {
     short: 'Civ picks, map votes and beta lobby tracking for 4v4 team games',
     title: 'AoE2 Discord bot for pickup games',
-    description:
-      'Run Age of Empires II pickup games on Discord: /add queues, check-in, balanced 4v4 teams, civ picks, map votes and your own Elo ladder.',
+    game: 'Age of Empires II',
+    tail: 'queues, check-in, balanced 4v4 teams, civ picks and map votes.',
     night:
       'A typical AoE2 night is eight people and a 4v4 team game on Arabia or Nomad. Make one queue per format, like “Friday 4v4 Arabia”, so nobody waits in the wrong line. The ladder belongs to your server and learns from your own team games, not from ranked 1v1.',
     features: [
@@ -41,8 +41,8 @@ export const gameCopy = {
   aoe3: {
     short: 'Supremacy or treaty queues; players link their DE profiles',
     title: 'AoE3 Discord bot for pickup games',
-    description:
-      'Run Age of Empires III pickup games on Discord: supremacy and treaty queues, check-in, balanced teams, map votes and your server’s own ratings.',
+    game: 'Age of Empires III',
+    tail: 'supremacy and treaty queues, check-in and balanced teams.',
     night:
       'AoE3 groups often split their evenings between supremacy and treaty. Make a queue for each and put the mode, and the treaty length, in its name. Ratings belong to your server and grow from the games you play together.',
     features: [
@@ -69,8 +69,8 @@ export const gameCopy = {
   aoe4: {
     short: 'Team-game queues; players link their AoE4 profiles',
     title: 'AoE4 Discord bot for pickup games',
-    description:
-      'Run Age of Empires IV pickup games on Discord: team-game queues, check-in, balanced teams, map votes and a ladder that belongs to your server.',
+    game: 'Age of Empires IV',
+    tail: 'team-game queues, check-in, balanced teams and Elo.',
     night:
       'AoE4 team nights work best with a queue named for its size and mood, like “4v4 casual” or “2v2 competitive”. Your server’s ratings are separate from ranked matchmaking and start fresh with your group. They get sharper with every game you record.',
     features: [
@@ -97,8 +97,8 @@ export const gameCopy = {
   aom: {
     short: 'Retold team games; players link their Retold profiles',
     title: 'Age of Mythology Discord bot for pickup games',
-    description:
-      'Run Age of Mythology: Retold pickup games on Discord: queues, check-in, balanced teams, map votes and a ladder for your own community.',
+    game: 'Age of Mythology: Retold',
+    tail: 'queues, check-in, balanced teams and map votes.',
     night:
       'Run a named queue for a scheduled mythology night or a quick team game. Say in the channel how gods are chosen, random or free pick, before people join. Ratings come from your group’s own games and don’t try to copy the official ladder.',
     features: [
@@ -125,8 +125,8 @@ export const gameCopy = {
   bar: {
     short: 'Queues up to 8v8; players link their BAR accounts',
     title: 'Beyond All Reason Discord bot for pickups',
-    description:
-      'Run Beyond All Reason pickup games on Discord: queues for up to 8v8, check-in, balanced teams, map votes and your community’s own ratings.',
+    game: 'Beyond All Reason',
+    tail: 'queues up to 8v8, check-in and balanced teams.',
     night:
       'BAR evenings often mix new and experienced players across big team games. One queue holds up to 16 players, enough for an 8v8. Check-in gives the host a firm list of who is actually ready before making the battle.',
     features: [
@@ -153,8 +153,8 @@ export const gameCopy = {
   wc3: {
     short: 'Team nights and inhouses; players link their BattleTags',
     title: 'Warcraft III Discord bot for pickup games',
-    description:
-      'Run Warcraft III pickup games and inhouse nights on Discord: queues, check-in, balanced teams, map votes and a ladder for your own server.',
+    game: 'Warcraft III',
+    tail: 'inhouse queues, check-in, balanced teams and Elo.',
     night:
       'Warcraft III groups use queues for regular team-game nights and inhouse leagues. Say which mode you play and how races are chosen before the host makes the game. Your server’s ladder is separate from W3Champions standings.',
     features: [
@@ -181,8 +181,8 @@ export const gameCopy = {
   zero_hour: {
     short: 'Zero Hour pickup groups; captains report results',
     title: 'Zero Hour Discord bot for pickup games',
-    description:
-      'Run C&C Generals: Zero Hour pickup games on Discord: queues, check-in, balanced teams, map votes and captain-reported results for your server.',
+    game: 'C&C Generals: Zero Hour',
+    tail: 'queues, check-in, balanced teams and captain-reported results.',
     night:
       'Zero Hour groups usually have house rules about maps, factions and conduct. Put them in the channel before people join, and name the queue for the kind of game you mean. Captains report the result after each game.',
     features: [

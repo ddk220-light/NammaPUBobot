@@ -125,7 +125,7 @@ export function landing(g) {
   const [id, slug, name] = g;
   const copy = gameCopy[id];
   const related = games.filter((v) => v[0] !== id).slice(0, 3);
-  return `<p>${N} is a free, open-source Discord bot that runs ${name} pickup games. Players type <code>/add</code>, check in and get balanced teams, and your server keeps its own ladder.</p>${actions()}
+  return `<p>Players type <code>/add</code>, check in and get balanced teams, and your server keeps its own ladder of ${name} games. It is free for any server, with nothing held back.</p>${actions()}
 <h2>How a game night goes</h2><p>${copy.night}</p>${examples.teams(name, `A ${name} match card once teams are made. The first name on each side is the captain.`)}
 <h2>What’s specific to ${name}</h2>${dl(copy.features)}
 ${cantYet(copy.limits)}<p>Optional game tracking is in beta. Queues, teams, ratings and captain-reported results work without it.</p>

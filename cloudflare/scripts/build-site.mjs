@@ -98,7 +98,8 @@ for (const g of games) {
   await emit(`/games/${g[1]}/`, {
     title: copy.title,
     heading: `${g[2]} Discord bot`,
-    description: copy.description,
+    // Line one answers the search: who we are and which game.
+    description: `${identity.publicName} is a free, open-source Discord bot that runs ${copy.game} pickup games: ${copy.tail}`,
     body: landing(g),
   });
 }
