@@ -26,6 +26,8 @@
     "cost:check": "node scripts/cost-report.mjs",
     "operator:config": "node scripts/operator-config.mjs",
     "operator:backup": "node scripts/operational-backup.mjs",
+    "usage:report": "node scripts/usage-report.mjs",
+    "test:ops": "vitest run operations usage-report m10-recovery",
     "test:ui": "npm run build:web && playwright test",
     "build:metadata": "node scripts/build-metadata.mjs --print",
     "test:connectors": "vitest run connector game-accounts account-trust provider-check",

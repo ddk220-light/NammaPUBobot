@@ -893,6 +893,26 @@ app.get('/api/communities/:guild/records', async (c) => {
     ),
   );
 });
+app.get('/api/communities/:guild/export', async (c) => {
+  const guild = c.req.param('guild'),
+    stub = c.env.COMMUNITIES.getByName(guild);
+  const { tables, excluded, schemaVersion, createdAt } = await stub.exportManifest(
+    guild,
+    'organizer',
+  );
+  return exportResponse(
+    stub,
+    guild,
+    { tables, scope: 'organizer' },
+    {
+      format: 1,
+      kind: 'community-data-export',
+      communityId: guild,
+      manifest: { schemaVersion, exportedAt: createdAt, tables, excluded },
+    },
+    `community-${guild}-${createdAt.slice(0, 10)}.json`,
+  );
+});
 app.post('/api/communities/:guild/import/preview', async (c) => {
   const bundle = importSchema.parse(await readJson(c.req.raw, 5 * 1024 * 1024));
   return c.json(

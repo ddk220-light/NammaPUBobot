@@ -1,0 +1,2353 @@
+{
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "workersInvocationsAdaptive": [
+            {
+              "dimensions": {
+                "date": "2026-10-12",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 5266,
+                "cpuTimeP99": 13123,
+                "wallTimeP50": 593781,
+                "wallTimeP99": 2143276
+              },
+              "sum": {
+                "cpuTimeUs": 2104270,
+                "duration": 26.3734525,
+                "errors": 0,
+                "requests": 320,
+                "responseBodySize": 2868710,
+                "subrequests": 1260,
+                "wallTime": 209294980
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-13",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 9593,
+                "cpuTimeP99": 23671,
+                "wallTimeP50": 360914,
+                "wallTimeP99": 1799081
+              },
+              "sum": {
+                "cpuTimeUs": 1118160,
+                "duration": 9.266645,
+                "errors": 0,
+                "requests": 120,
+                "responseBodySize": 2715780,
+                "subrequests": 360,
+                "wallTime": 73390610
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-13",
+                "scriptName": "community-gaming-rehearsal",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 20585,
+                "cpuTimeP99": 20585,
+                "wallTimeP50": 402889,
+                "wallTimeP99": 402889
+              },
+              "sum": {
+                "cpuTimeUs": 205850,
+                "duration": 0.50361125,
+                "errors": 0,
+                "requests": 10,
+                "responseBodySize": 690,
+                "subrequests": 10,
+                "wallTime": 4028890
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-14",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 3038,
+                "cpuTimeP99": 26029,
+                "wallTimeP50": 92916,
+                "wallTimeP99": 2086350
+              },
+              "sum": {
+                "cpuTimeUs": 929490,
+                "duration": 9.589617499999997,
+                "errors": 0,
+                "requests": 170,
+                "responseBodySize": 4032600,
+                "subrequests": 430,
+                "wallTime": 76213770
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-14",
+                "scriptName": "community-gaming-rehearsal",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 5398,
+                "cpuTimeP99": 5398,
+                "wallTimeP50": 6074,
+                "wallTimeP99": 6074
+              },
+              "sum": {
+                "cpuTimeUs": 53980,
+                "duration": 0.05398,
+                "errors": 0,
+                "requests": 10,
+                "responseBodySize": 4890,
+                "subrequests": 0,
+                "wallTime": 60740
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-14",
+                "scriptName": "__unknown__",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 2425,
+                "cpuTimeP99": 17928,
+                "wallTimeP50": 303777,
+                "wallTimeP99": 2536371
+              },
+              "sum": {
+                "cpuTimeUs": 661310,
+                "duration": 11.11402625,
+                "errors": 0,
+                "requests": 180,
+                "responseBodySize": 3565090,
+                "subrequests": 420,
+                "wallTime": 88912210
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-15",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 1686,
+                "cpuTimeP99": 2197,
+                "wallTimeP50": 77285,
+                "wallTimeP99": 299570
+              },
+              "sum": {
+                "cpuTimeUs": 73070,
+                "duration": 0.66134625,
+                "errors": 0,
+                "requests": 40,
+                "responseBodySize": 6260,
+                "subrequests": 80,
+                "wallTime": 5290770
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-17",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 6974,
+                "cpuTimeP99": 9932,
+                "wallTimeP50": 141702,
+                "wallTimeP99": 176645
+              },
+              "sum": {
+                "cpuTimeUs": 169060,
+                "duration": 0.39793375,
+                "errors": 0,
+                "requests": 20,
+                "responseBodySize": 2100,
+                "subrequests": 40,
+                "wallTime": 3183470
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-18",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 11441,
+                "cpuTimeP99": 12268,
+                "wallTimeP50": 349770,
+                "wallTimeP99": 649586
+              },
+              "sum": {
+                "cpuTimeUs": 287720,
+                "duration": 1.299825,
+                "errors": 0,
+                "requests": 30,
+                "responseBodySize": 13500650,
+                "subrequests": 20,
+                "wallTime": 10050460
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-20",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 30897,
+                "cpuTimeP99": 30897,
+                "wallTimeP50": 417624,
+                "wallTimeP99": 417624
+              },
+              "sum": {
+                "cpuTimeUs": 308970,
+                "duration": 0.5220300000000001,
+                "errors": 0,
+                "requests": 10,
+                "responseBodySize": 1050,
+                "subrequests": 20,
+                "wallTime": 4176240
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-24",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 7488,
+                "cpuTimeP99": 8133,
+                "wallTimeP50": 79138,
+                "wallTimeP99": 410852
+              },
+              "sum": {
+                "cpuTimeUs": 156210,
+                "duration": 0.6124875000000001,
+                "errors": 0,
+                "requests": 20,
+                "responseBodySize": 2100,
+                "subrequests": 40,
+                "wallTime": 4899900
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-27",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 4569,
+                "cpuTimeP99": 24123,
+                "wallTimeP50": 71819,
+                "wallTimeP99": 1479271
+              },
+              "sum": {
+                "cpuTimeUs": 1482010,
+                "duration": 12.04638,
+                "errors": 0,
+                "requests": 300,
+                "responseBodySize": 6472470,
+                "subrequests": 430,
+                "wallTime": 92080200
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-28",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 3728,
+                "cpuTimeP99": 17720,
+                "wallTimeP50": 323789,
+                "wallTimeP99": 2697303
+              },
+              "sum": {
+                "cpuTimeUs": 548230,
+                "duration": 6.6497775,
+                "errors": 0,
+                "requests": 90,
+                "responseBodySize": 7046040,
+                "subrequests": 110,
+                "wallTime": 52645710
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-29",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 2243,
+                "cpuTimeP99": 2407,
+                "wallTimeP50": 28613,
+                "wallTimeP99": 263064
+              },
+              "sum": {
+                "cpuTimeUs": 61440,
+                "duration": 0.37995375,
+                "errors": 0,
+                "requests": 30,
+                "responseBodySize": 36830,
+                "subrequests": 40,
+                "wallTime": 3039630
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 980,
+                "cpuTimeP99": 35806,
+                "wallTimeP50": 9535,
+                "wallTimeP99": 548557
+              },
+              "sum": {
+                "cpuTimeUs": 1511170,
+                "duration": 2.8681875000000003,
+                "errors": 0,
+                "requests": 660,
+                "responseBodySize": 2774810,
+                "subrequests": 600,
+                "wallTime": 20022970
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "scriptName": "namma-matchbot-pr49-preview",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 1072,
+                "cpuTimeP99": 12678,
+                "wallTimeP50": 9956,
+                "wallTimeP99": 210197
+              },
+              "sum": {
+                "cpuTimeUs": 590610,
+                "duration": 1.3105787500000003,
+                "errors": 0,
+                "requests": 280,
+                "responseBodySize": 11679730,
+                "subrequests": 260,
+                "wallTime": 9501720
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "scriptName": "namma-matchbot-pr49-preview",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 1215,
+                "cpuTimeP99": 17171,
+                "wallTimeP50": 11345,
+                "wallTimeP99": 63291
+              },
+              "sum": {
+                "cpuTimeUs": 383440,
+                "duration": 0.49278624999999987,
+                "errors": 0,
+                "requests": 150,
+                "responseBodySize": 5323840,
+                "subrequests": 150,
+                "wallTime": 3024010
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 810,
+                "cpuTimeP99": 9606,
+                "wallTimeP50": 8689,
+                "wallTimeP99": 155296
+              },
+              "sum": {
+                "cpuTimeUs": 423560,
+                "duration": 1.0247475000000001,
+                "errors": 0,
+                "requests": 310,
+                "responseBodySize": 3859430,
+                "subrequests": 300,
+                "wallTime": 6822310
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-07",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 9637,
+                "cpuTimeP99": 9637,
+                "wallTimeP50": 18838,
+                "wallTimeP99": 18838
+              },
+              "sum": {
+                "cpuTimeUs": 96370,
+                "duration": 0.09637,
+                "errors": 0,
+                "requests": 10,
+                "responseBodySize": 95750,
+                "subrequests": 10,
+                "wallTime": 188380
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-11",
+                "scriptName": "community-gaming-staging",
+                "status": "success"
+              },
+              "quantiles": {
+                "cpuTimeP50": 1990,
+                "cpuTimeP99": 13635,
+                "wallTimeP50": 8398,
+                "wallTimeP99": 16854
+              },
+              "sum": {
+                "cpuTimeUs": 241140,
+                "duration": 0.2423075,
+                "errors": 0,
+                "requests": 40,
+                "responseBodySize": 51000,
+                "subrequests": 20,
+                "wallTime": 428410
+              }
+            }
+          ],
+          "durableObjectsInvocationsAdaptiveGroups": [
+            {
+              "dimensions": {
+                "namespaceId": "5426dfbc27524b55818e102f6345069b",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "wallTimeP50": 49072,
+                "wallTimeP99": 13974761
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 40,
+                "responseBodySize": 0,
+                "wallTime": 17955024
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "wallTimeP50": 60005980,
+                "wallTimeP99": 60103496
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 4146,
+                "responseBodySize": 0,
+                "wallTime": 253896050317
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c",
+                "scriptName": "community-gaming-staging",
+                "status": "clientDisconnected",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "wallTimeP50": 59745576,
+                "wallTimeP99": 59998196
+              },
+              "sum": {
+                "errors": 172,
+                "requests": 172,
+                "responseBodySize": 0,
+                "wallTime": 8963084285
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "wallTimeP50": 65451,
+                "wallTimeP99": 214007
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 6,
+                "responseBodySize": 0,
+                "wallTime": 572484
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "wallTimeP50": 126897,
+                "wallTimeP99": 1435392
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 6766,
+                "responseBodySize": 0,
+                "wallTime": 1489707363
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "wallTimeP50": 60000830,
+                "wallTimeP99": 1658336500
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 20565,
+                "responseBodySize": 0,
+                "wallTime": 2217342468507
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010",
+                "scriptName": "community-gaming-staging",
+                "status": "clientDisconnected",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "wallTimeP50": 141509,
+                "wallTimeP99": 6941218
+              },
+              "sum": {
+                "errors": 2,
+                "requests": 2,
+                "responseBodySize": 0,
+                "wallTime": 7082727
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "wallTimeP50": 4181974,
+                "wallTimeP99": 269955840
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 72,
+                "responseBodySize": 0,
+                "wallTime": 2765166922
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "5426dfbc27524b55818e102f6345069b",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "wallTimeP50": 78731,
+                "wallTimeP99": 267676
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 367,
+                "responseBodySize": 0,
+                "wallTime": 31251091
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010",
+                "scriptName": "community-gaming-staging",
+                "status": "clientDisconnected",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "wallTimeP50": 79781,
+                "wallTimeP99": 4869906
+              },
+              "sum": {
+                "errors": 6759,
+                "requests": 6759,
+                "responseBodySize": 0,
+                "wallTime": 8179511065
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287",
+                "scriptName": "community-gaming-rehearsal",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "wallTimeP50": 35140,
+                "wallTimeP99": 155899
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 6,
+                "responseBodySize": 0,
+                "wallTime": 344609
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "wallTimeP50": 27208,
+                "wallTimeP99": 154384
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 3701,
+                "responseBodySize": 0,
+                "wallTime": 123608862
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "alarm"
+              },
+              "quantiles": {
+                "wallTimeP50": 30000290,
+                "wallTimeP99": 30015352
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 81,
+                "responseBodySize": 0,
+                "wallTime": 1576099652
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010",
+                "scriptName": "community-gaming-staging",
+                "status": "success",
+                "type": "jsrpc"
+              },
+              "quantiles": {
+                "wallTimeP50": 122499,
+                "wallTimeP99": 2836715
+              },
+              "sum": {
+                "errors": 0,
+                "requests": 2250,
+                "responseBodySize": 0,
+                "wallTime": 554245389
+              }
+            }
+          ],
+          "durableObjectsPeriodicGroups": [
+            {
+              "dimensions": {
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "sum": {
+                "activeTime": 571677,
+                "cpuTime": 7813,
+                "duration": 0.073174656,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 7,
+                "rowsWritten": 3,
+                "storageDeletes": 0,
+                "storageReadUnits": 0,
+                "storageWriteUnits": 0,
+                "subrequests": 0
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "sum": {
+                "activeTime": 1237799764320,
+                "cpuTime": 17501816,
+                "duration": 158438.36983296002,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 6,
+                "inboundWebsocketMsgCount": 34664,
+                "outboundWebsocketMsgCount": 30294,
+                "rowsRead": 117,
+                "rowsWritten": 4134,
+                "storageDeletes": 0,
+                "storageReadUnits": 0,
+                "storageWriteUnits": 0,
+                "subrequests": 456
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "sum": {
+                "activeTime": 343935,
+                "cpuTime": 105022,
+                "duration": 0.04402368,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 2981,
+                "rowsWritten": 2690,
+                "storageDeletes": 0,
+                "storageReadUnits": 0,
+                "storageWriteUnits": 0,
+                "subrequests": 0
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "sum": {
+                "activeTime": 9940106557,
+                "cpuTime": 94080475,
+                "duration": 1272.3336392959998,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 4010917,
+                "rowsWritten": 50754,
+                "storageDeletes": 0,
+                "storageReadUnits": 0,
+                "storageWriteUnits": 0,
+                "subrequests": 2097
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "sum": {
+                "activeTime": 49107113,
+                "cpuTime": 301416,
+                "duration": 6.285710463999999,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 366,
+                "rowsWritten": 56,
+                "storageDeletes": 0,
+                "storageReadUnits": 0,
+                "storageWriteUnits": 0,
+                "subrequests": 0
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "sum": {
+                "activeTime": 123178870,
+                "cpuTime": 4493309,
+                "duration": 15.766895360000003,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 0,
+                "outboundWebsocketMsgCount": 0,
+                "rowsRead": 17427,
+                "rowsWritten": 3702,
+                "storageDeletes": 0,
+                "storageReadUnits": 0,
+                "storageWriteUnits": 0,
+                "subrequests": 0
+              }
+            },
+            {
+              "dimensions": {
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "sum": {
+                "activeTime": 2383978743,
+                "cpuTime": 420779,
+                "duration": 305.1492791040001,
+                "exceededCpuErrors": 0,
+                "exceededMemoryErrors": 0,
+                "fatalInternalErrors": 0,
+                "inboundWebsocketMsgCount": 220,
+                "outboundWebsocketMsgCount": 17,
+                "rowsRead": 14,
+                "rowsWritten": 118,
+                "storageDeletes": 0,
+                "storageReadUnits": 0,
+                "storageWriteUnits": 0,
+                "subrequests": 24
+              }
+            }
+          ],
+          "durableObjectsSqlStorageGroups": [
+            {
+              "dimensions": {
+                "date": "2026-11-11",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-09",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-27",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 212992
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-27",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-11",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-07",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-09",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-07",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-29",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1826816
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-06",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-04",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-09",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4907008
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-25",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-27",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1257472
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-21",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-26",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-10",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-26",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1028096
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-15",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-14",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 180224
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-10",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-23",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-17",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-10",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-16",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-11",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-03",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-30",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 356352
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-05",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-15",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-08",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4911104
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-04",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-20",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1220608
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-06",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4980736
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-04",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-29",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-06",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-15",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-02",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-03",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4984832
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-23",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-23",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1179648
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-22",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1179648
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-05",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4980736
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-14",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1175552
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-18",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-19",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-10",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4907008
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-09",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-11",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4907008
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-16",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-22",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-06",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-07",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-09",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-06",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-19",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-17",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-11",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-25",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-12",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 40960
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 483328
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-29",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-19",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-26",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-10",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-21",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1179648
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 454656
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-28",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-30",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-13",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-30",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-07",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-06",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4984832
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-02",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4980736
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-28",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 237568
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-24",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-12",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 65536
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-06",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-08",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-02",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-04",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-07",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4980736
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-20",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-04",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-17",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-16",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1208320
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-19",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1220608
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-02",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-27",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-05",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-03",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-08",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-30",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-16",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-09",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-03",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-15",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1208320
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-14",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-24",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1028096
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-20",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-07",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-04",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4980736
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-03",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-24",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-25",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1028096
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-11",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-23",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-30",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-11",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-08",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-02",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-13",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-18",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-08",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-01",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-10",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-18",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1220608
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-05",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-13",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 630784
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-24",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-08",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-22",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-05",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "namespaceId": "e4f8b5fdbcba44b4b33b3592d08d891c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-17",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1212416
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-02",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-02",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-28",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1826816
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-07",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-05",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-29",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 364544
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-28",
+                "namespaceId": "c1d04eaca0d84eac9387c602fe270a41"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-20",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-29",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-08",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-21",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 172032
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-30",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 1830912
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-28",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-03",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-14",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-09",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-10",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 479232
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-05",
+                "namespaceId": "45f329f6f5354b32839221ac0b78be8c"
+              },
+              "max": {
+                "storedBytes": 16384
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-04",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-25",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-28",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-27",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-21",
+                "namespaceId": "1eba7d7e5d074a5a92f9e914348bcc6b"
+              },
+              "max": {
+                "storedBytes": 20480
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-22",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-29",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-26",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-31",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-13",
+                "namespaceId": "5426dfbc27524b55818e102f6345069b"
+              },
+              "max": {
+                "storedBytes": 118784
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-11-03",
+                "namespaceId": "ba83d10e0022455fa1f428353f39c010"
+              },
+              "max": {
+                "storedBytes": 4980736
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-18",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            },
+            {
+              "dimensions": {
+                "date": "2026-10-27",
+                "namespaceId": "7db50a3f28de498fbe5e72738fdb0287"
+              },
+              "max": {
+                "storedBytes": 1232896
+              }
+            }
+          ],
+          "durableObjectsStorageGroups": []
+        }
+      ]
+    }
+  },
+  "errors": null
+}
