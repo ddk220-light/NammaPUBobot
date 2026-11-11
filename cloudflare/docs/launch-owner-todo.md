@@ -6,6 +6,18 @@ item here when it is done.
 
 ## Now (unblocks testing)
 
+- [ ] **Let the repository's deploy job reach Cloudflare.** Staging deploys
+      run from GitHub Actions (workflow "Cloudflare foundation", run manually
+      with "Deploy the checked revision to isolated staging" ticked). The job
+      needs two secrets that are not set yet.
+  1. Cloudflare dashboard → profile icon → My Profile → API Tokens → Create
+     Token → "Edit Cloudflare Workers" → Use template → choose your account →
+     Create Token. Copy the token (it is shown once).
+  2. GitHub repository → Settings → Environments → `cloudflare-staging`
+     (create it with exactly this name if it is missing) → Environment secrets
+     → add `CLOUDFLARE_API_TOKEN` (the token) and `CLOUDFLARE_ACCOUNT_ID`
+     (Cloudflare dashboard → Workers & Pages → Account ID in the right-hand
+     column).
 - [ ] **Turn on GitHub Issues.** Repository → Settings → General → Features →
       tick Issues. The site's "Report a problem" links already point there and
       currently lead to a 404.
