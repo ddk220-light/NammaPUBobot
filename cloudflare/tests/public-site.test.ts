@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { publicPages } from '../src/routes/public-pages';
 import { page } from '../src/public-site';
 import { identity } from '../src/identity';
-import { commandReference, groups } from '../site/commands.mjs';
+import { commandReference, groups, hidden } from '../site/commands.mjs';
 import { commandsFor } from '../src/discord/commands.mjs';
 
 const e = (v: unknown) => String(v).replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -82,7 +82,7 @@ describe('command reference', () => {
       return subs.length ? subs.flatMap((o) => leaves(o, `${prefix} ${o.name}`)) : [prefix];
     };
     for (const path of commands.flatMap((c) => leaves(c, `/${c.name}`)))
-      expect(html.split(`<dt><code>${path}`).length - 1, path).toBe(1);
+      expect(html.split(`<dt><code>${path}`).length - 1, path).toBe(hidden.has(path) ? 0 : 1);
     expect([...html.matchAll(/<h2>(.*?)<\/h2>/g)].map((m) => m[1])).toEqual(groups.map(([g]) => g));
     expect(html.indexOf('/add')).toBeLessThan(html.indexOf('<h2>Captains'));
     expect(html.indexOf('/report')).toBeGreaterThan(html.indexOf('<h2>Captains'));

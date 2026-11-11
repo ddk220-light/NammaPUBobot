@@ -18,7 +18,7 @@ const audience = {
   '/test': 'Organizers',
 };
 // Voice features are hidden for the first release, so their one command is left off the page.
-const hidden = new Set(['/manage queue rally']);
+export const hidden = new Set(['/manage queue rally']);
 // Plainer one-liners than the 100-character Discord descriptions; unknown commands keep theirs.
 const plain = {
   '/help': 'How to join, play and report matches in this channel.',
