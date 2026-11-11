@@ -23,7 +23,7 @@ These private replies remain because they serve a purpose beyond acknowledging a
 | Choosing a queue, side/stake, or confirming back-out | The user still needs to supply input or confirm a disruptive action; completed owned private panels are removed |
 | Civilization choice receipt | The chosen civilization is hidden on the public card until the reveal |
 | Personal bet/cancel panel | Own stake, balance and cancellation controls are not the public aggregate pool; the existing owned panel updates in place |
-| `/teams`, `/maps show`, `/lobby status`, rank/profile/leaderboard/gold queries | These answer an explicit information request and do not publish a second channel update |
+| `/help`, `/teams`, `/lobby status`, rank/profile/leaderboard/gold queries | These answer an explicit information request and do not publish a second channel update |
 | Profile linking/unlinking, rating seed/hide/unhide/sync, access restrictions/forgiveness | The mapping, access change or administrative outcome is not recorded on the main channel card |
 | Setup status/web link | Configuration diagnostics and organizer navigation have no matching public update |
 

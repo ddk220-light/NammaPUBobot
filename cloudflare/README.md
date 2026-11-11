@@ -39,12 +39,12 @@ Detailed administrator commands are grouped under `/manage` with Setup, Queue, M
 
 - `/manage setup`: `status`, `web`.
 - `/manage queue`: `add`, `remove`, `start`, `clear`, `split`, `rally`.
-- `/manage match`: `cancel`, `report`, `undo`, `recover`, `substitute`, `put`, `record`, `maps-redo`, `close-betting`.
+- `/manage match`: `cancel`, `report`, `undo`, `recover`, `substitute`, `sub-from-queue`, `put`, `record`, `maps-redo`, `close-betting`.
 - `/manage player`: `seed`, `hide`, `unhide`, `sync`, `restrict`, `unrestrict`.
 
 `cancel` immediately cancels an unfinished match; `record` records an already-played game. `restrict` temporarily blocks queue entry, and `unrestrict` removes that block. Optional maps, predictions and rally still require their feature configuration. Match administration uses an explicit match ID from the web organizer. Queue creation and configuration remain in the web app opened by `/manage setup web`.
 
-Everyday player/captain commands and card buttons keep their existing names, including `/add`, `/remove`, `/report loss`, `/report abort`, `/maps redo` and `/predictions close`.
+Members see a short list: `/help`, `/add`, `/remove`, `/queue show|start`, `/teams`, `/report loss|draw|abort`, `/subme`, `/subfor`, `/rank`, `/leaderboard`, `/gold` (views: balance, history, richest, predictors), `/profile link|unlink|show|verify|hide|unhide`, `/lobby list|attach|unlink|status|confirm|facts|replays`, `/civpick` and `/admin`. `/help` privately explains joining, check-in, reporting, ratings, account linking and hiding; organizers also get pointers to `/admin`, `/manage` and the web console. Organizer tools that used to be separate commands live under `/manage`: rally is `/manage queue rally`, replacing a player from the queue is `/manage match sub-from-queue` (players use the card's substitute buttons), map redo is `/manage match maps-redo` and closing betting is `/manage match close-betting`. Map choices show on `/teams`, and the predictions board is `/gold view:predictors`.
 
 ## Optional engagement
 
@@ -54,9 +54,9 @@ The optional Thursday tax is off by default, protects 500 gold, grants initial s
 
 **Stories:** short game-agnostic pre/post-match text for 3+ win streaks, established rivalries, successful duos and repeated lineups. Saved story facts make post-match payoffs reproducible. One- and two-win streaks are omitted. No audio or paid AI service is required.
 
-**Maps:** off by default. AoE2 gets a starter pool; other games use organizer-entered names. Choose random, captain/admin pick, or player vote; select 1–5 maps, plurality/approval voting, tie/no-vote policy, duration and recent-map avoidance. A chosen list belongs to one rated match; per-map series scoring is not included. Voting can count as check-in. Saved rounds survive restarts, and roster changes invalidate old controls. `/maps show` and `/maps redo` are available.
+**Maps:** off by default. AoE2 gets a starter pool; other games use organizer-entered names. Choose random, captain/admin pick, or player vote; select 1–5 maps, plurality/approval voting, tie/no-vote policy, duration and recent-map avoidance. A chosen list belongs to one rated match; per-map series scoring is not included. Voting can count as check-in. Saved rounds survive restarts, and roster changes invalidate old controls. `/teams` shows the chosen maps; organizers redo them with `/manage match maps-redo`.
 
-**Voice presence:** optional queue previews show up to five recent public voice participants who are neither queued nor playing, refreshed every five minutes without notification pings. The queue **Ping** button sends a separate invitation to eligible public voice participants, with a server-wide five-minute cooldown. `/rally` uses the same shared voice-only Gateway adapter to invite eligible members with bounded mentions/cooldown. Neither feature processes audio. The connection stops ten minutes after the last preview refresh, or an hour after the last rally request, whichever is later. Outbound sockets have duration cost and do not hibernate; the adapter supports one shard only. See [voice previews and cost](docs/voice-preview.md).
+**Voice presence:** optional queue previews show up to five recent public voice participants who are neither queued nor playing, refreshed every five minutes without notification pings. The queue **Ping** button sends a separate invitation to eligible public voice participants, with a server-wide five-minute cooldown. `/manage queue rally` uses the same shared voice-only Gateway adapter to invite eligible members with bounded mentions/cooldown. Neither feature processes audio. The connection stops ten minutes after the last preview refresh, or an hour after the last rally request, whichever is later. Outbound sockets have duration cost and do not hibernate; the adapter supports one shard only. See [voice previews and cost](docs/voice-preview.md).
 
 ## Deploy your own copy
 
@@ -88,7 +88,7 @@ Operational backup/restore is private, bearer-protected and separate from commun
 
 The workerd suite uses real SQLite Durable Objects and mocked Discord transport. It covers queue races, readiness, substitutions, stale controls, expiry, restart recovery, money invariants, map votes, story snapshots and tenant isolation. The 1,000-community local rehearsal checks isolation; its timing is not production latency or billing evidence. Live Discord/web acceptance is recorded separately under `ops/`.
 
-Game API polling is off by default and runs only for attached active games with a supported connector enabled. No paid AI generation, voice audio or always-live game socket is started. `/lobby link`, `/lobby attach`, `/lobby status` and `/lobby unlink` use the shared game journey. `/connectors/game-ended` is an optional authenticated, binding-checked prompt hook; it never records a result or closes betting.
+Game API polling is off by default and runs only for attached active games with a supported connector enabled. No paid AI generation, voice audio or always-live game socket is started. `/profile link`, `/lobby attach`, `/lobby status` and `/lobby unlink` use the shared game journey. `/connectors/game-ended` is an optional authenticated, binding-checked prompt hook; it never records a result or closes betting.
 
 `npm run cost:check -- BILLING_SNAPSHOT.json` validates the requested $50 cumulative migration warning. It needs dated project-attributed billing data, including storage/backups and staging/production, excluding Railway. Null means unavailable. Connecting the collector/notification path remains a release gate if account access is unavailable; the helper alone is not active monitoring. Never infer actual cost from a load test or included allowances.
 
