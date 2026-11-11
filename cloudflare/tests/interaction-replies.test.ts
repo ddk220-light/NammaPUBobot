@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { deferInteractionReply, finishInteractionReply } from '../src/discord/interaction-replies';
+import {
+  deferInteractionReply,
+  finishInteractionReply,
+  publicUpdate,
+} from '../src/discord/interaction-replies';
 import { PlayError, type Reply } from '../src/domain/play';
 import type { Env } from '../src/env';
 import { harness } from './harness';
@@ -10,6 +14,10 @@ const token = 'synthetic-private-token';
 const original = `https://discord.com/api/v10/webhooks/${env.DISCORD_APPLICATION_ID}/${token}/messages/@original`;
 
 describe('interaction response lifecycle', () => {
+  it('uses the public request card as the receipt for win claims and declines', () => {
+    expect(publicUpdate('claim')).toBe(true);
+    expect(publicUpdate('decline')).toBe(true);
+  });
   it('acknowledges before slow work and deletes only the original response on public success', async () => {
     const jobs: Promise<unknown>[] = [];
     let finish!: (reply: Reply) => void;

@@ -1243,13 +1243,17 @@ export class PlayStore {
       : (['playing', 'check_in'].includes(m.state) && m.proposal?.id === round) ||
           !!m.endedProposals?.includes(round);
   }
-  /** Close the open captain request, leaving its card in place to show the outcome. */
+  /**
+   * Close the open captain request. A declined, expired or unanswered request keeps
+   * its card, edited to show the requester the outcome; otherwise the card is retired.
+   */
   private endProposal(m: Match, outcome: ProposalOutcome) {
     const p = m.proposal;
     if (!p) return;
     m.proposal = undefined;
     m.agreements = {};
     this.sql.exec("DELETE FROM deadlines WHERE match_id=? AND kind='proposal'", m.id);
+    if (!['declined', 'expired', 'auto'].includes(outcome)) return;
     m.endedProposals = [...(m.endedProposals ?? []), p.id].slice(-10);
     this.enqueue(`agreement:${m.id}:${p.id}`, m.queue.channelId, agreementCard(m, p, outcome));
   }
