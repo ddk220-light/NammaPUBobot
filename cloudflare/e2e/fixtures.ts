@@ -76,6 +76,8 @@ export async function mockApp(page: Page) {
     playerActions: [] as Record<string, unknown>[],
     matchState: 'playing',
     waitingCount: 0,
+    retryAfter: '',
+    sessionExpired: false,
   };
   const player = {
     id: user,
@@ -170,14 +172,22 @@ export async function mockApp(page: Page) {
       message:
         state.access === 'ready'
           ? 'Discord access verified.'
-          : 'Invite the bot or restore access, then check again.',
+          : state.access === 'unavailable'
+            ? 'Discord could not verify access. Your saved settings are available; retry shortly.'
+            : 'Invite the bot or restore its server access, then check again.',
       manageRoles: state.manageRoles,
       manageNicknames: state.manageNicknames,
+      ...(state.retryAfter ? { retryAfter: state.retryAfter } : {}),
     },
   });
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
+    if (state.sessionExpired && path !== '/api/bootstrap')
+      return json(
+        { code: 'sign_in_required', error: 'Sign in with Discord.', requestId: 'test-expired' },
+        401,
+      );
     if (path === '/api/bootstrap')
       return json({
         environment: 'staging',

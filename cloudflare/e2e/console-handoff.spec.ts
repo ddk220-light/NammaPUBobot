@@ -61,7 +61,7 @@ test('guide survives failed save and return from Discord without falsely complet
   await page.getByRole('button', { name: 'Save reviewed changes' }).click();
   await expect(page.locator('#savebar')).toBeVisible();
   await expect(page.locator('[data-guide-queue] [name="name"]')).toHaveValue('Keep this queue');
-  state.access = 'unavailable';
+  state.access = 'needs_access';
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Recheck access', exact: true }).click();
@@ -70,7 +70,7 @@ test('guide survives failed save and return from Discord without falsely complet
     (el as HTMLElement).click();
   });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.locator('.guided-setup')).toContainText('unavailable');
+  await expect(page.locator('.guided-setup')).toContainText('The bot is not in this server yet');
   await expect(page.locator('#view-setup')).not.toContainText('Ready to play');
   await expect(page.locator('#savebar')).toBeVisible();
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
