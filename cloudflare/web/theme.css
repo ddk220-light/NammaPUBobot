@@ -3103,3 +3103,100 @@ body.organizer {
     margin: 0;
   }
 }
+
+/* First-release surface: beta labels, Advanced groups, durations and plain summaries. */
+.beta-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.advanced-settings {
+  border-top: 1px solid var(--divider);
+}
+.advanced-settings > summary,
+.advanced-tools > summary {
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.connector-details .advanced-settings > summary,
+.advanced-tools > summary {
+  padding: 0;
+}
+.setting-title > .setting-label {
+  display: block;
+}
+.duration-control {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.duration-control input[data-duration-amount] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.duration-control select {
+  flex: 0 1 9rem;
+  min-width: 0;
+}
+.page-note {
+  margin: 8px 0 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  border-radius: 4px;
+  font-size: 14px;
+}
+.game-settings .connector-settings {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.connector-details > summary {
+  color: var(--accent);
+  font-weight: 600;
+  cursor: pointer;
+}
+.connector-summary {
+  margin: 8px 0 0;
+  font-weight: 600;
+}
+.paused-players {
+  margin-top: 16px;
+}
+.paused-players p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.game-picker button strong,
+.game-choice-status {
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: manual;
+}
+.game-choice-status {
+  font-size: 12px;
+  line-height: 1.35;
+}
+@media (max-width: 900px) {
+  .advanced-settings > summary {
+    padding: 0 16px;
+  }
+  .game-settings .advanced-settings > summary,
+  .game-settings .connector-settings {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}

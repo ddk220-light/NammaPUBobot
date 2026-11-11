@@ -90,7 +90,7 @@ function playerDetails(p: PlayerStatistics) {
     <p class="form-help">${p.eligible ? 'Included in this game’s leaderboard.' : 'Does not meet this game’s leaderboard requirements.'}</p></div>
 
     <div data-profile-panel="details">    <h3>Played civilizations / factions</h3>
-    <p class="form-help">Recorded from linked game profiles. Win rate is wins / completed games, including draws. Legacy inferred links remain suggestions until confirmed with /lobby link; /profile unlink removes an incorrect link.</p>
+    <p class="form-help">Recorded from linked game profiles. Win rate is wins / completed games, including draws. Links suggested automatically stay suggestions until the player confirms them with /lobby link; /profile unlink removes a wrong link.</p>
     ${p.civilizations?.length ? `<div class="table-wrap"><table><thead><tr><th>Civilization / faction</th><th>Games</th><th>W / L / D</th><th>Win rate</th><th>Inferred identity</th></tr></thead><tbody>${p.civilizations.map((c) => `<tr><td>${esc(c.selection)}</td><td>${c.games}</td><td>${c.wins} / ${c.losses} / ${c.draws}</td><td>${((100 * c.wins) / c.games).toFixed(1)}%</td><td>${c.inferred}</td></tr>`).join('')}</tbody></table></div>` : '<p>No civilizations or factions recorded yet. Unlinked games remain playable.</p>'}
     </div><div data-profile-panel="history"><h3>Recent rating history</h3>${ratingChart(p)}
     ${p.history.length ? `<div class="table-wrap"><table><caption class="sr-only">Recent rating changes for ${esc(p.name)}</caption><thead><tr><th scope="col">Date</th><th scope="col" class="numeric">Before</th><th scope="col" class="numeric">After</th><th scope="col">Reason</th></tr></thead><tbody>${p.history.map((c) => `<tr><td>${date(c.changed_at)}</td><td class="numeric">${c.before}</td><td class="numeric">${c.after}</td><td>${esc(c.reason ?? 'Match or administrator adjustment')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty-state">No rating changes recorded.</p>'}
@@ -108,11 +108,20 @@ function playerDetails(p: PlayerStatistics) {
   </div></section>`;
 }
 
+/** The environment badge is for test and local builds only; production shows nothing. */
+export function showEnvironment(environment: string) {
+  const badge = document.querySelector<HTMLElement>('#environment');
+  if (!badge) return;
+  badge.hidden = !environment || environment === 'production';
+  badge.textContent = badge.hidden
+    ? ''
+    : ({ staging: 'Staging', local: 'Local' }[environment] ?? environment);
+}
 export async function showStats(app: HTMLElement) {
   document.body.classList.add('public-statistics');
   document.title = `${identity.publicName} — statistics`;
   const bootstrap = await requestJson<{ environment: string; version: string }>('/api/bootstrap');
-  document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
+  showEnvironment(bootstrap.environment);
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
   const query = new URL(location.href).searchParams,
     community = query.get('community'),
