@@ -1285,6 +1285,7 @@ export const ORGANIZER_EXCLUDED = [
   'outbox',
   'play_actions',
   'record_actions',
+  'test_entries',
 ];
 export const RESTORE_WINDOW_MS = 30 * 86400000;
 export type PointInTime = {

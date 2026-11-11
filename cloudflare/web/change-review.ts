@@ -26,6 +26,7 @@ const labels: Record<string, string> = {
   voicePreview: 'Refresh voice availability',
   taxMinuteUtc: 'Thursday tax time (UTC minutes)',
   records: 'Leaderboard and ranks',
+  earlyStart: 'Who can start a match before the queue is full',
 };
 const human = (key: string) =>
   labels[key] ??
@@ -63,6 +64,7 @@ function effective(settings: Settings): Settings {
       ratingSettings: q.ratingSettings ?? defaultRatingSettings,
       checkIn: { reuseSeconds: 900, ...q.checkIn },
       autoStart: q.autoStart ?? true,
+      earlyStart: q.earlyStart ?? 'moderators',
       isDefault: q.isDefault ?? false,
       aliases: q.aliases ?? [],
       adminRoles: q.adminRoles ?? [],

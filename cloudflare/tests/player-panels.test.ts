@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Queue } from '../src/domain/config';
 import type { Match } from '../src/domain/play';
 import type { Player } from '../src/domain/rating';
-import { substitutionPanel } from '../src/discord/player-panels';
+import { reportPanel, substitutePrompt, substitutionPanel } from '../src/discord/player-panels';
 
 const player = (n: number): Player => ({
   id: String(100000000000000100n + BigInt(n)),
@@ -130,5 +130,46 @@ describe('private substitution panels', () => {
     }
     expect(panel.content).not.toContain(m.id);
     expect(panel.content).not.toMatch(/\/sub|\/add|\/remove/);
+  });
+});
+
+describe('private report and substitute prompts', () => {
+  const ids = (panel: { components: { components: { custom_id?: string }[] }[] }) =>
+    panel.components.flatMap((row) => row.components.map((c) => c.custom_id));
+  it('offers captains four results and organizers their own admin controls', () => {
+    const m = match();
+    expect(ids(reportPanel(m, m.captains[1], false))).toEqual(
+      ['confirm_loss', 'claim', 'draw', 'abort'].map((k) => `m:${m.id}:12:${k}`),
+    );
+    expect(reportPanel(m, m.captains[1], false).content).toContain('You’re Beta’s captain');
+    const organizer = reportPanel(m, player(99).id, true);
+    expect(ids(organizer)).toEqual(
+      ['alpha_loss', 'beta_loss', 'draw', 'cancel'].map(
+        (op) => `adm:${player(99).id}:${op}:${m.id}:12`,
+      ),
+    );
+    expect(organizer.content).toContain('You’ll confirm before anything changes');
+    const other = reportPanel(m, player(1).id, false);
+    expect(other.components).toEqual([]);
+    expect(other.content).toContain(`Alpha’s captain is <@${m.captains[0]}>`);
+    expect(reportPanel({ ...m, state: 'finished' }, m.captains[0], true).components).toEqual([]);
+    for (const panel of [organizer, reportPanel(m, m.captains[0], true)])
+      for (const row of panel.components) expect(row.components.length).toBeLessThanOrEqual(5);
+  });
+  it('confirms Sub me with the waiting substitute, or explains why it cannot', () => {
+    const m = match();
+    expect(substitutePrompt(m, player(1).id, { id: player(8).id, name: 'Sam_*' })).toEqual({
+      content: 'Leave this match? Sam\\_\\* will take your place on Alpha.',
+      components: [
+        {
+          type: 1,
+          components: [
+            { type: 2, style: 4, label: 'Leave match', custom_id: `m:${m.id}:12:confirm_sub` },
+          ],
+        },
+      ],
+    });
+    expect(substitutePrompt(m, player(1).id).content).toContain('No eligible substitute');
+    expect(substitutePrompt(m, player(9).id, { id: '1', name: 'x' }).components).toEqual([]);
   });
 });
