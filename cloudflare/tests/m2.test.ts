@@ -393,7 +393,8 @@ describe('durable queue and match journey', () => {
 
 describe('delivery and signed surfaces', () => {
   it('coalesces queue changes and persists unsent work across restart', async () => {
-    await setup();
+    // Saving publishes every enabled queue's first card; observe one channel's delivery.
+    await setup({ ...settings, queues: [settings.queues[0]] });
     await act('add', 0);
     await act('add', 1);
     await abortAllDurableObjects();
@@ -437,7 +438,8 @@ describe('delivery and signed surfaces', () => {
     expect(await gate.reserve('another_channel')).toBeGreaterThan(Date.now());
   });
   it('blocks missing-permission delivery, stops paid retries, and permits an explicit card refresh after repair', async () => {
-    await setup();
+    // Saving publishes every enabled queue's first card; observe one channel's delivery.
+    await setup({ ...settings, queues: [settings.queues[0]] });
     await act('add', 0);
     vi.mocked(fetch).mockImplementationOnce(async () => Response.json({}, { status: 403 }));
     await runInDurableObject(stub(), (_i, s) => {
@@ -459,7 +461,8 @@ describe('delivery and signed surfaces', () => {
     expect((await stub().records(guild)).delivery).toHaveLength(0);
   });
   it('reconciles an ambiguous create rather than duplicating its public card', async () => {
-    await setup();
+    // Saving publishes every enabled queue's first card; observe one channel's delivery.
+    await setup({ ...settings, queues: [settings.queues[0]] });
     await act('add', 0);
     const footer = `Community Games · queue:${queue}:g1`;
     vi.mocked(fetch)

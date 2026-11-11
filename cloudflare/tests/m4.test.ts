@@ -263,6 +263,8 @@ describe('historical reconciliation and corrections', () => {
       });
   it('reconciles historical counters, source IDs, timestamps, ratings and idempotent manifests across restart', async () => {
     await setup();
+    // The saved queue's first card is the only delivery; the import must add none.
+    const queued = (await stub().records(guild)).delivery.length;
     const b = history();
     await apply(b);
     await abortAllDurableObjects();
@@ -281,7 +283,7 @@ describe('historical reconciliation and corrections', () => {
     });
     expect(stats.player?.recent).toHaveLength(1);
     expect((await apply(b)).alreadyApplied).toBe(true);
-    expect((await stub().records(guild)).delivery).toHaveLength(0);
+    expect((await stub().records(guild)).delivery).toHaveLength(queued);
   });
   it('reverses imported original deltas without inventing a new historical calculation', async () => {
     await setup();
