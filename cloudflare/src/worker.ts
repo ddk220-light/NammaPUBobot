@@ -29,10 +29,12 @@ import type { FieldIssue } from './domain/errors';
 import { GameAccountError } from './auth/game-accounts';
 import { gameAccountRoutes } from './routes/game-accounts';
 import { runtimeAdapter, connectorAvailability } from './games/runtime';
+import { touchCommunity } from './storage/community-index';
 export { PublicDirectory } from './storage/public-directory';
 export { ProviderCoordinator } from './storage/provider-coordinator';
 export { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 export { Community } from './storage/community';
+import { EXPORT_PAGE_ROWS, type Community } from './storage/community';
 export { AuthStore } from './storage/auth';
 export { DiscordGate } from './storage/discord-gate';
 export { VoicePresence } from './storage/voice-presence';
@@ -245,7 +247,8 @@ app.use('/api/*', async (c, next) => {
   if (
     (await overLimit(c, 'api', key)) ||
     (write && (await overLimit(c, 'write', key))) ||
-    (write && c.req.path.includes('/import/') && (await overLimit(c, 'import', key)))
+    ((write ? c.req.path.includes('/import/') : c.req.path.endsWith('/export')) &&
+      (await overLimit(c, 'import', key)))
   )
     return tooMany(c, false);
   await next();
@@ -326,6 +329,50 @@ app.use('/ops/*', async (c, next) => {
   c.header('Cache-Control', 'no-store');
   await next();
 });
+/** Streams `{...head, "tables": {name: [rows]}}` page by page so no table size is ever held at once. */
+function exportResponse(
+  stub: DurableObjectStub<Community>,
+  guild: string,
+  manifest: { tables: { name: string }[]; scope: 'operator' | 'organizer' },
+  head: Record<string, unknown>,
+  filename?: string,
+) {
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter(),
+    encoder = new TextEncoder(),
+    write = (text: string) => writer.write(encoder.encode(text));
+  (async () => {
+    try {
+      await write(JSON.stringify(head).slice(0, -1) + ',"tables":{');
+      for (const [index, { name }] of manifest.tables.entries()) {
+        await write(`${index ? ',' : ''}${JSON.stringify(name)}:[`);
+        let first = true;
+        for (let after: number | null = 0; after !== null;) {
+          const page = await stub.exportPage(guild, name, after, EXPORT_PAGE_ROWS, manifest.scope);
+          if (page.rows.length) {
+            await write((first ? '' : ',') + page.rows.map((r) => JSON.stringify(r)).join(','));
+            first = false;
+          }
+          after = page.next;
+        }
+        await write(']');
+      }
+      await write('}}\n');
+      await writer.close();
+    } catch (error) {
+      // A truncated body is invalid JSON, so a failed export can never pass as complete.
+      console.error(JSON.stringify({ ops: 'export_failed', guild, scope: manifest.scope }));
+      await writer.abort(error);
+    }
+  })();
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...(filename ? { 'Content-Disposition': `attachment; filename="${filename}"` } : {}),
+    },
+  });
+}
 function operationalCommunity(c: Context<App>) {
   const guild = snowflake.parse(c.req.param('guild'));
   const copy = c.req.query('copy');
@@ -430,9 +477,119 @@ app.get('/ops/aoe2/lobbies/:id', async (c) => {
     await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').query(id),
   );
 });
+app.get('/ops/communities', async (c) => {
+  if (!c.env.PUBLIC_DIRECTORY)
+    throw new Problem(503, 'directory_unavailable', 'The community index is not configured.');
+  const limit = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .parse(c.req.query('limit') ?? 100);
+  const cursor = z
+    .string()
+    .regex(/^\d+:\d{17,20}$/)
+    .optional()
+    .parse(c.req.query('cursor'));
+  return c.json(await c.env.PUBLIC_DIRECTORY.getByName('directory').communities(limit, cursor));
+});
+// Same artifact shape as the former single-read backup, streamed page by page with no row cap.
 app.get('/ops/communities/:guild/backup', async (c) => {
   const { guild, stub } = operationalCommunity(c);
-  return c.json(await stub.operationalBackup(guild));
+  const manifest = await stub.exportManifest(guild, 'operator');
+  const { format, communityId, sourceApplicationId, createdAt } = manifest;
+  return exportResponse(stub, guild, manifest, {
+    format,
+    communityId,
+    sourceApplicationId,
+    createdAt,
+  });
+});
+app.get('/ops/communities/:guild/export', async (c) => {
+  const { guild, stub } = operationalCommunity(c);
+  return c.json(await stub.exportManifest(guild, 'operator'));
+});
+app.get('/ops/communities/:guild/export/:table', async (c) => {
+  const { guild, stub } = operationalCommunity(c);
+  const table = z
+    .string()
+    .regex(/^[a-z_]{1,64}$/)
+    .parse(c.req.param('table'));
+  const after = z.coerce
+    .number()
+    .int()
+    .min(0)
+    .parse(c.req.query('after') ?? 0);
+  const limit = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(EXPORT_PAGE_ROWS)
+    .parse(c.req.query('limit') ?? EXPORT_PAGE_ROWS);
+  if (!(await stub.exportManifest(guild, 'operator')).tables.some((t) => t.name === table))
+    throw new Problem(404, 'unknown_table', 'This community has no such table.');
+  return c.json(await stub.exportPage(guild, table, after, limit, 'operator'));
+});
+app.get('/ops/communities/:guild/notes', async (c) => {
+  const { guild } = operationalCommunity(c);
+  return c.json({
+    notes: (await c.env.PUBLIC_DIRECTORY?.getByName('directory').notes(guild)) ?? [],
+  });
+});
+app.post('/ops/communities/:guild/restore-to', async (c) => {
+  const { guild, stub } = operationalCommunity(c);
+  const input = z
+    .object({
+      time: z
+        .string()
+        .max(40)
+        .refine((t) => /^\d{4}-\d\d-\d\dT/.test(t) && !Number.isNaN(Date.parse(t)), {
+          message: 'Use an ISO timestamp such as 2026-11-10T18:00:00Z.',
+        })
+        .optional(),
+      bookmark: z.string().max(200).optional(),
+      confirm: z.string(),
+      reason: z.string().trim().max(500).optional(),
+    })
+    .strict()
+    .parse(await readJson(c.req.raw));
+  if (input.confirm !== guild)
+    throw new Problem(400, 'confirm_required', 'Set confirm to the server ID being restored.');
+  const armed = await stub.armPointInTimeRestore(guild, {
+    ...(input.time ? { time: Date.parse(input.time) } : {}),
+    ...(input.bookmark ? { bookmark: input.bookmark } : {}),
+  });
+  if (!armed.ok) throw new Problem(409, 'restore_refused', armed.error);
+  const record = {
+    requestId: c.get('requestId'),
+    copy: c.req.query('copy') ?? null,
+    requested: input.time ?? input.bookmark,
+    restoredTo: armed.bookmark,
+    undoBookmark: armed.undoBookmark,
+    previousBookmark: armed.from,
+    reason: input.reason ?? null,
+  };
+  // The note lives outside community storage; the restore cannot rewind it.
+  let noted = true;
+  try {
+    await c.env.PUBLIC_DIRECTORY!.getByName('directory').note(guild, 'restore_to', record);
+  } catch {
+    noted = false;
+  }
+  console.log(JSON.stringify({ ops: 'restore_to', guild, noted, ...record }));
+  try {
+    await stub.restart();
+  } catch {
+    // Aborting the object surfaces to this caller as an error; that is the expected outcome.
+  }
+  return c.json({
+    ok: true,
+    communityId: guild,
+    restoredTo: armed.bookmark,
+    undoBookmark: armed.undoBookmark,
+    noted,
+    undo: { bookmark: armed.undoBookmark, confirm: guild },
+  });
 });
 app.get('/ops/communities/:guild/checkpoint', async (c) => {
   const { guild, stub } = operationalCommunity(c);
@@ -790,7 +947,8 @@ app.use('/api/communities/:guild/*', async (c, next) => {
     await sessionGuilds(
       c,
       { id: c.get('sessionId'), session: c.get('session') },
-      !['GET', 'HEAD'].includes(c.req.method),
+      // Writes and the full data download recheck Discord; other reads may use the short cache.
+      !['GET', 'HEAD'].includes(c.req.method) || c.req.path.endsWith('/export'),
     )
   ).find((g) => g.id === guildId);
   if (!guild || !canManage(guild))
@@ -918,6 +1076,26 @@ app.get('/api/communities/:guild/records', async (c) => {
       game,
       playersPage,
     ),
+  );
+});
+app.get('/api/communities/:guild/export', async (c) => {
+  const guild = c.req.param('guild'),
+    stub = c.env.COMMUNITIES.getByName(guild);
+  const { tables, excluded, schemaVersion, createdAt } = await stub.exportManifest(
+    guild,
+    'organizer',
+  );
+  return exportResponse(
+    stub,
+    guild,
+    { tables, scope: 'organizer' },
+    {
+      format: 1,
+      kind: 'community-data-export',
+      communityId: guild,
+      manifest: { schemaVersion, exportedAt: createdAt, tables, excluded },
+    },
+    `community-${guild}-${createdAt.slice(0, 10)}.json`,
   );
 });
 app.post('/api/communities/:guild/import/preview', async (c) => {
@@ -1203,6 +1381,17 @@ app.put('/api/communities/:guild/config', async (c) => {
         'Settings changed in another tab. Refresh before saving.',
       'issues' in result ? result.issues : [],
     );
+  touchCommunity(
+    c.env,
+    guildId,
+    {
+      kind: 'settings',
+      hasSettings: !!(
+        result.snapshot.settings.games.length || result.snapshot.settings.queues.length
+      ),
+    },
+    c.executionCtx,
+  );
   return c.json(result.snapshot);
 });
 app.all('/api/*', (c) =>

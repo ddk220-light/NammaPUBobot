@@ -1,0 +1,131 @@
+{
+  "result": [
+    {
+      "id": "98de744f3cff8a05a5d62e039ea73b82",
+      "name": "community-gaming-staging_AuthStore",
+      "script": "community-gaming-staging",
+      "class": "AuthStore",
+      "use_sqlite": true
+    },
+    {
+      "id": "43a43f9c49d0b242e2a70840a06ae23b",
+      "name": "community-gaming-staging_Community",
+      "script": "community-gaming-staging",
+      "class": "Community",
+      "use_sqlite": true
+    },
+    {
+      "id": "c3dfa39fc08d6c9c74c0411d4aee9ab1",
+      "name": "community-gaming-staging_DiscordGate",
+      "script": "community-gaming-staging",
+      "class": "DiscordGate",
+      "use_sqlite": true
+    },
+    {
+      "id": "5726bf59c40a3ce0b3ebd8acc9cb512d",
+      "name": "community-gaming-staging_VoicePresence",
+      "script": "community-gaming-staging",
+      "class": "VoicePresence",
+      "use_sqlite": true
+    },
+    {
+      "id": "b0d36e67c18670636cd997c0431207e9",
+      "name": "community-gaming-rehearsal_AuthStore",
+      "script": "community-gaming-rehearsal",
+      "class": "AuthStore",
+      "use_sqlite": true
+    },
+    {
+      "id": "91990e44d3e836b4a249f6f7679a3b79",
+      "name": "community-gaming-rehearsal_Community",
+      "script": "community-gaming-rehearsal",
+      "class": "Community",
+      "use_sqlite": true
+    },
+    {
+      "id": "144b89928d28db4da9641ea6d56085c4",
+      "name": "community-gaming-rehearsal_DiscordGate",
+      "script": "community-gaming-rehearsal",
+      "class": "DiscordGate",
+      "use_sqlite": true
+    },
+    {
+      "id": "3d7f9a33b2f3fdeac439e434a22bc126",
+      "name": "community-gaming-rehearsal_VoicePresence",
+      "script": "community-gaming-rehearsal",
+      "class": "VoicePresence",
+      "use_sqlite": true
+    },
+    {
+      "id": "6ee993c355569bd5f12de56c84b07dd4",
+      "name": "community-gaming-staging_AoE2LobbyFeed",
+      "script": "community-gaming-staging",
+      "class": "AoE2LobbyFeed",
+      "use_sqlite": true
+    },
+    {
+      "id": "7ea5c0fe631e250d248fad5bad62c21e",
+      "name": "namma-matchbot-pr49-preview_VoicePresence",
+      "script": "namma-matchbot-pr49-preview",
+      "class": "VoicePresence",
+      "use_sqlite": true
+    },
+    {
+      "id": "876098793b92c335f9476d3d4de9f93b",
+      "name": "namma-matchbot-pr49-preview_ProviderCoordinator",
+      "script": "namma-matchbot-pr49-preview",
+      "class": "ProviderCoordinator",
+      "use_sqlite": true
+    },
+    {
+      "id": "5334a3e181e2734ffb178e9699b3290c",
+      "name": "namma-matchbot-pr49-preview_PublicDirectory",
+      "script": "namma-matchbot-pr49-preview",
+      "class": "PublicDirectory",
+      "use_sqlite": true
+    },
+    {
+      "id": "dedb793e4c01a37461547f9e42705c1f",
+      "name": "namma-matchbot-pr49-preview_AoE2LobbyFeed",
+      "script": "namma-matchbot-pr49-preview",
+      "class": "AoE2LobbyFeed",
+      "use_sqlite": true
+    },
+    {
+      "id": "23d93573005008a407fd9ec67f88ee0b",
+      "name": "namma-matchbot-pr49-preview_AuthStore",
+      "script": "namma-matchbot-pr49-preview",
+      "class": "AuthStore",
+      "use_sqlite": true
+    },
+    {
+      "id": "6109d26b351bbccf9e9dd91fb1693198",
+      "name": "namma-matchbot-pr49-preview_Community",
+      "script": "namma-matchbot-pr49-preview",
+      "class": "Community",
+      "use_sqlite": true
+    },
+    {
+      "id": "ffee3b491678a5a52e67821775f36064",
+      "name": "namma-matchbot-pr49-preview_DiscordGate",
+      "script": "namma-matchbot-pr49-preview",
+      "class": "DiscordGate",
+      "use_sqlite": true
+    },
+    {
+      "id": "1fce453f26c12c4087913b934958bd21",
+      "name": "community-gaming-staging_PublicDirectory",
+      "script": "community-gaming-staging",
+      "class": "PublicDirectory",
+      "use_sqlite": true
+    },
+    {
+      "id": "c2c49e238fa83dd83c8a006f0412a08d",
+      "name": "community-gaming-staging_ProviderCoordinator",
+      "script": "community-gaming-staging",
+      "class": "ProviderCoordinator",
+      "use_sqlite": true
+    }
+  ],
+  "success": true
+}

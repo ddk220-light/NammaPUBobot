@@ -1292,10 +1292,13 @@ function publicationEditor() {
       .join('') ?? ''
   }</section>`;
 }
+function yourDataBlock() {
+  return `<section class="panel" data-your-data><h2>Your data</h2><p>Download a JSON file with this server’s ${escape(identity.publicName)} settings, queues, matches, ratings, player records and gold history, plus a list of what it contains.</p><div class="actions"><a class="button" href="${communityUrl('export')}" download>Download community data</a></div></section>`;
+}
 function setupSection() {
   if (new URL(location.href).searchParams.has('guide'))
     return guidedSetup(draft!, setup, inviteUrls(), new URL(location.href), snapshot!);
-  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney() + gameEditors(draft!, setup, connectorDiagnostics) + permissionRecovery(draft!, setup, inviteUrls(), accessCheckedAt) + publicationEditor() + deleteCommunityForm(guilds.find((g) => g.id === guildId)?.name ?? 'this server')}`;
+  return `<div class="page-heading"><div><p class="eyebrow">Make it yours</p><h1>Setup</h1><p class="view-description">Games, shared ratings and Discord permissions.</p></div></div>${setupJourney() + gameEditors(draft!, setup, connectorDiagnostics) + permissionRecovery(draft!, setup, inviteUrls(), accessCheckedAt) + publicationEditor() + yourDataBlock() + deleteCommunityForm(guilds.find((g) => g.id === guildId)?.name ?? 'this server')}`;
 }
 
 function setupJourney() {
