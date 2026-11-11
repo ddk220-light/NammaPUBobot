@@ -34,6 +34,21 @@ import {
 const voiceInterval = 5 * 60 * 1000;
 const queueVisibilityInterval = 15 * 60 * 1000;
 type QueueVoiceCache = { due: number; observedAt: number; members: VoiceMember[] | null };
+// AbortSignal.timeout leaves its timer pending after the response, which holds the
+// invocation open for the full timeout. Read the body inside the bound, then clear it.
+async function discordFetch(url: string, { timeout, ...init }: RequestInit & { timeout: number }) {
+  const controller = new AbortController(),
+    timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const body = [101, 204, 205, 304].includes(response.status)
+      ? null
+      : await response.arrayBuffer();
+    return new Response(body, response);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 type Entry = { user_id: string; display_name: string };
 function calculate(m: Match, result: 0 | 1 | null) {
@@ -147,6 +162,7 @@ export function createPlayTables(sql: SqlStorage) {
 export class PlayStore {
   private flushing: Promise<void> | null = null;
   private resettingTest: Promise<Reply> | null = null;
+  private alarmRunning = false;
   constructor(
     private ctx: DurableObjectState,
     private env: Env,
@@ -587,11 +603,11 @@ export class PlayStore {
       const route = `channel:${channel}`;
       if ((await gate.reserve(route)) > Date.now()) continue;
       try {
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/channels/${channel}/messages?limit=5`,
           {
             headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-            signal: AbortSignal.timeout(5000),
+            timeout: 5000,
           },
         );
         if (response.status === 429) {
@@ -727,11 +743,11 @@ export class PlayStore {
       for (const candidate of presence.preview) {
         if ((await gate.reserve(route)) > Date.now())
           throw new PlayError('Discord is busy verifying queue eligibility. Try again shortly.');
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/guilds/${guild}/members/${candidate.userId}`,
           {
             headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-            signal: AbortSignal.timeout(1000),
+            timeout: 1000,
           },
         );
         await this.rateHeaders(response, route, gate);
@@ -899,11 +915,11 @@ export class PlayStore {
       const at = await gate.reserve(`members:${guild}`);
       if (at > Date.now()) break;
       try {
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/guilds/${guild}/members/${candidate.userId}`,
           {
             headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-            signal: AbortSignal.timeout(1000),
+            timeout: 1000,
           },
         );
         if (!response.ok) continue;
@@ -1462,11 +1478,11 @@ export class PlayStore {
           const route = `members:${guild}`;
           if ((await gate.reserve(route)) > Date.now())
             throw new Error('Membership checks are rate limited.');
-          const response = await fetch(
+          const response = await discordFetch(
             `https://discord.com/api/v10/guilds/${guild}/members/${id}`,
             {
               headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-              signal: AbortSignal.timeout(1000),
+              timeout: 1000,
             },
           );
           await this.rateHeaders(response, route, gate);
@@ -2818,11 +2834,11 @@ export class PlayStore {
           );
           continue;
         }
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/guilds/${guild}/members/${row.user_id}`,
           {
             headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-            signal: AbortSignal.timeout(1000),
+            timeout: 1000,
           },
         );
         if (response.status === 404) {
@@ -3237,42 +3253,55 @@ export class PlayStore {
     }
   }
   async alarm(guild: string) {
-    const session = this.ctx.storage.kv.get<RetiredTestSession>('testSession');
-    if (session && (session.cleaning || session.expiresAt <= Date.now())) {
-      await this.resetTest();
-      return;
+    this.alarmRunning = true;
+    try {
+      const session = this.ctx.storage.kv.get<RetiredTestSession>('testSession');
+      if (session && (session.cleaning || session.expiresAt <= Date.now())) {
+        await this.resetTest();
+        return;
+      }
+      const settings = this.read(guild).settings;
+      const due = this.sql
+        .exec<{ match_id: string }>(
+          "SELECT match_id FROM deadlines WHERE kind='check_in' AND due<=? LIMIT 32",
+          Date.now(),
+        )
+        .toArray();
+      await this.refreshCandidates(guild, [
+        ...settings.queues.filter((q) =>
+          due.some((row) => this.match(row.match_id).queue.id === q.id),
+        ),
+        ...due.map((row) => this.match(row.match_id).queue),
+      ]);
+      await this.ctx.storage.transaction(async () => {
+        this.expire(Date.now(), this.read(guild).settings);
+        if (!this.testMode) this.recordStore.decay(guild);
+        this.economy.tax();
+      });
+      await this.lobbies.poll(guild);
+      await this.returnPlayers(guild);
+      await this.refreshQueueVoice(guild);
+      await this.refreshQueueVisibility(guild);
+      await this.flush();
+    } finally {
+      this.alarmRunning = false;
+      await this.schedule('alarm');
     }
-    const settings = this.read(guild).settings;
-    const due = this.sql
-      .exec<{ match_id: string }>(
-        "SELECT match_id FROM deadlines WHERE kind='check_in' AND due<=? LIMIT 32",
-        Date.now(),
-      )
-      .toArray();
-    await this.refreshCandidates(guild, [
-      ...settings.queues.filter((q) =>
-        due.some((row) => this.match(row.match_id).queue.id === q.id),
-      ),
-      ...due.map((row) => this.match(row.match_id).queue),
-    ]);
-    await this.ctx.storage.transaction(async () => {
-      this.expire(Date.now(), this.read(guild).settings);
-      if (!this.testMode) this.recordStore.decay(guild);
-      this.economy.tax();
-      await this.schedule();
-    });
-    await this.lobbies.poll(guild);
-    await this.returnPlayers(guild);
-    await this.refreshQueueVoice(guild);
-    await this.refreshQueueVisibility(guild);
-    await this.schedule();
-    await this.flush();
   }
-  async schedule() {
+  /**
+   * One alarm drives every timer. alarm() re-arms exactly once, after its work: arming
+   * earlier, for work it is still about to do, starts a second overlapping invocation.
+   * A wake for an alarm can run before alarm() (the constructor), so outside the handler
+   * an already-due alarm is left alone; the handler re-arms when it finishes.
+   */
+  async schedule(from: 'request' | 'wake' | 'alarm' = 'request') {
     if (this.ctx.storage.kv.get('recoveryReadOnly')) {
       await this.ctx.storage.deleteAlarm();
       return;
     }
+    if (this.alarmRunning && from !== 'alarm') return;
+    const armed = from === 'alarm' ? null : await this.ctx.storage.getAlarm();
+    if (armed !== null && armed <= Date.now()) return;
     const session = this.ctx.storage.kv.get<RetiredTestSession>('testSession');
     const values = [
       ['deadlines', ''],
@@ -3315,7 +3344,13 @@ export class PlayStore {
     } else this.ctx.storage.kv.delete('queueVisibilityDue');
     const next = values.length ? Math.min(...values) : null;
     if (next !== null && next !== undefined)
-      await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next));
+      await this.ctx.storage.setAlarm(
+        // Due work at a wake with no alarm is usually the delivery now in flight; its handler re-arms.
+        Math.max(
+          Date.now() + (from === 'wake' && armed === null && next <= Date.now() ? 5000 : 50),
+          next,
+        ),
+      );
     else await this.ctx.storage.deleteAlarm();
   }
   records(guild: string, gameId?: string, playersPage = 0) {
@@ -3489,9 +3524,9 @@ export class PlayStore {
       const headers = { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` };
       try {
         if (!card.message_id && card.reconcile) {
-          const response = await fetch(
+          const response = await discordFetch(
             `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=100${card.reconcile_cursor ? `&before=${card.reconcile_cursor}` : ''}`,
-            { headers, signal: AbortSignal.timeout(5000) },
+            { headers, timeout: 5000 },
           );
           if (!response.ok) {
             await this.failed(work, route, response, gate);
@@ -3538,9 +3573,9 @@ export class PlayStore {
           continue;
         }
         if (card.message_id) {
-          const response = await fetch(
+          const response = await discordFetch(
             `https://discord.com/api/v10/channels/${card.channel_id}/messages/${card.message_id}`,
-            { method: 'DELETE', headers, signal: AbortSignal.timeout(5000) },
+            { method: 'DELETE', headers, timeout: 5000 },
           );
           if (!response.ok && response.status !== 404) {
             await this.failed(work, route, response, gate);
@@ -3736,9 +3771,9 @@ export class PlayStore {
             // Keep a recent card in place; publish and retire it only when it fell below the last five.
             let latest: { id: string }[];
             try {
-              const response = await fetch(
+              const response = await discordFetch(
                 `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=5`,
-                { headers, signal: AbortSignal.timeout(5000) },
+                { headers, timeout: 5000 },
               );
               if (!response.ok) {
                 if (response.status >= 500) await this.retry(work, 'queue_history_unavailable');
@@ -3772,9 +3807,9 @@ export class PlayStore {
           }
         }
         if (!card.message_id && card.reconcile) {
-          const check = await fetch(
+          const check = await discordFetch(
             `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=100${card.reconcile_cursor ? `&before=${card.reconcile_cursor}` : ''}`,
-            { headers, signal: AbortSignal.timeout(5000) },
+            { headers, timeout: 5000 },
           );
           if (!check.ok) {
             await this.failed(work, route, check, gate);
@@ -3957,13 +3992,13 @@ export class PlayStore {
             embed.footer = { text: this.testFooter(work.key) };
           }
         }
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/channels/${card.channel_id}/messages${card.message_id ? `/${card.message_id}` : ''}`,
           {
             method: work.key.startsWith('retire:') ? 'DELETE' : card.message_id ? 'PATCH' : 'POST',
             headers,
             body: work.key.startsWith('retire:') ? undefined : JSON.stringify(payload),
-            signal: AbortSignal.timeout(5000),
+            timeout: 5000,
           },
         );
         if (response.ok) {

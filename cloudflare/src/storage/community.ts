@@ -97,7 +97,7 @@ export class Community extends DurableObject<Env> {
       ctx.storage.kv.put('testSession', retiredTest);
     }
     // Adopt periodic queue visibility for existing communities on their next wake.
-    ctx.blockConcurrencyWhile(() => this.playStore.schedule());
+    ctx.blockConcurrencyWhile(() => this.playStore.schedule('wake'));
   }
 
   private migrate() {
