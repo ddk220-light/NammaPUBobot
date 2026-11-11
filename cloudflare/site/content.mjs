@@ -1,4 +1,7 @@
 import { gameCopy } from './game-copy.mjs';
+import { identity } from './load-identity.mjs';
+import { legalArticles } from './legal.mjs';
+const legal = legalArticles(identity);
 export const games = [
   [
     'aoe2',
@@ -88,7 +91,7 @@ export function landing(g) {
 <p>Optional connections are Beta. Setup shows whether they are Available, Configuration required, Awaiting activation or Unavailable. Their status does not change how players join a manual queue or report a result.</p>
 <h2>Questions before your first night</h2>
 <h3>${copy.question[0]}</h3><p>${copy.question[1]}</p>
-<h3>Is it free and open source?</h3><p>The software is free under GPL-3.0-only, and you can inspect it on <a href="https://github.com/ddk220-light/NammaPUBobot">GitHub</a>. Hosting and optional connection costs depend on the operator; see <a href="/terms/">hosted-service information</a> and <a href="/guides/self-hosting/">self-hosting</a>.</p>
+<h3>Is it free and open source?</h3><p>The software is free under GPL-3.0-only, and you can inspect it on <a href="https://github.com/ddk220-light/NammaPUBobot">GitHub</a>. Using the hosted bot costs nothing: there are no paid plans, charges or ads. See the <a href="/terms/">terms of use</a>, or <a href="/guides/self-hosting/">host your own copy</a>.</p>
 <h3>Can one server play several games?</h3><p>Yes. Choose from seven selectable games or create a custom game for manual reporting. Each configured game has its own records, while queues for that game share rating settings.</p>
 <h3>Will players appear in search engines?</h3><p>Search publishing is off by default and separate from public-by-link, members-only or administrator-only statistics. Organizers must explicitly publish a public leaderboard to make it searchable; hidden players remain excluded.</p>
 <h3>What if Discord or a game connection is unavailable?</h3><p>Saved settings and records remain available, and Setup explains how to recheck Discord access. Game connections are optional; use the manual reporting workflow once the bot can communicate in the selected channel.</p>
@@ -100,11 +103,7 @@ export function setup(g) {
   return `<p>Set up a community queue for ${g[2]} using saved settings and verified Discord permissions. Scope: ${g[3]}. Optional connections are Beta and may require configuration or activation.</p><ol><li>Open <a href="/app/">the dashboard</a>, sign in with Discord and select a server you can manage.</li><li>Open Setup and start guided setup. Invite the bot to the selected server, then return and check access.</li><li>Choose ${g[2]} from the supported game cards. This creates a draft; it does not publish a queue yet.</li><li>Choose a descriptive queue name, an accessible text channel, an even player count between 2 and 16, and captain, balanced or random teams.</li><li>Review check-in, permissions and the shared rating system. Existing same-game queues supply the shared policy. Do not change a locked rating engine.</li><li>Review changes and save. Resolve field errors or revision conflicts without discarding edits accidentally.</li><li>Open the configured channel and use <code>/add</code> or the queue card. Ask players to complete check-in, play, and confirm the result in Discord.</li></ol><h2>Verify the first match</h2><p>Saved configuration and verified permissions mean setup is ready; delivery can still be pending. Check Matches for a failed card delivery, correct the channel permissions, and use a supported refresh action. A missing provider observation does not stop manual reporting.</p><h2>Connection limitations</h2><p>${g[6]}</p><h2>If setup cannot finish</h2><p>Recheck the selected Discord account and Manage Server access. An invitation cannot repair a channel override or role order. Missing channels remain visible until corrected; cached names are unverified labels, not permission checks. A temporary Discord outage retains saved settings and drafts. Review <a href="/guides/discord-permissions/">permissions</a> and <a href="/guides/getting-started/">getting started</a> for recovery.</p><p><a href="/games/${g[1]}/">Read the ${g[2]} feature and workflow explanation</a>.</p>`;
 }
 export const articles = {
-  '/about/': [
-    'About Community Games',
-    'A community project for easier game nights.',
-    `<p>Our goal is to make community game nights easier to organize with transparent tools for queues, teams, ratings and match history.</p><p>The project grew from PUBobot2 by Leshaka and an Age of Empires community bot into a multi-game Cloudflare application. The repository retains the NammaPUBobot name; the internal project name is NammaMatchBot.</p><p>We value community control, understandable permissions, confirmed results and source that people can inspect. Maintainer and funding details will be added when confirmed; GitHub issues are the current project contact.</p>`,
-  ],
+  '/about/': legal['/about/'],
   '/open-source/': [
     'Free and open source',
     'Inspect the code, contribute improvements or host your own installation.',
@@ -150,16 +149,8 @@ export const articles = {
     'Manage queues, matches, players and setup on desktop or phone.',
     `<p>Four destinations keep the main jobs close: Queues, Matches, Players and Setup. Community drafts preserve edits as you navigate. Review and save settings atomically; validation, network and revision failures retain the draft.</p><p>Use confirmed actions for results and player adjustments, authoritative previews for imports and public statistics with a rating-history chart and accessible table. Phone and tablet layouts retain the same workflows.</p>`,
   ],
-  '/privacy/': [
-    'Privacy and public records',
-    'Understand what the application stores and publishes.',
-    `<p>The application stores Discord identifiers and display names, community configuration, ratings, match history, optional game-account references and virtual-gold activity. Authentication uses Discord OAuth and server-side session cookies. Optional providers process the account information needed for their connection.</p><p>Statistics visibility is controlled by organizers. Search publishing is a separate explicit choice for public leaderboards. Hidden players are excluded from public statistics. Search engines may retain earlier published copies temporarily.</p><p>Marketing analytics are disabled by default. For a data-access or removal request, contact your community organizer and use the project's GitHub issue contact without posting private tokens or personal records. Self-hosted operators control their own data and must provide their own operational contact.</p>`,
-  ],
-  '/terms/': [
-    'Hosted service information',
-    'Current availability and the software license.',
-    `<p>The software is free under GPL-3.0-only. Hosted availability and limits depend on the operator; this preview does not promise unlimited installations, uptime or free hosting forever.</p><p>Organizers must have permission to manage their Discord community and should explain public-record policies to players. The project is independent of Discord and game publishers. Review the software license and deployment-specific policies before relying on a hosted installation.</p>`,
-  ],
+  '/privacy/': legal['/privacy/'],
+  '/terms/': legal['/terms/'],
   '/changelog/': [
     'Changelog',
     'Released behavior and implementation history.',
