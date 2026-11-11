@@ -126,8 +126,8 @@ export function landing(g) {
   const copy = gameCopy[id];
   const related = games.filter((v) => v[0] !== id).slice(0, 3);
   return `<p>Players type <code>/add</code>, check in and get balanced teams, and your server keeps its own ladder of ${name} games. It is free for any server, with nothing held back.</p>${actions()}
-<h2>How a game night goes</h2><p>${copy.night}</p>${examples.teams(name, `A ${name} match card once teams are made. The first name on each side is the captain.`)}
-<h2>What’s specific to ${name}</h2>${dl(copy.features)}
+<h2>How a game night goes</h2><p>${copy.night}</p>${examples.teams(name, `The match card once teams are made. The first name on each side is the captain.`)}
+<h2>What’s specific to ${name}</h2>${dl(copy.features)}${id === 'aoe2' ? examples.civPicks() : ''}
 ${cantYet(copy.limits)}<p>Optional game tracking is in beta. Queues, teams, ratings and captain-reported results work without it.</p>
 <h2>Set it up</h2><p>Setup is the same for every game: add the bot, sign in to the console, pick ${name} and create a queue. The <a href="${guide}">five-step setup guide</a> walks through it with pictures.</p>${actions()}
 <h2>Questions</h2><h3>${copy.question[0]}</h3><p>${copy.question[1]}</p><h3>Is it free?</h3><p>Yes. ${N} is free and open source under GPL-3.0. <a href="/open-source/">Read the code</a> or host your own copy.</p><h3>Is it made by the game’s publisher?</h3><p>No. ${N} is a community project and isn’t affiliated with ${name} or its publisher.</p>
@@ -431,8 +431,7 @@ ${cantYet(['The console only shows servers where you have Manage Server. Other h
   '/features/import-ratings/': {
     title: 'Import ratings from PUBobot or another bot',
     heading: 'Import ratings from another bot',
-    description:
-      'Move your pickup ladder to RTS Pickup: import ratings from a spreadsheet or a PUBobot export, check a preview and apply it once.',
+    description: `Move your pickup ladder to ${N}: import ratings from a spreadsheet or a PUBobot export, check a preview and apply it once.`,
     body: `<p>${N} is a free, open-source Discord bot for pickup games, and your old ladder can come with you. Import a spreadsheet of ratings, or a whole history from PUBobot.</p>
 <h2>How to import</h2><ol><li>In the console, open Players, then Import player records.</li><li>Choose the game and queue the ratings belong to.</li><li>Upload a CSV or JSON file, or paste it in.</li><li>Check the preview: how many players, any warnings and any rows with errors.</li><li>Press Apply. Nothing changes before this step.</li></ol>
 <h2>What a file looks like</h2><p>A CSV needs the columns <code>id</code>, <code>name</code>, <code>rating</code> and <code>deviation</code>, where <code>id</code> is the player’s Discord user ID. It can also have wins, losses, draws, streak, hidden and last-played columns.</p><p>A ratings import adds new players and leaves existing records alone. A full match history needs an empty game.</p>
@@ -446,15 +445,13 @@ export const articles = {
   '/open-source/': {
     title: 'Free and open-source Discord pickup bot',
     heading: 'Free and open source',
-    description:
-      'RTS Pickup is free and open source under GPL-3.0. Read the code, suggest a change, report a bug or host your own copy of the Discord bot.',
+    description: `${N} is free and open source under GPL-3.0. Read the code, suggest a change, report a bug or host your own copy of the Discord bot.`,
     body: `<p>${N} is a free, open-source Discord bot that runs pickup games. The bot and the console are public under GPL-3.0-only: you can use, study and change them. If you hand out a changed copy, the license asks you to share its source too.</p><p><a href="${repo}">View the code on GitHub</a> · <a href="${identity.license}">Read the license</a> · <a href="${repo}/issues">Report an issue</a>.</p><h2>Credits</h2><p>It grew out of <a href="https://github.com/Leshaka/PUBobot2">PUBobot2 by Leshaka</a>, and uses public data from the community projects named on each game page. See <a href="/guides/self-hosting/">self-hosting</a> to run your own copy.</p>`,
   },
   [guide]: {
     title: 'Set up a Discord pickup bot in five steps',
     heading: 'Get started in five steps',
-    description:
-      'Add RTS Pickup to your Discord server, sign in to the console, pick your game, create a queue and run your first pickup game. An illustrated guide.',
+    description: `Add ${N} to your Discord server, sign in to the console, pick your game, create a queue and run your first pickup game. An illustrated guide.`,
     body: gettingStarted,
   },
   '/guides/discord-permissions/': {
@@ -496,8 +493,7 @@ export const indexes = {
   '/games/': {
     title: 'Pickup game bot for AoE2, WC3, BAR and more',
     heading: 'Games',
-    description:
-      'RTS Pickup runs Discord pickup games for Age of Empires II, III and IV, Age of Mythology, Warcraft III, Beyond All Reason and Zero Hour.',
+    description: `${N} is a free, open-source Discord bot that runs pickup games for Age of Empires II, III and IV, Age of Mythology, Warcraft III, BAR and Zero Hour.`,
   },
   '/features/': {
     title: 'Pickup bot features: queues, teams, Elo',

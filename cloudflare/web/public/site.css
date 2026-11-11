@@ -660,8 +660,9 @@ img {
   line-height: 1.5;
 }
 .article-body .cards h2,
-.cards h3 {
+.article-body .cards h3 {
   font-size: 18px;
+  margin-top: 0;
 }
 .article-sidebar {
   position: sticky;

@@ -40,7 +40,8 @@ for (const game of selectableCatalog) {
   const content = games.find((g) => g[0] === game.id);
   if (!content) throw Error(`Missing authored content for ${game.id}`);
   if (!gameCopy[game.id]) throw Error(`Missing game copy for ${game.id}`);
-  content[2] = game.name;
+  // “Warcraft III (W3Champions)” names a connection, not the game players search for.
+  content[2] = game.name.replace(/ \([^)]*\)$/, '');
   content[4] = game.selection;
 }
 if (games.some((g) => !selectableCatalog.some((c) => c.id === g[0])))
@@ -85,13 +86,12 @@ const gameCards = (level) =>
   );
 await emit('/', {
   title: 'Free Discord bot for RTS pickup games',
-  description:
-    'RTS Pickup is a free, open-source Discord bot for AoE2, AoE4, Warcraft III, BAR and more: pickup queues, check-in, balanced teams and Elo ratings.',
+  description: `${identity.publicName} is a free, open-source Discord bot for AoE2, AoE4, Warcraft III, BAR and more: pickup queues, check-in, balanced teams and Elo ratings.`,
   body: home(gameCards(3)),
 });
 await emit('/games/', {
   ...indexes['/games/'],
-  body: `<p>${e(identity.publicName)} is a free, open-source Discord bot that runs pickup games for these seven games. Each page says what is specific to that game and what it can’t do yet.</p>${gameCards(2)}<p>Playing something else? Add a custom game in the console: queues, teams, ratings and captain-reported results work for any game.</p>`,
+  body: `<p>Each page says what is specific to that game and what it can’t do yet. Setup is the same for all of them.</p><h2>Supported games</h2>${gameCards(3)}<p>Playing something else? Add a custom game in the console: queues, teams, ratings and captain-reported results work for any game.</p>`,
 });
 for (const g of games) {
   const copy = gameCopy[g[0]];
@@ -111,7 +111,10 @@ await emit('/features/', {
   ...indexes['/features/'],
   body: `<p>${e(identity.publicName)} is free and open source, with nothing held back. Features marked beta work but may change.</p>${features.map(([group, items]) => `<h2>${group}</h2>${cards(items, 3)}`).join('')}`,
 });
-await emit('/guides/', { ...indexes['/guides/'], body: cards(guides) });
+await emit('/guides/', {
+  ...indexes['/guides/'],
+  body: `<p>Start with the five-step guide; the rest are for when you need them.</p><h2>All guides</h2>${cards(guides, 3)}`,
+});
 // The public reference documents what strangers' servers receive.
 const commands = (await import('../src/discord/commands.mjs')).commandsFor('production');
 await emit('/guides/commands/', {
