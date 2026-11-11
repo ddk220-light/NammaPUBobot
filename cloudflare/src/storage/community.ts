@@ -33,10 +33,70 @@ import { testMembers } from '../discord/test-members';
 export class Community extends DurableObject<Env> {
   private playStore: PlayStore;
   private recordStore: RecordStore;
+  private discarded = false;
+  private active = 0;
+  static {
+    // find() may delete an unclaimed object's storage while the instance stays in memory, so
+    // every other entry point re-creates the schema first and counts itself as in flight.
+    for (const name of Object.getOwnPropertyNames(this.prototype)) {
+      const method = Object.getOwnPropertyDescriptor(this.prototype, name)?.value;
+      if (
+        ['constructor', 'find', 'migrate', 'unclaimed'].includes(name) ||
+        typeof method !== 'function'
+      )
+        continue;
+      Object.defineProperty(this.prototype, name, {
+        configurable: true,
+        writable: true,
+        value(this: Community, ...args: unknown[]) {
+          if (this.discarded) {
+            this.discarded = false;
+            this.migrate();
+          }
+          this.active++;
+          let result: unknown;
+          try {
+            result = method.apply(this, args);
+          } catch (error) {
+            this.active--;
+            throw error;
+          }
+          if (!(result instanceof Promise)) {
+            this.active--;
+            return result;
+          }
+          return result.finally(() => this.active--);
+        },
+      });
+    }
+  }
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    ctx.storage.transactionSync(() => {
-      const sql = ctx.storage.sql;
+    this.migrate();
+    this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
+    if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
+    this.playStore = new PlayStore(
+      ctx,
+      env,
+      (guild) => this.read(guild),
+      this.recordStore,
+      () =>
+        this.meta<boolean>('publicationPending')
+          ? (this.meta<number>('publicationRetryAt') ?? Date.now() + 60000)
+          : null,
+    );
+    const retiredTest = ctx.storage.kv.get<RetiredTestSession>('testSession');
+    if (ctx.storage.kv.get('testMode') && retiredTest) {
+      retiredTest.expiresAt = 0;
+      ctx.storage.kv.put('testSession', retiredTest);
+    }
+    // Adopt periodic queue visibility for existing communities on their next wake.
+    ctx.blockConcurrencyWhile(() => this.playStore.schedule());
+  }
+
+  private migrate() {
+    this.ctx.storage.transactionSync(() => {
+      const sql = this.ctx.storage.sql;
       sql.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)');
       const version = sql
         .exec<{ version: number }>('SELECT version FROM schema_version')
@@ -75,25 +135,6 @@ export class Community extends DurableObject<Env> {
       );
       sql.exec('UPDATE schema_version SET version=9');
     });
-    this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
-    if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
-    this.playStore = new PlayStore(
-      ctx,
-      env,
-      (guild) => this.read(guild),
-      this.recordStore,
-      () =>
-        this.meta<boolean>('publicationPending')
-          ? (this.meta<number>('publicationRetryAt') ?? Date.now() + 60000)
-          : null,
-    );
-    const retiredTest = ctx.storage.kv.get<RetiredTestSession>('testSession');
-    if (ctx.storage.kv.get('testMode') && retiredTest) {
-      retiredTest.expiresAt = 0;
-      ctx.storage.kv.put('testSession', retiredTest);
-    }
-    // Adopt periodic queue visibility for existing communities on their next wake.
-    ctx.blockConcurrencyWhile(() => this.playStore.schedule());
   }
 
   private identity(guildId: string) {
@@ -131,6 +172,32 @@ export class Community extends DurableObject<Env> {
           .map((r) => JSON.parse(r.config)),
       },
     };
+  }
+
+  /**
+   * Non-creating read for unauthenticated callers: null when nobody has set this guild up.
+   * Waking the object already wrote its empty schema (about 0.5 MB), so an object that holds
+   * nothing else is deleted again rather than kept forever for an arbitrary guild id.
+   */
+  async find(guildId: string): Promise<Snapshot | null> {
+    if (this.discarded) return null;
+    if (this.ctx.storage.sql.exec('SELECT 1 FROM community WHERE id=1').toArray().length)
+      return this.read(guildId);
+    const alarm = await this.ctx.storage.getAlarm();
+    if (alarm !== null || this.active || !this.unclaimed()) return null;
+    this.discarded = true;
+    await this.ctx.storage.deleteAll();
+    return null;
+  }
+  private unclaimed() {
+    const sql = this.ctx.storage.sql;
+    if (!this.ctx.storage.kv.list({ limit: 1 })[Symbol.iterator]().next().done) return false;
+    return sql
+      .exec<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type='table' AND substr(name,1,7)!='sqlite_' AND substr(name,1,4)!='_cf_' AND name NOT IN ('schema_version','record_state')`,
+      )
+      .toArray()
+      .every(({ name }) => !sql.exec(`SELECT 1 FROM "${name}" LIMIT 1`).toArray().length);
   }
 
   async save(

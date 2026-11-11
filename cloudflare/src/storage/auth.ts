@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { Env, Session } from '../env';
+import type { Guild } from '../discord/client';
 import type { GameVerificationState, GameAccountChoiceState } from '../auth/game-accounts';
 
 export class AuthStore extends DurableObject<Env> {
@@ -58,8 +59,9 @@ export class AuthStore extends DurableObject<Env> {
   async consumeState(): Promise<boolean> {
     return this.ctx.storage.transaction(async (tx) => {
       const state = await tx.get<{ expiresAt: number }>('state');
+      if (!state) return false;
       await tx.delete('state');
-      return !!state && state.expiresAt > Date.now();
+      return state.expiresAt > Date.now();
     });
   }
   async saveSession(session: Session) {
@@ -71,6 +73,17 @@ export class AuthStore extends DurableObject<Env> {
   async session(): Promise<Session | null> {
     const s = await this.ctx.storage.get<Session>('session');
     return s && s.expiresAt > Date.now() ? s : null;
+  }
+  /** A short-lived copy of the signed-in user's Discord guilds, so one page load asks Discord once. */
+  async cachedGuilds(maxAge: number): Promise<Guild[] | null> {
+    const cache = await this.ctx.storage.get<{ at: number; guilds: Guild[] }>('guilds');
+    return cache && Date.now() - cache.at < maxAge && Date.now() >= cache.at ? cache.guilds : null;
+  }
+  async cacheGuilds(guilds: Guild[]) {
+    await this.ctx.storage.transaction(async (tx) => {
+      // Never outlive the session: a write after sign-out would leave an orphaned object.
+      if (await tx.get('session')) await tx.put('guilds', { at: Date.now(), guilds });
+    });
   }
   async remove() {
     await this.ctx.storage.deleteAll();

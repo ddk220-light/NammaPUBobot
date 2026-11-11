@@ -60,6 +60,11 @@ async function session() {
     expiresAt: Date.now() + 60000,
   });
 }
+// Reads use the session's 30-second guild cache; tests that change permissions expire it.
+const expireGuildCache = () =>
+  runInDurableObject(env.AUTH.getByName(`session:${sessionId}`), (_i, state) =>
+    state.storage.delete('guilds'),
+  );
 const headers = () => ({
   Cookie: `__Host-cg-session=${sessionId}`,
   Origin: base,
@@ -450,10 +455,11 @@ describe('community authority and durable settings', () => {
     ).toBe(403);
     expect((await env.COMMUNITIES.getByName(guild).read(guild)).revision).toBe(0);
   });
-  it('rechecks administrator access on every configuration read and write', async () => {
+  it('rechecks administrator access on every write and on reads once the guild cache expires', async () => {
     await session();
     expect((await save()).status).toBe(200);
     admin = false;
+    await expireGuildCache();
     for (const suffix of ['config', 'channels', 'setup', 'audit'])
       expect(
         (await http(`/api/communities/${guild}/${suffix}`, { headers: headers() })).status,
@@ -461,6 +467,7 @@ describe('community authority and durable settings', () => {
     expect((await save(guild, settings, 1)).status).toBe(403);
     admin = true;
     guildRows = guildRows.filter((g) => g.id !== guild);
+    await expireGuildCache();
     expect((await http(`/api/communities/${guild}/config`, { headers: headers() })).status).toBe(
       403,
     );
@@ -723,6 +730,7 @@ describe('responsive organizer contracts', () => {
         { id: settings.games[0].id, ratingEngineLocked: false, ratingEngine: 'aoe2' },
       ]);
       admin = false;
+      await expireGuildCache();
       expect((await http(`/api/communities/${guild}/setup`, { headers: headers() })).status).toBe(
         403,
       );
