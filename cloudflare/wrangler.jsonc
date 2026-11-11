@@ -12,7 +12,7 @@
   },
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "head_sampling_rate": 0.1, "invocation_logs": false },
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": false },
   },
   "durable_objects": {
     "bindings": [
@@ -40,6 +40,32 @@
       "vars": {
         "APP_ENV": "staging",
         "APP_ORIGIN": "https://community-gaming-staging.deepakdhanavel.workers.dev",
+      },
+      "durable_objects": {
+        "bindings": [
+          { "name": "PUBLIC_DIRECTORY", "class_name": "PublicDirectory" },
+          { "name": "COMMUNITIES", "class_name": "Community" },
+          { "name": "AUTH", "class_name": "AuthStore" },
+          { "name": "DISCORD_GATE", "class_name": "DiscordGate" },
+          { "name": "VOICE_PRESENCE", "class_name": "VoicePresence" },
+          { "name": "AOE2_LOBBIES", "class_name": "AoE2LobbyFeed" },
+          { "name": "PROVIDERS", "class_name": "ProviderCoordinator" },
+        ],
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["Community", "AuthStore"] },
+        { "tag": "v2", "new_sqlite_classes": ["DiscordGate"] },
+        { "tag": "v3", "new_sqlite_classes": ["VoicePresence"] },
+        { "tag": "v4", "new_sqlite_classes": ["AoE2LobbyFeed"] },
+        { "tag": "v5", "new_sqlite_classes": ["ProviderCoordinator"] },
+        { "tag": "v6", "new_sqlite_classes": ["PublicDirectory"] },
+      ],
+    },
+    "production": {
+      "name": "community-gaming-production",
+      "vars": {
+        "APP_ENV": "production",
+        "APP_ORIGIN": "https://production-origin.invalid",
       },
       "durable_objects": {
         "bindings": [

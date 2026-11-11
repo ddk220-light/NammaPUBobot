@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
-import { stagingCredentials, verifyStagingApplication } from './env.mjs';
+import { envArg, envCredentials, verifyApplication } from './env.mjs';
 
-const credentials = await stagingCredentials();
-await verifyStagingApplication(credentials);
+const name = envArg();
+const credentials = await envCredentials(name);
+await verifyApplication(name, credentials);
 await new Promise((resolve, reject) => {
-  const child = spawn('node_modules/.bin/wrangler', ['secret', 'bulk', '--env', 'staging'], {
+  const child = spawn('node_modules/.bin/wrangler', ['secret', 'bulk', '--env', name], {
     stdio: ['pipe', 'inherit', 'inherit'],
     env: {
       ...process.env,
@@ -17,4 +18,4 @@ await new Promise((resolve, reject) => {
     code === 0 ? resolve() : reject(new Error(`Secret installation failed (${code}).`)),
   );
 });
-console.log('Staging secrets installed. No secret values were printed.');
+console.log(`${name} secrets installed. No secret values were printed.`);

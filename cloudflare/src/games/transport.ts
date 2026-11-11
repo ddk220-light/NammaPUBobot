@@ -1,3 +1,4 @@
+import { buildInfo } from '../build-info';
 import type { JsonTransport, ProviderResult } from './types';
 
 /** Preserve integer identifiers before JSON.parse can round them. Never repair malformed JSON. */
@@ -55,7 +56,7 @@ export const providerJson: JsonTransport = async (request) => {
   try {
     const response = await fetch(request.url, {
       headers: {
-        'User-Agent': 'CommunityGames/0.19 (+https://github.com/ddk220-light/NammaPUBobot)',
+        'User-Agent': `CommunityGames/${buildInfo.version} (+https://github.com/ddk220-light/NammaPUBobot)`,
         Accept: 'application/json',
         ...request.headers,
       },

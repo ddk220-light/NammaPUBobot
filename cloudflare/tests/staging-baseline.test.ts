@@ -38,10 +38,10 @@ const stored = (id: string): Promise<Match> =>
   );
 
 describe('staging 0.18.1 behavioral reconciliation', () => {
-  it('keeps /test populate and /test checkin registered as queue-moderated controls', () => {
+  it('keeps /test populate and /test checkin registered outside production for server managers', () => {
     const test = commands.find((c) => c.name === 'test')!;
     expect(test.options?.map((o) => o.name)).toEqual(['populate', 'checkin']);
-    expect(test.default_member_permissions).toBeNull();
+    expect(test.default_member_permissions).toBe('32');
   });
   it('marks a live match without recording result, ratings, participation, or prediction gains', async () => {
     const config = settings();

@@ -5,6 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { envArg, envConfig, usableOrigin } from './env.mjs';
 
 const app = fileURLToPath(new URL('../', import.meta.url));
 const git = (...args) => execFileSync('git', args, { cwd: app, encoding: 'utf8' });
@@ -41,7 +42,16 @@ const metadata = {
   sourceDirty: dirty,
   sourceTreeHash: treeHash,
 };
-const args = process.argv.slice(2);
+let args = process.argv.slice(2);
+if (args[0] === 'deploy' && !args.includes('--dry-run') && envArg(args) === 'production') {
+  // Wrangler would accept a bare `--env production`; only an explicit operator flag ships it.
+  if (!args.includes('--confirm-production'))
+    throw Error('Production deploys require --confirm-production.');
+  const origin = (await envConfig('production')).vars?.APP_ORIGIN;
+  if (!usableOrigin(origin))
+    throw Error('Set env.production.vars.APP_ORIGIN in wrangler.jsonc to the real HTTPS origin.');
+}
+args = args.filter((a) => a !== '--confirm-production');
 if (!args.length || args[0] === '--print') {
   process.stdout.write(`${JSON.stringify(metadata, null, 2)}\n`);
 } else {

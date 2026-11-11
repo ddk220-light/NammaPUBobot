@@ -18,6 +18,16 @@ export function testInteraction(
         allowed_mentions: { parse: [] },
       },
     });
+  // A stale guild-scoped /test registration can still reach production; refuse it here.
+  if (env.APP_ENV === 'production')
+    return Response.json({
+      type: 4,
+      data: {
+        content: '/test is not available in this installation.',
+        flags: 64,
+        allowed_mentions: { parse: [] },
+      },
+    });
   if (
     !ctx ||
     !i.token ||

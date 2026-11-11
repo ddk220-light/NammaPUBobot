@@ -72,7 +72,21 @@ node scripts/operator-discord.mjs verify wrangler.operator.json PRIVATE_ENV_FILE
 
 Use `global` in place of a guild ID only when intentionally releasing commands for every invited community. The helper verifies app identity, OAuth redirect and signed endpoint; it never reads a Discord user token.
 
-The checked-in `register:staging`/`connect:staging` scripts are pilot-specific safeguards. For your own installation use the standalone command/endpoint helper described below. They must never register another app's command namespace.
+The checked-in `register:<env>`/`connect:<env>`/`secrets:<env>` scripts serve this project's own `staging` and `production` environments in `wrangler.jsonc`, reading `.dev.vars.staging` or `.dev.vars.production`. They refuse a staging application whose name lacks "Staging" and a production application whose name contains it. For your own installation use the standalone helper above. They must never register another app's command namespace.
+
+## Production launch checklist
+
+For this project's own `production` environment in `wrangler.jsonc` (Worker `community-gaming-production`). Each step is deliberate; nothing below happens as a side effect of tests or staging deploys.
+
+1. **Discord application.** Create a new application for production; its name must not contain "Staging". Under Installation, allow **Guild Install** only (turn off User Install), and set the install link scopes to `bot applications.commands` with permissions `84992`. Privileged intents stay off unless you need channel-history reading.
+2. **Secrets.** Put `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_CLIENT_SECRET` and `DISCORD_BOT_TOKEN` in `.dev.vars.production` (never committed), then run `npm run secrets:production`. It verifies that the token, ID and key describe one non-staging application before uploading through stdin.
+3. **Origin.** Choose the public HTTPS origin (a custom domain routed to the Worker, or its `workers.dev` URL) and replace the `https://production-origin.invalid` placeholder in `env.production.vars.APP_ORIGIN`. The deploy refuses while the placeholder remains. Attach the custom domain in the Cloudflare dashboard (Workers → `community-gaming-production` → Domains & Routes).
+4. **Deploy.** `npm run deploy:production -- --confirm-production` locally, or the workflow's manual run with `deploy_production` checked (GitHub environment `cloudflare-production` holds `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). Without the flag, or with the placeholder origin, nothing is uploaded.
+5. **Endpoints.** In the Discord developer portal add the OAuth redirect `APP_ORIGIN/auth/callback`, then run `npm run connect:production` to set and validate the signed interactions endpoint `APP_ORIGIN/interactions`.
+6. **Global commands.** `npm run register:production` replaces the application's global list (`/test` is never included). A local deploy runs this automatically when `.dev.vars.production` exists; CI deploys skip it. Inspect the exact body first with `node scripts/register-commands.mjs --env production --print`.
+7. **Clear guild-scoped copies.** Any server that previously received guild-scoped commands from this application shows each command twice. Clear it once: `node scripts/register-commands.mjs --env production --clear-guild SERVER_ID` (registers globally, then empties that server's guild list). Staging's own test server needs the same once: `node scripts/register-commands.mjs --env staging --clear-guild STAGING_GUILD_ID`.
+8. **Verify.** `npm run doctor -- --env production --discord` checks health, application identity, redirect, endpoint and that the global list matches this revision.
+9. **Smoke test in a second server.** Using the install link, add the bot to a server that has never had it. Confirm the commands appear without a guild registration, are absent from DMs, `/test` is absent, `/manage` is hidden from members without Manage Server, and a complete join → check-in → result journey records in the web view.
 
 ## Configuration and capacity
 
@@ -121,7 +135,7 @@ Reconcile source and destination counts, rating totals, exact gold balances/ledg
 
 ## Monitoring and low cost
 
-Use `operator-discord.mjs verify CONFIG PRIVATE_ENV_FILE` for an independent installation's health and application identity. The pilot's `doctor` reads its staging configuration. API failures expose request IDs; safe logs omit credentials, OAuth callback codes and request bodies. Logs are sampled at 10%. Missing Discord permissions block deliveries; fix them and refresh/recover the current card. Ambiguous sends become visible blocked work after bounded reconciliation instead of unlimited duplicate posts.
+Use `operator-discord.mjs verify CONFIG PRIVATE_ENV_FILE` for an independent installation's health and application identity. The project's `npm run doctor -- --env staging|production [--discord]` checks that environment's health, application identity, endpoints and global command list. API failures expose request IDs; safe logs omit credentials, OAuth callback codes and request bodies. Every log line is kept (head sampling 1); lower `observability.logs.head_sampling_rate` only if volume costs require it. Missing Discord permissions block deliveries; fix them and refresh/recover the current card. Ambiguous sends become visible blocked work after bounded reconciliation instead of unlimited duplicate posts.
 
 Record a dated project billing baseline. The owner requested a warning strictly above $50 cumulative migration-attributable Cloudflare spend, including staging, production, storage and backups, excluding Railway. Account totals may include unrelated projects. Use resource-attributed actual billing when available; estimated usage cost must be labeled separately. `cost-report.mjs` detects unavailable/stale observations, does not interpret null as zero, and returns exit 2 for the threshold warning. Do not automatically interrupt accepted games at that threshold.
 

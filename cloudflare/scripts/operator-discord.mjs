@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { parseEnv } from 'node:util';
-import { commands } from '../src/discord/commands.mjs';
+import { commandsFor } from '../src/discord/commands.mjs';
 import { discordRequest } from './env.mjs';
 const [mode, configFile, credentialsFile, guild] = process.argv.slice(2);
 if (!['verify', 'connect', 'register'].includes(mode) || !configFile || !credentialsFile)
@@ -37,7 +37,7 @@ if (mode === 'connect') {
   const result = await discordRequest(
     `/applications/${app.id}/${guild === 'global' ? '' : `guilds/${guild}/`}commands`,
     token,
-    { method: 'PUT', body: JSON.stringify(commands) },
+    { method: 'PUT', body: JSON.stringify(commandsFor(config.vars.APP_ENV)) },
   );
   console.log(`PASS: ${result.length} commands registered for this app in ${guild}.`);
 } else {
