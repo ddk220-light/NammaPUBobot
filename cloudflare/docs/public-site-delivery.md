@@ -1,10 +1,10 @@
 # NammaMatchBot UI and public-site delivery
 
-The public name remains Community Games. Internal package identity is NammaMatchBot; public name, repository and license are centralized in `src/identity.ts`. No Discord application or repository rename is part of this release.
+The public name is RTS Pickup. Internal package identity is NammaMatchBot; public name, repository and license are centralized in `src/identity.ts`, and site copy reads the name from there rather than hard-coding it.
 
 ## Build and routes
 
-`npm run build:web` builds the organizer first, preserves it at `/app/`, then emits and validates 32 static public pages. The seven published-source game descriptions have 700–1,200 words each and separate setup guides. Game coverage is checked against the selectable catalog; command documentation uses the registered command tree.
+`npm run build:web` builds the organizer first, preserves it at `/app/`, then emits and validates 31 static public pages plus 10 moved-page notices. Game coverage is checked against the selectable catalog; command documentation uses the registered command tree.
 
 The Worker runs before assets so environment indexing policy applies to both. `/stats` and `/link` remain supported. Old root organizer queries redirect to `/app/` preserving query state. Unknown public routes use the real 404 asset. Vite preview supplies equivalent app entry routing for browser fixtures.
 
@@ -32,7 +32,7 @@ Real iOS Safari and Android Chrome verification requires physical devices: nativ
 
 Local verification passed: 1,357 Worker tests, 124 Chromium/WebKit cases, 11 converter cases, type checks, public-page build validation and Worker dry build. A focused 101-case regression run covers the final publishing retry/revision guard and gameplay scheduling changes. Anonymous requests against a real local Worker verified public HTML, `/app/`, `/stats`, `/link`, robots, sitemap, asset noindex and a true 404.
 
-Representative desktop/phone screenshots were captured for all organizer destinations and the public home, game, guide, features, About and Open Source pages. The website includes a labelled organizer screenshot using test fixtures. Physical iOS/Android checks and an authenticated deployed Discord setup smoke test have not been performed in this release.
+Representative desktop/phone screenshots were captured for all organizer destinations and the public home, game, guide, features, About and Open Source pages. Physical iOS/Android checks and an authenticated deployed Discord setup smoke test have not been performed in this release.
 
 Directory registrations carry the saved configuration revision. Older registrations cannot replace newer ones. Pending registration has a durable retry deadline that participates in the existing gameplay alarm schedule, so subsequent scheduling does not erase the retry.
 
@@ -45,3 +45,14 @@ Queues disable Start below two waiting players and when paused; empty queues omi
 Automatic substitutions rebalance during check-in and preserve team membership once playing, matching explicit replacements. Captain ordering may refresh within each team. Initial render no longer focuses the community picker without a prior focused control; keyboard focus restoration remains in place.
 
 This release adds no storage migration or connector activation. Real iOS/Android hardware checks and an authenticated organizer journey on the live deployment remain outside browser-fixture coverage.
+
+## Public site for server owners (S3)
+
+Content lives in `site/content.mjs` (pages), `site/game-copy.mjs` (what is specific to each game), `site/examples.mjs` (example bot cards) and `site/commands.mjs` (command grouping). `scripts/build-site.mjs` assembles them; `src/public-site.ts` is the shell.
+
+- **One setup guide.** `/guides/getting-started/` holds the five steps. The seven `/games/*/setup/` pages, `/features/queues-and-teams/`, `/guides/import-ratings/` and `/guides/switch-from-pubobot/` are folded into other pages; each old URL keeps a short noindex page with a canonical link and an immediate meta refresh, is listed under `moved` in `site-manifest.json`, and is left out of the sitemap. A worker 308 for those paths would be cleaner and can replace the notices later.
+- **Feature pages.** Eleven pages under `/features/`, each short and with a "What it can't do yet" list. Beta: AoE2 lobby tracking and other game tracking, predictions (opt-in).
+- **Example cards.** `site/examples.mjs` renders what the bot posts (queue, check-in, teams, result, substitute, map vote, predictions, civ picks, withdrawn result) in the site palette, captioned "Example". Wording follows `src/discord/cards.ts`; names and ratings are illustrative. The match card shows a "Report result" button, which the bot unit is adding.
+- **Console screenshots.** `web/public/screenshots/console-*.png` come from the local preview with the e2e mock fixtures (`mockApp`), environment badge hidden, demo names. Regenerate them with a throwaway spec like the one in the S3 hand-off; do not commit it under `e2e/`, because it writes into `web/public/`.
+- **Command reference.** Grouped Players → Captains → Organizers by a small map in `site/commands.mjs`. A command the map does not know is placed by its permissions and description (admin permissions → Organizers, "Captain…" → Captains, otherwise Players), never dropped.
+- **Checks.** `scripts/check-site.mjs` now also checks title (≤62) and description (50–160) length, heading order, breadcrumb JSON-LD against the visible trail, images (exists, width, height, alt), same-page anchors, moved pages, the sitemap and internal wording on public pages. `tests/public-site.test.ts` crawls the generated pages through the assets binding.
