@@ -30,7 +30,11 @@ export interface Match {
   ratedPlayers?: Player[];
   behaviorVersion?: number;
   expiresAt?: number;
-  proposal?: { id: string; requester: string; kind: 'draw' | 'abort'; opposing: string };
+  proposal?: Proposal;
+  /** Ended proposals whose request cards stay in the channel showing the outcome. */
+  endedProposals?: string[];
+  /** Created from test-populated places: never mention its members. */
+  silent?: boolean;
   storiesBefore?: string[];
   storiesAfter?: string[];
   storyContext?: import('./story-candidates').StoryContext;
@@ -48,6 +52,17 @@ export interface Match {
   lobbyAutoDisabled?: boolean;
   test?: { markedBy: string; markedAt: number };
 }
+export interface Proposal {
+  id: string;
+  requester: string;
+  kind: 'draw' | 'abort' | 'win';
+  opposing: string;
+  /** The claimed winner of a win claim. */
+  side?: 'alpha' | 'beta';
+  expiresAt?: number;
+}
+export type ProposalOutcome = 'accepted' | 'auto' | 'declined' | 'expired' | 'replaced' | 'ended';
+export const proposalSeconds = 600;
 export const personSchema = z
   .object({
     id: snowflake,
@@ -73,6 +88,8 @@ export const actionSchema = z
       'loss',
       'draw',
       'abort',
+      'claim',
+      'decline',
       'recover_abort',
       'subme',
       'subfor',

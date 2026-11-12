@@ -97,7 +97,7 @@ export class Community extends DurableObject<Env> {
       ctx.storage.kv.put('testSession', retiredTest);
     }
     // Adopt periodic queue visibility for existing communities on their next wake.
-    ctx.blockConcurrencyWhile(() => this.playStore.schedule());
+    ctx.blockConcurrencyWhile(() => this.playStore.schedule('wake'));
   }
 
   private migrate() {
@@ -300,6 +300,7 @@ export class Community extends DurableObject<Env> {
       this.ctx.storage.transactionSync(() =>
         this.playStore.configure(result.snapshot.settings, old),
       );
+      this.playStore.channelsSaved(result.snapshot.settings);
       this.playStore.reconcileLobbies();
       if (!this.ctx.storage.kv.get('testMode')) this.recordStore.configure(guildId, old);
       await this.playStore.schedule();
@@ -1285,6 +1286,7 @@ export const ORGANIZER_EXCLUDED = [
   'outbox',
   'play_actions',
   'record_actions',
+  'test_entries',
 ];
 export const RESTORE_WINDOW_MS = 30 * 86400000;
 export type PointInTime = {

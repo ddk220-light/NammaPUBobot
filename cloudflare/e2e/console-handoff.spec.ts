@@ -144,7 +144,7 @@ test('player cards preserve scoped actions, confirmation and authoritative visib
   await expect(card.locator('.status-pill')).toHaveText('Hidden');
   await card.locator('summary').first().click();
   await card.locator('.rating-options > summary').click();
-  await card.getByRole('spinbutton', { name: /Rating for/ }).fill('1500');
+  await card.getByRole('spinbutton', { name: /New rating for/ }).fill('1500');
   await card.getByRole('button', { name: 'Review rating change' }).click();
   expect(state.actions).toHaveLength(0);
   await card.getByRole('button', { name: 'Confirm action' }).click();
@@ -170,21 +170,21 @@ test('matches show actual readiness and settings help includes defaults and dura
   await page.screenshot({ path: info.outputPath('match-check-in.png') });
   await tab(page, 'Queues').click();
   await page.getByRole('button', { name: 'Settings for Evening games', exact: true }).click();
-  await page.getByRole('button', { name: 'Match Preparation', exact: true }).click();
+  await page.getByRole('button', { name: 'Match preparation', exact: true }).click();
   const input = page.getByRole('spinbutton', {
-    name: 'Check-in time limit (seconds)',
+    name: 'Check-in time (seconds)',
     exact: true,
   });
   await input.fill('90');
   await expect(input.locator('..')).toContainText('1 min 30 s');
-  await page.getByRole('button', { name: 'More about Check-in time limit (seconds)' }).click();
+  await page.getByRole('button', { name: 'More about Check-in time (seconds)' }).click();
   await expect(page.getByRole('dialog')).toContainText('Default');
   await expect(page.getByRole('dialog')).toContainText('60');
   await expect(page.getByRole('dialog')).toContainText('Applies to');
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Review changes', exact: true }).click();
-  await expect(page.getByRole('dialog')).toContainText('90');
-  await expect(page.getByRole('dialog')).toContainText('1 changes');
+  await expect(page.getByRole('dialog')).toContainText('1 min → 1 min 30 s');
+  await expect(page.getByRole('dialog')).toContainText('1 change across');
   await page.screenshot({ path: info.outputPath('settings-change-review.png') });
 });
 
@@ -208,7 +208,7 @@ test('custom game and advanced queue edits stay synchronized with the guide', as
   expect(state.saved).toHaveLength(0);
   await form.getByLabel('Players per match', { exact: true }).fill('4');
   await page.getByRole('button', { name: 'Advanced queue settings' }).click();
-  await page.getByRole('button', { name: 'Match Preparation', exact: true }).click();
+  await page.getByRole('button', { name: 'Match preparation', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Require check-in', exact: true }).uncheck();
   await page.getByRole('button', { name: 'Add queue', exact: true }).click();
   await tab(page, 'Setup').click();

@@ -26,9 +26,9 @@ let completed: {
   refreshError?: string;
 } | null = null;
 const countLabels: Record<string, string> = {
-  players: 'Players in source',
+  players: 'Players in the file',
   newPlayers: 'New players',
-  existingPlayers: 'Existing players retained',
+  existingPlayers: 'Existing players kept as they are',
   matches: 'Matches',
   changes: 'Rating history rows',
 };
@@ -38,7 +38,7 @@ const countList = (counts: Record<string, number>) =>
     .join('')}</dl>`;
 function resultMarkup(url: string) {
   if (!completed || completed.url !== url) return '';
-  return `<section class="import-result" role="status"><h3 tabindex="-1" data-import-result-heading>${completed.alreadyApplied ? 'Already imported' : 'Import applied'}</h3><p>Source: ${esc(completed.sourceId)}. ${completed.alreadyApplied ? 'No duplicate changes were made.' : 'The server confirmed this import. Existing seed records were retained.'}</p>${countList(completed.counts)}${completed.refreshError ? `<p class="notice error">The import succeeded, but records could not refresh: ${esc(completed.refreshError)}</p><button type="button" data-action="refresh-records">Retry record refresh</button>` : ''}</section>`;
+  return `<section class="import-result" role="status"><h3 tabindex="-1" data-import-result-heading>${completed.alreadyApplied ? 'Already imported' : 'Import applied'}</h3><p>Source: ${esc(completed.sourceId)}. ${completed.alreadyApplied ? 'No duplicate changes were made.' : 'Existing players were kept as they are.'}</p>${countList(completed.counts)}${completed.refreshError ? `<p class="notice error">The import succeeded, but records could not refresh: ${esc(completed.refreshError)}</p><button type="button" data-action="refresh-records">Retry record refresh</button>` : ''}</section>`;
 }
 export function importRecordsRefreshed(url: string) {
   if (completed?.url === url) delete completed.refreshError;
@@ -50,59 +50,57 @@ export function invalidateImport() {
   const box = document.querySelector('#import-preview');
   if (box) box.innerHTML = '';
 }
+const playerActions = {
+  hide: 'Hide from statistics',
+  unhide: 'Show in statistics',
+  link: 'Link a game profile',
+  unlink: 'Remove a game profile link',
+  reassign: 'Move a game profile link from another player',
+  sync: 'Retry rank role and nickname update',
+};
+/** Per-player record changes by Discord ID, for players the ratings list cannot reach. */
+export function playerRecordForm(snapshot: Snapshot) {
+  const games = snapshot.settings.games
+    .map((g) => `<option value="${g.id}">${esc(g.name)}</option>`)
+    .join('');
+  return `<form data-kind="player-record" class="repair-form"><h3>Visibility and game profiles</h3><p class="form-help">Hide a player from other players’ statistics, manage the game profiles linked to them, or retry their Discord rank role.</p><div class="fields">
+        <label>Game<select name="gameId">${games}</select></label>
+        <label>Player’s Discord user ID<input name="userId" required pattern="[0-9]{17,20}" inputmode="numeric" spellcheck="false" /></label>
+        <label>Action<select name="kind">${Object.entries(playerActions)
+          .map(([value, label]) => `<option value="${value}">${label}</option>`)
+          .join('')}</select></label>
+        <label>Profile site<input name="provider" placeholder="For example: steam" spellcheck="false" /></label>
+        <label>Profile ID on that site<input name="externalId" spellcheck="false" /></label>
+        <label>Profile link<input name="url" type="url" placeholder="https://…" /></label>
+        <label>Reason for moving a link<input name="reason" maxlength="200" /></label>
+      </div><p class="form-help">Site, profile ID and link are only needed for profile links. Moving a link from another player needs a reason and a second confirmation.</p><div class="actions"><button>Apply</button></div></form>`;
+}
 export function onboarding(snapshot: Snapshot, diagnostics: unknown) {
   const s = snapshot.settings;
   const result = resultMarkup(`/api/communities/${snapshot.communityId}/import/apply`);
   const games = s.games.map((g) => `<option value="${g.id}">${esc(g.name)}</option>`).join('');
   const queues = s.queues.map((q) => `<option value="${q.id}">${esc(q.name)}</option>`).join('');
-  const playerActions = {
-    hide: 'Hide from statistics',
-    unhide: 'Show in statistics',
-    link: 'Link an external profile',
-    unlink: 'Remove a profile link',
-    reassign: 'Reassign a profile link',
-    sync: 'Retry rank and nickname sync',
-  };
-  return `<section class="settings-section" aria-labelledby="player-settings-heading"><h2 id="player-settings-heading">Player settings</h2>
-    <p class="view-description">Ratings and gold are separate for each community and game. Account links show whether they were declared, assigned by an organizer or verified by signing in.</p>
-    ${
-      s.games.length
-        ? `<details class="rating-options"><summary>Visibility and profile links</summary>
-      <p class="form-help">Hide a player from other players’ statistics, manage declared profile links, or retry their Discord rank updates.</p>
-      <form data-kind="player-record"><div class="fields">
-        <label>Game<select name="gameId">${games}</select></label>
-        <label>Player Discord ID<input name="userId" required pattern="[0-9]{17,20}" inputmode="numeric" spellcheck="false" /></label>
-        <label>Action<select name="kind">${Object.entries(playerActions)
-          .map(([value, label]) => `<option value="${value}">${label}</option>`)
-          .join('')}</select></label>
-        <label>Provider<input name="provider" placeholder="steam, aoe2, etc." spellcheck="false" /></label>
-        <label>External profile ID<input name="externalId" spellcheck="false" /></label>
-        <label>HTTPS profile URL<input name="url" type="url" /></label>
-        <label>Reason for reassignment<input name="reason" maxlength="200" /></label>
-      </div><p class="form-help">Provider, profile ID and URL apply to profile links. Reassignment moves a profile from another player and requires a reason and a second confirmation.</p><div class="actions"><button>Apply player action</button></div></form>
-    </details>`
-        : ''
-    }
-
-    <details class="rating-options" data-import-section ${result ? 'open' : ''}><summary>Import player records</summary>
+  return `<section class="settings-section" aria-labelledby="player-settings-heading"><h2 id="player-settings-heading">Bring in players</h2>
+    <p class="view-description">Ratings and gold are kept separately for each game. Linked game profiles show whether a player added them, an organizer assigned them, or the player proved they own the account.</p>
+    <details class="rating-options" data-import-section ${result ? 'open' : ''}><summary>Import players</summary>
       <div id="import-result" aria-live="polite">${result}</div>
-      <p class="view-description">Seed imports add new players without changing existing records. Full history needs an empty destination game and matching result and rating-history totals.</p>
+      <p class="view-description">Bring ratings from a spreadsheet or another pickup bot. Adding players never changes players you already have. A full match history can only go into a game with no matches yet.</p>
       ${
         s.games.length && s.queues.length
           ? `<form data-kind="import-preview"><div class="fields">
-        <label>Input format<select name="format"><option value="csv">CSV seeds</option><option value="manual">Manual seeds (CSV rows)</option><option value="json">Normalized history / seed JSON</option></select></label>
-        <label>Source identifier<input name="sourceId" value="community-seed-1" required maxlength="100" spellcheck="false" /></label>
-        <label>Destination game<select name="gameId">${games}</select></label>
-        <label>Destination queue<select name="queueId">${queues}</select></label>
-        <label>Upload CSV / JSON<input name="file" type="file" accept=".csv,.json" /></label>
-      </div><label>Or paste input<textarea name="content" rows="8" spellcheck="false" placeholder="id,name,rating,deviation,wins,losses,draws,streak,hidden,lastRankedAt"></textarea></label>
-      <p class="form-help">Choose a file or paste the input. CSV dates need a timezone. JSON uses its own game and queue mappings; review their destinations in the preview.</p>
-      <p class="form-help">The offline converter supports PUBobot ZIP and NammaPUBobot CSV snapshots. Gold, quiz and drafting data are not part of this ratings import.</p>
+        <label>What are you importing?<select name="format"><option value="csv">A ratings spreadsheet (CSV)</option><option value="manual">Rows typed by hand (CSV)</option><option value="json">An export from another pickup bot</option></select></label>
+        <label>Name for this import<input name="sourceId" value="first-import" required maxlength="100" spellcheck="false" /></label>
+        <label>Game<select name="gameId">${games}</select></label>
+        <label>Queue<select name="queueId">${queues}</select></label>
+        <label>File<input name="file" type="file" accept=".csv,.json" /></label>
+      </div><label>Or paste it here<textarea name="content" rows="8" spellcheck="false" placeholder="id,name,rating,deviation,wins,losses,draws,streak,hidden,lastRankedAt"></textarea></label>
+      <p class="form-help">A spreadsheet needs these columns: Discord user ID (id), name, rating, deviation, wins, losses, draws, streak, hidden and lastRankedAt. Dates need a time zone, for example 2026-01-31T20:00:00Z.</p>
+      <p class="form-help">An export from another pickup bot is a JSON file in this tool’s import format. It names its own games and queues; check where each one goes in the preview. Gold, quiz and draft data are not imported. The name for this import stops the same file being applied twice.</p>
       <div class="actions"><button>Preview import</button></div></form><div id="import-preview" aria-live="polite"></div>`
-          : '<p class="empty-state">Create a game and queue in Setup before importing player records.</p>'
+          : '<p class="empty-state">Add a game and a queue in Setup before importing players.</p>'
       }
     </details>
-    <details class="technical-details"><summary>Import, rank and inactivity diagnostics</summary><pre>${esc(JSON.stringify(diagnostics, null, 2))}</pre></details>
+    <details class="technical-details"><summary>Technical details for support</summary><pre>${esc(JSON.stringify(diagnostics, null, 2))}</pre></details>
   </section>`;
 }
 
@@ -134,14 +132,14 @@ function importReview(bundle: ImportBundle, preview: Preview, snapshot: Snapshot
   return `<section class="import-review" aria-labelledby="import-review-heading">
     <h3 id="import-review-heading" tabindex="-1">${preview.alreadyApplied ? 'Already imported' : preview.ok ? 'Review import' : 'Import needs changes'}</h3>
     <p id="import-review-summary" class="form-help">${preview.alreadyApplied ? 'This source was previously applied. No changes will be made.' : preview.ok ? 'Nothing has been imported yet. Check the destinations and counts before applying.' : 'Nothing has been imported. Fix the issues below, then preview again.'}</p>
-    <p>Source: ${esc(bundle.sourceId)} · ${bundle.mode === 'seed' ? 'Player seeds' : 'Full match history'}</p>
+    <p>Source: ${esc(bundle.sourceId)} · ${bundle.mode === 'seed' ? 'Players and ratings' : 'Full match history'}</p>
     <dl class="import-counts">${Object.entries(preview.counts)
       .map(
         ([key, value]) =>
           `<div><dt>${esc(countLabels[key] ?? key)}</dt><dd>${esc(value)}</dd></div>`,
       )
       .join('')}</dl>
-    <div class="table-wrap"><table><caption>Import destinations</caption><thead><tr><th scope="col">Source ladder</th><th scope="col">Game</th><th scope="col">Queue mappings</th></tr></thead><tbody>${destinations}</tbody></table></div>
+    <div class="table-wrap"><table><caption>Where the import goes</caption><thead><tr><th scope="col">Ladder in the file</th><th scope="col">Game</th><th scope="col">Queues</th></tr></thead><tbody>${destinations}</tbody></table></div>
     ${preview.errors.length ? `<div class="notice error"><h4>Fix before importing</h4><ul class="review-issues">${preview.errors.map((message) => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
     ${preview.warnings.length ? `<div class="review-warnings"><h4>Review these notes</h4><ul class="review-issues">${preview.warnings.map((message) => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
     ${(['players', 'matches', 'changes'] as const)
@@ -151,7 +149,7 @@ function importReview(bundle: ImportBundle, preview: Preview, snapshot: Snapshot
           `<details class="import-rows" data-import-history="${kind}"><summary>Review ${bundle[kind].length} ${reviewLabels[kind]}</summary><div data-import-page-content>${reviewPage(bundle, snapshot, kind, 0)}</div></details>`,
       )
       .join('')}
-    <details class="technical-details"><summary>Technical mappings and preview</summary><pre>${esc(JSON.stringify({ version: bundle.version, source: bundle.source, mode: bundle.mode, mappings: bundle.mappings, unsupported: bundle.unsupported, ...preview }, null, 2))}</pre></details>
+    <details class="technical-details"><summary>Technical details</summary><pre>${esc(JSON.stringify({ version: bundle.version, source: bundle.source, mode: bundle.mode, mappings: bundle.mappings, unsupported: bundle.unsupported, ...preview }, null, 2))}</pre></details>
     ${preview.ok && !preview.alreadyApplied ? '<div class="actions import-apply"><button type="button" data-discard-import>Discard preview</button><button type="button" class="primary" data-action="apply-import" aria-describedby="import-review-summary">Apply reviewed import</button></div>' : ''}
   </section>`;
 }
@@ -374,6 +372,6 @@ export async function applyImport(h: Helpers) {
   }
   showResult();
   h.notice(
-    `${result.alreadyApplied ? 'This import was already applied.' : 'Import applied. Existing seed records were retained.'}${completed.refreshError ? ' Records could not refresh; retry the refresh below.' : ''}`,
+    `${result.alreadyApplied ? 'This import was already applied.' : 'Import applied. Existing players were kept as they are.'}${completed.refreshError ? ' Records could not refresh; retry the refresh below.' : ''}`,
   );
 }

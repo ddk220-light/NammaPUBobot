@@ -109,6 +109,13 @@ async function interaction(data: object, n = 0, rest: object = {}) {
     data: { content: string; flags: number; components?: any[]; embeds?: any[] };
   }>;
 }
+const posted = () =>
+  vi
+    .mocked(fetch)
+    .mock.calls.filter(
+      ([url, init]) => init?.method === 'POST' && /\/channels\/\d+\/messages$/.test(String(url)),
+    )
+    .map(([, init]) => JSON.parse(init!.body as string));
 const click = (m: Match, kind: string, n = 0, values?: string[]) =>
   interaction({ custom_id: `m:${m.id}:${m.version}:${kind}`, ...(values ? { values } : {}) }, n);
 
@@ -306,6 +313,7 @@ describe('public administrator panel', () => {
     async (count) => {
       const s = settings();
       s.queues[0].size = 8;
+      s.queues[0].earlyStart = 'anyone';
       await configure(s);
       for (let n = 0; n < count; n++) await act('add', n);
       const { card } = await panel();
@@ -359,6 +367,7 @@ describe('public administrator panel', () => {
     async (side) => {
       const s = settings();
       s.queues[0].size = 8;
+      s.queues[0].earlyStart = 'anyone';
       s.queues[0].modules.gold = true;
       s.queues[0].modules.predictions = true;
       await configure(s);
@@ -1011,27 +1020,54 @@ describe('player component routes', () => {
     expect((await current()).roster.map((p) => p.id)).toEqual(m.roster.map((p) => p.id));
   });
 
-  it('makes Sub me direct and denies spectators', async () => {
+  it('confirms Sub me privately, names the substitute and denies spectators', async () => {
     const m = await fill(true);
+    expect((await click(m, 'subauto', 0)).data.content).toContain('No eligible substitute');
     await act('add', 8);
-    expect((await click(m, 'subauto', 9)).data.content).toContain('outgoing player');
-    expect(await click(m, 'subauto', 0)).toEqual({ type: 6 });
-    expect((await current()).roster.some((p) => p.id === person(8).id)).toBe(true);
+    expect((await click(m, 'subauto', 9)).data.content).toContain('Only players in this match');
+    const prompt = await click(m, 'subauto', 0);
+    const team = m.teams[0].some((p) => p.id === person(0).id) ? 'Alpha' : 'Beta';
+    expect(prompt.data).toMatchObject({
+      flags: 64,
+      content: `Leave this match? Player 8 will take your place on ${team}.`,
+    });
+    expect(prompt.data.components![0].components[0].custom_id).toBe(
+      `m:${m.id}:${m.version}:confirm_sub`,
+    );
+    expect((await current()).roster.some((p) => p.id === person(8).id)).toBe(false);
+    expect(await click(m, 'confirm_sub', 9)).toMatchObject({ type: 4 });
+    expect(await click(m, 'confirm_sub', 0)).toEqual({ type: 6 });
+    const after = await current();
+    expect(after.roster.some((p) => p.id === person(8).id)).toBe(true);
+    expect(after.teams[team === 'Alpha' ? 0 : 1].some((p) => p.id === person(8).id)).toBe(true);
+    await runInDurableObject(stub(), (_i, s) => {
+      s.storage.sql.exec("UPDATE outbox SET due=0 WHERE status='pending'");
+    });
+    await stub().flush();
+    const notice = posted().find((p) => p.content?.includes('you’re in for'));
+    expect(notice).toMatchObject({
+      content: `<@${person(8).id}>, you’re in for <@${person(0).id}> on ${team}.`,
+      allowed_mentions: { parse: [], users: [person(8).id] },
+    });
   });
 
-  it.each([false, true])('retires the old Cancel match button even for admin=%s', async (admin) => {
-    const m = await fill(true);
-    const n = Number(BigInt(m.captains[0]) - 100000000000000100n);
-    const reply = await interaction({ custom_id: `m:${m.id}:${m.version}:abort` }, n, {
-      member: {
-        permissions: admin ? '32' : '0',
-        user: { id: person(n).id, username: person(n).name },
-      },
-    });
-    expect(reply.data.flags).toBe(64);
-    expect(reply.data.content).toContain('`/report abort`');
-    expect(await current()).toEqual(m);
-  });
+  it.each([false, true])(
+    'lets a captain request cancellation from the report panel (admin=%s)',
+    async (admin) => {
+      const m = await fill(true);
+      const n = Number(BigInt(m.captains[0]) - 100000000000000100n);
+      const reply = await interaction({ custom_id: `m:${m.id}:${m.version}:abort` }, n, {
+        member: {
+          permissions: admin ? '32' : '0',
+          user: { id: person(n).id, username: person(n).name },
+        },
+      });
+      expect(reply).toEqual({ type: 6 });
+      const after = await current();
+      if (admin) expect(after.state).toBe('aborted');
+      else expect(after.proposal).toMatchObject({ kind: 'abort', requester: m.captains[0] });
+    },
+  );
 
   it('starts cancellation through the command and keeps opposing-captain agreement', async () => {
     const m = await fill(true);
@@ -1073,7 +1109,7 @@ describe('player component routes', () => {
     const m = await fill(true);
     await act('add', 8);
     const id = String(seq++),
-      data = { custom_id: `m:${m.id}:${m.version}:subauto` };
+      data = { custom_id: `m:${m.id}:${m.version}:confirm_sub` };
     const saved = await interaction(data, 0, { id });
     expect(saved).toEqual({ type: 6 });
     expect(await interaction(data, 0, { id })).toEqual(saved);
@@ -1094,7 +1130,7 @@ describe('player component routes', () => {
     const joined = await interaction({ name: 'add' }, 0, { type: 2 });
     expect(joined).toEqual({ type: 5, data: { flags: 64 } });
     expect(queueCard(s.queues[0], [person(0)]).embeds[0].description).toContain(
-      'expire after 60 seconds',
+      'expire after 1 minute',
     );
     await runInDurableObject(stub(), (_i, state) => {
       for (let n = 1; n < 4; n++)
@@ -1220,5 +1256,173 @@ describe('quiet durable message delivery', () => {
     await stub().flush();
     expect(vi.mocked(fetch).mock.calls.filter(([, i]) => i?.method === 'POST')).toHaveLength(1);
     expect(vi.mocked(fetch).mock.calls.filter(([, i]) => i?.method === 'PATCH')).toHaveLength(1);
+  });
+});
+
+describe('reporting from the match card', () => {
+  const role = '100000000000000777';
+  const index = (id: string) => Number(BigInt(id) - 100000000000000100n);
+  const labels = (reply: { data: { components?: any[] } }) =>
+    (reply.data.components ?? []).flatMap((row) => row.components.map((c: any) => c.label));
+  const moderator = (n: number) => ({
+    member: { permissions: '0', roles: [role], user: { id: person(n).id, username: 'Mod' } },
+  });
+  const deliver = async () => {
+    await runInDurableObject(stub(), (_i, s) => {
+      s.storage.sql.exec("UPDATE outbox SET due=0 WHERE status='pending'");
+    });
+    await stub().flush();
+  };
+  async function start(roles: string[] = []) {
+    const s = settings();
+    s.queues[0].checkIn.enabled = false;
+    s.queues[0].adminRoles = roles;
+    await configure(s);
+    for (let n = 0; n < 4; n++) await act('add', n);
+    return current();
+  }
+  const webhookBodies = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.filter(([url, init]) => String(url).includes('/webhooks/') && init?.body)
+      .map(([, init]) => JSON.parse(init!.body as string));
+
+  it('gives captains report choices and tells everyone else who reports', async () => {
+    const m = await start();
+    const captain = await click(m, 'report', index(m.captains[0]));
+    expect(captain.type).toBe(4);
+    expect(captain.data.flags).toBe(64);
+    expect(labels(captain)).toEqual(['We lost', 'We won', 'Draw', 'Cancel match']);
+    expect(captain.data.components![0].components.map((c: any) => c.custom_id)).toEqual(
+      ['confirm_loss', 'claim', 'draw', 'abort'].map((k) => `m:${m.id}:${m.version}:${k}`),
+    );
+    expect(captain.data.content).toContain(`asks <@${m.captains[1]}> to confirm`);
+    const player = m.roster.find((p) => !m.captains.includes(p.id))!;
+    for (const n of [index(player.id), 9]) {
+      const other = await click(m, 'report', n);
+      expect(other.data.content).toContain(
+        `Alpha’s captain is <@${m.captains[0]}> and Beta’s is <@${m.captains[1]}>. One of them reports the result, or an organizer can.`,
+      );
+      expect(labels(other)).toEqual([]);
+    }
+    expect((await click({ ...m, version: m.version + 1 }, 'report', 0)).data.content).toContain(
+      'match changed',
+    );
+    expect(await current()).toEqual(m);
+  });
+
+  it('gives organizers the admin result controls with the same confirmation', async () => {
+    const m = await start([role]);
+    const panel = await interaction(
+      { custom_id: `m:${m.id}:${m.version}:report` },
+      9,
+      moderator(9),
+    );
+    expect(labels(panel)).toEqual(['Alpha lost', 'Beta lost', 'Draw', 'Cancel match']);
+    const own = panel.data.components![0].components[0].custom_id;
+    expect(own).toBe(`adm:${person(9).id}:alpha_loss:${m.id}:${m.version}`);
+    const admin = await interaction({ custom_id: `m:${m.id}:${m.version}:report` }, 8, {
+      member: { permissions: '32', user: { id: person(8).id, username: 'Admin' } },
+    });
+    expect(labels(admin)).toEqual(['Alpha lost', 'Beta lost', 'Draw', 'Cancel match']);
+    const captainModerator = await interaction(
+      { custom_id: `m:${m.id}:${m.version}:report` },
+      index(m.captains[0]),
+      moderator(index(m.captains[0])),
+    );
+    expect(labels(captainModerator)).toHaveLength(8);
+    const privately = { ...moderator(9), message: { flags: 64, author: { id: app } } };
+    expect(await interaction({ custom_id: own }, 9, privately)).toEqual({ type: 6 });
+    const prompt = webhookBodies().at(-1);
+    expect(JSON.stringify(prompt.embeds)).toContain('Record Alpha’s loss (Beta wins)?');
+    expect((await current()).state).toBe('playing');
+    const confirm = prompt.components[0].components.find((c: any) => c.label === 'Confirm');
+    // Another member cannot use a private panel owned by the moderator.
+    const stolen = await interaction({ custom_id: confirm.custom_id }, 8, {
+      ...moderator(8),
+      message: { flags: 64, author: { id: app } },
+    });
+    expect(stolen.data.content).toContain('current public /admin panel');
+    await interaction({ custom_id: confirm.custom_id }, 9, privately);
+    expect(await current()).toMatchObject({ state: 'finished', result: 'beta' });
+  });
+
+  it('records a win claim when the opposing captain confirms it and rejects other clicks', async () => {
+    const m = await start();
+    const [a, b] = m.captains.map(index);
+    expect((await click(m, 'claim', 9)).data.content).toContain(
+      `Only a team captain can report the result. Captains: <@${m.captains[0]}> (Alpha)`,
+    );
+    expect(await click(m, 'claim', a)).toEqual({ type: 6 });
+    const claimed = await current();
+    expect(claimed.version).toBe(m.version);
+    const p = claimed.proposal!;
+    expect(p).toMatchObject({ kind: 'win', side: 'alpha', requester: m.captains[0] });
+    await deliver();
+    const request = posted().find((c) => c.embeds?.[0]?.description?.includes('says Alpha won'))!;
+    expect(request.content).toBe(`<@${m.captains[1]}>`);
+    expect(request.allowed_mentions).toEqual({ parse: [], users: [m.captains[1]] });
+    const confirm = { custom_id: `a:${m.id}:${m.version}:${p.id}:win` };
+    expect((await interaction(confirm, a)).data.content).toContain(
+      `Waiting for <@${m.captains[1]}> to answer`,
+    );
+    expect((await interaction(confirm, 9)).data.content).toContain(
+      `Only <@${m.captains[1]}> can answer`,
+    );
+    expect((await current()).state).toBe('playing');
+    expect(await interaction(confirm, b)).toEqual({ type: 6 });
+    expect(await current()).toMatchObject({ state: 'finished', result: 'alpha' });
+    const again = await interaction(confirm, b);
+    expect(again.data.content).toMatch(/changed|ended|closed/);
+    expect((await stub().records(guild)).changes).toHaveLength(4);
+    await deliver();
+    expect(posted().filter((c) => c.content?.includes('Alpha won. Ratings'))).toHaveLength(1);
+  });
+
+  it('edits a disputed claim and mentions the moderator roles once', async () => {
+    const m = await start([role]);
+    const [a, b] = m.captains.map(index);
+    await click(m, 'claim', b);
+    const p = (await current()).proposal!;
+    await deliver();
+    const dispute = { custom_id: `a:${m.id}:${m.version}:${p.id}:decline` };
+    expect(p.opposing).toBe(m.captains[0]);
+    expect((await interaction(dispute, b)).data.content).toContain('Waiting for');
+    expect((await interaction(dispute, 9)).data.content).toContain(`Only <@${m.captains[0]}>`);
+    vi.mocked(fetch).mockClear();
+    expect(await interaction(dispute, a)).toEqual({ type: 6 });
+    const after = await current();
+    expect(after.state).toBe('playing');
+    expect(after.proposal).toBeUndefined();
+    expect((await interaction(dispute, a)).data.content).toContain('already ended');
+    await deliver();
+    await deliver();
+    const edited = vi
+      .mocked(fetch)
+      .mock.calls.filter(([, init]) => init?.method === 'PATCH')
+      .map(([, init]) => JSON.parse(init!.body as string))
+      .find((c) => JSON.stringify(c.embeds).includes('disputed this result'));
+    expect(edited.components).toEqual([]);
+    expect(JSON.stringify(edited.embeds)).toContain('/admin or the website');
+    const pings = posted().filter((c) => c.content?.includes(`<@&${role}>`));
+    expect(pings).toHaveLength(1);
+    expect(pings[0].allowed_mentions).toEqual({ parse: [], roles: [role] });
+  });
+
+  it('refuses an early /queue start and admin-panel start from members, with the reason', async () => {
+    const s = settings();
+    s.queues[0].size = 8;
+    await configure(s);
+    for (let n = 0; n < 3; n++) await act('add', n);
+    await interaction({ name: 'queue', options: [{ name: 'start' }] }, 9, { type: 2 });
+    expect(webhookBodies().at(-1).content).toContain(
+      'Only server administrators, managers and this queue’s bot moderators can start it',
+    );
+    expect((await stub().records(guild)).matches).toHaveLength(0);
+    await interaction({ name: 'queue', options: [{ name: 'start' }] }, 9, {
+      type: 2,
+      member: { permissions: '32', user: { id: person(9).id, username: 'Admin' } },
+    });
+    expect((await stub().records(guild)).matches).toHaveLength(1);
   });
 });

@@ -586,25 +586,22 @@ describe('delivery and signed surfaces', () => {
   it('keeps command definitions within Discord constraints with admin visibility on privileged groups', () => {
     expect(commands.map((c) => c.name)).toEqual([
       'test',
-      'admin',
-      'civpick',
-      'manage',
+      'help',
       'add',
       'remove',
       'queue',
-      'lobby',
       'teams',
-      'rally',
-      'gold',
-      'maps',
-      'predictions',
-      'rank',
-      'leaderboard',
-      'profile',
+      'report',
       'subme',
       'subfor',
-      'subauto',
-      'report',
+      'rank',
+      'leaderboard',
+      'gold',
+      'profile',
+      'lobby',
+      'civpick',
+      'admin',
+      'manage',
     ]);
     for (const c of commands) {
       expect(c.description.length).toBeLessThanOrEqual(100);
@@ -630,13 +627,13 @@ describe('delivery and signed surfaces', () => {
         0,
       ) + [...(o.options ?? []), ...(o.choices ?? [])].reduce((n, o) => n + characters(o), 0);
     expect(characters(admin)).toBeLessThanOrEqual(8000);
-    expect(commands.find((c) => c.name === 'queue')!.options.map((o) => o.name)).toEqual([
+    expect(commands.find((c) => c.name === 'queue')!.options!.map((o) => o.name)).toEqual([
       'show',
       'start',
     ]);
     const queueStart = commands
       .find((c) => c.name === 'queue')!
-      .options.find((o) => o.name === 'start')!;
+      .options!.find((o) => o.name === 'start')!;
     expect('options' in queueStart && queueStart.options?.map((o) => o.name)).toEqual(['queue']);
     expect(defaultRatingSettings.initial).toBe(1000);
   });

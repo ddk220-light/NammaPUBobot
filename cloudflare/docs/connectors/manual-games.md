@@ -16,7 +16,7 @@ Steam authentication proves control of the Steam account. It does not prove owne
 
 ## Using the bot
 
-- `/lobby link profile_id:…` declares an account for the current queue's game, including before a first match. `/profile verify` opens a member-accessible Steam, Battle.net or BAR verification page when supported. Authenticated verification never creates a played match or awards a rating.
+- `/profile link profile_id:…` declares an account for the current queue's game, including before a first match. `/profile verify` opens a member-accessible Steam, Battle.net or BAR verification page when supported. Authenticated verification never creates a played match or awards a rating.
 - `/lobby attach reference:…` associates the current bot match with a host-supplied room. `/lobby status` shows its association ID, freshness, availability and facts.
 - A captain can use `/lobby confirm binding_id:…` after checking the current association and roster. The exact ID prevents a confirmation from applying to a replacement association.
 - `/lobby facts selection:…` declares the caller's actual faction/clan. Captains and organizers may also supply `map`, `elapsed_seconds` and an external `recording_url`. Teams come from the bot roster. Declarations do not settle a result.

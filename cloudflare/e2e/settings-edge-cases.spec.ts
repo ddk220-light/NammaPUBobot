@@ -7,14 +7,7 @@ test('every queue category has usable help, domain defaults and correctly labell
 }, info) => {
   await mockApp(page);
   await page.goto(editor);
-  for (const name of [
-    'Basics',
-    'Access',
-    'Match Preparation',
-    'Maps',
-    'Engagement',
-    'Voice / Rally',
-  ]) {
+  for (const name of ['Basics', 'Access', 'Match preparation', 'Maps', 'Extras']) {
     await page.getByRole('button', { name, exact: true }).click();
     const category = page.locator('[data-category-panel]:visible');
     await expect(category).toHaveCount(1);
@@ -41,7 +34,7 @@ test('clearing a saved map pool cannot silently erase timer or other map edits',
   await page.goto(editor);
   await page.getByRole('button', { name: 'Maps', exact: true }).click();
   const pool = page.getByRole('textbox', { name: 'Map pool', exact: true });
-  const seconds = page.getByRole('spinbutton', { name: 'Selection time (seconds)', exact: true });
+  const seconds = page.getByRole('spinbutton', { name: 'Map choice time (seconds)', exact: true });
   await pool.fill('');
   await seconds.fill('');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -66,9 +59,11 @@ test('custom map edits require a pool and preserve the selected options until co
   delete state.snapshot.settings.queues[0].maps;
   await page.goto(editor);
   await page.getByRole('button', { name: 'Maps', exact: true }).click();
-  await page.getByRole('spinbutton', { name: 'Selection time (seconds)', exact: true }).fill('120');
   await page
-    .getByRole('combobox', { name: 'Selection method', exact: true })
+    .getByRole('spinbutton', { name: 'Map choice time (seconds)', exact: true })
+    .fill('120');
+  await page
+    .getByRole('combobox', { name: 'How the map is chosen', exact: true })
     .selectOption('random');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   expect(state.saved).toHaveLength(0);
@@ -92,7 +87,8 @@ test('map shortlist constraints match server validation and a failed save keeps 
   const state = await mockApp(page);
   await page.goto(editor);
   await page.getByRole('button', { name: 'Maps', exact: true }).click();
-  const shortlist = page.getByRole('spinbutton', { name: 'Shortlist size', exact: true });
+  await page.locator('[data-category-panel="maps"] details[data-advanced] > summary').click();
+  const shortlist = page.getByRole('spinbutton', { name: 'Maps on the ballot', exact: true });
   await expect(shortlist).toHaveAttribute('min', '1');
   await shortlist.fill('0');
   await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -109,7 +105,7 @@ test('predictions explain their Gold dependency without silently clearing a stag
 }) => {
   const state = await mockApp(page);
   await page.goto(editor);
-  await page.getByRole('button', { name: 'Engagement', exact: true }).click();
+  await page.getByRole('button', { name: 'Extras', exact: true }).click();
   const gold = page.getByRole('checkbox', { name: 'Gold', exact: true });
   const predictions = page.getByRole('checkbox', { name: 'Predictions', exact: true });
   await expect(predictions).toBeDisabled();

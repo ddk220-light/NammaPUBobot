@@ -11,12 +11,25 @@ import {
   playable,
   PlayError,
   policy,
+  proposalSeconds,
   type Action,
   type Match,
+  type Proposal,
+  type ProposalOutcome,
   type Reply,
 } from '../domain/play';
 import { rateTeams, type Player } from '../domain/rating';
-import { matchCard, queueCard, queuePingCard, agreementCard, type Card } from '../discord/cards';
+import {
+  matchCard,
+  queueCard,
+  queuePingCard,
+  agreementCard,
+  disputeNotice,
+  quietMatch,
+  resultNotice,
+  substituteNotice,
+  type Card,
+} from '../discord/cards';
 import { RecordStore } from './record-store';
 import { createUxTables, UxStore } from './ux-store';
 import { createEconomyTables, EconomyStore } from './economy-store';
@@ -33,7 +46,25 @@ import {
 
 const voiceInterval = 5 * 60 * 1000;
 const queueVisibilityInterval = 15 * 60 * 1000;
+// Periodic card and voice checks run only this long after a queue was last used.
+const activityWindow = 6 * 60 * 60 * 1000;
+type Refusal = { count: number; since: number; last: number; status: number };
 type QueueVoiceCache = { due: number; observedAt: number; members: VoiceMember[] | null };
+// AbortSignal.timeout leaves its timer pending after the response, which holds the
+// invocation open for the full timeout. Read the body inside the bound, then clear it.
+async function discordFetch(url: string, { timeout, ...init }: RequestInit & { timeout: number }) {
+  const controller = new AbortController(),
+    timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const body = [101, 204, 205, 304].includes(response.status)
+      ? null
+      : await response.arrayBuffer();
+    return new Response(body, response);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 type Entry = { user_id: string; display_name: string };
 function calculate(m: Match, result: 0 | 1 | null) {
@@ -76,6 +107,8 @@ export function createPlayTables(sql: SqlStorage) {
     'CREATE TABLE IF NOT EXISTS queue_entries (seq INTEGER PRIMARY KEY AUTOINCREMENT, queue_id TEXT NOT NULL, user_id TEXT NOT NULL, display_name TEXT NOT NULL, UNIQUE(queue_id,user_id))',
   );
   sql.exec('CREATE INDEX IF NOT EXISTS entry_user ON queue_entries(user_id)');
+  // Waiting places added by /test populate; matches formed from them never mention anyone.
+  sql.exec('CREATE TABLE IF NOT EXISTS test_entries (seq INTEGER PRIMARY KEY)');
   sql.exec(
     'CREATE TABLE IF NOT EXISTS profiles (game_id TEXT NOT NULL, user_id TEXT NOT NULL, config TEXT NOT NULL, PRIMARY KEY(game_id,user_id))',
   );
@@ -147,6 +180,8 @@ export function createPlayTables(sql: SqlStorage) {
 export class PlayStore {
   private flushing: Promise<void> | null = null;
   private resettingTest: Promise<Reply> | null = null;
+  private populating = false;
+  private alarmRunning = false;
   constructor(
     private ctx: DurableObjectState,
     private env: Env,
@@ -264,19 +299,24 @@ export class PlayStore {
           throw new PlayError(
             'The available players changed or too few are eligible. Nothing was added; retry /test populate.',
           );
-        for (const target of members)
-          this.dispatch(
-            {
-              id: request.id,
-              actor: request.actor,
-              channelId: request.channelId,
-              queue: q.id,
-              admin: true,
-              kind: 'add',
-              target,
-            },
-            settings,
-          );
+        this.populating = true;
+        try {
+          for (const target of members)
+            this.dispatch(
+              {
+                id: request.id,
+                actor: request.actor,
+                channelId: request.channelId,
+                queue: q.id,
+                admin: true,
+                kind: 'add',
+                target,
+              },
+              settings,
+            );
+        } finally {
+          this.populating = false;
+        }
         reply = {
           ok: true,
           content: `Added ${members.length} players to ${q.name}. Use the regular controls, then /test checkin to mark the match as a test before reporting it.`,
@@ -548,14 +588,17 @@ export class PlayStore {
       (q) =>
         q.enabled &&
         q.voicePreview &&
+        this.recent(q.id) &&
         this.sql.exec('SELECT 1 FROM cards WHERE key=?', `queue:${q.id}`).toArray().length,
     );
   }
-  private visibilityQueues(settings: Settings) {
+  private visibilityQueues(settings: Settings, at = Date.now()) {
     return settings.queues.filter(
       (q) =>
         q.enabled &&
         q.keepQueueVisible !== false &&
+        this.recent(q.id, at) &&
+        !this.unreachable(q.channelId) &&
         this.sql
           .exec(
             'SELECT 1 FROM cards WHERE key=? AND channel_id=? AND message_id IS NOT NULL',
@@ -564,6 +607,73 @@ export class PlayStore {
           )
           .toArray().length,
     );
+  }
+  // Joins, leaves, match changes and card publications, never the periodic checks themselves.
+  private noteActivity(queueId: string) {
+    const now = Date.now(),
+      seen = this.ctx.storage.kv.get<Record<string, number>>('queueActivity') ?? {};
+    this.ctx.storage.kv.put('queueActivity', {
+      ...Object.fromEntries(Object.entries(seen).filter(([, at]) => at + activityWindow > now)),
+      [queueId]: now,
+    });
+  }
+  private recent(queueId: string, at = Date.now()) {
+    const seen = this.ctx.storage.kv.get<Record<string, number>>('queueActivity')?.[queueId];
+    return seen !== undefined && seen + activityWindow > at;
+  }
+  private refusals() {
+    return this.ctx.storage.kv.get<Record<string, Refusal>>('channelRefusals') ?? {};
+  }
+  private refused(channel: string, status: number) {
+    const all = this.refusals(),
+      old = all[channel];
+    all[channel] = {
+      count: (old?.count ?? 0) + 1,
+      since: old?.since ?? Date.now(),
+      last: Date.now(),
+      status,
+    };
+    this.ctx.storage.kv.put('channelRefusals', all);
+  }
+  // Repeated refusals over at least an hour, so one permission blip does not stop a channel.
+  private unreachable(channel: string) {
+    const r = this.refusals()[channel];
+    return !!r && r.count >= 3 && r.last - r.since >= 3600000;
+  }
+  private reachable(channel: string) {
+    const all = this.refusals();
+    if (!all[channel]) return;
+    const retry = this.unreachable(channel);
+    delete all[channel];
+    if (Object.keys(all).length) this.ctx.storage.kv.put('channelRefusals', all);
+    else this.ctx.storage.kv.delete('channelRefusals');
+    if (retry)
+      this.sql.exec(
+        "UPDATE outbox SET status='pending',attempts=0,error=NULL,due=? WHERE status='blocked' AND error IN ('channel_unreachable','discord_403','discord_404') AND key IN (SELECT key FROM cards WHERE channel_id=?)",
+        Date.now(),
+        channel,
+      );
+  }
+  /** A settings save is the organizer's retry after fixing access. */
+  channelsSaved(settings: Settings) {
+    const channels = new Set(settings.queues.map((q) => q.channelId));
+    for (const channel of Object.keys(this.refusals()))
+      if (!channels.has(channel) || this.unreachable(channel)) this.reachable(channel);
+  }
+  private unreachableChannels(settings: Settings) {
+    return Object.entries(this.refusals())
+      .filter(([channel]) => this.unreachable(channel))
+      .map(([channelId, r]) => {
+        const queues = settings.queues.filter((q) => q.channelId === channelId);
+        return {
+          channelId,
+          queueIds: queues.map((q) => q.id),
+          refusals: r.count,
+          since: r.since,
+          status: r.status,
+          message: `The bot can't reach #${channelId}${queues.length ? ` (${queues.map((q) => q.name).join(', ')})` : ''}. Re-add the bot or fix its permissions, then save the queue.`,
+        };
+      });
   }
   private queueDeliveryPending(id: string) {
     // Do not reset failed/ambiguous deliveries or create overlapping publications.
@@ -587,11 +697,11 @@ export class PlayStore {
       const route = `channel:${channel}`;
       if ((await gate.reserve(route)) > Date.now()) continue;
       try {
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/channels/${channel}/messages?limit=5`,
           {
             headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-            signal: AbortSignal.timeout(5000),
+            timeout: 5000,
           },
         );
         if (response.status === 429) {
@@ -606,7 +716,9 @@ export class PlayStore {
             body?.global === true,
           );
         }
+        if ([403, 404].includes(response.status)) this.refused(channel, response.status);
         if (!response.ok) continue; // Preserve the card; retry at the next 15-minute check.
+        this.reachable(channel);
         await this.rateHeaders(response, route, gate);
         const rows: unknown = await response.json();
         if (!Array.isArray(rows) || rows.some((r) => !r || !/^\d{17,20}$/.test(r.id))) continue;
@@ -727,11 +839,11 @@ export class PlayStore {
       for (const candidate of presence.preview) {
         if ((await gate.reserve(route)) > Date.now())
           throw new PlayError('Discord is busy verifying queue eligibility. Try again shortly.');
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/guilds/${guild}/members/${candidate.userId}`,
           {
             headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-            signal: AbortSignal.timeout(1000),
+            timeout: 1000,
           },
         );
         await this.rateHeaders(response, route, gate);
@@ -899,11 +1011,11 @@ export class PlayStore {
       const at = await gate.reserve(`members:${guild}`);
       if (at > Date.now()) break;
       try {
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/guilds/${guild}/members/${candidate.userId}`,
           {
             headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-            signal: AbortSignal.timeout(1000),
+            timeout: 1000,
           },
         );
         if (!response.ok) continue;
@@ -1112,6 +1224,8 @@ export class PlayStore {
         q.id,
       )
       .toArray()[0];
+    if (!visibilityOnly && (refresh || afterMatch || view?.digest !== digest))
+      this.noteActivity(q.id);
     const pending = view
       ? this.sql
           .exec<{ key: string; state: string; after_matches: string }>(
@@ -1219,7 +1333,33 @@ export class PlayStore {
           m.deadline > Date.now() &&
           m.ready.length < m.roster.length &&
           (!round || round === String(m.deadline))
-      : ['playing', 'check_in'].includes(m.state) && m.proposal?.id === round;
+      : (['playing', 'check_in'].includes(m.state) && m.proposal?.id === round) ||
+          !!m.endedProposals?.includes(round);
+  }
+  /**
+   * Close the open captain request. A declined, expired or unanswered request keeps
+   * its card, edited to show the requester the outcome; otherwise the card is retired.
+   */
+  private endProposal(m: Match, outcome: ProposalOutcome) {
+    const p = m.proposal;
+    if (!p) return;
+    m.proposal = undefined;
+    m.agreements = {};
+    this.sql.exec("DELETE FROM deadlines WHERE match_id=? AND kind='proposal'", m.id);
+    if (!['declined', 'expired', 'auto'].includes(outcome)) return;
+    m.endedProposals = [...(m.endedProposals ?? []), p.id].slice(-10);
+    this.enqueue(`agreement:${m.id}:${p.id}`, m.queue.channelId, agreementCard(m, p, outcome));
+  }
+  private propose(m: Match, p: Omit<Proposal, 'id' | 'expiresAt'>) {
+    this.endProposal(m, 'replaced');
+    m.proposal = { id: crypto.randomUUID(), ...p, expiresAt: Date.now() + proposalSeconds * 1000 };
+    this.sql.exec(
+      'INSERT OR REPLACE INTO deadlines VALUES(?,?,?,?)',
+      `proposal:${m.id}`,
+      'proposal',
+      m.id,
+      m.proposal.expiresAt,
+    );
   }
   private finishReminders(m: Match) {
     for (const { key } of this.sql
@@ -1232,6 +1372,7 @@ export class PlayStore {
       this.retireTransient(key);
   }
   private saveMatch(m: Match) {
+    this.noteActivity(m.queue.id);
     this.lobbies.sync(m);
     this.civs.sync(m);
     this.sql.exec(
@@ -1317,7 +1458,7 @@ export class PlayStore {
     matchId?: string,
     version?: number,
   ) {
-    this.read(guild);
+    const settings = this.read(guild).settings;
     const m = this.selectedMatch({
       id: crypto.randomUUID(),
       actor: { id: actorId, name: 'Player' },
@@ -1331,11 +1472,18 @@ export class PlayStore {
     const pointer = this.sql
       .exec<Pointer>('SELECT * FROM cards WHERE key=?', `match:${m.id}`)
       .toArray()[0];
+    const q = settings.queues.find((q) => q.id === m.queue.id);
+    // Previews only; the transactional handler selects the actual substitute.
+    const substitute = q?.enabled
+      ? this.available(q).find((e) => this.allowed(m.queue, e.user_id))
+      : undefined;
     return {
       match: m,
       url: pointer?.message_id
         ? `https://discord.com/channels/${guild}/${channelId}/${pointer.message_id}`
         : undefined,
+      adminRoles: q?.adminRoles ?? [],
+      substitute: substitute && { id: substitute.user_id, name: substitute.display_name },
     };
   }
   playerReceipt(
@@ -1462,11 +1610,11 @@ export class PlayStore {
           const route = `members:${guild}`;
           if ((await gate.reserve(route)) > Date.now())
             throw new Error('Membership checks are rate limited.');
-          const response = await fetch(
+          const response = await discordFetch(
             `https://discord.com/api/v10/guilds/${guild}/members/${id}`,
             {
               headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-              signal: AbortSignal.timeout(1000),
+              timeout: 1000,
             },
           );
           await this.rateHeaders(response, route, gate);
@@ -1638,6 +1786,19 @@ export class PlayStore {
         );
       }
     }
+    if (
+      selected.some(
+        (e) =>
+          this.sql
+            .exec(
+              'SELECT 1 FROM test_entries t JOIN queue_entries e ON e.seq=t.seq WHERE e.queue_id=? AND e.user_id=?',
+              q.id,
+              e.user_id,
+            )
+            .toArray().length,
+      )
+    )
+      m.silent = true;
     const affected = new Set<string>([q.id]);
     for (const p of roster) {
       this.sql.exec('DELETE FROM pending_returns WHERE user_id=?', p.id);
@@ -1658,6 +1819,7 @@ export class PlayStore {
       this.sql.exec('DELETE FROM queue_clocks WHERE user_id=?', p.id);
       this.saveProfile(q.gameId, p, q.ratingEngine);
     }
+    this.sql.exec('DELETE FROM test_entries WHERE seq NOT IN (SELECT seq FROM queue_entries)');
     this.sql.exec(
       'INSERT OR REPLACE INTO deadlines VALUES(?,?,?,?)',
       `lifetime:${m.id}`,
@@ -1703,7 +1865,7 @@ export class PlayStore {
   }
   private close(m: Match, result: 'alpha' | 'beta' | 'draw' | 'abort', actor: string) {
     for (const p of m.roster) this.ux.clear(p.id);
-    m.proposal = undefined;
+    this.endProposal(m, 'ended');
     this.economy.finish(m, result);
     if (result === 'abort') {
       m.state = 'aborted';
@@ -1755,6 +1917,9 @@ export class PlayStore {
     this.clearDeadlines(m);
     this.sql.exec('DELETE FROM active_players WHERE match_id=?', m.id);
     this.saveMatch(m);
+    // One short channel message per recorded result, so it is noticed without scrolling up.
+    if (!m.test && !this.testMode)
+      this.enqueue(`result:${m.id}:${m.generation ?? 0}`, m.queue.channelId, resultNotice(m));
     if (!m.test)
       this.audit(
         'report',
@@ -1814,6 +1979,12 @@ export class PlayStore {
     m.closedAt = Date.now();
     // Retain the original record and deltas for audit, while excluding it from current stats.
     this.saveMatch(m);
+    if (!this.testMode)
+      this.enqueue(
+        `withdrawn:${m.id}:${m.generation ?? 0}`,
+        m.queue.channelId,
+        resultNotice(m, true),
+      );
     const rated =
       m.ratedPlayers ??
       rateTeams(
@@ -1874,8 +2045,7 @@ export class PlayStore {
     if (m.teams.some((t) => !t.length) || m.roster.length > 16)
       throw new PlayError('Keep two nonempty teams with at most 16 total players.');
     m.captains = [m.teams[0][0].id, m.teams[1][0].id];
-    m.agreements = {};
-    m.proposal = undefined;
+    this.endProposal(m, 'ended');
     this.economy.rosterChanged(m);
     if (m.queue.modules.stories) {
       m.storiesBefore = beforeStories(m, this.storyHistory(m));
@@ -1915,6 +2085,7 @@ export class PlayStore {
     actor: string,
     rebalance: boolean,
     force = false,
+    notify = false,
   ) {
     const old = m.roster.find((p) => p.id === outgoing);
     if (!old) throw new PlayError('That outgoing player is no longer in this roster.');
@@ -1936,6 +2107,14 @@ export class PlayStore {
     if (m.state === 'check_in' && this.ux.ready(m.queue, incoming.id, Date.now()))
       m.ready.push(incoming.id);
     this.rosterChanged(m, actor, { outgoing, incoming: incoming.id, rebalance, forced: force });
+    if (notify) this.announceSubstitute(m, incoming.id, outgoing);
+  }
+  private announceSubstitute(m: Match, incoming: string, outgoing: string) {
+    this.enqueue(
+      `sub:${m.id}:${outgoing}:${incoming}`,
+      m.queue.channelId,
+      substituteNotice(m, incoming, outgoing),
+    );
   }
   private expire(now: number, settings: Settings) {
     // Also retire reminders already delivered by earlier versions. Active transient
@@ -1987,6 +2166,21 @@ export class PlayStore {
         this.timeoutMatch(m, now);
         continue;
       }
+      if (job.kind === 'proposal') {
+        const p = m.proposal;
+        if (!p || !['check_in', 'playing'].includes(m.state) || (p.expiresAt ?? Infinity) > now)
+          continue;
+        if (p.kind === 'win' && m.state === 'playing') {
+          // An undisputed win claim stands, like a reported loss.
+          this.endProposal(m, 'auto');
+          this.close(m, p.side!, p.requester);
+          this.audit('claim_unanswered', 'system', { requester: p.requester }, m.id, m.queue.id);
+        } else {
+          this.endProposal(m, 'expired');
+          this.saveMatch(m);
+        }
+        continue;
+      }
       if (job.kind === 'map') {
         if (!['check_in', 'playing'].includes(m.state) || m.mapRound?.state !== 'open') continue;
         try {
@@ -2004,8 +2198,9 @@ export class PlayStore {
       if (m.state !== 'check_in') continue;
       if (job.kind === 'reminder' && m.deadline! > now) {
         const missing = m.roster.filter((p) => !m.ready.includes(p.id)).map((p) => p.id);
-        const card = matchCard(m);
-        card.content = `${missing.map((id) => `<@${id}>`).join(' ')} Check-in ends <t:${Math.floor(m.deadline! / 1000)}:R>. Confirm your place.`;
+        const card = matchCard(m),
+          quiet = quietMatch(m);
+        card.content = `${quiet ? '' : `${missing.map((id) => `<@${id}>`).join(' ')} `}Check-in ends <t:${Math.floor(m.deadline! / 1000)}:R>. Confirm your place.`;
         card.embeds = [];
         if (!m.mapRound?.settings.countsAsCheckIn)
           card.components = [
@@ -2016,7 +2211,7 @@ export class PlayStore {
               ],
             },
           ];
-        card.allowed_mentions = { parse: [], users: missing };
+        card.allowed_mentions = { parse: [], users: quiet ? [] : missing };
         if (missing.length) this.enqueue(`reminder:${m.id}:${m.deadline}`, m.queue.channelId, card);
       } else if (m.deadline! <= now) {
         const q = settings.queues.find((q) => q.id === m.queue.id && q.gameId === m.queue.gameId);
@@ -2046,6 +2241,8 @@ export class PlayStore {
             reason: 'no_show_replacement',
             round: m.replacementRounds,
           });
+          for (let i = 0; i < missing.length; i++)
+            this.announceSubstitute(m, candidates[i].user_id, missing[i].id);
           continue;
         }
         this.economy.finish(m, 'abort');
@@ -2070,6 +2267,7 @@ export class PlayStore {
               p.id,
               p.name,
             );
+            if (m.silent) this.markTestEntry(q.id, p.id);
             this.waitingClock(q, p.id);
           }
           this.touchQueue(q);
@@ -2084,6 +2282,13 @@ export class PlayStore {
         );
       }
     }
+  }
+  private markTestEntry(queueId: string, userId: string) {
+    this.sql.exec(
+      'INSERT OR IGNORE INTO test_entries SELECT seq FROM queue_entries WHERE queue_id=? AND user_id=?',
+      queueId,
+      userId,
+    );
   }
   private timeoutMatch(m: Match, now: number) {
     if (!['playing', 'check_in'].includes(m.state)) return;
@@ -2222,7 +2427,11 @@ export class PlayStore {
       throw new PlayError('Manage Server permission is required for this action.');
     if (a.target && a.target.id !== a.actor.id && !a.admin && ['add', 'remove'].includes(a.kind))
       throw new PlayError('Only an administrator can add or remove another player.');
-    if (['ready', 'loss', 'draw', 'abort', 'recover_abort', 'teams'].includes(a.kind)) {
+    if (
+      ['ready', 'loss', 'draw', 'abort', 'claim', 'decline', 'recover_abort', 'teams'].includes(
+        a.kind,
+      )
+    ) {
       const m = this.selectedMatch(a);
       if (a.kind === 'teams') {
         this.saveMatch(m);
@@ -2270,6 +2479,52 @@ export class PlayStore {
         this.close(m, 'abort', a.actor.id);
         return { content: 'Match cancelled. No ratings changed.' };
       }
+      const captainsLine = `Captains: <@${m.captains[0]}> (Alpha) and <@${m.captains[1]}> (Beta).`;
+      if (a.proposalId) {
+        const p = m.proposal;
+        if (
+          p?.id !== a.proposalId ||
+          (a.kind !== 'decline' && a.kind !== (p.kind === 'win' ? 'claim' : p.kind))
+        )
+          throw new PlayError(
+            'This request already ended. Check the match card for the current state.',
+          );
+        if (p.opposing !== a.actor.id)
+          throw new PlayError(
+            p.requester === a.actor.id
+              ? `Waiting for <@${p.opposing}> to answer. ${p.kind === 'win' ? 'Your result confirms automatically' : 'Your request expires'} <t:${Math.floor((p.expiresAt ?? Date.now()) / 1000)}:R>.`
+              : `Only <@${p.opposing}> can answer this request.`,
+          );
+        if (a.kind === 'decline') {
+          this.endProposal(m, 'declined');
+          if (p.kind === 'win') {
+            const roles =
+              settings.queues.find((q) => q.id === m.queue.id)?.adminRoles ??
+              m.queue.adminRoles ??
+              [];
+            if (roles.length)
+              this.enqueue(`dispute:${m.id}:${p.id}`, m.queue.channelId, disputeNotice(m, roles));
+            this.audit('claim_disputed', a.actor.id, { requester: p.requester }, m.id, m.queue.id);
+          }
+          this.saveMatch(m);
+          return {
+            content:
+              p.kind === 'win'
+                ? 'Result disputed. An organizer can record it from /admin or the website.'
+                : 'Request declined. The match continues.',
+          };
+        }
+        if (p.kind === 'win') {
+          this.endProposal(m, 'accepted');
+          this.close(m, p.side!, a.actor.id);
+          return {
+            content: m.test
+              ? 'Test match completed. Results and ratings were not recorded.'
+              : `${p.side === 'alpha' ? 'Alpha' : 'Beta'} wins. Result and ratings saved.`,
+          };
+        }
+      }
+      if (a.kind === 'decline') throw new PlayError('Use the request card to decline.');
       if (m.state !== 'playing' && a.kind !== 'abort')
         throw new PlayError(
           'Finish check-in before reporting a result. An organizer can cancel the match.',
@@ -2277,8 +2532,9 @@ export class PlayStore {
       const side = m.captains.indexOf(a.actor.id);
       if (side < 0)
         throw new PlayError(
-          'Only a team captain can report. Ask your captain to use the match card.',
+          `Only a team captain can report the result. ${captainsLine} An organizer can also record it.`,
         );
+      const opposing = m.captains[side === 0 ? 1 : 0];
       if (a.kind === 'loss') {
         this.close(m, side === 0 ? 'beta' : 'alpha', a.actor.id);
         return {
@@ -2287,20 +2543,26 @@ export class PlayStore {
             : `${side === 0 ? 'Beta' : 'Alpha'} wins. Result and ratings saved.`,
         };
       }
-      const vote = a.kind as 'draw' | 'abort';
-      if (a.proposalId && (m.proposal?.id !== a.proposalId || m.proposal.opposing !== a.actor.id))
-        throw new PlayError('That request changed. Use the latest match card.');
-      if (!m.proposal || m.proposal.kind !== vote) {
-        m.agreements = {};
-        m.proposal = {
-          id: crypto.randomUUID(),
-          requester: a.actor.id,
-          kind: vote,
-          opposing: m.captains[side === 0 ? 1 : 0],
+      if (a.kind === 'claim') {
+        if (m.proposal?.kind !== 'win' || m.proposal.requester !== a.actor.id) {
+          this.propose(m, {
+            kind: 'win',
+            requester: a.actor.id,
+            opposing,
+            side: side === 0 ? 'alpha' : 'beta',
+          });
+          this.saveMatch(m);
+        }
+        return {
+          content: `Waiting for <@${opposing}> to confirm. It confirms automatically <t:${Math.floor(m.proposal!.expiresAt! / 1000)}:R> unless they dispute it.`,
         };
       }
+      const vote = a.kind as 'draw' | 'abort';
+      if (!m.proposal || m.proposal.kind !== vote)
+        this.propose(m, { requester: a.actor.id, kind: vote, opposing });
       m.agreements[a.actor.id] = vote;
       if (m.captains.every((id) => m.agreements[id] === vote)) {
+        this.endProposal(m, 'accepted');
         this.close(m, vote, a.actor.id);
         return {
           content: m.test
@@ -2312,7 +2574,7 @@ export class PlayStore {
       }
       this.saveMatch(m);
       return {
-        content: `Waiting for the other captain to ${vote === 'draw' ? 'confirm the draw' : 'cancel the match'} on the match card.`,
+        content: `Waiting for the other captain to ${vote === 'draw' ? 'confirm the draw' : 'cancel the match'} on the request card.`,
       };
     }
     const q = this.queue(a, settings),
@@ -2385,6 +2647,17 @@ export class PlayStore {
         throw new PlayError(
           'Only an administrator can skip check-in. Use /queue start with the saved rules.',
         );
+      const waiting = this.available(q).length;
+      if (waiting < 2) throw new PlayError('At least two players are needed to start.');
+      if (
+        waiting < q.size &&
+        (q.earlyStart ?? 'moderators') === 'moderators' &&
+        !a.admin &&
+        !(q.adminRoles ?? []).some((id) => a.actor.roles?.includes(id))
+      )
+        throw new PlayError(
+          `${q.name} has ${waiting}/${q.size} players. Only server administrators, managers and this queue’s bot moderators can start it before it’s full. ${(q.autoStart ?? true) ? 'It starts by itself when full.' : 'Anyone can start it once it’s full.'}`,
+        );
       this.ux.hold(q.id, false);
       const m = this.createMatch(q, settings, a.skipCheckIn ?? false, undefined, a.actor.id);
       return {
@@ -2418,14 +2691,17 @@ export class PlayStore {
     }
     if (!alreadyWaiting && waiting.length >= ((q.autoStart ?? true) ? q.size : 128))
       throw new PlayError(`${q.name} is full. Wait for a place to open.`);
-    const added = this.sql
-      .exec(
-        'INSERT OR IGNORE INTO queue_entries(queue_id,user_id,display_name) VALUES(?,?,?) RETURNING user_id',
+    const inserted = this.sql
+      .exec<{ seq: number }>(
+        'INSERT OR IGNORE INTO queue_entries(queue_id,user_id,display_name) VALUES(?,?,?) RETURNING seq',
         q.id,
         target.id,
         target.name,
       )
-      .toArray().length;
+      .toArray();
+    const added = inserted.length;
+    if (added && this.populating)
+      this.sql.exec('INSERT OR IGNORE INTO test_entries VALUES(?)', inserted[0].seq);
     this.waitingClock(q, target.id);
     if (added) {
       this.ux.leave(target.id, q.id);
@@ -2642,6 +2918,8 @@ export class PlayStore {
           settings,
           a.actor.id,
           rebalanced,
+          false,
+          true,
         );
         return {
           content: `<@${candidate.user_id}> replaced <@${outgoing.id}>. ${rebalanced ? 'Teams rebalanced for check-in.' : 'Everyone else keeps their team.'} Check the updated teams on the match card.`,
@@ -2784,6 +3062,7 @@ export class PlayStore {
     const rows = this.sql
       .exec<{
         seq: number;
+        match_id: string;
         queue_id: string;
         user_id: string;
         name: string;
@@ -2818,11 +3097,11 @@ export class PlayStore {
           );
           continue;
         }
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/guilds/${guild}/members/${row.user_id}`,
           {
             headers: { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` },
-            signal: AbortSignal.timeout(1000),
+            timeout: 1000,
           },
         );
         if (response.status === 404) {
@@ -2866,6 +3145,7 @@ export class PlayStore {
             row.user_id,
             row.name,
           );
+          if (this.match(row.match_id).silent) this.markTestEntry(current.id, row.user_id);
           this.waitingClock(current, row.user_id);
           this.sql.exec('DELETE FROM pending_returns WHERE seq=?', row.seq);
           this.touchQueue(current);
@@ -3148,6 +3428,7 @@ export class PlayStore {
       await this.schedule();
       return reply;
     });
+    if (result.ok !== false) this.reachable(a.channelId);
     await this.schedule();
     return result;
   }
@@ -3237,42 +3518,53 @@ export class PlayStore {
     }
   }
   async alarm(guild: string) {
-    const session = this.ctx.storage.kv.get<RetiredTestSession>('testSession');
-    if (session && (session.cleaning || session.expiresAt <= Date.now())) {
-      await this.resetTest();
-      return;
+    this.alarmRunning = true;
+    try {
+      const session = this.ctx.storage.kv.get<RetiredTestSession>('testSession');
+      if (session && (session.cleaning || session.expiresAt <= Date.now())) {
+        await this.resetTest();
+        return;
+      }
+      const settings = this.read(guild).settings;
+      const due = this.sql
+        .exec<{ match_id: string }>(
+          "SELECT match_id FROM deadlines WHERE kind='check_in' AND due<=? LIMIT 32",
+          Date.now(),
+        )
+        .toArray();
+      await this.refreshCandidates(guild, [
+        ...settings.queues.filter((q) =>
+          due.some((row) => this.match(row.match_id).queue.id === q.id),
+        ),
+        ...due.map((row) => this.match(row.match_id).queue),
+      ]);
+      await this.ctx.storage.transaction(async () => {
+        this.expire(Date.now(), this.read(guild).settings);
+        if (!this.testMode) this.recordStore.decay(guild);
+        this.economy.tax();
+      });
+      await this.lobbies.poll(guild);
+      await this.returnPlayers(guild);
+      await this.refreshQueueVoice(guild);
+      await this.refreshQueueVisibility(guild);
+      await this.flush();
+    } finally {
+      this.alarmRunning = false;
+      await this.schedule('alarm');
     }
-    const settings = this.read(guild).settings;
-    const due = this.sql
-      .exec<{ match_id: string }>(
-        "SELECT match_id FROM deadlines WHERE kind='check_in' AND due<=? LIMIT 32",
-        Date.now(),
-      )
-      .toArray();
-    await this.refreshCandidates(guild, [
-      ...settings.queues.filter((q) =>
-        due.some((row) => this.match(row.match_id).queue.id === q.id),
-      ),
-      ...due.map((row) => this.match(row.match_id).queue),
-    ]);
-    await this.ctx.storage.transaction(async () => {
-      this.expire(Date.now(), this.read(guild).settings);
-      if (!this.testMode) this.recordStore.decay(guild);
-      this.economy.tax();
-      await this.schedule();
-    });
-    await this.lobbies.poll(guild);
-    await this.returnPlayers(guild);
-    await this.refreshQueueVoice(guild);
-    await this.refreshQueueVisibility(guild);
-    await this.schedule();
-    await this.flush();
   }
-  async schedule() {
+  /**
+   * One alarm drives every timer, and alarm() always re-arms it when its work is done.
+   * Arming it for an already-due time while that handler still runs starts a second,
+   * overlapping invocation, so meanwhile other calls may only arm a future time. A wake
+   * for an alarm runs the constructor first, so an already-due alarm is left alone.
+   */
+  async schedule(from: 'request' | 'wake' | 'alarm' = 'request') {
     if (this.ctx.storage.kv.get('recoveryReadOnly')) {
       await this.ctx.storage.deleteAlarm();
       return;
     }
+    const nested = this.alarmRunning && from !== 'alarm';
     const session = this.ctx.storage.kv.get<RetiredTestSession>('testSession');
     const values = [
       ['deadlines', ''],
@@ -3305,17 +3597,26 @@ export class PlayStore {
       }
       values.push(cache.due);
     } else this.ctx.storage.kv.delete('queueVoice');
-    if (identity && this.visibilityQueues(this.read(identity.guild_id).settings).length) {
-      let due = this.ctx.storage.kv.get<number>('queueVisibilityDue');
-      if (due === undefined) {
-        due = Date.now() + queueVisibilityInterval;
-        this.ctx.storage.kv.put('queueVisibilityDue', due);
-      }
+    const due =
+      this.ctx.storage.kv.get<number>('queueVisibilityDue') ?? Date.now() + queueVisibilityInterval;
+    // Stop at the last check that falls inside a queue's activity window; activity restarts it.
+    if (identity && this.visibilityQueues(this.read(identity.guild_id).settings, due).length) {
+      this.ctx.storage.kv.put('queueVisibilityDue', due);
       values.push(due);
     } else this.ctx.storage.kv.delete('queueVisibilityDue');
     const next = values.length ? Math.min(...values) : null;
-    if (next !== null && next !== undefined)
-      await this.ctx.storage.setAlarm(Math.max(Date.now() + 50, next));
+    const armed = from === 'alarm' || nested ? null : await this.ctx.storage.getAlarm();
+    if (armed !== null && armed <= Date.now()) return;
+    if (nested) {
+      if (next !== null && next > Date.now() + 1000) await this.ctx.storage.setAlarm(next);
+    } else if (next !== null && next !== undefined)
+      await this.ctx.storage.setAlarm(
+        // Due work at a wake with no alarm is usually the delivery now in flight; its handler re-arms.
+        Math.max(
+          Date.now() + (from === 'wake' && armed === null && next <= Date.now() ? 5000 : 50),
+          next,
+        ),
+      );
     else await this.ctx.storage.deleteAlarm();
   }
   records(guild: string, gameId?: string, playersPage = 0) {
@@ -3355,9 +3656,18 @@ export class PlayStore {
         ...(gameId ? [gameId] : []),
       )
       .toArray();
-    const delivery = this.sql
-      .exec('SELECT key,status,attempts,error FROM outbox ORDER BY due LIMIT 20')
-      .toArray();
+    const unreachableChannels = this.unreachableChannels(snapshot.settings);
+    const delivery = [
+      ...unreachableChannels.map((c) => ({
+        key: `channel:${c.channelId}`,
+        status: 'blocked',
+        attempts: c.refusals,
+        error: c.message,
+      })),
+      ...this.sql
+        .exec('SELECT key,status,attempts,error FROM outbox ORDER BY due LIMIT 20')
+        .toArray(),
+    ];
     const audit = this.sql
       .exec(
         'SELECT id,match_id,queue_id,action,actor_id,at,details FROM control_audit ORDER BY at DESC LIMIT 50',
@@ -3393,6 +3703,7 @@ export class PlayStore {
       playersPage,
       changes,
       delivery,
+      unreachableChannels,
       audit,
       waiting,
       noadds,
@@ -3460,7 +3771,7 @@ export class PlayStore {
     return {
       ok: true,
       content: pending
-        ? 'Test data erased. Discord card cleanup is pending; /test status shows delivery failures. Use /test reset to retry blocked cleanup after restoring bot access.'
+        ? 'Test data erased. Some test cards are still being removed from Discord; that retries by itself once the bot can reach the channel.'
         : 'Test data and test cards removed. The live queue and player records are unchanged.',
     };
   }
@@ -3489,9 +3800,9 @@ export class PlayStore {
       const headers = { Authorization: `Bot ${this.env.DISCORD_BOT_TOKEN}` };
       try {
         if (!card.message_id && card.reconcile) {
-          const response = await fetch(
+          const response = await discordFetch(
             `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=100${card.reconcile_cursor ? `&before=${card.reconcile_cursor}` : ''}`,
-            { headers, signal: AbortSignal.timeout(5000) },
+            { headers, timeout: 5000 },
           );
           if (!response.ok) {
             await this.failed(work, route, response, gate);
@@ -3538,9 +3849,9 @@ export class PlayStore {
           continue;
         }
         if (card.message_id) {
-          const response = await fetch(
+          const response = await discordFetch(
             `https://discord.com/api/v10/channels/${card.channel_id}/messages/${card.message_id}`,
-            { method: 'DELETE', headers, signal: AbortSignal.timeout(5000) },
+            { method: 'DELETE', headers, timeout: 5000 },
           );
           if (!response.ok && response.status !== 404) {
             await this.failed(work, route, response, gate);
@@ -3692,6 +4003,15 @@ export class PlayStore {
           continue;
         }
       }
+      if (this.unreachable(card.channel_id)) {
+        // No retries to a channel Discord keeps refusing; a save or interaction there retries.
+        this.sql.exec(
+          "UPDATE outbox SET status='blocked',error='channel_unreachable' WHERE key=? AND version=?",
+          work.key,
+          work.version,
+        );
+        continue;
+      }
       const gate = this.env.DISCORD_GATE.getByName(this.env.DISCORD_APPLICATION_ID!);
       const route = `channel:${card.channel_id}`;
       const at = await gate.reserve(route);
@@ -3736,9 +4056,9 @@ export class PlayStore {
             // Keep a recent card in place; publish and retire it only when it fell below the last five.
             let latest: { id: string }[];
             try {
-              const response = await fetch(
+              const response = await discordFetch(
                 `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=5`,
-                { headers, signal: AbortSignal.timeout(5000) },
+                { headers, timeout: 5000 },
               );
               if (!response.ok) {
                 if (response.status >= 500) await this.retry(work, 'queue_history_unavailable');
@@ -3772,9 +4092,9 @@ export class PlayStore {
           }
         }
         if (!card.message_id && card.reconcile) {
-          const check = await fetch(
+          const check = await discordFetch(
             `https://discord.com/api/v10/channels/${card.channel_id}/messages?limit=100${card.reconcile_cursor ? `&before=${card.reconcile_cursor}` : ''}`,
-            { headers, signal: AbortSignal.timeout(5000) },
+            { headers, timeout: 5000 },
           );
           if (!check.ok) {
             await this.failed(work, route, check, gate);
@@ -3909,7 +4229,8 @@ export class PlayStore {
             const m = this.match(work.key.slice(6));
             if (
               ['check_in', 'playing'].includes(m.state) &&
-              (!m.deadline || m.deadline > Date.now())
+              (!m.deadline || m.deadline > Date.now()) &&
+              !quietMatch(m)
             ) {
               const maps = m.mapRound?.state === 'open' ? m.mapRound : undefined;
               const invitees =
@@ -3949,7 +4270,7 @@ export class PlayStore {
               color: 6589560,
             });
           payload.content =
-            '**SETUP TEST — no ratings or match history**\nUse /test checkin · /test maps · /test result · /test reset';
+            '**SETUP TEST — no ratings or match history**\nUse /test checkin to check everyone in.';
           payload.allowed_mentions = { parse: [] };
           payload.components = [];
           for (const embed of payload.embeds) {
@@ -3957,16 +4278,17 @@ export class PlayStore {
             embed.footer = { text: this.testFooter(work.key) };
           }
         }
-        const response = await fetch(
+        const response = await discordFetch(
           `https://discord.com/api/v10/channels/${card.channel_id}/messages${card.message_id ? `/${card.message_id}` : ''}`,
           {
             method: work.key.startsWith('retire:') ? 'DELETE' : card.message_id ? 'PATCH' : 'POST',
             headers,
             body: work.key.startsWith('retire:') ? undefined : JSON.stringify(payload),
-            signal: AbortSignal.timeout(5000),
+            timeout: 5000,
           },
         );
         if (response.ok) {
+          this.reachable(card.channel_id);
           await this.rateHeaders(response, route, gate);
           if (work.key.startsWith('retire:')) {
             this.sql.exec('DELETE FROM outbox WHERE key=? AND version=?', work.key, work.version);
@@ -4075,14 +4397,16 @@ export class PlayStore {
       const wait = Number.isFinite(seconds) ? Math.max(1000, seconds * 1000) : 1000;
       await gate.pause(route, Date.now() + wait, body?.global === true);
       await this.retry(work, 'rate_limited', wait);
-    } else if ([400, 401, 403, 404].includes(response.status))
+    } else if ([400, 401, 403, 404].includes(response.status)) {
+      if ([403, 404].includes(response.status) && route.startsWith('channel:'))
+        this.refused(route.slice(8), response.status);
       this.sql.exec(
         "UPDATE outbox SET status='blocked',error=? WHERE key=? AND version=?",
         `discord_${response.status}`,
         work.key,
         work.version,
       );
-    else {
+    } else {
       if (
         !this.sql.exec<Pointer>('SELECT * FROM cards WHERE key=?', work.key).toArray()[0].message_id
       )

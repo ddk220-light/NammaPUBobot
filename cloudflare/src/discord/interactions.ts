@@ -9,11 +9,12 @@ import { playerSummary, recordActionSchema, recordPolicy } from '../domain/recor
 import { snowflake } from '../domain/config';
 import { memberIds, resolveMember } from './members';
 import { matchCard, type Card, type ActionRow } from './cards';
-import { substitutionPanel } from './player-panels';
+import { reportPanel, substitutePrompt, substitutionPanel } from './player-panels';
 import { queuePicker, type QueueChoice } from './queue-picker';
 import { predictionPanel } from './prediction-panel';
 import { adminCommandRoute } from './commands.mjs';
 import { adminInteraction } from './admin-interactions';
+import { helpInteraction } from './help';
 import {
   deferInteractionReply,
   deferPublicComponentReply,
@@ -164,6 +165,8 @@ export async function interactions(
   touchCommunity(env, interaction.guild_id, { kind: 'activity' }, ctx);
   if (interaction.type === 2 && interaction.data?.name === 'test')
     return testInteraction(interaction, env, ctx);
+  if (interaction.type === 2 && interaction.data?.name === 'help')
+    return helpInteraction(interaction, env);
   if (
     (interaction.type === 2 &&
       interaction.data?.name === 'admin' &&
@@ -214,6 +217,18 @@ export async function interactions(
       },
     };
   }
+  // /profile link without a provider is the game-aware account link (formerly /lobby link).
+  const link = interaction.data?.options?.[0];
+  if (
+    interaction.type === 2 &&
+    interaction.data?.name === 'profile' &&
+    link?.name === 'link' &&
+    !link.options?.some((o) => o.name === 'provider' && o.value !== undefined)
+  )
+    interaction = {
+      ...interaction,
+      data: { ...interaction.data, name: 'lobby', options: [link] },
+    };
   if ((interaction.type === 2 && interaction.data?.name !== 'setup') || interaction.type === 3)
     return playInteraction(interaction, env, ctx);
   if (interaction.type !== 2 || interaction.data?.name !== 'setup')
@@ -453,7 +468,7 @@ async function playInteraction(
           game?.connector?.capabilities?.ownershipVerification === false
         )
           return ephemeral(
-            'Account ownership verification is unavailable for this game. Use /lobby link to declare your account; manual play remains available.',
+            'Account ownership verification is unavailable for this game. Use /profile link to declare your account; manual play remains available.',
           );
         const link = new URL('/link', env.APP_ORIGIN);
         link.search = new URLSearchParams({
@@ -509,7 +524,7 @@ async function playInteraction(
       const p = stats.player;
       if (!p)
         return ephemeral(
-          'No visible player record for this game yet. You can link an account with /lobby link or /profile verify before playing.',
+          'No visible player record for this game yet. You can link an account with /profile link or /profile verify before playing.',
         );
       let content = `**${stats.gameName} · ${p.rank ?? 'Unranked'}**\n${playerSummary(p)}\n${p.matchCount} matches · ${p.winRate === null ? 'no win rate' : `${(p.winRate * 100).toFixed(1)}% wins`} · streak ${p.streak} · peak ${p.rated === false ? 'Unrated' : p.peak}`;
       if (option('detailed') || root === 'profile')
@@ -526,7 +541,7 @@ async function playInteraction(
             .slice(0, 5)
             .map((c) => `${c.before} → ${c.after}`)
             .join(', ') || 'None'
-        }\nProfile references: ${p.profiles.map((r) => `${r.provider}: ${r.external_id} (${r.trust === 'ownership_verified' ? 'ownership verified' : r.trust === 'organizer_assigned' ? 'organizer assigned' : r.trust === 'suggested' || r.provenance.startsWith('inferred:') ? 'suggested; /lobby link to confirm' : 'declared'})`).join(', ') || 'None'}\nSource: ${p.source}`;
+        }\nProfile references: ${p.profiles.map((r) => `${r.provider}: ${r.external_id} (${r.trust === 'ownership_verified' ? 'ownership verified' : r.trust === 'organizer_assigned' ? 'organizer assigned' : r.trust === 'suggested' || r.provenance.startsWith('inferred:') ? 'suggested; /profile link to confirm' : 'declared'})`).join(', ') || 'None'}\nSource: ${p.source}`;
       if (root === 'profile')
         content += `\nPlayed civilizations / factions: ${
           p.civilizations
@@ -693,15 +708,18 @@ async function playInteraction(
       }
       const picker = /^(qs|qp):(add|remove|queue):(\d{1,2})$/.exec(custom);
       const parsed =
-        /^m:([a-f0-9-]{36}):(\d+):(ready|loss|draw|abort|subme|subauto|back|subs|request|cancel|take|auto|rejoin|confirm_loss|confirm_back)$/.exec(
+        /^m:([a-f0-9-]{36}):(\d+):(ready|loss|draw|abort|claim|report|subme|subauto|back|subs|request|cancel|take|auto|rejoin|confirm_loss|confirm_back|confirm_sub)$/.exec(
           custom,
         );
-      const agreement = /^a:([a-f0-9-]{36}):(\d+):([a-f0-9-]{36}):(abort|draw)$/.exec(custom);
+      const agreement = /^a:([a-f0-9-]{36}):(\d+):([a-f0-9-]{36}):(abort|draw|win|decline)$/.exec(
+        custom,
+      );
       if (agreement) {
         action.matchId = agreement[1];
         action.version = Number(agreement[2]);
         action.proposalId = agreement[3];
-        action.kind = agreement[4] as 'abort' | 'draw';
+        action.kind =
+          agreement[4] === 'win' ? 'claim' : (agreement[4] as 'abort' | 'draw' | 'decline');
       } else if (queue) {
         action.queue = queue[1];
         action.kind = queue[2] === 'join' ? 'add' : 'remove';
@@ -722,7 +740,27 @@ async function playInteraction(
         action.matchId = parsed[1];
         action.version = Number(parsed[2]);
         const kind = parsed[3];
-        if (kind === 'abort') return ephemeral('Use `/report abort` to request a cancellation.');
+        if (kind === 'report' || kind === 'subauto') {
+          // Private, read-only views; every choice in them is rechecked by its own handler.
+          const current = await env.COMMUNITIES.getByName(i.guild_id!).playerMatch(
+            i.guild_id!,
+            i.channel_id!,
+            actor.id,
+            action.matchId,
+            action.version,
+          );
+          if (!current.ok) return ephemeral(current.content);
+          const m = current.match as Match;
+          const panel =
+            kind === 'report'
+              ? reportPanel(
+                  m,
+                  actor.id,
+                  !!action.admin || current.adminRoles.some((r) => member.roles?.includes(r)),
+                )
+              : substitutePrompt(m, actor.id, current.substitute);
+          return ephemeral(panel.content, panel);
+        }
         if (['take', 'auto', 'rejoin'].includes(kind)) {
           if (
             kind !== 'rejoin' &&
@@ -819,7 +857,9 @@ async function playInteraction(
                 ? 'loss'
                 : kind === 'confirm_back'
                   ? 'back'
-                  : (kind as Action['kind']);
+                  : kind === 'confirm_sub'
+                    ? 'subauto'
+                    : (kind as Action['kind']);
           if (kind === 'request' || kind === 'cancel') action.subRequest = kind === 'request';
         }
       } else return ephemeral('This button is no longer available. Use the latest card.');
@@ -883,9 +923,12 @@ async function playInteraction(
     const option = (name: string) => options.find((o) => o.name === name)?.value;
     if (option('queue') !== undefined) action.queue = option('queue') as string;
     if (root === 'gold') {
-      const view = String(option('view') ?? 'balance');
-      if (!['balance', 'history', 'leaderboard'].includes(view))
-        return ephemeral('Choose a current gold view.');
+      const choice = String(option('view') ?? 'balance');
+      // richest/predictors are the registered names; leaderboard is the pre-rename value.
+      const view =
+        ({ richest: 'leaderboard', predictors: 'predictions' } as Record<string, string>)[choice] ??
+        (['balance', 'history', 'leaderboard'].includes(choice) ? choice : null);
+      if (!view) return ephemeral('Choose a current gold view.');
       const reply = await env.COMMUNITIES.getByName(i.guild_id!).goldView(
         i.guild_id!,
         i.channel_id!,

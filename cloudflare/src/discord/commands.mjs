@@ -404,6 +404,7 @@ const operations = [
 ];
 
 const adminRoutes = new Map();
+// [operation, subcommand, /manage name, { required, description }]
 const adminGroups = [
   {
     name: 'setup',
@@ -417,8 +418,13 @@ const adminGroups = [
     name: 'queue',
     description: 'Manage waiting players and start matches',
     actions: [
-      ['add', '', 'add'],
-      ['remove', '', 'remove'],
+      ['add', '', 'add', { required: ['user'], description: 'Add a player to a waiting queue' }],
+      [
+        'remove',
+        '',
+        'remove',
+        { required: ['user'], description: 'Remove a player from a waiting queue' },
+      ],
       ['queue', 'start'],
       ['queue', 'clear'],
       ['queue', 'split'],
@@ -434,6 +440,15 @@ const adminGroups = [
       ['match', 'undo'],
       ['match', 'recover'],
       ['match', 'substitute'],
+      [
+        'subauto',
+        '',
+        'sub-from-queue',
+        {
+          required: ['match', 'user'],
+          description: 'Replace a player with the next eligible player waiting in the queue',
+        },
+      ],
       ['match', 'put'],
       ['match', 'create', 'record'],
       ['maps', 'redo', 'maps-redo'],
@@ -455,22 +470,20 @@ const adminGroups = [
 ];
 export const adminCommand = {
   name: 'manage',
-  description: 'Community administration: setup, queues, matches and players',
+  description: 'Organizer tools: setup, queues, matches and players',
   type: 1,
   default_member_permissions: '32',
   options: adminGroups.map((group) => ({
     name: group.name,
     description: group.description,
     type: 2,
-    options: group.actions.map(([command, action, alias]) => {
+    options: group.actions.map(([command, action, alias, extra = {}]) => {
       const operation = operations.find((c) => c.name === command);
       const source = action ? operation?.options?.find((o) => o.name === action) : operation;
       if (!source) throw new Error(`Missing admin operation: ${command} ${action}`);
       const name = alias || action;
       const options = (source.options ?? [])
-        .map((o) =>
-          ['add', 'remove'].includes(command) && o.name === 'user' ? { ...o, required: true } : o,
-        )
+        .map((o) => (extra.required?.includes(o.name) ? { ...o, required: true } : o))
         .sort((a, b) => Number(!!b.required) - Number(!!a.required));
       adminRoutes.set(`${group.name}:${name}`, {
         command,
@@ -479,13 +492,10 @@ export const adminCommand = {
         arguments: options.map((o) => o.name),
       });
       const description =
-        command === 'add'
-          ? 'Add a player to a waiting queue'
-          : command === 'remove'
-            ? 'Remove a player from a waiting queue'
-            : source.description
-                .replace(/^(Administrator|Captain\/admin|Organizer): /, '')
-                .replace(/^[a-z]/, (letter) => letter.toUpperCase());
+        extra.description ??
+        source.description
+          .replace(/^(Administrator|Captain\/admin|Organizer): /, '')
+          .replace(/^[a-z]/, (letter) => letter.toUpperCase());
       return sub(name, description, options);
     }),
   })),
@@ -494,6 +504,135 @@ export const adminCommand = {
 export function adminCommandRoute(group, action) {
   return adminRoutes.get(`${group}:${action}`) ?? null;
 }
+
+// Public wording keyed by command path; generic options fall back to `optionText`.
+const plain = {
+  help: 'How to join, play and report matches here',
+  add: 'Join the waiting queue in this channel',
+  remove: 'Leave the waiting queue',
+  queue: 'See who is waiting, or start the match early',
+  'queue show': 'Show who is waiting in the queue',
+  'queue start': 'Start the match now with the players who are waiting',
+  teams: 'Show your match: teams, captains and maps',
+  report: 'Report how your match ended (for captains)',
+  'report loss': 'Your team lost: give the win to the other team',
+  'report draw': 'Ask for a draw; the other captain must agree',
+  'report abort': 'Ask to cancel with no rating change; the other captain must agree',
+  subme: 'Ask for someone to take your place (run it again to cancel)',
+  subfor: 'Take the place of a player who asked for a substitute',
+  'subfor user': 'The player you are replacing',
+  rank: 'Show your rating, or another player’s',
+  'rank user': 'Player to look up (defaults to you)',
+  'rank detailed': 'Also show recent results, peak rating and linked accounts',
+  leaderboard: 'Show the top-rated players',
+  gold: 'Your play-money gold: balance, history and top players',
+  'gold view': 'What to show (defaults to your balance)',
+  profile: 'Your linked game accounts and privacy',
+  'profile link': 'Link your in-game account for this channel’s game',
+  'profile link profile_id': 'Your in-game profile ID or SteamID64',
+  'profile link provider': 'Only for other sites, for example steam; leave empty for this game',
+  'profile link url': 'Profile page link, if the site has one',
+  'profile link user': 'Organizers only: link this player instead of you',
+  'profile unlink': 'Remove a linked account',
+  'profile unlink provider': 'Account site, as listed by /profile show',
+  'profile unlink profile_id': 'Account ID, as listed by /profile show',
+  'profile show': 'Show your linked accounts and detailed stats',
+  'profile verify': 'Prove you own your Steam, Battle.net or BAR account',
+  'profile hide': 'Hide yourself from leaderboards and other players’ stats',
+  'profile unhide': 'Show yourself again on leaderboards and stats',
+  lobby: 'Connect your match to its in-game lobby',
+  'lobby list': 'Show open lobbies or games already running',
+  'lobby list phase': 'Open lobbies or running games',
+  'lobby attach': 'Attach your match’s in-game lobby by ID or link',
+  'lobby attach reference': 'Lobby ID or lobby link',
+  'lobby unlink': 'Stop tracking the attached lobby (captains)',
+  'lobby status': 'Show what the bot knows about your match’s lobby',
+  'lobby confirm': 'Confirm the attached lobby and players (captains)',
+  'lobby confirm binding_id': 'The ID shown by /lobby status',
+  'lobby facts': 'Add the civilization you played; captains can add map, length and recording',
+  'lobby facts selection': 'The civilization, faction or race you played',
+  'lobby facts map': 'Map played (captains)',
+  'lobby facts elapsed_seconds': 'Game length in seconds (captains)',
+  'lobby facts recording_url': 'Link to a recording of the game (captains)',
+  'lobby replays': 'Check for replays and recording links of your match',
+};
+const optionText = {
+  queue: 'Which queue, if this channel has more than one',
+  match: 'Match ID (defaults to your current match)',
+};
+// Which options of an operation are registered publicly; unlisted paths keep all of them.
+const shown = {
+  add: ['queue'],
+  remove: ['queue'],
+  queue: ['show', 'start'],
+  'queue start': ['queue'],
+  lobby: ['list', 'attach', 'unlink', 'status', 'confirm', 'facts', 'replays'],
+};
+/** @type {<T extends { description: string }>(o: T, path: string) => T} */
+const reword = (o, path) => ({
+  ...o,
+  description:
+    plain[path] ?? (o.type === 1 || o.type === 2 ? null : optionText[o.name]) ?? o.description,
+  ...(o.options && {
+    options: o.options
+      .filter((x) => !shown[path] || shown[path].includes(x.name))
+      .map((x) => reword(x, `${path} ${x.name}`)),
+  }),
+});
+const operation = (name) => operations.find((c) => c.name === name);
+const profileLink = operation('profile').options.find((o) => o.name === 'link').options;
+const lobbyLink = operation('lobby').options.find((o) => o.name === 'link').options;
+// /profile link without a provider is the game-aware /lobby link handler (interactions.ts).
+/** @type {Record<string, (typeof operations)[number]>} */
+const publicOperations = {
+  profile: {
+    ...operation('profile'),
+    options: operation('profile').options.map((o) =>
+      o.name === 'link'
+        ? {
+            ...o,
+            options: [
+              lobbyLink.find((x) => x.name === 'profile_id'),
+              { ...profileLink.find((x) => x.name === 'provider'), required: false },
+              profileLink.find((x) => x.name === 'url'),
+              queue,
+              user,
+            ],
+          }
+        : o,
+    ),
+  },
+  gold: {
+    ...operation('gold'),
+    options: operation('gold').options.map((o) =>
+      o.name === 'view'
+        ? {
+            ...o,
+            choices: [
+              { name: 'My balance', value: 'balance' },
+              { name: 'My history', value: 'history' },
+              { name: 'Richest players', value: 'richest' },
+              { name: 'Best predictors', value: 'predictors' },
+            ],
+          }
+        : o,
+    ),
+  },
+};
+const everyone = [
+  'add',
+  'remove',
+  'queue',
+  'teams',
+  'report',
+  'subme',
+  'subfor',
+  'rank',
+  'leaderboard',
+  'gold',
+  'profile',
+  'lobby',
+].map((name) => reword(publicOperations[name] ?? operation(name), name));
 
 const registered = [
   {
@@ -518,46 +657,36 @@ const registered = [
       ]),
     ],
   },
+  { name: 'help', description: plain.help, type: 1 },
+  ...everyone,
+  {
+    name: 'civpick',
+    description: 'Pick civilizations in secret for your match',
+    type: 1,
+    options: [
+      { type: 3, name: 'match', description: optionText.match },
+      {
+        type: 4,
+        name: 'minutes',
+        description: 'Time to pick, in minutes (default 3)',
+        min_value: 1,
+        max_value: 10,
+      },
+      {
+        type: 5,
+        name: 'redo',
+        description: 'Start a new round (whoever started it, or an organizer)',
+      },
+    ],
+  },
   {
     name: 'admin',
-    description: 'Open queue status, match history and administrator controls',
+    description: 'Post the queue control panel: start matches, results and history',
     type: 1,
     default_member_permissions: null,
     options: [queue],
   },
-  {
-    name: 'civpick',
-    description: 'Start or show hidden civilization picks for a match',
-    type: 1,
-    options: [
-      { type: 3, name: 'match', description: 'Optional match ID; defaults to your active match' },
-      {
-        type: 4,
-        name: 'minutes',
-        description: 'Time to pick (default 3 minutes)',
-        min_value: 1,
-        max_value: 10,
-      },
-      { type: 5, name: 'redo', description: 'Start a new round (initiator or administrator only)' },
-    ],
-  },
   adminCommand,
-  ...operations
-    .filter((c) => !['setup', 'rating', 'match', 'moderation'].includes(c.name))
-    .map((c) =>
-      c.name === 'queue'
-        ? {
-            ...c,
-            options: c.options
-              .filter((o) => ['show', 'start'].includes(o.name))
-              .map((o) =>
-                o.name === 'start'
-                  ? sub('start', 'Start with waiting players, including uneven teams', [queue])
-                  : o,
-              ),
-          }
-        : c,
-    ),
 ];
 
 const appEnvs = ['local', 'staging', 'production'];

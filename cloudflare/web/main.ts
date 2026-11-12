@@ -27,6 +27,11 @@ import {
   queueEditor,
   settingHelp,
   settingReadouts,
+  durationText,
+  syncDurations,
+  captureDuration,
+  captureClock,
+  syncClocks,
   gameEditors,
   categories,
   rankRow,
@@ -55,9 +60,10 @@ import {
   pageImportRows,
   deletePlayerForm,
   deleteCommunityForm,
+  playerRecordForm,
   confirmedName,
 } from './onboarding';
-import { showStats } from './stats';
+import { showEnvironment, showStats } from './stats';
 import { type Settings, type Snapshot } from '../src/domain/config';
 import { type Player } from '../src/domain/rating';
 import type { Action, Match } from '../src/domain/play';
@@ -261,6 +267,43 @@ function playerName(id: string, gameId?: string) {
     id
   );
 }
+const resultLabels: Record<string, string> = {
+  alpha: 'Alpha won',
+  beta: 'Beta won',
+  draw: 'Draw',
+  abort: 'Cancelled without ratings',
+};
+const bookLabels: Record<string, string> = {
+  open: 'Open for predictions',
+  frozen: 'Closed, waiting for the result',
+  settled: 'Paid out',
+  refunded: 'Refunded',
+};
+const auditLabels: Record<string, string> = {
+  admin_report: 'Recorded a result',
+  manual_create: 'Recorded a game played outside the bot',
+  force_sub: 'Replaced a player',
+  put: 'Moved a player',
+  recover_abort: 'Cancelled a match',
+  recover: 'Refreshed a match card',
+  undo: 'Undid a result',
+  seed: 'Set a rating',
+  noadd: 'Paused a player from queues',
+  forgive: 'Ended a queue pause',
+  start: 'Started a match',
+  split: 'Split a queue into matches',
+  clear: 'Cleared a queue',
+};
+/** Plain words for a stored value no label covers ("check_in_failed" → "Check in failed"). */
+const words = (value: string) => value.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase());
+const pauseLengths = { 3600: '1 hour', 86400: '1 day', 604800: '1 week', 1209600: '2 weeks' };
+function pauseFields() {
+  return `<label>How long<select name="seconds" data-pause-length>${Object.entries(pauseLengths)
+    .map(([value, text]) => `<option value="${value}">${text}</option>`)
+    .join(
+      '',
+    )}<option value="custom">Custom length</option></select></label><label data-pause-custom hidden>Custom length in hours<input name="customHours" type="number" min="1" max="336" step="1" value="2" inputmode="numeric" /></label><label>Reason (optional)<input name="reason" maxlength="200" /></label>`;
+}
 function statisticsUrl() {
   const game = snapshot && playerGames(snapshot.settings)[0];
   return game ? `/stats?community=${encodeURIComponent(guildId)}&game=${game.id}` : null;
@@ -411,9 +454,12 @@ function playerRatingRows() {
   return records!.players
     .map((p) => {
       const queues = snapshot!.settings.queues.filter((q) => q.gameId === p.gameId);
-      const queueField = `<label>Queue<select name="queueId">${queues.map((q) => `<option value="${q.id}">${escape(q.name)}</option>`).join('')}</select></label>`;
+      const queueField =
+        queues.length === 1
+          ? `<input type="hidden" name="queueId" value="${queues[0].id}" />`
+          : `<label>Queue<select name="queueId">${queues.map((q) => `<option value="${q.id}">${escape(q.name)}</option>`).join('')}</select></label>`;
       const restriction = records!.noadds.find((n) => n.user_id === p.id);
-      return `<details class="player-record" data-rating-row data-game="${p.gameId}" data-player-search="${escape(`${p.name.toLocaleLowerCase()} ${p.id}`)}"><summary><span class="player-identity"><span class="player-avatar" aria-hidden="true">${escape(Array.from(p.name)[0] ?? '?')}</span><span><strong>${escape(p.name)}</strong><small>${escape(gameName(p.gameId))}</small></span></span><span class="player-score">${p.rating}<small>Rating</small></span><span class="player-results"><small>W–L–D</small>${p.wins}–${p.losses}–${p.draws}</span><span class="status-pill">${p.hidden === undefined ? 'Visibility not loaded' : p.hidden ? 'Hidden' : 'Visible'}</span></summary><div class="player-detail"><dl class="player-facts"><div><dt>Deviation / uncertainty</dt><dd>${p.deviation}</dd></div><div><dt>Wins / losses / draws</dt><dd>${p.wins} / ${p.losses} / ${p.draws}</dd></div><div><dt>Discord ID</dt><dd>${p.id}</dd></div><div><dt>Queue access</dt><dd>${restriction ? `Restricted until ${escape(new Date(restriction.until_ms).toLocaleString())}${restriction.reason ? ` · ${escape(restriction.reason)}` : ''}` : 'No active restriction'}</dd></div></dl><p class="form-help">Visibility is per game. Hidden players remain available to authorized administrators; public access also follows this game’s statistics policy.</p><div class="actions"><a class="button" href="/stats?community=${guildId}&game=${p.gameId}&user=${p.id}">Open player profile</a><button type="button" data-game-link="${p.gameId}">Game rating and leaderboard policy</button></div>${p.hidden !== undefined ? `<form data-kind="player-record" data-inline-player><input type="hidden" name="gameId" value="${p.gameId}" /><input type="hidden" name="userId" value="${p.id}" /><input type="hidden" name="kind" value="${p.hidden ? 'unhide' : 'hide'}" /><button>${p.hidden ? 'Show in statistics' : 'Hide from statistics'}</button></form>` : ''}${queues.length ? `<details class="rating-options"><summary>Manage ${escape(p.name)}</summary><form data-kind="seed" class="repair-form"><h3>Set local rating</h3>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>Rating for ${escape(p.name)}<input name="rating" type="number" min="0" max="10000" value="${p.rating}" required /></label><button>Review rating change</button></form><form data-kind="noadd" class="repair-form"><h3>Restrict queue access</h3><p class="form-help">Applies to all queues in this community. Maximum 14 days.</p>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>Duration seconds<input name="seconds" type="number" min="1" max="1209600" value="3600" required /></label><label>Reason<input name="reason" maxlength="200" /></label><button>Review restriction</button></form>${restriction ? `<button type="button" data-action="forgive" data-id="${p.id}">Remove restriction</button>` : ''}</details>` : '<p class="form-help">Create a queue for this game to use rating and restriction tools.</p>'}${deletePlayerForm(p)}</div></details>`;
+      return `<details class="player-record" data-rating-row data-game="${p.gameId}" data-player-search="${escape(`${p.name.toLocaleLowerCase()} ${p.id}`)}"><summary><span class="player-identity"><span class="player-avatar" aria-hidden="true">${escape(Array.from(p.name)[0] ?? '?')}</span><span><strong>${escape(p.name)}</strong><small>${escape(gameName(p.gameId))}</small></span></span><span class="player-score">${p.rating}<small>Rating</small></span><span class="player-results"><small>W–L–D</small>${p.wins}–${p.losses}–${p.draws}</span><span class="status-pill">${p.hidden === undefined ? 'Visibility not loaded' : p.hidden ? 'Hidden' : 'Visible'}</span></summary><div class="player-detail"><dl class="player-facts"><div><dt>Deviation / uncertainty</dt><dd>${p.deviation}</dd></div><div><dt>Wins / losses / draws</dt><dd>${p.wins} / ${p.losses} / ${p.draws}</dd></div><div><dt>Discord ID</dt><dd>${p.id}</dd></div><div><dt>Queues</dt><dd>${restriction ? `Paused until ${escape(new Date(restriction.until_ms).toLocaleString())}${restriction.reason ? ` · ${escape(restriction.reason)}` : ''}` : 'Can join'}</dd></div></dl><p class="form-help">Hiding a player removes them from this game’s leaderboard and statistics for other players. Organizers still see them here.</p><div class="actions"><a class="button" href="/stats?community=${guildId}&game=${p.gameId}&user=${p.id}">Open player profile</a><button type="button" data-game-link="${p.gameId}">Game ratings and leaderboard</button></div>${p.hidden !== undefined ? `<form data-kind="player-record" data-inline-player><input type="hidden" name="gameId" value="${p.gameId}" /><input type="hidden" name="userId" value="${p.id}" /><input type="hidden" name="kind" value="${p.hidden ? 'unhide' : 'hide'}" /><button>${p.hidden ? 'Show in statistics' : 'Hide from statistics'}</button></form>` : ''}${queues.length ? `<details class="rating-options"><summary>Manage ${escape(p.name)}</summary><form data-kind="seed" class="repair-form"><h3>Set rating</h3><p class="form-help">Replaces ${escape(p.name)}’s rating in this game. Use it to fix a mistake or to start a known player higher.</p>${queueField}<input type="hidden" name="target" value="${p.id}" /><label>New rating for ${escape(p.name)}<input name="rating" type="number" min="0" max="10000" value="${p.rating}" required /></label><button>Review rating change</button></form><form data-kind="noadd" class="repair-form"><h3>Pause from queues</h3><p class="form-help">${escape(p.name)} cannot join any queue in this community until the pause ends. Up to 2 weeks.</p>${queueField}<input type="hidden" name="target" value="${p.id}" />${pauseFields()}<button>Review pause</button></form>${restriction ? `<button type="button" data-action="forgive" data-id="${p.id}">End pause now</button>` : ''}</details>` : '<p class="form-help">Add a queue for this game to set ratings or pause players.</p>'}${deletePlayerForm(p)}</div></details>`;
     })
     .join('');
 }
@@ -729,10 +775,16 @@ function fieldIssue(issue: Issue): FieldIssue {
 }
 function issueInputs(issue: FieldIssue) {
   return [
-    ...app.querySelectorAll<HTMLElement>(
+    ...app.querySelectorAll<HTMLInputElement>(
       `[data-config="${CSS.escape(issue.form)}"] [name="${CSS.escape(issue.name)}"]`,
     ),
-  ];
+  ].map((el) =>
+    el.type === 'hidden'
+      ? (el.closest('[data-duration]')?.querySelector<HTMLElement>('[data-duration-amount]') ??
+        el.form?.querySelector<HTMLElement>(`[data-clock-for="${CSS.escape(el.name)}"]`) ??
+        el)
+      : el,
+  );
 }
 function paintIssues() {
   app.querySelectorAll('[data-validation-error]').forEach((el) => el.remove());
@@ -756,6 +808,8 @@ function paintIssues() {
         [input.getAttribute('aria-describedby'), id].filter(Boolean).join(' '),
       );
     }
+    const group = inputs[0].closest<HTMLDetailsElement>('details[data-advanced]');
+    if (group) group.open = true;
     const container = inputs[0].closest('.choice-list') ?? inputs[0];
     container.insertAdjacentHTML(
       'afterend',
@@ -799,6 +853,8 @@ function showIssues(issues: Issue[]) {
     editRoute(undefined, 'replace');
     applyCategories();
   }
+  const group = input?.closest('details');
+  if (group) group.open = true;
   input?.focus();
 }
 function updateDirty() {
@@ -852,20 +908,32 @@ function updateDirty() {
   });
 }
 function applyCategories() {
-  if (!Object.hasOwn(categories, category)) category = 'basics';
+  const visible = (key: string) =>
+    app.querySelector(`[data-category-panel="${key}"]:not([data-release-hidden])`);
+  if (!Object.hasOwn(categories, category) || !visible(category)) category = 'basics';
   const search = settingsSearch.trim().toLocaleLowerCase();
   let total = 0;
   app.querySelectorAll<HTMLElement>('[data-category-panel]').forEach((panel) => {
+    if (panel.hasAttribute('data-release-hidden')) return;
     let matches = 0;
     panel
       .querySelectorAll<HTMLElement>('[data-setting], .choice-list, .shared-setting')
       .forEach((row) => {
+        if (row.closest('[data-release-hidden]')) return;
         row.hidden = Boolean(
           search &&
           !(row.dataset.search ?? row.textContent ?? '').toLocaleLowerCase().includes(search),
         );
         if (!row.hidden) matches++;
       });
+    // A search opens the Advanced group that holds a match, and hides one that holds none.
+    panel.querySelectorAll<HTMLDetailsElement>('details[data-advanced]').forEach((group) => {
+      const found = [...group.querySelectorAll<HTMLElement>('[data-setting]')].some(
+        (row) => !row.hidden,
+      );
+      group.hidden = Boolean(search && !found);
+      if (search && found) group.open = true;
+    });
     panel.hidden = search ? matches === 0 : panel.dataset.categoryPanel !== category;
     if (!panel.hidden) total += matches;
   });
@@ -890,7 +958,7 @@ function matchResult(m: Match) {
     )
     .join(
       '',
-    )}</fieldset><p class="form-help" data-result-consequence aria-live="polite">Record Alpha as the winning team. The server applies this game’s saved rating rules and updates match history. Paid prediction settlements remain final.</p><button class="primary">Review result</button></form>`;
+    )}</fieldset><p class="form-help" data-result-consequence aria-live="polite">Record Alpha as the winning team. Ratings and match history update using this game’s rules. Predictions already paid out stay paid.</p><button class="primary">Review result</button></form>`;
 }
 function matchRepairs(m: Match) {
   const candidates = new Map<string, MemberChoice>();
@@ -1017,10 +1085,10 @@ function queueOverview() {
           .join('') || '<li>No players waiting.</li>'
       }</ul>`;
       const actions = saved
-        ? `<form data-kind="queue-control" data-id="${q.id}" class="queue-quick-action"><input type="hidden" name="kind" value="start" /><p class="queue-policy"><span>${escape({ captain: 'Captain teams', balanced: 'Balanced teams', random: 'Random teams' }[saved.teamMethod])}</span><span>${saved.checkIn.enabled ? `Check-in ${saved.checkIn.seconds} s` : 'Check-in off'}</span><span>${matches.length} active in ${records!.matches.length} loaded records</span></p><button name="directAction" value="start" ${waiting.length < 2 || !saved.enabled ? 'disabled data-unavailable="true"' : ''}>${!saved.enabled ? 'Queue paused' : waiting.length < 2 ? 'Need 2 players to start' : `Start with ${Math.min(waiting.length, saved.size)} now`}</button>${waiting.length ? '<button name="directAction" value="clear">Clear queue</button>' : ''}${Math.min(waiting.length, saved.size) % 2 ? '<p class="form-help">Manual start uses uneven teams. Review the waiting roster before confirming.</p>' : ''}<span class="sr-only">Uses the waiting roster and saved rules. Advanced splitting is under Matches.</span></form>`
+        ? `<form data-kind="queue-control" data-id="${q.id}" class="queue-quick-action"><input type="hidden" name="kind" value="start" /><p class="queue-policy"><span>${escape({ captain: 'Captain teams', balanced: 'Balanced teams', random: 'Random teams' }[saved.teamMethod])}</span><span>${saved.checkIn.enabled ? `Check-in ${durationText(saved.checkIn.seconds)}` : 'Check-in off'}</span><span>${matches.length} active in ${records!.matches.length} loaded records</span></p><button name="directAction" value="start" ${waiting.length < 2 || !saved.enabled ? 'disabled data-unavailable="true"' : ''}>${!saved.enabled ? 'Queue paused' : waiting.length < 2 ? 'Need 2 players to start' : `Start with ${Math.min(waiting.length, saved.size)} now`}</button>${waiting.length ? '<button name="directAction" value="clear">Clear queue</button>' : ''}${Math.min(waiting.length, saved.size) % 2 ? '<p class="form-help">Manual start uses uneven teams. Review the waiting roster before confirming.</p>' : ''}<span class="sr-only">Uses the waiting roster and saved rules. Advanced splitting is under Matches.</span></form>`
         : '<p class="form-help">Save this queue before starting matches.</p>';
       const pausedEmpty = saved && !saved.enabled && !waiting.length && !matches.length;
-      return `<article class="panel queue-card"><div class="queue-card-heading"><div class="queue-card-title"><div class="section-heading"><h3>${escape(q.name || 'Unnamed draft')}</h3><span class="status-pill" data-status="${!saved ? 'draft' : saved.enabled ? 'open' : 'paused'}">${!saved ? 'New draft' : saved.enabled ? 'Open' : 'Paused'}</span>${q.isDefault ? '<span class="default-tag">Default in channel</span>' : ''}</div><p class="queue-meta">${meta}</p></div><div class="actions"><button type="button" data-open-queue="${q.id}" aria-label="Settings for ${escape(q.name || 'new queue')}">Settings</button><button type="button" data-toggle-queue="${q.id}" class="${q.enabled ? '' : 'resume-queue'}">${q.enabled ? 'Pause' : 'Resume'}<span class="sr-only"> on save</span></button></div></div>${changed ? `<p class="draft-tag">Unsaved changes${saved && saved.enabled !== q.enabled ? ` · ${q.enabled ? 'resume' : 'pause'} on save` : ''}${saved ? ' · Live roster and actions use saved settings' : ''}</p>` : ''}${pausedEmpty ? `<p class="paused-note">Players cannot <code>/add</code> while paused. Ratings and history are kept.</p><details class="queue-manual-actions"><summary>Waiting roster and manual actions</summary>${roster}${actions}</details>` : roster + actions}</article>`;
+      return `<article class="panel queue-card"><div class="queue-card-heading"><div class="queue-card-title"><div class="section-heading"><h3>${escape(q.name || 'Unnamed queue')}</h3><span class="status-pill" data-status="${!saved ? 'draft' : saved.enabled ? 'open' : 'paused'}">${!saved ? 'Not saved yet' : saved.enabled ? 'Open' : 'Paused'}</span>${q.isDefault ? '<span class="default-tag">Default in channel</span>' : ''}</div><p class="queue-meta">${meta}</p></div><div class="actions"><button type="button" data-open-queue="${q.id}" aria-label="Settings for ${escape(q.name || 'new queue')}">Settings</button><button type="button" data-toggle-queue="${q.id}" class="${q.enabled ? '' : 'resume-queue'}">${q.enabled ? 'Pause' : 'Resume'}<span class="sr-only"> on save</span></button></div></div>${changed ? `<p class="draft-tag">Unsaved changes${saved && saved.enabled !== q.enabled ? ` · ${q.enabled ? 'resume' : 'pause'} on save` : ''}${saved ? ' · Live roster and actions use saved settings' : ''}</p>` : ''}${pausedEmpty ? `<p class="paused-note">Players cannot <code>/add</code> while paused. Ratings and history are kept.</p><details class="queue-manual-actions"><summary>Waiting roster and manual actions</summary>${roster}${actions}</details>` : roster + actions}</article>`;
     })
     .join('');
   return `${setupNotice()}<section class="queue-overview" aria-label="Queue overview"><p class="sr-only queue-list-note">Live rosters use saved rules. Pause and resume take effect when you save.</p><div class="queue-cards">${cards}</div></section>`;
@@ -1059,25 +1127,32 @@ function openQueue(id: string, focus = true) {
 function queueAdministration() {
   const queues = snapshot!.settings.queues;
   if (!queues.length) return '';
-  return `<details class="rating-options"><summary>Queue controls and manual records</summary>${records!.waiting
+  return `<details class="rating-options"><summary>Queue controls</summary>${records!.waiting
     .filter((w) => queues.some((q) => q.id === w.queueId))
     .map((w) => {
       const q = queues.find((q) => q.id === w.queueId)!;
-      return `<form data-kind="queue-control" data-id="${q.id}" class="repair-form"><h3>${escape(q.name)} · ${w.players.length} waiting</h3><p>${w.players.map((p) => escape(p.name)).join(' · ') || 'Queue is empty.'}</p><div class="fields"><label>Queue action<select name="kind"><option value="start">Start match</option><option value="split">Split into matches</option><option value="clear">Clear waiting queue</option></select></label><label>Group size<input name="groupSize" type="number" min="2" max="16" step="2" value="2" /></label><label class="toggle"><input name="skipCheckIn" type="checkbox" /> Skip check-in for this manual start</label><label class="toggle"><input name="sortByRating" type="checkbox" /> Group by rating before splitting</label></div><button>Apply queue action</button></form>`;
+      return `<form data-kind="queue-control" data-id="${q.id}" class="repair-form"><h3>${escape(q.name)} · ${w.players.length} waiting</h3><p>${w.players.map((p) => escape(p.name)).join(' · ') || 'Queue is empty.'}</p><div class="fields"><label>Action<select name="kind"><option value="start">Start a match now</option><option value="split">Split into several matches</option><option value="clear">Remove everyone waiting</option></select></label><label>Players per match when splitting<input name="groupSize" type="number" min="2" max="16" step="2" value="2" /></label><label class="toggle"><input name="skipCheckIn" type="checkbox" /> Skip check-in for this start</label><label class="toggle"><input name="sortByRating" type="checkbox" /> Group similar ratings together when splitting</label></div><button>Review queue action</button></form>`;
     })
     .join('')}
-  <form data-kind="manual" class="repair-form"><h3>Record a game played outside the bot</h3><p class="muted">Enter player mentions or Discord IDs separated by spaces. This creates a ranked result and changes ratings.</p><div class="fields">${queueChoice()}<label>Alpha players<input name="alpha" required /></label><label>Beta players<input name="beta" required /></label><label>Winner<select name="result"><option value="alpha">Alpha</option><option value="beta">Beta</option><option value="draw">Draw</option></select></label></div><button>Record manual match</button></form></details>`;
+  <details class="advanced-tools"><summary>Advanced: record a game played outside the bot</summary><form data-kind="manual" class="repair-form"><p class="muted">Adds a ranked result and changes ratings. Enter each team as Discord mentions or user IDs, separated by spaces.</p><div class="fields">${queueChoice()}<label>Team Alpha players<input name="alpha" required spellcheck="false" /></label><label>Team Beta players<input name="beta" required spellcheck="false" /></label><label>Result<select name="result"><option value="alpha">Alpha won</option><option value="beta">Beta won</option><option value="draw">Draw</option></select></label></div><button>Review result</button></form></details></details>`;
 }
 function playerAdministration() {
-  if (!snapshot!.settings.queues.length) return '';
-  return `<details class="rating-options"><summary>Rating tools and restrictions</summary>
-  <form data-kind="seed" class="repair-form"><h3>Seed a local rating</h3><div class="fields">${queueChoice()}<label>Player ID<input name="target" required /></label><label>Rating<input name="rating" type="number" min="0" max="10000" required /></label></div><button>Seed rating</button></form>
-  <form data-kind="noadd" class="repair-form"><h3>Restrict queue access</h3><p class="muted">A restriction applies to this community’s queues.</p><div class="fields">${queueChoice()}<label>Player ID<input name="target" required /></label><label>Duration seconds<input name="seconds" type="number" min="1" max="1209600" value="60" required /></label><label>Reason<input name="reason" maxlength="200" /></label></div><button>Apply no-add</button></form>
-  ${records!.noadds.map((b) => `<p>${escape(playerName(b.user_id))} · until ${escape(new Date(b.until_ms).toLocaleString())}${b.reason ? ` · ${escape(b.reason)}` : ''} <button data-action="forgive" data-id="${b.user_id}">Remove restriction</button></p>`).join('')}</details>`;
+  const queues = snapshot!.settings.queues;
+  const paused = records!.noadds.length
+    ? `<section class="paused-players"><h3>Paused from queues</h3>${records!.noadds.map((b) => `<p>${escape(playerName(b.user_id))} · until ${escape(new Date(b.until_ms).toLocaleString())}${b.reason ? ` · ${escape(b.reason)}` : ''} <button type="button" data-action="forgive" data-id="${b.user_id}">End pause now</button></p>`).join('')}</section>`
+    : '';
+  if (!snapshot!.settings.games.length) return paused;
+  const idField = `<label>Player’s Discord user ID<input name="target" required pattern="[0-9]{17,20}" inputmode="numeric" spellcheck="false" /></label>`;
+  return `${paused}<details class="rating-options advanced-tools"><summary>Advanced tools</summary><p class="form-help">For players who are not in the list above, such as someone who has not played yet. You need their Discord user ID: turn on Developer Mode in Discord, then right-click the member and choose Copy User ID.</p>${
+    queues.length
+      ? `<form data-kind="seed" class="repair-form"><h3>Set a rating</h3><div class="fields">${queueChoice()}${idField}<label>Rating<input name="rating" type="number" min="0" max="10000" required /></label></div><button>Review rating change</button></form>
+  <form data-kind="noadd" class="repair-form"><h3>Pause from queues</h3><p class="muted">The player cannot join any queue in this community until the pause ends.</p><div class="fields">${queueChoice()}${idField}${pauseFields()}</div><button>Review pause</button></form>`
+      : ''
+  }${playerRecordForm(snapshot!)}</details>`;
 }
 function diagnostics() {
   const delivery = records!.delivery;
-  return `<aside class="activity-sidebar match-sidebar"><section class="panel"><h2>Discord delivery</h2>${delivery.length ? delivery.map((d) => `<div class="activity-item"><strong>${escape(d.status === 'blocked' ? 'A message needs attention' : d.status.replaceAll('_', ' '))}</strong>${d.error ? `<p>${escape(d.error)}</p>` : ''}<details><summary>Delivery details</summary><code>${escape(d.key)}</code></details></div>`).join('') : '<p class="muted">No delivery problems in the loaded records.</p>'}<button type="button" class="text-button" data-view="setup">Check Discord access</button><p class="form-help">After fixing access, refresh the affected card under Administrator actions.</p></section><section class="panel"><h2>Administrator activity</h2>${records!.audit.map((a) => `<div class="activity-item"><time>${escape(new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</time><p><strong>${escape(playerName(a.actor_id))}</strong> · ${escape(a.action.replaceAll('_', ' '))}${a.match_id ? `<small>Match ${escape(a.match_id)}</small>` : ''}</p></div>`).join('') || '<p class="muted">No administrator activity in the loaded records.</p>'}<p class="form-help">Recent activity only.</p></section></aside>`;
+  return `<aside class="activity-sidebar match-sidebar"><section class="panel"><h2>Discord delivery</h2>${delivery.length ? delivery.map((d) => `<div class="activity-item"><strong>${escape(d.status === 'blocked' ? 'A message needs attention' : words(d.status))}</strong>${d.error ? `<p>${escape(d.error)}</p>` : ''}<details><summary>Delivery details</summary><code>${escape(d.key)}</code></details></div>`).join('') : '<p class="muted">No delivery problems in the loaded records.</p>'}<button type="button" class="text-button" data-view="setup">Check Discord access</button><p class="form-help">After fixing access, open the match and choose Refresh the Discord card.</p></section><section class="panel"><h2>Administrator activity</h2>${records!.audit.map((a) => `<div class="activity-item"><time>${escape(new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</time><p><strong>${escape(playerName(a.actor_id))}</strong> · ${escape(auditLabels[a.action] ?? words(a.action))}</p></div>`).join('') || '<p class="muted">No administrator activity in the loaded records.</p>'}<p class="form-help">Recent activity only.</p></section></aside>`;
 }
 
 async function repair(
@@ -1132,7 +1207,12 @@ async function submitRepair(form: HTMLFormElement, data: FormData) {
   }
   if (kind === 'seed') action.rating = Number(data.get('rating'));
   if (kind === 'noadd') {
-    action.seconds = Number(data.get('seconds'));
+    action.seconds =
+      data.get('seconds') === 'custom'
+        ? Math.round(Number(data.get('customHours')) * 3600)
+        : Number(data.get('seconds'));
+    if (!Number.isSafeInteger(action.seconds) || action.seconds < 1 || action.seconds > 1209600)
+      throw new Error('Choose a pause from 1 hour to 2 weeks.');
     action.reason = String(data.get('reason') ?? '');
   }
   const playerLabel = (name: string) =>
@@ -1141,9 +1221,11 @@ async function submitRepair(form: HTMLFormElement, data: FormData) {
   const matchLabel = match ? `${match.queue.name} · ${match.gameName}` : 'these teams';
   const prompt =
     kind === 'undo'
-      ? `Undo ${matchLabel}? Reverse its recorded rating changes and counts, keeping other results and the audit.`
+      ? `Undo the result of ${matchLabel}? Its rating changes and win/loss counts are reversed; other results stay.`
       : ['admin_report', 'manual_create', 'seed'].includes(kind)
-        ? `Apply ${kind === 'seed' ? `rating ${action.rating} to player ${action.target}` : `ranked result ${action.result} for ${matchLabel}`}? This changes local ratings and history.`
+        ? kind === 'seed'
+          ? `Set ${playerName(action.target ?? '')}’s rating to ${action.rating}? This changes ratings for this game.`
+          : `Record “${resultLabels[action.result ?? ''] ?? action.result}” for ${matchLabel}? This changes ratings and match history.`
         : kind === 'clear'
           ? `Clear all waiting players from ${queue!.name}?`
           : kind === 'force_sub'
@@ -1151,14 +1233,14 @@ async function submitRepair(form: HTMLFormElement, data: FormData) {
             : kind === 'put'
               ? `Place ${playerLabel('target')} on ${action.side === 'alpha' ? 'Alpha' : 'Beta'} in ${matchLabel}?`
               : kind === 'recover_abort'
-                ? `Cancel ${matchLabel} without rating changes? Unsettled predictions are refunded; paid settlements remain final.`
+                ? `Cancel ${matchLabel} without rating changes? Open predictions are refunded; ones already paid out stay paid.`
                 : kind === 'noadd'
-                  ? `Prevent player ${action.target} from joining this community's queues for ${action.seconds} seconds?`
+                  ? `Pause ${playerName(action.target ?? '')} from this community’s queues for ${durationText(action.seconds ?? 0)}?`
                   : kind === 'split'
                     ? `Split ${queue!.name} into ${action.groupSize}-player matches${action.sortByRating ? ', grouping by rating' : ''}? Leftovers stay queued.`
                     : kind === 'start'
                       ? `Start ${queue!.name}${action.skipCheckIn ? ' with check-in skipped for this match' : ' with its saved rules'}?`
-                      : `Refresh the saved card for ${matchLabel}?`;
+                      : `Refresh the Discord card for ${matchLabel}?`;
   if (
     ['put', 'force_sub'].includes(kind) &&
     (!action.target || (kind === 'force_sub' && !action.replacement))
@@ -1210,7 +1292,7 @@ function matchCard(m: Match) {
   const ready = new Set(m.ready ?? []);
   const checked = m.roster.filter((p) => ready.has(p.id)).length;
   const book = records?.economy?.books.find((b) => b.match_id === m.id);
-  return `<details class="match-record" data-match-record data-match-id="${m.id}" data-queue="${m.queue.id}" data-state="${m.state}"${['playing', 'check_in'].includes(m.state) ? ' open' : ''}><summary><span>${escape(m.queue.name)} · ${escape(m.gameName)}</span><span class="status-pill" data-status="${m.state}">${escape(stateName(m))}</span><span class="record-meta">${escape(new Date(m.createdAt).toLocaleString())}</span></summary>${m.state === 'check_in' ? `<div class="check-in-progress"><p><strong>${checked} / ${m.roster.length} checked in</strong>${m.deadline ? ` · deadline ${escape(new Date(m.deadline).toLocaleString())}` : ''}</p><progress max="${Math.max(1, m.roster.length)}" value="${checked}" aria-label="Players checked in"></progress></div>` : ''}<div class="record-teams">${m.teams.map((team, side) => `<div><h3>${side === 0 ? 'Alpha' : 'Beta'}</h3>${team.map((p) => `<p><span class="team-player"><strong>${escape(p.name)}</strong>${m.captains[side] === p.id ? '<small>Captain</small>' : ''}${m.state === 'check_in' ? `<small class="readiness" data-ready="${ready.has(p.id)}">${ready.has(p.id) ? '✓ Ready' : 'Waiting for check-in'}</small>` : ''}</span><span class="team-rating">${p.rating}</span></p>`).join('') || '<p>No players assigned.</p>'}</div>`).join('')}</div>${m.changes.length ? `<h3>Recorded rating changes</h3><ul class="rating-changes">${m.changes.map((c) => `<li>${escape(m.roster.find((p) => p.id === c.userId)?.name ?? c.userId)}: ${c.before} → ${c.after} (${c.after - c.before >= 0 ? '+' : ''}${c.after - c.before})</li>`).join('')}</ul>` : '<p class="form-help">No rating changes recorded for this match.</p>'}${book ? `<p class="notice">Predictions: ${escape(book.status)}${book.reason ? ` · ${escape(book.reason)}` : ''}${book.status === 'settled' ? ' · Paid settlements remain final after result corrections.' : ''}</p>` : ''}${m.note ? `<p>${escape(m.note)}</p>` : ''}${matchResult(m)}${matchConnectorDetails(m)}${matchRepairs(m)}<details class="technical-details"><summary>Record identifiers</summary><p>Match ${escape(m.id)}</p>${m.roster.map((p) => `<p>${escape(p.name)} · ${escape(p.id)}</p>`).join('')}</details></details>`;
+  return `<details class="match-record" data-match-record data-match-id="${m.id}" data-queue="${m.queue.id}" data-state="${m.state}"${['playing', 'check_in'].includes(m.state) ? ' open' : ''}><summary><span>${escape(m.queue.name)} · ${escape(m.gameName)}</span><span class="status-pill" data-status="${m.state}">${escape(stateName(m))}</span><span class="record-meta">${escape(new Date(m.createdAt).toLocaleString())}</span></summary>${m.state === 'check_in' ? `<div class="check-in-progress"><p><strong>${checked} / ${m.roster.length} checked in</strong>${m.deadline ? ` · deadline ${escape(new Date(m.deadline).toLocaleString())}` : ''}</p><progress max="${Math.max(1, m.roster.length)}" value="${checked}" aria-label="Players checked in"></progress></div>` : ''}<div class="record-teams">${m.teams.map((team, side) => `<div><h3>${side === 0 ? 'Alpha' : 'Beta'}</h3>${team.map((p) => `<p><span class="team-player"><strong>${escape(p.name)}</strong>${m.captains[side] === p.id ? '<small>Captain</small>' : ''}${m.state === 'check_in' ? `<small class="readiness" data-ready="${ready.has(p.id)}">${ready.has(p.id) ? '✓ Ready' : 'Waiting for check-in'}</small>` : ''}</span><span class="team-rating">${p.rating}</span></p>`).join('') || '<p>No players assigned.</p>'}</div>`).join('')}</div>${m.changes.length ? `<h3>Recorded rating changes</h3><ul class="rating-changes">${m.changes.map((c) => `<li>${escape(m.roster.find((p) => p.id === c.userId)?.name ?? c.userId)}: ${c.before} → ${c.after} (${c.after - c.before >= 0 ? '+' : ''}${c.after - c.before})</li>`).join('')}</ul>` : '<p class="form-help">No rating changes recorded for this match.</p>'}${book ? `<p class="notice">Predictions: ${escape(bookLabels[book.status] ?? words(book.status))}${book.reason ? ` · ${escape(words(book.reason))}` : ''}${book.status === 'settled' ? ' · Payouts stay paid even if the result is corrected.' : ''}</p>` : ''}${m.note ? `<p>${escape(m.note)}</p>` : ''}${matchResult(m)}${matchConnectorDetails(m)}${matchRepairs(m)}<details class="technical-details"><summary>Match and player IDs</summary><p>Match ${escape(m.id)}</p>${m.roster.map((p) => `<p>${escape(p.name)} · ${escape(p.id)}</p>`).join('')}</details></details>`;
 }
 function recordSection() {
   if (!records) return '';
@@ -1237,8 +1319,8 @@ function recordSection() {
     .join(
       '',
     )}</select></label></div><p class="record-meta" data-filter-count="match" role="status" aria-live="polite"></p>`;
-  return `<div class="page-heading"><div><h1>Matches</h1><p class="view-description">Follow active games, confirm results, and review recent matches.</p></div></div><section class="panel match-workspace"><p class="sr-only" id="match-filter-scope">Showing the latest 20 match records. Filters and active counts apply to these loaded records.</p><div class="match-toolbar" aria-describedby="match-filter-scope">${matchFilters}<span class="match-limit">Latest 20 records</span></div><div class="match-layout"><div>${blocked.length ? `<p class="notice error">${blocked.length} Discord card delivery task(s) need attention. Check channel permissions in Setup, then refresh the affected match under Administrator actions.</p>` : ''}
-    ${returns.length ? `<details><summary>Players awaiting return after a timeout</summary><p class="muted">Overflow waits for a free place. Blocked returns need a fresh join after checking membership and roles.</p>${returns.map((r) => `<p>${escape(r.name)} · ${escape(snapshot?.settings.queues.find((q) => q.id === r.queue_id)?.name ?? r.queue_id)} · ${escape(r.status)}</p>`).join('')}</details>` : ''}
+  return `<div class="page-heading"><div><h1>Matches</h1><p class="view-description">Follow active games and review recent matches.</p><p class="page-note" data-matches-note>Results are normally reported by players in Discord. Use this page to correct a result or repair a match.</p></div></div><section class="panel match-workspace"><p class="sr-only" id="match-filter-scope">Showing the latest 20 match records. Filters and active counts apply to these loaded records.</p><div class="match-toolbar" aria-describedby="match-filter-scope">${matchFilters}<span class="match-limit">Latest 20 records</span></div><div class="match-layout"><div>${blocked.length ? `<p class="notice error">${blocked.length === 1 ? 'A Discord message could not be posted' : `${blocked.length} Discord messages could not be posted`}. Check channel permissions in Setup, then open the match and refresh its Discord card.</p>` : ''}
+    ${returns.length ? `<details><summary>Players waiting to go back into a queue</summary><p class="muted">After a match ends early, its players return to the queue when there is room. If a return is blocked, the player needs to join again.</p>${returns.map((r) => `<p>${escape(r.name)} · ${escape(snapshot?.settings.queues.find((q) => q.id === r.queue_id)?.name ?? 'Removed queue')} · ${escape(words(r.status))}</p>`).join('')}</details>` : ''}
     <div class="record-list">${[true, false]
       .map(
         (active) =>
@@ -1274,8 +1356,8 @@ function playerSection() {
       ? `${match.queue.name} · ${new Date(match.createdAt).toLocaleString()}`
       : 'Earlier match';
   };
-  return `<div class="page-heading"><div><h1>Players</h1><p class="view-description">Community ratings, player records, and imported history.</p></div></div><nav class="player-sections" aria-label="Player tools"><a href="#player-ratings" aria-current="page">Ratings</a>${filters.playerGame ? `<button type="button" data-player-policy>Leaderboard and ranks</button>` : ''}<button type="button" data-player-import>Import</button>${economy && (economy.wallets.length || snapshot!.settings.queues.some((q) => q.modules.gold)) ? '<a href="#player-gold">Gold</a>' : ''}</nav><section class="panel players-workspace" id="player-ratings"><div class="section-heading"><h2>Player ratings</h2></div><p class="muted">Ratings and gold are shared by queues for the same game. These filters search loaded ratings and gold balances. Load more players to extend the search.</p>${playerFilters}<p class="record-meta" data-filter-count="rating" role="status" aria-live="polite"></p><div data-filter-table="rating"><div class="player-columns" aria-hidden="true"><span>Player</span><span>Rating</span><span>W–L–D</span><span>Visibility</span></div><div class="player-records" data-rating-body>${playerRatingRows()}</div></div><p class="empty-state" data-filter-empty="rating" hidden></p><div class="actions"><button type="button" data-action="load-players"${records.players.length < (records.playersTotal ?? records.players.length) ? '' : ' hidden'}>Load more players</button></div>${playerAdministration()}</section>
-    ${economy && (economy.wallets.length || snapshot!.settings.queues.some((q) => q.modules.gold)) ? `<section class="panel" id="player-gold"><h2>Gold and predictions</h2><p class="record-meta" data-filter-count="wallet" role="status" aria-live="polite"></p><div class="table-wrap" data-filter-table="wallet"><table><thead><tr><th scope="col">Player</th><th scope="col">Game</th><th scope="col">Gold</th></tr></thead><tbody>${economy.wallets.map((w) => `<tr data-wallet-row data-game="${w.game_id}" data-player-search="${escape(playerName(w.user_id, w.game_id).toLocaleLowerCase())}"><td>${escape(playerName(w.user_id, w.game_id))}</td><td>${escape(gameName(w.game_id))}</td><td>${w.balance}</td></tr>`).join('')}</tbody></table></div><p class="empty-state" data-filter-empty="wallet" hidden></p><details class="rating-options"><summary>Gold ledger and prediction history</summary><h3>Gold activity</h3>${economy.ledger.map((l) => `<p>${escape(playerName(l.user_id))} · ${escape(l.kind.replaceAll('_', ' '))} · ${l.amount >= 0 ? '+' : ''}${l.amount} · balance ${l.balance_after}</p>`).join('') || '<p>No gold activity recorded.</p>'}<h3>Prediction pools</h3>${economy.books.map((b) => `<details><summary>${escape(matchName(b.match_id))} · ${escape(b.status)}</summary><p>${escape(b.reason ?? b.result ?? 'Open')}${b.status === 'settled' ? ' · Paid settlement remains final after corrections.' : ''}</p><p class="record-meta">Match ${escape(b.match_id)}</p></details>`).join('') || '<p>No prediction pools recorded.</p>'}</details></section>` : ''}
+  return `<div class="page-heading"><div><h1>Players</h1><p class="view-description">Ratings and records for each game. Open a player to change their rating, pause them from queues or hide them.</p></div></div><nav class="player-sections" aria-label="Player tools"><a href="#player-ratings" aria-current="page">Ratings</a>${filters.playerGame ? `<button type="button" data-player-policy>Leaderboard and ranks</button>` : ''}<button type="button" data-player-import>Import players</button>${economy && (economy.wallets.length || snapshot!.settings.queues.some((q) => q.modules.gold)) ? '<a href="#player-gold">Gold</a>' : ''}</nav><section class="panel players-workspace" id="player-ratings"><div class="section-heading"><h2>Player ratings</h2></div><p class="muted">Queues for the same game share ratings and gold. Search covers the players loaded so far; load more to search further.</p>${playerFilters}<p class="record-meta" data-filter-count="rating" role="status" aria-live="polite"></p><div data-filter-table="rating"><div class="player-columns" aria-hidden="true"><span>Player</span><span>Rating</span><span>W–L–D</span><span>Visibility</span></div><div class="player-records" data-rating-body>${playerRatingRows()}</div></div><p class="empty-state" data-filter-empty="rating" hidden></p><div class="actions"><button type="button" data-action="load-players"${records.players.length < (records.playersTotal ?? records.players.length) ? '' : ' hidden'}>Load more players</button></div>${playerAdministration()}</section>
+    ${economy && (economy.wallets.length || snapshot!.settings.queues.some((q) => q.modules.gold)) ? `<section class="panel" id="player-gold"><h2>Gold and predictions <span class="beta-tag">Beta</span></h2><p class="form-help">Play-money gold has no real value. Beta: it works, but it is new and may still change.</p><p class="record-meta" data-filter-count="wallet" role="status" aria-live="polite"></p><div class="table-wrap" data-filter-table="wallet"><table><thead><tr><th scope="col">Player</th><th scope="col">Game</th><th scope="col">Gold</th></tr></thead><tbody>${economy.wallets.map((w) => `<tr data-wallet-row data-game="${w.game_id}" data-player-search="${escape(playerName(w.user_id, w.game_id).toLocaleLowerCase())}"><td>${escape(playerName(w.user_id, w.game_id))}</td><td>${escape(gameName(w.game_id))}</td><td>${w.balance}</td></tr>`).join('')}</tbody></table></div><p class="empty-state" data-filter-empty="wallet" hidden></p><details class="rating-options"><summary>Gold ledger and prediction history</summary><h3>Gold activity</h3>${economy.ledger.map((l) => `<p>${escape(playerName(l.user_id))} · ${escape(words(l.kind))} · ${l.amount >= 0 ? '+' : ''}${l.amount} · balance ${l.balance_after}</p>`).join('') || '<p>No gold activity recorded.</p>'}<h3>Predictions</h3>${economy.books.map((b) => `<details><summary>${escape(matchName(b.match_id))} · ${escape(bookLabels[b.status] ?? words(b.status))}</summary><p>${escape(b.reason ? words(b.reason) : b.result ? (resultLabels[b.result] ?? words(b.result)) : 'Open')}${b.status === 'settled' ? ' · Payouts stay paid even if the result is corrected.' : ''}</p></details>`).join('') || '<p>No predictions yet.</p>'}</details></section>` : ''}
     ${onboarding(snapshot!, records.onboarding)}`;
 }
 function publicationEditor() {
@@ -1350,6 +1432,8 @@ function render() {
     }
     selectView(currentView(), false, false);
     draft.mount(app);
+    syncDurations(app);
+    syncClocks(app);
     // A shared guide URL may target a different queue than the visible editor.
     const guideQueue = app.querySelector<HTMLElement>('[data-guide-queue]')?.dataset.guideQueue;
     if (guideQueue && !app.querySelector(`[data-config="queue:${CSS.escape(guideQueue)}"]`)) {
@@ -1559,6 +1643,10 @@ app.addEventListener('keydown', (event) => {
 app.addEventListener('change', (event) => {
   const input = event.target as HTMLInputElement;
   if (input.dataset.filter) updateFilter(input);
+  if (input.hasAttribute('data-pause-length')) {
+    const custom = input.form?.querySelector<HTMLElement>('[data-pause-custom]');
+    if (custom) custom.hidden = input.value !== 'custom';
+  }
   const form = input.closest('form');
   if (form?.dataset.review) cancelRepair(form);
   if (input.id === 'community' && input.value) {
@@ -1621,7 +1709,7 @@ function reviewChanges() {
   if (!draft || !guideValid()) return;
   const dialog = openDialog(
     'Review community changes',
-    `<p class="form-help">Compared with saved revision ${draft.saved.revision}.${conflict ? ' Newer settings were found. Your draft is preserved; saving cannot overwrite the newer revision.' : ''}</p>${changeReview(draft.saved.settings, draft.materialize(), Object.fromEntries([...(setup.knownChannels ?? []), ...setup.channels, ...setup.roles].map((v) => [v.id, v.name])))}<div class="actions review-actions"><button type="button" data-review-edit>Back to editing</button><button type="button" data-review-save class="primary">Save reviewed changes</button></div>`,
+    `${conflict ? '<p class="form-help">Someone saved newer settings since you started. Your unsaved changes are kept here, but saving will not overwrite theirs; reload the latest settings first.</p>' : ''}${changeReview(draft.saved.settings, draft.materialize(), Object.fromEntries([...(setup.knownChannels ?? []), ...setup.channels, ...setup.roles].map((v) => [v.id, v.name])))}<div class="actions review-actions"><button type="button" data-review-edit>Back to editing</button><button type="button" data-review-save class="primary">Save reviewed changes</button></div>`,
   );
   dialog.classList.add('change-review');
   dialog.querySelector('[data-review-edit]')!.addEventListener('click', () => dialog.close());
@@ -1636,7 +1724,7 @@ function captureEdit(event: Event) {
   if (input.matches('.result-form [name="result"]')) {
     const consequence = input.closest('form')?.querySelector('[data-result-consequence]');
     if (consequence)
-      consequence.textContent = `${input.value === 'draw' ? 'Record a draw for both teams.' : `Record ${input.value === 'beta' ? 'Beta' : 'Alpha'} as the winning team.`} The server applies this game’s saved rating rules and updates match history. Paid prediction settlements remain final.`;
+      consequence.textContent = `${input.value === 'draw' ? 'Record a draw for both teams.' : `Record ${input.value === 'beta' ? 'Beta' : 'Alpha'} as the winning team.`} Ratings and match history update using this game’s rules. Predictions already paid out stay paid.`;
   }
   if (input.hasAttribute('data-guide-game') && event.type === 'change' && draft) {
     const url = new URL(location.href);
@@ -1701,13 +1789,14 @@ function captureEdit(event: Event) {
   }
   const form = input.closest<HTMLFormElement>('form[data-config]');
   if (form && draft) {
+    const name = (captureDuration(input) ?? captureClock(input) ?? input).name;
     if (input.name === 'visibility' && input.value !== 'public') {
       const publish = form.querySelector<HTMLInputElement>('[name="searchPublishing"]');
       if (publish) publish.checked = false;
     }
     draft.capture(form);
     validationIssues = validationIssues.filter(
-      (issue) => issue.form !== form.dataset.config || issue.name !== input.name,
+      (issue) => issue.form !== form.dataset.config || issue.name !== name,
     );
     paintIssues();
     if (input.type === 'checkbox') {
@@ -1892,6 +1981,7 @@ function handleEditorClick(event: MouseEvent): boolean {
       .closest('form')!
       .elements.namedItem(reset.dataset.reset!) as HTMLInputElement;
     input.value = reset.dataset.default!;
+    syncDurations(input.form!);
     input.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
   }
@@ -2075,7 +2165,7 @@ async function start() {
   landing.searchParams.delete('login');
   writeRoute(landing, 'replace');
   bootstrap = await api<Bootstrap>('/api/bootstrap');
-  document.querySelector('#environment')!.textContent = bootstrap.environment.toUpperCase();
+  showEnvironment(bootstrap.environment);
   document.querySelector('#version')!.textContent = `v${bootstrap.version}`;
   if (location.pathname === '/link') {
     await showAccountLink(app, bootstrap);

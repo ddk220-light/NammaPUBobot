@@ -93,7 +93,7 @@ test('drawer and help sheet contain focus, close with Escape and preserve commun
   await expect(menu).toBeFocused();
   const help = page.getByRole('button', { name: 'More about Queue name', exact: true });
   await help.click();
-  await expect(page.getByRole('dialog')).toContainText('The name players choose');
+  await expect(page.getByRole('dialog')).toContainText('The name players see');
   await page.keyboard.press('Escape');
   await expect(help).toBeFocused();
   await expect(page.getByRole('textbox', { name: 'Queue name', exact: true })).toHaveValue(
@@ -116,7 +116,9 @@ test('setup is honest about missing access and ratings locks', async ({ page }) 
   await expect(page.getByRole('button', { name: 'I’m back — check access' })).toBeVisible();
   await page.locator('.game-settings > summary').click();
   await expect(page.getByRole('combobox', { name: 'Rating system', exact: true })).toBeDisabled();
-  await expect(page.getByText('Locked because this game has player ratings.')).toBeVisible();
+  await expect(
+    page.getByText('Locked because players already have ratings for this game.'),
+  ).toBeVisible();
 });
 
 test('import previews cannot be reused after inputs change and errors prevent apply', async ({
@@ -338,6 +340,8 @@ test('rank rows and shared tax edits survive refresh and new queues inherit rati
   page,
 }) => {
   const state = await mockApp(page);
+  // The weekly tax is held back for new communities; this one already uses it.
+  state.snapshot.settings.queues[0].economy!.taxEnabled = true;
   await page.goto(`/?community=${guild}&view=setup`);
   await page.locator('.game-settings > summary').click();
   await page.getByRole('button', { name: 'Add rank', exact: true }).click();
@@ -345,13 +349,11 @@ test('rank rows and shared tax edits survive refresh and new queues inherit rati
   await page.getByRole('spinbutton', { name: 'Rating threshold', exact: true }).last().fill('2800');
   await page.getByRole('checkbox', { name: 'Show rating in nicknames', exact: true }).check();
   const rankRole = page
-    .getByRole('combobox', { name: 'Cosmetic Discord role', exact: true })
+    .getByRole('combobox', { name: 'Discord role (optional)', exact: true })
     .last();
   await rankRole.selectOption('100000000000000003');
   await page.getByRole('spinbutton', { name: 'Starting rating', exact: true }).fill('1234');
-  await page
-    .getByRole('spinbutton', { name: 'Thursday tax time (UTC minutes)', exact: true })
-    .fill('780');
+  await page.getByLabel('Weekly gold tax time (UTC)', { exact: true }).fill('13:00');
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   state.rolesAvailable = false;
@@ -461,12 +463,12 @@ for (const [width, height] of [
         })),
       );
     expect(targets.every((r) => r.width >= 44 && r.height >= 44)).toBe(true);
-    await page.getByRole('button', { name: 'Voice / Rally', exact: true }).click();
+    await page.getByRole('button', { name: 'Maps', exact: true }).click();
     await page
-      .getByRole('spinbutton', { name: 'Maximum mentions', exact: true })
+      .getByRole('spinbutton', { name: 'Map choice time (seconds)', exact: true })
       .scrollIntoViewIfNeeded();
     await expect(
-      page.getByRole('spinbutton', { name: 'Maximum mentions', exact: true }),
+      page.getByRole('spinbutton', { name: 'Map choice time (seconds)', exact: true }),
     ).toBeInViewport();
     expect(errors).toEqual([]);
   });

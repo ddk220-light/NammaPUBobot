@@ -34,12 +34,12 @@ test('reverting a shared rating and tax edit after adding a queue keeps every qu
   await page.goto(organizer);
   await openGame(page);
   await field(page, 'Starting rating').fill('1234');
-  await field(page, 'Thursday tax time (UTC minutes)').fill('780');
+  await page.getByLabel('Weekly gold tax time (UTC)', { exact: true }).fill('13:00');
   await tab(page, 'Queues').click();
   await page.getByRole('button', { name: 'Add queue', exact: true }).click();
   await openGame(page);
   await field(page, 'Starting rating').fill('1000');
-  await field(page, 'Thursday tax time (UTC minutes)').fill('600');
+  await page.getByLabel('Weekly gold tax time (UTC)', { exact: true }).fill('10:00');
   await save(page);
   await expect(page.locator('#notice')).toContainText('Settings saved');
   expect(state.saved[0].queues.map((q) => q.ratingSettings!.initial)).toEqual([1000, 1000]);
@@ -195,10 +195,11 @@ test('cross-field errors point to the game field and persist through other scree
   await mockApp(page);
   await page.goto(organizer);
   await openGame(page);
-  await field(page, 'Initial deviation').fill('100');
-  await field(page, 'Minimum deviation').fill('200');
+  await page.locator('[data-config^="rating:"] details[data-advanced] > summary').click();
+  await field(page, 'Starting uncertainty').fill('100');
+  await field(page, 'Lowest uncertainty').fill('200');
   await save(page);
-  await expect(field(page, 'Minimum deviation')).toHaveAttribute('aria-invalid', 'true');
+  await expect(field(page, 'Lowest uncertainty')).toHaveAttribute('aria-invalid', 'true');
   await expect(page.locator('.field-error')).toContainText(
     'Minimum deviation cannot exceed initial deviation.',
   );
@@ -206,8 +207,8 @@ test('cross-field errors point to the game field and persist through other scree
   await page.getByRole('button', { name: 'Account', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Refresh', exact: true }).click();
   await openGame(page);
-  await expect(field(page, 'Minimum deviation')).toHaveAttribute('aria-invalid', 'true');
-  await field(page, 'Minimum deviation').fill('50');
+  await expect(field(page, 'Lowest uncertainty')).toHaveAttribute('aria-invalid', 'true');
+  await field(page, 'Lowest uncertainty').fill('50');
   await save(page);
   await expect(page.locator('#notice')).toContainText('Settings saved');
 });
@@ -295,7 +296,7 @@ test('a committed import stays successful when record refresh fails and preserve
   await page.getByRole('button', { name: 'Apply reviewed import' }).click();
   await expect(page.getByRole('heading', { name: 'Import applied', exact: true })).toBeVisible();
   await expect(page.locator('#import-result')).toContainText('refresh-failed');
-  await expect(page.locator('#import-result')).toContainText('Players in source');
+  await expect(page.locator('#import-result')).toContainText('Players in the file');
   await expect(page.locator('#import-result dd').first()).toHaveText('1');
   await expect(page.getByRole('button', { name: 'Apply reviewed import' })).toHaveCount(0);
   await expect(page.getByText('Nothing has been imported yet.', { exact: false })).toHaveCount(0);
