@@ -1,6 +1,7 @@
 import { env, exports } from 'cloudflare:workers';
 import {
   abortAllDurableObjects,
+  createExecutionContext,
   reset,
   runDurableObjectAlarm,
   runInDurableObject,
@@ -11,6 +12,7 @@ import { channelPermissions, type Role } from '../src/discord/client';
 import { defaultRatingSettings } from '../src/domain/rating';
 import { defaultRecords } from '../src/domain/records';
 import { defaultMaps } from '../src/domain/maps';
+import worker from '../src/worker';
 
 const guild = '706320010368516198',
   otherGuild = '706320010368516199';
@@ -60,6 +62,11 @@ async function session() {
     expiresAt: Date.now() + 60000,
   });
 }
+// Reads use the session's 30-second guild cache; tests that change permissions expire it.
+const expireGuildCache = () =>
+  runInDurableObject(env.AUTH.getByName(`session:${sessionId}`), (_i, state) =>
+    state.storage.delete('guilds'),
+  );
 const headers = () => ({
   Cookie: `__Host-cg-session=${sessionId}`,
   Origin: base,
@@ -169,7 +176,12 @@ afterEach(async () => {
 
 describe('public invitations and organizer member search', () => {
   it('invites anonymously with only the configured application and base permissions', async () => {
-    const response = await http('/invite?ref=https://evil.example&returnTo=https://evil.example');
+    // Without OAuth sign-in configured, /invite stays a plain bot authorization.
+    const response = await worker.fetch(
+      new Request(`${base}/invite?ref=https://evil.example&returnTo=https://evil.example`),
+      { ...env, DISCORD_CLIENT_SECRET: undefined },
+      createExecutionContext(),
+    );
     expect(response.status).toBe(302);
     const target = new URL(response.headers.get('Location')!);
     expect(target.origin + target.pathname).toBe('https://discord.com/oauth2/authorize');
@@ -179,6 +191,80 @@ describe('public invitations and organizer member search', () => {
     expect(target.href).not.toContain('evil.example');
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex');
+  });
+  it('adds the bot and signs in with one Discord consent when sign-in is configured', async () => {
+    const invite = await http('/invite?returnTo=https://evil.example&guild=1');
+    expect(invite.status).toBe(302);
+    expect(invite.headers.get('Location')).toBe('/auth/login?install=1');
+    const login = await http('/auth/login?install=1');
+    const url = new URL(login.headers.get('Location')!);
+    expect(url.origin + url.pathname).toBe('https://discord.com/oauth2/authorize');
+    expect(url.searchParams.get('scope')).toBe('identify guilds bot applications.commands');
+    expect(url.searchParams.get('permissions')).toBe('84992');
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('redirect_uri')).toBe(`${base}/auth/callback`);
+    expect(url.searchParams.has('guild_id')).toBe(false);
+    const pinned = new URL(
+      (await http(`/auth/login?install=1&guild=${guild}`)).headers.get('Location')!,
+    );
+    expect(pinned.searchParams.get('guild_id')).toBe(guild);
+    expect(pinned.searchParams.get('disable_guild_select')).toBe('true');
+    const invalid = new URL(
+      (await http('/auth/login?install=1&guild=everyone')).headers.get('Location')!,
+    );
+    expect(invalid.searchParams.has('guild_id')).toBe(false);
+    const plain = new URL((await http(`/auth/login?guild=${guild}`)).headers.get('Location')!);
+    expect(plain.searchParams.get('scope')).toBe('identify guilds');
+    expect(plain.searchParams.has('permissions')).toBe(false);
+    expect(plain.searchParams.has('guild_id')).toBe(false);
+  });
+  it.each([
+    [guild, `/app/?community=${guild}&view=setup&guide=access`],
+    ['../evil', '/app/'],
+    ['', '/app/'],
+  ])('returns an installing organizer to the setup guide for %s', async (installed, expected) => {
+    const login = await http('/auth/login?install=1');
+    const state = new URL(login.headers.get('Location')!).searchParams.get('state')!;
+    const result = await http(
+      `/auth/callback?code=test-code&state=${state}&guild_id=${encodeURIComponent(installed)}&permissions=84992`,
+      { headers: { Cookie: `cg-oauth=${state}` } },
+    );
+    expect(result.status).toBe(302);
+    expect(result.headers.get('Location')).toBe(expected);
+    expect(result.headers.get('Set-Cookie')).toContain('__Host-cg-session=');
+  });
+  it('returns a cancelled consent to the console with a calm marker', async () => {
+    const requested = `/app/?community=${guild}&view=setup`;
+    const login = await http(`/auth/login?install=1&returnTo=${encodeURIComponent(requested)}`);
+    const state = new URL(login.headers.get('Location')!).searchParams.get('state')!;
+    const result = await http(`/auth/callback?error=access_denied&state=${state}`, {
+      headers: { Cookie: `cg-oauth=${state}` },
+    });
+    expect(result.status).toBe(302);
+    expect(result.headers.get('Location')).toBe(`${requested}&login=cancelled`);
+    expect(result.headers.get('Set-Cookie')).not.toContain('cg-session=');
+  });
+  it('explains sign-in failures on a page with a way back instead of JSON', async () => {
+    const login = await http('/auth/login?returnTo=%2Fapp%2F%3Fview%3Dsetup');
+    const state = new URL(login.headers.get('Location')!).searchParams.get('state')!;
+    const expired = await http(`/auth/callback?code=test&state=${state}`);
+    expect(expired.status).toBe(400);
+    expect(expired.headers.get('Content-Type')).toContain('text/html');
+    expect(expired.headers.get('Content-Security-Policy')).toContain("frame-ancestors 'none'");
+    const html = await expired.text();
+    expect(html).toContain('Sign-in expired');
+    expect(html).toContain('href="/auth/login?returnTo=%2Fapp%2F"');
+    expect(html).toContain('/site.css');
+    discordStatus = 500;
+    const again = await http('/auth/login?returnTo=%2Fapp%2F%3Fview%3Dsetup');
+    const retryState = new URL(again.headers.get('Location')!).searchParams.get('state')!;
+    const failed = await http(`/auth/callback?code=test&state=${retryState}`, {
+      headers: { Cookie: `cg-oauth=${retryState}` },
+    });
+    expect(failed.status).toBe(401);
+    const page = await failed.text();
+    expect(page).toContain('Discord sign-in failed');
+    expect(page).toContain(`href="/auth/login?returnTo=${encodeURIComponent('/app/?view=setup')}"`);
   });
   it('requires a session and current community management authority for member search', async () => {
     const path = `/api/communities/${guild}/members?query=Rin`;
@@ -450,10 +536,11 @@ describe('community authority and durable settings', () => {
     ).toBe(403);
     expect((await env.COMMUNITIES.getByName(guild).read(guild)).revision).toBe(0);
   });
-  it('rechecks administrator access on every configuration read and write', async () => {
+  it('rechecks administrator access on every write and on reads once the guild cache expires', async () => {
     await session();
     expect((await save()).status).toBe(200);
     admin = false;
+    await expireGuildCache();
     for (const suffix of ['config', 'channels', 'setup', 'audit'])
       expect(
         (await http(`/api/communities/${guild}/${suffix}`, { headers: headers() })).status,
@@ -461,6 +548,7 @@ describe('community authority and durable settings', () => {
     expect((await save(guild, settings, 1)).status).toBe(403);
     admin = true;
     guildRows = guildRows.filter((g) => g.id !== guild);
+    await expireGuildCache();
     expect((await http(`/api/communities/${guild}/config`, { headers: headers() })).status).toBe(
       403,
     );
@@ -581,14 +669,14 @@ describe('community authority and durable settings', () => {
 });
 
 describe('configuration feature boundaries', () => {
-  it('does not expose settings export or accept restore requests from an old browser tab', async () => {
+  it('does not offer the retired settings export or accept restore requests from an old browser tab', async () => {
     await session();
     await save();
     const before = await env.COMMUNITIES.getByName(guild).read(guild);
+    // The path now serves the full community data download, not the old settings-only format.
     const response = await http(`/api/communities/${guild}/export`, { headers: headers() });
-    expect(response.status).toBe(404);
-    expect(response.headers.has('Content-Disposition')).toBe(false);
-    expect(await response.json()).toMatchObject({ error: 'Unknown API route.' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ kind: 'community-data-export' });
     const restore = await http(`/api/communities/${guild}/restore`, {
       method: 'POST',
       headers: headers(),
@@ -723,6 +811,7 @@ describe('responsive organizer contracts', () => {
         { id: settings.games[0].id, ratingEngineLocked: false, ratingEngine: 'aoe2' },
       ]);
       admin = false;
+      await expireGuildCache();
       expect((await http(`/api/communities/${guild}/setup`, { headers: headers() })).status).toBe(
         403,
       );

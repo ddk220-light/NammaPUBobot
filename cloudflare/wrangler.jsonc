@@ -12,7 +12,7 @@
   },
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "head_sampling_rate": 0.1, "invocation_logs": false },
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": false },
   },
   "durable_objects": {
     "bindings": [
@@ -34,6 +34,35 @@
     { "tag": "v6", "new_sqlite_classes": ["PublicDirectory"] },
   ],
   "vars": { "APP_ENV": "local", "APP_ORIGIN": "http://localhost:8787" },
+  // Abuse limits per 60s: auth/public per client IP, console API per signed-in user (IP when
+  // anonymous). Not inherited by environments: keep every environment's copy identical.
+  "ratelimits": [
+    {
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 30, "period": 60 },
+    },
+    {
+      "name": "PUBLIC_RATE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 120, "period": 60 },
+    },
+    {
+      "name": "API_RATE_LIMITER",
+      "namespace_id": "1003",
+      "simple": { "limit": 300, "period": 60 },
+    },
+    {
+      "name": "API_WRITE_RATE_LIMITER",
+      "namespace_id": "1004",
+      "simple": { "limit": 60, "period": 60 },
+    },
+    {
+      "name": "IMPORT_RATE_LIMITER",
+      "namespace_id": "1005",
+      "simple": { "limit": 10, "period": 60 },
+    },
+  ],
   "env": {
     "staging": {
       "name": "community-gaming-staging",
@@ -41,6 +70,88 @@
         "APP_ENV": "staging",
         "APP_ORIGIN": "https://community-gaming-staging.deepakdhanavel.workers.dev",
       },
+      // Abuse limits per 60s: auth/public per client IP, console API per signed-in user (IP when
+      // anonymous). Not inherited by environments: keep every environment's copy identical.
+      "ratelimits": [
+        {
+          "name": "AUTH_RATE_LIMITER",
+          "namespace_id": "1001",
+          "simple": { "limit": 30, "period": 60 },
+        },
+        {
+          "name": "PUBLIC_RATE_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 120, "period": 60 },
+        },
+        {
+          "name": "API_RATE_LIMITER",
+          "namespace_id": "1003",
+          "simple": { "limit": 300, "period": 60 },
+        },
+        {
+          "name": "API_WRITE_RATE_LIMITER",
+          "namespace_id": "1004",
+          "simple": { "limit": 60, "period": 60 },
+        },
+        {
+          "name": "IMPORT_RATE_LIMITER",
+          "namespace_id": "1005",
+          "simple": { "limit": 10, "period": 60 },
+        },
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "PUBLIC_DIRECTORY", "class_name": "PublicDirectory" },
+          { "name": "COMMUNITIES", "class_name": "Community" },
+          { "name": "AUTH", "class_name": "AuthStore" },
+          { "name": "DISCORD_GATE", "class_name": "DiscordGate" },
+          { "name": "VOICE_PRESENCE", "class_name": "VoicePresence" },
+          { "name": "AOE2_LOBBIES", "class_name": "AoE2LobbyFeed" },
+          { "name": "PROVIDERS", "class_name": "ProviderCoordinator" },
+        ],
+      },
+      "migrations": [
+        { "tag": "v1", "new_sqlite_classes": ["Community", "AuthStore"] },
+        { "tag": "v2", "new_sqlite_classes": ["DiscordGate"] },
+        { "tag": "v3", "new_sqlite_classes": ["VoicePresence"] },
+        { "tag": "v4", "new_sqlite_classes": ["AoE2LobbyFeed"] },
+        { "tag": "v5", "new_sqlite_classes": ["ProviderCoordinator"] },
+        { "tag": "v6", "new_sqlite_classes": ["PublicDirectory"] },
+      ],
+    },
+    "production": {
+      "name": "community-gaming-production",
+      "vars": {
+        "APP_ENV": "production",
+        "APP_ORIGIN": "https://production-origin.invalid",
+      },
+      "ratelimits": [
+        {
+          "name": "AUTH_RATE_LIMITER",
+          "namespace_id": "2001",
+          "simple": { "limit": 30, "period": 60 },
+        },
+        {
+          "name": "PUBLIC_RATE_LIMITER",
+          "namespace_id": "2002",
+          "simple": { "limit": 120, "period": 60 },
+        },
+        {
+          "name": "API_RATE_LIMITER",
+          "namespace_id": "2003",
+          "simple": { "limit": 300, "period": 60 },
+        },
+        {
+          "name": "API_WRITE_RATE_LIMITER",
+          "namespace_id": "2004",
+          "simple": { "limit": 60, "period": 60 },
+        },
+        {
+          "name": "IMPORT_RATE_LIMITER",
+          "namespace_id": "2005",
+          "simple": { "limit": 10, "period": 60 },
+        },
+      ],
       "durable_objects": {
         "bindings": [
           { "name": "PUBLIC_DIRECTORY", "class_name": "PublicDirectory" },

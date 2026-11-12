@@ -211,6 +211,7 @@ test('staged game changes do not relabel the live queue roster or its saved-rule
   expect(state.actions).toHaveLength(0);
   expect(state.saved).toHaveLength(0);
   await card.getByRole('button', { name: 'Confirm action', exact: true }).click();
+  await expect.poll(() => state.actions.length).toBe(1);
   expect(state.actions[0]).toMatchObject({ kind: 'clear', queue });
   await expect(page.locator('#savebar')).toBeVisible();
 });
@@ -235,7 +236,7 @@ test('an established community recovers access without choosing a test ladder or
   page,
 }) => {
   const state = await mockApp(page);
-  state.access = 'unavailable';
+  state.access = 'needs_access';
   state.snapshot.settings.queues[0].enabled = false;
   state.snapshot.settings.games.unshift({
     id: 'aaaaaaaa-1111-4111-8111-111111111111',

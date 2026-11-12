@@ -67,10 +67,12 @@ export async function publicPages(request: Request, env: Env): Promise<Response>
         : null;
     const gameRef = entry?.games.find((g) => g.slug === parts[2]);
     if (entry && gameRef) {
+      // Directory entries are hints: a community removed since must not be recreated by a visit.
       const stub = env.COMMUNITIES.getByName(entry.guild),
-        snapshot = await stub.read(entry.guild);
-      const game = snapshot.settings.games.find((g) => g.id === gameRef.id);
+        snapshot = await stub.find(entry.guild);
+      const game = snapshot?.settings.games.find((g) => g.id === gameRef.id);
       if (
+        snapshot &&
         game?.records?.visibility === 'public' &&
         game.records.searchPublishing &&
         snapshot.settings.publicPage?.displayName
@@ -117,10 +119,10 @@ export async function publicPages(request: Request, env: Env): Promise<Response>
     const urls: string[] = [];
     if (launched)
       for (const entry of (await env.PUBLIC_DIRECTORY?.getByName('directory').entries()) ?? []) {
-        const snapshot = await env.COMMUNITIES.getByName(entry.guild).read(entry.guild);
+        const snapshot = await env.COMMUNITIES.getByName(entry.guild).find(entry.guild);
         for (const g of entry.games)
           if (
-            snapshot.settings.publicPage?.displayName &&
+            snapshot?.settings.publicPage?.displayName &&
             snapshot.settings.games.some(
               (v) =>
                 v.id === g.id && v.records?.visibility === 'public' && v.records.searchPublishing,

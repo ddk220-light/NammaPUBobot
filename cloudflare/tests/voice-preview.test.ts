@@ -186,6 +186,19 @@ describe('five-minute voice cache after staging removes queue previews', () => {
     const s = settings();
     s.queues[0].voicePreview = true;
     await setup(s);
+    // Saving now queues the first card; model a queue whose card was never created.
+    await runInDurableObject(stub(), async (_i, state) => {
+      for (const table of ['outbox', 'cards', 'queue_views', 'queue_publications'])
+        state.storage.sql.exec(`DELETE FROM ${table}`);
+      await state.storage.deleteAlarm();
+    });
+    await stub().save(
+      guild,
+      1,
+      { ...s, publicPage: { displayName: 'Renamed' } },
+      person(99).id,
+      'save',
+    );
     await runInDurableObject(stub(), async (_i, state) =>
       expect(await state.storage.getAlarm()).toBeNull(),
     );

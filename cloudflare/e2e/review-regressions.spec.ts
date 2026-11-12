@@ -159,6 +159,8 @@ test('community history preserves the destination and cancelling Back preserves 
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`community=${guild}.*view=queues`));
   await expect(page.locator('#community')).toHaveValue(guild);
+  // The console ignores history navigation while a community is still loading.
+  await expect(page.locator('#app')).not.toHaveAttribute('aria-busy', 'true');
   await page.goForward();
   await expect(page.locator('#community')).toHaveValue(otherGuild);
   await expect(page.locator('#view-queues')).toBeVisible();

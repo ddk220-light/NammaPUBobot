@@ -15,7 +15,10 @@ import {
   userGuilds,
   DiscordFailure,
   botInviteUrls,
+  BOT_PERMISSIONS,
+  BOT_SCOPES,
 } from './discord/client';
+import { page, htmlEscape } from './public-site';
 import { interactions } from './discord/interactions';
 import { PlayError, actionSchema, type Action } from './domain/play';
 import { memberIds, resolveMember } from './discord/members';
@@ -26,15 +29,26 @@ import type { FieldIssue } from './domain/errors';
 import { GameAccountError } from './auth/game-accounts';
 import { gameAccountRoutes } from './routes/game-accounts';
 import { runtimeAdapter, connectorAvailability } from './games/runtime';
+import { touchCommunity } from './storage/community-index';
 export { PublicDirectory } from './storage/public-directory';
 export { ProviderCoordinator } from './storage/provider-coordinator';
 export { AoE2LobbyFeed } from './storage/aoe2-lobby-feed';
 export { Community } from './storage/community';
+import { EXPORT_PAGE_ROWS, type Community } from './storage/community';
 export { AuthStore } from './storage/auth';
 export { DiscordGate } from './storage/discord-gate';
 export { VoicePresence } from './storage/voice-presence';
 
-type App = { Bindings: Env; Variables: { requestId: string; session: Session; sessionId: string } };
+type SignedIn = { id: string; session: Session };
+type App = {
+  Bindings: Env;
+  Variables: {
+    requestId: string;
+    session: Session;
+    sessionId: string;
+    signedIn?: Promise<SignedIn | null>;
+  };
+};
 const app = new Hono<App>();
 class Problem extends Error {
   constructor(
@@ -76,16 +90,79 @@ const tokenId = () =>
   ).join('');
 const isTokenId = (s: string | undefined): s is string => !!s && /^[a-f0-9]{64}$/.test(s);
 
-async function sessionFor(c: Context<App>): Promise<{ id: string; session: Session } | null> {
-  const id = getCookie(c, sessionCookie(c.env));
-  if (!isTokenId(id)) return null;
-  const session = await c.env.AUTH.getByName(`session:${id}`).session();
-  return session ? { id, session } : null;
+function sessionFor(c: Context<App>): Promise<SignedIn | null> {
+  let signedIn = c.get('signedIn');
+  if (!signedIn) {
+    const id = getCookie(c, sessionCookie(c.env));
+    signedIn = isTokenId(id)
+      ? c.env.AUTH.getByName(`session:${id}`)
+          .session()
+          .then((session) => (session ? { id, session } : null))
+      : Promise.resolve(null);
+    c.set('signedIn', signedIn);
+  }
+  return signedIn;
 }
+
+// Long enough to serve one page load's reads, short enough that a lost permission stops reads soon.
+// Changes always re-ask Discord.
+const guildCacheMs = 30000;
+async function sessionGuilds(c: Context<App>, { id, session }: SignedIn, live = false) {
+  const store = c.env.AUTH.getByName(`session:${id}`);
+  const cached = live ? null : await store.cachedGuilds(guildCacheMs);
+  if (cached) return cached;
+  try {
+    const guilds = (await userGuilds(session.accessToken)).map(
+      ({ id, name, icon, owner, permissions }) => ({ id, name, icon, owner, permissions }),
+    );
+    await store.cacheGuilds(guilds);
+    return guilds;
+  } catch (error) {
+    if (!(error instanceof DiscordFailure) || error.status !== 401) throw error;
+    // Discord no longer accepts this grant: end the session instead of failing every request.
+    await store.remove();
+    deleteCookie(c, sessionCookie(c.env), { path: '/', secure: secure(c.env) });
+    throw new Problem(401, 'sign_in_required', 'Your Discord sign-in expired. Sign in again.');
+  }
+}
+
+// Each tier's request budget lives in wrangler.jsonc `ratelimits`, identical in every environment.
+const rateLimitPeriod = 60;
+const rateLimiters = {
+  auth: 'AUTH_RATE_LIMITER',
+  public: 'PUBLIC_RATE_LIMITER',
+  api: 'API_RATE_LIMITER',
+  write: 'API_WRITE_RATE_LIMITER',
+  import: 'IMPORT_RATE_LIMITER',
+} as const;
+async function overLimit(c: Context<App>, tier: keyof typeof rateLimiters, key?: string) {
+  const limiter = c.env[rateLimiters[tier]];
+  // Cloudflare's edge always supplies the client address; only local test requests lack it.
+  if (!limiter || !key) return false;
+  try {
+    return !(await limiter.limit({ key })).success;
+  } catch {
+    // An abuse control, not an authorization: a limiter outage must not take sign-in down.
+    console.error(
+      JSON.stringify({ requestId: c.get('requestId'), code: 'rate_limiter_unavailable', tier }),
+    );
+    return false;
+  }
+}
+function tooMany(c: Context<App>, page: boolean) {
+  c.header('Retry-After', String(rateLimitPeriod));
+  if (page) return c.text('Too many requests. Wait a minute, then try again.', 429);
+  throw new Problem(429, 'rate_limited', 'Too many requests. Wait a minute, then retry.');
+}
+const clientAddress = (c: Context<App>) => c.req.header('CF-Connecting-IP');
 
 async function readJson(request: Request, limit = 262144) {
   if (!request.headers.get('Content-Type')?.startsWith('application/json'))
     throw new Problem(415, 'content_type', 'Send JSON.');
+  if (Number(request.headers.get('Content-Length')) > limit) {
+    await request.body?.cancel();
+    throw new Problem(413, 'too_large', 'The request is too large.');
+  }
   const reader = request.body?.getReader();
   if (!reader) throw new Problem(400, 'invalid_json', 'The request is empty.');
   const chunks: Uint8Array[] = [];
@@ -127,6 +204,9 @@ app.use('*', async (c, next) => {
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', c.req.path.startsWith('/auth/game/') ? 'no-referrer' : 'same-origin');
   c.header('X-Frame-Options', 'DENY');
+  // Browsers ignore HSTS over plain HTTP; local development never pins localhost.
+  if (secure(c.env) && new URL(c.req.url).protocol === 'https:')
+    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   if (
     c.req.path.startsWith('/api/') ||
     c.req.path.startsWith('/auth/') ||
@@ -144,6 +224,34 @@ app.use('*', async (c, next) => {
       elapsedMs: Date.now() - started,
     }),
   );
+});
+
+app.use('*', async (c, next) => {
+  const path = c.req.path;
+  const tier =
+    path === '/invite' || path.startsWith('/auth/')
+      ? 'auth'
+      : path.startsWith('/statistics/') ||
+          path.startsWith('/c/') ||
+          /^\/sitemap[\w-]*\.xml$/.test(path)
+        ? 'public'
+        : null;
+  if (tier && (await overLimit(c, tier, clientAddress(c))))
+    return tooMany(c, !path.startsWith('/statistics/'));
+  await next();
+});
+app.use('/api/*', async (c, next) => {
+  const signedIn = await sessionFor(c),
+    key = signedIn ? `user:${signedIn.session.user.id}` : clientAddress(c),
+    write = !['GET', 'HEAD'].includes(c.req.method);
+  if (
+    (await overLimit(c, 'api', key)) ||
+    (write && (await overLimit(c, 'write', key))) ||
+    ((write ? c.req.path.includes('/import/') : c.req.path.endsWith('/export')) &&
+      (await overLimit(c, 'import', key)))
+  )
+    return tooMany(c, false);
+  await next();
 });
 
 app.onError((error, c) => {
@@ -221,6 +329,50 @@ app.use('/ops/*', async (c, next) => {
   c.header('Cache-Control', 'no-store');
   await next();
 });
+/** Streams `{...head, "tables": {name: [rows]}}` page by page so no table size is ever held at once. */
+function exportResponse(
+  stub: DurableObjectStub<Community>,
+  guild: string,
+  manifest: { tables: { name: string }[]; scope: 'operator' | 'organizer' },
+  head: Record<string, unknown>,
+  filename?: string,
+) {
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter(),
+    encoder = new TextEncoder(),
+    write = (text: string) => writer.write(encoder.encode(text));
+  (async () => {
+    try {
+      await write(JSON.stringify(head).slice(0, -1) + ',"tables":{');
+      for (const [index, { name }] of manifest.tables.entries()) {
+        await write(`${index ? ',' : ''}${JSON.stringify(name)}:[`);
+        let first = true;
+        for (let after: number | null = 0; after !== null;) {
+          const page = await stub.exportPage(guild, name, after, EXPORT_PAGE_ROWS, manifest.scope);
+          if (page.rows.length) {
+            await write((first ? '' : ',') + page.rows.map((r) => JSON.stringify(r)).join(','));
+            first = false;
+          }
+          after = page.next;
+        }
+        await write(']');
+      }
+      await write('}}\n');
+      await writer.close();
+    } catch (error) {
+      // A truncated body is invalid JSON, so a failed export can never pass as complete.
+      console.error(JSON.stringify({ ops: 'export_failed', guild, scope: manifest.scope }));
+      await writer.abort(error);
+    }
+  })();
+  return new Response(readable, {
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...(filename ? { 'Content-Disposition': `attachment; filename="${filename}"` } : {}),
+    },
+  });
+}
 function operationalCommunity(c: Context<App>) {
   const guild = snowflake.parse(c.req.param('guild'));
   const copy = c.req.query('copy');
@@ -325,9 +477,119 @@ app.get('/ops/aoe2/lobbies/:id', async (c) => {
     await c.env.AOE2_LOBBIES.getByName(c.env.DISCORD_APPLICATION_ID ?? 'local').query(id),
   );
 });
+app.get('/ops/communities', async (c) => {
+  if (!c.env.PUBLIC_DIRECTORY)
+    throw new Problem(503, 'directory_unavailable', 'The community index is not configured.');
+  const limit = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(500)
+    .parse(c.req.query('limit') ?? 100);
+  const cursor = z
+    .string()
+    .regex(/^\d+:\d{17,20}$/)
+    .optional()
+    .parse(c.req.query('cursor'));
+  return c.json(await c.env.PUBLIC_DIRECTORY.getByName('directory').communities(limit, cursor));
+});
+// Same artifact shape as the former single-read backup, streamed page by page with no row cap.
 app.get('/ops/communities/:guild/backup', async (c) => {
   const { guild, stub } = operationalCommunity(c);
-  return c.json(await stub.operationalBackup(guild));
+  const manifest = await stub.exportManifest(guild, 'operator');
+  const { format, communityId, sourceApplicationId, createdAt } = manifest;
+  return exportResponse(stub, guild, manifest, {
+    format,
+    communityId,
+    sourceApplicationId,
+    createdAt,
+  });
+});
+app.get('/ops/communities/:guild/export', async (c) => {
+  const { guild, stub } = operationalCommunity(c);
+  return c.json(await stub.exportManifest(guild, 'operator'));
+});
+app.get('/ops/communities/:guild/export/:table', async (c) => {
+  const { guild, stub } = operationalCommunity(c);
+  const table = z
+    .string()
+    .regex(/^[a-z_]{1,64}$/)
+    .parse(c.req.param('table'));
+  const after = z.coerce
+    .number()
+    .int()
+    .min(0)
+    .parse(c.req.query('after') ?? 0);
+  const limit = z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(EXPORT_PAGE_ROWS)
+    .parse(c.req.query('limit') ?? EXPORT_PAGE_ROWS);
+  if (!(await stub.exportManifest(guild, 'operator')).tables.some((t) => t.name === table))
+    throw new Problem(404, 'unknown_table', 'This community has no such table.');
+  return c.json(await stub.exportPage(guild, table, after, limit, 'operator'));
+});
+app.get('/ops/communities/:guild/notes', async (c) => {
+  const { guild } = operationalCommunity(c);
+  return c.json({
+    notes: (await c.env.PUBLIC_DIRECTORY?.getByName('directory').notes(guild)) ?? [],
+  });
+});
+app.post('/ops/communities/:guild/restore-to', async (c) => {
+  const { guild, stub } = operationalCommunity(c);
+  const input = z
+    .object({
+      time: z
+        .string()
+        .max(40)
+        .refine((t) => /^\d{4}-\d\d-\d\dT/.test(t) && !Number.isNaN(Date.parse(t)), {
+          message: 'Use an ISO timestamp such as 2026-11-10T18:00:00Z.',
+        })
+        .optional(),
+      bookmark: z.string().max(200).optional(),
+      confirm: z.string(),
+      reason: z.string().trim().max(500).optional(),
+    })
+    .strict()
+    .parse(await readJson(c.req.raw));
+  if (input.confirm !== guild)
+    throw new Problem(400, 'confirm_required', 'Set confirm to the server ID being restored.');
+  const armed = await stub.armPointInTimeRestore(guild, {
+    ...(input.time ? { time: Date.parse(input.time) } : {}),
+    ...(input.bookmark ? { bookmark: input.bookmark } : {}),
+  });
+  if (!armed.ok) throw new Problem(409, 'restore_refused', armed.error);
+  const record = {
+    requestId: c.get('requestId'),
+    copy: c.req.query('copy') ?? null,
+    requested: input.time ?? input.bookmark,
+    restoredTo: armed.bookmark,
+    undoBookmark: armed.undoBookmark,
+    previousBookmark: armed.from,
+    reason: input.reason ?? null,
+  };
+  // The note lives outside community storage; the restore cannot rewind it.
+  let noted = true;
+  try {
+    await c.env.PUBLIC_DIRECTORY!.getByName('directory').note(guild, 'restore_to', record);
+  } catch {
+    noted = false;
+  }
+  console.log(JSON.stringify({ ops: 'restore_to', guild, noted, ...record }));
+  try {
+    await stub.restart();
+  } catch {
+    // Aborting the object surfaces to this caller as an error; that is the expected outcome.
+  }
+  return c.json({
+    ok: true,
+    communityId: guild,
+    restoredTo: armed.bookmark,
+    undoBookmark: armed.undoBookmark,
+    noted,
+    undo: { bookmark: armed.undoBookmark, confirm: guild },
+  });
 });
 app.get('/ops/communities/:guild/checkpoint', async (c) => {
   const { guild, stub } = operationalCommunity(c);
@@ -414,6 +676,8 @@ app.get('/invite', (c) => {
   c.header('Cache-Control', 'no-store');
   c.header('X-Robots-Tag', 'noindex');
   c.header('Referrer-Policy', 'no-referrer');
+  // One Discord consent both adds the bot and signs in, then returns to the setup guide.
+  if (signInReady(c.env)) return c.redirect('/auth/login?install=1', 302);
   if (!invite)
     return c.text('Discord invitations are not configured. Open /app/ for setup information.', 503);
   return c.redirect(invite, 302);
@@ -430,7 +694,7 @@ app.route(
           'Join this Discord community before linking an account.',
           403,
         );
-      const game = (await env.COMMUNITIES.getByName(guild).read(guild)).settings.games.find(
+      const game = (await env.COMMUNITIES.getByName(guild).find(guild))?.settings.games.find(
         (g) => g.id === gameId,
       );
       const adapter = runtimeAdapter(env, game?.catalogId);
@@ -455,26 +719,65 @@ app.route(
   }),
 );
 
+function signInReady(env: Env) {
+  try {
+    return !!(env.DISCORD_APPLICATION_ID && env.DISCORD_CLIENT_SECRET && origin(env));
+  } catch {
+    return false;
+  }
+}
+/** Same-origin console, statistics and link pages only; never an open redirect. */
+function allowedReturn(requested: string | undefined, base: string) {
+  if (!requested) return null;
+  let url: URL;
+  try {
+    url = new URL(requested, base);
+  } catch {
+    return null;
+  }
+  return url.origin === base &&
+    ((['/stats', '/link'].includes(url.pathname) &&
+      snowflake.safeParse(url.searchParams.get('community')).success &&
+      z.uuid().safeParse(url.searchParams.get('game')).success) ||
+      (['/', '/app', '/app/'].includes(url.pathname) &&
+        (!url.searchParams.has('community') ||
+          snowflake.safeParse(url.searchParams.get('community')).success)))
+    ? url.pathname + url.search
+    : null;
+}
+async function authPage(
+  c: Context<App>,
+  status: 400 | 401 | 503,
+  title: string,
+  message: string,
+  retry = '/auth/login',
+) {
+  const html = page(
+    title,
+    message,
+    `<p class="hero-actions"><a class="button" href="${htmlEscape(retry)}">Sign in again</a> <a class="button secondary" href="/app/">Open dashboard</a> <a class="text-link" href="/">Back to home</a></p>`,
+    new URL(c.req.path, c.req.url).href,
+  );
+  const hashes = await Promise.all(
+    [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)].map(
+      async (m) =>
+        `'sha256-${btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(m[1])))))}'`,
+    ),
+  );
+  c.header(
+    'Content-Security-Policy',
+    `default-src 'self'; script-src 'self' ${hashes.join(' ')}; style-src 'self'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+  );
+  return c.html(html, status);
+}
 app.get('/auth/login', async (c) => {
   const base = origin(c.env);
   if (!c.env.DISCORD_APPLICATION_ID || !c.env.DISCORD_CLIENT_SECRET)
     throw new Problem(503, 'setup_incomplete', 'Discord sign-in is not configured yet.');
   const state = tokenId();
-  let returnTo = '/app/';
-  const requested = c.req.query('returnTo');
-  if (requested) {
-    const url = new URL(requested, base);
-    if (
-      url.origin === base &&
-      ((['/stats', '/link'].includes(url.pathname) &&
-        snowflake.safeParse(url.searchParams.get('community')).success &&
-        z.uuid().safeParse(url.searchParams.get('game')).success) ||
-        (['/', '/app', '/app/'].includes(url.pathname) &&
-          (!url.searchParams.has('community') ||
-            snowflake.safeParse(url.searchParams.get('community')).success)))
-    )
-      returnTo = url.pathname + url.search;
-  }
+  const install = c.req.query('install') === '1';
+  const pinned = snowflake.safeParse(c.req.query('guild'));
+  const returnTo = allowedReturn(c.req.query('returnTo'), base) ?? '/app/';
   await c.env.AUTH.getByName(`oauth:${state}`).createState(Date.now() + 600000, returnTo);
   setCookie(c, 'cg-oauth', state, {
     path: '/auth',
@@ -488,8 +791,10 @@ app.get('/auth/login', async (c) => {
     client_id: c.env.DISCORD_APPLICATION_ID,
     response_type: 'code',
     redirect_uri: `${base}/auth/callback`,
-    scope: 'identify guilds',
+    scope: install ? `identify guilds ${BOT_SCOPES}` : 'identify guilds',
     state,
+    ...(install ? { permissions: String(BOT_PERMISSIONS.basic) } : {}),
+    ...(install && pinned.success ? { guild_id: pinned.data, disable_guild_select: 'true' } : {}),
   }).toString();
   return c.redirect(url.href);
 });
@@ -502,69 +807,98 @@ app.get('/auth/callback', async (c) => {
     isTokenId(state) && state === cookie
       ? await c.env.AUTH.getByName(`oauth:${state}`).returnPath()
       : '/';
+  const retry = `/auth/login?returnTo=${encodeURIComponent(returnTo === '/' ? '/app/' : returnTo)}`;
   if (
     !isTokenId(state) ||
     state !== cookie ||
     !(await c.env.AUTH.getByName(`oauth:${state}`).consumeState())
   )
-    throw new Problem(
+    return authPage(
+      c,
       400,
-      'invalid_state',
-      'Sign-in expired or was already used. Start sign-in again.',
+      'Sign-in expired',
+      'This sign-in link expired or was already used. Start sign-in again.',
+      retry,
     );
-  if (c.req.query('error')) return c.redirect('/?login=cancelled');
+  if (c.req.query('error')) {
+    // Leaving the Discord consent screen is a normal choice, not a failure.
+    const back = new URL(returnTo, origin(c.env));
+    back.searchParams.set('login', 'cancelled');
+    return c.redirect(back.pathname + back.search);
+  }
   const code = c.req.query('code');
   if (!code || !c.env.DISCORD_APPLICATION_ID || !c.env.DISCORD_CLIENT_SECRET)
-    throw new Problem(400, 'invalid_code', 'Start Discord sign-in again.');
-  const response = await fetch('https://discord.com/api/v10/oauth2/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    signal: AbortSignal.timeout(5000),
-    body: new URLSearchParams({
-      client_id: c.env.DISCORD_APPLICATION_ID,
-      client_secret: c.env.DISCORD_CLIENT_SECRET,
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: `${origin(c.env)}/auth/callback`,
-    }),
-  });
-  if (!response.ok) throw new Problem(401, 'login_failed', 'Discord sign-in failed. Start again.');
-  const token = z
-    .object({ access_token: z.string().min(1), expires_in: z.number().positive() })
-    .parse(await response.json());
-  const user = z
-    .object({ id: snowflake, username: z.string(), avatar: z.string().nullable() })
-    .parse(await discord('/users/@me', token.access_token, true));
-  const id = tokenId(),
-    csrf = tokenId(),
-    expiresAt = Date.now() + Math.min(token.expires_in, 28800) * 1000;
-  await c.env.AUTH.getByName(`session:${id}`).saveSession({
-    user,
-    csrf,
-    accessToken: token.access_token,
-    expiresAt,
-  });
-  setCookie(c, sessionCookie(c.env), id, {
-    path: '/',
-    httpOnly: true,
-    secure: secure(c.env),
-    sameSite: 'Lax',
-    maxAge: Math.floor((expiresAt - Date.now()) / 1000),
-  });
-  return c.redirect(returnTo);
+    return authPage(c, 400, 'Sign-in incomplete', 'Discord did not finish signing you in.', retry);
+  try {
+    const response = await fetch('https://discord.com/api/v10/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      signal: AbortSignal.timeout(5000),
+      body: new URLSearchParams({
+        client_id: c.env.DISCORD_APPLICATION_ID,
+        client_secret: c.env.DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: `${origin(c.env)}/auth/callback`,
+      }),
+    });
+    if (!response.ok)
+      return authPage(c, 401, 'Sign-in failed', 'Discord sign-in failed. Start again.', retry);
+    const token = z
+      .object({ access_token: z.string().min(1), expires_in: z.number().positive() })
+      .parse(await response.json());
+    const user = z
+      .object({ id: snowflake, username: z.string(), avatar: z.string().nullable() })
+      .parse(await discord('/users/@me', token.access_token, true));
+    const id = tokenId(),
+      csrf = tokenId(),
+      expiresAt = Date.now() + Math.min(token.expires_in, 28800) * 1000;
+    await c.env.AUTH.getByName(`session:${id}`).saveSession({
+      user,
+      csrf,
+      accessToken: token.access_token,
+      expiresAt,
+    });
+    setCookie(c, sessionCookie(c.env), id, {
+      path: '/',
+      httpOnly: true,
+      secure: secure(c.env),
+      sameSite: 'Lax',
+      maxAge: Math.floor((expiresAt - Date.now()) / 1000),
+    });
+    // Discord reports the server only when this consent also added the bot.
+    const installed = snowflake.safeParse(c.req.query('guild_id'));
+    return c.redirect(
+      (installed.success &&
+        allowedReturn(
+          `/app/?community=${installed.data}&view=setup&guide=access`,
+          origin(c.env),
+        )) ||
+        returnTo,
+    );
+  } catch (error) {
+    if (error instanceof Problem) throw error;
+    return authPage(
+      c,
+      503,
+      'Discord is unavailable',
+      'Discord did not respond while signing you in. Try again in a moment.',
+      retry,
+    );
+  }
 });
 
 app.get('/statistics/:guild/:game', async (c) => {
   const guild = snowflake.parse(c.req.param('guild')),
     game = z.uuid().parse(c.req.param('game'));
   const stub = c.env.COMMUNITIES.getByName(guild),
-    snapshot = await stub.read(guild),
-    cfg = recordPolicy(snapshot.settings, game);
-  if (!snapshot.settings.games.some((g) => g.id === game))
+    snapshot = await stub.find(guild);
+  if (!snapshot?.settings.games.some((g) => g.id === game))
     throw new Problem(404, 'unknown_game', 'Game not found in this community.');
+  const cfg = recordPolicy(snapshot.settings, game);
   const session = await sessionFor(c);
   const member = session
-    ? (await userGuilds(session.session.accessToken)).find((g) => g.id === guild)
+    ? (await sessionGuilds(c, session)).find((g) => g.id === guild)
     : undefined;
   const admin = !!member && canManage(member);
   if (cfg.visibility !== 'public' && (!member || (cfg.visibility === 'admins' && !admin)))
@@ -601,7 +935,7 @@ app.post('/api/logout', async (c) => {
 });
 app.get('/api/communities', async (c) =>
   c.json({
-    communities: (await userGuilds(c.get('session').accessToken))
+    communities: (await sessionGuilds(c, { id: c.get('sessionId'), session: c.get('session') }))
       .filter(canManage)
       .map(({ id, name, icon }) => ({ id, name, icon })),
   }),
@@ -609,7 +943,14 @@ app.get('/api/communities', async (c) =>
 
 app.use('/api/communities/:guild/*', async (c, next) => {
   const guildId = snowflake.parse(c.req.param('guild'));
-  const guild = (await userGuilds(c.get('session').accessToken)).find((g) => g.id === guildId);
+  const guild = (
+    await sessionGuilds(
+      c,
+      { id: c.get('sessionId'), session: c.get('session') },
+      // Writes and the full data download recheck Discord; other reads may use the short cache.
+      !['GET', 'HEAD'].includes(c.req.method) || c.req.path.endsWith('/export'),
+    )
+  ).find((g) => g.id === guildId);
   if (!guild || !canManage(guild))
     throw new Problem(
       403,
@@ -737,6 +1078,26 @@ app.get('/api/communities/:guild/records', async (c) => {
     ),
   );
 });
+app.get('/api/communities/:guild/export', async (c) => {
+  const guild = c.req.param('guild'),
+    stub = c.env.COMMUNITIES.getByName(guild);
+  const { tables, excluded, schemaVersion, createdAt } = await stub.exportManifest(
+    guild,
+    'organizer',
+  );
+  return exportResponse(
+    stub,
+    guild,
+    { tables, scope: 'organizer' },
+    {
+      format: 1,
+      kind: 'community-data-export',
+      communityId: guild,
+      manifest: { schemaVersion, exportedAt: createdAt, tables, excluded },
+    },
+    `community-${guild}-${createdAt.slice(0, 10)}.json`,
+  );
+});
 app.post('/api/communities/:guild/import/preview', async (c) => {
   const bundle = importSchema.parse(await readJson(c.req.raw, 5 * 1024 * 1024));
   return c.json(
@@ -773,6 +1134,39 @@ app.post('/api/communities/:guild/player', async (c) => {
   const reply = await stub.recordAction(c.req.param('guild'), a, c.get('session').user.id, true);
   if (!reply.ok) throw new Problem(reply.status, 'player_conflict', reply.content);
   c.executionCtx.waitUntil(stub.flush());
+  return c.json(reply);
+});
+app.post('/api/communities/:guild/player/delete', async (c) => {
+  const { userId } = z
+    .object({ userId: snowflake })
+    .strict()
+    .parse(await readJson(c.req.raw));
+  const reply = await c.env.COMMUNITIES.getByName(c.req.param('guild')).deletePlayer(
+    c.req.param('guild'),
+    userId,
+    c.get('session').user.id,
+  );
+  if (!reply.ok) throw new Problem(reply.status, 'player_delete_conflict', reply.content);
+  return c.json(reply);
+});
+// Wiping a community is reserved for the owner or an Administrator, not Manage Server.
+app.post('/api/communities/:guild/delete', async (c) => {
+  const guildId = c.req.param('guild');
+  const { confirmName } = z
+    .object({ confirmName: z.string().max(100) })
+    .strict()
+    .parse(await readJson(c.req.raw));
+  const guild = (await userGuilds(c.get('session').accessToken)).find((g) => g.id === guildId);
+  if (!guild || !(guild.owner || BigInt(guild.permissions) & 8n))
+    throw new Problem(
+      403,
+      'forbidden',
+      'Only the server owner or an Administrator can delete this community’s data.',
+    );
+  if (confirmName.trim() !== guild.name.trim())
+    throw new Problem(400, 'confirmation', 'Type the server name exactly to confirm.');
+  const reply = await c.env.COMMUNITIES.getByName(guildId).deleteCommunity(guildId);
+  if (!reply.ok) throw new Problem(409, 'community_delete_conflict', reply.content);
   return c.json(reply);
 });
 
@@ -987,6 +1381,17 @@ app.put('/api/communities/:guild/config', async (c) => {
         'Settings changed in another tab. Refresh before saving.',
       'issues' in result ? result.issues : [],
     );
+  touchCommunity(
+    c.env,
+    guildId,
+    {
+      kind: 'settings',
+      hasSettings: !!(
+        result.snapshot.settings.games.length || result.snapshot.settings.queues.length
+      ),
+    },
+    c.executionCtx,
+  );
   return c.json(result.snapshot);
 });
 app.all('/api/*', (c) =>

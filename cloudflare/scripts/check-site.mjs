@@ -1,5 +1,13 @@
 import { readFile } from 'node:fs/promises';
+import { identity } from '../site/load-identity.mjs';
+import { launchBlockers } from '../site/launch-guard.mjs';
 const manifest = JSON.parse(await readFile('dist/web/site-manifest.json', 'utf8'));
+// An indexed public launch must say who runs the service and how to reach them privately.
+if (manifest.published || process.env.PUBLIC_SITE_INDEXING === 'true') {
+  const missing = launchBlockers(identity);
+  if (missing.length)
+    throw Error(`Indexing is enabled but src/identity.ts is missing: ${missing.join(', ')}`);
+}
 const titles = new Set(),
   descriptions = new Set();
 for (const path of manifest.pages) {
@@ -25,6 +33,14 @@ for (const path of manifest.pages) {
       throw Error(`Broken public link ${path} -> ${href}`);
   if (/\[org\]|\[repo\]|\[Support Discord/.test(html))
     throw Error(`Unresolved placeholder: ${path}`);
+  if (/free hosting forever|preview does not promise/i.test(html))
+    throw Error(`Pricing hedge contradicts the free service: ${path}`);
+}
+for (const path of ['/privacy/', '/terms/']) {
+  const html = await readFile(`dist/web${path}index.html`, 'utf8');
+  if (!/Last updated: <time datetime="\d{4}-\d{2}-\d{2}">/.test(html))
+    throw Error(`Missing last-updated date: ${path}`);
+  if (!/<h2[^>]*>Contact<\/h2>/.test(html)) throw Error(`Missing contact section: ${path}`);
 }
 for (const font of ['plex-sans', 'plex-sans-600', 'plex-sans-700', 'plex-mono']) {
   const bytes = await readFile(`dist/web/fonts/${font}.woff2`);

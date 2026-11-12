@@ -76,6 +76,9 @@ export async function mockApp(page: Page) {
     playerActions: [] as Record<string, unknown>[],
     matchState: 'playing',
     waitingCount: 0,
+    retryAfter: '',
+    sessionExpired: false,
+    deletions: [] as { path: string; body: Record<string, unknown> }[],
   };
   const player = {
     id: user,
@@ -170,14 +173,22 @@ export async function mockApp(page: Page) {
       message:
         state.access === 'ready'
           ? 'Discord access verified.'
-          : 'Invite the bot or restore access, then check again.',
+          : state.access === 'unavailable'
+            ? 'Discord could not verify access. Your saved settings are available; retry shortly.'
+            : 'Invite the bot or restore its server access, then check again.',
       manageRoles: state.manageRoles,
       manageNicknames: state.manageNicknames,
+      ...(state.retryAfter ? { retryAfter: state.retryAfter } : {}),
     },
   });
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
+    if (state.sessionExpired && path !== '/api/bootstrap')
+      return json(
+        { code: 'sign_in_required', error: 'Sign in with Discord.', requestId: 'test-expired' },
+        401,
+      );
     if (path === '/api/bootstrap')
       return json({
         environment: 'staging',
@@ -277,6 +288,18 @@ export async function mockApp(page: Page) {
           changes: bundle.changes.length,
         },
       });
+    }
+    if (path.endsWith('/player/delete') || path.endsWith('/delete')) {
+      const body = route.request().postDataJSON();
+      state.deletions.push({ path, body });
+      state.playerCount = 0;
+      if (!path.endsWith('/player/delete'))
+        state.snapshot = { ...state.snapshot, revision: 0, settings: { games: [], queues: [] } };
+      return json(
+        path.endsWith('/player/delete')
+          ? { ok: true, content: 'Player data deleted.' }
+          : { ok: true },
+      );
     }
     if (path.endsWith('/player')) {
       const action = route.request().postDataJSON();

@@ -31,12 +31,78 @@ import { testRequestSchema, type RetiredTestSession } from '../domain/testing';
 import { testMembers } from '../discord/test-members';
 
 export class Community extends DurableObject<Env> {
-  private playStore: PlayStore;
-  private recordStore: RecordStore;
+  private playStore!: PlayStore;
+  private recordStore!: RecordStore;
+  private discarded = false;
+  private active = 0;
+  static {
+    // find() may delete an unclaimed object's storage while the instance stays in memory, so
+    // every other entry point re-creates the schema first and counts itself as in flight.
+    for (const name of Object.getOwnPropertyNames(this.prototype)) {
+      const method = Object.getOwnPropertyDescriptor(this.prototype, name)?.value;
+      if (
+        ['constructor', 'find', 'migrate', 'attach', 'unclaimed'].includes(name) ||
+        typeof method !== 'function'
+      )
+        continue;
+      Object.defineProperty(this.prototype, name, {
+        configurable: true,
+        writable: true,
+        value(this: Community, ...args: unknown[]) {
+          if (this.discarded) {
+            this.discarded = false;
+            this.migrate();
+          }
+          this.active++;
+          let result: unknown;
+          try {
+            result = method.apply(this, args);
+          } catch (error) {
+            this.active--;
+            throw error;
+          }
+          if (!(result instanceof Promise)) {
+            this.active--;
+            return result;
+          }
+          return result.finally(() => this.active--);
+        },
+      });
+    }
+  }
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    ctx.storage.transactionSync(() => {
-      const sql = ctx.storage.sql;
+    this.migrate();
+    this.attach();
+  }
+
+  /** Builds the stores over the current schema; also run after the storage is wiped. */
+  private attach() {
+    const { ctx, env } = this;
+    this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
+    if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
+    this.playStore = new PlayStore(
+      ctx,
+      env,
+      (guild) => this.read(guild),
+      this.recordStore,
+      () =>
+        this.meta<boolean>('publicationPending')
+          ? (this.meta<number>('publicationRetryAt') ?? Date.now() + 60000)
+          : null,
+    );
+    const retiredTest = ctx.storage.kv.get<RetiredTestSession>('testSession');
+    if (ctx.storage.kv.get('testMode') && retiredTest) {
+      retiredTest.expiresAt = 0;
+      ctx.storage.kv.put('testSession', retiredTest);
+    }
+    // Adopt periodic queue visibility for existing communities on their next wake.
+    ctx.blockConcurrencyWhile(() => this.playStore.schedule());
+  }
+
+  private migrate() {
+    this.ctx.storage.transactionSync(() => {
+      const sql = this.ctx.storage.sql;
       sql.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)');
       const version = sql
         .exec<{ version: number }>('SELECT version FROM schema_version')
@@ -75,25 +141,6 @@ export class Community extends DurableObject<Env> {
       );
       sql.exec('UPDATE schema_version SET version=9');
     });
-    this.recordStore = new RecordStore(ctx, env, (guild) => this.read(guild));
-    if (!ctx.storage.kv.get('testMode')) this.recordStore.backfill();
-    this.playStore = new PlayStore(
-      ctx,
-      env,
-      (guild) => this.read(guild),
-      this.recordStore,
-      () =>
-        this.meta<boolean>('publicationPending')
-          ? (this.meta<number>('publicationRetryAt') ?? Date.now() + 60000)
-          : null,
-    );
-    const retiredTest = ctx.storage.kv.get<RetiredTestSession>('testSession');
-    if (ctx.storage.kv.get('testMode') && retiredTest) {
-      retiredTest.expiresAt = 0;
-      ctx.storage.kv.put('testSession', retiredTest);
-    }
-    // Adopt periodic queue visibility for existing communities on their next wake.
-    ctx.blockConcurrencyWhile(() => this.playStore.schedule());
   }
 
   private identity(guildId: string) {
@@ -131,6 +178,32 @@ export class Community extends DurableObject<Env> {
           .map((r) => JSON.parse(r.config)),
       },
     };
+  }
+
+  /**
+   * Non-creating read for unauthenticated callers: null when nobody has set this guild up.
+   * Waking the object already wrote its empty schema (about 0.5 MB), so an object that holds
+   * nothing else is deleted again rather than kept forever for an arbitrary guild id.
+   */
+  async find(guildId: string): Promise<Snapshot | null> {
+    if (this.discarded) return null;
+    if (this.ctx.storage.sql.exec('SELECT 1 FROM community WHERE id=1').toArray().length)
+      return this.read(guildId);
+    const alarm = await this.ctx.storage.getAlarm();
+    if (alarm !== null || this.active || !this.unclaimed()) return null;
+    this.discarded = true;
+    await this.ctx.storage.deleteAll();
+    return null;
+  }
+  private unclaimed() {
+    const sql = this.ctx.storage.sql;
+    if (!this.ctx.storage.kv.list({ limit: 1 })[Symbol.iterator]().next().done) return false;
+    return sql
+      .exec<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type='table' AND substr(name,1,7)!='sqlite_' AND substr(name,1,4)!='_cf_' AND name NOT IN ('schema_version','record_state')`,
+      )
+      .toArray()
+      .every(({ name }) => !sql.exec(`SELECT 1 FROM "${name}" LIMIT 1`).toArray().length);
   }
 
   async save(
@@ -865,6 +938,39 @@ export class Community extends DurableObject<Env> {
       };
     }
   }
+  deletePlayer(guild: string, user: string, actor: string) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false as const, content: 'Recovery copy is read-only.', status: 409 };
+    try {
+      return this.recordStore.erase(guild, snowflake.parse(user), actor);
+    } catch (error) {
+      if (!(error instanceof PlayError)) throw error;
+      return { ok: false as const, content: error.message, status: 409 };
+    }
+  }
+  /** Leaves the object as if the community had never been set up. */
+  async deleteCommunity(guild: string) {
+    this.identity(guild);
+    if (this.ctx.storage.kv.get('recoveryReadOnly'))
+      return { ok: false as const, content: 'Recovery copy is read-only.' };
+    if (
+      this.ctx.storage.sql
+        .exec("SELECT 1 FROM matches WHERE state IN ('check_in','playing') LIMIT 1")
+        .toArray().length
+    )
+      return {
+        ok: false as const,
+        content: 'A match is still active. Finish or cancel every active match, then try again.',
+      };
+    await this.env.PUBLIC_DIRECTORY?.getByName('directory').forget(guild);
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    // Rebuild empty tables and fresh stores in place so nothing cached outlives the wipe.
+    this.migrate();
+    this.attach();
+    return { ok: true as const };
+  }
   async alarm() {
     if (this.ctx.storage.kv.get('recoveryReadOnly')) {
       await this.ctx.storage.deleteAlarm();
@@ -893,31 +999,114 @@ export class Community extends DurableObject<Env> {
       };
     }
   }
+  /** Whole artifact in one call: fine for tests and small communities; HTTP callers page instead. */
   async operationalBackup(guild: string) {
-    this.identity(guild);
-    const tables = this.ctx.storage.transactionSync(() => {
-      const result: Record<string, Record<string, SqlStorageValue>[]> = {};
-      for (const { name } of this.ctx.storage.sql.exec<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__cf_%' ORDER BY name",
-      )) {
-        if (name.startsWith('_')) continue;
-        if (!/^[a-z_]+$/.test(name)) throw Error('Unexpected table identity.');
-        const rows = this.ctx.storage.sql.exec(`SELECT * FROM ${name} LIMIT 50001`).toArray();
-        if (rows.length > 50000) throw Error('Use paged operational export for this community.');
-        result[name] = rows;
+    const manifest = this.exportManifest(guild);
+    const tables: Record<string, Record<string, SqlStorageValue>[]> = {};
+    for (const { name } of manifest.tables) {
+      tables[name] = [];
+      for (let after: number | null = 0; after !== null;) {
+        const page = this.exportPage(guild, name, after);
+        tables[name].push(...page.rows);
+        after = page.next;
       }
-      return result;
-    });
+    }
+    const { format, communityId, sourceApplicationId, createdAt } = manifest;
+    return { format, communityId, sourceApplicationId, createdAt, tables };
+  }
+  private exportTables(scope: ExportScope) {
+    return this.ctx.storage.sql
+      .exec<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__cf_%' ORDER BY name",
+      )
+      .toArray()
+      .filter(({ name }) => !name.startsWith('_'))
+      .map(({ name }) => {
+        if (!/^[a-z_]+$/.test(name)) throw Error('Unexpected table identity.');
+        return name;
+      })
+      .filter((name) => scope === 'operator' || !ORGANIZER_EXCLUDED.includes(name));
+  }
+  /** Table list with row counts; pages are read separately and are not one transaction. */
+  exportManifest(guild: string, scope: ExportScope = 'operator') {
+    this.identity(guild);
+    const sql = this.ctx.storage.sql;
     return {
-      format: 1,
+      format: 1 as const,
+      scope,
       communityId: guild,
       sourceApplicationId:
         this.ctx.storage.kv.get<string>('recoverySourceApplication') ??
         this.env.DISCORD_APPLICATION_ID,
+      schemaVersion: sql.exec<{ version: number }>('SELECT version FROM schema_version').one()
+        .version,
       createdAt: new Date().toISOString(),
-      tables,
+      tables: this.exportTables(scope).map((name) => ({
+        name,
+        rows: sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM ${name}`).one().n,
+      })),
+      ...(scope === 'organizer' ? { excluded: ORGANIZER_EXCLUDED } : {}),
     };
   }
+  /** One page of one table by rowid cursor, bounded by row count and serialized size. */
+  exportPage(
+    guild: string,
+    table: string,
+    after = 0,
+    limit = EXPORT_PAGE_ROWS,
+    scope: ExportScope = 'operator',
+  ) {
+    this.identity(guild);
+    if (!this.exportTables(scope).includes(table)) throw Error('Unknown export table.');
+    const size = Math.min(Math.max(Math.trunc(limit) || EXPORT_PAGE_ROWS, 1), EXPORT_PAGE_ROWS);
+    const found = this.ctx.storage.sql
+      .exec(
+        `SELECT rowid AS export_rowid__, * FROM ${table} WHERE rowid > ? ORDER BY rowid LIMIT ?`,
+        Math.max(0, Math.trunc(after) || 0),
+        size,
+      )
+      .toArray();
+    const rows: Record<string, SqlStorageValue>[] = [];
+    let bytes = 0,
+      last = 0;
+    for (const { export_rowid__: rowid, ...row } of found) {
+      bytes += JSON.stringify(row).length;
+      if (rows.length && bytes > EXPORT_PAGE_BYTES) break;
+      rows.push(row);
+      last = Number(rowid);
+    }
+    return {
+      table,
+      rows,
+      next: rows.length < found.length || found.length === size ? last : null,
+    };
+  }
+  /** Arms a restore of this object's SQLite database; it takes effect when the object restarts. */
+  async armPointInTimeRestore(guild: string, target: { time?: number; bookmark?: string }) {
+    if (
+      !this.ctx.storage.sql.exec('SELECT 1 FROM community WHERE guild_id=?', guild).toArray().length
+    )
+      return { ok: false as const, error: 'No community data exists for this server.' };
+    const problem = restoreTargetProblem(target, Date.now());
+    if (problem) return { ok: false as const, error: problem };
+    try {
+      const from = await this.pointInTime.current();
+      const bookmark = target.bookmark ?? (await this.pointInTime.forTime(target.time!));
+      const undoBookmark = await this.pointInTime.arm(bookmark);
+      return { ok: true as const, bookmark, undoBookmark, from };
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: `Storage refused the restore point: ${error instanceof Error ? error.message : 'unknown error'}`,
+      };
+    }
+  }
+  /** Restarts the object so an armed restore applies. The calling RPC sees the abort as an error. */
+  restart() {
+    this.pointInTime.restart('Point-in-time restore requested by the operator.');
+  }
+  // Seam: workerd's local runtime does not implement point-in-time recovery, so tests replace this.
+  private pointInTime: PointInTime = storagePointInTime(this.ctx);
   async operationalRestore(
     guild: string,
     backup: {
@@ -1082,6 +1271,46 @@ export class Community extends DurableObject<Env> {
     await this.playStore.schedule();
     return result;
   }
+}
+
+type ExportScope = 'operator' | 'organizer';
+export const EXPORT_PAGE_ROWS = 2000;
+export const EXPORT_PAGE_BYTES = 2 * 1024 * 1024;
+/** Runtime delivery and idempotency state: not the community's records, never useful to an organizer. */
+export const ORGANIZER_EXCLUDED = [
+  'budget',
+  'cards',
+  'deadlines',
+  'limits',
+  'outbox',
+  'play_actions',
+  'record_actions',
+];
+export const RESTORE_WINDOW_MS = 30 * 86400000;
+export type PointInTime = {
+  current(): Promise<string>;
+  forTime(at: number): Promise<string>;
+  arm(bookmark: string): Promise<string>;
+  restart(reason: string): void;
+};
+export const storagePointInTime = (ctx: DurableObjectState): PointInTime => ({
+  current: () => ctx.storage.getCurrentBookmark(),
+  forTime: (at) => ctx.storage.getBookmarkForTime(at),
+  arm: (bookmark) => ctx.storage.onNextSessionRestoreBookmark(bookmark),
+  restart: (reason) => ctx.abort(reason),
+});
+export function restoreTargetProblem(target: { time?: number; bookmark?: string }, now: number) {
+  if ((target.time === undefined) === (target.bookmark === undefined))
+    return 'Give exactly one of time or bookmark.';
+  if (target.bookmark !== undefined)
+    return /^[0-9a-f]{8}(-[0-9a-f]{8}){2}-[0-9a-f]{32}$/i.test(target.bookmark)
+      ? null
+      : 'The bookmark is not in the storage bookmark format.';
+  if (!Number.isFinite(target.time)) return 'The time is not a valid timestamp.';
+  if (target.time! > now) return 'The restore time is in the future.';
+  if (target.time! < now - RESTORE_WINDOW_MS)
+    return 'The restore time is older than the 30-day recovery window.';
+  return null;
 }
 
 function slug(value: string) {

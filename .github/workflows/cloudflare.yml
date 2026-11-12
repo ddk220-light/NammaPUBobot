@@ -20,6 +20,10 @@ on:
         description: Deploy the checked revision to isolated staging
         type: boolean
         default: false
+      deploy_production:
+        description: Deploy the checked revision to production
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -69,6 +73,29 @@ jobs:
           cache-dependency-path: cloudflare/package-lock.json
       - run: npm ci
       - run: npm run deploy:staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  production:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_production
+    needs: check
+    runs-on: ubuntu-latest
+    environment: cloudflare-production
+    concurrency:
+      group: cloudflare-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: cloudflare
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cloudflare/package-lock.json
+      - run: npm ci
+      - run: npm run deploy:production -- --confirm-production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

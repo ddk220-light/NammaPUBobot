@@ -39,7 +39,7 @@ Discord allowing the command does not grant authority to clear queues or overrid
 
 Discord cannot register a root command that both opens a panel and owns subcommands. **`/admin` now opens the panel; the previous Setup, Queue, Match and Player command groups move to `/manage`.** Those detailed commands keep their Manage Server/Administrator requirement and existing options, including `/manage match undo`, `/manage player seed` and `/manage queue start skip_check_in:true`. Older already-issued `/admin` subcommand interactions remain accepted with their existing permission checks during client refresh.
 
-Deploy the Worker, then register the guild commands with `npm run register:staging`. That script verifies the staging application and replaces only its configured guild command namespace. It does not change the Railway bot, create roles, grant permissions or register global commands. Administrators configure any custom-role command overrides themselves in Discord; no new token scope is needed.
+Deploy the Worker, then register the commands with `npm run register:staging` (a local `npm run deploy:staging` does this when `.dev.vars.staging` exists). That script verifies the staging application and replaces its global command list; `--guild ID` registers in one server instead. It does not change the Railway bot, create roles or grant permissions. Administrators configure any custom-role command overrides themselves in Discord; no new token scope is needed.
 
 ## Verification
 

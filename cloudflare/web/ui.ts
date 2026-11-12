@@ -26,7 +26,10 @@ export async function requestJson<T>(path: string, options: RequestInit = {}): P
     throw new ApiError(
       response.status,
       body.code ?? 'request_failed',
-      body.error ?? 'Request failed.',
+      body.error ??
+        (response.status === 429
+          ? `Too many requests. Wait ${response.headers.has('Retry-After') ? `${response.headers.get('Retry-After')} seconds` : 'a minute'}, then retry.`
+          : 'Request failed.'),
       body.requestId ?? response.headers.get('X-Request-ID') ?? undefined,
       body.issues,
     );

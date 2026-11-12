@@ -366,4 +366,37 @@ export class SettingsDraft {
     this.working.queues = this.working.queues.filter((q) => q.id !== id);
     this.raw.delete(`queue:${id}`);
   }
+  /** Keep unsaved edits in this tab across a sign-in round trip. */
+  stash(storage: Storage) {
+    storage.setItem(
+      `${stashPrefix}${this.saved.communityId}`,
+      JSON.stringify({
+        saved: this.saved,
+        working: this.working,
+        raw: [...this.raw],
+        initial: [...this.initial],
+        policies: [...this.policies],
+      }),
+    );
+  }
+  /** Returns the stashed draft (against the revision it was edited from), once. */
+  static unstash(storage: Storage, communityId: string, gameState: GameState[]) {
+    const key = `${stashPrefix}${communityId}`;
+    const text = storage.getItem(key);
+    storage.removeItem(key);
+    if (!text) return null;
+    try {
+      const data = JSON.parse(text);
+      if (data?.saved?.communityId !== communityId) return null;
+      const draft = new SettingsDraft(data.saved, gameState);
+      draft.working = data.working;
+      draft.raw = new Map(data.raw);
+      draft.initial = new Map(data.initial);
+      draft.policies = new Map(data.policies);
+      return draft.dirty ? draft : null;
+    } catch {
+      return null;
+    }
+  }
 }
+const stashPrefix = 'organizer-draft:';

@@ -1,3 +1,4 @@
+import { touchCommunity } from '../storage/community-index';
 import { gameListReply } from './game-list';
 import type { Env } from '../env';
 import { gameCapabilities } from '../games/catalog';
@@ -160,6 +161,7 @@ export async function interactions(
   if (interaction.application_id !== env.DISCORD_APPLICATION_ID)
     return new Response('Wrong application.', { status: 401 });
   if (interaction.type === 1) return Response.json({ type: 1 });
+  touchCommunity(env, interaction.guild_id, { kind: 'activity' }, ctx);
   if (interaction.type === 2 && interaction.data?.name === 'test')
     return testInteraction(interaction, env, ctx);
   if (
@@ -476,6 +478,13 @@ async function playInteraction(
         });
         const result = await stub.recordAction(i.guild_id!, parsed, actor.id, canManage(member));
         ctx?.waitUntil(stub.flush());
+        const gameName = s.settings.games.find((g) => g.id === q.gameId)?.name ?? 'this game';
+        if (root === 'profile' && result.ok && (kind === 'hide' || kind === 'unhide'))
+          return ephemeral(
+            kind === 'hide'
+              ? `You are now hidden in ${gameName}. You no longer appear on its rating, gold or predictions leaderboards, on the public statistics pages, or in other players’ statistics; past matches show you as “Hidden player”. Organizers can still see your records. Use /profile unhide to show yourself again.`
+              : `You are visible again in ${gameName}. You appear on its leaderboards and in other players’ statistics once you meet the game’s minimum match and recent-play thresholds.`,
+          );
         return ephemeral(result.content);
       }
       if (recordPolicy(s.settings, q.gameId).visibility === 'admins' && !canManage(member))

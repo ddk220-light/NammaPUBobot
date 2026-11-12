@@ -1,3 +1,4 @@
+import { buildInfo } from '../build-info';
 import { privilegedRankPermissions } from '../domain/rank-roles';
 import type { DiscordSetup } from '../domain/setup';
 import type { Env } from '../env';
@@ -7,12 +8,23 @@ export const MANAGE_GUILD = 32n,
 export const REQUIRED_CHANNEL_PERMISSIONS = 1024n | 2048n | 16384n | 65536n;
 export const MANAGE_ROLES = 1n << 28n;
 export const MANAGE_NICKNAMES = 1n << 27n;
+export const BOT_SCOPES = 'bot applications.commands';
+/** The same permissions back the plain invite and the combined install-and-sign-in flow. */
+export const BOT_PERMISSIONS = {
+  basic: REQUIRED_CHANNEL_PERMISSIONS,
+  ranks: REQUIRED_CHANNEL_PERMISSIONS | MANAGE_ROLES,
+  nicknames: REQUIRED_CHANNEL_PERMISSIONS | MANAGE_NICKNAMES,
+};
 export function botInviteUrls(applicationId?: string) {
-  const invite = (extra: bigint) =>
+  const invite = (bits: bigint) =>
     applicationId
-      ? `https://discord.com/oauth2/authorize?client_id=${applicationId}&scope=bot%20applications.commands&permissions=${REQUIRED_CHANNEL_PERMISSIONS | extra}`
+      ? `https://discord.com/oauth2/authorize?client_id=${applicationId}&scope=${encodeURIComponent(BOT_SCOPES)}&permissions=${bits}`
       : null;
-  return { basic: invite(0n), ranks: invite(MANAGE_ROLES), nicknames: invite(MANAGE_NICKNAMES) };
+  return {
+    basic: invite(BOT_PERMISSIONS.basic),
+    ranks: invite(BOT_PERMISSIONS.ranks),
+    nicknames: invite(BOT_PERMISSIONS.nicknames),
+  };
 }
 export const PERMISSIONS = [
   { bit: 1024n, name: 'View Channel' },
@@ -74,7 +86,10 @@ export async function discord<T>(
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Authorization', `${bearer ? 'Bearer' : 'Bot'} ${token}`);
-  headers.set('User-Agent', 'DiscordBot (https://github.com/ddk220-light/NammaPUBobot, 0.1.0)');
+  headers.set(
+    'User-Agent',
+    `DiscordBot (https://github.com/ddk220-light/NammaPUBobot, ${buildInfo.version})`,
+  );
   for (let attempt = 0; attempt < 3; attempt++) {
     const response = await fetch(`${DISCORD_API}${path}`, {
       ...init,

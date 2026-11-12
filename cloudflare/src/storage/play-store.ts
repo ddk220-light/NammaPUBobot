@@ -478,13 +478,12 @@ export class PlayStore {
           ([user, value]) =>
             value.games >= Math.max(1, game.records?.minimumMatches ?? 1) &&
             !this.sql
-              .exec<{ config: string }>(
-                'SELECT config FROM profiles WHERE game_id=? AND user_id=?',
+              .exec(
+                'SELECT 1 FROM player_meta WHERE game_id=? AND user_id=? AND hidden=1',
                 q.gameId,
                 user,
               )
-              .toArray()
-              .some((r) => JSON.parse(r.config).hidden),
+              .toArray().length,
         )
         .sort(
           (a, b) =>
@@ -504,12 +503,11 @@ export class PlayStore {
       );
     }
     const rows = this.sql
-      .exec<{ user_id: string; balance: number; config: string | null }>(
-        'SELECT w.user_id,w.balance,p.config FROM wallets w LEFT JOIN profiles p ON p.game_id=w.game_id AND p.user_id=w.user_id WHERE w.game_id=? ORDER BY w.balance DESC LIMIT 100',
+      .exec<{ user_id: string; balance: number }>(
+        'SELECT w.user_id,w.balance FROM wallets w LEFT JOIN player_meta m ON m.game_id=w.game_id AND m.user_id=w.user_id WHERE w.game_id=? AND COALESCE(m.hidden,0)=0 ORDER BY w.balance DESC,w.user_id LIMIT 20',
         q.gameId,
       )
-      .toArray()
-      .filter((r) => !r.config || !JSON.parse(r.config).hidden);
+      .toArray();
     return (
       `**${game.name} · gold**\n` +
       rows
@@ -528,9 +526,22 @@ export class PlayStore {
       const current = this.sql
         .exec<{ digest: string }>('SELECT digest FROM queue_views WHERE queue_id=?', q.id)
         .toArray()[0];
-      const payload = this.queuePayload(q);
-      if (current && current.digest !== JSON.stringify(payload)) this.touchQueue(q);
+      if (current) {
+        if (current.digest !== JSON.stringify(this.queuePayload(q))) this.touchQueue(q);
+      } else if (q.enabled && !this.channelBlocked(q.channelId)) this.touchQueue(q);
     }
+  }
+  // A queue created or enabled on the website gets its first card without a slash command,
+  // unless Discord has already refused deliveries to that channel.
+  private channelBlocked(channel: string) {
+    return (
+      this.sql
+        .exec(
+          "SELECT 1 FROM outbox o JOIN cards c ON c.key=o.key WHERE c.channel_id=? AND o.status='blocked' AND o.error IN ('discord_403','discord_404') LIMIT 1",
+          channel,
+        )
+        .toArray().length > 0
+    );
   }
   private voiceQueues(settings: Settings) {
     return settings.queues.filter(

@@ -244,6 +244,8 @@ const operations = [
       ]),
       sub('show', 'Show your linked profiles and detailed stats', [queue]),
       sub('verify', 'Verify control of your supported Steam, Battle.net or BAR account', [queue]),
+      sub('hide', 'Hide yourself from this game’s leaderboards and others’ statistics', [queue]),
+      sub('unhide', 'Show yourself again on this game’s leaderboards and statistics', [queue]),
     ],
   },
   {
@@ -493,13 +495,12 @@ export function adminCommandRoute(group, action) {
   return adminRoutes.get(`${group}:${action}`) ?? null;
 }
 
-export const commands = [
+const registered = [
   {
     name: 'test',
     description: 'Admins and bot moderators: populate a live queue or mark a match as a test',
     type: 1,
-    default_member_permissions: null,
-    dm_permission: false,
+    default_member_permissions: '32',
     options: [
       sub('populate', 'Add random real members to a live queue (default 8)', [
         queue,
@@ -522,7 +523,6 @@ export const commands = [
     description: 'Open queue status, match history and administrator controls',
     type: 1,
     default_member_permissions: null,
-    dm_permission: false,
     options: [queue],
   },
   {
@@ -559,3 +559,14 @@ export const commands = [
         : c,
     ),
 ];
+
+const appEnvs = ['local', 'staging', 'production'];
+/** Global registration needs contexts/integration_types, or commands also appear in DMs and user installs. */
+export function commandsFor(appEnv) {
+  if (!appEnvs.includes(appEnv)) throw new Error(`Unknown app environment: ${appEnv}`);
+  return registered
+    .filter((c) => appEnv !== 'production' || c.name !== 'test')
+    .map((c) => ({ ...c, contexts: [0], integration_types: [0] }));
+}
+
+export const commands = commandsFor('staging');

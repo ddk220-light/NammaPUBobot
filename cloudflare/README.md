@@ -1,4 +1,4 @@
-# Community Games · Cloudflare 0.8
+# Community Games · Cloudflare
 
 **Lobby integration, 27 October 2026 UTC:** the first backlog item is deployed to the Cloudflare test installation: optional game connectors, profile linking, explicit lobby attachment, durable start/end evidence and manual report prompts. Three live Discord match/economy demos passed with simulated player actions. Actual AoE2 lobby acceptance remains pending, and live occupancy is unavailable. See [deployment evidence](ops/live-demo-2026-10-27.md), [implementation and acceptance](docs/lobby-integration-handoff.md), and the [remaining feature plan](ops/remaining-features-plan.md).
 

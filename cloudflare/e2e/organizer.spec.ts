@@ -206,7 +206,7 @@ test('returning from Discord rechecks saved readiness while preserving a conflic
   page,
 }) => {
   const state = await mockApp(page);
-  state.access = 'unavailable';
+  state.access = 'needs_access';
   await page.goto(`/?community=${guild}&view=setup`);
   await page.locator('.game-settings > summary').click();
   await page.getByRole('textbox', { name: 'Game name', exact: true }).fill('Local game name');

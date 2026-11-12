@@ -61,7 +61,7 @@ test('guide survives failed save and return from Discord without falsely complet
   await page.getByRole('button', { name: 'Save reviewed changes' }).click();
   await expect(page.locator('#savebar')).toBeVisible();
   await expect(page.locator('[data-guide-queue] [name="name"]')).toHaveValue('Keep this queue');
-  state.access = 'unavailable';
+  state.access = 'needs_access';
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Back', exact: true }).click();
   await page.getByRole('button', { name: 'Recheck access', exact: true }).click();
@@ -70,7 +70,7 @@ test('guide survives failed save and return from Discord without falsely complet
     (el as HTMLElement).click();
   });
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.locator('.guided-setup')).toContainText('unavailable');
+  await expect(page.locator('.guided-setup')).toContainText('The bot is not in this server yet');
   await expect(page.locator('#view-setup')).not.toContainText('Ready to play');
   await expect(page.locator('#savebar')).toBeVisible();
   await page.getByRole('button', { name: 'Choose game', exact: true }).click();
@@ -119,6 +119,7 @@ test('queue cards stage pause and use reviewed actions with saved rules', async 
   expect(state.actions).toHaveLength(0);
   await expect(card).toContainText('Clear all waiting players');
   await card.getByRole('button', { name: 'Confirm action' }).click();
+  await expect.poll(() => state.actions.length).toBe(1);
   expect(state.actions[0]).toMatchObject({ kind: 'clear', queue });
   await expect(page.locator('#savebar')).toBeVisible();
   await page.locator('[data-edit="save"]').click();
@@ -147,7 +148,9 @@ test('player cards preserve scoped actions, confirmation and authoritative visib
   await card.getByRole('button', { name: 'Review rating change' }).click();
   expect(state.actions).toHaveLength(0);
   await card.getByRole('button', { name: 'Confirm action' }).click();
-  expect(state.actions[0]).toMatchObject({ kind: 'seed', target: user, queue, rating: 1500 });
+  await expect
+    .poll(() => state.actions[0])
+    .toMatchObject({ kind: 'seed', target: user, queue, rating: 1500 });
   await card.locator('summary').first().click();
   await page.screenshot({ path: info.outputPath('player-management.png') });
 });
@@ -216,6 +219,7 @@ test('custom game and advanced queue edits stay synchronized with the guide', as
   await expect(form.getByLabel('Queue name', { exact: true })).toHaveValue('First custom queue');
   await page.getByRole('button', { name: 'Review and save' }).click();
   await page.getByRole('button', { name: 'Save reviewed changes' }).click();
+  await expect.poll(() => state.saved.length).toBe(1);
   expect(state.saved[0].games[0].name).toBe('Friday board games');
   expect(state.saved[0].queues[0]).toMatchObject({
     name: 'First custom queue',

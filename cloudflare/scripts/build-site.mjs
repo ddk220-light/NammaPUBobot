@@ -144,7 +144,8 @@ for (const [path, title, prefix] of [
         .map(([p, [t, d]]) => [p, t, d]),
     ),
   );
-const { commands } = await import('../src/discord/commands.mjs');
+// The public reference documents what strangers' servers receive.
+const commands = (await import('../src/discord/commands.mjs')).commandsFor('production');
 function command(c, prefix = '') {
   const name = prefix ? `${prefix} ${c.name}` : `/${c.name}`;
   return `<li><code>${e(name)}</code>: ${e(c.description)}${c.options?.length ? `<ul>${c.options.map((o) => command(o, name)).join('')}</ul>` : ''}</li>`;

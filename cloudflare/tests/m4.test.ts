@@ -263,6 +263,8 @@ describe('historical reconciliation and corrections', () => {
       });
   it('reconciles historical counters, source IDs, timestamps, ratings and idempotent manifests across restart', async () => {
     await setup();
+    // The saved queue's first card is the only delivery; the import must add none.
+    const queued = (await stub().records(guild)).delivery.length;
     const b = history();
     await apply(b);
     await abortAllDurableObjects();
@@ -281,7 +283,7 @@ describe('historical reconciliation and corrections', () => {
     });
     expect(stats.player?.recent).toHaveLength(1);
     expect((await apply(b)).alreadyApplied).toBe(true);
-    expect((await stub().records(guild)).delivery).toHaveLength(0);
+    expect((await stub().records(guild)).delivery).toHaveLength(queued);
   });
   it('reverses imported original deltas without inventing a new historical calculation', async () => {
     await setup();
@@ -444,13 +446,19 @@ describe('profile identity and visibility', () => {
     await act('unhide', 1);
     expect((await stub().statistics(guild, game)).total).toBe(2);
   });
-  it('requires admin authority for hiding and prevents cross-player profile changes', async () => {
+  it('requires admin authority to hide others and prevents cross-player profile changes', async () => {
     await setup();
     await apply();
-    await expect(act('hide', 0, {}, false)).resolves.toMatchObject({
-      ok: false,
-      content: expect.stringContaining('organizers'),
-    });
+    await expect(
+      stub().recordAction(
+        guild,
+        { id: crypto.randomUUID(), kind: 'hide', gameId: game, userId: uid(1) },
+        uid(0),
+        false,
+      ),
+    ).resolves.toMatchObject({ ok: false, content: expect.stringContaining('organizers') });
+    // Players may hide themselves (/profile hide).
+    await expect(act('hide', 0, {}, false)).resolves.toMatchObject({ ok: true });
     await expect(
       stub().recordAction(
         guild,

@@ -1,6 +1,7 @@
 import { lobbySummary, lobbySearchSummary } from '../domain/lobby';
 import type { Queue } from '../domain/config';
 import type { Match } from '../domain/play';
+import { identity } from '../identity';
 
 const mention = (id: string) => `<@${id}>`;
 export interface Button {
@@ -235,7 +236,7 @@ export function matchCard(match: Match): Card {
         title,
         description: text,
         color: match.state === 'finished' ? 0xb9e77c : 0x648c78,
-        footer: { text: 'Community Games' },
+        footer: { text: identity.publicName },
       },
       ...extra,
     ],
@@ -254,7 +255,7 @@ export function agreementCard(match: Match): Card {
         title: `${match.queue.name} · ${draw ? 'Draw requested' : 'Cancellation requested'}`,
         description: `${mention(proposal.requester)} requested ${draw ? 'a draw' : 'to cancel this match'}.\n${mention(proposal.opposing)}, do you agree?`,
         color: 0x648c78,
-        footer: { text: 'Community Games' },
+        footer: { text: identity.publicName },
       },
     ],
     components: [
